@@ -142,6 +142,17 @@ def _contract(
     )
 
 
+# HAMCP-071 R1-M1: every Home Assistant request the scene configuration
+# provider can send (config GET/POST, registry list/get, state GETs).
+SCENE_CONFIGURATION_REQUESTS: tuple[str, ...] = (
+    "GET /api/config/scene/config/{config_id}",
+    "GET /api/states/{entity_id}",
+    "POST /api/config/scene/config/{config_id}",
+    "websocket config/entity_registry/get",
+    "websocket config/entity_registry/list",
+)
+
+
 CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
     _contract(
         "core.basic_rest_read",
@@ -772,6 +783,97 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             "readback": "dashboards_list_row_exact_requested_and_unrequested_plus_content_fingerprint_unchanged",
             "content_fingerprint": "existing_admitted_get_dashboard_config_engineering_config_hash",
             "concurrency": "no_core_compare_and_swap_residual_window_disclosed",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    # HAMCP-071 Part 2: governed edit of one existing UI-managed scene.  Josh
+    # 2026-10-30: Engineering-native direct Core provider, built inactive and
+    # signed with the November batch.  The one write is the scene config POST
+    # for the exact config id carrying the full proposed configuration without
+    # ``id``; the config GET plus the entity registry entry and the loaded
+    # scene are the authoritative readback.  Saving never activates the scene.
+    # R1-M1 / D2: every Home Assistant request the provider can send is
+    # declared (``SCENE_CONFIGURATION_REQUESTS``); consumer disclosure reads
+    # only the already-built dependency index and never refreshes it.
+    _contract(
+        "core.scene_configuration_operation",
+        CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
+        "compiled-core-scene-configuration-operation-v1",
+        (
+            "rest_scene_config_get_by_config_id",
+            "rest_scene_config_post_by_config_id",
+            "rest_state_get_by_entity_id",
+            "websocket_entity_registry_list_and_get",
+            "scene_config_and_loaded_scene_readback_exact",
+            "scene_post_save_reload_evidence_required",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": (
+                "one_exact_existing_ui_managed_scene_by_config_id_with_"
+                "homeassistant_registry_entry"
+            ),
+            "requests": list(SCENE_CONFIGURATION_REQUESTS),
+            "routes": {
+                "read": "GET /api/config/scene/config/{config_id}",
+                "write": "POST /api/config/scene/config/{config_id}",
+                "state": "GET /api/states/{entity_id}",
+            },
+            "commands": {
+                "read": [
+                    "config/entity_registry/get",
+                    "config/entity_registry/list",
+                ],
+            },
+            "state_reads": [
+                "loaded_scene_state_and_post_save_reload_evidence",
+                "member_device_class_when_the_registry_has_none",
+                "member_existence_when_unregistered",
+                "scene_state_reload_baseline_immediately_before_the_post",
+            ],
+            "consumer_disclosure": (
+                "current_cached_dependency_index_snapshot_only_never_built_or_"
+                "refreshed_gap_disclosed_when_not_current"
+            ),
+            "arguments": {
+                "config_id": "exact_config_id_matching_the_registry_unique_id",
+                "fields": ["entities", "icon", "name"],
+                "name": "non_empty_string_max_255_exact_no_trim",
+                "icon": "prefix_colon_name_max_64_or_null_removes",
+                "entities": (
+                    "merge_patch_of_existing_entity_ids_to_bounded_snapshots_"
+                    "with_state"
+                ),
+                "body": "full_proposed_configuration_without_id",
+                "unrequested_fields": "sent_exactly_as_stored",
+            },
+            "dispatch": (
+                "at_most_once_scene_config_post_per_scene_under_one_f3_write_"
+                "permit_bound_to_plan_target_command_and_dispatch_intent"
+            ),
+            "never_sent": [
+                "DELETE /api/config/scene/config/{config_id}",
+                "scene.apply",
+                "scene.create",
+                "scene.delete",
+                "scene.reload",
+                "scene.turn_on",
+            ],
+            "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
+            "readback": (
+                "stored_config_exact_plus_registry_identity_plus_loaded_scene_"
+                "consistent_plus_post_save_reload_observed"
+            ),
+            "unverified": (
+                "stored_config_verified_loaded_scene_unverified_observing_then_"
+                "manual_review_never_verified"
+            ),
+            "concurrency": (
+                "no_core_compare_and_swap_upsert_concurrent_edit_overwritten_"
+                "undetected_concurrent_delete_recreated_disclosed"
+            ),
             "recovery": "read_only_no_redispatch",
         },
         predispatch=("core_identity", "capability_contract", "target_fingerprint",

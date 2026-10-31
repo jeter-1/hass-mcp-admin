@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
@@ -24,6 +25,7 @@ from ..governance.entity_metadata import (
 from ..governance import entity_availability_exposure as availability_exposure
 from ..governance import label_registry
 from ..governance import dashboard_metadata
+from ..governance import scene_configuration
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
     configuration_write_config,
@@ -70,6 +72,10 @@ CAPABILITY_IDENTITIES = {
         dashboard_metadata.RESOURCE_TYPE,
         dashboard_metadata.ACTION,
     ): dashboard_metadata.CAPABILITY_IDENTITY,
+    (
+        scene_configuration.RESOURCE_TYPE,
+        scene_configuration.ACTION,
+    ): scene_configuration.CAPABILITY_IDENTITY,
 }
 
 
@@ -232,6 +238,22 @@ class ConfigurationStrategy(ABC):
         proposed_config: dict[str, Any],
     ) -> tuple[str, ...]:
         del gateway, target_id, current_config, proposed_config
+        return ()
+
+    def dispatch_scope(
+        self, operation: Any, provider_config: dict[str, Any]
+    ) -> AbstractContextManager[Any]:
+        """Authority installed around the one send, after the durable intent."""
+
+        del operation, provider_config
+        return nullcontext()
+
+    async def observation_gap(
+        self, gateway: Any, operation: Any, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """Codes that make an exact readback incomplete evidence; ``()``: none."""
+
+        del gateway, operation, observed
         return ()
 
     def read_error_code(self, exc: BaseException) -> str:
@@ -940,6 +962,193 @@ class DashboardMetadataConfigurationStrategy(ConfigurationStrategy):
         return ()
 
 
+class SceneConfigurationConfigurationStrategy(ConfigurationStrategy):
+    """One closed scene configuration update for one exact scene (HAMCP-071).
+
+    The plan records the full final state (the exact stored configuration and
+    the loaded scene identity); the single POST is rebuilt from the plan's own
+    recorded current state and carries the full proposed configuration
+    without ``id``.  Activation, create, delete and reload are never built.
+    """
+
+    resource_type = scene_configuration.RESOURCE_TYPE
+    provider = scene_configuration.PROVIDER
+    provider_contract = scene_configuration.PROVIDER_CONTRACT
+    validation_contract = "scene_configuration_validation_v1"
+    requires_configuration_check = False
+
+    @property
+    def transport(self) -> str:
+        return "home_assistant_rest"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        return ("body", "config_id", "method")
+
+    def provider_operation(self, target_id: str) -> str:
+        del target_id
+        return scene_configuration.PROVIDER_OPERATIONS[self.action]
+
+    def _command(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if self.action != scene_configuration.ACTION:
+            raise ValueError("scene configuration is update-only")
+        return scene_configuration.write_command(
+            target_id, current_config, proposed_config
+        )
+
+    def provider_descriptor(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> ConfigurationProviderDescriptor:
+        command = self._command(target_id, proposed_config, current_config)
+        return ConfigurationProviderDescriptor(
+            provider=self.provider,
+            contract_model=self.provider_contract,
+            transport=self.transport,
+            operation=self.provider_operation(target_id),
+            argument_names=tuple(
+                sorted(command, key=lambda item: item.encode("utf-8"))
+            ),
+            arguments_hash=stable_hash(command),
+        )
+
+    def provider_payload(
+        self, target_id: str, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError(
+            "scene configuration payloads require the planned current state"
+        )
+
+    def argument_names(
+        self, proposed_config: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raise NotImplementedError(
+            "scene configuration argument names require the planned current state"
+        )
+
+    def dispatch_config(
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        target_id = proposed_config.get("config_id")
+        return self._command(target_id, proposed_config, current_config)
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        # Exactly the planned final state, loaded scene included, is present.
+        if observed is None:
+            return False
+        try:
+            # Type-exact: 1, 1.0 and True are distinct stored values.
+            return scene_configuration.exactly_equal(
+                scene_configuration.normalize_state(observed),
+                scene_configuration.normalize_state(proposed_config),
+            )
+        except (TypeError, ValueError):
+            return False
+
+    def dispatch_scope(
+        self, operation: Any, provider_config: dict[str, Any]
+    ) -> AbstractContextManager[Any]:
+        """HAMCP-071 R1-H2: the single-use permit for exactly this POST."""
+
+        current = operation.current_config() or {}
+        return scene_configuration.write_permit(
+            scene_configuration.ScenePermit(
+                plan_id=operation.plan_id,
+                task_id=operation.task_id,
+                operation_id=operation.operation_id,
+                config_id=operation.target.target_id,
+                entity_id=str(current.get("entity_id")),
+                arguments_hash=operation.provider_descriptor.arguments_hash,
+                intent=scene_configuration.DISPATCH_INTENT,
+            )
+        )
+
+    async def observation_gap(
+        self, gateway: Any, operation: Any, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """HAMCP-071 R1-H1: a stored match without the save reload is unverified.
+
+        The stored configuration can equal the plan while the loaded scene
+        still holds the previous member snapshots, which no read exposes.
+        Only a reload observed after this operation's own POST proves the
+        loaded scene; until then the readback is incomplete evidence, never
+        verified and never a mismatch.
+        """
+
+        proposed = operation.proposed_config()
+        if observed is None or any(
+            observed.get(key) != proposed.get(key)
+            for key in ("config_id", "entity_id", "registry_entry_id")
+        ):
+            return ()
+        if not scene_configuration.exactly_equal(
+            observed.get("config"), proposed.get("config")
+        ):
+            return ()
+        check = getattr(gateway, "scene_configuration_reload_observed", None)
+        if (
+            check is not None
+            and observed.get("loaded_matches_config") is True
+            and check(operation.target.target_id, operation.operation_id) is True
+        ):
+            return ()
+        return (
+            scene_configuration.STORED_CONFIGURATION_VERIFIED,
+            scene_configuration.RELOAD_UNVERIFIED,
+        )
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        check = getattr(gateway, "scene_configuration_preflight_evidence", None)
+        if check is None or current_config is None:
+            return ("dependency_evidence_unavailable",)
+        try:
+            return tuple(
+                await check(target_id, current_config, proposed_config)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dependency_evidence_unavailable",)
+
+    def read_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "permission_failure"
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "readback_permission_failure"
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        details = getattr(exc, "details", None)
+        if (
+            isinstance(details, dict)
+            and details.get("reason") == scene_configuration.UNAUTHORIZED_REASON
+        ):
+            return ("provider_permission_denied",)
+        return ()
+
+
 _STRATEGIES = {
     "automation": AutomationConfigurationStrategy,
     "script": ScriptConfigurationStrategy,
@@ -956,6 +1165,7 @@ _STRATEGIES = {
     ),
     label_registry.LABEL_RESOURCE_TYPE: LabelRegistryEntryConfigurationStrategy,
     dashboard_metadata.RESOURCE_TYPE: DashboardMetadataConfigurationStrategy,
+    scene_configuration.RESOURCE_TYPE: SceneConfigurationConfigurationStrategy,
 }
 
 

@@ -1780,7 +1780,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 78)
+        self.assertEqual(len(tools), 79)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1791,6 +1791,7 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "create_configuration_delete_plan",
                 "create_helper_options_plan",
                 "create_dashboard_metadata_plan",
+                "create_scene_configuration_plan",
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",

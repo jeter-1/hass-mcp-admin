@@ -118,6 +118,15 @@ DASHBOARD_METADATA_REGISTRATION = (
 )
 DASHBOARD_METADATA_PROVIDER_MODEL = "direct-ha-exact-dashboard-metadata-v1"
 
+# HAMCP-071: the exact configuration update of one UI-managed scene.
+# Admitted only by the dormant ``core.scene_configuration_operation`` profile.
+SCENE_CONFIGURATION_REGISTRATION = (
+    "update_scene_configuration_configuration",
+    "scene_configuration",
+    "update",
+)
+SCENE_CONFIGURATION_PROVIDER_MODEL = "direct-ha-exact-scene-configuration-v1"
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -344,6 +353,30 @@ class ClosedAdapterRegistry:
                 required_protocol="direct-home-assistant-api-v1",
             )
         )
+        capability, target, action = SCENE_CONFIGURATION_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=SCENE_CONFIGURATION_PROVIDER_MODEL,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_configuration_readback",
+                recovery_model="exact_configuration_readback",
+                rollback_declaration="separate_governed_reverse_update_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
@@ -459,6 +492,7 @@ class ClosedAdapterRegistry:
                 *CONFIGURATION_DELETE_REGISTRATIONS,
                 HELPER_OPTIONS_REGISTRATION,
                 DASHBOARD_METADATA_REGISTRATION,
+                SCENE_CONFIGURATION_REGISTRATION,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -479,6 +513,7 @@ class ClosedAdapterRegistry:
                 *(item[0] for item in CONFIGURATION_DELETE_REGISTRATIONS),
                 HELPER_OPTIONS_REGISTRATION[0],
                 DASHBOARD_METADATA_REGISTRATION[0],
+                SCENE_CONFIGURATION_REGISTRATION[0],
             }
             if (
                 (
@@ -535,6 +570,16 @@ class ClosedAdapterRegistry:
                         != DASHBOARD_METADATA_PROVIDER_MODEL
                     )
                 )
+                or (
+                    entry.target_type == "scene_configuration"
+                    and (
+                        entry.capability_id
+                        != SCENE_CONFIGURATION_REGISTRATION[0]
+                        or entry.action != "update"
+                        or entry.provider_model
+                        != SCENE_CONFIGURATION_PROVIDER_MODEL
+                    )
+                )
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {
@@ -543,7 +588,7 @@ class ClosedAdapterRegistry:
                     "dashboard", "entity_registry_metadata",
                     "entity_registry_availability", "entity_assistant_exposure",
                     "label_registry_entry", "config_entry_helper_options",
-                    "dashboard_metadata",
+                    "dashboard_metadata", "scene_configuration",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

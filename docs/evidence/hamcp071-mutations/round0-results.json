@@ -1,0 +1,1476 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 109.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": null,
+    "baseline_ok": true
+  },
+  {
+    "name": "A1_entry_gate_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unadmitted_planning_reads_nothing_and_stores_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A2_core_gate_always_available",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.6,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=8)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_generic_builder_refuses_a_raw_operation_first",
+      "test_unadmitted_planning_reads_nothing_and_stores_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A3_persist_recheck_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 125.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "A4_generic_builder_gate_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_generic_builder_refuses_a_raw_operation_first"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A5_rollback_gate_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "T1_integration_scene_allowed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "T2_yaml_scene_reported_absent",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 125.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_yaml_scene_outside_the_config_store_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T3_ambiguous_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_ambiguous_registry_identity_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T4_disabled_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_disabled_scene_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T5_not_loaded_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unloaded_scene_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T6_entity_mismatch_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_entity_id_must_match_the_config_id"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T7_absent_not_refused",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_retryable_not_found_gap_is_not_masked",
+      "test_rollback_after_the_scene_was_deleted_is_refused",
+      "test_unknown_config_id"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T8_read_unstable_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_change_during_planning_read_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T9_loaded_name_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_failed_reload_is_a_verification_failure",
+      "test_unloaded_scene_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T10_loaded_members_unchecked",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "V1_whitespace_name_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=25)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V2_name_bound_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.4,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V3_name_stored_trimmed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_name_is_stored_exactly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V4_icon_pattern_weakened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=22)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_closed_payload_violations_are_never_sent",
+      "test_unsendable_and_unrestorable_baselines",
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V5_icon_clear_ignored",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 118.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2, errors=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_before_after_for_each_field_and_member",
+      "test_each_field_alone_is_saved_and_verified_exactly",
+      "test_rollback_restores_the_exact_prior_configuration",
+      "test_unrestorable_icon_cleared_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V6_scene_member_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V7_member_bound_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V8_requested_bare_state_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=11)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_snapshot_rules",
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V9_nonfinite_float_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_outside_the_contract_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V10_unknown_member_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unknown_member_entities_are_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V11_absent_member_removal_unrefused",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_removing_a_non_member_or_every_member"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V12_empty_scene_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_removing_a_non_member_or_every_member"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W1_method_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_closed_payload_violations_are_never_sent",
+      "test_command_shape_is_closed"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W2_body_id_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_closed_payload_violations_are_never_sent",
+      "test_command_shape_is_closed"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W3_body_sends_id",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 21.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5, errors=77)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_activating_automations_and_scripts_are_listed",
+      "test_all_fields_together",
+      "test_attribution_names_the_scene_provider",
+      "test_authorization_rejection_is_confirmed_not_dispatched",
+      "test_before_after_for_each_field_and_member",
+      "test_body_never_carries_the_id_and_metadata_is_kept",
+      "test_core_validation_rejection_is_confirmed_not_dispatched",
+      "test_each_field_alone_is_saved_and_verified_exactly",
+      "test_elevated_scene_remains_actionable",
+      "test_entity_add_remove_and_change",
+      "test_expired_plan_is_never_applied",
+      "test_failed_reload_is_a_verification_failure",
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_full_attribute_snapshot_round_trips_exactly",
+      "test_lock_or_garage_cover_elevates_before_or_after",
+      "test_lost_response_is_indeterminate_and_never_redispatched",
+      "test_member_type_change_is_a_change_not_a_no_op",
+      "test_name_is_stored_exactly",
+      "test_no_self_approval_and_unapproved_apply",
+      "test_other_scenes_are_never_changed",
+      "test_plan_text_never_carries_untrusted_scene_text",
+      "test_planning_reads_only_and_sends_nothing",
+      "test_readback_mismatch_when_nothing_was_stored",
+      "test_registry_change_before_dispatch_is_stale",
+      "test_retained_approved_plan_without_f3_refuses_before_any_read",
+      "test_rollback_after_the_scene_was_deleted_is_refused",
+      "test_rollback_availability_tracks_the_verified_forward",
+      "test_rollback_drift_is_type_exact",
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_rollback_plan_discloses_and_needs_its_own_approval",
+      "test_rollback_refused_after_drift",
+      "test_rollback_refused_when_already_restored",
+      "test_rollback_refused_when_forward_was_not_verified",
+      "test_rollback_refused_when_forward_was_rejected",
+      "test_rollback_restores_the_exact_prior_configuration",
+      "test_saving_does_not_activate_and_reload_is_disclosed",
+      "test_scene_deleted_before_dispatch_is_refused",
+      "test_server_error_after_send_is_indeterminate",
+      "test_stale_state_for_each_field_is_refused_before_dispatch",
+      "test_standard_policy_for_harmless_members",
+      "test_state_only_member_is_known",
+      "test_stored_bare_state_is_kept_and_re_sent_exactly",
+      "test_target_already_reached_is_not_dispatched",
+      "test_unavailable_consumer_evidence_is_a_disclosed_gap",
+      "test_unknown_member_entities_are_refused",
+      "test_unloaded_change_before_dispatch_is_stale",
+      "test_unrequested_drift_is_a_verification_failure",
+      "test_unresolved_device_class_is_protected",
+      "test_unrestorable_icon_cleared_is_refused",
+      "test_unsendable_and_unrestorable_baselines",
+      "test_verified_child_under_an_unverified_task_creates_no_restore",
+      "test_verified_plan_is_never_applied_twice",
+      "test_withdrawn_admission_refuses_apply_before_any_read",
+      "test_write_command_refuses_identity_and_metadata_changes"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W4_metadata_change_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_write_command_refuses_identity_and_metadata_changes"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W5_identity_change_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_write_command_refuses_identity_and_metadata_changes"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W6_command_target_mismatch_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_closed_payload_violations_are_never_sent"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W7_4xx_indeterminate",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 125.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authorization_rejection_is_confirmed_not_dispatched",
+      "test_core_validation_rejection_is_confirmed_not_dispatched"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W8_unauthorized_as_rejected",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authorization_rejection_is_confirmed_not_dispatched"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W9_ws_vocabulary_widened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=4, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_never_sends_outside_the_vocabulary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W10_send_boundary_unmarked",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "N1_noop_creates_plan",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_op_is_truthful_and_creates_no_plan"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D1_before_after_swapped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.6,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_before_after_for_each_field_and_member"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D2_unchanged_members_listed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 130.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_before_after_for_each_field_and_member",
+      "test_entity_add_remove_and_change",
+      "test_member_type_change_is_a_change_not_a_no_op"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D3_consumers_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 119.4,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_activating_automations_and_scripts_are_listed",
+      "test_unavailable_consumer_evidence_is_a_disclosed_gap"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D4_unavailable_index_as_no_consumers",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unavailable_consumer_evidence_is_a_disclosed_gap"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D5_activation_flag_wrong",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_plan_discloses_and_needs_its_own_approval",
+      "test_saving_does_not_activate_and_reload_is_disclosed"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D6_never_sent_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_saving_does_not_activate_and_reload_is_disclosed"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D7_reload_statement_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_saving_does_not_activate_and_reload_is_disclosed"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D8_requested_flag_wrong",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 124.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "P1_protection_floor_unchecked",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "P2_elevated_planned_standard",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 117.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5, errors=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_elevated_scene_remains_actionable",
+      "test_lock_or_garage_cover_elevates_before_or_after",
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_unresolved_device_class_is_protected"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P3_unresolved_device_class_harmless",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unresolved_device_class_is_protected"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P4_elevated_classified_standard",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=7)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_elevated_scene_remains_actionable",
+      "test_lock_or_garage_cover_elevates_before_or_after",
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_unresolved_device_class_is_protected"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P5_multi_operation_allowed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 124.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "B1_preflight_compare_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_preflight_holds_only_for_the_bound_state"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B2_preflight_type_inexact",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_preflight_holds_only_for_the_bound_state"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B3_preflight_absent_not_stale",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "B4_preflight_contract_error_not_stale",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "B5_strategy_preflight_skipped",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "B6_already_reached_type_inexact",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.4,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_strategy_readback_alone_rejects_a_mismatch"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B7_exactly_equal_type_inexact",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.6,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=3, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_member_type_change_is_a_change_not_a_no_op",
+      "test_preflight_holds_only_for_the_bound_state",
+      "test_rollback_drift_is_type_exact",
+      "test_strategy_readback_alone_rejects_a_mismatch"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B8_projection_drops_config",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=21)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_failed_reload_is_a_verification_failure",
+      "test_lost_response_is_indeterminate_and_never_redispatched",
+      "test_preflight_holds_only_for_the_bound_state",
+      "test_readback_mismatch_when_nothing_was_stored",
+      "test_rollback_drift_is_type_exact",
+      "test_rollback_refused_after_drift",
+      "test_rollback_refused_when_forward_was_not_verified",
+      "test_server_error_after_send_is_indeterminate",
+      "test_stale_state_for_each_field_is_refused_before_dispatch",
+      "test_strategy_readback_alone_rejects_a_mismatch",
+      "test_target_already_reached_is_not_dispatched",
+      "test_unrequested_drift_is_a_verification_failure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B9_projection_drops_loaded",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.4,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=7, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_failed_reload_is_a_verification_failure",
+      "test_readback_mismatch_when_nothing_was_stored",
+      "test_server_error_after_send_is_indeterminate",
+      "test_strategy_readback_alone_rejects_a_mismatch",
+      "test_unrequested_drift_is_a_verification_failure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B10_loaded_poll_ignored",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_failed_reload_is_a_verification_failure",
+      "test_unloaded_scene_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R1_rollback_drift_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.0,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_drift_is_type_exact",
+      "test_rollback_refused_after_drift"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R2_rollback_unverified_forward",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 124.6,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "R3_rollback_undispatched_forward",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 123.5,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "R4_rollback_fingerprint_unchecked",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.8,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "R5_rollback_no_change_not_drift",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "R6_restore_wrong_config",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 108.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (errors=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_rollback_plan_discloses_and_needs_its_own_approval",
+      "test_rollback_restores_the_exact_prior_configuration"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R7_rollback_lease_unchecked",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "S1_requested_name_unscreened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.3,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_requested_text_is_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "S2_current_config_unscreened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.6,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_stored_text_is_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "S3_member_value_unscreened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_requested_text_is_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "S4_consumers_unscreened",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 122.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "S5_mapping_keys_unscreened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_requested_text_is_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G1_write_refusal_not_enforced",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=6, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_with_a_refusing_dispatch_window_refuses",
+      "test_admitted_without_f3_context_refuses",
+      "test_core_runtime_error_refuses_pending_admission",
+      "test_no_core_runtime_refuses_pending_admission",
+      "test_refused_even_inside_an_authorizing_call_window",
+      "test_valid_complete_command_refuses_pending_admission"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G2_write_f3_context_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.9,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=3, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_with_a_refusing_dispatch_window_refuses",
+      "test_admitted_without_f3_context_refuses",
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G3_write_admission_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_configured_write_boundary_consults_the_given_core_runtime",
+      "test_core_runtime_error_refuses_pending_admission",
+      "test_no_core_runtime_refuses_pending_admission",
+      "test_refused_even_inside_an_authorizing_call_window",
+      "test_valid_complete_command_refuses_pending_admission"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G4_write_authorizer_presence_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_without_f3_context_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G5_no_f3_inventory_entry_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 125.2,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_retained_approved_plan_without_f3_refuses_before_any_read",
+      "test_scene_configuration_is_in_the_no_f3_refusal_inventory"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G6_runtime_core_wiring_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.7,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G7_f3_profile_mapping_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_dispatch_admission_covers_label_and_both_069b_types"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G8_apply_core_status_entry_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 117.1,
+    "tests": [
+      "205"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_target_already_reached_is_not_dispatched"
+    ],
+    "killed": true
+  }
+]

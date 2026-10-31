@@ -1,5 +1,68 @@
 # Changelog
 
+## 2.4.1-beta.52 - Governed scene configuration edit built inactive (HAMCP-071) (staged)
+
+Builds on 2.4.1-beta.51 (#331). Activates nothing new.
+
+- New tool `create_scene_configuration_plan` (static tools 78 -> 79). It
+  refuses `pending_signed_registry_admission` before any read, request or
+  persistence until a signed Core registry sequence names the runtime-only
+  profile `core.scene_configuration_operation`
+  (`sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2`,
+  planned sequence 16). Under sequence 14, health itemizes 26 compatible and
+  5 withheld profiles.
+- Once admitted, one plan edits `name`, `icon` (or removes it) and member
+  states (`entities` merge patch; `null` removes a member) of one existing
+  UI-managed scene by `config_id`:
+  - The write is one `POST /api/config/scene/config/{config_id}` with the
+    full proposed configuration and no `id`, at most once. Unrequested keys
+    and `metadata` are sent exactly as stored.
+  - The readback checks that the stored configuration is exact, the
+    registry identity is unchanged and the loaded scene is consistent, with
+    post-save reload evidence observed within the bounded window. Without
+    it the result is changed but unverified (observing, then manual review,
+    never verified). Comparisons are type-exact (canonical JSON).
+  - Saving never activates the scene. Nothing sends `scene.turn_on`,
+    `scene.apply`, `scene.create`, `scene.reload`, `scene.delete` or the
+    scene-config DELETE (which the route allowlist does not admit).
+  - Planning refuses, before any dispatch:
+    - integration scenes, YAML scenes outside `scenes.yaml`, and unknown,
+      mismatched, ambiguous, disabled, unloaded or unreviewable targets;
+    - unknown members and `scene.` members;
+    - removing the last member;
+    - invalid values;
+    - stored values that the closed POST could not send or restore.
+
+    It refuses a no-op with no plan.
+  - The plan discloses each change before and after, the consumer
+    automations and scripts from the cached index only (or the evidence
+    gap), the switch and mode-helper members, the global scene reload, id assignment,
+    member order and the residual concurrency window: Core's save is an
+    upsert, so a concurrent edit can be overwritten undetected and a
+    concurrent deletion can be recreated (accepted, disclosed).
+  - A protected member before or after the edit makes the plan
+    `elevated_admin` (risk HIGH, physical consequence `indirect`), and so
+    does any `switch` member before or after the edit, and (Josh, D4) any
+    `input_boolean` or `input_select` member before or after the edit,
+    because mode/helper members can change how automations behave.
+    Otherwise it is `standard_admin`.
+  - Drift is refused as `stale_target_state`, and a scene missing at the
+    final check is refused.
+  - `rollback_change` creates a separately approved restore plan for the
+    exact prior configuration.
+  - The send boundary refuses a complete, valid command before sending
+    unless Core admits the profile, the call runs inside the F3 dispatch
+    window, and an F3 write permit binds the plan, target, command and
+    dispatch intent. Direct reads refuse with 0 calls while admission is
+    withdrawn. The inactive profile declares every Home Assistant request.
+    A legacy apply without F3 refuses `core_authority_unavailable`.
+  - There is no delegated provider and no fallback.
+- Two defects in the new code, found by its tests and fixed:
+  - elevated-plan policy reason codes (`protected_object:<x>` was invalid);
+  - type-loose already-reached, preflight and rollback-drift comparisons.
+- Edit only: creating a scene is HAMCP-071 Part 3. No scene evidence lane
+  yet; `ci.yml` is unchanged.
+
 ## 2.4.1-beta.51 - Sun condition steps verify exactly; verifier refusals name their location (HAMCP-252)
 
 Builds on 2.4.1-beta.50 (#330). No tool, input schema, dispatch or Home

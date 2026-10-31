@@ -216,6 +216,8 @@ from . import helper_options as helper_options_contract
 from . import helper_options_planning
 from . import dashboard_metadata as dashboard_metadata_contract
 from . import dashboard_metadata_planning
+from . import scene_configuration as scene_configuration_contract
+from . import scene_configuration_planning
 from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from . import input_select_option as input_select_contract
 from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
@@ -249,6 +251,8 @@ DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
         *entity_availability_exposure.RESOURCE_TYPES,
         # HAMCP-106 R1-H1.
         dashboard_metadata_contract.RESOURCE_TYPE,
+        # HAMCP-071.
+        scene_configuration_contract.RESOURCE_TYPE,
     }
 )
 
@@ -724,6 +728,7 @@ class ChangeGovernanceService:
         input_select_gateway: Any | None = None,
         helper_options_gateway: Any | None = None,
         dashboard_metadata_gateway: Any | None = None,
+        scene_configuration_gateway: Any | None = None,
         input_select_dependency_risk_reader: Callable[..., Awaitable[
             dict[str, Any]
         ]] | None = None,
@@ -764,6 +769,9 @@ class ChangeGovernanceService:
         # HAMCP-106: the dashboard list and the one metadata update, inactive
         # until a signed registry admits core.dashboard_metadata_operation.
         self.dashboard_metadata_gateway = dashboard_metadata_gateway
+        # HAMCP-071: the scene config reads and the one config POST, inactive
+        # until a signed registry admits core.scene_configuration_operation.
+        self.scene_configuration_gateway = scene_configuration_gateway
         self.input_select_dependency_risk_reader = (
             input_select_dependency_risk_reader
             or read_input_select_dependency_risk
@@ -6089,6 +6097,7 @@ class ChangeGovernanceService:
         availability_exposure_context: Any | None,
         helper_options_context: Any | None = None,
         dashboard_metadata_context: Any | None = None,
+        scene_configuration_context: Any | None = None,
     ) -> bool:
         """HAMCP-165 review1 M1: admission first in the lowest builder.
 
@@ -6125,10 +6134,17 @@ class ChangeGovernanceService:
             dashboard_metadata_context is not None
             or dashboard_metadata_contract.RESOURCE_TYPE in resource_types
         )
+        # HAMCP-071: the scene configuration resource type, prepared or raw.
+        scene_configuration = (
+            scene_configuration_context is not None
+            or scene_configuration_contract.RESOURCE_TYPE in resource_types
+        )
         if helper_options:
             self._helper_options_core()
         if dashboard_metadata:
             self._dashboard_metadata_core()
+        if scene_configuration:
+            self._scene_configuration_core()
         if label:
             self._label_core()
         for resource_type in sorted(availability_exposure):
@@ -6138,6 +6154,7 @@ class ChangeGovernanceService:
             or bool(availability_exposure)
             or helper_options
             or dashboard_metadata
+            or scene_configuration
         )
 
     async def create_helper_options_plan(
@@ -6405,6 +6422,141 @@ class ChangeGovernanceService:
             _before_persist=_before_persist,
         )
 
+    async def create_scene_configuration_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan one governed scene configuration update (HAMCP-071).
+
+        Admission of the runtime-only ``core.scene_configuration_operation``
+        profile is enforced first, before input validation, any read and any
+        persistence; unadmitted planning reads nothing and stores nothing.
+        Input is then validated before any Home Assistant read; planning
+        reads the stored configuration, the registry entry and the loaded
+        scene inside the exact-target Core lease.  A request that changes
+        nothing is refused with a truthful no-change reason.  Nothing is
+        dispatched and the scene is never activated.
+        """
+
+        self._scene_configuration_core()
+        try:
+            request = scene_configuration_planning.validate_request(arguments)
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, {}) from None
+        lease = self._scene_configuration_planning_lease(request.lease_target_id)
+        async with lease:
+            try:
+                if self.scene_configuration_gateway is None:
+                    raise scene_configuration_planning.Refusal(
+                        "scene_configuration_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await scene_configuration_planning.prepare(
+                    self.scene_configuration_gateway, request
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self._entity_metadata_refusal_error(
+                    exc, {"config_id": request.config_id}
+                ) from None
+            lease.require_current()
+            return await self._create_scene_configuration_plan(
+                prepared,
+                caller_context=caller_context,
+                _before_persist=lease.require_current,
+            )
+
+    def _scene_configuration_core(self) -> Any:
+        """Return Core only if a signed registry admits the scene profile."""
+
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status(
+                    (scene_configuration_contract.PROFILE,)
+                ).get("available")
+                is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": scene_configuration_contract.PENDING_ADMISSION_REASON,
+                    "reason_code": (
+                        scene_configuration_contract.PENDING_ADMISSION_REASON
+                    ),
+                    "resource_type": scene_configuration_contract.RESOURCE_TYPE,
+                    "core_capability": scene_configuration_contract.PROFILE,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _scene_configuration_planning_lease(self, target_id: str) -> Any:
+        """Hold exact-target Core authority across one scene planning."""
+
+        from ..f3_runtime.runtime import _rollback_planning_lease
+
+        core = self._scene_configuration_core()
+        return _rollback_planning_lease(
+            core,
+            (scene_configuration_contract.PROFILE,),
+            target={
+                "target_type": scene_configuration_contract.RESOURCE_TYPE,
+                "target_id": target_id,
+            },
+        )
+
+    async def _create_scene_configuration_plan(
+        self,
+        prepared: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+        _before_persist: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        # Every scene persistence path re-checks admission and must hold a
+        # current Core lease; neither ever depends on the caller alone.
+        self._scene_configuration_core()
+        if _before_persist is None or len(prepared.items) != 1:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        item = prepared.items[0]
+        verb = (
+            "Restore"
+            if isinstance(caller_context, dict)
+            and "rollback_source_plan_id" in caller_context
+            else "Update"
+        )
+        # The untrusted scene name is never copied into the plan title or
+        # description; it is reviewed as data in the field disclosure.
+        return await self._create_configuration_plan(
+            title=f"{verb} scene configuration {item.config_id}"[:160],
+            description=(
+                f"{verb} scene {item.current['entity_id']} "
+                f"(config id {item.config_id}): "
+                + ", ".join(item.changed)
+                + ". Saving does not activate the scene; unrequested fields "
+                "are sent exactly as stored."
+            )[:2000],
+            operations=[
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": scene_configuration_contract.RESOURCE_TYPE,
+                    "action": scene_configuration_contract.ACTION,
+                    "target_id": item.config_id,
+                    "proposed_config": deepcopy(item.proposed),
+                }
+            ],
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _scene_configuration_context=prepared,
+            _before_persist=_before_persist,
+        )
+
     async def create_configuration_delete_plan(
         self,
         arguments: Any,
@@ -6574,6 +6726,7 @@ class ChangeGovernanceService:
         _configuration_delete_context: Any | None = None,
         _helper_options_context: Any | None = None,
         _dashboard_metadata_context: Any | None = None,
+        _scene_configuration_context: Any | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -6602,6 +6755,10 @@ class ChangeGovernanceService:
         ``create_dashboard_metadata_plan`` and its F3 restore route
         (HAMCP-106): exactly the one prepared update.  Without it the
         dashboard metadata resource type is refused.
+        ``_scene_configuration_context`` is supplied only by
+        ``create_scene_configuration_plan`` and its F3 restore route
+        (HAMCP-071): exactly the one prepared update.  Without it the scene
+        configuration resource type is refused.
         """
 
         dormant_profiles = self._require_dormant_profile_admission(
@@ -6610,6 +6767,7 @@ class ChangeGovernanceService:
             availability_exposure_context=_availability_exposure_context,
             helper_options_context=_helper_options_context,
             dashboard_metadata_context=_dashboard_metadata_context,
+            scene_configuration_context=_scene_configuration_context,
         )
         if dormant_profiles and _before_persist is None:
             # Every dormant-profile persistence holds a current Core lease.
@@ -6628,6 +6786,7 @@ class ChangeGovernanceService:
                     _configuration_delete_context,
                     _helper_options_context,
                     _dashboard_metadata_context,
+                    _scene_configuration_context,
                 )
             )
             > 1
@@ -6642,6 +6801,10 @@ class ChangeGovernanceService:
             )
             or (
                 _dashboard_metadata_context is not None
+                and _rollback_context is not None
+            )
+            or (
+                _scene_configuration_context is not None
                 and _rollback_context is not None
             )
         ):
@@ -6706,6 +6869,24 @@ class ChangeGovernanceService:
                 details={
                     "validation_errors": [
                         "dashboard metadata plans contain exactly the prepared "
+                        "operation"
+                    ]
+                },
+            )
+        if _scene_configuration_context is not None and (
+            _before_persist is None
+            or [
+                item.get("operation_id") if isinstance(item, dict) else None
+                for item in (operations if isinstance(operations, list) else [])
+            ]
+            != [item.operation_id for item in _scene_configuration_context.items]
+            or len(_scene_configuration_context.items) != 1
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "validation_errors": [
+                        "scene configuration plans contain exactly the prepared "
                         "operation"
                     ]
                 },
@@ -6872,6 +7053,8 @@ class ChangeGovernanceService:
                 if _helper_options_context is not None
                 else {dashboard_metadata_contract.RESOURCE_TYPE}
                 if _dashboard_metadata_context is not None
+                else {scene_configuration_contract.RESOURCE_TYPE}
+                if _scene_configuration_context is not None
                 else SUPPORTED_CONFIGURATION_RESOURCES
                 if _entity_metadata_context is None
                 else {ENTITY_METADATA_RESOURCE_TYPE}
@@ -6889,6 +7072,7 @@ class ChangeGovernanceService:
                 or _availability_exposure_context is not None
                 or _helper_options_context is not None
                 or _dashboard_metadata_context is not None
+                or _scene_configuration_context is not None
                 or (
                     _label_context is not None
                     and resource_type == ENTITY_METADATA_RESOURCE_TYPE
@@ -7020,6 +7204,21 @@ class ChangeGovernanceService:
                         "preparation"
                     )
                 valid, warnings = not errors, []
+            elif _scene_configuration_context is not None:
+                scene_item = _scene_configuration_context.item(operation_id)
+                errors = scene_configuration_contract.proposed_errors(
+                    target_id, proposed_config
+                )
+                if (
+                    depends_on
+                    or scene_item.config_id != target_id
+                    or proposed_config != scene_item.proposed
+                ):
+                    errors.append(
+                        "scene configuration operation does not match its "
+                        "preparation"
+                    )
+                valid, warnings = not errors, []
             elif _configuration_delete_context is not None:
                 delete_item = _configuration_delete_context.item(operation_id)
                 errors = configuration_delete.intent_errors(
@@ -7086,6 +7285,12 @@ class ChangeGovernanceService:
                 # the planning lease.
                 current = deepcopy(
                     _dashboard_metadata_context.item(operation_id).current
+                )
+            elif _scene_configuration_context is not None:
+                # The exact stored configuration and loaded scene read inside
+                # the planning lease.
+                current = deepcopy(
+                    _scene_configuration_context.item(operation_id).current
                 )
             elif _helper_options_context is not None:
                 # The visible options baseline read inside the planning lease.
@@ -7173,6 +7378,17 @@ class ChangeGovernanceService:
                         ),
                     }
                     risk = dashboard_metadata_planning.risk_assessment(
+                        operation_id, item.classification
+                    )
+                elif _scene_configuration_context is not None:
+                    item = _scene_configuration_context.item(operation_id)
+                    diff = {
+                        "has_changes": True,
+                        "scene_configuration": (
+                            scene_configuration_planning.projection(item)
+                        ),
+                    }
+                    risk = scene_configuration_planning.risk_assessment(
                         operation_id, item.classification
                     )
                 elif _configuration_delete_context is not None:
@@ -7453,6 +7669,10 @@ class ChangeGovernanceService:
             plan.dry_run_results["dashboard_metadata"] = deepcopy(
                 _dashboard_metadata_context.plan_disclosure
             )
+        if _scene_configuration_context is not None:
+            plan.dry_run_results["scene_configuration"] = deepcopy(
+                _scene_configuration_context.plan_disclosure
+            )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
         if dormant_profiles:
@@ -7463,6 +7683,7 @@ class ChangeGovernanceService:
                 availability_exposure_context=_availability_exposure_context,
                 helper_options_context=_helper_options_context,
                 dashboard_metadata_context=_dashboard_metadata_context,
+                scene_configuration_context=_scene_configuration_context,
             )
         if _before_persist is not None:
             _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
@@ -15934,6 +16155,9 @@ class ChangeGovernanceService:
         operational["dashboard_metadata_provider"] = (
             self._dashboard_metadata_provider_health_snapshot(admission)
         )
+        operational["scene_configuration_provider"] = (
+            self._scene_configuration_provider_health_snapshot(admission)
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -16147,6 +16371,12 @@ class ChangeGovernanceService:
             "create_dashboard_metadata_plan",
             (dashboard_metadata_contract.PROFILE,),
             dashboard_metadata_contract.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "scene_configuration_provider",
+            "create_scene_configuration_plan",
+            (scene_configuration_contract.PROFILE,),
+            scene_configuration_contract.PENDING_ADMISSION_REASON,
         ),
     )
     _CORE_ADMISSION_READ_ATTEMPTS = 3
@@ -16395,6 +16625,31 @@ class ChangeGovernanceService:
                 "dashboard_metadata_provider", admission
             ),
             "fields": list(dashboard_metadata_contract.FIELDS),
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _scene_configuration_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-071 provider without a Core call."""
+
+        configured = self.scene_configuration_gateway is not None
+        return {
+            "provider": scene_configuration_contract.PROVIDER,
+            "provider_contract": scene_configuration_contract.PROVIDER_CONTRACT,
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": scene_configuration_contract.PROFILE,
+            "core_admission": self._health_core_admission(
+                "scene_configuration_provider", admission
+            ),
+            "fields": list(scene_configuration_contract.FIELDS),
+            "activation": "never",
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

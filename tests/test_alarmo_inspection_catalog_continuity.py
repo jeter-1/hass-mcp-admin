@@ -83,6 +83,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "create_configuration_delete_plan",
                                                           "create_helper_options_plan",
                                                           "create_dashboard_metadata_plan",
+                                                          "create_scene_configuration_plan",
                                                           "create_input_select_option_plan",
                                                           "list_script_traces", "get_script_trace",
                                                           "capture_automation_trace",
@@ -101,7 +102,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual["list_capabilities"] = without_hamcp247_descriptor_change(self, actual["list_capabilities"])
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 78)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 79)
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

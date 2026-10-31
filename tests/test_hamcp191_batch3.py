@@ -413,6 +413,12 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "create_dashboard_metadata_plan": frozenset(
         {"title", "icon", "show_in_sidebar", "require_admin", "expiration_minutes"}
     ),
+    # HAMCP-071: config_id and entity_id are identifiers; name and icon are
+    # schema-bounded metadata, entities is the member patch the planner
+    # re-validates, and expiration_minutes is a bounded number.
+    "create_scene_configuration_plan": frozenset(
+        {"name", "icon", "entities", "expiration_minutes"}
+    ),
     "create_addon_restart_plan": frozenset({"expiration_minutes"}),
     "create_home_assistant_restart_plan": frozenset({"expiration_minutes"}),
     "create_change_plan": frozenset(
@@ -496,6 +502,11 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
         "reason": "ordinary",
     },
     "create_dashboard_metadata_plan": {"url_path": "main-operations", "title": "Main Operations"},
+    "create_scene_configuration_plan": {
+        "config_id": "1700000000001",
+        "entity_id": "scene.evening",
+        "name": "Evening",
+    },
     "create_addon_restart_plan": {"addon_slug": "core_mosquitto"},
     "create_home_assistant_restart_plan": {},
     "create_change_plan": {
@@ -613,6 +624,10 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
             set(governance_tools.DASHBOARD_METADATA_INPUT_SCHEMA["properties"]),
             set(inspect.signature(tools["create_dashboard_metadata_plan"]).parameters),
         )
+        self.assertEqual(
+            set(governance_tools.SCENE_CONFIGURATION_INPUT_SCHEMA["properties"]),
+            set(inspect.signature(tools["create_scene_configuration_plan"]).parameters),
+        )
 
     def service(self, secret):
         service = Mock()
@@ -626,6 +641,9 @@ class IdentifierBoundaryEnumerationTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-106: the served tool passes the raw argument object
                 # (field presence matters); the direct function refuses.
                 return await governance_tools.registered_dashboard_metadata_tool().run(arguments)
+            if name == "create_scene_configuration_plan":
+                # HAMCP-071: the same raw-argument pattern as HAMCP-106.
+                return await governance_tools.registered_scene_configuration_tool().run(arguments)
             return await tool(**arguments)
 
     async def test_every_identifier_input_is_screened_before_tool_work(self):

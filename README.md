@@ -1,5 +1,27 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.52** (HAMCP-071) builds
+a governed edit of one existing UI-managed scene, inactive. The new tool
+`create_scene_configuration_plan` proposes `name`, `icon` and member-state
+(`entities`) changes to one scene by `config_id`. It sends one
+`POST /api/config/scene/config/{config_id}` with the full proposed
+configuration (no `id`, `metadata` kept exactly). It verifies the result by
+exact readback of the stored configuration, the registry identity and the
+loaded scene. Saving never activates the scene, and the tool never sends
+`scene.turn_on`, `scene.apply`, `scene.create`, `scene.reload`,
+`scene.delete` or the scene-config DELETE. It refuses
+`pending_signed_registry_admission` before any Home Assistant request or
+persistence until a signed Core registry sequence (planned 16) names
+`core.scene_configuration_operation`. Creating a scene is a follow-up
+(HAMCP-071 Part 3). No signed registry, signed profile, existing
+fingerprint or existing schema changes. Static tools 79; advertised catalog
+107 (108 with the optional YAML reader). Rollback is reinstalling beta.51.
+Read the
+[2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md) and
+[2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
+
+It builds on beta.51 and the releases below.
+
 Engineering **2.4.1-beta.51** (HAMCP-252) lets the
 readback verifier compare a `sun` condition used as an action step
 (`after`/`before`/offsets, exact comparison only), which unblocks the A109

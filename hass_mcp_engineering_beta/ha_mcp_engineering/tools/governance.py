@@ -13,6 +13,7 @@ from ..request_context import current_telemetry
 from ..governance import GOVERNANCE
 from ..governance import dashboard_metadata as dashboard_metadata_contract
 from ..governance import helper_options as helper_options_contract
+from ..governance import scene_configuration as scene_configuration_contract
 from ..governance.label_registry import (
     COLOR_HEX_PATTERN,
     LABEL_ID_PATTERN,
@@ -93,6 +94,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
     "create_input_select_option_plan": ("entity_id",),
     "create_helper_options_plan": ("changes[].entity_id",),
     "create_dashboard_metadata_plan": ("url_path",),
+    "create_scene_configuration_plan": ("config_id", "entity_id"),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -1667,6 +1669,154 @@ def registered_dashboard_metadata_tool():
     return tool
 
 
+#: One bounded member value: a mapping with ``state`` plus attributes.  The
+#: planner re-validates depth, size and every leaf before any read (HAMCP-071).
+_SCENE_MEMBER_SNAPSHOT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["state"],
+    "maxProperties": scene_configuration_contract.MAX_ATTRIBUTES,
+    "properties": {
+        "state": {
+            "type": "string",
+            "maxLength": scene_configuration_contract.MAX_NAME_LENGTH,
+        },
+    },
+}
+
+#: The closed published input schema (HAMCP-071).  The planner re-validates
+#: every value before any Home Assistant read; values are stored exactly.
+SCENE_CONFIGURATION_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_scene_configuration_planArguments",
+    "additionalProperties": False,
+    "required": ["config_id"],
+    "minProperties": 2,
+    "properties": {
+        "config_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": scene_configuration_contract.CONFIG_ID_PATTERN.pattern,
+        },
+        "entity_id": {
+            "type": "string",
+            "minLength": 7,
+            "maxLength": 255,
+            "pattern": "^scene\\.",
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": scene_configuration_contract.MAX_NAME_LENGTH,
+        },
+        "icon": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "maxLength": scene_configuration_contract.MAX_ICON_LENGTH,
+                    "pattern": scene_configuration_contract.ICON_PATTERN.pattern,
+                },
+                {"type": "null"},
+            ]
+        },
+        "entities": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": scene_configuration_contract.MAX_ENTITIES,
+            "additionalProperties": {
+                "anyOf": [_SCENE_MEMBER_SNAPSHOT_SCHEMA, {"type": "null"}]
+            },
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _scene_configuration_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_scene_configuration_plan",
+        "Created one governed scene configuration proposal without dispatching it.",
+        _screened(
+            "create_scene_configuration_plan",
+            arguments,
+            lambda: GOVERNANCE.require().create_scene_configuration_plan(arguments),
+        ),
+        metadata={
+            "resource_type": scene_configuration_contract.RESOURCE_TYPE,
+            "provider": scene_configuration_contract.PROVIDER,
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_scene_configuration_plan(
+    config_id: str,
+    entity_id: str | None = None,
+    name: str | None = None,
+    icon: str | None = None,
+    entities: dict[str, Any] | None = None,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose a name, icon or member change to one existing UI scene.
+
+    Names one existing UI-managed scene by its exact config id (the scene's
+    "id" attribute, not its entity_id; entity_id is an optional cross-check)
+    and any of name (stored exactly), icon ("prefix:name", or null to
+    remove) and entities, a patch mapping each member entity_id to its full
+    stored value (an object with "state" and any attributes) or to null to
+    remove it. Members and fields not given are kept exactly. Integration,
+    YAML and disabled scenes are refused, as are members that do not exist.
+    Planning creates no plan when nothing would change. The plan shows each
+    field and member before and after, the automations and scripts that may
+    activate the scene, and the reload of all scenes. Saving never activates
+    the scene. External administrator approval and apply_change_plan are
+    required; dispatch re-reads the scene and refuses if anything changed,
+    saves once, and verifies the stored configuration exactly by readback.
+    rollback_change plans a separately approved restore of the exact prior
+    configuration. Until a signed registry admits this capability the tool
+    refuses with pending_signed_registry_admission.
+    """
+    del config_id, entity_id, name, icon, entities, expiration_minutes
+    raise RuntimeError("scene configuration planning receives raw arguments")
+
+
+class SceneConfigurationPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation.
+
+    Field presence matters (an omitted field is kept exactly, ``icon: null``
+    removes the icon, a ``null`` member removes it), so defaults are never
+    materialized.
+    """
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _scene_configuration_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_scene_configuration_tool():
+    tool = SceneConfigurationPlanTool.from_function(
+        create_scene_configuration_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = SCENE_CONFIGURATION_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
@@ -1678,6 +1828,7 @@ GOVERNANCE_TOOLS = (
     create_input_select_option_plan,
     create_helper_options_plan,
     create_dashboard_metadata_plan,
+    create_scene_configuration_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

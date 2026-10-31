@@ -557,7 +557,8 @@ class ConfigurationOperationAdapter:
             )
 
         try:
-            await self._send(operation, provider_config)
+            with self.strategy.dispatch_scope(operation, provider_config):
+                await self._send(operation, provider_config)
         except ConfigurationMutationNotDispatchedError as exc:
             self._increment("intents_committed")
             self._increment("dispatch_attempts")
@@ -893,6 +894,29 @@ class ConfigurationOperationAdapter:
                 diagnostic_codes=(readback_code,),
                 identity_match=None,
                 resource_exists=None,
+                semantic_match=None,
+                normalization_valid=None,
+                configuration_check_status="unavailable",
+                normalized_observed_fingerprint=None,
+            )
+        gap = bounded_codes(
+            await self.strategy.observation_gap(self.gateway, operation, observed)
+        )
+        if gap:
+            self._emit("observation", operation.target.target_id, "observing", gap)
+            return ConfigurationObservationResult(
+                outcome=NormalizedOperationOutcome.OBSERVING,
+                attempt_count=attempt_count,
+                observation_complete=False,
+                provider_reachable=True,
+                target_reachable=True,
+                readback_state_fingerprint=None,
+                intended_result_observed=None,
+                mismatch_fields=(),
+                evidence_hash=None,
+                diagnostic_codes=gap,
+                identity_match=None,
+                resource_exists=True,
                 semantic_match=None,
                 normalization_valid=None,
                 configuration_check_status="unavailable",

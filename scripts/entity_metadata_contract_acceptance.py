@@ -416,7 +416,8 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                                        "core.config_entry_helper_options_operation",
                                        "core.typed_input_select_option_operation",
                                        "core.script_trace_read",
-                                       "core.dashboard_metadata_operation"}]
+                                       "core.dashboard_metadata_operation",
+                                       "core.scene_configuration_operation"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]
     new = old + [added]
     assert len(old) == 21 and len(new) == 22 and len({r["capability_id"] for r in new}) == 22

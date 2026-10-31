@@ -613,6 +613,54 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.52` slice (HAMCP-071) adds a governed edit of one existing
+UI-managed scene, **unreachable at release**. It switches on with the
+sequence-16 signing. It adds no permission, add-on option, role, fallback
+or delegated provider.
+
+- **New write path.** `POST /api/config/scene/config/{config_id}`. The body
+  is the full proposed configuration without `id`, and only `name`, `icon`
+  and `entities` may differ from the stored configuration. The write is
+  reachable only through an externally approved plan dispatched by the F3
+  runtime, for the Core capability profile
+  `core.scene_configuration_operation`, admitted by a signed registry.
+  Signed sequence 14 does not reference that profile.
+  - The tool and `create_configuration_plan` refuse
+    `pending_signed_registry_admission` before any read or storage, and F3
+    dispatch admission is checked again.
+  - The send boundary refuses a complete, valid command before sending it,
+    unless Core currently admits the profile
+    (`pending_signed_registry_admission`) and the call runs inside the F3
+    dispatch window (`active_f3_execution_required`).
+  - A legacy apply without F3 refuses `core_authority_unavailable`.
+- **Closed vocabulary.** The route allowlist admits the scene-config route
+  for GET and POST only, so DELETE is unreachable. The only websocket reads
+  are `config/entity_registry/list` and `get`. The profile's never-sent list
+  names the scene-config DELETE, `scene.apply`, `scene.create`,
+  `scene.delete`, `scene.reload` and `scene.turn_on`. A save never
+  activates a scene. Core's own post-write hook reloads every scene, and
+  the plan discloses that.
+- **Target.** One existing scene: registry platform `homeassistant`, its
+  `unique_id` equal to the config id, and a GET hit. Integration scenes,
+  YAML scenes outside `scenes.yaml`, and ambiguous, disabled or unloaded
+  targets are refused while planning. Because Core's POST is an upsert,
+  the scene is re-read immediately before the write, and a missing scene
+  is refused as stale, never created.
+- **Approval and verification.**
+  - A protected member (OD-4 `object_protection`) before or after the edit
+    makes the plan `elevated_admin`, with physical consequence `indirect`.
+    Otherwise it is `standard_admin`.
+  - A multi-operation plan containing a scene operation, or an incomplete
+    operation, is `PROHIBITED`.
+  - Drift is refused immediately before the write, compared type-exactly.
+  - The exact readback must show the stored configuration as proposed, the
+    registry identity unchanged and the loaded scene consistent.
+  - An indeterminate response is decided by readback. It is never
+    redispatched.
+- **Untrusted text.** Planning screens scene names and stored text.
+  Credential-shaped text is refused, and the plan title never repeats a
+  scene name.
+
 The `2.4.1-beta.50` slice (HAMCP-106) adds governed storage-dashboard
 metadata, **unreachable at release**. It switches on with the sequence-15
 signing. It adds no permission, add-on option, role, fallback or delegated

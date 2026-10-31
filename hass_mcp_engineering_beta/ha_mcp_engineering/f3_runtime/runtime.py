@@ -111,6 +111,8 @@ from ..governance.models import (
 )
 from ..governance import dashboard_metadata as dashboard_metadata_contract
 from ..governance import dashboard_metadata_planning
+from ..governance import scene_configuration as scene_configuration_contract
+from ..governance import scene_configuration_planning
 from ..governance import helper_options as helper_options_contract
 from ..governance import input_select_option as input_select_contract
 from ..governance.helper_state import (
@@ -837,6 +839,10 @@ UNSIGNED_PROFILE_REQUIREMENTS = MappingProxyType(
         helper_options_contract.RESOURCE_TYPE: helper_options_contract.PROFILE,
         # HAMCP-106: dashboard metadata is admitted only by its own profile.
         dashboard_metadata_contract.RESOURCE_TYPE: dashboard_metadata_contract.PROFILE,
+        # HAMCP-071: scene edits are admitted only by their own profile.
+        scene_configuration_contract.RESOURCE_TYPE: (
+            scene_configuration_contract.PROFILE
+        ),
         **{
             resource_type: requirements[-1]
             for resource_type, requirements in (
@@ -1446,6 +1452,19 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    async def scene_configuration_preflight_evidence(
+        self, target_id, current, proposed
+    ):
+        return await self.delegate.scene_configuration_preflight_evidence(
+            target_id, current, proposed
+        )
+
+    def scene_configuration_reload_observed(self, target_id, operation_id):
+        # HAMCP-071 R1-H1: read-only in-memory evidence; nothing is sent.
+        return self.delegate.scene_configuration_reload_observed(
+            target_id, operation_id
+        )
+
     # HAMCP-232: options reads, the held flow and its abort pass through;
     # only the one step submit is the audited send.
     async def options_entry(self, entry_id):
@@ -1854,6 +1873,15 @@ class F3RuntimeIntegration:
         ] = ConfigurationOperationAdapter(
             dashboard_metadata_contract.RESOURCE_TYPE,
             dashboard_metadata_contract.ACTION,
+            config_gateway,
+            now=service.now,
+        )
+        # HAMCP-071: scene configuration is update-only, one exact scene.
+        configuration_adapters[
+            scene_configuration_contract.CAPABILITY_IDENTITY
+        ] = ConfigurationOperationAdapter(
+            scene_configuration_contract.RESOURCE_TYPE,
+            scene_configuration_contract.ACTION,
             config_gateway,
             now=service.now,
         )
@@ -4099,6 +4127,7 @@ class F3RuntimeIntegration:
             in (
                 ENTITY_METADATA_RESOURCE_TYPE,
                 dashboard_metadata_contract.RESOURCE_TYPE,
+                scene_configuration_contract.RESOURCE_TYPE,
             )
             for operation in plan.operations
         ):
@@ -4946,6 +4975,14 @@ class F3RuntimeIntegration:
             return await self._create_dashboard_metadata_rollback(
                 source_plan, task
             )
+        if source_plan.contract_version == 2 and any(
+            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            # HAMCP-071: admission first, then its own exact lease.
+            return await self._create_scene_configuration_rollback(
+                source_plan, task
+            )
         entity_metadata = source_plan.contract_version == 2 and any(
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
@@ -5571,6 +5608,142 @@ class F3RuntimeIntegration:
             "operations_excluded": [],
             "restored_fields": list(changed),
             "rollback_disclosure": dashboard_metadata_planning.ROLLBACK_DISCLOSURE,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_scene_configuration_rollback(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """Plan the restore of one verified scene configuration update.
+
+        Admission is checked before any read.  The reverse plan proposes the
+        exact captured prior configuration (every field and member value;
+        mapping key order is not bound).  It is refused unless the forward child dispatched once and
+        was exactly verified, and the live scene still equals the verified
+        forward result.  Nothing is dispatched here; the scene is never
+        activated.
+        """
+
+        self.service._scene_configuration_core()
+
+        def refuse(reason: str) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        if len(source_plan.operations) != 1:
+            raise refuse("forward_not_verified")
+        operation = source_plan.operations[0]
+        if (
+            task is None
+            or task.state != ExecutionTaskState.SUCCEEDED_VERIFIED
+            or task.terminal_outcome != "succeeded_verified"
+        ):
+            raise refuse(
+                "forward_not_dispatched"
+                if task is not None
+                and task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                else "forward_not_verified"
+            )
+        record = next(
+            (
+                self.children.get(item["child_id"])
+                for item in self.children.declarations_for_task(task.task_id)
+                if item["operation_id"] == operation.operation_id
+            ),
+            None,
+        )
+        if (
+            record is None
+            or not record.terminal
+            or record.normalized_outcome != "succeeded_verified"
+        ):
+            raise refuse("forward_not_verified")
+        if record.dispatch_intent is None or record.dispatch_count != 1:
+            raise refuse("forward_not_dispatched")
+        prior = operation.current_config
+        forward_result = operation.proposed_config
+        if (
+            not isinstance(prior, dict)
+            or not isinstance(forward_result, dict)
+            or scene_configuration_contract.state_errors(operation.target_id, prior)
+            or scene_configuration_contract.proposed_errors(
+                operation.target_id, forward_result
+            )
+        ):
+            raise refuse("prior_state_missing")
+        if record.evidence.get("resulting_state_fingerprint") != (
+            resource_fingerprint(
+                scene_configuration_contract.RESOURCE_TYPE, forward_result
+            )
+        ):
+            raise refuse("forward_not_verified")
+        changed = scene_configuration_contract.changed_fields(prior, forward_result)
+        if not changed:
+            raise refuse("forward_not_dispatched")
+        lease = self.service._scene_configuration_planning_lease(
+            operation.target_id
+        )
+        async with lease:
+            try:
+                request = scene_configuration_planning.restore_request(
+                    operation.target_id, prior
+                )
+                gateway = self.service.scene_configuration_gateway
+                if gateway is None:
+                    raise scene_configuration_planning.Refusal(
+                        "scene_configuration_provider_unavailable",
+                        kind="unavailable",
+                    )
+                prepared = await scene_configuration_planning.prepare(
+                    gateway, request, restore=True
+                )
+            except scene_configuration_planning.Refusal as exc:
+                raise refuse(
+                    "scene_configuration_rollback_baseline_drift"
+                    if exc.reason_code == scene_configuration_planning.NO_CHANGE
+                    else exc.reason_code
+                ) from None
+            item = prepared.items[0]
+            # Any drift since the verified forward result (configuration,
+            # metadata, registry entry or loaded scene) refuses the restore.
+            if not scene_configuration_contract.exactly_equal(
+                scene_configuration_contract.normalize_state(item.current),
+                scene_configuration_contract.normalize_state(forward_result),
+            ):
+                raise refuse("scene_configuration_rollback_baseline_drift")
+            lease.require_current()
+            created = await self.service._create_scene_configuration_plan(
+                prepared,
+                caller_context={
+                    "rollback_source_plan_id": source_plan.plan_id,
+                    "rollback_model": "hamcp071-scene-configuration-restore-v1",
+                },
+                _before_persist=lease.require_current,
+            )
+        rollback_plan = self.service._load(created["plan_id"])
+        source_plan.rollback.available = True
+        source_plan.rollback.status = "governed_plan_created"
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": "rollback_plan_created",
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [item.operation_id],
+            "operations_excluded": [],
+            "restored_fields": list(changed),
+            "rollback_disclosure": scene_configuration_planning.ROLLBACK_DISCLOSURE,
             "provider_dispatch_occurred": False,
         }
 

@@ -807,7 +807,8 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                                        "core.config_entry_helper_options_operation",
                                        "core.typed_input_select_option_operation",
                                        "core.script_trace_read",
-                                       "core.dashboard_metadata_operation"}]
+                                       "core.dashboard_metadata_operation",
+                                       "core.scene_configuration_operation"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
