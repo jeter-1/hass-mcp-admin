@@ -724,12 +724,17 @@ The receipt is data, not executable code or a substitute for these checks.
 
 GitHub can report the merge run complete before its job records settle
 (beta.50, HAMCP-258). The verifier therefore re-reads only the triggering run
-attempt's jobs, six times over at most 80 s. It stops at the first settled
-success or skip, and it logs each read's bounded status and conclusion. A job
-bound to another run, attempt or head, or a duplicate merge job, refuses at
-once. After the window, a completed unsuccessful job still refuses
-`source_merge_unsuccessful`. A job that never reached a final state refuses
-`source_merge_not_final`, and an absent job refuses `source_job_mismatch`.
+attempt's jobs, six times over at most 80 s. It stops only at a complete job
+list with exactly one merge job that is `completed` with `success` or
+`skipped`. It logs each read's counts and every listed job's bounded name,
+status, conclusion and attempt. An absent or duplicated merge job, a job count
+that disagrees with the listed jobs, and a skip that is not yet `completed` are
+re-read like any unfinished job. A merge job bound to another run, attempt or
+head, and a malformed or oversized list, refuse at once after logging the read.
+After the window, a changed job set refuses `source_job_mismatch`, a job that
+never reached a final state refuses `source_merge_not_final`, and a completed
+unsuccessful job refuses `source_merge_unsuccessful`. The refusal logs the
+final job names and counts.
 
 The read-only detector runs before complete publication CI. After authenticating
 the handoff and rechecking source-run identity, it reads the bounded, unambiguous

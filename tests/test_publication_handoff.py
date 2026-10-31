@@ -476,6 +476,20 @@ class SourceMergeJobRereadTests(unittest.TestCase):
             return HandoffTests.api(self, route, binary)
         return api
 
+    def responses(self, *lists):
+        """Serve one whole jobs response per read; the last one repeats."""
+        reads = iter(lists)
+        last = None
+
+        def api(route, binary=False):
+            nonlocal last
+            if route == self.JOBS:
+                self.calls.append(route)
+                last = next(reads, last)
+                return deepcopy(last)
+            return HandoffTests.api(self, route, binary)
+        return api
+
     def verify_with(self, api):
         return handoff_verify.verify(7, 1, MERGE, api, self.git,
                                      sleep=self.sleeps.append, log=self.logs.append)
@@ -517,8 +531,10 @@ class SourceMergeJobRereadTests(unittest.TestCase):
         self.assertEqual(self.verify()["release_action"], "inspect")
         self.assertEqual(self.sleeps, [])
         self.assertEqual(self.calls.count(self.JOBS), 1)
-        self.assertEqual(self.logs, ["Source merge job read 1/6: run 7 attempt 1, 1 job(s) listed, "
-                                     "merge-authorized-head status completed, conclusion success, attempt 1"])
+        self.assertEqual(self.logs, [
+            "Source merge job read 1/6: run 7 attempt 1, total_count 1, 1 job(s) listed "
+            "[merge-authorized-head completed/success attempt 1], "
+            "merge-authorized-head status completed, conclusion success, attempt 1"])
 
     def assert_refused(self, api, category):
         with self.assertRaises(handoff.Refusal) as refused:
@@ -534,24 +550,41 @@ class SourceMergeJobRereadTests(unittest.TestCase):
                                     "source_merge_unsuccessful")
                 self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
                 self.assertEqual(self.calls.count(self.JOBS), 6)
-                self.assertIn(f"read 6/6: run 7 attempt 1, 2 job(s) listed, merge-authorized-head "
-                              f"status completed, conclusion {conclusion}, attempt 1", self.logs[-1])
+                self.assertEqual(len(self.logs), 7)
+                self.assertIn(f"read 6/6: run 7 attempt 1, total_count 2, 2 job(s) listed "
+                              f"[retire-stale-ready-run completed/skipped attempt 1; "
+                              f"merge-authorized-head completed/{conclusion} attempt 1], "
+                              f"merge-authorized-head status completed, conclusion {conclusion}, "
+                              f"attempt 1", self.logs[-2])
+                self.assertEqual(self.logs[-1], (
+                    "Source merge job refused after 6 reads: source_merge_unsuccessful; final set "
+                    "total_count 2, 2 job(s) listed, 1 merge-authorized-head match(es), "
+                    "names [merge-authorized-head, retire-stale-ready-run]"))
 
     def test_status_still_not_final_after_the_window_has_its_own_reason(self):
         for status, conclusion in (("in_progress", None), ("queued", None),
                                    ("waiting", None), ("completed", None),
-                                   ("in_progress", "success"), (None, "success")):
+                                   ("in_progress", "success"), (None, "success"),
+                                   ("in_progress", "skipped"), ("queued", "skipped"),
+                                   (None, "skipped")):
             with self.subTest(status=status, conclusion=conclusion):
                 self.calls, self.sleeps, self.logs = [], [], []
                 self.assert_refused(self.sequence(self.job_with(status=status, conclusion=conclusion)),
                                     "source_merge_not_final")
                 self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
-                self.assertEqual(len(self.logs), 6)
+                self.assertEqual(self.calls.count(self.JOBS), 6)
+                self.assertEqual(len(self.logs), 7)
+                self.assertTrue(self.logs[-1].startswith(
+                    "Source merge job refused after 6 reads: source_merge_not_final;"))
 
     def test_merge_job_still_absent_after_the_window_is_a_job_mismatch(self):
         self.assert_refused(self.sequence(None), "source_job_mismatch")
         self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
-        self.assertTrue(all(line.endswith("merge-authorized-head absent") for line in self.logs))
+        self.assertEqual(len(self.logs), 7)
+        self.assertTrue(all(line.endswith("merge-authorized-head absent") for line in self.logs[:6]))
+        self.assertEqual(self.logs[-1], (
+            "Source merge job refused after 6 reads: source_job_mismatch; final set total_count 1, "
+            "1 job(s) listed, 0 merge-authorized-head match(es), names [retire-stale-ready-run]"))
 
     def test_wrong_run_attempt_or_head_binding_refuses_at_once(self):
         for key, bad in (("run_id", 6), ("run_attempt", 2), ("head_sha", BASE),
@@ -563,13 +596,110 @@ class SourceMergeJobRereadTests(unittest.TestCase):
                     self.assert_refused(self.sequence(*before, self.job_with(**{key: bad})),
                                         "source_job_mismatch")
                     self.assertEqual(self.sleeps, [5] * len(before))
+                    # The refused read itself is logged before the refusal.
+                    self.assertEqual(len(self.logs), len(before) + 2)
+                    self.assertIn(f"read {len(before) + 1}/6", self.logs[-2])
+                    self.assertEqual(self.logs[-1], (
+                        f"Source merge job refused at read {len(before) + 1}/6: source_job_mismatch, "
+                        "merge-authorized-head bound to another run, attempt or head"))
 
-    def test_duplicate_merge_jobs_refuse_at_once(self):
-        self.data[self.JOBS] = {"total_count": 2, "jobs": [self.job, deepcopy(self.job)]}
-        with self.assertRaises(handoff.Refusal) as refused:
-            self.verify()
-        self.assertEqual(str(refused.exception), "source_job_mismatch")
+    def test_foreign_duplicate_refuses_at_once(self):
+        # A duplicate is retried only while every copy is bound to this attempt.
+        api = self.responses({"total_count": 2, "jobs": [self.job, self.job_with(run_attempt=2)]})
+        self.assert_refused(api, "source_job_mismatch")
         self.assertEqual(self.sleeps, [])
+        self.assertEqual(len(self.logs), 2)
+
+    def test_duplicate_merge_jobs_settling_to_one_publish(self):
+        api = self.responses({"total_count": 2, "jobs": [self.job, deepcopy(self.job)]},
+                             {"total_count": 2, "jobs": [self.RETIRE, self.job]})
+        self.assertEqual(self.verify_with(api)["release_action"], "inspect")
+        self.assertEqual(self.sleeps, [5])
+        self.assertEqual(self.calls.count(self.JOBS), 2)
+        self.assertEqual(len(self.logs), 2)
+        self.assertTrue(self.logs[0].endswith("merge-authorized-head 2 matches"))
+
+    def test_count_and_list_disagreement_settling_publishes(self):
+        # total_count already names a job the list does not yet return.
+        api = self.responses({"total_count": 2, "jobs": [self.job]},
+                             {"total_count": 1, "jobs": [self.RETIRE, self.job]},
+                             {"total_count": 2, "jobs": [self.RETIRE, self.job]})
+        self.assertEqual(self.verify_with(api)["release_action"], "inspect")
+        self.assertEqual(self.sleeps, [5, 10])
+        self.assertIn("total_count 2, 1 job(s) listed", self.logs[0])
+        self.assertIn("total_count 1, 2 job(s) listed", self.logs[1])
+
+    def test_persistent_job_set_mismatch_refuses_after_the_window(self):
+        for name, response, matches in (
+                ("duplicate", {"total_count": 2, "jobs": [self.job, deepcopy(self.job)]}, 2),
+                ("count above list", {"total_count": 2, "jobs": [self.job]}, 1),
+                ("count below list", {"total_count": 1, "jobs": [self.RETIRE, self.job]}, 1),
+                ("absent", {"total_count": 1, "jobs": [self.RETIRE]}, 0)):
+            with self.subTest(name=name):
+                self.calls, self.sleeps, self.logs = [], [], []
+                self.assert_refused(self.responses(response), "source_job_mismatch")
+                self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
+                self.assertEqual(self.calls.count(self.JOBS), 6)
+                self.assertEqual(len(self.logs), 7)
+                self.assertTrue(all(f"read {n}/6:" in line for n, line in enumerate(self.logs[:6], 1)))
+                self.assertIn(f"total_count {response['total_count']}, "
+                              f"{len(response['jobs'])} job(s) listed, "
+                              f"{matches} merge-authorized-head match(es)", self.logs[-1])
+
+    def test_duplicate_merge_job_in_the_final_read_refuses(self):
+        api = self.responses(*[{"total_count": 1, "jobs": [self.RETIRE]}] * 5,
+                             {"total_count": 2, "jobs": [self.job, deepcopy(self.job)]})
+        self.assert_refused(api, "source_job_mismatch")
+        self.assertEqual(self.calls.count(self.JOBS), 6)
+        self.assertTrue(self.logs[5].endswith("merge-authorized-head 2 matches"))
+        self.assertIn("2 merge-authorized-head match(es)", self.logs[-1])
+
+    def test_publish_1117_observed_job_set_settles_to_a_lifecycle_no_op(self):
+        # #1117 (2026-10-30): source run 41122145397 attempt 1 listed only its
+        # successful retire-stale-ready-run when publish read it at 20:21:22;
+        # the skipped merge-authorized-head record was created at 20:21:26.
+        retire = {**self.RETIRE, "conclusion": "success"}
+        merge = self.job_with(conclusion="skipped")
+        for first in ({"total_count": 1, "jobs": [retire]},
+                      {"total_count": 2, "jobs": [retire]}):
+            with self.subTest(first=first):
+                self.calls, self.sleeps, self.logs = [], [], []
+                api = self.responses(first, {"total_count": 2, "jobs": [retire, merge]})
+                self.assertEqual(self.verify_with(api), {"release_action": "none"})
+                self.assertEqual(self.sleeps, [5])
+                self.assertFalse(any("artifacts" in route for route in self.calls))
+                self.assertIn("[retire-stale-ready-run completed/success attempt 1], "
+                              "merge-authorized-head absent", self.logs[0])
+                self.assertIn("merge-authorized-head status completed, conclusion skipped",
+                              self.logs[1])
+
+    def test_non_final_skipped_job_is_re_read(self):
+        not_final = self.job_with(status="in_progress", conclusion="skipped")
+        api = self.sequence(not_final, self.job)
+        self.assertEqual(self.verify_with(api)["release_action"], "inspect")
+        self.assertEqual(self.sleeps, [5])
+        self.calls, self.sleeps, self.logs = [], [], []
+        api = self.sequence(not_final, self.job_with(conclusion="skipped"))
+        self.assertEqual(self.verify_with(api), {"release_action": "none"})
+        self.assertEqual(self.sleeps, [5])
+        self.assertEqual(self.calls.count(self.JOBS), 2)
+        self.assertFalse(any("artifacts" in route for route in self.calls))
+
+    def test_malformed_or_oversized_job_list_refuses_at_once_with_a_log(self):
+        for response, category in (
+                ([], "malformed_collection"),
+                ({"total_count": "1", "jobs": [self.job]}, "malformed_collection"),
+                ({"total_count": 1, "jobs": "x"}, "malformed_collection"),
+                ({"total_count": 1, "jobs": ["x"]}, "malformed_collection"),
+                ({"total_count": 101, "jobs": [self.job]}, "incomplete_collection"),
+                ({"total_count": -1, "jobs": []}, "incomplete_collection"),
+                ({"total_count": 1, "jobs": [self.job] * 101}, "incomplete_collection")):
+            with self.subTest(response=str(response)[:60]):
+                self.calls, self.sleeps, self.logs = [], [], []
+                self.assert_refused(self.responses(response), category)
+                self.assertEqual(self.sleeps, [])
+                self.assertEqual(self.logs, [f"Source merge job read 1/6: run 7 attempt 1, "
+                                             f"job list refused: {category}"])
 
     def test_only_the_triggering_attempt_route_is_read(self):
         self.run["run_attempt"] = 2
@@ -590,10 +720,21 @@ class SourceMergeJobRereadTests(unittest.TestCase):
             handoff_verify.verify(7, 1, MERGE, api, self.git, sleep=self.sleeps.append)
         self.assertEqual(str(refused.exception), "source_merge_not_final")
         lines = output.getvalue().splitlines()
-        self.assertEqual(len(lines), 6)
-        self.assertIn("merge-authorized-head status invalid, conclusion invalid, attempt 1", lines[-1])
+        self.assertEqual(len(lines), 7)
+        self.assertIn("merge-authorized-head status invalid, conclusion invalid, attempt 1", lines[-2])
         self.assertNotIn("synthetic-secret-marker", output.getvalue())
         self.assertNotIn("::", output.getvalue())
+
+    def test_listed_sibling_fields_are_bounded_in_the_log(self):
+        hostile = {"name": "::add-mask::synthetic-secret-marker", "run_attempt": "1\nsynthetic-secret-marker",
+                   "status": "completed", "conclusion": "skipped", "run_id": 7, "head_sha": HEAD}
+        api = self.responses({"total_count": 1, "jobs": [hostile]})
+        self.assert_refused(api, "source_job_mismatch")
+        text = "\n".join(self.logs)
+        self.assertIn("[invalid completed/skipped attempt invalid]", self.logs[0])
+        self.assertIn("names [invalid]", self.logs[-1])
+        self.assertNotIn("synthetic-secret-marker", text)
+        self.assertNotIn("::", text)
 
     def test_production_default_waits_between_reads(self):
         api = self.sequence(None, self.job)
@@ -610,6 +751,16 @@ class SourceMergeJobRereadTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 self.assertEqual(handoff.observed(bad), "invalid")
         self.assertEqual(handoff.observed("a" * 32), "a" * 32)
+        self.assertEqual(handoff.observed_name("merge-authorized-head"), "merge-authorized-head")
+        self.assertEqual(handoff.observed_name("a" * 64), "a" * 64)
+        for bad in ("", "-x", "Merge", "a" * 65, "a b", "a\n", None, 1):
+            with self.subTest(name=bad):
+                self.assertEqual(handoff.observed_name(bad), "invalid")
+        self.assertEqual(handoff.observed_attempt(1), "1")
+        self.assertEqual(handoff.observed_attempt(999_999), "999999")
+        for bad in (0, -1, 1_000_000, True, "1", None, 1.0):
+            with self.subTest(attempt=bad):
+                self.assertEqual(handoff.observed_attempt(bad), "invalid")
 
     def test_cli_refusal_names_the_new_category(self):
         output = io.StringIO()
