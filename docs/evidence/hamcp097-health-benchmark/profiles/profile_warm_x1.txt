@@ -1,0 +1,49 @@
+# source_root=<worktree>/.artifacts/h097/base call=warm1 (all threads)
+         7840835 function calls (7392512 primitive calls) in 5.775 seconds
+
+   Ordered by: cumulative time
+   List reduced from 761 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     6384    0.027    0.000    5.824    0.001 stdlib/asyncio/base_events.py:1922(_run_once)
+     6388    0.006    0.000    5.763    0.001 stdlib/asyncio/events.py:86(_run)
+     6388    0.019    0.000    5.757    0.001 {method 'run' of '_contextvars.Context' objects}
+     6380    0.003    0.000    5.716    0.001 <worktree>/.artifacts/h097/bench_health.py:249(main)
+     6380    0.027    0.000    5.713    0.001 <worktree>/.artifacts/h097/bench_health.py:129(one_call)
+     6381    0.009    0.000    5.686    0.001 ha_mcp_engineering/governance/service.py:15494(async_health_summary)
+     1515    0.003    0.000    2.419    0.002 ha_mcp_engineering/governance/policy.py:2167(policy_snapshot_matches)
+     1515    0.003    0.000    2.414    0.002 ha_mcp_engineering/governance/policy.py:2117(evaluate_change_policy)
+     1515    0.025    0.000    2.410    0.002 ha_mcp_engineering/governance/policy.py:2023(_evaluate_change_policy_version)
+        1    0.003    0.003    2.144    2.144 ha_mcp_engineering/governance/service.py:16542(_build_health_summary)
+7806/5628    0.006    0.000    2.098    0.000 {built-in method builtins.sum}
+     1515    0.015    0.000    2.020    0.001 ha_mcp_engineering/governance/policy.py:1511(_single_plan_policy)
+      527    0.006    0.000    1.940    0.004 ha_mcp_engineering/governance/service.py:1885(_is_effectively_prohibited_plan)
+      513    0.002    0.000    1.927    0.004 ha_mcp_engineering/governance/service.py:3410(_approval_is_actionable)
+      500    0.001    0.000    1.910    0.004 ha_mcp_engineering/governance/service.py:16725(<genexpr>)
+     3785    0.016    0.000    1.909    0.001 ha_mcp_engineering/governance/physical_effects.py:1460(compare_operation)
+     3785    0.026    0.000    1.889    0.000 ha_mcp_engineering/governance/physical_effects.py:1294(compare_physical_effects)
+      527    0.011    0.000    1.863    0.004 ha_mcp_engineering/governance/service.py:1777(_effective_prohibited_plan_failures)
+      501    0.002    0.000    1.645    0.003 ha_mcp_engineering/governance/service.py:1231(_require_projection_policy_snapshot)
+     7174    0.043    0.000    1.403    0.000 ha_mcp_engineering/governance/physical_effects.py:1122(_analyze)
+     7174    0.156    0.000    1.343    0.000 ha_mcp_engineering/governance/physical_effects.py:903(walk)
+     1431    0.027    0.000    1.328    0.001 ha_mcp_engineering/governance/policy.py:1290(configuration_operation_policy)
+     2642    0.003    0.000    1.305    0.000 ha_mcp_engineering/governance/policy.py:1823(<genexpr>)
+      847    0.006    0.000    1.109    0.001 ha_mcp_engineering/governance/task_storage.py:639(_load)
+      527    0.007    0.000    0.991    0.002 ha_mcp_engineering/governance/task_storage.py:573(get_for_plan)
+      847    0.022    0.000    0.967    0.001 ha_mcp_engineering/governance/task_models.py:269(from_dict)
+      847    0.021    0.000    0.899    0.001 ha_mcp_engineering/governance/task_models.py:337(validate)
+      501    0.002    0.000    0.841    0.002 ha_mcp_engineering/governance/service.py:1197(_require_policy_snapshot)
+     3990    0.010    0.000    0.757    0.000 ha_mcp_engineering/f3_runtime/runtime.py:6397(async_health)
+     3990    0.003    0.000    0.747    0.000 ha_mcp_engineering/f3_runtime/runtime.py:6407(_async_health)
+    32881    0.053    0.000    0.667    0.000 ha_mcp_engineering/governance/physical_effects.py:870(_step_is_effect)
+     1267    0.003    0.000    0.658    0.001 ha_mcp_engineering/governance/physical_effects.py:1514(plan_acknowledgement_binding)
+     1375    0.003    0.000    0.618    0.000 ha_mcp_engineering/governance/policy.py:318(_safety_critical_comparison_policy)
+      442    0.009    0.000    0.617    0.001 ha_mcp_engineering/governance/task_storage.py:696(collect_health)
+      847    0.033    0.000    0.590    0.001 ha_mcp_engineering/governance/task_models.py:498(materialize_execution_task)
+     1307    0.017    0.000    0.565    0.000 ha_mcp_engineering/f3_runtime/repository.py:1236(collect_health)
+    23908    0.107    0.000    0.549    0.000 ha_mcp_engineering/governance/physical_effects.py:658(_call_effects)
+248357/5941    0.252    0.000    0.522    0.000 stdlib/copy.py:118(deepcopy)
+20619/5941    0.090    0.000    0.503    0.000 stdlib/copy.py:217(_deepcopy_dict)
+    18810    0.036    0.000    0.451    0.000 ha_mcp_engineering/governance/normalize.py:1040(stable_hash)
+
+

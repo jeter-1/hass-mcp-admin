@@ -1,0 +1,1533 @@
+{
+ "rows": [
+  {
+   "call": "cold_first_after_validation_launch",
+   "governance_health_hot_path": {},
+   "historical_validation": {
+    "assembly_prewarmed": null,
+    "deferred_lifecycle_plans": null,
+    "elapsed_ms": null,
+    "failure_category": null,
+    "plans_validated": null,
+    "scope": "startup_background",
+    "state": "in_progress",
+    "tasks_collected": null,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "waited_ms": 3007.315,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": null,
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 0,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 0,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 0,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 0,
+     "assembly_reuses": 0,
+     "discards": 0,
+     "projection_hits": 0,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 1226,
+     "terminal_records_deserialized": 1226
+    },
+    "task": {
+     "records_deserialized": 1024,
+     "terminal_records_deserialized": 1024
+    }
+   },
+   "pending_reason": "historical_validation_in_progress",
+   "phase_elapsed_ms": null,
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": null,
+    "health_cache_rebuild_count": null,
+    "plan_records_deserialized": null,
+    "records_enumerated": null,
+    "task_records_deserialized": null,
+    "terminal_plan_records_deserialized": null,
+    "terminal_task_records_deserialized": null
+   },
+   "profiled": false,
+   "projection_failure_count": null,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 0,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": null,
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 0,
+     "invalidations": 0,
+     "misses": 0,
+     "not_applicable": 0
+    }
+   },
+   "status": "pending",
+   "wall_ms": 3007.3
+  },
+  {
+   "call": "first_after_validation_complete",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1496.882,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 1226,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 1024,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 1,
+     "discards": 0,
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 2.79,
+    "historical_validation_wait_ms": 0.002,
+    "overlay_ms": 1030.892,
+    "projection_ms": 29.511,
+    "reader_wait_ms": 0.004,
+    "snapshot_ms": 382.177,
+    "validation_wait_ms": 2.538,
+    "worker_elapsed_ms": 0.008
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 1,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 1189,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 74
+    }
+   },
+   "status": null,
+   "wall_ms": 1503.1
+  },
+  {
+   "call": "warm1",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1457.14,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 2452,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 2048,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 2,
+     "discards": 0,
+     "projection_hits": 2452,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 2.864,
+    "historical_validation_wait_ms": 0.002,
+    "overlay_ms": 997.976,
+    "projection_ms": 28.314,
+    "reader_wait_ms": 0.003,
+    "snapshot_ms": 377.606,
+    "validation_wait_ms": 2.586,
+    "worker_elapsed_ms": 0.004
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 2,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 2378,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 111
+    }
+   },
+   "status": null,
+   "wall_ms": 1463.4
+  },
+  {
+   "call": "warm2",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1446.145,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 3678,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 3072,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 3,
+     "discards": 0,
+     "projection_hits": 3678,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 2.778,
+    "historical_validation_wait_ms": 0.002,
+    "overlay_ms": 990.154,
+    "projection_ms": 28.705,
+    "reader_wait_ms": 0.002,
+    "snapshot_ms": 373.937,
+    "validation_wait_ms": 2.524,
+    "worker_elapsed_ms": 0.004
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 3,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 3567,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 148
+    }
+   },
+   "status": null,
+   "wall_ms": 1452.3
+  },
+  {
+   "call": "warm3",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1484.043,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 4904,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 4096,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 4,
+     "discards": 0,
+     "projection_hits": 4904,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 3.115,
+    "historical_validation_wait_ms": 0.002,
+    "overlay_ms": 1020.851,
+    "projection_ms": 30.224,
+    "reader_wait_ms": 0.003,
+    "snapshot_ms": 378.456,
+    "validation_wait_ms": 2.942,
+    "worker_elapsed_ms": 0.005
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 4,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 4756,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 185
+    }
+   },
+   "status": null,
+   "wall_ms": 1489.7
+  },
+  {
+   "call": "warm4",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1387.521,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 6130,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 5120,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 5,
+     "discards": 0,
+     "projection_hits": 6130,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 2.876,
+    "historical_validation_wait_ms": 0.002,
+    "overlay_ms": 934.739,
+    "projection_ms": 29.167,
+    "reader_wait_ms": 0.002,
+    "snapshot_ms": 371.864,
+    "validation_wait_ms": 2.545,
+    "worker_elapsed_ms": 0.006
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 5,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 5945,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 222
+    }
+   },
+   "status": null,
+   "wall_ms": 1395.1
+  },
+  {
+   "call": "warm5",
+   "governance_health_hot_path": {
+    "last_duration_ms": 1465.556,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "historical_validation": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "scope": "startup_background",
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup",
+    "wait_budget_ms": 3000.0,
+    "writes": "none"
+   },
+   "incremental_health_index": {
+    "authoritative_reads_use_index": false,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "assembly": "reused",
+     "mode": "incremental",
+     "projection_hits": 1226,
+     "projection_invalidations": 0,
+     "projection_misses": 0
+    },
+    "persisted": false,
+    "plan_records": {
+     "discards": 0,
+     "entries": 1226,
+     "hits": 7356,
+     "invalidations": 0,
+     "misses": 1226
+    },
+    "projection_entries": 1226,
+    "scope": "process_memory_only",
+    "task_records": {
+     "discards": 0,
+     "entries": 1024,
+     "hits": 6144,
+     "invalidations": 0,
+     "misses": 1024
+    },
+    "terminal_records_only": true,
+    "totals": {
+     "assembly_rebuilds": 1,
+     "assembly_reuses": 6,
+     "discards": 0,
+     "projection_hits": 7356,
+     "projection_invalidations": 0,
+     "projection_misses": 1226
+    }
+   },
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    },
+    "task": {
+     "records_deserialized": 0,
+     "terminal_records_deserialized": 0
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 3.883,
+    "historical_validation_wait_ms": 0.003,
+    "overlay_ms": 1000.9,
+    "projection_ms": 28.727,
+    "reader_wait_ms": 0.003,
+    "snapshot_ms": 379.003,
+    "validation_wait_ms": 2.578,
+    "worker_elapsed_ms": 0.006
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 6,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 0,
+    "records_enumerated": 2250,
+    "task_records_deserialized": 0,
+    "terminal_plan_records_deserialized": 0,
+    "terminal_task_records_deserialized": 0
+   },
+   "profiled": false,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 1189,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 1189,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 37,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 7134,
+     "invalidations": 0,
+     "misses": 1189,
+     "not_applicable": 259
+    }
+   },
+   "status": null,
+   "wall_ms": 1471.4
+  }
+ ],
+ "summary": {
+  "calls": [
+   {
+    "call": "cold_first_after_validation_launch",
+    "historical_validation": {
+     "assembly_prewarmed": null,
+     "deferred_lifecycle_plans": null,
+     "elapsed_ms": null,
+     "failure_category": null,
+     "plans_validated": null,
+     "scope": "startup_background",
+     "state": "in_progress",
+     "tasks_collected": null,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "waited_ms": 3007.315,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": null,
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 0,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 0,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 0,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 0,
+      "assembly_reuses": 0,
+      "discards": 0,
+      "projection_hits": 0,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 1226,
+      "terminal_records_deserialized": 1226
+     },
+     "task": {
+      "records_deserialized": 1024,
+      "terminal_records_deserialized": 1024
+     }
+    },
+    "pending_reason": "historical_validation_in_progress",
+    "phase_elapsed_ms": null,
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": null,
+     "health_cache_rebuild_count": null,
+     "plan_records_deserialized": null,
+     "records_enumerated": null,
+     "task_records_deserialized": null,
+     "terminal_plan_records_deserialized": null,
+     "terminal_task_records_deserialized": null
+    },
+    "profiled": false,
+    "projection_failure_count": null,
+    "status": "pending",
+    "wall_ms": 3007.3
+   },
+   {
+    "call": "first_after_validation_complete",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 1226,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 1024,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 1,
+      "discards": 0,
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 2.79,
+     "historical_validation_wait_ms": 0.002,
+     "overlay_ms": 1030.892,
+     "projection_ms": 29.511,
+     "reader_wait_ms": 0.004,
+     "snapshot_ms": 382.177,
+     "validation_wait_ms": 2.538,
+     "worker_elapsed_ms": 0.008
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 1,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1503.1
+   },
+   {
+    "call": "warm1",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 2452,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 2048,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 2,
+      "discards": 0,
+      "projection_hits": 2452,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 2.864,
+     "historical_validation_wait_ms": 0.002,
+     "overlay_ms": 997.976,
+     "projection_ms": 28.314,
+     "reader_wait_ms": 0.003,
+     "snapshot_ms": 377.606,
+     "validation_wait_ms": 2.586,
+     "worker_elapsed_ms": 0.004
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 2,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1463.4
+   },
+   {
+    "call": "warm2",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 3678,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 3072,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 3,
+      "discards": 0,
+      "projection_hits": 3678,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 2.778,
+     "historical_validation_wait_ms": 0.002,
+     "overlay_ms": 990.154,
+     "projection_ms": 28.705,
+     "reader_wait_ms": 0.002,
+     "snapshot_ms": 373.937,
+     "validation_wait_ms": 2.524,
+     "worker_elapsed_ms": 0.004
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 3,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1452.3
+   },
+   {
+    "call": "warm3",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 4904,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 4096,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 4,
+      "discards": 0,
+      "projection_hits": 4904,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 3.115,
+     "historical_validation_wait_ms": 0.002,
+     "overlay_ms": 1020.851,
+     "projection_ms": 30.224,
+     "reader_wait_ms": 0.003,
+     "snapshot_ms": 378.456,
+     "validation_wait_ms": 2.942,
+     "worker_elapsed_ms": 0.005
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 4,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1489.7
+   },
+   {
+    "call": "warm4",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 6130,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 5120,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 5,
+      "discards": 0,
+      "projection_hits": 6130,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 2.876,
+     "historical_validation_wait_ms": 0.002,
+     "overlay_ms": 934.739,
+     "projection_ms": 29.167,
+     "reader_wait_ms": 0.002,
+     "snapshot_ms": 371.864,
+     "validation_wait_ms": 2.545,
+     "worker_elapsed_ms": 0.006
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 5,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1395.1
+   },
+   {
+    "call": "warm5",
+    "historical_validation": {
+     "assembly_prewarmed": true,
+     "deferred_lifecycle_plans": 0,
+     "elapsed_ms": 9509.146,
+     "failure_category": null,
+     "plans_validated": 1226,
+     "scope": "startup_background",
+     "state": "complete",
+     "tasks_collected": 1024,
+     "trigger": "startup",
+     "wait_budget_ms": 3000.0,
+     "writes": "none"
+    },
+    "incremental_health_index": {
+     "authoritative_reads_use_index": false,
+     "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+     "last_run": {
+      "assembly": "reused",
+      "mode": "incremental",
+      "projection_hits": 1226,
+      "projection_invalidations": 0,
+      "projection_misses": 0
+     },
+     "persisted": false,
+     "plan_records": {
+      "discards": 0,
+      "entries": 1226,
+      "hits": 7356,
+      "invalidations": 0,
+      "misses": 1226
+     },
+     "projection_entries": 1226,
+     "scope": "process_memory_only",
+     "task_records": {
+      "discards": 0,
+      "entries": 1024,
+      "hits": 6144,
+      "invalidations": 0,
+      "misses": 1024
+     },
+     "terminal_records_only": true,
+     "totals": {
+      "assembly_rebuilds": 1,
+      "assembly_reuses": 6,
+      "discards": 0,
+      "projection_hits": 7356,
+      "projection_invalidations": 0,
+      "projection_misses": 1226
+     }
+    },
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     },
+     "task": {
+      "records_deserialized": 0,
+      "terminal_records_deserialized": 0
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 3.883,
+     "historical_validation_wait_ms": 0.003,
+     "overlay_ms": 1000.9,
+     "projection_ms": 28.727,
+     "reader_wait_ms": 0.003,
+     "snapshot_ms": 379.003,
+     "validation_wait_ms": 2.578,
+     "worker_elapsed_ms": 0.006
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 6,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 0,
+     "records_enumerated": 2250,
+     "task_records_deserialized": 0,
+     "terminal_plan_records_deserialized": 0,
+     "terminal_task_records_deserialized": 0
+    },
+    "profiled": false,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 1471.4
+   }
+  ],
+  "cold_mode": "startup_validation",
+  "environment_after": {
+   "cpu_model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+   "loadavg": [
+    "4.54",
+    "4.09",
+    "4.83"
+   ],
+   "mem_total": "8067484 kB",
+   "nproc": 10,
+   "python": "3.12.14",
+   "uptime": "19:40:58 up 2 days, 12:03,  2 users,  load average: 4.54, 4.09, 4.83",
+   "utc": "2026-10-31T00:40:58Z"
+  },
+  "environment_before": {
+   "cpu_model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+   "loadavg": [
+    "4.52",
+    "4.01",
+    "4.85"
+   ],
+   "mem_total": "8067484 kB",
+   "nproc": 10,
+   "python": "3.12.14",
+   "uptime": "19:40:09 up 2 days, 12:02,  2 users,  load average: 4.52, 4.01, 4.85",
+   "utc": "2026-10-31T00:40:09Z"
+  },
+  "historical_validation": {
+   "launch_to_complete_ms": 9509.3,
+   "state": {
+    "assembly_prewarmed": true,
+    "deferred_lifecycle_plans": 0,
+    "elapsed_ms": 9509.146,
+    "failure_category": null,
+    "plans_validated": 1226,
+    "state": "complete",
+    "tasks_collected": 1024,
+    "trigger": "startup"
+   }
+  },
+  "label": "after_x4cap",
+  "mutation": null,
+  "source": {
+   "head": "398f929f4a0584aff8a2c89bf0fc65fea5729628",
+   "root": "<worktree>",
+   "runtime_diff_files": [
+    "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/observability.py"
+   ],
+   "runtime_diff_sha256": "0ab36c77214da3e692b690dfc166b82458bbfc1d51f4fec0ce85242e22c390ce"
+  },
+  "source_root": "<worktree>",
+  "startup_construction_ms": 31432.8,
+  "store": "<worktree>/.artifacts/h097/store_x4cap",
+  "warm_phase_ms": {
+   "abandoned_worker_wait_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 5
+   },
+   "assembly_ms": {
+    "max": 3.9,
+    "median": 2.9,
+    "min": 2.8,
+    "n": 5
+   },
+   "historical_validation_wait_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 5
+   },
+   "overlay_ms": {
+    "max": 1020.9,
+    "median": 998.0,
+    "min": 934.7,
+    "n": 5
+   },
+   "projection_ms": {
+    "max": 30.2,
+    "median": 28.7,
+    "min": 28.3,
+    "n": 5
+   },
+   "reader_wait_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 5
+   },
+   "snapshot_ms": {
+    "max": 379.0,
+    "median": 377.6,
+    "min": 371.9,
+    "n": 5
+   },
+   "validation_wait_ms": {
+    "max": 2.9,
+    "median": 2.6,
+    "min": 2.5,
+    "n": 5
+   },
+   "worker_elapsed_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 5
+   }
+  },
+  "warm_wall_ms": {
+   "max": 1489.7,
+   "median": 1463.4,
+   "min": 1395.1,
+   "n": 5
+  }
+ }
+}
