@@ -81,7 +81,11 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(self.thread_ids, [threading.get_ident()])
         self.assertEqual(cold["total_plans"], 1)
         self.assertEqual(warm["plans_requiring_approval"], 1)
-        self.assertEqual(self.service._health_cache_rebuild_count, rebuilds + 2)
+        # HAMCP-097: the second call saw byte-identical records before the
+        # next clock transition, so it republished the first aggregate.
+        self.assertEqual(self.service._health_cache_rebuild_count, rebuilds + 1)
+        index = warm["plan_store_scaling"]["incremental_health_index"]
+        self.assertEqual(index["last_run"]["assembly"], "reused")
         self.assertEqual(warm["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 1)
         self.assertEqual(self.fixture.gateway.write_calls, 0)
 
@@ -323,6 +327,7 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
             cold = await self.service.async_health_summary()
         phases = cold["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
         self.assertEqual(set(phases), {
+            "historical_validation_wait_ms",
             "reader_wait_ms", "abandoned_worker_wait_ms", "snapshot_ms",
             "validation_wait_ms", "worker_elapsed_ms", "projection_ms",
             "assembly_ms", "overlay_ms",

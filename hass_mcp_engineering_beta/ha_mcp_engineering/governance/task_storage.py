@@ -16,6 +16,11 @@ import re
 import threading
 from typing import Callable
 
+from .storage import (
+    PlanRecordEvidence,
+    TerminalRecordMemo,
+    _read_record_text,
+)
 from .task_models import (
     ExecutionTask,
     ExecutionTaskState,
@@ -112,6 +117,7 @@ class ExecutionTaskRepository:
         self.records_deserialized = 0
         self.terminal_records_deserialized = 0
         self.full_history_scan_count = 0
+        self.health_record_memo = TerminalRecordMemo()
         self._observed_directory_token: tuple[int, int] | None = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -642,13 +648,33 @@ class ExecutionTaskRepository:
         *,
         quarantine_corrupt: bool = True,
         before_quarantine: Callable[[], None] | None = None,
+        evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> ExecutionTask | None:
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            if evidence is None:
+                text, observed = path.read_text(encoding="utf-8"), None
+            else:
+                text, observed = _read_record_text(path)
+                reused = (
+                    self.health_record_memo.lookup(observed)
+                    if reuse_terminal else None
+                )
+                if reused is not None:
+                    evidence[reused.task_id] = observed
+                    return reused
+            value = json.loads(text)
             task = ExecutionTask.from_dict(value)
             self.records_deserialized += 1
-            if task.state in TERMINAL_TASK_STATES:
+            terminal = task.state in TERMINAL_TASK_STATES
+            if terminal:
                 self.terminal_records_deserialized += 1
+            if observed is not None:
+                evidence[task.task_id] = observed
+                if terminal:
+                    self.health_record_memo.store(observed, task)
+                else:
+                    self.health_record_memo.forget(observed.path)
             return task
         except FileNotFoundError:
             return None
@@ -694,13 +720,18 @@ class ExecutionTaskRepository:
             )
 
     async def collect_health(
-        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None]
+        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None],
+        evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> list[ExecutionTask]:
         """One validated parent read per call, with staged navigation repair.
 
         Only detached navigation containers are staged. The canonical writer's
         existing metadata projection is reused on the owner loop; no durable
         authority, repository lock or partial index crosses an await.
+        ``evidence`` and ``reuse_terminal`` behave as for plan collection
+        (HAMCP-097): every record is still read and digested, and only a
+        terminal task whose exact bytes were already decoded is reused.
         """
         generation, directory = self.generation, self._directory_token()
         def check() -> None:
@@ -724,7 +755,10 @@ class ExecutionTaskRepository:
                 path = Path(entry.path)
                 watch(path)
                 with self._lock:
-                    task = self._load(path, before_quarantine=check)
+                    task = self._load(
+                        path, before_quarantine=check, evidence=evidence,
+                        reuse_terminal=reuse_terminal,
+                    )
                 check()
                 if task is None:
                     raise ExecutionTaskStorageError("Execution-task record is missing")
@@ -735,6 +769,10 @@ class ExecutionTaskRepository:
                     raise ExecutionTaskStorageError("Execution-task ownership is ambiguous")
                 staged._put_entry(task, count_update=False)
                 tasks.append(task)
+        if evidence is not None:
+            self.health_record_memo.prune(
+                {observed.path for observed in evidence.values()}
+            )
         changed = self._observed_directory_token != directory
         for name in _TASK_NAVIGATION_FIELDS:
             await asyncio.sleep(0)
