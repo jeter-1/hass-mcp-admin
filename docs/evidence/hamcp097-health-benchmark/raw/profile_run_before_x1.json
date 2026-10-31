@@ -1,0 +1,323 @@
+{
+ "rows": [
+  {
+   "call": "cold",
+   "governance_health_hot_path": {
+    "last_duration_ms": 14956.843,
+    "plan_records_deserialized": 501,
+    "records_enumerated": 925,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 847,
+    "terminal_plan_records_deserialized": 501,
+    "terminal_task_records_deserialized": 847
+   },
+   "historical_validation": null,
+   "incremental_health_index": null,
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 501,
+     "terminal_records_deserialized": 501
+    },
+    "task": {
+     "records_deserialized": 847,
+     "terminal_records_deserialized": 847
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.0,
+    "assembly_ms": 1869.431,
+    "overlay_ms": 878.84,
+    "projection_ms": 1744.984,
+    "reader_wait_ms": 0.01,
+    "snapshot_ms": 1023.405,
+    "validation_wait_ms": 9390.15,
+    "worker_elapsed_ms": 9384.385
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 0,
+    "health_cache_rebuild_count": 2,
+    "plan_records_deserialized": 501,
+    "records_enumerated": 925,
+    "task_records_deserialized": 847,
+    "terminal_plan_records_deserialized": 501,
+    "terminal_task_records_deserialized": 847
+   },
+   "profile_file": "<worktree>/.artifacts/h097/profile_cold_x1.txt",
+   "profiled": true,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 487,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 0,
+     "misses": 487,
+     "mode": "cached",
+     "not_applicable": 14,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 0,
+     "invalidations": 0,
+     "misses": 487,
+     "not_applicable": 14
+    }
+   },
+   "status": null,
+   "wall_ms": 14979.1
+  },
+  {
+   "call": "warm1",
+   "governance_health_hot_path": {
+    "last_duration_ms": 5803.66,
+    "plan_records_deserialized": 501,
+    "records_enumerated": 925,
+    "recovery_candidates_examined": 0,
+    "task_records_deserialized": 847,
+    "terminal_plan_records_deserialized": 501,
+    "terminal_task_records_deserialized": 847
+   },
+   "historical_validation": null,
+   "incremental_health_index": null,
+   "navigation_delta": {
+    "plan": {
+     "records_deserialized": 501,
+     "terminal_records_deserialized": 501
+    },
+    "task": {
+     "records_deserialized": 847,
+     "terminal_records_deserialized": 847
+    }
+   },
+   "pending_reason": null,
+   "phase_elapsed_ms": {
+    "abandoned_worker_wait_ms": 0.001,
+    "assembly_ms": 2144.595,
+    "overlay_ms": 823.214,
+    "projection_ms": 1713.975,
+    "reader_wait_ms": 0.011,
+    "snapshot_ms": 1072.504,
+    "validation_wait_ms": 2.218,
+    "worker_elapsed_ms": 0.013
+   },
+   "plan_store_scaling_counters": {
+    "health_cache_hit_count": 1,
+    "health_cache_rebuild_count": 3,
+    "plan_records_deserialized": 501,
+    "records_enumerated": 925,
+    "task_records_deserialized": 847,
+    "terminal_plan_records_deserialized": 501,
+    "terminal_task_records_deserialized": 847
+   },
+   "profile_file": "<worktree>/.artifacts/h097/profile_warm_x1.txt",
+   "profiled": true,
+   "projection_failure_count": 2,
+   "safety_verdict_cache": {
+    "authoritative_reads_use_cache": false,
+    "deep_rescan_input": "get_server_health.deep_storage_audit",
+    "entries": 487,
+    "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+    "last_run": {
+     "hits": 487,
+     "misses": 0,
+     "mode": "cached",
+     "not_applicable": 14,
+     "pruned": 0
+    },
+    "persisted": false,
+    "scope": "process_memory_only",
+    "totals": {
+     "deep_rescans": 0,
+     "hits": 487,
+     "invalidations": 0,
+     "misses": 487,
+     "not_applicable": 28
+    }
+   },
+   "status": null,
+   "wall_ms": 5828.2
+  }
+ ],
+ "summary": {
+  "calls": [
+   {
+    "call": "cold",
+    "historical_validation": null,
+    "incremental_health_index": null,
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 501,
+      "terminal_records_deserialized": 501
+     },
+     "task": {
+      "records_deserialized": 847,
+      "terminal_records_deserialized": 847
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.0,
+     "assembly_ms": 1869.431,
+     "overlay_ms": 878.84,
+     "projection_ms": 1744.984,
+     "reader_wait_ms": 0.01,
+     "snapshot_ms": 1023.405,
+     "validation_wait_ms": 9390.15,
+     "worker_elapsed_ms": 9384.385
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 0,
+     "health_cache_rebuild_count": 2,
+     "plan_records_deserialized": 501,
+     "records_enumerated": 925,
+     "task_records_deserialized": 847,
+     "terminal_plan_records_deserialized": 501,
+     "terminal_task_records_deserialized": 847
+    },
+    "profiled": true,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 14979.1
+   },
+   {
+    "call": "warm1",
+    "historical_validation": null,
+    "incremental_health_index": null,
+    "navigation_delta": {
+     "plan": {
+      "records_deserialized": 501,
+      "terminal_records_deserialized": 501
+     },
+     "task": {
+      "records_deserialized": 847,
+      "terminal_records_deserialized": 847
+     }
+    },
+    "pending_reason": null,
+    "phase_elapsed_ms": {
+     "abandoned_worker_wait_ms": 0.001,
+     "assembly_ms": 2144.595,
+     "overlay_ms": 823.214,
+     "projection_ms": 1713.975,
+     "reader_wait_ms": 0.011,
+     "snapshot_ms": 1072.504,
+     "validation_wait_ms": 2.218,
+     "worker_elapsed_ms": 0.013
+    },
+    "plan_store_scaling_counters": {
+     "health_cache_hit_count": 1,
+     "health_cache_rebuild_count": 3,
+     "plan_records_deserialized": 501,
+     "records_enumerated": 925,
+     "task_records_deserialized": 847,
+     "terminal_plan_records_deserialized": 501,
+     "terminal_task_records_deserialized": 847
+    },
+    "profiled": true,
+    "projection_failure_count": 2,
+    "status": null,
+    "wall_ms": 5828.2
+   }
+  ],
+  "cold_mode": "plain",
+  "environment_after": {
+   "cpu_model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+   "loadavg": [
+    "8.91",
+    "9.48",
+    "9.13"
+   ],
+   "mem_total": "8067484 kB",
+   "nproc": 10,
+   "python": "3.12.14",
+   "uptime": "19:05:09 up 2 days, 11:27,  2 users,  load average: 8.91, 9.48, 9.13",
+   "utc": "2026-10-31T00:05:09Z"
+  },
+  "environment_before": {
+   "cpu_model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+   "loadavg": [
+    "8.74",
+    "9.52",
+    "9.13"
+   ],
+   "mem_total": "8067484 kB",
+   "nproc": 10,
+   "python": "3.12.14",
+   "uptime": "19:04:33 up 2 days, 11:26,  2 users,  load average: 8.74, 9.52, 9.13",
+   "utc": "2026-10-31T00:04:33Z"
+  },
+  "historical_validation": null,
+  "label": "x1",
+  "mutation": null,
+  "source": {
+   "head": "398f929f4a0584aff8a2c89bf0fc65fea5729628",
+   "root": "<worktree>/.artifacts/h097/base",
+   "runtime_diff_files": [],
+   "runtime_diff_sha256": null
+  },
+  "source_root": "<worktree>/.artifacts/h097/base",
+  "startup_construction_ms": 15169.0,
+  "store": "<worktree>/.artifacts/h097/store_x1",
+  "warm_phase_ms": {
+   "abandoned_worker_wait_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 1
+   },
+   "assembly_ms": {
+    "max": 2144.6,
+    "median": 2144.6,
+    "min": 2144.6,
+    "n": 1
+   },
+   "overlay_ms": {
+    "max": 823.2,
+    "median": 823.2,
+    "min": 823.2,
+    "n": 1
+   },
+   "projection_ms": {
+    "max": 1714.0,
+    "median": 1714.0,
+    "min": 1714.0,
+    "n": 1
+   },
+   "reader_wait_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 1
+   },
+   "snapshot_ms": {
+    "max": 1072.5,
+    "median": 1072.5,
+    "min": 1072.5,
+    "n": 1
+   },
+   "validation_wait_ms": {
+    "max": 2.2,
+    "median": 2.2,
+    "min": 2.2,
+    "n": 1
+   },
+   "worker_elapsed_ms": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 1
+   }
+  },
+  "warm_wall_ms": {
+   "max": 5828.2,
+   "median": 5828.2,
+   "min": 5828.2,
+   "n": 1
+  }
+ }
+}

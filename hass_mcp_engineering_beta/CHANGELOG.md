@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.4.1-beta.52 - Governance health stops re-projecting unchanged history; startup historical validation (HAMCP-097)
+
+Builds on 2.4.1-beta.51 (#331). No tool, input schema, route, provider,
+dispatch, persisted format or Home Assistant write change.
+
+- `get_server_health` reuses a decoded terminal plan or task record, its
+  projection outcome and the assembled summary only for byte-identical
+  input: canonical path, inode, size, `mtime_ns` and SHA-256, plus the
+  detector context. The key is the safety-verdict cache key. Every record
+  is still read and hashed on every call, and the overlay and snapshot
+  are rebuilt, so total cost still grows with retained history. A warm
+  call with no change decodes 0 terminal records, and k changed records
+  cost exactly k re-projections. The summary is never reused across a
+  quarantine or restoration. Reassembling the summary after a change re-evaluates
+  approval actionability only for the changed plans. Previously it
+  re-read every prohibited plan's task. The entries are process memory only. They are discarded
+  on `deep_storage_audit=true` and on any scan error. Authorization paths
+  never read them.
+- The historical validation now starts in the background after startup
+  recovery. It never persists a lifecycle transition; a plan whose
+  lifecycle would persist is deferred to the next health call. A corrupt
+  record it meets is still quarantined and reported as
+  `writes: "corrupt_record_quarantine"` with `quarantined_records`
+  counts; otherwise `writes` is `none`. A record whose quarantine move
+  and fallback removal both failed is not reported as a write: it is
+  counted in `quarantine_failures` with
+  `failed_writes: "corrupt_record_quarantine"`. A health call waits at most 3 s for
+  it. If validation is still running, governance answers
+  `status: "pending"`, `historical_validation.state: "in_progress"`, and
+  every history-derived field `null` and listed in `pending_fields`.
+- New counters: `plan_store_scaling.incremental_health_index` and
+  `governance.historical_validation`.
+- Benchmark (governance `service.async_health_summary`, offline, not
+  end-to-end MCP latency), warm median before and after: 1x (501 plans)
+  2,451 to 698 ms, 2x (1,001 plans) 4,145 to 1,262 ms, x4cap (1,226 plans,
+  1,024 tasks, not a full 4x store) 4,980 to 1,398 ms. The first call
+  after 5 changes is 714 ms at 1x and 1,739 ms at x4cap, above the 1.5 s
+  warm SLO; Josh accepted that miss, and HAMCP-259 tracks it.
+
 ## 2.4.1-beta.51 - Sun condition steps verify exactly; verifier refusals name their location (HAMCP-252)
 
 Builds on 2.4.1-beta.50 (#330). No tool, input schema, dispatch or Home

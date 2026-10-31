@@ -354,6 +354,99 @@ def _read_record_text(path: Path) -> tuple[str, PlanRecordEvidence]:
     )
 
 
+def quarantine_listing(*directories: Path) -> tuple[str, ...] | None:
+    """HAMCP-097: names of ``.corrupt`` files in ``directories``, for health.
+
+    Health-derived state only. ``None`` means the listing is unknown, and the
+    caller must not reuse anything derived from earlier quarantine state. A
+    missing directory holds nothing.
+    """
+    names: list[str] = []
+    for directory in directories:
+        try:
+            with os.scandir(directory) as entries:
+                names.extend(
+                    f"{directory.name}/{entry.name}"
+                    for entry in entries
+                    if entry.name.endswith(".corrupt")
+                )
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+    return tuple(sorted(names))
+
+
+class TerminalRecordMemo:
+    """HAMCP-097: health-only reuse of decoded terminal records.
+
+    Health still reads, stats and digests every record on every call. A
+    record is only *decoded* again when the bytes changed: an entry is reused
+    solely when the canonical path, ``(st_ino, st_size, st_mtime_ns)`` and
+    SHA-256 of the bytes read on this call equal those the entry was decoded
+    from (the HAMCP-171 verdict-cache key). Only terminal records are kept,
+    nothing is persisted, and authoritative reads never consult the memo.
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[str, tuple[tuple[int, int, int], str, Any]] = {}
+        self.hits = 0
+        self.misses = 0
+        self.invalidations = 0
+        self.discards = 0
+
+    def lookup(self, observed: PlanRecordEvidence) -> Any | None:
+        entry = self._entries.get(observed.path)
+        if (
+            entry is not None
+            and observed.stat is not None
+            and entry[0] == observed.stat
+            and entry[1] == observed.sha256
+        ):
+            self.hits += 1
+            return entry[2]
+        if entry is not None:
+            # The bytes behind this path moved: never reuse the old decode.
+            del self._entries[observed.path]
+            self.invalidations += 1
+        self.misses += 1
+        return None
+
+    def store(self, observed: PlanRecordEvidence, record: Any) -> None:
+        if observed.stat is None:
+            self._entries.pop(observed.path, None)
+        else:
+            self._entries[observed.path] = (
+                observed.stat, observed.sha256, record
+            )
+
+    def forget(self, path: str) -> None:
+        if self._entries.pop(path, None) is not None:
+            self.invalidations += 1
+
+    def prune(self, seen: set[str]) -> None:
+        for path in [path for path in self._entries if path not in seen]:
+            del self._entries[path]
+            self.invalidations += 1
+
+    def discard(self) -> None:
+        if self._entries:
+            self._entries.clear()
+            self.discards += 1
+
+    def records(self) -> list[Any]:
+        return [entry[2] for entry in self._entries.values()]
+
+    def metrics(self) -> dict[str, int]:
+        return {
+            "entries": len(self._entries),
+            "hits": self.hits,
+            "misses": self.misses,
+            "invalidations": self.invalidations,
+            "discards": self.discards,
+        }
+
+
 @dataclass(frozen=True)
 class PlanNavigationEntry:
     """Non-authoritative metadata used only to locate persisted records."""
@@ -391,6 +484,11 @@ class ChangePlanRepository:
         self.content_redactions = 0
         self.content_refusals = 0
         self.recovery_refusals = 0
+        # HAMCP-097: bumped by every quarantine and restoration, so derived
+        # health is never reused across one even when no record proof moved.
+        self.quarantine_generation = 0
+        # HAMCP-097: what each quarantine actually did to the record file.
+        self.quarantine_outcomes = {"moved": 0, "removed": 0, "failed": 0}
         self.quarantine_restoration: dict[str, Any] = {
             "performed": False,
             "restored": 0,
@@ -422,6 +520,7 @@ class ChangePlanRepository:
         self.records_deserialized = 0
         self.terminal_records_deserialized = 0
         self.full_history_scan_count = 0
+        self.health_record_memo = TerminalRecordMemo()
         self._observed_directory_token: tuple[tuple[int, int], ...] | None = (
             None
         )
@@ -949,6 +1048,7 @@ class ChangePlanRepository:
         *,
         before_quarantine: Callable[[], None] | None = None,
         evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> ChangePlan | None:
         try:
             with self._lock:
@@ -956,13 +1056,25 @@ class ChangePlanRepository:
                     text, observed = path.read_text(encoding="utf-8"), None
                 else:
                     text, observed = _read_record_text(path)
+                    reused = (
+                        self.health_record_memo.lookup(observed)
+                        if reuse_terminal else None
+                    )
+                    if reused is not None:
+                        evidence[reused.plan_id] = observed
+                        return reused
                 value = json.loads(text)
             plan = ChangePlan.from_dict(value)
             self.records_deserialized += 1
-            if is_terminal_plan(plan):
+            terminal = is_terminal_plan(plan)
+            if terminal:
                 self.terminal_records_deserialized += 1
             if observed is not None:
                 evidence[plan.plan_id] = observed
+                if terminal:
+                    self.health_record_memo.store(observed, plan)
+                else:
+                    self.health_record_memo.forget(observed.path)
             return plan
         except FileNotFoundError:
             return None
@@ -986,13 +1098,17 @@ class ChangePlanRepository:
         checkpoint: Callable[[], None],
         watch: Callable[[Path], None],
         evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> list[ChangePlan]:
         """Validate once and stage the existing navigation projection cooperatively.
 
         Synchronous readers/writers keep their existing APIs. No lock, partial
         navigation table or mutable repository is handed to an async worker.
         When ``evidence`` is supplied it receives, per plan id, the stat and
-        SHA-256 of the exact bytes this collection parsed.
+        SHA-256 of the exact bytes this collection read. With
+        ``reuse_terminal`` a terminal record whose exact bytes were already
+        decoded in this process is returned from the health memo instead of
+        being decoded again (HAMCP-097); every record is still read.
         """
         generation, directory = self.generation, self._directory_token()
 
@@ -1018,7 +1134,8 @@ class ChangePlanRepository:
                     watch(path)
                     with self._lock:
                         plan = self._load(
-                            path, before_quarantine=check, evidence=evidence
+                            path, before_quarantine=check, evidence=evidence,
+                            reuse_terminal=reuse_terminal,
                         )
                     check()
                     if plan is None:
@@ -1028,6 +1145,10 @@ class ChangePlanRepository:
                         raise ChangePlanStorageError("Ambiguous governance record identifier")
                     staged._put_entry(plan, count_update=False)
                     plans.append(plan)
+        if evidence is not None:
+            self.health_record_memo.prune(
+                {observed.path for observed in evidence.values()}
+            )
         changed = self._observed_directory_token != directory
         for name in _PLAN_NAVIGATION_FIELDS:
             await asyncio.sleep(0)
@@ -1046,6 +1167,7 @@ class ChangePlanRepository:
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        self.quarantine_generation += 1
         self._remove_entry(path.stem)
         self.generation += 1
         self.index_invalidation_count += 1
@@ -1061,9 +1183,16 @@ class ChangePlanRepository:
             os.replace(path, destination)
         except OSError:
             try:
-                path.unlink(missing_ok=True)
+                path.unlink()
+            except FileNotFoundError:
+                # Already gone: this call wrote nothing.
+                return
             except OSError:
-                pass
+                self.quarantine_outcomes["failed"] += 1
+                return
+            self.quarantine_outcomes["removed"] += 1
+        else:
+            self.quarantine_outcomes["moved"] += 1
 
     def restore_quarantined_records(self) -> dict[str, Any]:
         """HAMCP-213 batch 4 (H6): return rollback-quarantined plans to service.
@@ -1103,6 +1232,7 @@ class ChangePlanRepository:
                 self.generation += 1
                 self.index_invalidation_count += 1
                 self.rebuild_navigation_index()
+            self.quarantine_generation += 1
             self.quarantine_restoration = {
                 "performed": True,
                 "restored": len(restored),
@@ -1126,6 +1256,11 @@ class ChangePlanRepository:
                 MAX_QUARANTINE_RESTORE_ENTRIES,
             )
         return dict(self.quarantine_restoration)
+
+    def quarantine_listing(self) -> tuple[str, ...] | None:
+        """Quarantined plan names for health reuse; ``None`` when unknown."""
+        with self._lock:
+            return quarantine_listing(self.quarantine, self.operational_quarantine)
 
     @staticmethod
     def _quarantine_candidates(

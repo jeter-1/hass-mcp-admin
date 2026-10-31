@@ -247,7 +247,9 @@ class ProjectionAuthorityBoundaryStructureTests(unittest.TestCase):
                 "_projection_failure_for_plan",
                 "_load_for_projection",
                 "_resolved_plans_with_projection_failures",
-                "async_health_summary",
+                # HAMCP-097: the async health scan body (formerly inline in
+                # async_health_summary) is the same reviewed read caller.
+                "_async_health_scan",
             },
         )
 

@@ -1,0 +1,47 @@
+# source_root=<worktree> call=warm1 (all threads)
+         1152335 function calls (1142594 primitive calls) in 1.104 seconds
+
+   Ordered by: cumulative time
+   List reduced from 445 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     6384    0.021    0.000    1.115    0.000 stdlib/asyncio/base_events.py:1922(_run_once)
+     6388    0.005    0.000    1.068    0.000 stdlib/asyncio/events.py:86(_run)
+     6388    0.013    0.000    1.063    0.000 {method 'run' of '_contextvars.Context' objects}
+     6380    0.002    0.000    1.033    0.000 <worktree>/.artifacts/h097/bench_health.py:249(main)
+     6380    0.003    0.000    1.031    0.000 <worktree>/.artifacts/h097/bench_health.py:129(one_call)
+     6381    0.005    0.000    1.029    0.000 ha_mcp_engineering/governance/service.py:15525(async_health_summary)
+     6381    0.007    0.000    1.023    0.000 ha_mcp_engineering/governance/service.py:15674(_async_health_scan)
+     3990    0.009    0.000    0.672    0.000 ha_mcp_engineering/f3_runtime/runtime.py:6397(async_health)
+     3990    0.003    0.000    0.663    0.000 ha_mcp_engineering/f3_runtime/runtime.py:6407(_async_health)
+     1307    0.014    0.000    0.503    0.000 ha_mcp_engineering/f3_runtime/repository.py:1236(collect_health)
+     8191    0.033    0.000    0.282    0.000 ha_mcp_engineering/f3_runtime/health_scan.py:50(check)
+    32768    0.018    0.000    0.249    0.000 ha_mcp_engineering/f3_runtime/health_scan.py:39(_read_source)
+    56605    0.016    0.000    0.249    0.000 stdlib/pathlib.py:835(stat)
+    56605    0.163    0.000    0.233    0.000 {built-in method posix.stat}
+      524    0.007    0.000    0.161    0.000 ha_mcp_engineering/governance/storage.py:1067(collect_health)
+    29109    0.014    0.000    0.155    0.000 ha_mcp_engineering/f3_runtime/health_scan.py:27(stamp)
+      442    0.006    0.000    0.122    0.000 ha_mcp_engineering/governance/task_storage.py:722(collect_health)
+      454    0.008    0.000    0.108    0.000 ha_mcp_engineering/f3_runtime/repository.py:297(_envelope_at)
+      454    0.001    0.000    0.104    0.000 ha_mcp_engineering/f3_runtime/repository.py:437(_record_from_envelope)
+     2731    0.006    0.000    0.104    0.000 ha_mcp_engineering/f3_runtime/health_scan.py:75(verify_files)
+      454    0.008    0.000    0.102    0.000 ha_mcp_engineering/f3/models.py:871(from_dict)
+      424    0.002    0.000    0.102    0.000 ha_mcp_engineering/f3_runtime/repository.py:657(manifest_for_task)
+     9218    0.019    0.000    0.101    0.000 ha_mcp_engineering/governance/storage.py:639(_directory_token)
+    63400    0.017    0.000    0.096    0.000 stdlib/pathlib.py:437(__str__)
+      454    0.018    0.000    0.092    0.000 ha_mcp_engineering/f3/models.py:502(validate)
+      424    0.003    0.000    0.085    0.000 ha_mcp_engineering/f3_runtime/repository.py:660(read)
+    59293    0.025    0.000    0.083    0.000 stdlib/pathlib.py:447(__fspath__)
+      925    0.007    0.000    0.073    0.000 ha_mcp_engineering/governance/storage.py:339(_read_record_text)
+     3606    0.005    0.000    0.073    0.000 stdlib/pathlib.py:551(drive)
+     8192    0.009    0.000    0.070    0.000 ha_mcp_engineering/f3_runtime/runtime.py:6384(<lambda>)
+     3606    0.008    0.000    0.068    0.000 stdlib/pathlib.py:407(_load_parts)
+      908    0.016    0.000    0.064    0.000 ha_mcp_engineering/f3_runtime/repository.py:138(_validate_declaration)
+     1804    0.003    0.000    0.063    0.000 ha_mcp_engineering/f3_runtime/health_scan.py:69(watch)
+     1332    0.003    0.000    0.058    0.000 ha_mcp_engineering/f3_runtime/repository.py:61(canonical_hash)
+        1    0.000    0.000    0.058    0.058 ha_mcp_engineering/f3_runtime/runtime.py:6483(_health)
+        1    0.001    0.001    0.057    0.057 ha_mcp_engineering/f3_runtime/runtime.py:6580(_dispatch_outcome_counts)
+      424    0.002    0.000    0.055    0.000 ha_mcp_engineering/f3_runtime/runtime.py:3509(dispatch_facts_for_task)
+      501    0.002    0.000    0.048    0.000 ha_mcp_engineering/governance/storage.py:1017(_load)
+     3606    0.023    0.000    0.048    0.000 stdlib/pathlib.py:387(_parse_path)
+     2683    0.034    0.000    0.048    0.000 {built-in method _io.open}
