@@ -595,6 +595,13 @@ class SourceMergeJobRereadTests(unittest.TestCase):
         self.assertNotIn("synthetic-secret-marker", output.getvalue())
         self.assertNotIn("::", output.getvalue())
 
+    def test_production_default_waits_between_reads(self):
+        api = self.sequence(None, self.job)
+        with patch.object(handoff.time, "sleep") as waited, redirect_stderr(io.StringIO()):
+            self.assertEqual(handoff_verify.verify(7, 1, MERGE, api, self.git)["release_action"],
+                             "inspect")
+        waited.assert_called_once_with(5)
+
     def test_observed_field_tokens(self):
         self.assertEqual(handoff.observed(None), "none")
         self.assertEqual(handoff.observed("completed"), "completed")
