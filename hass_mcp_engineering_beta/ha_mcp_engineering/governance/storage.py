@@ -354,6 +354,29 @@ def _read_record_text(path: Path) -> tuple[str, PlanRecordEvidence]:
     )
 
 
+def quarantine_listing(*directories: Path) -> tuple[str, ...] | None:
+    """HAMCP-097: names of ``.corrupt`` files in ``directories``, for health.
+
+    Health-derived state only. ``None`` means the listing is unknown, and the
+    caller must not reuse anything derived from earlier quarantine state. A
+    missing directory holds nothing.
+    """
+    names: list[str] = []
+    for directory in directories:
+        try:
+            with os.scandir(directory) as entries:
+                names.extend(
+                    f"{directory.name}/{entry.name}"
+                    for entry in entries
+                    if entry.name.endswith(".corrupt")
+                )
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+    return tuple(sorted(names))
+
+
 class TerminalRecordMemo:
     """HAMCP-097: health-only reuse of decoded terminal records.
 
@@ -461,6 +484,9 @@ class ChangePlanRepository:
         self.content_redactions = 0
         self.content_refusals = 0
         self.recovery_refusals = 0
+        # HAMCP-097: bumped by every quarantine and restoration, so derived
+        # health is never reused across one even when no record proof moved.
+        self.quarantine_generation = 0
         self.quarantine_restoration: dict[str, Any] = {
             "performed": False,
             "restored": 0,
@@ -1139,6 +1165,7 @@ class ChangePlanRepository:
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        self.quarantine_generation += 1
         self._remove_entry(path.stem)
         self.generation += 1
         self.index_invalidation_count += 1
@@ -1196,6 +1223,7 @@ class ChangePlanRepository:
                 self.generation += 1
                 self.index_invalidation_count += 1
                 self.rebuild_navigation_index()
+            self.quarantine_generation += 1
             self.quarantine_restoration = {
                 "performed": True,
                 "restored": len(restored),
@@ -1219,6 +1247,11 @@ class ChangePlanRepository:
                 MAX_QUARANTINE_RESTORE_ENTRIES,
             )
         return dict(self.quarantine_restoration)
+
+    def quarantine_listing(self) -> tuple[str, ...] | None:
+        """Quarantined plan names for health reuse; ``None`` when unknown."""
+        with self._lock:
+            return quarantine_listing(self.quarantine, self.operational_quarantine)
 
     @staticmethod
     def _quarantine_candidates(

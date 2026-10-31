@@ -36,6 +36,7 @@ from ha_mcp_engineering.governance import service as service_module
 from ha_mcp_engineering.governance.runtime import GovernanceRuntime
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.models import ChangePlan
+from ha_mcp_engineering.governance import storage as storage_module
 from ha_mcp_engineering.governance import task_storage as task_storage_module
 from ha_mcp_engineering.governance.storage import ChangePlanRepository, PlanRecordEvidence
 from ha_mcp_engineering.observability import METRICS
@@ -107,6 +108,36 @@ class _DifferentialMixin:
                     governed(warm, restart=True), governed(fresh, restart=True)
                 )
         return warm
+
+    async def outcome(self, fresh=False, **kwargs):
+        """The governed summary, or the refusal code; never a partial answer.
+
+        ``fresh`` is a restarted process, whose constructor already projects.
+        """
+        try:
+            service = await self.fresh_service() if fresh else self.service
+            summary = await service.async_health_summary(**kwargs)
+        except GovernanceError as exc:
+            return ("refused", exc.code)
+        return ("answered", summary)
+
+    async def assert_outcome_equals_full(self, label):
+        """Ordinary, deep and restarted health agree, refusals included.
+
+        The ordinary call runs first, so nothing from the deep audit can
+        stand in for an aggregate that should have been invalidated.
+        """
+        ordinary = await self.outcome()
+        deep = await self.outcome(deep_storage_audit=True)
+        fresh = await self.outcome(fresh=True, deep_storage_audit=True)
+        normal = [
+            (kind, governed(value, restart=True) if kind == "answered" else value)
+            for kind, value in (ordinary, deep, fresh)
+        ]
+        with self.subTest(step=label):
+            self.assertEqual(normal[0], normal[1])
+            self.assertEqual(normal[0], normal[2])
+        return ordinary
 
 
 class _DistinctPlans:
@@ -183,6 +214,43 @@ class LegacyDifferentialTests(
         rolled = await self.assert_incremental_equals_full("rollback")
         self.assertGreater(index_of(rolled)["totals"]["projection_hits"], 0)
         self.assertGreater(index_of(rolled)["totals"]["assembly_reuses"], 0)
+
+        # R1-H1: quarantine-only events change no tracked record proof.
+        tasks = self.service.task_repository.quarantine
+        tasks.mkdir(parents=True, exist_ok=True)
+        task_corrupt = tasks / f"{created['plan_id']}.{'e' * 32}.1.corrupt"
+        task_corrupt.write_text("{", encoding="utf-8")
+        await self.assert_outcome_equals_full("task_quarantine_added")
+        task_corrupt.unlink()
+        await self.assert_incremental_equals_full("task_quarantine_removed")
+
+        plans = self.repository.quarantine
+        plans.mkdir(parents=True, exist_ok=True)
+        (plans / f"{'b' * 32}.1700000000.corrupt").write_text("{", encoding="utf-8")
+        await self.assert_incremental_equals_full("plan_quarantine_added")
+        retained = self.service.repository.restore_quarantined_records()
+        self.assertEqual((retained["restored"], retained["retained"]), (0, 1))
+        kept = await self.service.async_health_summary()
+        self.assertEqual(index_of(kept)["last_run"]["assembly"], "rebuilt")
+        await self.assert_incremental_equals_full("plan_quarantine_retained")
+
+        path = self.repository._path(rejected["plan_id"])
+        os.replace(path, plans / f"{rejected['plan_id']}.1700000001.corrupt")
+        # No restart here: a restarted process would restore the record itself.
+        absent = await self.assert_incremental_equals_full("plan_quarantined", restart=False)
+        self.assertEqual(absent["rejected_plans"], 0)
+        restored = self.service.repository.restore_quarantined_records()
+        self.assertEqual(restored["restored"], 1)
+        back = await self.assert_incremental_equals_full("plan_quarantine_restored")
+        self.assertEqual(back["rejected_plans"], 1)
+
+        # A tampered terminal record is still detected after all of that.
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["policy_decision"]["policy_subject_hash"] = "0" * 64
+        path.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")),
+                        encoding="utf-8")
+        tampered = await self.assert_incremental_equals_full("tamper_after_restoration")
+        self.assertEqual(tampered["projection_failure_count"], 1)
 
     async def test_projection_failure_and_tamper_are_reflected_when_warm(self):
         rejected = await self.update_plan()
@@ -504,6 +572,9 @@ class HistoricalValidationTests(
             self.assertEqual(pending["pending_reason"], "historical_validation_in_progress")
             self.assertEqual(pending["historical_validation"]["state"], "in_progress")
             self.assertEqual(pending["historical_validation"]["writes"], "none")
+            self.assertEqual(pending["historical_validation"]["lifecycle_writes"], "none")
+            self.assertEqual(pending["historical_validation"]["quarantined_records"],
+                             {"plans": 0, "tasks": 0})
             self.assertGreaterEqual(pending["historical_validation"]["waited_ms"], 0.0)
             for field in (
                 "total_plans", "projection_failure_count", "projection_failures",
@@ -582,6 +653,61 @@ class HistoricalValidationTests(
         self.assertEqual(index_of(await self.service.async_health_summary())["last_run"]["mode"], "incremental")
         summary = await self.assert_incremental_equals_full("deferred_expiry")
         self.assertEqual(summary["expired_plans"], 1)
+
+    # R1-M1 (Codex round 1). Kills mutants M1, M2, M3, M4.
+    async def test_startup_quarantine_is_reported_as_a_write(self):
+        await self.history()
+        task_repository = self.service.task_repository
+        cases = (
+            ("plans", ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+             self.repository.root / f"{'a' * 32}.json",
+             self.service.repository.quarantine),
+            ("tasks", ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
+             task_repository.root / f"{'a' * 32}.{'f' * 32}.json",
+             task_repository.quarantine),
+        )
+        for kind, code, path, quarantine in cases:
+            with self.subTest(kind=kind):
+                self.service = await self.fresh_service()
+                path.write_text('{"synthetic-corrupt-marker": ', encoding="utf-8")
+                await self.service.start_historical_validation()
+                self.assertFalse(path.exists())
+                self.assertEqual(len(list(quarantine.glob(f"{path.stem}.*.corrupt"))), 1)
+                report = self.service._historical_validation_health()
+                self.assertEqual(report["state"], "failed")
+                self.assertEqual(report["failure_category"], code.value)
+                self.assertEqual(report["writes"], "corrupt_record_quarantine")
+                self.assertEqual(report["lifecycle_writes"], "none")
+                expected = {"plans": 0, "tasks": 0, kind: 1}
+                self.assertEqual(report["quarantined_records"], expected)
+                summary = await self.service.async_health_summary()
+                self.assertEqual(summary["historical_validation"]["quarantined_records"],
+                                 expected)
+                text = json.dumps(summary["historical_validation"])
+                for secret in ("a" * 32, "f" * 32, "synthetic-corrupt-marker",
+                               str(self.repository.root), ".corrupt"):
+                    self.assertNotIn(secret, text)
+                # Counts are frozen at the end of validation: a later health
+                # quarantine is not attributed to it.
+                later = self.repository.root / f"{'9' * 32}.json"
+                later.write_text("{", encoding="utf-8")
+                with self.assertRaises(GovernanceError):
+                    await self.service.async_health_summary()
+                self.assertEqual(
+                    self.service._historical_validation_health()["quarantined_records"],
+                    expected)
+
+    async def test_clean_startup_reports_no_writes(self):
+        await self.history()
+        before = {p.name: p.read_bytes() for p in self.repository.root.rglob("*") if p.is_file()}
+        await self.service.start_historical_validation()
+        after = {p.name: p.read_bytes() for p in self.repository.root.rglob("*") if p.is_file()}
+        self.assertEqual(after, before)
+        report = (await self.service.async_health_summary())["historical_validation"]
+        self.assertEqual(report["state"], "complete")
+        self.assertEqual(report["writes"], "none")
+        self.assertEqual(report["lifecycle_writes"], "none")
+        self.assertEqual(report["quarantined_records"], {"plans": 0, "tasks": 0})
 
     async def test_failed_validation_is_reported_and_health_still_scans(self):
         await self.history()
@@ -832,6 +958,25 @@ class F3DifferentialTests(_DifferentialMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["assembly"], "rebuilt")
         await self.assert_incremental_equals_full("task_touched")
 
+    # R1-H1 with F3 composed: a quarantined ownership file for a verified
+    # plan, and no other change.
+    async def test_quarantine_only_task_change_agrees_with_full_projection(self):
+        verified, _ = await self._verified()
+        await self.service.async_health_summary()
+        warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(warm)["last_run"]["assembly"], "reused")
+        quarantine = self.service.task_repository.quarantine
+        quarantine.mkdir(parents=True, exist_ok=True)
+        corrupt = quarantine / f"{verified['plan_id']}.{'e' * 32}.1.corrupt"
+        corrupt.write_text("{", encoding="utf-8")
+        ordinary = await self.assert_outcome_equals_full("f3_task_quarantine_only")
+        self.assertEqual(ordinary, ("refused", ErrorCode.EXECUTION_TASK_STORAGE_ERROR))
+        corrupt.unlink()
+        # The refusal latches F3 readiness for this process; a restart's
+        # startup recovery clears it, so compare in-process only.
+        await self.assert_incremental_equals_full(
+            "f3_task_quarantine_removed", restart=False)
+
     # Kills mutant I9 (docs/evidence/hamcp097-mutations).
     async def test_removed_task_record_is_pruned(self):
         verified, result = await self._verified()
@@ -985,6 +1130,73 @@ class ProhibitedActionabilityTests(
         with self.assertRaises(GovernanceError) as full:
             await self.full_projection()
         self.assertEqual(full.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+    # R1-H1 (Codex round 1): no other record changes, so only quarantine
+    # state can invalidate the reused aggregate. Kills mutants Q1, Q3.
+    async def test_quarantine_only_task_change_is_not_served_from_the_aggregate(self):
+        quarantine = self.service.task_repository.quarantine
+        quarantine.mkdir(parents=True, exist_ok=True)
+        corrupt = quarantine / f"{self.consulted}.{'e' * 32}.1.corrupt"
+        corrupt.write_text("{")
+        ordinary = await self.outcome()
+        self.assertEqual(ordinary, ("refused", ErrorCode.EXECUTION_TASK_STORAGE_ERROR))
+        await self.assert_outcome_equals_full("task_quarantine_only")
+        # Removing it again is also a quarantine-only change.
+        corrupt.unlink()
+        back = await self.service.async_health_summary()
+        self.assertEqual(governed(back), governed(self.warm))
+        await self.assert_incremental_equals_full("task_quarantine_removed")
+        reused = await self.service.async_health_summary()
+        self.assertEqual(index_of(reused)["last_run"]["assembly"], "reused")
+        self.assertEqual(hot(reused)["terminal_plan_records_deserialized"], 0)
+
+    # Kills mutants Q2, Q8.
+    async def test_unknown_quarantine_listing_forbids_aggregate_reuse(self):
+        real = os.scandir
+        denied = {self.service.repository.quarantine, self.service.task_repository.quarantine}
+        for target in sorted(denied):
+            def scandir(path=".", target=target):
+                if Path(path) == target:
+                    raise PermissionError("quarantine listing denied")
+                return real(path)
+
+            with self.subTest(denied=target.parent.name):
+                with patch.object(storage_module.os, "scandir", side_effect=scandir):
+                    # Unknown twice in a row: still never reused.
+                    for _ in range(2):
+                        changed = await self.service.async_health_summary()
+                        self.assertEqual(index_of(changed)["last_run"]["assembly"], "rebuilt")
+                        self.assertEqual(governed(changed), governed(self.warm))
+        # An aggregate built without a known listing is never remembered; the
+        # next readable call rebuilds once and is then reused.
+        rebuilt = await self.service.async_health_summary()
+        self.assertEqual(index_of(rebuilt)["last_run"]["assembly"], "rebuilt")
+        warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(warm)["last_run"]["assembly"], "reused")
+
+    # The explicit quarantine generation invalidates even where a listing
+    # cannot show the event. Kills mutants Q4, Q5, Q6, Q7.
+    async def test_quarantine_and_restoration_bump_the_quarantine_generation(self):
+        plans, tasks = self.service.repository, self.service.task_repository
+        listings = (plans.quarantine_listing(), tasks.quarantine_listing())
+        with patch.object(plans, "quarantine_listing", return_value=listings[0]), \
+                patch.object(tasks, "quarantine_listing", return_value=listings[1]):
+            before = plans.quarantine_generation
+            result = plans.restore_quarantined_records()
+            self.assertEqual((result["restored"], result["retained"]), (0, 0))
+            self.assertEqual(plans.quarantine_generation, before + 1)
+            restored = await self.service.async_health_summary()
+            self.assertEqual(index_of(restored)["last_run"]["assembly"], "rebuilt")
+            self.assertEqual(governed(restored), governed(self.warm))
+        for repository, path in (
+            (plans, plans.root / f"{'c' * 32}.json"),
+            (tasks, tasks.root / f"{'c' * 32}.{'d' * 32}.json"),
+        ):
+            path.write_text("{", encoding="utf-8")
+            before = repository.quarantine_generation
+            repository._quarantine(path)
+            self.assertEqual(repository.quarantine_generation, before + 1)
+            self.assertFalse(path.exists())
 
     async def test_unknown_quarantine_listing_evaluates_every_plan(self):
         self.touch(self.other)

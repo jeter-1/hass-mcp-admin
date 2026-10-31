@@ -20,6 +20,7 @@ from .storage import (
     PlanRecordEvidence,
     TerminalRecordMemo,
     _read_record_text,
+    quarantine_listing,
 )
 from .task_models import (
     ExecutionTask,
@@ -89,6 +90,8 @@ class ExecutionTaskRepository:
         self.transaction_path = self.root / ".transaction.lock"
         self.retention_days = retention_days
         self.corruption_count = 0
+        # HAMCP-097: bumped by every quarantine; see ChangePlanRepository.
+        self.quarantine_generation = 0
         self.write_failures = 0
         self.event_write_failures = 0
         self.materialization_failures = 0
@@ -576,6 +579,11 @@ class ExecutionTaskRepository:
                 self._mark_navigation_current()
             return task
 
+    def quarantine_listing(self) -> tuple[str, ...] | None:
+        """Quarantined task names for health reuse; ``None`` when unknown."""
+        with self._lock:
+            return quarantine_listing(self.quarantine)
+
     def quarantined_plan_prefixes(self) -> frozenset[str] | None:
         """Plan identifiers that may own a quarantined task file.
 
@@ -813,6 +821,7 @@ class ExecutionTaskRepository:
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        self.quarantine_generation += 1
         parts = path.stem.split(".")
         if len(parts) == 2:
             self._remove_entry(parts[1])

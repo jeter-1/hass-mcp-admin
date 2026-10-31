@@ -885,8 +885,11 @@ class ChangeGovernanceService:
             "state": "not_started", "trigger": None, "elapsed_ms": None,
             "plans_validated": None, "tasks_collected": None,
             "deferred_lifecycle_plans": None, "assembly_prewarmed": None,
-            "failure_category": None,
+            "failure_category": None, "quarantined_records": None,
         }
+        # Plan and task corruption counts when validation started: the scan
+        # keeps the ordinary corrupt-record quarantine, and reports it.
+        self._historical_validation_corruption_baseline: tuple[int, int] | None = None
         self.historical_validation_wait_seconds = HISTORICAL_VALIDATION_WAIT_SECONDS
         self._health_cache = self._build_health_summary(
             include_provider_health=False
@@ -15576,10 +15579,16 @@ class ChangeGovernanceService:
 
         It performs the same snapshot and safety-detector pass as a health
         call and prewarms only write-free terminal projections. It never
-        resolves a lifecycle transition that would persist, so it writes
-        nothing; such a plan is left to the next health call.
+        resolves a lifecycle transition that would persist, so it makes no
+        lifecycle write; such a plan is left to the next health call. Like
+        every health scan it still quarantines a corrupt record it meets,
+        and reports how many it quarantined.
         """
         if self._historical_validation_job is None:
+            self._historical_validation_corruption_baseline = (
+                self.repository.corruption_count,
+                self.task_repository.corruption_count,
+            )
             self._historical_validation.update(
                 state="in_progress", trigger="startup"
             )
@@ -15615,13 +15624,43 @@ class ChangeGovernanceService:
             state.update(state="complete", **outcome)
         finally:
             state["elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
+            state["quarantined_records"] = self._historical_validation_quarantined()
+
+    def _historical_validation_quarantined(self) -> dict[str, int]:
+        """Corrupt records quarantined since validation started.
+
+        Counts plan and task records moved to quarantine (or removed when the
+        move fails) while the validation ran, whichever caller met them.
+        """
+        baseline = self._historical_validation_corruption_baseline
+        if baseline is None:
+            return {"plans": 0, "tasks": 0}
+        return {
+            "plans": self.repository.corruption_count - baseline[0],
+            "tasks": self.task_repository.corruption_count - baseline[1],
+        }
 
     def _historical_validation_health(self) -> dict[str, Any]:
-        """Bounded state and counts only; never paths or record content."""
+        """Bounded state and counts only; never paths or record content.
+
+        The validation never persists a lifecycle transition. ``writes`` is
+        ``none`` only when it quarantined nothing; otherwise it is
+        ``corrupt_record_quarantine`` with the counts in
+        ``quarantined_records`` (frozen when the validation ends).
+        """
+        quarantined = (
+            self._historical_validation["quarantined_records"]
+            or self._historical_validation_quarantined()
+        )
         return {
             **self._historical_validation,
             "scope": "startup_background",
-            "writes": "none",
+            "writes": (
+                "corrupt_record_quarantine"
+                if quarantined["plans"] or quarantined["tasks"] else "none"
+            ),
+            "lifecycle_writes": "none",
+            "quarantined_records": dict(quarantined),
             "wait_budget_ms": round(
                 self.historical_validation_wait_seconds * 1000.0, 3
             ),
@@ -16026,7 +16065,18 @@ class ChangeGovernanceService:
         plan_generation: int,
         task_generation: int,
     ) -> tuple[Any, ...] | None:
-        """Exact assembly input, or ``None`` when any record lacks byte proof."""
+        """Exact assembly input, or ``None`` when any record lacks byte proof.
+
+        Quarantine state is input too: a quarantined task file makes its
+        plan's ``get_for_plan`` refuse without touching any tracked record,
+        so the quarantine listings and the repositories' quarantine
+        generations (bumped by every quarantine and restoration) are part of
+        the fingerprint, and an unknown listing forbids reuse.
+        """
+        plan_quarantine = self.repository.quarantine_listing()
+        task_quarantine = self.task_repository.quarantine_listing()
+        if plan_quarantine is None or task_quarantine is None:
+            return None
         plan_part = []
         for plan in plans:
             proof = _health_record_proof(evidence.get(plan.plan_id))
@@ -16043,6 +16093,9 @@ class ChangeGovernanceService:
             plan_generation, task_generation,
             tuple(plan_part), tuple(task_part),
             tuple((plan.plan_id, code.value) for plan, code in failures),
+            self.repository.quarantine_generation,
+            self.task_repository.quarantine_generation,
+            plan_quarantine, task_quarantine,
             self.operational_gateway is not None,
             self.lifecycle_gateway is not None,
             self.helper_state_gateway is not None,

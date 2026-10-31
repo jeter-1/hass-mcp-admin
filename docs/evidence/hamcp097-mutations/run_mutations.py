@@ -110,6 +110,8 @@ T = "pending or startup-validation state untruthful"
 W = "startup validation not write-free"
 C = "incremental counters wrong"
 X = "approval actionability memo (c575723c) weakened"
+Q = "aggregate reused across a quarantine-only change (R1-H1)"
+M = "startup quarantine not reported as a write (R1-M1)"
 
 PROJECTION_KEY = '(proof, plan_tasks.get(plan.plan_id, ("absent",)), context)'
 DEEP_DISCARD = (
@@ -307,6 +309,48 @@ MUTATIONS = [
       (SV, "                actionable_keys=self._health_actionable_keys(\n"
            "                    plans, evidence, tasks, task_proofs),\n",
        "                actionable_keys=None,\n")),
+    # Q: R1-H1 quarantine invalidation of the aggregate (Codex round 1)
+    m("Q1-fingerprint-without-quarantine-listings", Q,
+      (SV, "            plan_quarantine, task_quarantine,\n", "")),
+    m("Q2-unknown-quarantine-listing-allows-reuse", Q,
+      (SV, "        if plan_quarantine is None or task_quarantine is None:\n"
+           "            return None\n        plan_part = []\n",
+       "        plan_part = []\n")),
+    m("Q3-fingerprint-without-task-quarantine-listing", Q,
+      (SV, "            plan_quarantine, task_quarantine,\n", "            plan_quarantine,\n")),
+    m("Q4-fingerprint-without-quarantine-generations", Q,
+      (SV, "            self.repository.quarantine_generation,\n"
+           "            self.task_repository.quarantine_generation,\n", "")),
+    m("Q5-restoration-does-not-bump-generation", Q,
+      (ST, "            self.quarantine_generation += 1\n"
+           "            self.quarantine_restoration = {\n",
+       "            self.quarantine_restoration = {\n")),
+    m("Q6-plan-quarantine-does-not-bump-generation", Q,
+      (ST, "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
+       "        self.corruption_count += 1\n")),
+    m("Q7-task-quarantine-does-not-bump-generation", Q,
+      (TS, "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
+       "        self.corruption_count += 1\n")),
+    m("Q8-quarantine-listing-error-reads-as-empty", Q,
+      (ST, "        except FileNotFoundError:\n            continue\n"
+           "        except OSError:\n            return None\n",
+       "        except FileNotFoundError:\n            continue\n"
+           "        except OSError:\n            return ()\n")),
+    # M: R1-M1 truthful startup write reporting (Codex round 1)
+    m("M1-writes-always-none", M,
+      (SV, '                "corrupt_record_quarantine"\n'
+           '                if quarantined["plans"] or quarantined["tasks"] else "none"\n',
+       '                "none"\n')),
+    m("M2-no-corruption-baseline", M,
+      (SV, "            self._historical_validation_corruption_baseline = (\n"
+           "                self.repository.corruption_count,\n"
+           "                self.task_repository.corruption_count,\n"
+           "            )\n", "")),
+    m("M3-quarantine-count-not-frozen", M,
+      (SV, '            state["quarantined_records"] = self._historical_validation_quarantined()\n', "")),
+    m("M4-task-quarantine-not-counted", M,
+      (SV, '            "tasks": self.task_repository.corruption_count - baseline[1],\n',
+       '            "tasks": 0,\n')),
 ]
 
 base.MODULES = ("test_hamcp097_incremental_health", "test_governance_async_health",
