@@ -1,5 +1,17 @@
 # HA MCP Engineering Server
 
+Staged, not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) makes
+`get_server_health(check_ha=false)` scale with changed records and active
+work instead of retained history. Terminal records and their projections
+are reused only for byte-identical input, and the historical validation
+now runs in the background at startup. Until it finishes, governance
+health says `historical_validation: in_progress` and reports every
+history-derived field as pending instead of guessing. Once it finishes,
+every field equals the full projection. No tool, input schema, persisted
+format or Home Assistant write changes. Rollback is reinstalling beta.51.
+Read the [2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md)
+and the [2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
+
 Engineering **2.4.1-beta.51** (HAMCP-252) lets the
 readback verifier compare a `sun` condition used as an action step
 (`after`/`before`/offsets, exact comparison only), which unblocks the A109

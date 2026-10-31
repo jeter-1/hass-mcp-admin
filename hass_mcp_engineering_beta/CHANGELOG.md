@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.1-beta.52 - Governance health scales with changed records and active work; startup historical validation (HAMCP-097) (staged)
+
+Builds on 2.4.1-beta.51 (#331). No tool, input schema, route, provider,
+dispatch, persisted format or Home Assistant write change.
+
+- `get_server_health` reuses a decoded terminal plan or task record, its
+  projection outcome and the assembled summary only for byte-identical
+  input: canonical path, inode, size, `mtime_ns` and SHA-256, plus the
+  detector context. The key is the safety-verdict cache key. Every record
+  is still read and hashed on every call. A warm call with no change
+  decodes 0 terminal records, and k changed records cost exactly k
+  re-projections. The entries are process memory only. They are discarded
+  on `deep_storage_audit=true` and on any scan error. Authorization paths
+  never read them.
+- The historical validation now starts in the background after startup
+  recovery. It writes nothing; a plan whose lifecycle would persist is
+  deferred to the next health call. A health call waits at most 3 s for
+  it. If validation is still running, governance answers
+  `status: "pending"`, `historical_validation.state: "in_progress"`, and
+  every history-derived field `null` and listed in `pending_fields`.
+- New counters: `plan_store_scaling.incremental_health_index` and
+  `governance.historical_validation`.
+
 ## 2.4.1-beta.51 - Sun condition steps verify exactly; verifier refusals name their location (HAMCP-252)
 
 Builds on 2.4.1-beta.50 (#330). No tool, input schema, dispatch or Home

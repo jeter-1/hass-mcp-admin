@@ -1,5 +1,95 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.4.1-beta.52 incremental governance health (HAMCP-097)
+
+`get_server_health(check_ha=false)` no longer re-decodes and re-projects
+the whole retained plan and task history on every call. Its cost now
+scales with records that changed and with active work. Every governance
+field is identical to the full projection once startup validation has
+completed.
+
+**What is reused.** Three process-memory entries are reused, and nothing
+is persisted:
+
+- A decoded terminal plan or task record. It is reused only when the
+  canonical path, `(st_ino, st_size, st_mtime_ns)` and SHA-256 of the
+  bytes read on *this* call equal those it was decoded from. This is the
+  same key as the safety-verdict cache. Health still reads, stats and
+  hashes every record on every call; only JSON decoding and model
+  construction are skipped. Active (non-terminal) records are always
+  decoded afresh.
+- A terminal plan's projection outcome. It is keyed by that plan's proof,
+  its task's proof (or its absence) and the detector context. The
+  classified outcomes recorded when it was computed are replayed on reuse.
+- The assembled summary. It is reused only when every proof and active
+  input is unchanged and the clock is still before the next lifecycle
+  deadline.
+
+All three are discarded on `deep_storage_audit=true`, on
+`deep_audit_plan_store`, and on any storage, governance or unexpected
+error during a scan. The next call then decodes afresh. Approval, apply,
+rollback and every other authorization path read persisted records
+exactly as before and never consult these entries. Assembly reuse does
+not increment `health_cache_hit_count`.
+
+**Counters.** `governance.plan_store_scaling.incremental_health_index`
+reports:
+
+- `scope` (`process_memory_only`), `persisted` (false), `key`,
+  `authoritative_reads_use_index` (false) and `terminal_records_only`;
+- `plan_records` and `task_records`: `{entries, hits, misses,
+  invalidations, discards}`. An invalidation is a reused path whose bytes
+  changed, or a record that disappeared;
+- `projection_entries`;
+- `last_run`: `{mode, projection_hits, projection_misses,
+  projection_invalidations, assembly}`. `mode` is `incremental`,
+  `deep_rescan` or `startup_validation`; `assembly` is `reused` or
+  `rebuilt`;
+- `totals`: `{projection_hits, projection_misses,
+  projection_invalidations, assembly_reuses, assembly_rebuilds,
+  discards}`.
+
+The existing `plan_store_scaling.hot_paths.governance_health` reports
+`terminal_plan_records_deserialized` and
+`terminal_task_records_deserialized` for the last call. A warm call with
+no record change reports 0 for both.
+
+**Startup historical validation.** After strict startup recovery, the
+add-on starts the historical validation in the background. It runs the
+same snapshot, persisted-record safety detector and terminal projection
+as a health call. It writes nothing: a plan whose lifecycle transition
+would persist (for example a due expiry) is deferred to the next health
+call. `governance.historical_validation` reports:
+
+- `state`: `not_started`, `in_progress`, `complete`, `failed` or
+  `cancelled`;
+- `trigger`, `elapsed_ms`, `plans_validated`, `tasks_collected`,
+  `deferred_lifecycle_plans`, `assembly_prewarmed` and
+  `failure_category` (a bounded error code or exception class name);
+- `scope` (`startup_background`), `writes` (`none`) and
+  `wait_budget_ms` (3000).
+
+**Truthful in-progress answer.** While validation is in progress, a
+health call waits at most `wait_budget_ms`. If validation is still
+running, the governance summary has:
+
+- `status: "pending"` and
+  `pending_reason: "historical_validation_in_progress"`;
+- every history-derived field set to `null` and listed in
+  `pending_fields`;
+- `historical_validation` with `waited_ms`.
+
+Only process-live fields (`active_apply_operations`,
+`plan_store_scaling`) and build-time constants are filled in. The
+constants are `enabled`, `external_approval_enabled`,
+`ingress_approval_ui_configured`, `approval_authority_version`,
+`projection_failure_category_model`, and the fixed `f3` "unavailable"
+descriptor when no F3 runtime is composed. No count is reported before it
+is validated. `deep_storage_audit=true` always waits for validation to
+finish and then performs its full rescan. A failed or cancelled
+validation does not block health: the next call performs the ordinary
+full scan.
+
 ## 2.4.1-beta.49 health warning classification (HAMCP-198, HAMCP-120)
 
 **Projection-failure identification.** `get_server_health.governance` adds
