@@ -45,5 +45,3 @@
       501    0.002    0.000    0.048    0.000 ha_mcp_engineering/governance/storage.py:1017(_load)
      3606    0.023    0.000    0.048    0.000 stdlib/pathlib.py:387(_parse_path)
      2683    0.034    0.000    0.048    0.000 {built-in method _io.open}
-
-

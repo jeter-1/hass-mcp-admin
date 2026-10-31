@@ -61,7 +61,7 @@
    "seconds": 146.3
   },
   {
-   "id": "I9-task-record-prune-removed",
+   "id": "I9-task-prune-removed",
    "class": "invalidation or discard removed",
    "replacements": [
     [
@@ -70,7 +70,7 @@
      "            pass\n"
     ]
    ],
-   "log_path": "mutation-logs/I9-task-record-prune-removed.log",
+   "log_path": "mutation-logs/I9-task-prune-removed.log",
    "returncode": 1,
    "killed": true,
    "timed_out": false,

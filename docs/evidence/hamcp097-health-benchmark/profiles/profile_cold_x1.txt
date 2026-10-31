@@ -45,5 +45,3 @@
      2642    0.003    0.000    1.265    0.000 ha_mcp_engineering/governance/policy.py:1823(<genexpr>)
    912633    1.189    0.000    1.189    0.000 {method 'sub' of 're.Pattern' objects}
    267422    0.090    0.000    1.182    0.000 ha_mcp_engineering/sanitization.py:572(_category_for_key)
-
-

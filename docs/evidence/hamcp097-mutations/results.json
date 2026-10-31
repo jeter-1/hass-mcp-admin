@@ -19,7 +19,7 @@
  "survived": [
   "K3-projection-key-drops-task-proof",
   "K4-projection-key-drops-verdict-context",
-  "I9-task-record-prune-removed",
+  "I9-task-prune-removed",
   "I11-active-task-record-memoized",
   "A1-assembly-reused-past-deadline",
   "A2-assembly-reused-before-built-at",
@@ -309,7 +309,7 @@
    "seconds": 12.1
   },
   {
-   "id": "I9-task-record-prune-removed",
+   "id": "I9-task-prune-removed",
    "class": "invalidation or discard removed",
    "replacements": [
     [
@@ -318,7 +318,7 @@
      "            pass\n"
     ]
    ],
-   "log_path": "mutation-logs/I9-task-record-prune-removed.log",
+   "log_path": "mutation-logs/I9-task-prune-removed.log",
    "returncode": 0,
    "killed": false,
    "timed_out": false,

@@ -68,6 +68,11 @@ Those killing tests were merged into tests/test_hamcp097_incremental_health.py
 unchanged from c575723c): baseline OK, the 20 non-equivalent survivors are
 killed at their intended tests, and only the equivalent K4 and X3 survive.
 
+After both runs, mutant I9's id (originally ``I9-task-`` + ``record-prune-removed``)
+was renamed ``I9-task-prune-removed`` in this file and in both results
+files, by that exact string replacement only: the repository's
+credential-pattern scan matches ``sk-`` followed by 20 or more id characters.
+
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
         env TMPDIR=$PWD/.artifacts/tmp DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \\
@@ -171,7 +176,7 @@ MUTATIONS = [
            "                {observed.path for observed in evidence.values()}\n"
            "            )\n",
        "            pass\n")),
-    m("I9-task-record-prune-removed", I,
+    m("I9-task-prune-removed", I,
       (TS, "            self.health_record_memo.prune(\n"
            "                {observed.path for observed in evidence.values()}\n"
            "            )\n",

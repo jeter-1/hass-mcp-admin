@@ -45,5 +45,3 @@
 248357/5941    0.252    0.000    0.522    0.000 stdlib/copy.py:118(deepcopy)
 20619/5941    0.090    0.000    0.503    0.000 stdlib/copy.py:217(_deepcopy_dict)
     18810    0.036    0.000    0.451    0.000 ha_mcp_engineering/governance/normalize.py:1040(stable_hash)
-
-
