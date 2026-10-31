@@ -446,9 +446,9 @@ class DisclosureTests(_Base):
         self.assertIn('"loaded_state": "not_verified"', source)
         documents = {
             "design": ROOT / "docs" / "HAMCP_071_SCENE_CONFIGURATION_DESIGN.md",
-            "release notes": ROOT / "docs" / "V2_4_1_BETA52_RELEASE_NOTES.md",
+            "release notes": ROOT / "docs" / "V2_4_1_BETA53_RELEASE_NOTES.md",
             "changelog": ROOT / "hass_mcp_engineering_beta" / "CHANGELOG.md",
-            "acceptance": ROOT / "docs" / "V2_4_1_BETA52_ACCEPTANCE.md",
+            "acceptance": ROOT / "docs" / "V2_4_1_BETA53_ACCEPTANCE.md",
         }
         for label, path in documents.items():
             body = " ".join(path.read_text(encoding="utf-8").split())

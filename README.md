@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Staged, not yet released: Engineering **2.4.1-beta.52** (HAMCP-071) builds
+Staged, not yet released: Engineering **2.4.1-beta.53** (HAMCP-071) builds
 a governed edit of one existing UI-managed scene, inactive. The new tool
 `create_scene_configuration_plan` proposes `name`, `icon` and member-state
 (`entities`) changes to one scene by `config_id`. It sends one
@@ -18,10 +18,27 @@ persistence until a signed Core registry sequence (planned 16) names
 fingerprint or existing schema changes. Static tools 79; advertised catalog
 107 (108 with the optional YAML reader). Rollback is reinstalling beta.51.
 Read the
-[2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md) and
-[2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
+[2.4.1-beta.53 release notes](docs/V2_4_1_BETA53_RELEASE_NOTES.md) and
+[2.4.1-beta.53 acceptance contract](docs/V2_4_1_BETA53_ACCEPTANCE.md).
 
 It builds on beta.51 and the releases below.
+
+Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
+`get_server_health(check_ha=false)` from re-decoding and re-projecting
+unchanged history. Terminal records and their projections are reused only
+for byte-identical input, and the historical validation now runs in the
+background at startup. Cost still grows with retained history, because
+every record is still read and hashed: the offline benchmark of the
+governance component gives a warm median of 698 ms at today's 501 plans
+and 1,398 ms at 1,226 plans, and a first call after 5 changes of 1,739 ms
+at 1,226 plans. That miss of the 1.5 s warm SLO is accepted and tracked as
+HAMCP-259. Until it finishes, governance
+health says `historical_validation: in_progress` and reports every
+history-derived field as pending instead of guessing. Once it finishes,
+every field equals the full projection. No tool, input schema, persisted
+format or Home Assistant write changes. Rollback is reinstalling beta.51.
+Read the [2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md)
+and the [2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
 
 Engineering **2.4.1-beta.51** (HAMCP-252) lets the
 readback verifier compare a `sun` condition used as an action step

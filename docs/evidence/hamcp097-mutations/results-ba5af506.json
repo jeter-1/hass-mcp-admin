@@ -1,0 +1,1397 @@
+{
+ "source": ".artifacts/h097-frozen-ba5af506/src",
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp097_incremental_health",
+   "test_governance_async_health",
+   "test_f3_health_responsiveness",
+   "test_beta34_historical_policy_projection",
+   "test_governance_health_cache"
+  ],
+  "returncode": 0,
+  "tests": 135,
+  "seconds": 115.7,
+  "summary": "OK"
+ },
+ "mutation_count": 68,
+ "killed": 66,
+ "survived": [
+  "K4-projection-key-drops-verdict-context",
+  "X3-actionable-key-drops-context"
+ ],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "K1-record-memo-ignores-sha256",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "            and entry[1] == observed.sha256\n",
+     "            and True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K1-record-memo-ignores-sha256.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_same_stat_byte_change_is_never_served_from_the_index (test_hamcp097_incremental_health.LegacyDifferentialTests.test_same_stat_byte_change_is_never_served_from_the_index)"
+   ],
+   "seconds": 20.2
+  },
+  {
+   "id": "K2-record-memo-ignores-stat",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "            and entry[0] == observed.stat\n",
+     "            and True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K2-record-memo-ignores-stat.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_k_changed_records_cause_exactly_k_reprojections (test_hamcp097_incremental_health.LegacyScalingTests.test_k_changed_records_cause_exactly_k_reprojections)"
+   ],
+   "seconds": 22.5
+  },
+  {
+   "id": "K3-projection-key-drops-task-proof",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "(proof, plan_tasks.get(plan.plan_id, (\"absent\",)), context)",
+     "(proof, context)"
+    ]
+   ],
+   "log_path": "mutation-logs/K3-projection-key-drops-task-proof.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reprojects_its_plan_and_rebuilds (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reprojects_its_plan_and_rebuilds)"
+   ],
+   "seconds": 10.2
+  },
+  {
+   "id": "K4-projection-key-drops-verdict-context",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "(proof, plan_tasks.get(plan.plan_id, (\"absent\",)), context)",
+     "(proof, plan_tasks.get(plan.plan_id, (\"absent\",)))"
+    ]
+   ],
+   "log_path": "mutation-logs/K4-projection-key-drops-verdict-context.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 117.6
+  },
+  {
+   "id": "K5-active-plan-projection-memoized",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        if proof is not None and is_terminal_plan(plan)\n",
+     "                        if proof is not None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/K5-active-plan-projection-memoized.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_crossed_deadline_during_projection_is_not_cached_past_expiry (test_governance_async_health.AsyncHealthTests.test_crossed_deadline_during_projection_is_not_cached_past_expiry)"
+   ],
+   "seconds": 33.3
+  },
+  {
+   "id": "I1-deep-audit-plan-store-keeps-index",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        self._safety_verdict_invalidate()\n        self._health_incremental_discard()\n        plan = self.repository.rebuild_navigation_index()",
+     "        self._safety_verdict_invalidate()\n        plan = self.repository.rebuild_navigation_index()"
+    ]
+   ],
+   "log_path": "mutation-logs/I1-deep-audit-plan-store-keeps-index.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_errors_and_deep_audit_discard_the_index (test_hamcp097_incremental_health.LegacyDifferentialTests.test_errors_and_deep_audit_discard_the_index)"
+   ],
+   "seconds": 17.1
+  },
+  {
+   "id": "I2-deep-scan-no-discard",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    self._health_incremental_discard()\n",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I2-deep-scan-no-discard.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_reevaluates_every_plan (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_deep_audit_reevaluates_every_plan)"
+   ],
+   "seconds": 25.9
+  },
+  {
+   "id": "I3-deep-scan-reuses-record-memo",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    self._health_incremental_discard()\n",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    pass\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "evidence=evidence, reuse_terminal=not deep)",
+     "evidence=evidence, reuse_terminal=True)"
+    ]
+   ],
+   "log_path": "mutation-logs/I3-deep-scan-reuses-record-memo.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_waits_for_validation_then_rescans (test_hamcp097_incremental_health.HistoricalValidationTests.test_deep_audit_waits_for_validation_then_rescans)"
+   ],
+   "seconds": 11.9
+  },
+  {
+   "id": "I4-deep-scan-replays-projection-memo",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    self._health_incremental_discard()\n",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    pass\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "if not deep and key is not None and memo is not None and memo[0] == key:",
+     "if key is not None and memo is not None and memo[0] == key:"
+    ]
+   ],
+   "log_path": "mutation-logs/I4-deep-scan-replays-projection-memo.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_reevaluates_every_plan (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_deep_audit_reevaluates_every_plan)"
+   ],
+   "seconds": 26.1
+  },
+  {
+   "id": "I5-governance-error-keeps-index",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    self._safety_verdict_invalidate()\n                    self._health_incremental_discard()\n                if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR",
+     "                    self._safety_verdict_invalidate()\n                if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR"
+    ]
+   ],
+   "log_path": "mutation-logs/I5-governance-error-keeps-index.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantined_task_file_is_evaluated_against_storage (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_quarantined_task_file_is_evaluated_against_storage)"
+   ],
+   "seconds": 26.2
+  },
+  {
+   "id": "I6-storage-error-keeps-index",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                self._safety_verdict_invalidate()\n                self._health_incremental_discard()\n                if fence is not None and corruption_before",
+     "                self._safety_verdict_invalidate()\n                if fence is not None and corruption_before"
+    ]
+   ],
+   "log_path": "mutation-logs/I6-storage-error-keeps-index.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_corruption_discards_nothing_hidden_and_matches_deep (test_hamcp097_incremental_health.LegacyDifferentialTests.test_corruption_discards_nothing_hidden_and_matches_deep)"
+   ],
+   "seconds": 16.0
+  },
+  {
+   "id": "I7-unexpected-exception-keeps-index",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                self._health_cache_key = None\n                self._health_incremental_discard()\n                raise\n            except BaseException:",
+     "                self._health_cache_key = None\n                raise\n            except BaseException:"
+    ]
+   ],
+   "log_path": "mutation-logs/I7-unexpected-exception-keeps-index.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_validation_is_reported_and_health_still_scans (test_hamcp097_incremental_health.HistoricalValidationTests.test_failed_validation_is_reported_and_health_still_scans)"
+   ],
+   "seconds": 12.2
+  },
+  {
+   "id": "I8-plan-record-prune-removed",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "            self.health_record_memo.prune(\n                {observed.path for observed in evidence.values()}\n            )\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I8-plan-record-prune-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_removed_record_is_pruned_from_every_index (test_hamcp097_incremental_health.LegacyDifferentialTests.test_removed_record_is_pruned_from_every_index)"
+   ],
+   "seconds": 19.0
+  },
+  {
+   "id": "I9-task-prune-removed",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            self.health_record_memo.prune(\n                {observed.path for observed in evidence.values()}\n            )\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I9-task-prune-removed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_removed_task_record_is_pruned (test_hamcp097_incremental_health.F3DifferentialTests.test_removed_task_record_is_pruned)"
+   ],
+   "seconds": 7.9
+  },
+  {
+   "id": "I10-active-plan-record-memoized",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "                if terminal:\n                    self.health_record_memo.store(observed, plan)\n",
+     "                if True:\n                    self.health_record_memo.store(observed, plan)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I10-active-plan-record-memoized.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_approval_change_invalidates_then_warm_reads_remain_stable (test_governance_async_health.AsyncHealthTests.test_approval_change_invalidates_then_warm_reads_remain_stable)"
+   ],
+   "seconds": 31.4
+  },
+  {
+   "id": "I11-active-task-record-memoized",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "                if terminal:\n                    self.health_record_memo.store(observed, task)\n",
+     "                if True:\n                    self.health_record_memo.store(observed, task)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I11-active-task-record-memoized.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_active_task_is_decoded_on_every_call (test_hamcp097_incremental_health.F3DifferentialTests.test_active_task_is_decoded_on_every_call)"
+   ],
+   "seconds": 3.0
+  },
+  {
+   "id": "I12-stale-projection-entries-kept",
+   "class": "invalidation or discard removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    del self._health_projection_memo[plan_id]\n                    incremental[\"projection_invalidations\"] += 1\n",
+     "                    pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/I12-stale-projection-entries-kept.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_restoration_is_reflected (test_hamcp097_incremental_health.F3DifferentialTests.test_quarantine_restoration_is_reflected)"
+   ],
+   "seconds": 6.9
+  },
+  {
+   "id": "A1-assembly-reused-past-deadline",
+   "class": "assembly reused without exact input or past its deadline",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "and (memo[\"deadline\"] is None or now < memo[\"deadline\"])",
+     "and True"
+    ]
+   ],
+   "log_path": "mutation-logs/A1-assembly-reused-past-deadline.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_async_backoff_deadline_is_not_served_from_a_reused_assembly (test_hamcp097_incremental_health.RestartBackoffAssemblyTests.test_async_backoff_deadline_is_not_served_from_a_reused_assembly)"
+   ],
+   "seconds": 28.0
+  },
+  {
+   "id": "A2-assembly-reused-before-built-at",
+   "class": "assembly reused without exact input or past its deadline",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "now >= memo[\"built_at\"]\n",
+     "True\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A2-assembly-reused-before-built-at.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_clock_moving_backwards_rebuilds_the_assembly (test_hamcp097_incremental_health.LegacyDifferentialTests.test_clock_moving_backwards_rebuilds_the_assembly)"
+   ],
+   "seconds": 15.5
+  },
+  {
+   "id": "A3-assembly-reused-without-fingerprint-match",
+   "class": "assembly reused without exact input or past its deadline",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "if fingerprint is None or memo is None or memo[\"fingerprint\"] != fingerprint:",
+     "if fingerprint is None or memo is None:"
+    ]
+   ],
+   "log_path": "mutation-logs/A3-assembly-reused-without-fingerprint-match.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_operational_lifecycle_and_manual_review_equal_full (test_hamcp097_incremental_health.F3DifferentialTests.test_operational_lifecycle_and_manual_review_equal_full)"
+   ],
+   "seconds": 4.2
+  },
+  {
+   "id": "A4-fingerprint-omits-tasks",
+   "class": "assembly reused without exact input or past its deadline",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            tuple(plan_part), tuple(task_part),\n",
+     "            tuple(plan_part), (),\n"
+    ]
+   ],
+   "log_path": "mutation-logs/A4-fingerprint-omits-tasks.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reevaluates_its_plan_actionability (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reevaluates_its_plan_actionability)"
+   ],
+   "seconds": 9.0
+  },
+  {
+   "id": "A5-deep-audit-reuses-assembly",
+   "class": "assembly reused without exact input or past its deadline",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    self._health_incremental_discard()\n",
+     "                if deep:\n                    # A deep audit re-derives everything from fresh decodes.\n                    pass\n"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "if not deep and self._health_assembly_reusable(fingerprint):",
+     "if self._health_assembly_reusable(fingerprint):"
+    ]
+   ],
+   "log_path": "mutation-logs/A5-deep-audit-reuses-assembly.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_reevaluates_every_plan (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_deep_audit_reevaluates_every_plan)"
+   ],
+   "seconds": 29.2
+  },
+  {
+   "id": "T1-pending-fills-history-field",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "    \"approval_authority_version\", \"projection_failure_category_model\",\n)",
+     "    \"approval_authority_version\", \"projection_failure_category_model\",\n    \"total_plans\",\n)"
+    ]
+   ],
+   "log_path": "mutation-logs/T1-pending-fills-history-field.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_in_progress_call_answers_with_explicit_pending_markers (test_hamcp097_incremental_health.HistoricalValidationTests.test_in_progress_call_answers_with_explicit_pending_markers)"
+   ],
+   "seconds": 19.6
+  },
+  {
+   "id": "T2-pending-fields-omitted",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        summary[\"pending_fields\"] = pending\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/T2-pending-fields-omitted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "ERROR test_in_progress_call_answers_with_explicit_pending_markers (test_hamcp097_incremental_health.HistoricalValidationTests.test_in_progress_call_answers_with_explicit_pending_markers)"
+   ],
+   "seconds": 19.9
+  },
+  {
+   "id": "T3-deep-audit-does-not-wait",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if deep_storage_audit:\n                await asyncio.wait({job})\n",
+     "            if False:\n                await asyncio.wait({job})\n"
+    ]
+   ],
+   "log_path": "mutation-logs/T3-deep-audit-does-not-wait.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_waits_for_validation_then_rescans (test_hamcp097_incremental_health.HistoricalValidationTests.test_deep_audit_waits_for_validation_then_rescans)"
+   ],
+   "seconds": 18.1
+  },
+  {
+   "id": "T4-wait-budget-ignored",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "{job}, timeout=self.historical_validation_wait_seconds",
+     "{job}, timeout=0"
+    ]
+   ],
+   "log_path": "mutation-logs/T4-wait-budget-ignored.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_finishing_within_the_budget_answers_in_full (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_finishing_within_the_budget_answers_in_full)"
+   ],
+   "seconds": 21.0
+  },
+  {
+   "id": "T5-pending-after-completion",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if not job.done():\n                    return self._historical_validation_pending_summary(",
+     "                if True:\n                    return self._historical_validation_pending_summary("
+    ]
+   ],
+   "log_path": "mutation-logs/T5-pending-after-completion.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_finishing_within_the_budget_answers_in_full (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_finishing_within_the_budget_answers_in_full)"
+   ],
+   "seconds": 15.9
+  },
+  {
+   "id": "T6-failed-state-not-recorded",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            state.update(state=\"failed\", failure_category=type(exc).__name__)",
+     "            pass"
+    ]
+   ],
+   "log_path": "mutation-logs/T6-failed-state-not-recorded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_failed_validation_is_reported_and_health_still_scans (test_hamcp097_incremental_health.HistoricalValidationTests.test_failed_validation_is_reported_and_health_still_scans)"
+   ],
+   "seconds": 12.9
+  },
+  {
+   "id": "T7-cancelled-state-not-recorded",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            state.update(state=\"cancelled\")\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/T7-cancelled-state-not-recorded.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_cancelled_validation_is_reported (test_hamcp097_incremental_health.HistoricalValidationTests.test_cancelled_validation_is_reported)"
+   ],
+   "seconds": 11.2
+  },
+  {
+   "id": "T8-superseded-not-classified",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "\"superseded\"\n                    if exc.details.get(\"reason\") == \"health_snapshot_superseded\"\n                    else exc.code.value",
+     "exc.code.value"
+    ]
+   ],
+   "log_path": "mutation-logs/T8-superseded-not-classified.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_superseded_validation_is_classified_without_detail (test_hamcp097_incremental_health.HistoricalValidationTests.test_superseded_validation_is_classified_without_detail)"
+   ],
+   "seconds": 13.7
+  },
+  {
+   "id": "T9-validation-launched-twice",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if self._historical_validation_job is None:\n            self._historical_validation_corruption_baseline = (",
+     "        if True:\n            self._historical_validation_corruption_baseline = ("
+    ]
+   ],
+   "log_path": "mutation-logs/T9-validation-launched-twice.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_in_progress_call_answers_with_explicit_pending_markers (test_hamcp097_incremental_health.HistoricalValidationTests.test_in_progress_call_answers_with_explicit_pending_markers)"
+   ],
+   "seconds": 12.7
+  },
+  {
+   "id": "T10-f3-descriptor-reported-pending",
+   "class": "pending or startup-validation state untruthful",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            static.add(\"f3\")\n",
+     "            pass\n"
+    ]
+   ],
+   "log_path": "mutation-logs/T10-f3-descriptor-reported-pending.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_in_progress_call_answers_with_explicit_pending_markers (test_hamcp097_incremental_health.HistoricalValidationTests.test_in_progress_call_answers_with_explicit_pending_markers)"
+   ],
+   "seconds": 17.6
+  },
+  {
+   "id": "W1-warmup-resolves-persisting-lifecycle",
+   "class": "startup validation not write-free",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "if warmup and self._health_lifecycle_would_persist(plan):",
+     "if False:"
+    ]
+   ],
+   "log_path": "mutation-logs/W1-warmup-resolves-persisting-lifecycle.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_defers_an_expired_challenge_without_writing (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_defers_an_expired_challenge_without_writing)"
+   ],
+   "seconds": 14.9
+  },
+  {
+   "id": "W2-would-persist-always-false",
+   "class": "startup validation not write-free",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        return bool(\n            self._plan_expiration_applies(plan)\n",
+     "        return False and bool(\n            self._plan_expiration_applies(plan)\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W2-would-persist-always-false.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_defers_an_expired_challenge_without_writing (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_defers_an_expired_challenge_without_writing)"
+   ],
+   "seconds": 14.6
+  },
+  {
+   "id": "W3-would-persist-ignores-challenge-expiry",
+   "class": "startup validation not write-free",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            or self._challenge_has_expired(plan)\n        )\n\n    async def _async_health_scan(",
+     "        )\n\n    async def _async_health_scan("
+    ]
+   ],
+   "log_path": "mutation-logs/W3-would-persist-ignores-challenge-expiry.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_defers_an_expired_challenge_without_writing (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_defers_an_expired_challenge_without_writing)"
+   ],
+   "seconds": 14.6
+  },
+  {
+   "id": "W4-assembly-prewarmed-despite-deferral",
+   "class": "startup validation not write-free",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if deferred == 0:\n",
+     "        if True:\n"
+    ]
+   ],
+   "log_path": "mutation-logs/W4-assembly-prewarmed-despite-deferral.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_validation_defers_an_expired_challenge_without_writing (test_hamcp097_incremental_health.HistoricalValidationTests.test_validation_defers_an_expired_challenge_without_writing)"
+   ],
+   "seconds": 14.1
+  },
+  {
+   "id": "C1-record-memo-hits-not-counted",
+   "class": "incremental counters wrong",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "            self.hits += 1\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C1-record-memo-hits-not-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_record_memo_counts_hits_and_misses (test_hamcp097_incremental_health.LegacyDifferentialTests.test_record_memo_counts_hits_and_misses)"
+   ],
+   "seconds": 18.5
+  },
+  {
+   "id": "C2-projection-hits-not-counted",
+   "class": "incremental counters wrong",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        incremental[\"projection_hits\"] += 1\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C2-projection-hits-not-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_lifecycle_steps_equal_full_projection (test_hamcp097_incremental_health.LegacyDifferentialTests.test_lifecycle_steps_equal_full_projection)"
+   ],
+   "seconds": 17.5
+  },
+  {
+   "id": "C3-projection-invalidations-not-counted",
+   "class": "incremental counters wrong",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                            del self._health_projection_memo[plan.plan_id]\n                            incremental[\"projection_invalidations\"] += 1\n",
+     "                            del self._health_projection_memo[plan.plan_id]\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C3-projection-invalidations-not-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reprojects_its_plan_and_rebuilds (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reprojects_its_plan_and_rebuilds)"
+   ],
+   "seconds": 9.9
+  },
+  {
+   "id": "C4-terminal-decode-counted-on-hit",
+   "class": "incremental counters wrong",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "                        evidence[reused.plan_id] = observed\n",
+     "                        evidence[reused.plan_id] = observed\n                        self.terminal_records_deserialized += 1\n"
+    ]
+   ],
+   "log_path": "mutation-logs/C4-terminal-decode-counted-on-hit.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_operational_lifecycle_and_manual_review_equal_full (test_hamcp097_incremental_health.F3DifferentialTests.test_operational_lifecycle_and_manual_review_equal_full)"
+   ],
+   "seconds": 3.9
+  },
+  {
+   "id": "C5-classified-outcomes-not-replayed",
+   "class": "incremental counters wrong",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        for category in memo[2]:\n                            METRICS.record_classified_outcome(category)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/C5-classified-outcomes-not-replayed.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_warm_projection_replays_classified_outcomes (test_hamcp097_incremental_health.LegacyDifferentialTests.test_warm_projection_replays_classified_outcomes)"
+   ],
+   "seconds": 19.3
+  },
+  {
+   "id": "X1-actionable-key-drops-plan-proof",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "keys[plan.plan_id] = (proof, plan_tasks, context)",
+     "keys[plan.plan_id] = (plan_tasks, context)"
+    ]
+   ],
+   "log_path": "mutation-logs/X1-actionable-key-drops-plan-proof.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_changed_plan_reconsults_task_storage (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_changed_plan_reconsults_task_storage)"
+   ],
+   "seconds": 25.5
+  },
+  {
+   "id": "X2-actionable-key-drops-task-proofs",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "keys[plan.plan_id] = (proof, plan_tasks, context)",
+     "keys[plan.plan_id] = (proof, tuple(item[0] for item in plan_tasks), context)"
+    ]
+   ],
+   "log_path": "mutation-logs/X2-actionable-key-drops-task-proofs.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reevaluates_its_plan_actionability (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reevaluates_its_plan_actionability)"
+   ],
+   "seconds": 8.6
+  },
+  {
+   "id": "X3-actionable-key-drops-context",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "keys[plan.plan_id] = (proof, plan_tasks, context)",
+     "keys[plan.plan_id] = (proof, plan_tasks)"
+    ]
+   ],
+   "log_path": "mutation-logs/X3-actionable-key-drops-context.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 112.8
+  },
+  {
+   "id": "X4-actionable-key-for-non-terminal-plan",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if (proof is None or not is_terminal_plan(plan)\n                    or any(item[1] is None for item in plan_tasks)):\n",
+     "            if (proof is None\n                    or any(item[1] is None for item in plan_tasks)):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X4-actionable-key-for-non-terminal-plan.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_non_terminal_plan_is_evaluated_on_every_assembly (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_non_terminal_plan_is_evaluated_on_every_assembly)"
+   ],
+   "seconds": 26.1
+  },
+  {
+   "id": "X5-actionable-key-without-task-proof-guard",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if (proof is None or not is_terminal_plan(plan)\n                    or any(item[1] is None for item in plan_tasks)):\n",
+     "            if (proof is None or not is_terminal_plan(plan)):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X5-actionable-key-without-task-proof-guard.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_terminal_plan_with_an_unproven_task_has_no_actionability_key (test_hamcp097_incremental_health.F3DifferentialTests.test_terminal_plan_with_an_unproven_task_has_no_actionability_key)"
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "X6-actionable-ignores-quarantine",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if (key is not None and quarantined is not None\n                    and plan.plan_id not in quarantined\n",
+     "            if (key is not None\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X6-actionable-ignores-quarantine.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_only_task_change_agrees_with_full_projection (test_hamcp097_incremental_health.F3DifferentialTests.test_quarantine_only_task_change_agrees_with_full_projection)"
+   ],
+   "seconds": 6.6
+  },
+  {
+   "id": "X7-actionable-ignores-quarantine-membership",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    and plan.plan_id not in quarantined\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/X7-actionable-ignores-quarantine-membership.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_only_task_change_agrees_with_full_projection (test_hamcp097_incremental_health.F3DifferentialTests.test_quarantine_only_task_change_agrees_with_full_projection)"
+   ],
+   "seconds": 6.5
+  },
+  {
+   "id": "X8-actionable-replays-without-key-match",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    and memo is not None and memo[0] == key):\n",
+     "                    and memo is not None):\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X8-actionable-replays-without-key-match.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reevaluates_its_plan_actionability (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reevaluates_its_plan_actionability)"
+   ],
+   "seconds": 8.7
+  },
+  {
+   "id": "X9-actionable-memo-not-pruned",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        for plan_id in [item for item in self._health_actionable_memo if item not in flags]:\n            del self._health_actionable_memo[plan_id]\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/X9-actionable-memo-not-pruned.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_removed_plan_leaves_the_actionability_memo (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_removed_plan_leaves_the_actionability_memo)"
+   ],
+   "seconds": 26.6
+  },
+  {
+   "id": "X10-actionable-miss-keeps-stale-entry",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            self._health_actionable_memo.pop(plan.plan_id, None)\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/X10-actionable-miss-keeps-stale-entry.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_full_rebuild_without_keys_drops_actionability_entries (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_full_rebuild_without_keys_drops_actionability_entries)"
+   ],
+   "seconds": 25.9
+  },
+  {
+   "id": "X11-discard-keeps-actionable-memo",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            self._health_actionable_memo.clear()\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/X11-discard-keeps-actionable-memo.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_deep_audit_reevaluates_every_plan (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_deep_audit_reevaluates_every_plan)"
+   ],
+   "seconds": 25.7
+  },
+  {
+   "id": "X12-quarantine-listing-error-reads-as-empty",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            except OSError:\n                return None\n        return frozenset(\n",
+     "            except OSError:\n                return frozenset()\n        return frozenset(\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X12-quarantine-listing-error-reads-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unreadable_quarantine_listing_evaluates_every_plan (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_unreadable_quarantine_listing_evaluates_every_plan)"
+   ],
+   "seconds": 27.0
+  },
+  {
+   "id": "X13-quarantine-listing-without-corrupt-filter",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            for name in names\n            if name.endswith(\".corrupt\")\n",
+     "            for name in names\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X13-quarantine-listing-without-corrupt-filter.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_only_corrupt_quarantine_files_force_reevaluation (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_only_corrupt_quarantine_files_force_reevaluation)"
+   ],
+   "seconds": 25.9
+  },
+  {
+   "id": "X14-scan-assembly-without-actionable-keys",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        actionable_keys=self._health_actionable_keys(\n                            plans, evidence, tasks, task_proofs),\n",
+     "                        actionable_keys=None,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X14-scan-assembly-without-actionable-keys.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_task_record_change_reevaluates_its_plan_actionability (test_hamcp097_incremental_health.F3DifferentialTests.test_task_record_change_reevaluates_its_plan_actionability)"
+   ],
+   "seconds": 8.8
+  },
+  {
+   "id": "X15-validation-assembly-without-actionable-keys",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                actionable_keys=self._health_actionable_keys(\n                    plans, evidence, tasks, task_proofs),\n",
+     "                actionable_keys=None,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/X15-validation-assembly-without-actionable-keys.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_startup_validation_prewarms_the_actionability_memo (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_startup_validation_prewarms_the_actionability_memo)"
+   ],
+   "seconds": 26.5
+  },
+  {
+   "id": "Q1-fingerprint-without-quarantine-listings",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            plan_quarantine, task_quarantine,\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/Q1-fingerprint-without-quarantine-listings.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_only_task_change_agrees_with_full_projection (test_hamcp097_incremental_health.F3DifferentialTests.test_quarantine_only_task_change_agrees_with_full_projection)"
+   ],
+   "seconds": 6.7
+  },
+  {
+   "id": "Q2-unknown-quarantine-listing-allows-reuse",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if plan_quarantine is None or task_quarantine is None:\n            return None\n        plan_part = []\n",
+     "        plan_part = []\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q2-unknown-quarantine-listing-allows-reuse.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_quarantine_listing_forbids_aggregate_reuse (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_unknown_quarantine_listing_forbids_aggregate_reuse)"
+   ],
+   "seconds": 26.8
+  },
+  {
+   "id": "Q3-fingerprint-without-task-listing",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            plan_quarantine, task_quarantine,\n",
+     "            plan_quarantine,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q3-fingerprint-without-task-listing.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_only_task_change_agrees_with_full_projection (test_hamcp097_incremental_health.F3DifferentialTests.test_quarantine_only_task_change_agrees_with_full_projection)"
+   ],
+   "seconds": 6.7
+  },
+  {
+   "id": "Q4-fingerprint-without-quarantine-generations",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            self.repository.quarantine_generation,\n            self.task_repository.quarantine_generation,\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/Q4-fingerprint-without-quarantine-generations.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_lifecycle_steps_equal_full_projection (test_hamcp097_incremental_health.LegacyDifferentialTests.test_lifecycle_steps_equal_full_projection)"
+   ],
+   "seconds": 17.8
+  },
+  {
+   "id": "Q5-restoration-does-not-bump-generation",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "            self.quarantine_generation += 1\n            self.quarantine_restoration = {\n",
+     "            self.quarantine_restoration = {\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q5-restoration-does-not-bump-generation.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_lifecycle_steps_equal_full_projection (test_hamcp097_incremental_health.LegacyDifferentialTests.test_lifecycle_steps_equal_full_projection)"
+   ],
+   "seconds": 17.7
+  },
+  {
+   "id": "Q6-plan-quarantine-does-not-bump-generation",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
+     "        self.corruption_count += 1\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q6-plan-quarantine-does-not-bump-generation.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_and_restoration_bump_the_quarantine_generation (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_quarantine_and_restoration_bump_the_quarantine_generation)"
+   ],
+   "seconds": 26.0
+  },
+  {
+   "id": "Q7-quarantined-task-not-bumped",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
+     "        self.corruption_count += 1\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q7-quarantined-task-not-bumped.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_quarantine_and_restoration_bump_the_quarantine_generation (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_quarantine_and_restoration_bump_the_quarantine_generation)"
+   ],
+   "seconds": 26.3
+  },
+  {
+   "id": "Q8-quarantine-listing-error-reads-as-empty",
+   "class": "aggregate reused across a quarantine-only change (R1-H1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "        except FileNotFoundError:\n            continue\n        except OSError:\n            return None\n",
+     "        except FileNotFoundError:\n            continue\n        except OSError:\n            return ()\n"
+    ]
+   ],
+   "log_path": "mutation-logs/Q8-quarantine-listing-error-reads-as-empty.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_unknown_quarantine_listing_forbids_aggregate_reuse (test_hamcp097_incremental_health.ProhibitedActionabilityTests.test_unknown_quarantine_listing_forbids_aggregate_reuse)"
+   ],
+   "seconds": 26.9
+  },
+  {
+   "id": "M1-writes-always-none",
+   "class": "startup quarantine not reported as a write (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                \"corrupt_record_quarantine\"\n                if quarantined[\"plans\"] or quarantined[\"tasks\"] else \"none\"\n",
+     "                \"none\"\n"
+    ]
+   ],
+   "log_path": "mutation-logs/M1-writes-always-none.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_startup_quarantine_is_reported_as_a_write (test_hamcp097_incremental_health.HistoricalValidationTests.test_startup_quarantine_is_reported_as_a_write)"
+   ],
+   "seconds": 13.0
+  },
+  {
+   "id": "M2-no-corruption-baseline",
+   "class": "startup quarantine not reported as a write (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            self._historical_validation_corruption_baseline = (\n                self.repository.corruption_count,\n                self.task_repository.corruption_count,\n            )\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/M2-no-corruption-baseline.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_startup_quarantine_is_reported_as_a_write (test_hamcp097_incremental_health.HistoricalValidationTests.test_startup_quarantine_is_reported_as_a_write)"
+   ],
+   "seconds": 12.9
+  },
+  {
+   "id": "M3-quarantine-count-not-frozen",
+   "class": "startup quarantine not reported as a write (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            state[\"quarantined_records\"] = self._historical_validation_quarantined()\n",
+     ""
+    ]
+   ],
+   "log_path": "mutation-logs/M3-quarantine-count-not-frozen.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_startup_quarantine_is_reported_as_a_write (test_hamcp097_incremental_health.HistoricalValidationTests.test_startup_quarantine_is_reported_as_a_write)"
+   ],
+   "seconds": 13.0
+  },
+  {
+   "id": "M4-quarantined-task-not-counted",
+   "class": "startup quarantine not reported as a write (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            \"tasks\": self.task_repository.corruption_count - baseline[1],\n",
+     "            \"tasks\": 0,\n"
+    ]
+   ],
+   "log_path": "mutation-logs/M4-quarantined-task-not-counted.log",
+   "returncode": 1,
+   "killed": true,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [
+    "FAIL test_startup_quarantine_is_reported_as_a_write (test_hamcp097_incremental_health.HistoricalValidationTests.test_startup_quarantine_is_reported_as_a_write)"
+   ],
+   "seconds": 13.0
+  }
+ ]
+}

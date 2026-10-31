@@ -7,7 +7,7 @@ entities. It is Engineering-native and built **inactive**. It refuses with
 sequence names its profile. The planned sequence is 16, the November
 signing batch that adds 2026.11.x with all profiles (OD-13 in
 [`HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md`](HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md)).
-It is staged for 2.4.1-beta.52.
+It is staged for 2.4.1-beta.53.
 
 Saving a scene never activates it. The tool never sends `scene.turn_on`,
 `scene.apply`, `scene.create`, `scene.reload` or `scene.delete`, and it never

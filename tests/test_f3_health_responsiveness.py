@@ -17,6 +17,7 @@ from tests import test_hamcp135_governed_rollback as inverse_fixtures
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.f3_runtime.health_scan import HealthScanFence
 from ha_mcp_engineering.f3_runtime import repository as child_storage
+from ha_mcp_engineering.governance import task_storage as task_storage_module
 from ha_mcp_engineering.governance.task_storage import (
     ExecutionTaskStorageError,
     _TASK_NAVIGATION_FIELDS,
@@ -76,12 +77,21 @@ class ChildCollectionTests(unittest.IsolatedAsyncioTestCase):
                 counts[path.name] += 1
                 boundary_ticks.append(len(ticks))
             return original(path, *args, **kwargs)
+        # HAMCP-097: parent envelopes are read through the fstat-bound reader
+        # so their bytes carry a proof; count those reads at the same boundary.
+        original_bound = task_storage_module._read_record_text
+        def read_bound(path):
+            if path.parent == parents.root and path.suffix == '.json':
+                counts[path.name] += 1
+                boundary_ticks.append(len(ticks))
+            return original_bound(path)
         heartbeat = asyncio.create_task(pulse())
         await asyncio.sleep(0)
         gc.callbacks.append(observe_gc)
         started, cpu = time.perf_counter(), time.thread_time()
         try:
-            with patch.object(Path, 'read_text', read):
+            with patch.object(Path, 'read_text', read), \
+                    patch.object(task_storage_module, '_read_record_text', read_bound):
                 summary = await self.fixture.service.async_health_summary()
                 data = summary["f3"]
         finally:

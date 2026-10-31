@@ -3,9 +3,32 @@
 from __future__ import annotations
 
 from collections import Counter, deque
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import statistics
+import threading
 import time
+from typing import Iterator
+
+
+_CLASSIFIED_CAPTURE = threading.local()
+
+
+@contextmanager
+def capture_classified_outcomes() -> Iterator[list[str]]:
+    """Collect this thread's classified-outcome categories while recording.
+
+    HAMCP-097: health reuses a memoized per-record projection result and
+    replays the exact categories that projection recorded, so counters stay
+    identical to a full re-projection. Recording itself is unchanged.
+    """
+    previous = getattr(_CLASSIFIED_CAPTURE, "categories", None)
+    captured: list[str] = []
+    _CLASSIFIED_CAPTURE.categories = captured
+    try:
+        yield captured
+    finally:
+        _CLASSIFIED_CAPTURE.categories = previous
 
 
 @dataclass
@@ -192,6 +215,9 @@ class RuntimeMetrics:
         Returns true when the category must not increment a terminal analysis
         or provider-health failure counter.
         """
+        captured = getattr(_CLASSIFIED_CAPTURE, "categories", None)
+        if captured is not None:
+            captured.append(category)
         value = str(category)[:64]
         if value in {
             "entity_not_found", "automation_not_found", "dashboard_not_found",

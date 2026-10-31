@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Scene configuration edit, inactive (2.4.1-beta.52, HAMCP-071)
+## Scene configuration edit, inactive (2.4.1-beta.53, HAMCP-071)
 
 `create_scene_configuration_plan` is a native governed planning tool:
 - category `governed_configuration`, routing `engineering_native`,

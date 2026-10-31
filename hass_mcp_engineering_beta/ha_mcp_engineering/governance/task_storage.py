@@ -16,6 +16,12 @@ import re
 import threading
 from typing import Callable
 
+from .storage import (
+    PlanRecordEvidence,
+    TerminalRecordMemo,
+    _read_record_text,
+    quarantine_listing,
+)
 from .task_models import (
     ExecutionTask,
     ExecutionTaskState,
@@ -84,6 +90,9 @@ class ExecutionTaskRepository:
         self.transaction_path = self.root / ".transaction.lock"
         self.retention_days = retention_days
         self.corruption_count = 0
+        # HAMCP-097: bumped by every quarantine; see ChangePlanRepository.
+        self.quarantine_generation = 0
+        self.quarantine_outcomes = {"moved": 0, "removed": 0, "failed": 0}
         self.write_failures = 0
         self.event_write_failures = 0
         self.materialization_failures = 0
@@ -112,6 +121,7 @@ class ExecutionTaskRepository:
         self.records_deserialized = 0
         self.terminal_records_deserialized = 0
         self.full_history_scan_count = 0
+        self.health_record_memo = TerminalRecordMemo()
         self._observed_directory_token: tuple[int, int] | None = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -570,6 +580,32 @@ class ExecutionTaskRepository:
                 self._mark_navigation_current()
             return task
 
+    def quarantine_listing(self) -> tuple[str, ...] | None:
+        """Quarantined task names for health reuse; ``None`` when unknown."""
+        with self._lock:
+            return quarantine_listing(self.quarantine)
+
+    def quarantined_plan_prefixes(self) -> frozenset[str] | None:
+        """Plan identifiers that may own a quarantined task file.
+
+        Health assembly only. The result is a superset of every
+        ``get_for_plan`` quarantine match; ``None`` means unknown, and the
+        caller then evaluates every plan against storage afresh.
+        """
+
+        with self._lock:
+            try:
+                names = [entry.name for entry in os.scandir(self.quarantine)]
+            except FileNotFoundError:
+                return frozenset()
+            except OSError:
+                return None
+        return frozenset(
+            name.split(".", 1)[0]
+            for name in names
+            if name.endswith(".corrupt")
+        )
+
     def get_for_plan(self, plan_id: str) -> ExecutionTask | None:
         if not PLAN_ID.fullmatch(plan_id):
             return None
@@ -642,13 +678,33 @@ class ExecutionTaskRepository:
         *,
         quarantine_corrupt: bool = True,
         before_quarantine: Callable[[], None] | None = None,
+        evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> ExecutionTask | None:
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            if evidence is None:
+                text, observed = path.read_text(encoding="utf-8"), None
+            else:
+                text, observed = _read_record_text(path)
+                reused = (
+                    self.health_record_memo.lookup(observed)
+                    if reuse_terminal else None
+                )
+                if reused is not None:
+                    evidence[reused.task_id] = observed
+                    return reused
+            value = json.loads(text)
             task = ExecutionTask.from_dict(value)
             self.records_deserialized += 1
-            if task.state in TERMINAL_TASK_STATES:
+            terminal = task.state in TERMINAL_TASK_STATES
+            if terminal:
                 self.terminal_records_deserialized += 1
+            if observed is not None:
+                evidence[task.task_id] = observed
+                if terminal:
+                    self.health_record_memo.store(observed, task)
+                else:
+                    self.health_record_memo.forget(observed.path)
             return task
         except FileNotFoundError:
             return None
@@ -694,13 +750,18 @@ class ExecutionTaskRepository:
             )
 
     async def collect_health(
-        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None]
+        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None],
+        evidence: dict[str, PlanRecordEvidence] | None = None,
+        reuse_terminal: bool = False,
     ) -> list[ExecutionTask]:
         """One validated parent read per call, with staged navigation repair.
 
         Only detached navigation containers are staged. The canonical writer's
         existing metadata projection is reused on the owner loop; no durable
         authority, repository lock or partial index crosses an await.
+        ``evidence`` and ``reuse_terminal`` behave as for plan collection
+        (HAMCP-097): every record is still read and digested, and only a
+        terminal task whose exact bytes were already decoded is reused.
         """
         generation, directory = self.generation, self._directory_token()
         def check() -> None:
@@ -724,7 +785,10 @@ class ExecutionTaskRepository:
                 path = Path(entry.path)
                 watch(path)
                 with self._lock:
-                    task = self._load(path, before_quarantine=check)
+                    task = self._load(
+                        path, before_quarantine=check, evidence=evidence,
+                        reuse_terminal=reuse_terminal,
+                    )
                 check()
                 if task is None:
                     raise ExecutionTaskStorageError("Execution-task record is missing")
@@ -735,6 +799,10 @@ class ExecutionTaskRepository:
                     raise ExecutionTaskStorageError("Execution-task ownership is ambiguous")
                 staged._put_entry(task, count_update=False)
                 tasks.append(task)
+        if evidence is not None:
+            self.health_record_memo.prune(
+                {observed.path for observed in evidence.values()}
+            )
         changed = self._observed_directory_token != directory
         for name in _TASK_NAVIGATION_FIELDS:
             await asyncio.sleep(0)
@@ -754,6 +822,7 @@ class ExecutionTaskRepository:
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        self.quarantine_generation += 1
         parts = path.stem.split(".")
         if len(parts) == 2:
             self._remove_entry(parts[1])
@@ -766,9 +835,16 @@ class ExecutionTaskRepository:
             os.replace(path, destination)
         except OSError:
             try:
-                path.unlink(missing_ok=True)
+                path.unlink()
+            except FileNotFoundError:
+                # Already gone: this call wrote nothing.
+                return
             except OSError:
-                pass
+                self.quarantine_outcomes["failed"] += 1
+                return
+            self.quarantine_outcomes["removed"] += 1
+        else:
+            self.quarantine_outcomes["moved"] += 1
 
     def cleanup(self, *, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)

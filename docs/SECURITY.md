@@ -613,7 +613,7 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
-The `2.4.1-beta.52` slice (HAMCP-071) adds a governed edit of one existing
+The `2.4.1-beta.53` slice (HAMCP-071) adds a governed edit of one existing
 UI-managed scene, **unreachable at release**. It switches on with the
 sequence-16 signing. It adds no permission, add-on option, role, fallback
 or delegated provider.

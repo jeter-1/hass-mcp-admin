@@ -31,7 +31,7 @@ from ..errors import (
     HomeAssistantApiError,
 )
 from ..logging_config import get_logger, log_event
-from ..observability import METRICS
+from ..observability import METRICS, capture_classified_outcomes
 from ..request_context import (
     REQUEST_ID_PATTERN,
     current_caller_id,
@@ -868,10 +868,47 @@ class ChangeGovernanceService:
         }
         self._health_read_lock = asyncio.Lock()
         self._health_validation_job: asyncio.Task[float] | None = None
+        # HAMCP-097: health-only incremental state, in process memory only.
+        # Each entry is bound to the exact bytes (path, inode, size, mtime_ns,
+        # SHA-256) of every record it was derived from; authorization never
+        # reads it and deep_storage_audit discards it before a full rescan.
+        self._health_projection_memo: dict[
+            str, tuple[tuple[Any, ...], ErrorCode | None, tuple[str, ...]]
+        ] = {}
+        self._health_assembly_memo: dict[str, Any] | None = None
+        self._health_actionable_memo: dict[str, tuple[tuple[Any, ...], bool]] = {}
+        self._health_actionable_run = {"hits": 0, "misses": 0}
+        self._health_incremental_totals = {
+            "projection_hits": 0, "projection_misses": 0,
+            "projection_invalidations": 0, "assembly_reuses": 0,
+            "assembly_rebuilds": 0, "discards": 0,
+        }
+        self._health_incremental_last_run: dict[str, Any] | None = None
+        # HAMCP-097: the startup historical validation runs the same scan as
+        # health (snapshot, detector, write-free projection) in the background.
+        # Until it completes, a health call waits a bounded budget and then
+        # answers with explicit pending markers instead of unvalidated counts.
+        self._historical_validation_job: asyncio.Task[None] | None = None
+        self._historical_validation: dict[str, Any] = {
+            "state": "not_started", "trigger": None, "elapsed_ms": None,
+            "plans_validated": None, "tasks_collected": None,
+            "deferred_lifecycle_plans": None, "assembly_prewarmed": None,
+            "failure_category": None, "quarantine_outcomes": None,
+        }
+        # Plan and task quarantine outcomes when validation started: the scan
+        # keeps the ordinary corrupt-record quarantine, and reports it.
+        self._historical_validation_quarantine_baseline: (
+            tuple[dict[str, int], dict[str, int]] | None
+        ) = None
+        self.historical_validation_wait_seconds = HISTORICAL_VALIDATION_WAIT_SECONDS
         self._health_cache = self._build_health_summary(
             include_provider_health=False
         )
         self._health_cache_rebuild_count += 1
+        # Every field a complete governance health summary carries.
+        self._health_summary_fields = (
+            *self._health_cache, *_HEALTH_OVERLAY_FIELDS,
+        )
 
     def _timestamp(self) -> str:
         return self.now().isoformat()
@@ -999,6 +1036,7 @@ class ChangeGovernanceService:
         # HAMCP-171: a deliberate deep audit also discards the in-memory
         # health safety verdicts so the next health scan validates afresh.
         self._safety_verdict_invalidate()
+        self._health_incremental_discard()
         plan = self.repository.rebuild_navigation_index()
         task = self.task_repository.rebuild_navigation_index()
         self._rebuild_projection_failure_index()
@@ -15729,20 +15767,220 @@ class ChangeGovernanceService:
         Only the pure detector sees detached records in the worker. Lifecycle
         resolution, repository writes and cache publication stay on the owner
         loop. Cancellation abandons publication, never the single-worker bound.
-        Every record is still collected and parsed on every call; only the
-        safety detector is skipped for a record whose exact bytes already
-        passed it in this process. ``deep_storage_audit`` discards every
-        cached verdict first and re-validates every record.
+        Every record is still read and digested on every call. The safety
+        detector is skipped for a record whose exact bytes already passed it
+        in this process, and a terminal record's decode and projection are
+        reused only for byte-identical input (HAMCP-097).
+        ``deep_storage_audit`` discards every cached verdict and derived entry
+        first and re-validates and re-decodes every record.
+
+        While the startup historical validation is still running, a call waits
+        at most ``historical_validation_wait_seconds`` for it. If it is still
+        running then, the call answers with ``historical_validation.state ==
+        "in_progress"`` and every history-derived field explicitly pending.
+        A deep audit always waits for it and then rescans everything.
         """
         requested_at = time.monotonic()
+        job = self._historical_validation_job
+        if job is not None and not job.done():
+            if deep_storage_audit:
+                await asyncio.wait({job})
+            else:
+                await asyncio.wait(
+                    {job}, timeout=self.historical_validation_wait_seconds
+                )
+                if not job.done():
+                    return self._historical_validation_pending_summary(
+                        requested_at
+                    )
+        result = await self._async_health_scan(
+            requested_at=requested_at,
+            home_assistant_status=home_assistant_status,
+            home_assistant_websocket_status=home_assistant_websocket_status,
+            deep_storage_audit=deep_storage_audit,
+        )
+        assert result is not None
+        return result
+
+    def start_historical_validation(self) -> asyncio.Task[None]:
+        """Launch the startup historical validation once, in the background.
+
+        It performs the same snapshot and safety-detector pass as a health
+        call and prewarms only write-free terminal projections. It never
+        resolves a lifecycle transition that would persist, so it makes no
+        lifecycle write; such a plan is left to the next health call. Like
+        every health scan it still quarantines a corrupt record it meets,
+        and reports how many it quarantined.
+        """
+        if self._historical_validation_job is None:
+            self._historical_validation_quarantine_baseline = (
+                dict(self.repository.quarantine_outcomes),
+                dict(self.task_repository.quarantine_outcomes),
+            )
+            self._historical_validation.update(
+                state="in_progress", trigger="startup"
+            )
+            self._historical_validation_job = asyncio.create_task(
+                self._run_historical_validation(),
+                name="governance-historical-validation",
+            )
+        return self._historical_validation_job
+
+    async def _run_historical_validation(self) -> None:
+        started = time.monotonic()
+        state = self._historical_validation
+        try:
+            outcome = await self._async_health_scan(
+                requested_at=started, warmup=True
+            )
+        except asyncio.CancelledError:
+            state.update(state="cancelled")
+            raise
+        except GovernanceError as exc:
+            state.update(
+                state="failed",
+                failure_category=(
+                    "superseded"
+                    if exc.details.get("reason") == "health_snapshot_superseded"
+                    else exc.code.value
+                ),
+            )
+        except Exception as exc:
+            state.update(state="failed", failure_category=type(exc).__name__)
+        else:
+            assert outcome is not None
+            state.update(state="complete", **outcome)
+        finally:
+            state["elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
+            state["quarantine_outcomes"] = self._historical_validation_quarantine()
+
+    def _historical_validation_quarantine(self) -> dict[str, dict[str, int]]:
+        """Quarantine outcomes since validation started, by outcome and kind.
+
+        Counts plan and task records that were moved to quarantine, removed
+        when the move failed, or left in place because both failed, while
+        the validation ran, whichever caller met them.
+        """
+        current = (
+            self.repository.quarantine_outcomes,
+            self.task_repository.quarantine_outcomes,
+        )
+        baseline = self._historical_validation_quarantine_baseline or current
+        return {
+            outcome: {
+                kind: now[outcome] - base[outcome]
+                for kind, now, base in zip(("plans", "tasks"), current, baseline)
+            }
+            for outcome in ("moved", "removed", "failed")
+        }
+
+    def _historical_validation_health(self) -> dict[str, Any]:
+        """Bounded state and counts only; never paths or record content.
+
+        The validation never persists a lifecycle transition. ``writes`` is
+        ``corrupt_record_quarantine`` only when a quarantine move or removal
+        completed, with those counts in ``quarantined_records``. A record
+        whose move and removal both failed is not a write: it is counted in
+        ``quarantine_failures`` and makes ``failed_writes``
+        ``corrupt_record_quarantine``. Counts freeze when validation ends.
+        """
+        outcomes = (
+            self._historical_validation["quarantine_outcomes"]
+            or self._historical_validation_quarantine()
+        )
+        completed = {
+            kind: outcomes["moved"][kind] + outcomes["removed"][kind]
+            for kind in ("plans", "tasks")
+        }
+        failed = dict(outcomes["failed"])
+        return {
+            **self._historical_validation,
+            "scope": "startup_background",
+            "writes": (
+                "corrupt_record_quarantine" if any(completed.values()) else "none"
+            ),
+            "failed_writes": (
+                "corrupt_record_quarantine" if any(failed.values()) else "none"
+            ),
+            "lifecycle_writes": "none",
+            "quarantined_records": completed,
+            "quarantine_failures": failed,
+            "quarantine_outcomes": {
+                outcome: dict(counts) for outcome, counts in outcomes.items()
+            },
+            "wait_budget_ms": round(
+                self.historical_validation_wait_seconds * 1000.0, 3
+            ),
+        }
+
+    def _historical_validation_pending_summary(
+        self, requested_at: float
+    ) -> dict[str, Any]:
+        """Truthful governance health while startup validation is running.
+
+        No history-derived value is reported: each such field is ``None`` and
+        named in ``pending_fields``. Only process-live state and build-time
+        constants (which no record can change) are filled in.
+        """
+        static = set(_HEALTH_STATIC_FIELDS)
+        if self.f3_runtime is None:
+            # Without a runtime this is the fixed "unavailable" descriptor.
+            static.add("f3")
+        pending = sorted(
+            set(self._health_summary_fields) - _HEALTH_PENDING_LIVE_FIELDS
+            - static
+        )
+        summary: dict[str, Any] = {field: None for field in pending}
+        for field in sorted(static):
+            summary[field] = deepcopy(self._health_cache[field])
+        summary["status"] = "pending"
+        summary["pending_reason"] = "historical_validation_in_progress"
+        summary["pending_fields"] = pending
+        summary["historical_validation"] = {
+            **self._historical_validation_health(),
+            "waited_ms": round((time.monotonic() - requested_at) * 1000.0, 3),
+        }
+        summary["active_apply_operations"] = sum(
+            lock.locked() for lock in self._target_locks.values()
+        )
+        summary["plan_store_scaling"] = {
+            "authorization_source": "persisted_records",
+            "derived_state_role": "navigation_and_status_only",
+            "safety_verdict_cache": self._safety_verdict_health(),
+            "incremental_health_index": self._health_incremental_health(),
+        }
+        return summary
+
+    def _health_lifecycle_would_persist(self, plan: ChangePlan) -> bool:
+        """Whether ``_resolve_lifecycle`` would write this plan now."""
+        return bool(
+            self._plan_expiration_applies(plan)
+            or self._terminal_challenge_requires_invalidation(plan)
+            or self._challenge_has_expired(plan)
+        )
+
+    async def _async_health_scan(
+        self,
+        *,
+        requested_at: float,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
+        deep_storage_audit: bool = False,
+        warmup: bool = False,
+    ) -> dict[str, Any] | None:
+        """One serialized health scan; ``warmup`` is the write-free startup run."""
         phases = {
+            "historical_validation_wait_ms": (
+                0.0 if warmup else (time.monotonic() - requested_at) * 1000.0
+            ),
             "reader_wait_ms": 0.0, "abandoned_worker_wait_ms": 0.0,
             "snapshot_ms": 0.0, "validation_wait_ms": 0.0,
             "worker_elapsed_ms": 0.0, "projection_ms": 0.0,
             "assembly_ms": 0.0, "overlay_ms": 0.0,
         }
+        lock_requested = time.monotonic()
         async with self._health_read_lock:
-            phases["reader_wait_ms"] = (time.monotonic() - requested_at) * 1000.0
+            phases["reader_wait_ms"] = (time.monotonic() - lock_requested) * 1000.0
             phase_started = time.monotonic()
             previous = self._health_validation_job
             if previous is not None:
@@ -15782,20 +16020,26 @@ class ChangeGovernanceService:
                 if self.f3_runtime is not None:
                     sources.extend(self.f3_runtime._health_fence_sources()[2:])
                 fence = HealthScanFence(tuple(sources))
+                deep = bool(deep_storage_audit) and not warmup
+                if deep:
+                    # A deep audit re-derives everything from fresh decodes.
+                    self._health_incremental_discard()
                 try:
                     evidence: dict[str, PlanRecordEvidence] = {}
                     plans = await self.repository.collect_health(
                         checkpoint=fence.check,
                         watch=lambda path: fence.watch(path, code=ErrorCode.CHANGE_PLAN_STORAGE_ERROR),
-                        evidence=evidence)
+                        evidence=evidence, reuse_terminal=not deep)
                 except (GovernanceError, ChangePlanStorageError):
                     raise
                 except Exception as exc:
                     raise ChangePlanStorageError("Governance health collection failed") from exc
                 plan_generation = self.repository.generation
                 try:
+                    task_evidence: dict[str, PlanRecordEvidence] = {}
                     tasks = await self.task_repository.collect_health(
-                        checkpoint=fence.check, watch=fence.watch)
+                        checkpoint=fence.check, watch=fence.watch,
+                        evidence=task_evidence, reuse_terminal=not deep)
                 except (GovernanceError, ExecutionTaskStorageError):
                     raise
                 except Exception as exc:
@@ -15806,7 +16050,7 @@ class ChangeGovernanceService:
                 phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
                 pending, verdict_run = self._safety_verdict_lookup(
-                    plans, evidence, deep=bool(deep_storage_audit)
+                    plans, evidence, deep=deep
                 )
                 # The job is always submitted, even when every verdict hit, so
                 # the single-worker drain and cancellation contract is unchanged.
@@ -15834,20 +16078,75 @@ class ChangeGovernanceService:
                 phase_started = time.monotonic()
                 resolved: list[ChangePlan] = []
                 failures: list[tuple[ChangePlan, ErrorCode]] = []
+                context = self._safety_verdict_context()
+                task_proofs = {
+                    task.task_id: _health_record_proof(task_evidence.get(task.task_id))
+                    for task in tasks
+                }
+                plan_tasks = {
+                    task.plan_id: task_proofs[task.task_id] for task in tasks
+                }
+                incremental = {
+                    "mode": (
+                        "startup_validation" if warmup
+                        else "deep_rescan" if deep else "incremental"
+                    ),
+                    "projection_hits": 0, "projection_misses": 0,
+                    "projection_invalidations": 0, "assembly": "rebuilt",
+                    "actionable_hits": 0, "actionable_misses": 0,
+                }
+                deferred = 0
                 for plan in plans:
                     await asyncio.sleep(0)
                     fence.check()
                     self._require_health_generations(plan_generation, task_generation)
-                    try:
-                        if plan.policy_decision is not None:
-                            self._require_projection_policy_snapshot(plan)
-                        self._resolve_lifecycle(plan)
-                    except GovernanceError as exc:
-                        if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
-                            raise
-                        failures.append((plan, exc.code))
+                    proof = _health_record_proof(evidence.get(plan.plan_id))
+                    key = (
+                        (proof, plan_tasks.get(plan.plan_id, ("absent",)), context)
+                        if proof is not None and is_terminal_plan(plan)
+                        and plan_tasks.get(plan.plan_id, ("absent",)) is not None
+                        else None
+                    )
+                    memo = self._health_projection_memo.get(plan.plan_id)
+                    if not deep and key is not None and memo is not None and memo[0] == key:
+                        # Same exact plan and task bytes: replay the identical
+                        # outcome, including its classified-outcome counters.
+                        code = memo[1]
+                        for category in memo[2]:
+                            METRICS.record_classified_outcome(category)
+                        incremental["projection_hits"] += 1
                     else:
+                        if memo is not None:
+                            del self._health_projection_memo[plan.plan_id]
+                            incremental["projection_invalidations"] += 1
+                        if warmup and self._health_lifecycle_would_persist(plan):
+                            # The background run never persists; the next
+                            # health call resolves (and may persist) it.
+                            deferred += 1
+                            continue
+                        incremental["projection_misses"] += 1
+                        with capture_classified_outcomes() as categories:
+                            try:
+                                if plan.policy_decision is not None:
+                                    self._require_projection_policy_snapshot(plan)
+                                self._resolve_lifecycle(plan)
+                            except GovernanceError as exc:
+                                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                                    raise
+                                code = exc.code
+                            else:
+                                code = None
+                        if warmup and self.repository.generation != plan_generation:
+                            raise RuntimeError("historical validation must not persist")
+                        if key is not None and self.repository.generation == plan_generation:
+                            # Terminal and nothing persisted: the outcome is a
+                            # pure function of the keyed bytes and context.
+                            self._health_projection_memo[plan.plan_id] = (
+                                key, code, tuple(categories))
+                    if code is None:
                         resolved.append(plan)
+                    else:
+                        failures.append((plan, code))
                     if self.repository.generation != plan_generation:
                         # Only this synchronous owner section may persist this
                         # plan's expiry; no other loop task runs until the yield.
@@ -15855,18 +16154,48 @@ class ChangeGovernanceService:
                         fence.files[path] = fence.stamp(path)
                         fence.tokens = (self.repository._directory_token(), *fence.tokens[1:])
                         plan_generation = self.repository.generation
+                        # The decoded object now differs from its old bytes.
+                        self.repository.health_record_memo.forget(str(path))
+                        self._health_projection_memo.pop(plan.plan_id, None)
+                        evidence.pop(plan.plan_id, None)
                 fence.check()
                 self._require_health_generations(plan_generation, task_generation)
+                seen_plans = {plan.plan_id for plan in plans}
+                for plan_id in [item for item in self._health_projection_memo if item not in seen_plans]:
+                    del self._health_projection_memo[plan_id]
+                    incremental["projection_invalidations"] += 1
                 phases["projection_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
-                self._health_cache = self._build_health_summary(
-                    include_provider_health=False,
-                    resolved_history=(resolved, sorted(failures, key=lambda item: item[0].plan_id)),
-                    captured_plan_generation=plan_generation,
-                    captured_built_at=built_at, collected_tasks=tasks,
+                failures.sort(key=lambda item: item[0].plan_id)
+                if warmup:
+                    return self._historical_validation_finish(
+                        fence, plans, tasks, evidence, task_proofs, resolved,
+                        failures, deferred, incremental,
+                        plan_generation, task_generation, built_at,
+                    )
+                fingerprint = self._health_assembly_fingerprint(
+                    plans, evidence, tasks, task_proofs, failures,
+                    plan_generation, task_generation,
                 )
+                if not deep and self._health_assembly_reusable(fingerprint):
+                    self._health_assembly_restore()
+                    incremental["assembly"] = "reused"
+                else:
+                    self._health_assembly_memo = None
+                    self._health_cache = self._build_health_summary(
+                        include_provider_health=False,
+                        resolved_history=(resolved, failures),
+                        captured_plan_generation=plan_generation,
+                        captured_built_at=built_at, collected_tasks=tasks,
+                        actionable_keys=self._health_actionable_keys(
+                            plans, evidence, tasks, task_proofs),
+                    )
+                    self._health_cache_rebuild_count += 1
+                    self._health_assembly_remember(fingerprint)
+                    incremental["actionable_hits"] = self._health_actionable_run["hits"]
+                    incremental["actionable_misses"] = self._health_actionable_run["misses"]
                 phases["assembly_ms"] = (time.monotonic() - phase_started) * 1000.0
-                self._health_cache_rebuild_count += 1
+                self._health_incremental_record(incremental)
                 phase_started = time.monotonic()
                 f3 = None
                 if self.f3_runtime is not None:
@@ -15896,6 +16225,7 @@ class ChangeGovernanceService:
             except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
                 self._health_cache_key = None
                 self._safety_verdict_invalidate()
+                self._health_incremental_discard()
                 if fence is not None and corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
                     fence.check_after_failure()
                 if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
@@ -15907,10 +16237,16 @@ class ChangeGovernanceService:
                 self._health_cache_key = None
                 if exc.details.get("reason") != "health_snapshot_superseded":
                     self._safety_verdict_invalidate()
+                    self._health_incremental_discard()
                 if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                         and exc.details.get("reason") != "health_snapshot_superseded"
                         and self.f3_runtime is not None):
                     self.f3_runtime._readiness_fault("health")
+                raise
+            except Exception:
+                # An unexpected failure proves nothing about derived entries.
+                self._health_cache_key = None
+                self._health_incremental_discard()
                 raise
             except BaseException:
                 self._health_cache_key = None
@@ -15918,6 +16254,239 @@ class ChangeGovernanceService:
             finally:
                 if fence_holder is not None:
                     fence_holder._exit_health_fence()
+
+    def _historical_validation_finish(
+        self,
+        fence: HealthScanFence,
+        plans: list[ChangePlan],
+        tasks: list[ExecutionTask],
+        evidence: dict[str, PlanRecordEvidence],
+        task_proofs: dict[str, tuple[str, tuple[int, int, int], str] | None],
+        resolved: list[ChangePlan],
+        failures: list[tuple[ChangePlan, ErrorCode]],
+        deferred: int,
+        incremental: dict[str, Any],
+        plan_generation: int,
+        task_generation: int,
+        built_at: datetime,
+    ) -> dict[str, Any]:
+        """Prewarm assembly only when every plan was projected write-free."""
+        prewarmed = False
+        if deferred == 0:
+            fingerprint = self._health_assembly_fingerprint(
+                plans, evidence, tasks, task_proofs, failures,
+                plan_generation, task_generation,
+            )
+            self._health_assembly_memo = None
+            self._health_cache = self._build_health_summary(
+                include_provider_health=False,
+                resolved_history=(resolved, failures),
+                captured_plan_generation=plan_generation,
+                captured_built_at=built_at, collected_tasks=tasks,
+                actionable_keys=self._health_actionable_keys(
+                    plans, evidence, tasks, task_proofs),
+            )
+            self._health_cache_rebuild_count += 1
+            self._health_assembly_remember(fingerprint)
+            incremental["actionable_hits"] = self._health_actionable_run["hits"]
+            incremental["actionable_misses"] = self._health_actionable_run["misses"]
+            prewarmed = self._health_assembly_memo is not None
+        else:
+            incremental["assembly"] = "deferred"
+        fence.check()
+        self._require_health_generations(plan_generation, task_generation)
+        self._health_incremental_record(incremental)
+        return {
+            "plans_validated": len(plans), "tasks_collected": len(tasks),
+            "deferred_lifecycle_plans": deferred,
+            "assembly_prewarmed": prewarmed,
+        }
+
+    def _health_assembly_fingerprint(
+        self,
+        plans: list[ChangePlan],
+        evidence: dict[str, PlanRecordEvidence],
+        tasks: list[ExecutionTask],
+        task_proofs: dict[str, tuple[str, tuple[int, int, int], str] | None],
+        failures: list[tuple[ChangePlan, ErrorCode]],
+        plan_generation: int,
+        task_generation: int,
+    ) -> tuple[Any, ...] | None:
+        """Exact assembly input, or ``None`` when any record lacks byte proof.
+
+        Quarantine state is input too: a quarantined task file makes its
+        plan's ``get_for_plan`` refuse without touching any tracked record,
+        so the quarantine listings and the repositories' quarantine
+        generations (bumped by every quarantine and restoration) are part of
+        the fingerprint, and an unknown listing forbids reuse.
+        """
+        plan_quarantine = self.repository.quarantine_listing()
+        task_quarantine = self.task_repository.quarantine_listing()
+        if plan_quarantine is None or task_quarantine is None:
+            return None
+        plan_part = []
+        for plan in plans:
+            proof = _health_record_proof(evidence.get(plan.plan_id))
+            if proof is None:
+                return None
+            plan_part.append((plan.plan_id, proof))
+        task_part = []
+        for task in tasks:
+            proof = task_proofs.get(task.task_id)
+            if proof is None:
+                return None
+            task_part.append((task.task_id, proof))
+        return (
+            plan_generation, task_generation,
+            tuple(plan_part), tuple(task_part),
+            tuple((plan.plan_id, code.value) for plan, code in failures),
+            self.repository.quarantine_generation,
+            self.task_repository.quarantine_generation,
+            plan_quarantine, task_quarantine,
+            self.operational_gateway is not None,
+            self.lifecycle_gateway is not None,
+            self.helper_state_gateway is not None,
+            self.f3_runtime is not None,
+            self._safety_verdict_context(),
+        )
+
+    def _health_actionable_keys(
+        self,
+        plans: list[ChangePlan],
+        evidence: dict[str, PlanRecordEvidence],
+        tasks: list[ExecutionTask],
+        task_proofs: dict[str, tuple[str, tuple[int, int, int], str] | None],
+    ) -> dict[str, tuple[Any, ...]]:
+        """Exact per-plan actionability input for terminal plans with proof."""
+        owned: dict[str, list[tuple[str, Any]]] = {}
+        for task in tasks:
+            owned.setdefault(task.plan_id, []).append(
+                (task.task_id, task_proofs.get(task.task_id)))
+        context = self._safety_verdict_context()
+        keys: dict[str, tuple[Any, ...]] = {}
+        for plan in plans:
+            proof = _health_record_proof(evidence.get(plan.plan_id))
+            plan_tasks = tuple(sorted(owned.get(plan.plan_id, ())))
+            if (proof is None or not is_terminal_plan(plan)
+                    or any(item[1] is None for item in plan_tasks)):
+                continue
+            keys[plan.plan_id] = (proof, plan_tasks, context)
+        return keys
+
+    def _health_actionable_flags(
+        self,
+        plans: list[ChangePlan],
+        keys: dict[str, tuple[Any, ...]] | None,
+    ) -> dict[str, bool]:
+        """Approval actionability per plan, for health assembly only.
+
+        With ``keys`` (incremental health), a terminal plan whose exact plan
+        bytes, owned task bytes and detector context are unchanged replays
+        its earlier answer, unless a task file for it may be quarantined.
+        Everything else is evaluated against storage exactly as before.
+        """
+        quarantined = (
+            None if keys is None
+            else self.task_repository.quarantined_plan_prefixes()
+        )
+        run = {"hits": 0, "misses": 0}
+        flags: dict[str, bool] = {}
+        for plan in plans:
+            key = None if keys is None else keys.get(plan.plan_id)
+            memo = self._health_actionable_memo.get(plan.plan_id)
+            if (key is not None and quarantined is not None
+                    and plan.plan_id not in quarantined
+                    and memo is not None and memo[0] == key):
+                flags[plan.plan_id] = memo[1]
+                run["hits"] += 1
+                continue
+            self._health_actionable_memo.pop(plan.plan_id, None)
+            flags[plan.plan_id] = self._approval_is_actionable(plan)
+            run["misses"] += 1
+            if key is not None:
+                self._health_actionable_memo[plan.plan_id] = (
+                    key, flags[plan.plan_id])
+        for plan_id in [item for item in self._health_actionable_memo if item not in flags]:
+            del self._health_actionable_memo[plan_id]
+        self._health_actionable_run = run
+        return flags
+
+    def _health_assembly_reusable(self, fingerprint: tuple[Any, ...] | None) -> bool:
+        """Reuse only identical input before its next clock-driven transition."""
+        memo = self._health_assembly_memo
+        if fingerprint is None or memo is None or memo["fingerprint"] != fingerprint:
+            return False
+        now = self.now()
+        return bool(
+            now >= memo["built_at"]
+            and (memo["deadline"] is None or now < memo["deadline"])
+        )
+
+    def _health_assembly_remember(self, fingerprint: tuple[Any, ...] | None) -> None:
+        if fingerprint is None or self._health_cache_key is None:
+            return
+        self._health_assembly_memo = {
+            "fingerprint": fingerprint,
+            "summary": self._health_cache,
+            "key": self._health_cache_key,
+            "built_at": self._health_cache_built_at,
+            "deadline": self._health_cache_deadline,
+            "has_lifecycle_provider": self._health_cache_has_lifecycle_provider,
+            "projection_failure_index": dict(self._projection_failure_index),
+            "historical_index": dict(self._historical_policy_projection_index),
+        }
+
+    def _health_assembly_restore(self) -> None:
+        """Republish the aggregate built from byte-identical input."""
+        memo = self._health_assembly_memo
+        assert memo is not None
+        self._health_cache = memo["summary"]
+        self._health_cache_built_at = memo["built_at"]
+        self._health_cache_deadline = memo["deadline"]
+        self._health_cache_has_lifecycle_provider = memo["has_lifecycle_provider"]
+        self._projection_failure_index = dict(memo["projection_failure_index"])
+        self._historical_policy_projection_index = dict(memo["historical_index"])
+        self._health_cache_key = memo["key"]
+
+    def _health_incremental_record(self, run: dict[str, Any]) -> None:
+        totals = self._health_incremental_totals
+        for name in ("projection_hits", "projection_misses", "projection_invalidations"):
+            totals[name] += run[name]
+        if run["assembly"] == "reused":
+            totals["assembly_reuses"] += 1
+        elif run["assembly"] == "rebuilt":
+            totals["assembly_rebuilds"] += 1
+        self._health_incremental_last_run = run
+
+    def _health_incremental_discard(self) -> None:
+        """Drop every derived health entry; the next call decodes afresh."""
+        self.repository.health_record_memo.discard()
+        self.task_repository.health_record_memo.discard()
+        if (self._health_projection_memo or self._health_actionable_memo
+                or self._health_assembly_memo is not None):
+            self._health_projection_memo.clear()
+            self._health_actionable_memo.clear()
+            self._health_assembly_memo = None
+            self._health_incremental_totals["discards"] += 1
+
+    def _health_incremental_health(self) -> dict[str, Any]:
+        """Bounded counters only; never paths, digests or record content."""
+        return {
+            "scope": "process_memory_only",
+            "persisted": False,
+            "key": "canonical_path_inode_size_mtime_ns_sha256_detector",
+            "authoritative_reads_use_index": False,
+            "terminal_records_only": True,
+            "plan_records": self.repository.health_record_memo.metrics(),
+            "task_records": self.task_repository.health_record_memo.metrics(),
+            "projection_entries": len(self._health_projection_memo),
+            "actionable_entries": len(self._health_actionable_memo),
+            "last_run": (
+                None if self._health_incremental_last_run is None
+                else dict(self._health_incremental_last_run)
+            ),
+            "totals": dict(self._health_incremental_totals),
+        }
 
     def _safety_verdict_context(self) -> bytes:
         """Bind verdicts to the detector and secret set without storing secrets."""
@@ -16083,6 +16652,7 @@ class ChangeGovernanceService:
         summary["active_apply_operations"] = sum(
             lock.locked() for lock in self._target_locks.values()
         )
+        summary["historical_validation"] = self._historical_validation_health()
         if self.f3_runtime is not None:
             summary["f3"] = (self.f3_runtime.health() if collected_f3 is None else collected_f3)
             f3_outcomes = summary["f3"].get("dispatch_outcome_counts")
@@ -16259,6 +16829,7 @@ class ChangeGovernanceService:
             ),
             "health_cache_hit_count": self._health_cache_hit_count,
             "safety_verdict_cache": self._safety_verdict_health(),
+            "incremental_health_index": self._health_incremental_health(),
             "hot_paths": deepcopy(self._hot_path_metrics),
             "historical_integrity": (
                 "validated_at_startup_or_explicit_deep_audit_and_when_"
@@ -16807,6 +17378,7 @@ class ChangeGovernanceService:
         captured_plan_generation: int | None = None,
         captured_built_at: datetime | None = None,
         collected_tasks: list[ExecutionTask] | None = None,
+        actionable_keys: dict[str, tuple[Any, ...]] | None = None,
     ) -> dict[str, Any]:
         # Invalidate before rebuilding: an exception must never leave an old
         # ready aggregate reusable. There is no await/provider read in this
@@ -16971,6 +17543,7 @@ class ChangeGovernanceService:
                 )
             )
 
+        actionable = self._health_actionable_flags(plans, actionable_keys)
         summary = {
             "enabled": True,
             "storage": storage,
@@ -16979,11 +17552,11 @@ class ChangeGovernanceService:
             "total_plans": total_plans,
             "plans_awaiting_approval": sum(
                 plan.status == PlanStatus.AWAITING_APPROVAL
-                and self._approval_is_actionable(plan)
+                and actionable[plan.plan_id]
                 for plan in plans
             ),
             "plans_requiring_approval": sum(
-                self._approval_is_actionable(plan)
+                actionable[plan.plan_id]
                 for plan in plans
             ),
             "external_approval_enabled": True,
@@ -17781,6 +18354,35 @@ def _require_safe_persisted_plan(
             ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
             details={"reason": "unsafe_persisted_configuration_plan"},
         )
+
+
+# HAMCP-097: bounded wait for the startup historical validation before a
+# health call answers with explicit pending markers (cold SLO is 5 s).
+HISTORICAL_VALIDATION_WAIT_SECONDS = 3.0
+# Fields the overlay adds to the cached aggregate.
+_HEALTH_OVERLAY_FIELDS = (
+    "storage", "storage_status", "storage_corruption_count", "total_plans",
+    "active_apply_operations", "approval_notifications", "f3",
+    "historical_validation", "plan_store_scaling",
+)
+# Process-live fields a pending summary still reports.
+# Build-time constants of every governance summary; never history-derived.
+_HEALTH_STATIC_FIELDS = (
+    "enabled", "external_approval_enabled", "ingress_approval_ui_configured",
+    "approval_authority_version", "projection_failure_category_model",
+)
+_HEALTH_PENDING_LIVE_FIELDS = frozenset({
+    "active_apply_operations", "historical_validation", "plan_store_scaling",
+})
+
+
+def _health_record_proof(
+    observed: PlanRecordEvidence | None,
+) -> tuple[str, tuple[int, int, int], str] | None:
+    """The exact-bytes identity of one read, or ``None`` without a stat."""
+    if observed is None or observed.stat is None:
+        return None
+    return (observed.path, observed.stat, observed.sha256)
 
 
 def _validate_health_records(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 import uuid
 
@@ -314,6 +315,12 @@ class GovernanceRuntime:
             home_assistant_websocket_status=home_assistant_websocket_status,
             deep_storage_audit=deep_storage_audit,
         )
+
+    def start_historical_validation(self) -> asyncio.Task[None] | None:
+        """HAMCP-097: launch the background startup historical validation."""
+        if self.service is None:
+            return None
+        return self.service.start_historical_validation()
 
     def health_summary(
         self,
