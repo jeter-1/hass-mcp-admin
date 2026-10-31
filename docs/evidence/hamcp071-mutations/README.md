@@ -25,9 +25,11 @@ TMPDIR and HOME, and the logs. Each run was a `systemd-run --user` unit
 | `round0-results.json` | first pass, all mutants | 205 OK | 81 | 64 |
 | `round1-results.json` | the 17 round-0 survivors plus the A3+A4 control, after the new tests | 219 tests per mutant run | 18 | 17 |
 | `round1-baseline.json` | the unmutated tree after the new tests | 219 OK | — | — |
-| `results.json` | final: round 0 with the round-1 rows and the round-1 baseline | 219 OK | 82 | **81** |
+| `pre-r1-results.json` | final before the Codex R1 corrections: round 0 with the round-1 rows and the round-1 baseline | 219 OK | 82 | **81** |
+| `results.json` | R1 full run: all 82 replayed plus 22 new `H*` guard removals, after the R1 corrections | 246 OK | 104 | 99 |
+| `r1-rerun-results.json` | the 5 R1 survivors plus the H14 control, after the new R1 isolation tests | 247 OK | 6 | 5 |
 
-No mutant timed out and none had an import error in either round.
+No mutant timed out and none had an import error in any round.
 
 **Before round 1:** I added `MutationSurvivorTests` (14 tests) and
 `ProfileShapeTests` to `tests/test_hamcp071_scene_configuration.py`. Before
@@ -61,6 +63,25 @@ Why these survived round 0:
   admission. The new test therefore uses the case where the gate must come
   first.
 
+## Codex R1 corrections (round 2)
+
+The R1 corrections (write permit, reload evidence, switch rule, declared
+requests, cached-only consumers) re-anchored T10, P2, G1 and G3 and added
+`H1`–`H22`. Every one of the 82 earlier mutants was replayed against the
+corrected tree in `results.json`: 99 of 104 killed. The survivors were A3
+(equivalent, below) and four that layered checks were masking. Each now
+has an isolated test, confirmed in `r1-rerun-results.json`:
+
+| Survivor | What the mutant does | Why it survived | Killing test |
+|---|---|---|---|
+| W6 | drops the closed-payload `config_id` match in `write()` | the F3 write permit behind it also refuses (`write_permit_required`), and the test asserted only `call_not_sent` | `test_closed_payload_violations_are_never_sent` now asserts the reason `closed_payload_violation` |
+| H9 | takes an activation (state value moves with `last_changed`) as reload evidence | the activation test changed the state on every read, so the baseline already held it; and a name edit failed the loaded check anyway | `test_an_activation_is_not_reload_evidence`: one activation after the POST, on a member-only edit that the pre-reload loaded scene already matches |
+| H11 | accepts reload evidence latched by any operation | each write replaces the baseline, so the operation id check is layered | `assert_verified_after_a_delayed_reload` asserts that another operation id is not evidence |
+| H15 | verifies when the gateway has no reload check | every gateway in the suite has the check | `test_strategy_without_the_reload_check_is_unverified`: no check, a truthy non-`True` answer and `False` stay unverified; a `True` answer for this target and operation verifies |
+
+`H14_unobserved_reload_verified` was killed in the full run; the rerun
+includes it as a control (5 failures).
+
 ## Remaining survivor (1): equivalent
 
 - **A3: the persistence-entry recheck is removed.** Equivalent.
@@ -74,6 +95,7 @@ Why these survived round 0:
   checks and is killed in round 1 (2 failures).
 - **A4 alone** (only the generic-builder check removed) was killed in
   round 0.
+- A3 survives again in both R1 runs, for the same reason.
 
 ## Usage
 
@@ -84,5 +106,7 @@ From the worktree root:
         .artifacts/venv/bin/python docs/evidence/hamcp071-mutations/run_mutations.py [ids...]
 
 With no ids, the runner runs the baseline and then every mutant, and writes
-`results.json`. With ids, it runs only those mutants and writes
-`results-partial.json`.
+`results.json`. With ids, it runs only those mutants (pass `baseline` to
+include it) and writes `results-partial.json`; the R1 rerun's copy is
+`r1-rerun-results.json`. The R1 units also set
+`TMPDIR=<worktree>/.artifacts/tmp`.

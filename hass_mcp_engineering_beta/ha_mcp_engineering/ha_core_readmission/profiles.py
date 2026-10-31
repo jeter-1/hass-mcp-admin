@@ -142,6 +142,17 @@ def _contract(
     )
 
 
+# HAMCP-071 R1-M1: every Home Assistant request the scene configuration
+# provider can send (config GET/POST, registry list/get, state GETs).
+SCENE_CONFIGURATION_REQUESTS: tuple[str, ...] = (
+    "GET /api/config/scene/config/{config_id}",
+    "GET /api/states/{entity_id}",
+    "POST /api/config/scene/config/{config_id}",
+    "websocket config/entity_registry/get",
+    "websocket config/entity_registry/list",
+)
+
+
 CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
     _contract(
         "core.basic_rest_read",
@@ -783,6 +794,9 @@ CORE_NOVEMBER_BATCH_PROFILES = (
     # for the exact config id carrying the full proposed configuration without
     # ``id``; the config GET plus the entity registry entry and the loaded
     # scene are the authoritative readback.  Saving never activates the scene.
+    # R1-M1 / D2: every Home Assistant request the provider can send is
+    # declared (``SCENE_CONFIGURATION_REQUESTS``); consumer disclosure reads
+    # only the already-built dependency index and never refreshes it.
     _contract(
         "core.scene_configuration_operation",
         CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
@@ -790,8 +804,10 @@ CORE_NOVEMBER_BATCH_PROFILES = (
         (
             "rest_scene_config_get_by_config_id",
             "rest_scene_config_post_by_config_id",
+            "rest_state_get_by_entity_id",
             "websocket_entity_registry_list_and_get",
             "scene_config_and_loaded_scene_readback_exact",
+            "scene_post_save_reload_evidence_required",
         ),
         provider_boundary="direct_ha_api",
         response_contract={
@@ -799,9 +815,11 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                 "one_exact_existing_ui_managed_scene_by_config_id_with_"
                 "homeassistant_registry_entry"
             ),
+            "requests": list(SCENE_CONFIGURATION_REQUESTS),
             "routes": {
                 "read": "GET /api/config/scene/config/{config_id}",
                 "write": "POST /api/config/scene/config/{config_id}",
+                "state": "GET /api/states/{entity_id}",
             },
             "commands": {
                 "read": [
@@ -809,6 +827,16 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                     "config/entity_registry/list",
                 ],
             },
+            "state_reads": [
+                "loaded_scene_state_and_post_save_reload_evidence",
+                "member_device_class_when_the_registry_has_none",
+                "member_existence_when_unregistered",
+                "scene_state_reload_baseline_immediately_before_the_post",
+            ],
+            "consumer_disclosure": (
+                "current_cached_dependency_index_snapshot_only_never_built_or_"
+                "refreshed_gap_disclosed_when_not_current"
+            ),
             "arguments": {
                 "config_id": "exact_config_id_matching_the_registry_unique_id",
                 "fields": ["entities", "icon", "name"],
@@ -821,7 +849,10 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                 "body": "full_proposed_configuration_without_id",
                 "unrequested_fields": "sent_exactly_as_stored",
             },
-            "dispatch": "at_most_once_scene_config_post_per_scene",
+            "dispatch": (
+                "at_most_once_scene_config_post_per_scene_under_one_f3_write_"
+                "permit_bound_to_plan_target_command_and_dispatch_intent"
+            ),
             "never_sent": [
                 "DELETE /api/config/scene/config/{config_id}",
                 "scene.apply",
@@ -833,9 +864,16 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
             "readback": (
                 "stored_config_exact_plus_registry_identity_plus_loaded_scene_"
-                "consistent"
+                "consistent_plus_post_save_reload_observed"
             ),
-            "concurrency": "no_core_compare_and_swap_residual_window_disclosed",
+            "unverified": (
+                "stored_config_verified_loaded_scene_unverified_observing_then_"
+                "manual_review_never_verified"
+            ),
+            "concurrency": (
+                "no_core_compare_and_swap_upsert_concurrent_edit_overwritten_"
+                "undetected_concurrent_delete_recreated_disclosed"
+            ),
             "recovery": "read_only_no_redispatch",
         },
         predispatch=("core_identity", "capability_contract", "target_fingerprint",

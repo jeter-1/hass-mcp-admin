@@ -70,8 +70,10 @@ scene, by `config_id`. The plan is approved externally and applied with
   plan.
 - **Disclosure.** The plan shows the name and icon before and after, each
   changed member's snapshot before and after, and the consumers: the
-  automations and scripts that reference the scene. When the dependency
-  index is unavailable, the gap is disclosed instead.
+  automations and scripts that reference the scene, and the switch members.
+  Consumers come only from the cached dependency index, which planning never
+  refreshes. When the index is unavailable or not current, the gap is
+  disclosed instead.
   Fixed texts state these facts:
   - saving does not activate the scene;
   - Home Assistant reloads every scene after the save, which removes
@@ -80,8 +82,13 @@ scene, by `config_id`. The plan is approved externally and applied with
   - members are saved in `entity_id` order, which is not an activation
     order;
   - metadata is never changed;
-  - Core has no compare-and-swap, so a residual window remains between the
-    final check and the save.
+  - Core has no compare-and-swap and its save is an upsert. Between the
+    final check and the save, a concurrent edit can be overwritten without
+    being detected, and a concurrent deletion can make the save recreate the
+    scene. Verification proves only this plan's stored result. Josh accepted
+    this race with this disclosure;
+  - verification needs post-save reload evidence, and recovery is
+    read-only.
 - **Policy.** If any member before or after the edit is a protected object
   under the OD-4 `object_protection` rules, the plan is `elevated_admin`,
   risk HIGH,
@@ -94,17 +101,28 @@ scene, by `config_id`. The plan is approved externally and applied with
   - a siren;
   - a safety binary sensor.
 
+  Any `switch` member before or after the edit also makes the plan
+  `elevated_admin`, because a switch's purpose cannot be resolved from its
+  entity id. The switch entity ids are disclosed.
   A member whose device class cannot be read also counts as protected.
   Otherwise the plan is `standard_admin`, risk LOW, physical consequence
   none. A multi-operation or incomplete scene plan is `PROHIBITED`.
 - **Apply.** The scene is re-read immediately before the write, and drift
-  is refused as `stale_target_state`. A missing scene is never re-created.
+  is refused as `stale_target_state`. A scene missing at that check is
+  refused; Engineering never asks Core to create one, although Core's upsert
+  can recreate a scene deleted after the check. The lowest write layer sends
+  only under an F3 write permit bound to the plan, the target, the command
+  and the dispatch intent; a planning lease is not a permit.
   The write is dispatched at most once, with durable intent, no redispatch
   and truthful attribution. A 5xx or lost response is decided by the
   readback.
 - **Verification.** The stored configuration must be exact, the registry
   identity unchanged and the loaded scene consistent with the stored
-  configuration. Comparisons are type-exact.
+  configuration, with genuine evidence that Home Assistant reloaded the
+  scene after the save, observed within the bounded window (10 × 0.5 s).
+  Without that evidence the result is changed but unverified: the task stays
+  observing and then requires manual review, never verified and never
+  redispatched. Comparisons are type-exact.
 - **Rollback.** `rollback_change` creates a separate governed plan that
   restores the exact prior configuration. It needs its own approval, and it
   does not activate the scene either.

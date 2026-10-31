@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
@@ -237,6 +238,22 @@ class ConfigurationStrategy(ABC):
         proposed_config: dict[str, Any],
     ) -> tuple[str, ...]:
         del gateway, target_id, current_config, proposed_config
+        return ()
+
+    def dispatch_scope(
+        self, operation: Any, provider_config: dict[str, Any]
+    ) -> AbstractContextManager[Any]:
+        """Authority installed around the one send, after the durable intent."""
+
+        del operation, provider_config
+        return nullcontext()
+
+    async def observation_gap(
+        self, gateway: Any, operation: Any, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """Codes that make an exact readback incomplete evidence; ``()``: none."""
+
+        del gateway, operation, observed
         return ()
 
     def read_error_code(self, exc: BaseException) -> str:
@@ -1040,6 +1057,58 @@ class SceneConfigurationConfigurationStrategy(ConfigurationStrategy):
             )
         except (TypeError, ValueError):
             return False
+
+    def dispatch_scope(
+        self, operation: Any, provider_config: dict[str, Any]
+    ) -> AbstractContextManager[Any]:
+        """HAMCP-071 R1-H2: the single-use permit for exactly this POST."""
+
+        current = operation.current_config() or {}
+        return scene_configuration.write_permit(
+            scene_configuration.ScenePermit(
+                plan_id=operation.plan_id,
+                task_id=operation.task_id,
+                operation_id=operation.operation_id,
+                config_id=operation.target.target_id,
+                entity_id=str(current.get("entity_id")),
+                arguments_hash=operation.provider_descriptor.arguments_hash,
+                intent=scene_configuration.DISPATCH_INTENT,
+            )
+        )
+
+    async def observation_gap(
+        self, gateway: Any, operation: Any, observed: dict[str, Any] | None
+    ) -> tuple[str, ...]:
+        """HAMCP-071 R1-H1: a stored match without the save reload is unverified.
+
+        The stored configuration can equal the plan while the loaded scene
+        still holds the previous member snapshots, which no read exposes.
+        Only a reload observed after this operation's own POST proves the
+        loaded scene; until then the readback is incomplete evidence, never
+        verified and never a mismatch.
+        """
+
+        proposed = operation.proposed_config()
+        if observed is None or any(
+            observed.get(key) != proposed.get(key)
+            for key in ("config_id", "entity_id", "registry_entry_id")
+        ):
+            return ()
+        if not scene_configuration.exactly_equal(
+            observed.get("config"), proposed.get("config")
+        ):
+            return ()
+        check = getattr(gateway, "scene_configuration_reload_observed", None)
+        if (
+            check is not None
+            and observed.get("loaded_matches_config") is True
+            and check(operation.target.target_id, operation.operation_id) is True
+        ):
+            return ()
+        return (
+            scene_configuration.STORED_CONFIGURATION_VERIFIED,
+            scene_configuration.RELOAD_UNVERIFIED,
+        )
 
     async def preflight_evidence(
         self,

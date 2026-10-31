@@ -47,7 +47,7 @@ Bind the following:
 
   | Profile | sha256 |
   |---|---|
-  | `core.scene_configuration_operation` | `8fa78120c76aa1d892a21540e730479302293370126779ea89a59a4cb7b009d7` |
+  | `core.scene_configuration_operation` | `d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2` |
 
 The review needs a security section covering the following items:
 - **New write path, unreachable at release.** The path is
@@ -74,18 +74,28 @@ The review needs a security section covering the following items:
   disclosure says that the reload removes `scene.create` runtime scenes.
 - **Target.** Exactly one existing UI-managed scene: registry platform
   `homeassistant`, `unique_id` equal to the config id, and a GET hit. A
-  missing scene is never created, either at planning or immediately before
-  the write.
+  scene missing at planning or at the final check immediately before the
+  write is refused. Core's save is an upsert, so a deletion after that check
+  can be recreated, and a concurrent edit can be overwritten undetected;
+  this is disclosed and accepted (D3), and no readback claims to detect it.
+- **Write permit.** The lowest write layer sends only under an F3 write
+  permit bound to the plan, target, command and dispatch intent.
 - **Approval.**
-  - A protected member before or after the edit is `elevated_admin` /
-    HIGH / `indirect`. Otherwise the plan is `standard_admin` / LOW / none.
+  - A protected member, or any `switch` member, before or after the edit
+    is `elevated_admin` / HIGH / `indirect`. Otherwise the plan is
+    `standard_admin` / LOW / none.
   - A multi-operation or incomplete scene plan is `PROHIBITED`.
   - The planning caller cannot approve.
 - **Verification.**
   - The fingerprint is checked immediately before the write.
   - The readback must show the stored configuration exactly, the registry
     identity unchanged and the loaded scene consistent with the stored
-    configuration.
+    configuration, with post-save reload evidence observed within the
+    bounded window (10 × 0.5 s).
+  - Without that evidence the result is changed but unverified: the task
+    stays observing and then requires manual review. It is never
+    `succeeded_verified` from pre-save state, and a late reload alone is
+    never a verification mismatch. Recovery is read-only.
   - Comparisons are type-exact.
   - An indeterminate send is decided by readback and never redispatched.
 - **Rollback.** A separately approved restore plan of the exact prior
@@ -214,29 +224,45 @@ These steps require all of the following:
 
 **Josh approves each live change at the time.** The target is one
 pre-existing, harmless UI-managed scene that Josh selects at the time,
-with no protected members. Its config id and entity id are recorded in the
-run evidence, not here. **The scene is never activated** at any step: no
+with no protected members and no `switch` member (a switch makes the plan
+`elevated_admin`). Its config id and entity id are recorded in the run
+evidence, not here. **The scene is never activated** at any step: no
 `scene.turn_on`, no `scene.apply`, and no dashboard or voice activation.
 
-1. Read the scene. Record its stored configuration and its state, which
-   must stay unchanged throughout because a save does not activate it.
+1. Read the scene. Record its stored configuration and its state value
+   (the last activation time). The save reloads the scene, so the full
+   state object and `last_changed` are not required to stay unchanged.
 2. Create a plan that changes only the name, or only the icon. Check the
    disclosure:
    - the before and after values;
    - the consumers;
-   - the not-activated, reload, id-assignment and member-order texts;
+   - the not-activated, reload, id-assignment, member-order, loaded-scene
+     and concurrency texts (the concurrency text discloses that a
+     concurrent edit can be overwritten undetected and a concurrent
+     deletion can be recreated);
    - `standard_admin`.
 
    Josh approves it. Apply it, then verify:
    - the stored configuration equals the proposed one exactly;
    - the members and `metadata` are unchanged;
    - the registry entry and `entity_id` are unchanged;
-   - the loaded scene matches;
-   - the scene's state, including `last_changed`, shows no activation.
+   - the loaded scene matches the intended fields exactly: the registry
+     `original_name` or `original_icon`, the state attribute `id` and the
+     member list;
+   - the task is `succeeded_verified` with post-save reload evidence. If it
+     stays observing (`scene_post_save_reload_unverified`), record that the
+     result is changed but unverified, inspect read-only, and do not
+     reverify or resend;
+   - bounded no-activation evidence: the audit and the task record no
+     scene service (`scene.turn_on`, `scene.apply`, `scene.create`,
+     `scene.reload`, `scene.delete`) and only the one config POST, and the
+     scene's state value (its last activation time) is unchanged.
+     `last_changed` may move, because the reload re-adds the scene.
 3. `rollback_change` creates a separate restore plan. Josh approves it.
    Apply it, then verify that the stored configuration equals the step-1
-   record exactly, the registry identity is unchanged and there was no
-   activation.
+   record exactly, the registry identity is unchanged and the same bounded
+   no-activation evidence holds (no scene service; the state value is
+   unchanged).
 4. Repeat a request for the current values. It is refused as no-change,
    with no plan.
 5. Run the smoke and regression checks.

@@ -19,6 +19,7 @@ from .operational_lifecycle import OperationalLifecycleGateway
 from .projection_diagnostics import PROJECTION_FAILURE_CATEGORY_MODEL
 from .resources import ConfigurationResourceGateway
 from .entity_metadata_disclosure import (
+    read_cached_dependency_snapshot,
     read_runtime_dependency_snapshot,
     runtime_consumer_evidence,
 )
@@ -188,6 +189,11 @@ class GovernanceRuntime:
             # HAMCP-071: the scene POST refuses unless this Core runtime
             # currently admits its profile and the F3 window is open.
             resource_gateway.scene_configuration.core_runtime = core_runtime
+            # HAMCP-071 R1-M1: scene consumer disclosure reads only the
+            # dependency evidence already held; it never refreshes the index.
+            resource_gateway.scene_configuration.consumer_snapshot_reader = (
+                read_cached_dependency_snapshot
+            )
             if dashboard_provider is not None:
                 # HAMCP-106: the content fingerprint is the existing admitted
                 # get_dashboard_config read; the configuration itself is

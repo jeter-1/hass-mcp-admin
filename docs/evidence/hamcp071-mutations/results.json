@@ -3,9 +3,9 @@
     "name": "baseline",
     "exit": 0,
     "timed_out": false,
-    "seconds": 111.1,
+    "seconds": 149.8,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "OK"
@@ -19,9 +19,9 @@
     "name": "A1_entry_gate_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.3,
+    "seconds": 165.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -36,17 +36,18 @@
     "name": "A2_core_gate_always_available",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.6,
+    "seconds": 164.4,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=8)"
+      "FAILED (failures=9)"
     ],
     "import_error": false,
     "failing": [
       "test_final_persistence_check_refuses_without_the_lease_check",
       "test_generic_builder_refuses_a_raw_operation_first",
+      "test_rollback_admission_is_checked_before_the_forward_state",
       "test_unadmitted_planning_reads_nothing_and_stores_nothing"
     ],
     "killed": true
@@ -55,9 +56,9 @@
     "name": "A3_persist_recheck_removed",
     "exit": 0,
     "timed_out": false,
-    "seconds": 132.7,
+    "seconds": 166.0,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "OK"
@@ -70,9 +71,27 @@
     "name": "A4_generic_builder_gate_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.3,
+    "seconds": 160.2,
     "tests": [
-      "205"
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_generic_builder_refuses_a_raw_operation_first"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A3A4_both_persist_gates_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 161.6,
+    "tests": [
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -88,9 +107,9 @@
     "name": "A5_rollback_gate_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 133.0,
+    "seconds": 161.6,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -105,9 +124,9 @@
     "name": "T1_integration_scene_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.9,
+    "seconds": 161.3,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -122,9 +141,9 @@
     "name": "T2_yaml_scene_reported_absent",
     "exit": 1,
     "timed_out": false,
-    "seconds": 125.1,
+    "seconds": 160.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -139,9 +158,9 @@
     "name": "T3_ambiguous_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 127.0,
+    "seconds": 160.6,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -156,9 +175,9 @@
     "name": "T4_disabled_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 127.2,
+    "seconds": 160.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -173,15 +192,16 @@
     "name": "T5_not_loaded_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 127.0,
+    "seconds": 160.6,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (errors=1)"
+      "FAILED (errors=2)"
     ],
     "import_error": false,
     "failing": [
+      "test_loaded_members_must_match_the_stored_members",
       "test_unloaded_scene_is_refused"
     ],
     "killed": true
@@ -190,9 +210,9 @@
     "name": "T6_entity_mismatch_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 127.5,
+    "seconds": 160.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -207,9 +227,9 @@
     "name": "T7_absent_not_refused",
     "exit": 1,
     "timed_out": false,
-    "seconds": 127.3,
+    "seconds": 159.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (errors=3)"
@@ -226,9 +246,9 @@
     "name": "T8_read_unstable_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.3,
+    "seconds": 159.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -243,16 +263,15 @@
     "name": "T9_loaded_name_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.9,
+    "seconds": 160.4,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=2)"
+      "FAILED (failures=1)"
     ],
     "import_error": false,
     "failing": [
-      "test_failed_reload_is_a_verification_failure",
       "test_unloaded_scene_is_refused"
     ],
     "killed": true
@@ -261,9 +280,9 @@
     "name": "T10_loaded_members_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 132.5,
+    "seconds": 175.1,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -278,9 +297,9 @@
     "name": "V1_whitespace_name_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.5,
+    "seconds": 174.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=25)"
@@ -295,9 +314,9 @@
     "name": "V2_name_bound_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.4,
+    "seconds": 175.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -312,9 +331,9 @@
     "name": "V3_name_stored_trimmed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.0,
+    "seconds": 174.5,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -329,16 +348,15 @@
     "name": "V4_icon_pattern_weakened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.8,
+    "seconds": 174.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=22)"
+      "FAILED (failures=20)"
     ],
     "import_error": false,
     "failing": [
-      "test_closed_payload_violations_are_never_sent",
       "test_unsendable_and_unrestorable_baselines",
       "test_values_outside_the_contract_are_refused_before_any_read"
     ],
@@ -348,15 +366,16 @@
     "name": "V5_icon_clear_ignored",
     "exit": 1,
     "timed_out": false,
-    "seconds": 118.2,
+    "seconds": 168.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=2, errors=2)"
+      "FAILED (failures=2, errors=3)"
     ],
     "import_error": false,
     "failing": [
+      "test_an_icon_removal_needs_reload_evidence",
       "test_before_after_for_each_field_and_member",
       "test_each_field_alone_is_saved_and_verified_exactly",
       "test_rollback_restores_the_exact_prior_configuration",
@@ -368,9 +387,9 @@
     "name": "V6_scene_member_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.2,
+    "seconds": 176.5,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -385,9 +404,9 @@
     "name": "V7_member_bound_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.2,
+    "seconds": 175.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -402,9 +421,9 @@
     "name": "V8_requested_bare_state_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.2,
+    "seconds": 175.5,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=11)"
@@ -420,9 +439,9 @@
     "name": "V9_nonfinite_float_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.9,
+    "seconds": 177.4,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -437,9 +456,9 @@
     "name": "V10_unknown_member_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.7,
+    "seconds": 176.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -454,9 +473,9 @@
     "name": "V11_absent_member_removal_unrefused",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.1,
+    "seconds": 177.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -471,9 +490,9 @@
     "name": "V12_empty_scene_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.8,
+    "seconds": 177.0,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -488,16 +507,15 @@
     "name": "W1_method_check_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 120.9,
+    "seconds": 175.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=5)"
+      "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_closed_payload_violations_are_never_sent",
       "test_command_shape_is_closed"
     ],
     "killed": true
@@ -506,16 +524,15 @@
     "name": "W2_body_id_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.7,
+    "seconds": 176.5,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=3)"
+      "FAILED (failures=1)"
     ],
     "import_error": false,
     "failing": [
-      "test_closed_payload_violations_are_never_sent",
       "test_command_shape_is_closed"
     ],
     "killed": true
@@ -524,42 +541,64 @@
     "name": "W3_body_sends_id",
     "exit": 1,
     "timed_out": false,
-    "seconds": 21.2,
+    "seconds": 26.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=5, errors=77)"
+      "FAILED (failures=5, errors=103)"
     ],
     "import_error": false,
     "failing": [
+      "test_a_delayed_reload_inside_the_window_verifies_a_member_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_a_name_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_an_icon_edit",
+      "test_a_failed_reload_is_changed_but_unverified",
+      "test_a_light_only_scene_stays_standard",
+      "test_a_name_edit_needs_reload_evidence",
+      "test_a_prevented_reload_of_a_member_edit_is_not_verified",
+      "test_a_reload_after_the_window_is_never_verified_or_a_mismatch",
+      "test_a_switch_present_only_before_the_edit_elevates",
+      "test_a_synthetic_security_siren_switch_elevates",
       "test_activating_automations_and_scripts_are_listed",
       "test_all_fields_together",
+      "test_an_activation_is_not_reload_evidence",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_an_icon_edit_needs_reload_evidence",
+      "test_an_icon_removal_needs_reload_evidence",
+      "test_an_unchanged_switch_member_elevates_a_name_edit",
+      "test_any_ordinary_switch_elevates",
       "test_attribution_names_the_scene_provider",
       "test_authorization_rejection_is_confirmed_not_dispatched",
       "test_before_after_for_each_field_and_member",
       "test_body_never_carries_the_id_and_metadata_is_kept",
+      "test_bound_basis_must_carry_the_protection_floor",
+      "test_consumer_evidence_text_is_screened",
       "test_core_validation_rejection_is_confirmed_not_dispatched",
       "test_each_field_alone_is_saved_and_verified_exactly",
       "test_elevated_scene_remains_actionable",
       "test_entity_add_remove_and_change",
       "test_expired_plan_is_never_applied",
-      "test_failed_reload_is_a_verification_failure",
       "test_final_persistence_check_refuses_without_the_lease_check",
       "test_full_attribute_snapshot_round_trips_exactly",
       "test_lock_or_garage_cover_elevates_before_or_after",
       "test_lost_response_is_indeterminate_and_never_redispatched",
       "test_member_type_change_is_a_change_not_a_no_op",
+      "test_multi_operation_scene_plan_is_prohibited",
       "test_name_is_stored_exactly",
       "test_no_self_approval_and_unapproved_apply",
       "test_other_scenes_are_never_changed",
+      "test_plan_apply_and_rollback_reach_exactly_the_declared_set",
       "test_plan_text_never_carries_untrusted_scene_text",
       "test_planning_reads_only_and_sends_nothing",
       "test_readback_mismatch_when_nothing_was_stored",
       "test_registry_change_before_dispatch_is_stale",
       "test_retained_approved_plan_without_f3_refuses_before_any_read",
+      "test_rollback_admission_is_checked_before_the_forward_state",
+      "test_rollback_after_external_restore_is_drift",
       "test_rollback_after_the_scene_was_deleted_is_refused",
       "test_rollback_availability_tracks_the_verified_forward",
+      "test_rollback_checks_the_forward_child_record",
       "test_rollback_drift_is_type_exact",
       "test_rollback_of_an_elevated_scene_is_elevated",
       "test_rollback_plan_discloses_and_needs_its_own_approval",
@@ -568,18 +607,22 @@
       "test_rollback_refused_when_forward_was_not_verified",
       "test_rollback_refused_when_forward_was_rejected",
       "test_rollback_restores_the_exact_prior_configuration",
+      "test_rollback_route_rechecks_its_lease_before_persisting",
       "test_saving_does_not_activate_and_reload_is_disclosed",
       "test_scene_deleted_before_dispatch_is_refused",
+      "test_send_boundary_records_the_send_time",
       "test_server_error_after_send_is_indeterminate",
       "test_stale_state_for_each_field_is_refused_before_dispatch",
       "test_standard_policy_for_harmless_members",
       "test_state_only_member_is_known",
       "test_stored_bare_state_is_kept_and_re_sent_exactly",
       "test_target_already_reached_is_not_dispatched",
+      "test_the_upsert_race_is_disclosed_and_never_claimed_detected",
       "test_unavailable_consumer_evidence_is_a_disclosed_gap",
       "test_unknown_member_entities_are_refused",
       "test_unloaded_change_before_dispatch_is_stale",
       "test_unrequested_drift_is_a_verification_failure",
+      "test_unrequested_field_is_disclosed_as_not_requested",
       "test_unresolved_device_class_is_protected",
       "test_unrestorable_icon_cleared_is_refused",
       "test_unsendable_and_unrestorable_baselines",
@@ -594,9 +637,9 @@
     "name": "W4_metadata_change_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.1,
+    "seconds": 175.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -611,9 +654,9 @@
     "name": "W5_identity_change_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.8,
+    "seconds": 177.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -626,28 +669,26 @@
   },
   {
     "name": "W6_command_target_mismatch_allowed",
-    "exit": 1,
+    "exit": 0,
     "timed_out": false,
-    "seconds": 123.1,
+    "seconds": 176.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=2)"
+      "OK"
     ],
     "import_error": false,
-    "failing": [
-      "test_closed_payload_violations_are_never_sent"
-    ],
-    "killed": true
+    "failing": [],
+    "killed": false
   },
   {
     "name": "W7_4xx_indeterminate",
     "exit": 1,
     "timed_out": false,
-    "seconds": 125.0,
+    "seconds": 174.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -663,9 +704,9 @@
     "name": "W8_unauthorized_as_rejected",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.0,
+    "seconds": 174.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -680,9 +721,9 @@
     "name": "W9_ws_vocabulary_widened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.9,
+    "seconds": 175.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=4, errors=1)"
@@ -697,9 +738,9 @@
     "name": "W10_send_boundary_unmarked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 131.5,
+    "seconds": 171.2,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -714,16 +755,17 @@
     "name": "N1_noop_creates_plan",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.8,
+    "seconds": 171.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=5)"
+      "FAILED (failures=6)"
     ],
     "import_error": false,
     "failing": [
-      "test_no_op_is_truthful_and_creates_no_plan"
+      "test_no_op_is_truthful_and_creates_no_plan",
+      "test_rollback_after_external_restore_is_drift"
     ],
     "killed": true
   },
@@ -731,9 +773,9 @@
     "name": "D1_before_after_swapped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.6,
+    "seconds": 175.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -748,9 +790,9 @@
     "name": "D2_unchanged_members_listed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.1,
+    "seconds": 186.5,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=5)"
@@ -767,16 +809,18 @@
     "name": "D3_consumers_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 119.4,
+    "seconds": 172.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (errors=2)"
+      "FAILED (failures=1, errors=3)"
     ],
     "import_error": false,
     "failing": [
       "test_activating_automations_and_scripts_are_listed",
+      "test_consumer_evidence_text_is_screened",
+      "test_plan_apply_and_rollback_reach_exactly_the_declared_set",
       "test_unavailable_consumer_evidence_is_a_disclosed_gap"
     ],
     "killed": true
@@ -785,9 +829,9 @@
     "name": "D4_unavailable_index_as_no_consumers",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.5,
+    "seconds": 176.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -802,9 +846,9 @@
     "name": "D5_activation_flag_wrong",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.1,
+    "seconds": 170.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -820,9 +864,9 @@
     "name": "D6_never_sent_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.7,
+    "seconds": 168.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (errors=1)"
@@ -837,9 +881,9 @@
     "name": "D7_reload_statement_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.2,
+    "seconds": 168.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (errors=1)"
@@ -854,9 +898,9 @@
     "name": "D8_requested_flag_wrong",
     "exit": 1,
     "timed_out": false,
-    "seconds": 133.5,
+    "seconds": 163.9,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -871,9 +915,9 @@
     "name": "P1_protection_floor_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 131.8,
+    "seconds": 164.2,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -888,17 +932,24 @@
     "name": "P2_elevated_planned_standard",
     "exit": 1,
     "timed_out": false,
-    "seconds": 117.2,
+    "seconds": 156.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=5, errors=2)"
+      "FAILED (failures=9, errors=5)"
     ],
     "import_error": false,
     "failing": [
+      "test_a_switch_present_only_before_the_edit_elevates",
+      "test_a_synthetic_security_siren_switch_elevates",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_an_unchanged_switch_member_elevates_a_name_edit",
+      "test_any_ordinary_switch_elevates",
+      "test_bound_basis_must_carry_the_protection_floor",
       "test_elevated_scene_remains_actionable",
       "test_lock_or_garage_cover_elevates_before_or_after",
+      "test_multi_operation_scene_plan_is_prohibited",
       "test_rollback_of_an_elevated_scene_is_elevated",
       "test_unresolved_device_class_is_protected"
     ],
@@ -908,9 +959,9 @@
     "name": "P3_unresolved_device_class_harmless",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.2,
+    "seconds": 162.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -925,15 +976,21 @@
     "name": "P4_elevated_classified_standard",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.5,
+    "seconds": 158.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=7)"
+      "FAILED (failures=13)"
     ],
     "import_error": false,
     "failing": [
+      "test_a_switch_present_only_before_the_edit_elevates",
+      "test_a_synthetic_security_siren_switch_elevates",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_an_unchanged_switch_member_elevates_a_name_edit",
+      "test_any_ordinary_switch_elevates",
+      "test_bound_basis_must_carry_the_protection_floor",
       "test_elevated_scene_remains_actionable",
       "test_lock_or_garage_cover_elevates_before_or_after",
       "test_rollback_of_an_elevated_scene_is_elevated",
@@ -945,9 +1002,9 @@
     "name": "P5_multi_operation_allowed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.4,
+    "seconds": 160.9,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -962,15 +1019,16 @@
     "name": "B1_preflight_compare_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.5,
+    "seconds": 161.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=1)"
+      "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
+      "test_gateway_preflight_holds_only_for_the_bound_state",
       "test_preflight_holds_only_for_the_bound_state"
     ],
     "killed": true
@@ -979,9 +1037,9 @@
     "name": "B2_preflight_type_inexact",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.3,
+    "seconds": 161.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -996,9 +1054,9 @@
     "name": "B3_preflight_absent_not_stale",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.6,
+    "seconds": 162.1,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1013,9 +1071,9 @@
     "name": "B4_preflight_contract_error_not_stale",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.9,
+    "seconds": 158.6,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1030,9 +1088,9 @@
     "name": "B5_strategy_preflight_skipped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.8,
+    "seconds": 158.6,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=4)"
@@ -1047,9 +1105,9 @@
     "name": "B6_already_reached_type_inexact",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.4,
+    "seconds": 158.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1064,9 +1122,9 @@
     "name": "B7_exactly_equal_type_inexact",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.6,
+    "seconds": 160.4,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=3, errors=1)"
@@ -1084,16 +1142,16 @@
     "name": "B8_projection_drops_config",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.1,
+    "seconds": 160.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=21)"
     ],
     "import_error": false,
     "failing": [
-      "test_failed_reload_is_a_verification_failure",
+      "test_gateway_preflight_holds_only_for_the_bound_state",
       "test_lost_response_is_indeterminate_and_never_redispatched",
       "test_preflight_holds_only_for_the_bound_state",
       "test_readback_mismatch_when_nothing_was_stored",
@@ -1112,16 +1170,15 @@
     "name": "B9_projection_drops_loaded",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.4,
+    "seconds": 165.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=7, errors=1)"
+      "FAILED (failures=6, errors=1)"
     ],
     "import_error": false,
     "failing": [
-      "test_failed_reload_is_a_verification_failure",
       "test_readback_mismatch_when_nothing_was_stored",
       "test_server_error_after_send_is_indeterminate",
       "test_strategy_readback_alone_rejects_a_mismatch",
@@ -1133,16 +1190,16 @@
     "name": "B10_loaded_poll_ignored",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.1,
+    "seconds": 177.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_failed_reload_is_a_verification_failure",
+      "test_loaded_members_must_match_the_stored_members",
       "test_unloaded_scene_is_refused"
     ],
     "killed": true
@@ -1151,9 +1208,9 @@
     "name": "R1_rollback_drift_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.0,
+    "seconds": 177.7,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -1169,9 +1226,9 @@
     "name": "R2_rollback_unverified_forward",
     "exit": 1,
     "timed_out": false,
-    "seconds": 133.8,
+    "seconds": 177.2,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=4)"
@@ -1186,9 +1243,9 @@
     "name": "R3_rollback_undispatched_forward",
     "exit": 1,
     "timed_out": false,
-    "seconds": 130.6,
+    "seconds": 177.2,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=3)"
@@ -1203,9 +1260,9 @@
     "name": "R4_rollback_fingerprint_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 132.2,
+    "seconds": 176.6,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1220,9 +1277,9 @@
     "name": "R5_rollback_no_change_not_drift",
     "exit": 1,
     "timed_out": false,
-    "seconds": 131.7,
+    "seconds": 177.3,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1237,18 +1294,21 @@
     "name": "R6_restore_wrong_config",
     "exit": 1,
     "timed_out": false,
-    "seconds": 108.7,
+    "seconds": 159.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (errors=9)"
+      "FAILED (failures=1, errors=11)"
     ],
     "import_error": false,
     "failing": [
+      "test_plan_apply_and_rollback_reach_exactly_the_declared_set",
+      "test_rollback_checks_the_forward_child_record",
       "test_rollback_of_an_elevated_scene_is_elevated",
       "test_rollback_plan_discloses_and_needs_its_own_approval",
-      "test_rollback_restores_the_exact_prior_configuration"
+      "test_rollback_restores_the_exact_prior_configuration",
+      "test_rollback_route_rechecks_its_lease_before_persisting"
     ],
     "killed": true
   },
@@ -1256,9 +1316,9 @@
     "name": "R7_rollback_lease_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 131.1,
+    "seconds": 178.7,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1273,9 +1333,9 @@
     "name": "S1_requested_name_unscreened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.3,
+    "seconds": 177.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=4)"
@@ -1290,9 +1350,9 @@
     "name": "S2_current_config_unscreened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.6,
+    "seconds": 177.1,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=3)"
@@ -1307,9 +1367,9 @@
     "name": "S3_member_value_unscreened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.9,
+    "seconds": 174.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=3)"
@@ -1324,9 +1384,9 @@
     "name": "S4_consumers_unscreened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 131.4,
+    "seconds": 177.2,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1341,9 +1401,9 @@
     "name": "S5_mapping_keys_unscreened",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.2,
+    "seconds": 176.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -1358,22 +1418,27 @@
     "name": "G1_write_refusal_not_enforced",
     "exit": 1,
     "timed_out": false,
-    "seconds": 121.7,
+    "seconds": 176.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=6, errors=1)"
+      "FAILED (failures=9, errors=7)"
     ],
     "import_error": false,
     "failing": [
-      "test_admitted_request_without_dispatch_authorizer_refuses",
-      "test_admitted_with_a_refusing_dispatch_window_refuses",
-      "test_admitted_without_f3_context_refuses",
+      "test_a_permit_authorizes_one_send_only",
+      "test_a_permit_for_another_target_command_or_intent_refuses",
+      "test_a_valid_write_inside_a_planning_lease_refuses",
+      "test_admitted_without_a_permit_refuses",
+      "test_an_authorizing_core_window_alone_is_not_a_permit",
       "test_core_runtime_error_refuses_pending_admission",
       "test_no_core_runtime_refuses_pending_admission",
+      "test_permit_with_a_refusing_dispatch_window_refuses",
+      "test_permit_without_dispatch_authorizer_refuses",
       "test_refused_even_inside_an_authorizing_call_window",
-      "test_valid_complete_command_refuses_pending_admission"
+      "test_valid_complete_command_refuses_pending_admission",
+      "test_withdrawn_admission_refuses_even_with_a_permit"
     ],
     "killed": true
   },
@@ -1381,19 +1446,17 @@
     "name": "G2_write_f3_context_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 122.9,
+    "seconds": 176.0,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=3, errors=1)"
+      "FAILED (failures=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_admitted_request_without_dispatch_authorizer_refuses",
-      "test_admitted_with_a_refusing_dispatch_window_refuses",
-      "test_admitted_without_f3_context_refuses",
-      "test_configured_write_boundary_consults_the_given_core_runtime"
+      "test_permit_with_a_refusing_dispatch_window_refuses",
+      "test_permit_without_dispatch_authorizer_refuses"
     ],
     "killed": true
   },
@@ -1401,12 +1464,12 @@
     "name": "G3_write_admission_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.1,
+    "seconds": 176.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=5)"
+      "FAILED (failures=6)"
     ],
     "import_error": false,
     "failing": [
@@ -1414,7 +1477,8 @@
       "test_core_runtime_error_refuses_pending_admission",
       "test_no_core_runtime_refuses_pending_admission",
       "test_refused_even_inside_an_authorizing_call_window",
-      "test_valid_complete_command_refuses_pending_admission"
+      "test_valid_complete_command_refuses_pending_admission",
+      "test_withdrawn_admission_refuses_even_with_a_permit"
     ],
     "killed": true
   },
@@ -1422,17 +1486,16 @@
     "name": "G4_write_authorizer_presence_unchecked",
     "exit": 1,
     "timed_out": false,
-    "seconds": 123.1,
+    "seconds": 177.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
-      "FAILED (failures=2)"
+      "FAILED (failures=1)"
     ],
     "import_error": false,
     "failing": [
-      "test_admitted_request_without_dispatch_authorizer_refuses",
-      "test_admitted_without_f3_context_refuses"
+      "test_permit_without_dispatch_authorizer_refuses"
     ],
     "killed": true
   },
@@ -1440,9 +1503,9 @@
     "name": "G5_no_f3_inventory_entry_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 125.2,
+    "seconds": 176.3,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=2)"
@@ -1458,9 +1521,9 @@
     "name": "G6_runtime_core_wiring_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 124.7,
+    "seconds": 173.9,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1475,9 +1538,9 @@
     "name": "G7_f3_profile_mapping_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 120.1,
+    "seconds": 172.8,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1492,9 +1555,9 @@
     "name": "G8_apply_core_status_entry_dropped",
     "exit": 1,
     "timed_out": false,
-    "seconds": 117.1,
+    "seconds": 172.2,
     "tests": [
-      "205"
+      "246"
     ],
     "result": [
       "FAILED (failures=1)"
@@ -1506,20 +1569,432 @@
     "killed": true
   },
   {
-    "name": "A3A4_both_persist_gates_removed",
+    "name": "H1_permit_check_removed",
     "exit": 1,
     "timed_out": false,
-    "seconds": 132.9,
+    "seconds": 176.4,
     "tests": [
-      "219"
+      "246"
     ],
     "result": [
-      "FAILED (failures=2)"
+      "FAILED (failures=8, errors=2)"
     ],
     "import_error": false,
     "failing": [
-      "test_final_persistence_check_refuses_without_the_lease_check",
-      "test_generic_builder_refuses_a_raw_operation_first"
+      "test_a_permit_authorizes_one_send_only",
+      "test_a_permit_for_another_target_command_or_intent_refuses",
+      "test_a_valid_write_inside_a_planning_lease_refuses",
+      "test_admitted_without_a_permit_refuses",
+      "test_an_authorizing_core_window_alone_is_not_a_permit",
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H2_permit_reuse_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 177.0,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_permit_authorizes_one_send_only"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H3_permit_intent_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 177.3,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_permit_for_another_target_command_or_intent_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H4_permit_target_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 172.7,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_permit_for_another_target_command_or_intent_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H5_permit_command_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 173.1,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_permit_for_another_target_command_or_intent_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H6_permit_never_consumed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 173.6,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_permit_authorizes_one_send_only"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H7_read_admission_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 167.7,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_withdrawn_admission_refuses_every_direct_read_with_no_call"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H8_reload_latch_always_true",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.9,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=39, errors=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_delayed_reload_inside_the_window_verifies_a_member_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_a_name_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_an_icon_edit",
+      "test_all_fields_together",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_attribution_names_the_scene_provider",
+      "test_each_field_alone_is_saved_and_verified_exactly",
+      "test_elevated_scene_remains_actionable",
+      "test_entity_add_remove_and_change",
+      "test_full_attribute_snapshot_round_trips_exactly",
+      "test_name_is_stored_exactly",
+      "test_plan_apply_and_rollback_reach_exactly_the_declared_set",
+      "test_rollback_after_external_restore_is_drift",
+      "test_rollback_availability_tracks_the_verified_forward",
+      "test_rollback_checks_the_forward_child_record",
+      "test_rollback_drift_is_type_exact",
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_rollback_plan_discloses_and_needs_its_own_approval",
+      "test_rollback_refused_after_drift",
+      "test_rollback_restores_the_exact_prior_configuration",
+      "test_rollback_route_rechecks_its_lease_before_persisting",
+      "test_send_boundary_records_the_send_time",
+      "test_state_only_member_is_known",
+      "test_stored_bare_state_is_kept_and_re_sent_exactly",
+      "test_verified_child_under_an_unverified_task_creates_no_restore",
+      "test_verified_plan_is_never_applied_twice"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H9_activation_taken_as_reload",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 165.5,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "H10_last_changed_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 160.9,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_prevented_reload_of_a_member_edit_is_not_verified"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H11_reload_evidence_any_operation",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 161.2,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "H12_reload_baseline_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 158.9,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_an_unreadable_reload_baseline_sends_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H13_poll_stops_before_reload",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 159.7,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_delayed_reload_inside_the_window_verifies_a_member_edit"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H14_unobserved_reload_verified",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 158.3,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_prevented_reload_of_a_member_edit_is_not_verified"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H15_missing_reload_check_verified",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 158.9,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "H16_runtime_reload_passthrough_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 133.0,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=39, errors=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_delayed_reload_inside_the_window_verifies_a_member_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_a_name_edit",
+      "test_a_delayed_reload_inside_the_window_verifies_an_icon_edit",
+      "test_all_fields_together",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_attribution_names_the_scene_provider",
+      "test_each_field_alone_is_saved_and_verified_exactly",
+      "test_elevated_scene_remains_actionable",
+      "test_entity_add_remove_and_change",
+      "test_full_attribute_snapshot_round_trips_exactly",
+      "test_name_is_stored_exactly",
+      "test_plan_apply_and_rollback_reach_exactly_the_declared_set",
+      "test_rollback_after_external_restore_is_drift",
+      "test_rollback_availability_tracks_the_verified_forward",
+      "test_rollback_checks_the_forward_child_record",
+      "test_rollback_drift_is_type_exact",
+      "test_rollback_of_an_elevated_scene_is_elevated",
+      "test_rollback_plan_discloses_and_needs_its_own_approval",
+      "test_rollback_refused_after_drift",
+      "test_rollback_restores_the_exact_prior_configuration",
+      "test_rollback_route_rechecks_its_lease_before_persisting",
+      "test_send_boundary_records_the_send_time",
+      "test_state_only_member_is_known",
+      "test_stored_bare_state_is_kept_and_re_sent_exactly",
+      "test_verified_child_under_an_unverified_task_creates_no_restore",
+      "test_verified_plan_is_never_applied_twice"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H17_switch_reason_dropped_in_planner",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 159.2,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=4, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_switch_present_only_before_the_edit_elevates",
+      "test_a_synthetic_security_siren_switch_elevates",
+      "test_an_elevated_switch_plan_applies_after_elevated_approval",
+      "test_an_unchanged_switch_member_elevates_a_name_edit",
+      "test_any_ordinary_switch_elevates"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H18_switch_reason_dropped_from_floor",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 160.7,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_the_id_floor_names_switches_and_keeps_existing_domains"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H19_switch_rule_on_substring",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 158.3,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_the_id_floor_names_switches_and_keeps_existing_domains"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H20_switch_statement_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 158.6,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_switch_present_only_before_the_edit_elevates",
+      "test_a_synthetic_security_siren_switch_elevates",
+      "test_an_unchanged_switch_member_elevates_a_name_edit",
+      "test_any_ordinary_switch_elevates"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H21_consumer_reader_refreshes",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 152.3,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H22_consumer_gap_not_disclosed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 135.9,
+    "tests": [
+      "246"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unavailable_consumer_evidence_is_a_disclosed_gap"
     ],
     "killed": true
   }

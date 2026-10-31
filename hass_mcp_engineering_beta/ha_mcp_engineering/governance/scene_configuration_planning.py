@@ -47,6 +47,12 @@ DISCLOSURE_MODEL = "scene_configuration_disclosure_v1"
 OPERATION_ID = "scene_configuration_1"
 # Classification needs the device class only where object_protection uses it.
 DEVICE_CLASS_DOMAINS = frozenset({"cover", "binary_sensor"})
+# HAMCP-071 R1-H3 (Josh, D1): a switch's purpose (a siren, a lock, a safety
+# device's power) is not knowable from Home Assistant, and an unresolved
+# purpose never implies harmlessness, so every switch member before or after
+# the edit is protected in addition to object_protection.
+SWITCH_DOMAIN = "switch"
+SWITCH_REASON = "switch_domain"
 NOT_ACTIVATED_DISCLOSURE = (
     "Saving this scene does not activate it: no device changes state when "
     "the plan is applied. The stored states take effect only when the scene "
@@ -61,10 +67,28 @@ ID_ASSIGNMENT_DISCLOSURE = (
     "without an id is given a new random id."
 )
 CONCURRENCY_DISCLOSURE = (
-    "Core has no compare-and-swap for scene configuration: the stored "
-    "configuration and registry entry are rechecked immediately before the "
-    "one save, and a change landing in the residual window after that check "
-    "is replaced by the save and detected by the exact readback."
+    "Core has no compare-and-swap for scene configuration, and its save is "
+    "an upsert. The stored configuration, registry entry and loaded scene "
+    "are rechecked immediately before the one save, but between that final "
+    "check and the save: a concurrent edit to this scene can be overwritten "
+    "without being detected (the readback sees only this plan's result), "
+    "and a concurrent deletion can make the save recreate the scene. "
+    "Verification proves this plan's stored result, not that no other "
+    "change happened in that window."
+)
+LOADED_SCENE_DISCLOSURE = (
+    "Verification needs evidence that Home Assistant reloaded the scene "
+    "after this save (the scene state is re-added). Until that evidence is "
+    "observed within the bounded observation window, the stored "
+    "configuration may be verified while the loaded scene is not: the task "
+    "stays observing and then requires manual review, never verified. "
+    "Recovery is read-only: inspect the task and the scene's stored "
+    "configuration and state, and reload scenes in Home Assistant yourself "
+    "if the loaded scene is stale; Engineering never reloads, activates or "
+    "resends. The evidence is held in memory, so an Engineering restart "
+    "after the save also leaves the result unverified. A scene reload by "
+    "anything else just before the save cannot be told apart from the "
+    "save's own reload."
 )
 MEMBER_ORDER_DISCLOSURE = (
     "Members are saved in entity_id order. Core reproduces scene states "
@@ -103,6 +127,10 @@ _REFUSALS = {
     ),
     "scene_configuration_target_disabled": (
         "scene_configuration_target_disabled", "unreviewable"
+    ),
+    # R1-H2: the reads refuse before any call while the profile is withdrawn.
+    contract.PENDING_ADMISSION_REASON: (
+        contract.PENDING_ADMISSION_REASON, "unavailable"
     ),
 }
 _UNSET = object()
@@ -270,7 +298,19 @@ def id_protection_reasons(entity_ids: Any) -> list[str]:
             # A classless cover is decided by the planner's device-class read.
             if reason != "cover_device_class_unresolved"
         )
+        if _is_switch(entity_id):
+            reasons.add(SWITCH_REASON)
     return sorted(reasons)
+
+
+def _is_switch(entity_id: Any) -> bool:
+    return isinstance(entity_id, str) and entity_id.split(".", 1)[0] == SWITCH_DOMAIN
+
+
+def switch_members(entity_ids: Any) -> list[str]:
+    """The switch members before and after the edit, for the disclosure."""
+
+    return sorted({item for item in entity_ids if _is_switch(item)})
 
 
 async def protection_reasons(gateway: Any, entity_ids: list[str]) -> list[str]:
@@ -286,19 +326,32 @@ async def protection_reasons(gateway: Any, entity_ids: list[str]) -> list[str]:
                 # Unresolved evidence is protected, never assumed harmless.
                 reasons.add("device_class_unresolved")
         reasons.update(object_protection(entry))
+        if _is_switch(entity_id):
+            reasons.add(SWITCH_REASON)
     return sorted(reasons)
 
 
-def classify(reasons: list[str]) -> dict[str, Any]:
+def classify(
+    reasons: list[str], switches: tuple[str, ...] | list[str] = ()
+) -> dict[str, Any]:
     if reasons:
+        statements = [
+            "This scene stores states for protected devices; activating "
+            "it later can change them. Saving it does not."
+        ]
+        if switches:
+            statements.append(
+                "Elevated because the scene has switch members before or "
+                "after this edit; a switch's purpose cannot be resolved from "
+                "Home Assistant, so it is treated as protected: "
+                + ", ".join(switches)
+                + "."
+            )
         return {
             "policy": "elevated",
             "physical_consequence": "indirect",
             "basis": list(reasons),
-            "statements": [
-                "This scene stores states for protected devices; activating "
-                "it later can change them. Saving it does not."
-            ],
+            "statements": statements,
             "warnings": [],
         }
     return {
@@ -506,10 +559,10 @@ async def prepare(
         if unknown:
             raise Refusal(UNKNOWN_ENTITIES, fields=sorted(unknown)[:16])
     changed = contract.changed_fields(current, proposed)
-    reasons = await protection_reasons(
-        gateway, [*current["config"]["entities"], *config["entities"]]
-    )
-    classification = classify(reasons)
+    members = [*current["config"]["entities"], *config["entities"]]
+    reasons = await protection_reasons(gateway, members)
+    switches = switch_members(members)
+    classification = classify(reasons, switches)
     rows, unchanged = entity_rows(current["config"]["entities"], config["entities"])
     disclosure = {
         "model": DISCLOSURE_MODEL,
@@ -533,6 +586,7 @@ async def prepare(
         "id_assignment": ID_ASSIGNMENT_DISCLOSURE,
         "consumers": await consumer_disclosure(gateway, current["entity_id"]),
         "consequence_statements": list(classification["statements"]),
+        "switch_members": switches,
         "untrusted_text": UNTRUSTED_DISCLOSURE,
         "provider": contract.PROVIDER,
         "fallback": "none",
@@ -564,6 +618,7 @@ async def prepare(
                 else ROLLBACK_DISCLOSURE
             ),
             "residual_concurrency_window": CONCURRENCY_DISCLOSURE,
+            "loaded_scene_verification": LOADED_SCENE_DISCLOSURE,
         },
     )
 
@@ -594,6 +649,7 @@ __all__ = [
     "Preparation",
     "Refusal",
     "Request",
+    "SWITCH_REASON",
     "SceneConfigurationRefusal",
     "UNKNOWN_ENTITIES",
     "classify",
@@ -602,5 +658,6 @@ __all__ = [
     "projection",
     "restore_request",
     "risk_assessment",
+    "switch_members",
     "validate_request",
 ]

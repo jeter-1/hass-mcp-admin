@@ -162,6 +162,14 @@ class SyntheticSceneRest:
         self.drift: dict[str, Any] = {}
         # When set, the post-write reload fails (Core only logs it).
         self.reload_fails = False
+        # When set, the post-write reload is deferred until this many scene
+        # state reads after the POST (``None``: immediate).
+        self.reload_after_state_reads: int | None = None
+        self._pending_reload: int | None = None
+        # Each state add gets a fresh ``last_changed`` (core.py async_set_internal).
+        self._generation = 0
+        # The restored scene state value: the last activation time.
+        self.activated_at = "2026-10-01T00:00:00+00:00"
         # Called once after the next config GET (between planning reads).
         self.after_config_read: Any = None
 
@@ -222,9 +230,12 @@ class SyntheticSceneRest:
         if entry is not None:
             entry["original_name"] = config.get("name")
             entry["original_icon"] = config.get("icon")
+        self._generation += 1
         self.states[entity_id] = {
             "entity_id": entity_id,
-            "state": "2026-10-01T00:00:00+00:00",
+            "state": self.activated_at,
+            "last_changed": f"2026-10-01T00:{self._generation // 60:02d}:"
+            f"{self._generation % 60:02d}+00:00",
             "attributes": {
                 "entity_id": list(config.get("entities", {})),
                 "id": config.get("id"),
@@ -282,9 +293,21 @@ class SyntheticSceneRest:
                 break
         else:
             self.scenes.append(updated)
-        if not self.reload_fails:
+        if self.reload_fails:
+            return {"result": "ok"}
+        if self.reload_after_state_reads is not None:
+            self._pending_reload = self.reload_after_state_reads
+        else:
             self._reload()
         return {"result": "ok"}
+
+    def _state_read(self, entity_id: str) -> None:
+        if self._pending_reload is None or not entity_id.startswith("scene."):
+            return
+        self._pending_reload -= 1
+        if self._pending_reload <= 0:
+            self._pending_reload = None
+            self._reload()
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
         require_core_authority(self, method, str(path))
@@ -307,6 +330,7 @@ class SyntheticSceneRest:
             raise AssertionError(f"never-sent scene request: {method} {path}")
         if method == "GET" and path.startswith("/states/"):
             entity_id = path.removeprefix("/states/")
+            self._state_read(entity_id)
             value = self.states.get(entity_id)
             return ExpectedHttpStatus(404) if value is None else deepcopy(value)
         if "/services/scene/" in path or "/services/" in path:
@@ -341,11 +365,20 @@ class SceneServiceTestCase(LabelServiceTestCase):
         )
         self.exposure_reads: list[bool] = []
 
+        # R1-M1: a refreshing read is outside the scene profile; only the
+        # cached snapshot reader may be used.
+        self.refreshing_reads: list[bool] = []
+
         async def exposure_reader(*, fenced: bool) -> Any:
-            self.exposure_reads.append(fenced)
+            self.refreshing_reads.append(fenced)
+            return self.exposure
+
+        def cached_reader() -> Any:
+            self.exposure_reads.append("cached")
             return self.exposure
 
         gateway.availability_exposure_snapshot_reader = exposure_reader
+        gateway.scene_configuration.consumer_snapshot_reader = cached_reader
         self.service.scene_configuration_gateway = gateway.scene_configuration
         self.core = SceneAdmittingCore(
             SceneAdmittingCore.GATED if self.core_admits else ()

@@ -46,7 +46,13 @@ Mutant classes:
 - ``G*`` (HAMCP-106 R1-H1 pattern) resource-write gate: refusal not
   enforced, F3 context unchecked, admission unchecked, authorizer presence
   unchecked, no-F3 apply inventory entry dropped, runtime Core wiring
-  dropped, F3 profile mapping dropped, apply Core status entry dropped.
+  dropped, F3 profile mapping dropped, apply Core status entry dropped;
+- ``H*`` (HAMCP-071 R1) guard removals: the F3 write permit (presence,
+  reuse, intent, target, command, consumption), read admission, the
+  post-save reload latch and its baseline, the poll exit, the strategy's
+  reload-evidence requirement and runtime passthrough, the switch rule
+  (planner, floor, domain match, statement), and the cached-only consumer
+  reader and its gap.
 
 Usage (from the worktree root):
     systemd-run --user --unit hamcp071-mut --property=MemoryMax=3G \\
@@ -170,8 +176,8 @@ M = [
  ('T10_loaded_members_unchecked',
   [(C, '        return type(members) is list and sorted(\n'
        '            str(item) for item in members\n'
-       '        ) == sorted(config["entities"])\n',
-       '        return type(members) is list\n')]),
+       '        ) == sorted(config["entities"]), state\n',
+       '        return type(members) is list, state\n')]),
  # ---- V: requested values.
  ('V1_whitespace_name_allowed',
   [(C, 'isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_NAME_LENGTH',
@@ -268,8 +274,8 @@ M = [
   [(PO, '    if reasons != sorted(set(reasons)) or not set(floor) <= set(reasons):\n',
         '    if reasons != sorted(set(reasons)):\n')]),
  ('P2_elevated_planned_standard',
-  [(P, '    if reasons:\n        return {\n            "policy": "elevated",\n',
-       '    if False:\n        return {\n            "policy": "elevated",\n')]),
+  [(P, '    if reasons:\n        statements = [\n',
+       '    if False:\n        statements = [\n')]),
  ('P3_unresolved_device_class_harmless',
   [(P, '                reasons.add("device_class_unresolved")\n', '                pass\n')]),
  ('P4_elevated_classified_standard',
@@ -362,12 +368,12 @@ M = [
        '        return any(_withheld(item) for item in value.values())\n')]),
  # ---- G: resource-write gate (HAMCP-106 R1-H1 pattern).
  ('G1_write_refusal_not_enforced',
-  [(C, '        refusal = self.write_refusal()\n        if refusal is not None:\n',
-       '        refusal = self.write_refusal()\n        if False:\n')]),
+  [(C, '        refusal = self.write_refusal(config_id, command)\n        if refusal is not None:\n',
+       '        refusal = self.write_refusal(config_id, command)\n        if False:\n')]),
  ('G2_write_f3_context_unchecked',
   [(C, '            return F3_CONTEXT_REQUIRED_REASON\n', '            pass\n')]),
  ('G3_write_admission_unchecked',
-  [(C, '        if not admitted:\n            return PENDING_ADMISSION_REASON\n',
+  [(C, '        if self.read_refusal() is not None:\n            return PENDING_ADMISSION_REASON\n',
        '        if False:\n            return PENDING_ADMISSION_REASON\n')]),
  ('G4_write_authorizer_presence_unchecked',
   [(C, '            or telemetry.core_dispatch_authorizer is None\n', '')]),
@@ -384,6 +390,66 @@ M = [
         '            for operation in plan.operations\n',
         '                dashboard_metadata_contract.RESOURCE_TYPE,\n            )\n'
         '            for operation in plan.operations\n')]),
+ # ---- H: HAMCP-071 R1 guard removals (permit, read admission, reload
+ # evidence, switch rule, consumer cache).
+ ('H1_permit_check_removed',
+  [(C, '            return WRITE_PERMIT_REQUIRED_REASON\n        telemetry', '            pass\n        telemetry')]),
+ ('H2_permit_reuse_allowed',
+  [(C, '            or slot.consumed\n', '')]),
+ ('H3_permit_intent_unchecked',
+  [(C, '            or permit.intent != DISPATCH_INTENT\n', '')]),
+ ('H4_permit_target_unchecked',
+  [(C, '            or permit.config_id != config_id\n', '')]),
+ ('H5_permit_command_unchecked',
+  [(C, '            or permit.arguments_hash != stable_hash(command)\n', '')]),
+ ('H6_permit_never_consumed',
+  [(C, '        slot.consumed = True  # type: ignore[union-attr]\n', '')]),
+ ('H7_read_admission_unchecked',
+  [(C, '        if self.read_refusal() is not None:\n'
+       '            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)\n',
+       '        if False:\n'
+       '            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)\n')]),
+ ('H8_reload_latch_always_true',
+  [(C, '        baseline = self._reload_baselines.get(config_id)\n'
+       '        if baseline is None or baseline.observed:\n            return True\n',
+       '        return True\n')]),
+ ('H9_activation_taken_as_reload',
+  [(C, '            and exactly_equal(state.get("state"), baseline.state)\n', '')]),
+ ('H10_last_changed_unchecked',
+  [(C, '            and state["last_changed"] != baseline.last_changed\n', '')]),
+ ('H11_reload_evidence_any_operation',
+  [(C, '            and baseline.operation_id == operation_id\n', '')]),
+ ('H12_reload_baseline_check_removed',
+  [(C, '        if baseline_state is None or type(baseline_state.get("last_changed")) is not str:\n',
+       '        if baseline_state is None and False:\n')]),
+ ('H13_poll_stops_before_reload',
+  [(C, '            if loaded and reloaded:\n', '            if loaded:\n')]),
+ ('H14_unobserved_reload_verified',
+  [(ST, '            and check(operation.target.target_id, operation.operation_id) is True\n', '')]),
+ ('H15_missing_reload_check_verified',
+  [(ST, '            check is not None\n            and observed.get("loaded_matches_config") is True\n',
+        '            observed.get("loaded_matches_config") is True\n')]),
+ ('H16_runtime_reload_passthrough_dropped',
+  [(RU, '    def scene_configuration_reload_observed(self, target_id, operation_id):\n',
+        '    def _scene_configuration_reload_observed_unused(self, target_id, operation_id):\n')]),
+ ('H17_switch_reason_dropped_in_planner',
+  [(P, '        if _is_switch(entity_id):\n            reasons.add(SWITCH_REASON)\n'
+       '    return sorted(reasons)\n\n\ndef classify',
+       '    return sorted(reasons)\n\n\ndef classify')]),
+ ('H18_switch_reason_dropped_from_floor',
+  [(P, '        if _is_switch(entity_id):\n            reasons.add(SWITCH_REASON)\n'
+       '    return sorted(reasons)\n\n\ndef _is_switch',
+       '    return sorted(reasons)\n\n\ndef _is_switch')]),
+ ('H19_switch_rule_on_substring',
+  [(P, 'entity_id.split(".", 1)[0] == SWITCH_DOMAIN', 'SWITCH_DOMAIN in entity_id')]),
+ ('H20_switch_statement_dropped',
+  [(P, '        if switches:\n', '        if False:\n')]),
+ ('H21_consumer_reader_refreshes',
+  [(GR, '                read_cached_dependency_snapshot\n            )\n',
+        '                read_runtime_dependency_snapshot\n            )\n')]),
+ ('H22_consumer_gap_not_disclosed',
+  [(C, '        if snapshot is None:\n            evidence["evidence_gaps"] = sorted(\n',
+       '        if False:\n            evidence["evidence_gaps"] = sorted(\n')]),
 ]
 
 only = set(sys.argv[1:])

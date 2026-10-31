@@ -21,7 +21,18 @@ The gateway sends only a closed vocabulary: the config GET, the one config
 POST (the full proposed configuration without ``id``), the entity registry
 list and get reads, and the state read.  ``scene.turn_on``, ``scene.apply``,
 ``scene.create``, ``scene.delete``, ``scene.reload`` and the config DELETE
-are never sent: saving a scene never activates it.
+are never sent: saving a scene never activates it.  Every read refuses
+before it is sent while the profile is not admitted, and the POST needs the
+single-use F3 write permit the configuration adapter installs only after
+the durable dispatch intent (HAMCP-071 R1-H2).
+
+Core's save reload removes the scene's state and adds a fresh one
+(``StateMachine.async_remove``; a re-added state has a new
+``last_changed``), while the restored state value (the last activation
+time) is unchanged.  The POST is preceded by a baseline read of that state;
+a later read that sees a new ``last_changed`` with the same state value is
+the post-save reload evidence verification requires (R1-H1).  Without it the
+stored configuration can be verified but the loaded scene is not.
 
 There is no fallback provider.  The resource type stays unadmitted until a
 signed Core registry sequence pins ``core.scene_configuration_operation``
@@ -31,10 +42,13 @@ signed Core registry sequence pins ``core.scene_configuration_operation``
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 import json
 import math
 import re
-from typing import Any
+from typing import Any, Iterator
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
@@ -43,6 +57,7 @@ from .entity_metadata import (
     EntityMetadataProviderError,
     EntityMetadataUpdateErrorResult,
 )
+from .normalize import stable_hash
 
 
 RESOURCE_TYPE = "scene_configuration"
@@ -75,6 +90,18 @@ ERROR_RESULT_REASON = "scene_configuration_write_error_result"
 PENDING_ADMISSION_REASON = "pending_signed_registry_admission"
 # HAMCP-106 R1-H1: an admitted profile still needs the F3 dispatch window.
 F3_CONTEXT_REQUIRED_REASON = "active_f3_execution_required"
+# HAMCP-071 R1-H2: the generic Core dispatch authority (installed by every
+# Core call window and planning lease) is not a write permit.  The POST
+# needs the permit bound to the plan, task, operation, exact target, exact
+# command and the recorded dispatch intent.
+WRITE_PERMIT_REQUIRED_REASON = "scene_configuration_write_permit_required"
+DISPATCH_INTENT = "dispatch_intent_recorded"
+# HAMCP-071 R1-H1: the pre-POST read of the scene state failed, so no
+# post-save reload could ever be proven; nothing is sent.
+RELOAD_BASELINE_UNAVAILABLE_REASON = "scene_configuration_reload_baseline_unavailable"
+STORED_CONFIGURATION_VERIFIED = "scene_stored_configuration_verified"
+RELOAD_UNVERIFIED = "scene_post_save_reload_unverified"
+CONSUMER_INDEX_NOT_CURRENT = "dependency_index_not_current"
 PENDING_ADMISSION_TEXT = (
     "Scene configuration edits are implemented but inactive: pending signed "
     "registry admission (planned: the November Core signing batch, sequence "
@@ -110,6 +137,50 @@ MAX_REGISTRY_LIST_ITEMS = 5_000
 # scene is polled within this bound before it counts as inconsistent.
 LOADED_POLL_ATTEMPTS = 10
 LOADED_POLL_INTERVAL_SECONDS = 0.5
+
+
+@dataclass(frozen=True)
+class ScenePermit:
+    """One F3 dispatch's authority to send exactly one scene POST."""
+
+    plan_id: str
+    task_id: str
+    operation_id: str
+    config_id: str
+    entity_id: str
+    arguments_hash: str
+    intent: str
+
+
+class _PermitSlot:
+    def __init__(self, permit: ScenePermit) -> None:
+        self.permit = permit
+        self.consumed = False
+
+
+_WRITE_PERMIT: ContextVar[_PermitSlot | None] = ContextVar(
+    "scene_configuration_write_permit", default=None
+)
+
+
+@contextmanager
+def write_permit(permit: ScenePermit) -> Iterator[None]:
+    """Install ``permit`` for the one send it authorizes."""
+
+    token = _WRITE_PERMIT.set(_PermitSlot(permit))
+    try:
+        yield
+    finally:
+        _WRITE_PERMIT.reset(token)
+
+
+@dataclass
+class _ReloadBaseline:
+    operation_id: str
+    entity_id: str
+    last_changed: str
+    state: Any
+    observed: bool = False
 
 
 class SceneConfigurationContractError(ValueError):
@@ -404,8 +475,15 @@ class SceneConfigurationGateway:
     def __init__(self, configuration_gateway: Any) -> None:
         self._configuration = configuration_gateway
         # Set by the governance runtime.  Absent means the profile cannot be
-        # shown admitted, so every write refuses before it is sent.
+        # shown admitted, so every read and write refuses before it is sent.
         self.core_runtime: Any = None
+        # Set by the governance runtime: the dependency snapshot reader that
+        # never builds or refreshes (HAMCP-071 R1-M1).
+        self.consumer_snapshot_reader: Any = None
+        # Pre-POST scene state per config id (R1-H1), in memory only: after
+        # an Engineering restart the reload evidence is gone and the result
+        # stays unverified.
+        self._reload_baselines: dict[str, _ReloadBaseline] = {}
 
     @property
     def rest_client(self) -> Any:
@@ -415,13 +493,8 @@ class SceneConfigurationGateway:
     def websocket_client(self) -> Any:
         return self._configuration.websocket_client
 
-    def write_refusal(self) -> str | None:
-        """Why a write may not be sent now, or ``None`` when it may.
-
-        HAMCP-106 R1-H1: a closed, valid command is not authority.  The write
-        needs current Core admission of the scene profile and the
-        request-bound dispatch authority only the F3 dispatch window installs.
-        """
+    def read_refusal(self) -> str | None:
+        """Why no scene read may be sent now (R1-H2): admission withdrawn."""
 
         core = self.core_runtime
         try:
@@ -431,8 +504,37 @@ class SceneConfigurationGateway:
             )
         except Exception:
             admitted = False
-        if not admitted:
+        return None if admitted else PENDING_ADMISSION_REASON
+
+    def _require_read_admission(self) -> None:
+        if self.read_refusal() is not None:
+            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)
+
+    def write_refusal(
+        self, config_id: str | None = None, command: dict[str, Any] | None = None
+    ) -> str | None:
+        """Why a write may not be sent now, or ``None`` when it may.
+
+        HAMCP-106 R1-H1: a closed, valid command is not authority.  The write
+        needs current Core admission of the scene profile, the request-bound
+        dispatch authority, and (HAMCP-071 R1-H2) the unconsumed F3 write
+        permit for exactly this target and command.
+        """
+
+        if self.read_refusal() is not None:
             return PENDING_ADMISSION_REASON
+        slot = _WRITE_PERMIT.get()
+        permit = slot.permit if slot is not None else None
+        if (
+            permit is None
+            or slot.consumed
+            or permit.intent != DISPATCH_INTENT
+            or config_id is None
+            or permit.config_id != config_id
+            or command is None
+            or permit.arguments_hash != stable_hash(command)
+        ):
+            return WRITE_PERMIT_REQUIRED_REASON
         telemetry = current_telemetry()
         if (
             telemetry is None
@@ -447,6 +549,7 @@ class SceneConfigurationGateway:
             raise SceneConfigurationContractError(
                 "scene_configuration_command_outside_vocabulary"
             )
+        self._require_read_admission()
         return await self.websocket_client.command(dict(command))
 
     async def read_config(self, config_id: str) -> dict[str, Any] | None:
@@ -457,6 +560,7 @@ class SceneConfigurationGateway:
 
         if not config_id_valid(config_id):
             raise ValueError("scene_configuration resource_id must be a config id")
+        self._require_read_admission()
         value = await self.rest_client.request(
             "GET",
             rest_path("/config/scene/config/{}", config_id),
@@ -542,6 +646,7 @@ class SceneConfigurationGateway:
         from ..clients.rest import ExpectedHttpStatus
 
         validate_entity_id(entity_id)
+        self._require_read_admission()
         value = await self.rest_client.request(
             "GET",
             rest_path("/states/{}", entity_id, kinds=("entity_id",)),
@@ -585,16 +690,29 @@ class SceneConfigurationGateway:
     async def consumer_evidence(self, entity_id: str) -> dict[str, Any] | None:
         """Automations and scripts that reference the scene, from the index.
 
-        ``None`` means the index reader is not wired; a failed build is the
-        069B "unavailable" evidence with its gaps, never "no consumers".
+        HAMCP-071 R1-M1: only the dependency evidence the index already holds
+        is used; nothing is built or refreshed, so no read outside the
+        profile's declared vocabulary is sent.  ``None`` means the reader is
+        not wired; an absent or no-longer-current snapshot is "unavailable"
+        evidence with the ``dependency_index_not_current`` gap, never "no
+        consumers".
         """
 
-        from .entity_availability_exposure_planning import read_consumer_evidence
+        from .entity_availability_exposure_planning import _consumer_evidence
 
-        reader = getattr(self._configuration, "availability_exposure_snapshot_reader", None)
+        reader = self.consumer_snapshot_reader
         if reader is None:
             return None
-        return await read_consumer_evidence(reader, entity_id, fenced=False)
+        try:
+            snapshot = reader()
+        except Exception:
+            snapshot = None
+        evidence = _consumer_evidence(snapshot, entity_id)
+        if snapshot is None:
+            evidence["evidence_gaps"] = sorted(
+                {*evidence["evidence_gaps"], CONSUMER_INDEX_NOT_CURRENT}
+            )
+        return evidence
 
     async def _loaded_matches(
         self,
@@ -602,13 +720,17 @@ class SceneConfigurationGateway:
         entity_id: str,
         registry_entry_id: str,
         config: dict[str, Any],
-    ) -> bool:
-        """The loaded scene entity reflects ``config`` (Core reload landed).
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Whether the loaded scene's identity, name, icon and members match.
 
         The re-added entity updates the registry ``original_name`` and
         ``original_icon``; its state lists the member entity_ids and the id.
+        The member snapshots are not observable, so this alone is not proof
+        that a save reload landed (R1-H1); see ``reload_observed``.
         """
 
+        # The state is read first so every poll can observe the reload.
+        state = await self.read_entity_state(entity_id)
         detail = await self.registry_detail(entity_id)
         if (
             detail is None
@@ -619,21 +741,54 @@ class SceneConfigurationGateway:
             or detail.get("original_name") != config["name"]
             or detail.get("original_icon") != config.get("icon")
         ):
-            return False
-        state = await self.read_entity_state(entity_id)
+            return False, state
         attributes = state.get("attributes") if state is not None else None
         if type(attributes) is not dict or attributes.get("id") != config_id:
-            return False
+            return False, state
         members = attributes.get("entity_id")
         return type(members) is list and sorted(
             str(item) for item in members
-        ) == sorted(config["entities"])
+        ) == sorted(config["entities"]), state
+
+    def _observe_reload(
+        self, config_id: str, entity_id: str, state: dict[str, Any] | None
+    ) -> bool:
+        """Latch the post-save reload; ``True`` while no evidence is pending.
+
+        Core's reload re-adds the scene state with a new ``last_changed`` and
+        the restored state value; an activation changes the state value
+        instead, so it is never taken for a reload.
+        """
+
+        baseline = self._reload_baselines.get(config_id)
+        if baseline is None or baseline.observed:
+            return True
+        if (
+            baseline.entity_id == entity_id
+            and state is not None
+            and type(state.get("last_changed")) is str
+            and state["last_changed"] != baseline.last_changed
+            and exactly_equal(state.get("state"), baseline.state)
+        ):
+            baseline.observed = True
+        return baseline.observed
+
+    def reload_observed(self, config_id: str, operation_id: str) -> bool:
+        """The save of ``operation_id`` was followed by a loaded-scene reload."""
+
+        baseline = self._reload_baselines.get(config_id)
+        return (
+            baseline is not None
+            and baseline.operation_id == operation_id
+            and baseline.observed
+        )
 
     async def read_state(self, config_id: str) -> dict[str, Any] | None:
         """The exact governed state, or ``None`` when no such scene exists."""
 
         if not config_id_valid(config_id):
             raise ValueError("scene_configuration resource_id must be a config id")
+        self._require_read_admission()
         config = await self.read_config(config_id)
         entry = self.registry_entry(await self.registry_items(), config_id)
         if config is None:
@@ -657,8 +812,11 @@ class SceneConfigurationGateway:
         for attempt in range(LOADED_POLL_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(LOADED_POLL_INTERVAL_SECONDS)
-            loaded = await self._loaded_matches(config_id, entity_id, entry_id, config)
-            if loaded:
+            loaded, state = await self._loaded_matches(
+                config_id, entity_id, entry_id, config
+            )
+            reloaded = self._observe_reload(config_id, entity_id, state)
+            if loaded and reloaded:
                 break
         # Re-read last: a configuration that changed while the loaded scene
         # was checked is never bound.
@@ -692,7 +850,7 @@ class SceneConfigurationGateway:
                 },
                 call_not_sent=True,
             )
-        refusal = self.write_refusal()
+        refusal = self.write_refusal(config_id, command)
         if refusal is not None:
             raise ConfigurationMutationNotDispatchedError(
                 details={
@@ -715,6 +873,33 @@ class SceneConfigurationGateway:
                 },
                 call_not_sent=True,
             ) from exc
+        # write_refusal proved an unconsumed permit for exactly this send.
+        slot = _WRITE_PERMIT.get()
+        slot.consumed = True  # type: ignore[union-attr]
+        permit = slot.permit  # type: ignore[union-attr]
+        # R1-H1: the scene state just before the POST; the save reload is
+        # proven only against it.  Without it nothing is sent.
+        try:
+            baseline_state = await self.read_entity_state(permit.entity_id)
+        except Exception:
+            baseline_state = None
+        if baseline_state is None or type(baseline_state.get("last_changed")) is not str:
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": operation,
+                    "resource_id": config_id,
+                    "reason": RELOAD_BASELINE_UNAVAILABLE_REASON,
+                    "reason_code": RELOAD_BASELINE_UNAVAILABLE_REASON,
+                    "provider_dispatch_occurred": False,
+                },
+                call_not_sent=True,
+            )
+        self._reload_baselines[config_id] = _ReloadBaseline(
+            operation_id=permit.operation_id,
+            entity_id=permit.entity_id,
+            last_changed=baseline_state["last_changed"],
+            state=json.loads(canonical(baseline_state.get("state"))),
+        )
         try:
             mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self.rest_client.request(
@@ -779,11 +964,15 @@ __all__ = [
     "PROVIDER",
     "PROVIDER_CONTRACT",
     "REJECTED_REASON",
+    "RELOAD_UNVERIFIED",
+    "STORED_CONFIGURATION_VERIFIED",
+    "ScenePermit",
     "RESOURCE_TYPE",
     "STATE_KEYS",
     "SceneConfigurationContractError",
     "SceneConfigurationGateway",
     "UNAUTHORIZED_REASON",
+    "WRITE_PERMIT_REQUIRED_REASON",
     "canonical",
     "changed_fields",
     "command_errors",
@@ -799,4 +988,5 @@ __all__ = [
     "state_errors",
     "write_body",
     "write_command",
+    "write_permit",
 ]

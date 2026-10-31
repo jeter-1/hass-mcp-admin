@@ -99,6 +99,15 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
+    def scene_configuration_reload_observed(
+        self, target_id: str, operation_id: str
+    ) -> bool:
+        """HAMCP-071 R1-H1: this operation's save reload was observed."""
+
+        return self._gateway.scene_configuration.reload_observed(
+            target_id, operation_id
+        )
+
     async def label_preflight_evidence(
         self,
         target_id: str,

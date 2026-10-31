@@ -49,9 +49,21 @@ follow-up (section 0).
      missing id is created) and accepts a `python_transform`, and it is
      reviewed for classification only. Using it would need an ha-mcp
      contract change, which is a non-goal.
-   - **(c) Chosen.** It binds the exact existing target, re-reads it before
-     the one write, and has no upsert path: a missing scene is refused, never
-     created.
+   - **(c) Chosen.** It binds the exact existing target and re-reads it
+     before the one write. Engineering never asks Core to create a scene: a
+     scene missing at planning or at the final check is refused. Core's save
+     is still an upsert, so a deletion landing after the final check can make
+     the one save recreate the scene. Josh accepted that race with an honest
+     disclosure (D3, section 3).
+5. **R1 decisions (Josh).**
+   - **D1.** Any `switch` member, before or after the edit, makes the plan
+     `elevated_admin` in addition to object protection. A switch's purpose
+     cannot be resolved from its entity id, and an unresolved purpose never
+     implies harmlessness.
+   - **D2.** The inactive profile declares every Home Assistant request and
+     state read. It is unsigned, so its fingerprint changed (section 6).
+   - **D3.** The Core upsert race is accepted and disclosed. No mechanism
+     closes it.
 3. **Built inactive.** The new compiled Core profile
    `core.scene_configuration_operation` is runtime-only and sits in
    `CORE_NOVEMBER_BATCH_PROFILES`. No release in signed sequences 1–14 names
@@ -61,8 +73,8 @@ follow-up (section 0).
    [`HAMCP_222_SIGNED_COVERAGE_AUDIT.md`](HAMCP_222_SIGNED_COVERAGE_AUDIT.md).
 4. **Classification reuses object protection.** It uses `object_protection`
    from `governance/entity_availability_exposure_planning.py:189` over every
-   member before *and* after the edit. Gaps in consumer evidence are
-   disclosed but do not elevate the policy. Risk labels are decision
+   member before *and* after the edit, plus the switch rule (D1). Gaps in
+   consumer evidence are disclosed but do not elevate the policy. Risk labels are decision
    support only (`AGENTS.md`).
 
 ## 1. Part 1 findings: the Core contract
@@ -234,9 +246,13 @@ Planning refuses before any dispatch, and creates no plan, when:
     snapshot, and the unchanged member count;
   - the member counts before and after;
   - the consumers: automations and scripts that reference the scene, from
-    the 069B dependency index. When the index is missing, `status` is
-    `unavailable` with `evidence_gaps` `["dependency_index_unavailable"]`,
-    never "no consumers".
+    the 069B dependency index. Planning reads only the snapshot that is
+    already cached; it never builds or refreshes the index, so it sends no
+    Home Assistant request of its own. When the index is missing, `status` is
+    `unavailable` with `evidence_gaps` `["dependency_index_unavailable"]`;
+    when the cached snapshot is not current, the gap is
+    `dependency_index_not_current`. Neither is ever "no consumers".
+  - the switch members before and after the edit (entity ids only).
 
   It also carries these fixed texts:
   - "Saving this scene does not activate it: no device changes state when
@@ -250,6 +266,9 @@ Planning refuses before any dispatch, and creates no plan, when:
     with every domain in parallel, so stored order is not an activation
     ordering guarantee before or after this save."
   - The metadata text: metadata is never changed.
+  - The loaded-scene text: verification needs post-save reload evidence;
+    otherwise the task stays observing and then needs manual review, never
+    verified, and recovery is read-only (section 4).
   - The rollback, untrusted-text and consumer texts.
 
   The plan-level disclosure records:
@@ -258,9 +277,13 @@ Planning refuses before any dispatch, and creates no plan, when:
   - provider `direct_home_assistant_scene_configuration`;
   - fallback `none`;
   - the never-sent list (section 6);
-  - the residual concurrency window: Core has no compare-and-swap, so a
-    change landing after the final check is replaced by the save, and the
-    readback detects it.
+  - the residual concurrency window (D3): "Core has no compare-and-swap for
+    scene configuration, and its save is an upsert. ... between that final
+    check and the save: a concurrent edit to this scene can be overwritten
+    without being detected (the readback sees only this plan's result), and
+    a concurrent deletion can make the save recreate the scene.
+    Verification proves this plan's stored result, not that no other change
+    happened in that window." No readback claims to detect this race.
 - **Policy.** Object protection is evaluated over the members before and
   after the edit. Device class is read for `cover` and `binary_sensor`. A
   device class that cannot be resolved counts as protected
@@ -271,6 +294,13 @@ Planning refuses before any dispatch, and creates no plan, when:
     `scene_protected_member_<reason>`. The statement is "This scene stores
     states for protected devices; activating it later can change them.
     Saving it does not."
+  - Any `switch` member before or after the edit (D1): `elevated_admin`,
+    with `scene_protected_member_switch_domain`. A second statement names
+    the switch entity ids: "Elevated because the scene has switch members
+    before or after this edit; a switch's purpose cannot be resolved from
+    Home Assistant, so it is treated as protected: ...". The rule is on the
+    domain only, so
+    `light.switch_room` is not a switch.
   - Otherwise: `standard_admin`, risk `LOW`, physical consequence `none`.
     The reason codes are `scene_configuration_standard_policy` and
     `supported_configuration_change`.
@@ -290,6 +320,15 @@ and `mark_provider_send()` at the send boundary. The locks are an exclusive
 `scene_configuration` identity per config id plus the shared `reload:scene`
 identity.
 
+- **Write permit (R1-H2).** The lowest write layer
+  (`scene_configuration.write`) sends only under an F3 write permit bound to
+  the plan, the config id, the command's arguments hash and the dispatch
+  intent, and each permit carries one send. The permit is installed only by
+  the adapter's `dispatch_scope()` around the one send. A planning lease, an
+  authorizing Core call window, or a wrong target, command or intent is
+  refused as `scene_configuration_write_permit_required`, with no request.
+  Every direct read refuses with `pending_signed_registry_admission`, and 0
+  calls, while admission is withdrawn.
 - **Before dispatch.** `scene_configuration_preflight_evidence` re-reads the
   scene immediately before the POST. A missing scene or any type-exact drift
   is refused as `stale_target_state`, with no dispatch. It never creates a
@@ -307,11 +346,33 @@ identity.
     (`failed_post_dispatch`), and the readback decides it.
   - A lost response is never redispatched.
   - `{"result": "ok"}` is not success by itself; the readback decides it.
-- **Readback.** The stored configuration must equal the proposed
-  configuration exactly. The registry identity must be unchanged. The loaded
-  scene must be consistent with the stored configuration, which proves that
-  the reload completed. Any mismatch is a verification failure, and recovery
-  is read-only.
+- **Reload baseline.** Immediately before the POST the write reads the
+  scene state (`GET /api/states/{entity_id}`). If it cannot be read, the
+  POST is not sent (`scene_configuration_reload_baseline_unavailable`).
+- **Readback (R1-H1).** The stored configuration must equal the proposed
+  configuration exactly, and the registry identity must be unchanged. The
+  loaded scene must be consistent with the stored configuration *and* there
+  must be genuine post-save reload evidence: during the bounded poll (10 ×
+  0.5 s) the scene state is re-added, so `last_changed` differs from the
+  pre-POST baseline while the state value (the last activation time) is
+  unchanged. An activation changes the state value and is never evidence.
+  Each poll reads the state first, so name- and icon-only edits also
+  observe it. Pre-save state is never evidence.
+  - Evidence observed in the window: `succeeded_verified`.
+  - Not observed (the reload was prevented, failed or landed after the
+    window): the stored configuration is verified but the loaded scene is
+    not. The task stays `observing` with
+    `scene_post_save_reload_unverified` and
+    `scene_stored_configuration_verified`; after the evidence deadline it
+    is `manual_review_required` (`f3_sequence_incomplete`). It is never
+    `succeeded_verified`, never a `verification_mismatch` caused only by a
+    late reload, and never redispatched.
+  - Recovery is read-only: inspect the task and the scene, and reload
+    scenes in Home Assistant yourself if the loaded scene is stale.
+    `reverify_configuration_task` does not apply, because it needs a
+    verification mismatch record.
+  - A stored-configuration or registry mismatch is a verification failure,
+    and recovery is read-only.
 - **Rollback.** `rollback_change` creates a separate governed plan
   (`hamcp071-scene-configuration-restore-v1`). It restores the exact
   captured prior configuration, needs its own approval and does not activate
@@ -388,22 +449,40 @@ identity.
 | `profile_id` | `core_scene_configuration_operation_v1` |
 | `profile_version` | `1` |
 | `adapter_id` | `compiled-core-scene-configuration-operation-v1` |
-| `contract_fingerprint` | `sha256:8fa78120c76aa1d892a21540e730479302293370126779ea89a59a4cb7b009d7` |
+| `contract_fingerprint` | `sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2` |
 | `auto_eligible` | `true` (the default; every November-batch profile) |
 
 - **Required checks:** `rest_scene_config_get_by_config_id`,
-  `rest_scene_config_post_by_config_id`,
-  `websocket_entity_registry_list_and_get` and
-  `scene_config_and_loaded_scene_readback_exact`.
+  `rest_scene_config_post_by_config_id`, `rest_state_get_by_entity_id`,
+  `websocket_entity_registry_list_and_get`,
+  `scene_config_and_loaded_scene_readback_exact` and
+  `scene_post_save_reload_evidence_required`.
 - **Provider boundary:** `direct_ha_api`.
 - **Predispatch:** `core_identity`, `capability_contract`,
   `target_fingerprint`, `session_fingerprint` and `generation`.
 
 The response contract has these values:
 - target: `one_exact_existing_ui_managed_scene_by_config_id_with_homeassistant_registry_entry`;
-- routes: read `GET /api/config/scene/config/{config_id}` and write
-  `POST /api/config/scene/config/{config_id}`; commands read
+- requests (D2, `SCENE_CONFIGURATION_REQUESTS`): every Home Assistant
+  request the provider can send:
+  - `GET /api/config/scene/config/{config_id}`;
+  - `GET /api/states/{entity_id}`;
+  - `POST /api/config/scene/config/{config_id}`;
+  - websocket `config/entity_registry/get`;
+  - websocket `config/entity_registry/list`.
+
+  `ReachableRequestSetTests` proves that create, apply and restore reach
+  exactly this set;
+- routes: read `GET /api/config/scene/config/{config_id}`, write
+  `POST /api/config/scene/config/{config_id}` and state
+  `GET /api/states/{entity_id}`; commands read
   `config/entity_registry/get` and `config/entity_registry/list`;
+- state reads: `loaded_scene_state_and_post_save_reload_evidence`,
+  `member_device_class_when_the_registry_has_none`,
+  `member_existence_when_unregistered` and
+  `scene_state_reload_baseline_immediately_before_the_post`;
+- consumer disclosure:
+  `current_cached_dependency_index_snapshot_only_never_built_or_refreshed_gap_disclosed_when_not_current`;
 - arguments:
   - fields `entities`, `icon` and `name`;
   - name: `non_empty_string_max_255_exact_no_trim`;
@@ -411,16 +490,19 @@ The response contract has these values:
   - entities: `merge_patch_of_existing_entity_ids_to_bounded_snapshots_with_state`;
   - body: `full_proposed_configuration_without_id`;
   - unrequested fields: `sent_exactly_as_stored`;
-- dispatch: `at_most_once_scene_config_post_per_scene`;
+- dispatch: `at_most_once_scene_config_post_per_scene_under_one_f3_write_permit_bound_to_plan_target_command_and_dispatch_intent`;
 - never sent: `DELETE /api/config/scene/config/{config_id}`, `scene.apply`,
   `scene.create`, `scene.delete`, `scene.reload` and `scene.turn_on`;
 - side effect: `core_post_write_hook_reloads_all_ui_scenes`;
-- readback: `stored_config_exact_plus_registry_identity_plus_loaded_scene_consistent`;
-- concurrency: `no_core_compare_and_swap_residual_window_disclosed`;
+- readback: `stored_config_exact_plus_registry_identity_plus_loaded_scene_consistent_plus_post_save_reload_observed`;
+- unverified: `stored_config_verified_loaded_scene_unverified_observing_then_manual_review_never_verified`;
+- concurrency: `no_core_compare_and_swap_upsert_concurrent_edit_overwritten_undetected_concurrent_delete_recreated_disclosed`;
 - recovery: `read_only_no_redispatch`.
 
 The fingerprint above is computed from the source at this head
-(`CORE_RUNTIME_CAPABILITY_PROFILES`).
+(`CORE_RUNTIME_CAPABILITY_PROFILES`). R1 (D2) changed it from
+`sha256:8fa78120…`; the profile is unsigned, so no signed fingerprint
+changed.
 `ProfileShapeTests.test_seq16_profile_shape_is_the_documented_shape` pins the whole
 profile mapping, including this fingerprint, so a change to the shape
 breaks a test before signing. The signed-registry entry itself belongs with
@@ -449,7 +531,7 @@ Remaining for the November sequence-16 batch (not authorized here):
 
 ## 8. Offline proof
 
-`tests/test_hamcp071_scene_configuration.py` has 112 tests and uses the
+`tests/test_hamcp071_scene_configuration.py` has 140 tests and uses the
 synthetic fixtures in `tests/hamcp071_fixtures.py`:
 - `scene.synthetic_lounge_dim`, config id `1700000000001`;
 - `scene.synthetic_leaving`, config id `1700000000002`;
@@ -466,7 +548,14 @@ cover:
 - runtime composition and the apply boundary;
 - truthful failure outcomes;
 - rollback and its refusals;
-- the contract boundaries.
+- the contract boundaries;
+- R1: the F3 write permit and withdrawn-admission reads
+  (`AdmittedResourceWriteTests`), the switch rule (`SwitchMemberTests`),
+  post-save reload evidence (`LoadedSceneReloadEvidenceTests`: prevented,
+  failed, delayed inside and outside the window, name and icon edits, an
+  activation that is not evidence), the declared request set
+  (`ReachableRequestSetTests`) and the upsert-race disclosure
+  (`DisclosureTests.test_the_upsert_race_is_disclosed_and_never_claimed_detected`).
 
 The new tests found and fixed **two runtime defects**:
 1. **Invalid policy reason codes.** The policy emitted
@@ -492,7 +581,15 @@ Mutation evidence is in `docs/evidence/hamcp071-mutations/`; see
   `ProfileShapeTests`. Most of the new tests isolate one layered check,
   such as a gateway or strategy preflight, a rollback child-record check or
   the rollback lease recheck. Each of those is redundant on the full path.
-- **Final:** 81 of 82 mutants killed, against a baseline of 219 tests.
+- **Before R1:** 81 of 82 mutants killed, against a baseline of 219 tests
+  (`pre-r1-results.json`).
+- **R1 full run:** the 82 replayed plus 22 new `H*` guard removals (permit,
+  read admission, reload latch and baseline, poll exit, strategy evidence,
+  runtime passthrough, switch rule, cached-only consumers): 99 of 104
+  killed, against a baseline of 246 tests (`results.json`).
+- **R1 isolation:** the four masked survivors W6, H9, H11 and H15 each got
+  an isolated test; the rerun kills all four, plus the H14 control, against
+  a baseline of 247 tests (`r1-rerun-results.json`).
 - **Survivor:** A3, which removes the persistence-entry recheck. It is
   equivalent: the generic builder repeats the same gate as its first
   statement, and nothing yields between the two checks. The combined
@@ -512,9 +609,18 @@ Not in this change:
 - any signed registry, signed profile or existing fingerprint change.
 
 Known limitations:
-- **Residual concurrency window.** It runs between the final check and the
-  POST (section 3). The readback detects a change in that window, and the
-  send is never repeated.
+- **Residual concurrency window (D3, accepted).** It runs between the
+  final check and the POST (section 3). A concurrent edit in that window can
+  be overwritten without being detected, and a concurrent deletion can make
+  the save recreate the scene, because Core's save is an upsert. The
+  readback proves only this plan's stored result. The send is never
+  repeated.
+- **Reload evidence is in memory.** An Engineering restart after the save,
+  or a reload that lands after the bounded window, leaves the result
+  unverified (observing, then manual review). A scene reload by anything
+  else just before the save cannot be told apart from this save's reload.
+- **Consumers are cached.** The consumer disclosure uses only the cached
+  dependency index and discloses a gap when it is missing or not current.
 - **Global reload.** The save reloads every UI and YAML scene and removes
   `scene.create` runtime scenes. This is disclosed, not prevented.
 - **Untrusted store values.** A stored configuration that the closed POST

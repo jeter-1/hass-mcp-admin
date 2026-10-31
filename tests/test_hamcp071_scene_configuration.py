@@ -15,6 +15,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -35,6 +36,7 @@ from ha_mcp_engineering.governance import scene_configuration as contract  # noq
 from ha_mcp_engineering.governance import (  # noqa: E402
     scene_configuration_planning as planning,
 )
+from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationNotDispatchedError,
 )
@@ -363,26 +365,80 @@ class DisclosureTests(_Base):
                          planning.CONCURRENCY_DISCLOSURE)
         self.assertEqual(plan_level["rollback"], planning.ROLLBACK_DISCLOSURE)
 
+    async def test_the_upsert_race_is_disclosed_and_never_claimed_detected(self):
+        # HAMCP-071 R1-M2 / D3: the race is accepted and disclosed, never
+        # covered by a verification claim.
+        created = await self.create(config_id=LOUNGE, name="Renamed")
+        plan = self.service._load(created["plan_id"])
+        text = plan.dry_run_results["scene_configuration"]["residual_concurrency_window"]
+        self.assertEqual(text, planning.CONCURRENCY_DISCLOSURE)
+        for phrase in ("no compare-and-swap", "upsert",
+                       "overwritten without being detected",
+                       "recreate the scene",
+                       "not that no other change happened"):
+            self.assertIn(phrase, text)
+        # The response contract is fingerprinted, not retained, so the
+        # compiled source is read with its implicit concatenations joined.
+        source = re.sub(
+            r'"\s*\n\s*"', "",
+            (ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
+             / "ha_core_readmission" / "profiles.py").read_text(encoding="utf-8"),
+        )
+        source = re.sub(r"\(\s+", "(", re.sub(r"\s+\)", ")", source))
+        self.assertIn(
+            '"concurrency": ("no_core_compare_and_swap_upsert_concurrent_edit_'
+            'overwritten_undetected_concurrent_delete_recreated_disclosed")',
+            source,
+        )
+        self.assertIn(
+            '"readback": ("stored_config_exact_plus_registry_identity_plus_'
+            'loaded_scene_consistent_plus_post_save_reload_observed")',
+            source,
+        )
+        documents = {
+            "design": ROOT / "docs" / "HAMCP_071_SCENE_CONFIGURATION_DESIGN.md",
+            "release notes": ROOT / "docs" / "V2_4_1_BETA52_RELEASE_NOTES.md",
+            "changelog": ROOT / "hass_mcp_engineering_beta" / "CHANGELOG.md",
+            "acceptance": ROOT / "docs" / "V2_4_1_BETA52_ACCEPTANCE.md",
+        }
+        for label, path in documents.items():
+            body = " ".join(path.read_text(encoding="utf-8").split())
+            with self.subTest(document=label):
+                self.assertNotIn("readback detects", body)
+                self.assertNotIn("never re-created", body)
+                self.assertNotIn("missing scene is never created", body)
+
     async def test_activating_automations_and_scripts_are_listed(self):
         created = await self.create(config_id=LOUNGE, name="Renamed")
         consumers = self.disclosure(created)["consumers"]
         self.assertEqual(consumers["statement"], planning.CONSUMER_DISCLOSURE)
         self.assertIn(CONSUMER, str(consumers["consumers"]))
         self.assertEqual(consumers["consumer_count"], 1)
-        self.assertEqual(self.exposure_reads, [False])
+        # R1-M1: the cached snapshot only; the refreshing reader is never used.
+        self.assertEqual(self.exposure_reads, ["cached"])
+        self.assertEqual(self.refreshing_reads, [])
 
     async def test_unavailable_consumer_evidence_is_a_disclosed_gap(self):
-        async def failing(*, fenced: bool):
+        def failing():
             raise HomeAssistantApiError("synthetic index failure")
 
-        self.resource_gateway.availability_exposure_snapshot_reader = failing
+        gateway = self.resource_gateway.scene_configuration
+        gateway.consumer_snapshot_reader = failing
         created = await self.create(config_id=LOUNGE, name="Renamed")
         consumers = self.disclosure(created)["consumers"]
         self.assertIs(consumers["evidence_complete"], False)
-        self.assertNotEqual(consumers.get("status"), "complete")
+        self.assertEqual(consumers["status"], "unavailable")
         self.assertEqual(consumers["consumers"], [])
-        self.assertTrue(consumers["evidence_gaps"])
-        self.resource_gateway.availability_exposure_snapshot_reader = None
+        self.assertIn("dependency_index_not_current", consumers["evidence_gaps"])
+        # R1-M1: an absent or no-longer-current snapshot is a gap, never a
+        # refresh.
+        gateway.consumer_snapshot_reader = lambda: None
+        created = await self.create(config_id=LOUNGE, name="Renamed stale")
+        consumers = self.disclosure(created)["consumers"]
+        self.assertEqual(consumers["status"], "unavailable")
+        self.assertIn("dependency_index_not_current", consumers["evidence_gaps"])
+        self.assertEqual(self.refreshing_reads, [])
+        gateway.consumer_snapshot_reader = None
         created = await self.create(config_id=LOUNGE, name="Renamed again")
         consumers = self.disclosure(created)["consumers"]
         self.assertEqual(consumers["status"], "unavailable")
@@ -1016,29 +1072,159 @@ class InactiveResourceWriteTests(_ResourceWriteAuthority, _Base):
 
 
 class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
-    async def test_admitted_without_f3_context_refuses(self):
-        await self.assert_both_write_layers_refused("active_f3_execution_required")
+    """HAMCP-071 R1-H2: only an F3 write permit bound to this send is authority."""
 
-    async def test_admitted_request_without_dispatch_authorizer_refuses(self):
+    def permit(self, **changes) -> contract.ScenePermit:
+        values = {
+            "plan_id": "plan_synthetic",
+            "task_id": "task_synthetic",
+            "operation_id": "operation_synthetic",
+            "config_id": LOUNGE,
+            "entity_id": LOUNGE_ENTITY,
+            "arguments_hash": stable_hash(self.valid_command()),
+            "intent": contract.DISPATCH_INTENT,
+        }
+        values.update(changes)
+        return contract.ScenePermit(**values)
+
+    async def assert_both_layers_refused_under(self, permit, reason_code: str) -> None:
+        with contract.write_permit(permit):
+            await self.assert_both_write_layers_refused(reason_code)
+
+    async def test_admitted_without_a_permit_refuses(self):
+        await self.assert_both_write_layers_refused(contract.WRITE_PERMIT_REQUIRED_REASON)
+
+    async def test_an_authorizing_core_window_alone_is_not_a_permit(self):
+        async with _core_call_window(lambda: True):
+            await self.assert_both_write_layers_refused(
+                contract.WRITE_PERMIT_REQUIRED_REASON
+            )
+
+    async def test_a_valid_write_inside_a_planning_lease_refuses(self):
+        lease = self.service._scene_configuration_planning_lease(LOUNGE)
+        async with lease:
+            await self.assert_both_write_layers_refused(
+                contract.WRITE_PERMIT_REQUIRED_REASON
+            )
+        self.assertEqual(self.writes(), [])
+
+    async def test_a_permit_for_another_target_command_or_intent_refuses(self):
+        other = self.valid_command()
+        other["body"] = {**other["body"], "name": "Another name"}
+        cases = (
+            self.permit(config_id=LEAVING),
+            self.permit(arguments_hash=stable_hash(other)),
+            self.permit(intent="planning"),
+            self.permit(intent="dispatch_intent_pending"),
+        )
+        async with _core_call_window(lambda: True):
+            for permit in cases:
+                with self.subTest(permit=permit):
+                    await self.assert_both_layers_refused_under(
+                        permit, contract.WRITE_PERMIT_REQUIRED_REASON
+                    )
+        self.assertEqual(self.writes(), [])
+
+    async def test_a_permit_authorizes_one_send_only(self):
+        async with _core_call_window(lambda: True):
+            with contract.write_permit(self.permit()):
+                await self.resource_gateway.scene_configuration.write(
+                    LOUNGE, self.valid_command()
+                )
+                self.assertEqual(len(self.writes()), 1)
+                with self.assertRaises(ConfigurationMutationNotDispatchedError) as raised:
+                    await self.resource_gateway.scene_configuration.write(
+                        LOUNGE, self.valid_command()
+                    )
+        self.assertEqual(
+            raised.exception.details["reason_code"],
+            contract.WRITE_PERMIT_REQUIRED_REASON,
+        )
+        self.assertIs(raised.exception.call_not_sent, True)
+        self.assertEqual(len(self.writes()), 1)
+
+    async def test_permit_without_dispatch_authorizer_refuses(self):
         telemetry, token = begin_request()
         try:
             self.assertIsNone(telemetry.core_dispatch_authorizer)
-            await self.assert_both_write_layers_refused("active_f3_execution_required")
+            await self.assert_both_layers_refused_under(
+                self.permit(), "active_f3_execution_required"
+            )
         finally:
             end_request(token)
 
-    async def test_admitted_with_a_refusing_dispatch_window_refuses(self):
+    async def test_permit_with_a_refusing_dispatch_window_refuses(self):
         async with _core_call_window(lambda: False):
-            await self.assert_both_write_layers_refused("active_f3_execution_required")
-
-    async def test_admitted_with_f3_context_sends_exactly_once(self):
-        async with _core_call_window(lambda: True):
-            result = await self.resource_gateway.write(
-                "update", contract.RESOURCE_TYPE, LOUNGE, self.valid_command()
+            await self.assert_both_layers_refused_under(
+                self.permit(), "active_f3_execution_required"
             )
+
+    async def test_withdrawn_admission_refuses_even_with_a_permit(self):
+        self.core.withdraw()
+        async with _core_call_window(lambda: True):
+            await self.assert_both_layers_refused_under(
+                self.permit(), "pending_signed_registry_admission"
+            )
+
+    async def test_permit_with_f3_context_sends_exactly_once(self):
+        self.scene_rest.requests.clear()
+        async with _core_call_window(lambda: True):
+            with contract.write_permit(self.permit()):
+                result = await self.resource_gateway.write(
+                    "update", contract.RESOURCE_TYPE, LOUNGE, self.valid_command()
+                )
         self.assertEqual(result, {"core_response": {"result": "ok"}})
         self.assertEqual(self.writes(), [(LOUNGE, self.valid_command()["body"])])
         self.assertEqual(self.stored()["name"], "Synthetic review name")
+        # R1-H1: the reload baseline is read before, and only before, the POST.
+        self.assertEqual(
+            self.scene_rest.requests,
+            [
+                ("GET", f"/states/{LOUNGE_ENTITY}"),
+                ("POST", f"/config/scene/config/{LOUNGE}"),
+            ],
+        )
+
+    async def test_an_unreadable_reload_baseline_sends_nothing(self):
+        self.scene_rest.states.pop(LOUNGE_ENTITY, None)
+        async with _core_call_window(lambda: True):
+            with contract.write_permit(self.permit()):
+                with self.assertRaises(ConfigurationMutationNotDispatchedError) as raised:
+                    await self.resource_gateway.scene_configuration.write(
+                        LOUNGE, self.valid_command()
+                    )
+        self.assertEqual(
+            raised.exception.details["reason_code"],
+            contract.RELOAD_BASELINE_UNAVAILABLE_REASON,
+        )
+        self.assertIs(raised.exception.call_not_sent, True)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.stored(), lounge_config())
+
+    async def test_withdrawn_admission_refuses_every_direct_read_with_no_call(self):
+        gateway = self.resource_gateway.scene_configuration
+        self.core.withdraw()
+        self.scene_rest.requests.clear()
+        self.ws.commands.clear()
+        reads = (
+            lambda: gateway.read_config(LOUNGE),
+            lambda: gateway.read_state(LOUNGE),
+            lambda: gateway.read_entity_state(LOUNGE_ENTITY),
+            lambda: gateway.registry_items(),
+            lambda: gateway.registry_detail(LOUNGE_ENTITY),
+            lambda: gateway.entity_registry_platform(LOUNGE_ENTITY),
+            lambda: gateway.device_class(LAMP),
+            lambda: gateway.unknown_entities([LAMP]),
+        )
+        for index, read in enumerate(reads):
+            with self.subTest(read=index):
+                with self.assertRaises(contract.SceneConfigurationContractError) as raised:
+                    await read()
+                self.assertEqual(
+                    raised.exception.args[0], "pending_signed_registry_admission"
+                )
+        self.assertEqual(self.scene_rest.requests, [])
+        self.assertEqual(self.ws.commands, [])
 
     async def test_closed_payload_violations_are_never_sent(self):
         valid = self.valid_command()
@@ -1061,6 +1247,11 @@ class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
                             LOUNGE, command
                         )
                     self.assertIs(raised.exception.call_not_sent, True)
+                    # The closed-payload check refuses on its own, not the
+                    # permit check behind it (mutation W6).
+                    self.assertEqual(
+                        raised.exception.details["reason"], "closed_payload_violation"
+                    )
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.stored(), lounge_config())
 
@@ -1101,6 +1292,266 @@ class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
         )
 
         self.assertIn(contract.RESOURCE_TYPE, DORMANT_PROFILE_RESOURCE_TYPES)
+
+
+class SwitchMemberTests(_Base):
+    """HAMCP-071 R1-H3 / D1: any switch member, before or after, elevates.
+
+    A switch's purpose (a siren, an alarm relay, a coffee maker) cannot be
+    resolved from Home Assistant, so an unresolved purpose is never taken
+    as harmless.
+    """
+
+    SIREN = "switch.synthetic_security_siren"
+    PLUG = "switch.synthetic_coffee_plug"
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.scene_rest.add_member(self.SIREN, "off")
+        self.scene_rest.add_member(self.PLUG, "off")
+
+    def assert_switch_elevated(self, created: dict, switches: list[str]) -> None:
+        decision = created["policy_decision"]
+        self.assertEqual(decision["policy_class"], "elevated_admin")
+        self.assertEqual(decision["physical_consequence"], "indirect")
+        codes = self.service._load(created["plan_id"]).policy_decision.reason_codes
+        self.assertIn("scene_configuration_protected_member", codes)
+        self.assertIn("scene_protected_member_switch_domain", codes)
+        disclosure = self.disclosure(created)
+        self.assertEqual(disclosure["switch_members"], switches)
+        self.assertIn(planning.SWITCH_REASON, disclosure["policy_basis"]["basis"])
+        statements = disclosure["consequence_statements"]
+        self.assertEqual(len(statements), 2)
+        self.assertIn("switch members before or after this edit", statements[1])
+        for entity_id in switches:
+            self.assertIn(entity_id, statements[1])
+
+    async def test_a_synthetic_security_siren_switch_elevates(self):
+        created = await self.create(
+            config_id=LOUNGE, entities={self.SIREN: {"state": "on"}}
+        )
+        self.assert_switch_elevated(created, [self.SIREN])
+
+    async def test_any_ordinary_switch_elevates(self):
+        created = await self.create(
+            config_id=LOUNGE, entities={self.PLUG: {"state": "on"}}
+        )
+        self.assert_switch_elevated(created, [self.PLUG])
+
+    async def test_a_switch_present_only_before_the_edit_elevates(self):
+        entities = {**lounge_config()["entities"], self.PLUG: {"state": "on"}}
+        self.scene_rest.set_external(LOUNGE, entities=entities)
+        created = await self.create(config_id=LOUNGE, entities={self.PLUG: None})
+        self.assert_switch_elevated(created, [self.PLUG])
+        proposed = self.service._load(created["plan_id"]).operations[0].proposed_config
+        self.assertNotIn(self.PLUG, proposed["config"]["entities"])
+
+    async def test_an_unchanged_switch_member_elevates_a_name_edit(self):
+        entities = {**lounge_config()["entities"], self.SIREN: {"state": "off"}}
+        self.scene_rest.set_external(LOUNGE, entities=entities)
+        created = await self.create(config_id=LOUNGE, name="Renamed")
+        self.assert_switch_elevated(created, [self.SIREN])
+
+    async def test_a_light_only_scene_stays_standard(self):
+        created = await self.create(config_id=LOUNGE, name="Renamed")
+        self.assertEqual(created["policy_decision"]["policy_class"], "standard_admin")
+        disclosure = self.disclosure(created)
+        self.assertEqual(disclosure["switch_members"], [])
+        self.assertEqual(disclosure["consequence_statements"], [])
+
+    def test_the_id_floor_names_switches_and_keeps_existing_domains(self):
+        self.assertEqual(planning.id_protection_reasons([LAMP, STRIP]), [])
+        self.assertEqual(planning.id_protection_reasons([self.PLUG]),
+                         [planning.SWITCH_REASON])
+        floor = planning.id_protection_reasons([FRONT_LOCK, GARAGE])
+        self.assertNotIn(planning.SWITCH_REASON, floor)
+        self.assertTrue(floor)
+        # A name that merely contains "switch" is not a switch.
+        self.assertEqual(planning.id_protection_reasons(["light.switch_room"]), [])
+        self.assertEqual(planning.switch_members([LAMP, self.PLUG, self.PLUG]),
+                         [self.PLUG])
+
+    async def test_an_elevated_switch_plan_applies_after_elevated_approval(self):
+        created, result = await self.applied(
+            config_id=LOUNGE, entities={self.SIREN: {"state": "on"}}
+        )
+        self.assertEqual(created["policy_decision"]["policy_class"], "elevated_admin")
+        self.assert_outcome(result, "succeeded_verified", ["succeeded_verified"],
+                            ["exact_readback_verified"])
+        self.assertEqual(self.stored()["entities"][self.SIREN], {"state": "on"})
+        # Saving never activated the scene: the siren stays off.
+        self.assertEqual(self.scene_rest.states[self.SIREN]["state"], "off")
+
+
+class LoadedSceneReloadEvidenceTests(_Base):
+    """HAMCP-071 R1-H1: verified only on post-save reload evidence.
+
+    Core's config view saves, then reloads scenes from a post-write hook
+    task (pinned components/config/view.py); a reload re-adds each scene
+    state, so ``last_changed`` moves while the restored state value (the
+    last activation time) stays (pinned core.py:2313, 2423-2470;
+    scene/__init__.py:123-132, 154-160).  Pre-reload state never verifies.
+    """
+
+    BRIGHT = {"entities": {LAMP: lamp_snapshot(brightness=200)}}
+
+    def observation_codes(self, task_id: str) -> list[str]:
+        codes: list[str] = []
+        for record in self.child_records(task_id):
+            for event in record.events:
+                if event["event_type"] == "observation_recorded":
+                    codes.extend(event["diagnostic_codes"])
+        return codes
+
+    def assert_changed_but_unverified(self, result) -> None:
+        self.assertEqual(result["task_state"], "observing", result)
+        self.assertEqual(self.outcomes(result["task_id"]), ["observing"])
+        self.assertIs(result["provider_dispatch_occurred"], True)
+        codes = self.observation_codes(result["task_id"])
+        self.assertIn(contract.STORED_CONFIGURATION_VERIFIED, codes)
+        self.assertIn(contract.RELOAD_UNVERIFIED, codes)
+        self.assertEqual(len(self.writes()), 1)
+
+    async def test_a_prevented_reload_of_a_member_edit_is_not_verified(self):
+        # Same member, brightness only: the identity predicate alone would
+        # pass on the pre-reload loaded scene.
+        created = await self.approved(config_id=LOUNGE, **self.BRIGHT)
+        self.scene_rest.reload_after_state_reads = 10**6
+        loaded_before = deepcopy(self.scene_rest.states[LOUNGE_ENTITY])
+        result = await self.apply(created)
+        self.assert_changed_but_unverified(result)
+        self.assertEqual(self.stored()["entities"][LAMP]["brightness"], 200)
+        self.assertEqual(self.scene_rest.states[LOUNGE_ENTITY], loaded_before)
+
+    async def test_a_failed_reload_is_changed_but_unverified(self):
+        created = await self.approved(config_id=LOUNGE, name="Requested")
+        self.scene_rest.reload_fails = True
+        result = await self.apply(created)
+        self.assert_changed_but_unverified(result)
+        self.assertNotIn("verification_mismatch", self.outcomes(result["task_id"]))
+        self.assertEqual(self.stored()["name"], "Requested")
+
+    async def assert_verified_after_a_delayed_reload(self, arguments) -> None:
+        created = await self.approved(config_id=LOUNGE, **arguments)
+        self.scene_rest.reload_after_state_reads = contract.LOADED_POLL_ATTEMPTS - 2
+        result = await self.apply(created)
+        self.assert_outcome(result, "succeeded_verified", ["succeeded_verified"],
+                            ["exact_readback_verified"])
+        self.assertEqual(len(self.writes()), 1)
+        self.assertTrue(self.resource_gateway.scene_configuration.reload_observed(
+            LOUNGE, "scene_configuration_1"))
+        # The evidence belongs to this operation's own save only (mutation H11).
+        self.assertFalse(self.resource_gateway.scene_configuration.reload_observed(
+            LOUNGE, "scene_configuration_other"))
+
+    async def test_a_delayed_reload_inside_the_window_verifies_a_name_edit(self):
+        await self.assert_verified_after_a_delayed_reload({"name": "Requested"})
+
+    async def test_a_delayed_reload_inside_the_window_verifies_an_icon_edit(self):
+        await self.assert_verified_after_a_delayed_reload({"icon": "mdi:lamp"})
+
+    async def test_a_delayed_reload_inside_the_window_verifies_a_member_edit(self):
+        await self.assert_verified_after_a_delayed_reload(self.BRIGHT)
+
+    async def test_a_reload_after_the_window_is_never_verified_or_a_mismatch(self):
+        created = await self.approved(config_id=LOUNGE, name="Requested")
+        self.scene_rest.reload_after_state_reads = contract.LOADED_POLL_ATTEMPTS + 1
+        result = await self.apply(created)
+        self.assert_changed_but_unverified(result)
+        self.clock[0] += timedelta(minutes=3)
+        later = await self.apply(created)
+        self.assertEqual(later["task_state"], "manual_review_required", later)
+        self.assertIs(later["redispatch_performed"], False)
+        self.assertEqual(self.outcomes(result["task_id"]), ["manual_review_required"])
+        self.assertEqual(len(self.writes()), 1)
+
+    async def assert_unverified_without_a_reload(self, arguments) -> None:
+        created = await self.approved(config_id=LOUNGE, **arguments)
+        self.scene_rest.reload_after_state_reads = 10**6
+        self.assert_changed_but_unverified(await self.apply(created))
+
+    async def test_a_name_edit_needs_reload_evidence(self):
+        await self.assert_unverified_without_a_reload({"name": "Requested"})
+
+    async def test_an_icon_edit_needs_reload_evidence(self):
+        await self.assert_unverified_without_a_reload({"icon": "mdi:lamp"})
+
+    async def test_an_icon_removal_needs_reload_evidence(self):
+        await self.assert_unverified_without_a_reload({"icon": None})
+
+    async def test_an_activation_is_not_reload_evidence(self):
+        # A member-only edit: the pre-reload loaded scene already passes the
+        # identity predicate, so only the reload latch decides (mutation H9).
+        created = await self.approved(config_id=LOUNGE, **self.BRIGHT)
+        self.scene_rest.reload_after_state_reads = 10**6
+        real_read = self.scene_rest._state_read
+        activated = []
+
+        def activation_after_the_save(entity_id):
+            real_read(entity_id)
+            state = self.scene_rest.states.get(entity_id)
+            if (
+                state is not None
+                and entity_id == LOUNGE_ENTITY
+                and self.scene_rest.posts
+                and not activated
+            ):
+                # A scene activation after the POST moves the state value
+                # together with last_changed; a reload keeps the value.
+                activated.append(entity_id)
+                state["state"] = "2026-10-23T12:00:30+00:00"
+                state["last_changed"] = "2026-10-23T12:00:30+00:00"
+
+        self.scene_rest._state_read = activation_after_the_save
+        result = await self.apply(created)
+        self.assertEqual(activated, [LOUNGE_ENTITY])
+        self.assert_changed_but_unverified(result)
+        self.assertFalse(self.resource_gateway.scene_configuration.reload_observed(
+            LOUNGE, "scene_configuration_1"))
+
+    async def test_strategy_without_the_reload_check_is_unverified(self):
+        # A gateway that cannot report reload evidence never verifies, and a
+        # check must answer exactly True (mutations H14, H15).
+        from types import SimpleNamespace
+
+        from ha_mcp_engineering.f3_configuration.strategies import (
+            SceneConfigurationConfigurationStrategy,
+        )
+
+        strategy = SceneConfigurationConfigurationStrategy(contract.ACTION)
+        observed = await self.resource_gateway.scene_configuration.read_state(LOUNGE)
+        self.assertIs(observed["loaded_matches_config"], True)
+        operation = SimpleNamespace(
+            proposed_config=lambda: deepcopy(observed),
+            target=SimpleNamespace(target_id=LOUNGE),
+            operation_id="scene_configuration_1",
+        )
+        unverified = (contract.STORED_CONFIGURATION_VERIFIED, contract.RELOAD_UNVERIFIED)
+        for gateway in (
+            SimpleNamespace(),
+            SimpleNamespace(scene_configuration_reload_observed=lambda t, o: 1),
+            SimpleNamespace(scene_configuration_reload_observed=lambda t, o: False),
+        ):
+            with self.subTest(gateway=gateway):
+                self.assertEqual(
+                    await strategy.observation_gap(gateway, operation, deepcopy(observed)),
+                    unverified,
+                )
+        calls = []
+        proven = SimpleNamespace(
+            scene_configuration_reload_observed=lambda t, o: calls.append((t, o)) or True
+        )
+        self.assertEqual(
+            await strategy.observation_gap(proven, operation, deepcopy(observed)), ()
+        )
+        self.assertEqual(calls, [(LOUNGE, "scene_configuration_1")])
+
+    def test_the_plan_discloses_the_reload_requirement(self):
+        text = planning.LOADED_SCENE_DISCLOSURE
+        self.assertIn("reloaded the scene after this save", text)
+        self.assertIn("never verified", text)
+        self.assertIn("Engineering never reloads, activates or resends", text)
+        self.assertNotIn("reverif", text)
 
 
 class RuntimeCompositionTests(unittest.TestCase):
@@ -1147,7 +1598,14 @@ class RuntimeCompositionTests(unittest.TestCase):
         admitting = Core(True)
         gateway = self.configured_gateway(admitting)
         self.assertIs(gateway.core_runtime, admitting)
-        self.assertEqual(gateway.write_refusal(), contract.F3_CONTEXT_REQUIRED_REASON)
+        # R1-M1: consumers come from the cached snapshot, never a refresh.
+        from ha_mcp_engineering.governance.entity_metadata_disclosure import (
+            read_cached_dependency_snapshot,
+        )
+
+        self.assertIs(gateway.consumer_snapshot_reader, read_cached_dependency_snapshot)
+        # Admitted, but no F3 write permit is installed (R1-H2).
+        self.assertEqual(gateway.write_refusal(), contract.WRITE_PERMIT_REQUIRED_REASON)
         self.assertEqual(admitting.asked, [(contract.PROFILE,)])
         withheld = Core(False)
         self.assertEqual(
@@ -1329,16 +1787,6 @@ class FailureTruthfulnessTests(_Base):
                                     ["verification_mismatch"],
                                     ["exact_readback_not_verified"])
                 self.assertEqual(len(self.writes()), writes + 1)
-
-    async def test_failed_reload_is_a_verification_failure(self):
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_fails = True
-        result = await self.apply(created)
-        self.assert_outcome(result, "failed_post_dispatch", ["verification_mismatch"],
-                            ["exact_readback_not_verified"])
-        # Stored, but the loaded scene never reflected it.
-        self.assertEqual(self.stored()["name"], "Requested")
-        self.assertEqual(len(self.writes()), 1)
 
     async def test_verified_plan_is_never_applied_twice(self):
         created, result = await self.applied(config_id=LOUNGE, name="Requested")
@@ -1860,16 +2308,72 @@ class ProfileShapeTests(unittest.TestCase):
             "profile_version": 1,
             "adapter_id": "compiled-core-scene-configuration-operation-v1",
             "contract_fingerprint": (
-                "sha256:8fa78120c76aa1d892a21540e730479302293370126779ea89a59a4cb7b009d7"
+                "sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2"
             ),
             "required_checks": [
                 "rest_scene_config_get_by_config_id",
                 "rest_scene_config_post_by_config_id",
+                "rest_state_get_by_entity_id",
                 "websocket_entity_registry_list_and_get",
                 "scene_config_and_loaded_scene_readback_exact",
+                "scene_post_save_reload_evidence_required",
             ],
             "auto_eligible": True,
         })
+
+    def test_the_declared_requests_are_the_gateway_vocabulary(self):
+        from ha_mcp_engineering.ha_core_readmission.profiles import (
+            SCENE_CONFIGURATION_REQUESTS,
+        )
+
+        self.assertEqual(
+            {item for item in SCENE_CONFIGURATION_REQUESTS if item.startswith("websocket ")},
+            {f"websocket {command}" for command in contract.ALLOWED_COMMANDS},
+        )
+
+
+class ReachableRequestSetTests(_Base):
+    """HAMCP-071 R1-M1: what is sent is exactly what the profile declares."""
+
+    def reached(self) -> set[str]:
+        reached = set()
+        for method, path in self.scene_rest.requests:
+            if path.startswith("/config/scene/config/"):
+                reached.add(f"{method} /api/config/scene/config/{{config_id}}")
+            elif path.startswith("/states/"):
+                reached.add(f"{method} /api/states/{{entity_id}}")
+            else:
+                reached.add(f"{method} /api{path}")
+        for command in self.ws.commands:
+            reached.add(f"websocket {command.get('type')}")
+        return reached
+
+    async def test_plan_apply_and_rollback_reach_exactly_the_declared_set(self):
+        from ha_mcp_engineering.ha_core_readmission.profiles import (
+            SCENE_CONFIGURATION_REQUESTS,
+        )
+
+        self.scene_rest.add_member("cover.synthetic_blind", "open", device_class="blind")
+        self.scene_rest.add_member("light.synthetic_unregistered", "off", registry=False)
+        self.scene_rest.requests.clear()
+        self.ws.commands.clear()
+        created, result = await self.applied(
+            config_id=LOUNGE,
+            name="Requested",
+            entities={
+                "cover.synthetic_blind": {"state": "closed"},
+                "light.synthetic_unregistered": {"state": "on"},
+            },
+        )
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        restored = await self.restore(created)
+        self.assertEqual(restored["task_state"], "succeeded_verified", restored)
+        self.assertEqual(self.reached(), set(SCENE_CONFIGURATION_REQUESTS))
+        # Consumer disclosure used the cached index only, never a refresh.
+        self.assertEqual(self.refreshing_reads, [])
+        self.assertTrue(self.exposure_reads)
+        self.assertEqual(self.ws.commands and {c.get("type") for c in self.ws.commands}
+                         - contract.ALLOWED_COMMANDS, set())
 
 
 if __name__ == "__main__":

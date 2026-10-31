@@ -1459,6 +1459,12 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
+    def scene_configuration_reload_observed(self, target_id, operation_id):
+        # HAMCP-071 R1-H1: read-only in-memory evidence; nothing is sent.
+        return self.delegate.scene_configuration_reload_observed(
+            target_id, operation_id
+        )
+
     # HAMCP-232: options reads, the held flow and its abort pass through;
     # only the one step submit is the audited send.
     async def options_entry(self, entry_id):
