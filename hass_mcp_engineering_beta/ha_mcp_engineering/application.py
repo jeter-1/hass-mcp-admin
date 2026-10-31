@@ -517,6 +517,13 @@ async def _serve(settings: Settings) -> None:
     # initial cheap recovery pass have all succeeded.
     if isinstance(gateway, AuthenticatedMcpGateway):
         await _run_f3_recovery_pass("startup", strict=True)
+    # HAMCP-097: validate retained history in the background, after strict
+    # recovery; health reports it as in progress until it completes.
+    historical_validation_task = (
+        GOVERNANCE.start_historical_validation()
+        if isinstance(gateway, AuthenticatedMcpGateway)
+        else None
+    )
 
     notification_manager = (
         GOVERNANCE.service.approval_notifications
@@ -613,6 +620,8 @@ async def _serve(settings: Settings) -> None:
             if core_reconciliation_task is not None:
                 core_reconciliation_task.cancel()
             operational_reconciliation_task.cancel()
+            if historical_validation_task is not None:
+                historical_validation_task.cancel()
             if notification_task is not None:
                 notification_task.cancel()
             await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
@@ -626,6 +635,10 @@ async def _serve(settings: Settings) -> None:
             )
             if notification_task is not None:
                 await asyncio.gather(notification_task, return_exceptions=True)
+            if historical_validation_task is not None:
+                await asyncio.gather(
+                    historical_validation_task, return_exceptions=True
+                )
             if registry_refresh_task is not None:
                 await asyncio.gather(registry_refresh_task, return_exceptions=True)
             if FAN_OPERATIONS.service is not None:

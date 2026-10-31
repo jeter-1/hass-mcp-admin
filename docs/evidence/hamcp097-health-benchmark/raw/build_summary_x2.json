@@ -1,0 +1,96 @@
+{
+  "build_apply_outcomes": {
+    "failed_post_dispatch": 24,
+    "manual_review_required": 1,
+    "succeeded_verified": 822
+  },
+  "build_kind_counts": {
+    "addon_restart_applied": 12,
+    "backup_applied": 40,
+    "config_applied": 666,
+    "config_apply_failed": 24,
+    "config_expired": 64,
+    "config_prohibited": 28,
+    "config_rejected": 60,
+    "config_rollback_inverse": 16,
+    "config_rollback_source": 16,
+    "ha_restart_applied": 12,
+    "manual_review": 1,
+    "ops_rejected": 2,
+    "reload_applied": 60
+  },
+  "build_seconds": 2622.0,
+  "event_count": 5941,
+  "fake_clock_end": "2026-10-05T20:22:01.000024+00:00",
+  "file_count": 3613,
+  "health_plans_by_policy_class": {
+    "elevated_admin": 184,
+    "legacy_without_policy_snapshot": 0,
+    "prohibited": 28,
+    "projection_failed": 2,
+    "standard_admin": 787
+  },
+  "nonterminal_plan_count": 0,
+  "nonterminal_task_count": 0,
+  "plan_count": 1001,
+  "plan_file_bytes": {
+    "max": 53240,
+    "median": 17924,
+    "min": 5452,
+    "p90": 26416,
+    "total": 17933436
+  },
+  "plan_operation_counts": {
+    "configuration_plan": 846,
+    "controlled_reload": 63,
+    "create_full_backup": 40,
+    "restart_addon": 12,
+    "restart_home_assistant": 12,
+    "update_automation": 28
+  },
+  "plan_status_counts": {
+    "applied": 822,
+    "awaiting_approval": 28,
+    "expired": 64,
+    "failed": 24,
+    "rejected": 62,
+    "verification_failed": 1
+  },
+  "policy_class_counts": {
+    "elevated_admin": 185,
+    "prohibited": 28,
+    "standard_admin": 788
+  },
+  "projection_failure_count": 2,
+  "projection_failures": [
+    {
+      "category": "approval_policy_binding_mismatch",
+      "plan_id": "0160801a9d674e2ea606e8a5364339ac"
+    },
+    {
+      "category": "policy_subject_hash_not_reproducible",
+      "plan_id": "01adb08bb505438e9c958640ef595e90"
+    }
+  ],
+  "scale": 2,
+  "tampered": [
+    {
+      "field": "subject",
+      "kind": "config_rejected",
+      "plan_id": "01adb08bb505438e9c958640ef595e90"
+    },
+    {
+      "field": "approval_binding",
+      "kind": "config_applied",
+      "plan_id": "0160801a9d674e2ea606e8a5364339ac"
+    }
+  ],
+  "task_count": 847,
+  "task_state_counts": {
+    "failed_post_dispatch": 24,
+    "manual_review_required": 1,
+    "succeeded_verified": 822
+  },
+  "tasks_manual_review": 1,
+  "total_bytes_on_disk": 43717024
+}
