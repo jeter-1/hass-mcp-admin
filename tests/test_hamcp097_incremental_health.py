@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from tests import test_beta11_restart_reconciliation as restart_fixtures
 from tests import test_governance as fixtures
 from tests.test_2_1a_beta2_operational_lifecycle import LegacyGateway
 from tests.test_f3_runtime_integration import (
@@ -34,7 +36,9 @@ from ha_mcp_engineering.governance import service as service_module
 from ha_mcp_engineering.governance.runtime import GovernanceRuntime
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.models import ChangePlan
-from ha_mcp_engineering.governance.storage import ChangePlanRepository
+from ha_mcp_engineering.governance import task_storage as task_storage_module
+from ha_mcp_engineering.governance.storage import ChangePlanRepository, PlanRecordEvidence
+from ha_mcp_engineering.observability import METRICS
 from ha_mcp_engineering.request_context import begin_request, end_request
 
 
@@ -328,6 +332,53 @@ class LegacyDifferentialTests(
             result = await self.service.apply(created["plan_id"])
         self.assertEqual(result["status"], "applied")
 
+    async def _two_terminal(self):
+        created, _ = await self.approved_plan()
+        await self.service.apply(created["plan_id"])
+        rejected = await self.update_plan()
+        await self.reject(rejected)
+        return created, rejected
+
+    # Kills mutant A2 (docs/evidence/hamcp097-mutations).
+    async def test_clock_moving_backwards_rebuilds_the_assembly(self):
+        await self._two_terminal()
+        await self.service.async_health_summary()
+        self.assertEqual(
+            index_of(await self.service.async_health_summary())["last_run"]["assembly"], "reused")
+        self.clock.advance(minutes=-1)
+        earlier = await self.service.async_health_summary()
+        self.assertEqual(index_of(earlier)["last_run"]["assembly"], "rebuilt")
+
+    # Kills mutant C1 (docs/evidence/hamcp097-mutations).
+    async def test_record_memo_counts_hits_and_misses(self):
+        await self._two_terminal()
+        await self.service.async_health_summary()
+        warm = await self.service.async_health_summary()
+        records = index_of(warm)["plan_records"]
+        self.assertEqual(
+            (records["entries"], records["hits"], records["misses"]), (2, 2, 2))
+
+    # Kills mutant C5 (docs/evidence/hamcp097-mutations).
+    async def test_warm_projection_replays_classified_outcomes(self):
+        rejected = await self.update_plan()
+        await self.reject(rejected)
+        path = self.repository._path(rejected["plan_id"])
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["policy_decision"]["policy_subject_hash"] = "0" * 64
+        path.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+        with patch.object(
+            METRICS, "record_classified_outcome", wraps=METRICS.record_classified_outcome
+        ) as recorded:
+            cold = await self.service.async_health_summary()
+            cold_calls = list(recorded.call_args_list)
+            recorded.reset_mock()
+            warm = await self.service.async_health_summary()
+            warm_calls = list(recorded.call_args_list)
+        self.assertEqual(cold["projection_failure_count"], 1)
+        self.assertEqual(index_of(warm)["last_run"]["projection_hits"], 1)
+        self.assertTrue(cold_calls)
+        self.assertEqual(warm_calls, cold_calls)
+
 
 class LegacyScalingTests(_DistinctPlans, fixtures.GovernanceTestCase):
     async def populate(self, count):
@@ -580,6 +631,62 @@ class HistoricalValidationTests(
             type("Stub", (), {"service": None})()
         ))
 
+    # Kills mutant T4, T5 (docs/evidence/hamcp097-mutations).
+    async def test_validation_finishing_within_the_budget_answers_in_full(self):
+        await self.history()
+        self.service.historical_validation_wait_seconds = 5.0
+        controlled = _ControlledValidation()
+        with patch.object(service_module, "_validate_health_records", side_effect=controlled):
+            job = self.service.start_historical_validation()
+            await controlled.wait_entered()
+            call = asyncio.create_task(self.service.async_health_summary())
+            await asyncio.sleep(0.05)
+            self.assertFalse(call.done())
+            controlled.release.set()
+            summary = await call
+        self.assertTrue(job.done())
+        self.assertNotIn("pending_fields", summary)
+        self.assertEqual(summary["historical_validation"]["state"], "complete")
+        self.assertGreater(hot(summary)["phase_elapsed_ms"]["historical_validation_wait_ms"], 0.0)
+        self.assertEqual(governed(summary), governed(await self.full_projection()))
+
+    # Kills mutant T8 (docs/evidence/hamcp097-mutations).
+    async def test_superseded_validation_is_classified_without_detail(self):
+        await self.history()
+        with patch.object(
+            self.service, "_async_health_scan",
+            side_effect=GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={"reason": "health_snapshot_superseded"},
+            ),
+        ):
+            await self.service.start_historical_validation()
+        state = self.service._historical_validation
+        self.assertEqual(state["state"], "failed")
+        self.assertEqual(state["failure_category"], "superseded")
+
+    # Kills mutant W3 (docs/evidence/hamcp097-mutations).
+    async def test_validation_defers_an_expired_challenge_without_writing(self):
+        await self.history()
+        created = await self.update_plan()
+        pending = self.service.approve(created["plan_id"], created["plan_hash"])
+        self.assertIn("challenge_id", pending)
+        self.service = await self.fresh_service()
+        # Challenge TTL is 60 minutes; the plan itself expires at 120.
+        self.clock.advance(minutes=61)
+        before = {p.name: p.read_bytes() for p in self.repository.root.glob("*.json")}
+        await self.service.start_historical_validation()
+        after = {p.name: p.read_bytes() for p in self.repository.root.glob("*.json")}
+        self.assertEqual(after, before)
+        state = self.service._historical_validation
+        self.assertEqual(state["state"], "complete")
+        self.assertEqual(state["deferred_lifecycle_plans"], 1)
+        self.assertFalse(state["assembly_prewarmed"])
+        await self.assert_incremental_equals_full("deferred_challenge_expiry")
+        # The next health call, not the validation, persisted the expiry.
+        resolved = {p.name: p.read_bytes() for p in self.repository.root.glob("*.json")}
+        self.assertNotEqual(resolved, before)
+
 
 class F3DifferentialTests(_DifferentialMixin, unittest.IsolatedAsyncioTestCase):
     """Operational plans through the composed F3 runtime, including review."""
@@ -702,6 +809,89 @@ class F3DifferentialTests(_DifferentialMixin, unittest.IsolatedAsyncioTestCase):
         back = await self.assert_incremental_equals_full("quarantine_restored")
         self.assertEqual(back["total_plans"], 1)
 
+    async def _verified(self):
+        verified = await self.grant(
+            await self.service.create_reload_plan(reload_target="automation"))
+        result = await self.service.apply(verified["plan_id"], verified["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        return verified, result
+
+    # Kills mutant K3, A4 (docs/evidence/hamcp097-mutations).
+    async def test_task_record_change_reprojects_its_plan_and_rebuilds(self):
+        verified, result = await self._verified()
+        await self.service.async_health_summary()
+        warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(warm)["last_run"]["assembly"], "reused")
+        task_path = self.service.task_repository._path(result["task_id"])
+        stat = task_path.stat()
+        os.utime(task_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+        changed = await self.service.async_health_summary()
+        run = index_of(changed)["last_run"]
+        self.assertEqual(run["projection_misses"], 1)
+        self.assertEqual(run["projection_invalidations"], 1)
+        self.assertEqual(run["assembly"], "rebuilt")
+        await self.assert_incremental_equals_full("task_touched")
+
+    # Kills mutant I9 (docs/evidence/hamcp097-mutations).
+    async def test_removed_task_record_is_pruned(self):
+        verified, result = await self._verified()
+        await self.service.async_health_summary()
+        warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(warm)["task_records"]["entries"], 1)
+        task_path = self.service.task_repository._path(result["task_id"])
+        held = task_path.read_bytes()
+        task_path.unlink()
+        removed = await self.service.async_health_summary()
+        self.assertEqual(index_of(removed)["task_records"]["entries"], 0)
+        task_path.write_bytes(held)
+        await self.assert_incremental_equals_full("task_restored", restart=False)
+
+    # Kills mutant I11 (docs/evidence/hamcp097-mutations).
+    async def test_active_task_is_decoded_on_every_call(self):
+        self.lifecycle.mode = "ambiguous"
+        review = await self.grant(
+            await self.service.create_reload_plan(reload_target="input_boolean"))
+        observing = await self.service.apply(review["plan_id"], review["plan_hash"])
+        self.lifecycle.mode = "success"
+        self.assertEqual(observing["task_state"], "observing")
+        await self.service.async_health_summary()
+        warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(warm)["task_records"]["entries"], 0)
+        self.assertEqual(hot(warm)["task_records_deserialized"], 1)
+
+    # Kills mutant X2 (docs/evidence/hamcp097-mutations).
+    async def test_task_record_change_reevaluates_its_plan_actionability(self):
+        verified, result = await self._verified()
+        await self.service.async_health_summary()
+        await self.service.async_health_summary()
+        self.assertIn(verified["plan_id"], self.service._health_actionable_memo)
+        task_path = self.service.task_repository._path(result["task_id"])
+        stat = task_path.stat()
+        os.utime(task_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+        with patch.object(self.service, "_approval_is_actionable",
+                          wraps=self.service._approval_is_actionable) as evaluate:
+            changed = await self.service.async_health_summary()
+        self.assertIn(verified["plan_id"],
+                      [call.args[0].plan_id for call in evaluate.call_args_list])
+        self.assertEqual(index_of(changed)["last_run"]["actionable_hits"], 0)
+        await self.assert_incremental_equals_full("task_touched_actionability")
+
+    # Kills mutant X5 (docs/evidence/hamcp097-mutations).
+    async def test_terminal_plan_with_an_unproven_task_has_no_actionability_key(self):
+        verified, result = await self._verified()
+        plan = self.service.repository.get(verified["plan_id"])
+        task = self.service.task_repository.get(result["task_id"])
+        evidence = {plan.plan_id: PlanRecordEvidence(
+            path="plan.json", stat=(1, 2, 3), sha256="0" * 64)}
+        proven = ("task.json", (4, 5, 6), "1" * 64)
+        keys = self.service._health_actionable_keys(
+            [plan], evidence, [task], {task.task_id: proven})
+        self.assertIn(plan.plan_id, keys)
+        self.assertEqual(self.service._health_actionable_keys(
+            [plan], evidence, [task], {task.task_id: None}), {})
+        self.assertEqual(self.service._health_actionable_keys(
+            [plan], evidence, [task], {}), {})
+
 
 class ProhibitedActionabilityTests(
     _DifferentialMixin, _DistinctPlans, fixtures.GovernanceTestCase
@@ -822,6 +1012,77 @@ class ProhibitedActionabilityTests(
         self.assertFalse(public["approval_actionable"])
         self.assertIn(self.consulted, [call.args[0] for call in lookup.call_args_list])
 
+    # Kills mutant X4 (docs/evidence/hamcp097-mutations).
+    async def test_non_terminal_plan_is_evaluated_on_every_assembly(self):
+        created = await self.update_plan()
+        self.assertEqual(created["status"], "awaiting_approval")
+        await self.service.async_health_summary()
+        self.touch(self.other)
+        changed, evaluated, _ = await self.evaluated()
+        self.assertEqual(index_of(changed)["last_run"]["assembly"], "rebuilt")
+        self.assertIn(created["plan_id"], evaluated)
+        self.assertNotIn(created["plan_id"], self.service._health_actionable_memo)
+        self.assertEqual(index_of(changed)["actionable_entries"], 2)
+
+    # Kills mutant X9 (docs/evidence/hamcp097-mutations).
+    async def test_removed_plan_leaves_the_actionability_memo(self):
+        self.assertEqual(sorted(self.service._health_actionable_memo), self.ids)
+        self.paths[self.other].unlink()
+        changed, evaluated, _ = await self.evaluated()
+        self.assertEqual(changed["total_plans"], 1)
+        self.assertEqual(sorted(self.service._health_actionable_memo), [self.consulted])
+        self.assertEqual(index_of(changed)["actionable_entries"], 1)
+
+    # Kills mutant X10 (docs/evidence/hamcp097-mutations).
+    async def test_full_rebuild_without_keys_drops_actionability_entries(self):
+        self.assertEqual(sorted(self.service._health_actionable_memo), self.ids)
+        await self.update_plan()
+        self.service.health_summary()
+        self.assertEqual(self.service._health_actionable_memo, {})
+
+    # Kills mutant X12 (docs/evidence/hamcp097-mutations).
+    async def test_unreadable_quarantine_listing_evaluates_every_plan(self):
+        repository = self.service.task_repository
+        real = os.scandir
+
+        def scandir(path="."):
+            if Path(path) == repository.quarantine:
+                raise PermissionError("quarantine listing denied")
+            return real(path)
+
+        self.touch(self.other)
+        with patch.object(task_storage_module.os, "scandir", side_effect=scandir):
+            self.assertIsNone(repository.quarantined_plan_prefixes())
+            changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(sorted(evaluated), self.ids)
+        self.assertIn(self.consulted, lookups)
+        run = index_of(changed)["last_run"]
+        self.assertEqual((run["actionable_hits"], run["actionable_misses"]), (0, 2))
+
+    # Kills mutant X13 (docs/evidence/hamcp097-mutations).
+    async def test_only_corrupt_quarantine_files_force_reevaluation(self):
+        quarantine = self.service.task_repository.quarantine
+        quarantine.mkdir(parents=True, exist_ok=True)
+        (quarantine / f"{self.consulted}.{'e' * 32}.1.json").write_text("{")
+        self.assertEqual(self.service.task_repository.quarantined_plan_prefixes(), frozenset())
+        self.touch(self.other)
+        changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(evaluated, [self.other])
+        self.assertNotIn(self.consulted, lookups)
+        self.assertEqual(governed(changed), governed(self.warm))
+
+    # Kills mutant X15 (docs/evidence/hamcp097-mutations).
+    async def test_startup_validation_prewarms_the_actionability_memo(self):
+        self.service = await self.fresh_service()
+        await self.service.start_historical_validation()
+        state = self.service._historical_validation
+        self.assertEqual((state["state"], state["assembly_prewarmed"]), ("complete", True))
+        self.assertEqual(sorted(self.service._health_actionable_memo), self.ids)
+        self.touch(self.other)
+        changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(evaluated, [self.other])
+        self.assertNotIn(self.consulted, lookups)
+
 
 class _Untouchable(dict):
     def __getattribute__(self, name):
@@ -912,6 +1173,31 @@ class ServeLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unauthenticated_test_gateway_starts_no_validation(self):
         events = await self.serve(object())
         self.assertNotIn("validation_started", events)
+
+
+class RestartBackoffAssemblyTests(unittest.IsolatedAsyncioTestCase):
+    # Kills mutant A1 (docs/evidence/hamcp097-mutations).
+    async def test_async_backoff_deadline_is_not_served_from_a_reused_assembly(self):
+        fixture = restart_fixtures.Beta11RestartReconciliationTests()
+        await fixture.asyncSetUp()
+        try:
+            _, task = await fixture._pending_addon_restart()
+            service = fixture._recovered()
+            await service.reconcile_operational_plans(trigger="startup")
+            await service.async_health_summary()
+            health = await service.async_health_summary()
+            self.assertEqual(index_of(health)["last_run"]["assembly"], "reused")
+            self.assertEqual(health["restart_reconciliation"]["pending_backoff_record_count"], 1)
+            persisted = service.task_repository.get(task.task_id)
+            next_at = persisted.verification_summary["restart_reconciliation"]["next_attempt_at"]
+            fixture.clock.value = datetime.fromisoformat(next_at)
+            health = await service.async_health_summary()
+            self.assertEqual(health["restart_reconciliation"]["pending_eligible_record_count"], 1)
+            self.assertEqual(health["restart_reconciliation"]["pending_backoff_record_count"], 0)
+            self.assertEqual(index_of(health)["last_run"]["assembly"], "rebuilt")
+            self.assertEqual(service.lifecycle_gateway.dispatch_count, 0)
+        finally:
+            await fixture.asyncTearDown()
 
 
 if __name__ == "__main__":
