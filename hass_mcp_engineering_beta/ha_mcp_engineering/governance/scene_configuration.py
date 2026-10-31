@@ -5,9 +5,8 @@ config id (the ``id`` key Core stores in ``scenes.yaml``, which is also the
 scene entity's registry ``unique_id`` and its ``id`` state attribute; it is
 not the entity_id).  The governed state is:
 
-``config_id``, ``entity_id``, ``registry_entry_id``, ``config`` (the exact
-``GET /api/config/scene/config/<id>`` body) and ``loaded_matches_config``
-(the loaded scene entity reflects that stored configuration).
+``config_id``, ``entity_id``, ``registry_entry_id`` and ``config`` (the
+exact ``GET /api/config/scene/config/<id>`` body).
 
 Core 2026.10 ``config/scene.py`` and ``config/view.py``: GET answers 404 when
 no stored entry has the id; POST validates the body with the scene platform
@@ -26,13 +25,14 @@ before it is sent while the profile is not admitted, and the POST needs the
 single-use F3 write permit the configuration adapter installs only after
 the durable dispatch intent (HAMCP-071 R1-H2).
 
-Core's save reload removes the scene's state and adds a fresh one
-(``StateMachine.async_remove``; a re-added state has a new
-``last_changed``), while the restored state value (the last activation
-time) is unchanged.  The POST is preceded by a baseline read of that state;
-a later read that sees a new ``last_changed`` with the same state value is
-the post-save reload evidence verification requires (R1-H1).  Without it the
-stored configuration can be verified but the loaded scene is not.
+Verification scope (HAMCP-071 option C, Josh's decision): verified means
+the stored configuration reads back exactly (type-exact canonical JSON) and
+the scene's entity registry identity (entity_id, registry entry id,
+``homeassistant`` platform, unique_id) is unchanged.  Engineering verifies
+the saved scene and its registry identity; it does not verify the scene
+Home Assistant has loaded.  No read correlates Core's background reload
+with this save, so nothing about the loaded copy is inferred or claimed --
+the same scope as the automation family's stored-configuration readback.
 
 There is no fallback provider.  The resource type stays unadmitted until a
 signed Core registry sequence pins ``core.scene_configuration_operation``
@@ -41,10 +41,9 @@ signed Core registry sequence pins ``core.scene_configuration_operation``
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 import math
 import re
@@ -96,20 +95,13 @@ F3_CONTEXT_REQUIRED_REASON = "active_f3_execution_required"
 # command and the recorded dispatch intent.
 WRITE_PERMIT_REQUIRED_REASON = "scene_configuration_write_permit_required"
 DISPATCH_INTENT = "dispatch_intent_recorded"
-# HAMCP-071 R1-H1: the pre-POST read of the scene state failed, so no
-# post-save reload could ever be proven; nothing is sent.
-RELOAD_BASELINE_UNAVAILABLE_REASON = "scene_configuration_reload_baseline_unavailable"
-STORED_CONFIGURATION_VERIFIED = "scene_stored_configuration_verified"
-RELOAD_UNVERIFIED = "scene_post_save_reload_unverified"
-# HAMCP-071 R2-H1: the plan's final configuration is already stored, but no
-# save by this plan exists whose reload could prove the loaded scene.
-ALREADY_STORED = "scene_desired_configuration_already_stored"
-# HAMCP-071 R2-H1: the loaded-scene components a reload visibly changes.
-# Core reads scenes.yaml once per reload and builds every scene's name,
-# icon, member list and snapshots from that one parse
-# (homeassistant/scene.py:182-211, 308-328 at 2026.10.1/2026.10.3); the
-# member snapshots themselves are never observable.
-VISIBLE_COMPONENTS = ("name", "icon", "entities")
+# HAMCP-071 option C: what a verified scene result does and does not claim.
+VERIFICATION_SCOPE = "stored_configuration_and_registry_identity"
+LOADED_STATE = "not_verified"
+VERIFICATION_SCOPE_STATEMENT = (
+    "Engineering verifies the saved scene and its registry identity; it does "
+    "not verify the scene Home Assistant has loaded."
+)
 CONSUMER_INDEX_NOT_CURRENT = "dependency_index_not_current"
 PENDING_ADMISSION_TEXT = (
     "Scene configuration edits are implemented but inactive: pending signed "
@@ -123,7 +115,6 @@ STATE_KEYS = (
     "entity_id",
     "registry_entry_id",
     "config",
-    "loaded_matches_config",
 )
 # The closed per-scene keys of Core's homeassistant scene platform schema.
 CONFIG_KEYS = frozenset({"id", "name", "icon", "entities", "metadata"})
@@ -142,10 +133,6 @@ MAX_DEPTH = 4
 MAX_CONFIG_BYTES = 65_536
 MAX_INTEGER = 2**53
 MAX_REGISTRY_LIST_ITEMS = 5_000
-# Core's post-write ``scene.reload`` runs after POST answers; the loaded
-# scene is polled within this bound before it counts as inconsistent.
-LOADED_POLL_ATTEMPTS = 10
-LOADED_POLL_INTERVAL_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -183,63 +170,14 @@ def write_permit(permit: ScenePermit) -> Iterator[None]:
         _WRITE_PERMIT.reset(token)
 
 
-@dataclass
-class _ReloadBaseline:
-    operation_id: str
-    entity_id: str
-    last_changed: str
-    state: Any
-    # R2-H1: the loaded visible components just before the POST and the
-    # ones the POST stores; evidence names each component a post-save
-    # reload visibly moved from ``before`` to ``target``.
-    before: dict[str, Any]
-    target: dict[str, Any]
-    observed: bool = False
-    evidence: set[str] = field(default_factory=set)
+def verification_scope_fields() -> dict[str, str]:
+    """The additive scope fields every scene plan and result carries."""
 
-
-def configured_visible(config: Any) -> dict[str, Any] | None:
-    """The reload-visible components a scene configuration declares."""
-
-    if type(config) is not dict or type(config.get("entities")) is not dict:
-        return None
     return {
-        "name": config.get("name"),
-        "icon": config.get("icon"),
-        "entities": sorted(str(key) for key in config["entities"]),
+        "verification_scope": VERIFICATION_SCOPE,
+        "loaded_state": LOADED_STATE,
+        "verification_scope_statement": VERIFICATION_SCOPE_STATEMENT,
     }
-
-
-def loaded_visible(
-    detail: dict[str, Any] | None, state: dict[str, Any] | None
-) -> dict[str, Any] | None:
-    """The loaded scene's visible components: registry name/icon, members."""
-
-    if type(detail) is not dict or type(state) is not dict:
-        return None
-    attributes = state.get("attributes")
-    if type(attributes) is not dict:
-        return None
-    members = attributes.get("entity_id")
-    if type(members) is not list:
-        return None
-    return {
-        "name": detail.get("original_name"),
-        "icon": detail.get("original_icon"),
-        "entities": sorted(str(item) for item in members),
-    }
-
-
-def planned_visible_changes(current: Any, proposed: Any) -> frozenset[str]:
-    """Visible components the plan changes; only these can carry evidence."""
-
-    before = configured_visible(current)
-    after = configured_visible(proposed)
-    if before is None or after is None:
-        return frozenset()
-    return frozenset(
-        key for key in VISIBLE_COMPONENTS if before[key] != after[key]
-    )
 
 
 class SceneConfigurationContractError(ValueError):
@@ -417,8 +355,6 @@ def state_errors(config_id: str, state: Any) -> list[str]:
     entry_id = state["registry_entry_id"]
     if type(entry_id) is not str or not REGISTRY_ENTRY_ID_PATTERN.fullmatch(entry_id):
         errors.append("scene configuration registry_entry_id is invalid")
-    if type(state["loaded_matches_config"]) is not bool:
-        errors.append("scene configuration loaded_matches_config is invalid")
     errors.extend(config_errors(config_id, state["config"]))
     return errors
 
@@ -426,12 +362,7 @@ def state_errors(config_id: str, state: Any) -> list[str]:
 def proposed_errors(config_id: str, proposed: Any) -> list[str]:
     """Errors in a proposed final state; requested values use the strict rules."""
 
-    errors = state_errors(config_id, proposed)
-    if errors:
-        return errors
-    if proposed["loaded_matches_config"] is not True:
-        errors.append("a proposed scene state must be loaded")
-    return errors
+    return state_errors(config_id, proposed)
 
 
 def normalize_state(state: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -539,10 +470,6 @@ class SceneConfigurationGateway:
         # Set by the governance runtime: the dependency snapshot reader that
         # never builds or refreshes (HAMCP-071 R1-M1).
         self.consumer_snapshot_reader: Any = None
-        # Pre-POST scene state per config id (R1-H1), in memory only: after
-        # an Engineering restart the reload evidence is gone and the result
-        # stays unverified.
-        self._reload_baselines: dict[str, _ReloadBaseline] = {}
 
     @property
     def rest_client(self) -> Any:
@@ -773,91 +700,6 @@ class SceneConfigurationGateway:
             )
         return evidence
 
-    async def _loaded_matches(
-        self,
-        config_id: str,
-        entity_id: str,
-        registry_entry_id: str,
-        config: dict[str, Any],
-    ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
-        """Whether the loaded scene's identity, name, icon and members match.
-
-        The re-added entity updates the registry ``original_name`` and
-        ``original_icon``; its state lists the member entity_ids and the id.
-        The member snapshots are not observable, so a match is never proof
-        that a save reload landed (R1-H1, R2-H1); see ``reload_evidence``.
-        """
-
-        # The state is read first so every poll can observe the reload.
-        state = await self.read_entity_state(entity_id)
-        detail = await self.registry_detail(entity_id)
-        if (
-            detail is None
-            or detail.get("id") != registry_entry_id
-            or detail.get("platform") != "homeassistant"
-            or detail.get("unique_id") != config_id
-            or detail.get("disabled_by") is not None
-            or detail.get("original_name") != config["name"]
-            or detail.get("original_icon") != config.get("icon")
-        ):
-            return False, state, detail
-        attributes = state.get("attributes") if state is not None else None
-        if type(attributes) is not dict or attributes.get("id") != config_id:
-            return False, state, detail
-        members = attributes.get("entity_id")
-        return type(members) is list and sorted(
-            str(item) for item in members
-        ) == sorted(config["entities"]), state, detail
-
-    def _observe_reload(
-        self,
-        config_id: str,
-        entity_id: str,
-        state: dict[str, Any] | None,
-        detail: dict[str, Any] | None,
-    ) -> bool:
-        """Latch post-save reload evidence; ``True`` while none is pending.
-
-        Core's reload re-adds the scene state with a new ``last_changed`` and
-        the restored state value; an activation changes the state value
-        instead, so it is never taken for a reload.  A re-add alone does not
-        say which file the reload read (an external reload may race the
-        save), so R2-H1 evidence additionally requires a visible component
-        the POST changes to have moved, in that same poll, from its pre-POST
-        loaded value to the saved one.  The file held the old value until
-        this save, so only a reload that read the file after it loads the
-        new one.
-        """
-
-        baseline = self._reload_baselines.get(config_id)
-        if baseline is None:
-            return True
-        if (
-            baseline.entity_id == entity_id
-            and state is not None
-            and type(state.get("last_changed")) is str
-            and state["last_changed"] != baseline.last_changed
-            and exactly_equal(state.get("state"), baseline.state)
-        ):
-            baseline.observed = True
-            loaded = loaded_visible(detail, state)
-            if loaded is not None:
-                baseline.evidence.update(
-                    key
-                    for key in VISIBLE_COMPONENTS
-                    if baseline.before[key] != baseline.target[key]
-                    and loaded[key] == baseline.target[key]
-                )
-        return baseline.observed
-
-    def reload_evidence(self, config_id: str, operation_id: str) -> frozenset[str]:
-        """Visible components a reload after ``operation_id``'s save loaded."""
-
-        baseline = self._reload_baselines.get(config_id)
-        if baseline is None or baseline.operation_id != operation_id:
-            return frozenset()
-        return frozenset(baseline.evidence)
-
     async def read_state(self, config_id: str) -> dict[str, Any] | None:
         """The exact governed state, or ``None`` when no such scene exists."""
 
@@ -882,27 +724,16 @@ class SceneConfigurationGateway:
             raise SceneConfigurationContractError("scene_configuration_not_loaded")
         if entry.get("disabled_by") is not None:
             raise SceneConfigurationContractError("scene_configuration_target_disabled")
-        entity_id, entry_id = entry["entity_id"], entry["id"]
-        loaded = False
-        for attempt in range(LOADED_POLL_ATTEMPTS):
-            if attempt:
-                await asyncio.sleep(LOADED_POLL_INTERVAL_SECONDS)
-            loaded, state, detail = await self._loaded_matches(
-                config_id, entity_id, entry_id, config
-            )
-            reloaded = self._observe_reload(config_id, entity_id, state, detail)
-            if loaded and reloaded:
-                break
-        # Re-read last: a configuration that changed while the loaded scene
-        # was checked is never bound.
+        # Re-read last: a configuration that changed while the registry
+        # identity was read is never bound.  The loaded scene is not read:
+        # Engineering does not verify Home Assistant's loaded copy.
         if not exactly_equal(await self.read_config(config_id), config):
             raise EntityMetadataProviderError("scene_configuration_read_unstable")
         return {
             "config_id": config_id,
-            "entity_id": entity_id,
-            "registry_entry_id": entry_id,
+            "entity_id": entry["entity_id"],
+            "registry_entry_id": entry["id"],
             "config": json.loads(canonical(config)),
-            "loaded_matches_config": loaded,
         }
 
     async def write(self, config_id: str, command: dict[str, Any]) -> dict[str, Any]:
@@ -949,42 +780,7 @@ class SceneConfigurationGateway:
                 call_not_sent=True,
             ) from exc
         # write_refusal proved an unconsumed permit for exactly this send.
-        slot = _WRITE_PERMIT.get()
-        slot.consumed = True  # type: ignore[union-attr]
-        permit = slot.permit  # type: ignore[union-attr]
-        # R1-H1/R2-H1: the loaded scene just before the POST; the save
-        # reload is proven only against it.  Without it nothing is sent.
-        try:
-            baseline_state = await self.read_entity_state(permit.entity_id)
-            baseline_detail = await self.registry_detail(permit.entity_id)
-        except Exception:
-            baseline_state = baseline_detail = None
-        before = loaded_visible(baseline_detail, baseline_state)
-        target = configured_visible(command["body"])
-        if (
-            baseline_state is None
-            or type(baseline_state.get("last_changed")) is not str
-            or before is None
-            or target is None
-        ):
-            raise ConfigurationMutationNotDispatchedError(
-                details={
-                    "operation": operation,
-                    "resource_id": config_id,
-                    "reason": RELOAD_BASELINE_UNAVAILABLE_REASON,
-                    "reason_code": RELOAD_BASELINE_UNAVAILABLE_REASON,
-                    "provider_dispatch_occurred": False,
-                },
-                call_not_sent=True,
-            )
-        self._reload_baselines[config_id] = _ReloadBaseline(
-            operation_id=permit.operation_id,
-            entity_id=permit.entity_id,
-            last_changed=baseline_state["last_changed"],
-            state=json.loads(canonical(baseline_state.get("state"))),
-            before=before,
-            target=target,
-        )
+        _WRITE_PERMIT.get().consumed = True  # type: ignore[union-attr]
         try:
             mark_provider_send()  # OD-6(ii): the exact send boundary
             result = await self.rest_client.request(
@@ -1040,7 +836,6 @@ class SceneConfigurationGateway:
 
 __all__ = [
     "ACTION",
-    "ALREADY_STORED",
     "CAPABILITY_IDENTITIES",
     "CAPABILITY_IDENTITY",
     "FIELDS",
@@ -1049,15 +844,16 @@ __all__ = [
     "PROFILE",
     "PROVIDER",
     "PROVIDER_CONTRACT",
+    "LOADED_STATE",
     "REJECTED_REASON",
-    "RELOAD_UNVERIFIED",
-    "STORED_CONFIGURATION_VERIFIED",
     "ScenePermit",
     "RESOURCE_TYPE",
     "STATE_KEYS",
     "SceneConfigurationContractError",
     "SceneConfigurationGateway",
     "UNAUTHORIZED_REASON",
+    "VERIFICATION_SCOPE",
+    "VERIFICATION_SCOPE_STATEMENT",
     "WRITE_PERMIT_REQUIRED_REASON",
     "canonical",
     "changed_fields",
@@ -1072,6 +868,7 @@ __all__ = [
     "requested_name_valid",
     "snapshot_valid",
     "state_errors",
+    "verification_scope_fields",
     "write_body",
     "write_command",
     "write_permit",

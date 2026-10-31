@@ -356,9 +356,6 @@ class ConfigurationOperationAdapter:
         # before it commits durable intent through ``before_dispatch``.
         state, state_code = await self._authoritative_state(operation)
         if state_code == "desired_state_already_reached":
-            gap = self.strategy.already_reached_gap(state)
-            if gap:
-                return self._preflight_rejected(operation, gap)
             return self._preflight_already_reached(
                 operation, state, required_locks, validation_status
             )
@@ -897,29 +894,6 @@ class ConfigurationOperationAdapter:
                 diagnostic_codes=(readback_code,),
                 identity_match=None,
                 resource_exists=None,
-                semantic_match=None,
-                normalization_valid=None,
-                configuration_check_status="unavailable",
-                normalized_observed_fingerprint=None,
-            )
-        gap = bounded_codes(
-            await self.strategy.observation_gap(self.gateway, operation, observed)
-        )
-        if gap:
-            self._emit("observation", operation.target.target_id, "observing", gap)
-            return ConfigurationObservationResult(
-                outcome=NormalizedOperationOutcome.OBSERVING,
-                attempt_count=attempt_count,
-                observation_complete=False,
-                provider_reachable=True,
-                target_reachable=True,
-                readback_state_fingerprint=None,
-                intended_result_observed=None,
-                mismatch_fields=(),
-                evidence_hash=None,
-                diagnostic_codes=gap,
-                identity_match=None,
-                resource_exists=True,
                 semantic_match=None,
                 normalization_valid=None,
                 configuration_check_status="unavailable",

@@ -537,6 +537,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "activating_consumers_disclosed": True,
         "scene_activation": "never",
         "readback_required": True,
+        "verification_scope": "stored_configuration_and_registry_identity",
+        "loaded_state": "not_verified",
         "recovery": "exact_readback_only_no_redispatch",
         "rollback_available": True,
         "rollback": "separately_approved_restore_of_exact_prior_configuration",

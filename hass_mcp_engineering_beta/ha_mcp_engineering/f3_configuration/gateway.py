@@ -99,15 +99,6 @@ class ExistingConfigurationGatewayBridge:
             target_id, current, proposed
         )
 
-    def scene_configuration_reload_evidence(
-        self, target_id: str, operation_id: str
-    ) -> frozenset[str]:
-        """HAMCP-071 R2-H1: components a reload after this save loaded."""
-
-        return self._gateway.scene_configuration.reload_evidence(
-            target_id, operation_id
-        )
-
     async def label_preflight_evidence(
         self,
         target_id: str,

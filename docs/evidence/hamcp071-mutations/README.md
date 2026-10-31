@@ -31,6 +31,8 @@ TMPDIR and HOME, and the logs. Each run was a `systemd-run --user` unit
 | `d4-results.json` | D4 full run: all 104 replayed plus 9 new D4 `H23`–`H31` mutants, after the D4 change | 258 OK | 113 | 112 |
 | `r2-results.json` | R2 full run: all 113 replayed (7 re-anchored) plus 10 new `E1`–`E10` evidence-check removals, after the R2-H1 correction | 278 OK | 123 | 119 |
 | `r2-rerun-results.json` | the 4 R2 survivors (A3 included as the equivalent control), after the new R2 isolation tests | 282 OK | 4 | 3 |
+| `optc-results.json` | option C full run: 99 replayed (24 retired, H6 re-anchored) plus 11 new `O1`–`O11` check removals | 257 OK | 110 | 107 |
+| `optc-rerun-results.json` | the 3 option C survivors (A3 included as the equivalent control), after the two new isolation tests | 259 OK | 3 | 2 |
 
 No mutant timed out and none had an import error in any round.
 
@@ -111,6 +113,9 @@ No mutant timed out and none had an import error.
 
 ## Codex R2 corrections (round 4)
 
+*Historical: option C (round 5, below) removed the R2 evidence rule, and
+retired every `E` mutant and the mutants re-anchored onto it.*
+
 R2-H1: a loaded scene that matched the plan could be reported verified
 from a reload before the save, or with no save at all. The correction
 requires positive post-save evidence: in one poll the scene is re-added
@@ -159,6 +164,59 @@ Every mutant that removes an R2 evidence check maps to one verified path:
 
 All are killed. No mutant timed out and none had an import error.
 
+## Option C (round 5)
+
+Codex R3-H1: another writer's reload before this plan's save could still
+produce `succeeded_verified` while old member attributes stayed loaded.
+Josh's option C (2026-10-31) redefines "verified": the stored scene
+configuration reads back exactly (type-exact canonical) and the scene's
+entity registry identity is unchanged. Engineering claims nothing about
+the scene Home Assistant has loaded, and the reload-inference machinery
+was removed. Results carry `verification_scope:
+"stored_configuration_and_registry_identity"` and `loaded_state:
+"not_verified"`.
+
+**Retired (24), because the code they mutated was removed:** T5, T9 and
+T10 (loaded-scene reads), B9 (the projection's loaded key, now
+equivalent), B10, H8–H16 (reload latch, baseline, poll exit, evidence
+passthrough) and E1–E10 (the R2 evidence rule). **H6** was re-anchored to
+the kept write-permit consumption. The other 99 earlier mutants were
+replayed against the option C tree.
+
+The new `O` mutants each remove one option C check:
+
+| Mutant | What it does | Killed in |
+|---|---|---|
+| O1 | the projection drops `registry_entry_id` | `optc-results.json` (8 failures, including the registry-drift tests) |
+| O2 | the projection drops `entity_id` | `optc-results.json` (7 failures, including the renamed-entity drift test) |
+| O3 | verification compares identity only, not the stored `config` | `optc-results.json` (10 failures, including the stored-mismatch tests) |
+| O4 | the scene response-identity check always matches | `optc-rerun-results.json`: `test_response_identity_is_the_exact_config_id` |
+| O5 | the scope fields are dropped from the apply result | `optc-results.json` (8 failures) |
+| O6 | the scope fields are dropped from the execution task | `optc-results.json` (2 failures) |
+| O7 | the scope fields are dropped from the retained apply result | `optc-results.json` (1 failure) |
+| O8 | the scope fields are dropped from the plan disclosure | `optc-results.json` (1 failure) |
+| O9 | `loaded_state` is dropped from the catalog | `optc-results.json` (1 failure) |
+| O10 | `loaded_state` claims `"verified"` | `optc-results.json` (8 failures, including the loaded-claim guard) |
+| O11 | the scope fields are stamped on every family's task | `optc-rerun-results.json`: `test_scope_fields_are_stamped_only_on_scene_tasks` |
+
+Two option C mutants survived the full run, and each now has an isolated
+test:
+- **O4.** The scene read (`read_state`) builds `config_id` from its own
+  argument, and the generic callers of `resource_identity_matches` (retry
+  bundles, the garage inverse, deletion) never carry a scene, so no full
+  path can reach the branch with another identity. The new test pins the
+  check itself.
+- **O11.** No other family runs through these modules. The new test pins
+  the scene-only rule on the runtime projection: no declarations, another
+  family and a mixed task all get no scope fields.
+
+O8–O11 ran with 258 tests: the O4 test was added while the full run was in
+progress, and the remaining mutant copies included it. It is a stricter
+suite, and each row records its test count. The rerun used the final
+259-test tree.
+
+So 109 of 110 are killed. No mutant timed out and none had an import error.
+
 ## Remaining survivor (1): equivalent
 
 - **A3: the persistence-entry recheck is removed.** Equivalent.
@@ -172,8 +230,8 @@ All are killed. No mutant timed out and none had an import error.
   checks and is killed in round 1 (2 failures).
 - **A4 alone** (only the generic-builder check removed) was killed in
   round 0.
-- A3 survives again in both R1 runs, the D4 run and both R2 runs, for the
-  same reason.
+- A3 survives again in both R1 runs, the D4 run, both R2 runs and both
+  option C runs, for the same reason.
 
 ## Usage
 
@@ -188,5 +246,6 @@ With no ids, the runner runs the baseline and then every mutant, and writes
 include it) and writes `results-partial.json`; the R1 rerun's copy is
 `r1-rerun-results.json`. `--out NAME.json` overrides the output file (the
 D4 run used `--out d4-results.json`; the R2 runs used `--out r2-results.json`
-and `--out r2-rerun-results.json`). The R1, D4 and R2 units also set
-`TMPDIR=<worktree>/.artifacts/tmp`.
+and `--out r2-rerun-results.json`; the option C runs used
+`--out optc-results.json` and `--out optc-rerun-results.json`). The R1, D4,
+R2 and option C units also set `TMPDIR=<worktree>/.artifacts/tmp`.

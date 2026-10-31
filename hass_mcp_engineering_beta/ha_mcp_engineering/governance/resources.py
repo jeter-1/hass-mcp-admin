@@ -1200,7 +1200,7 @@ class ConfigurationResourceGateway:
 
         The target is judged from one fresh read: a scene that no longer
         exists (POST would create it), or whose stored configuration,
-        registry entry or loaded state differs from the plan's bound state,
+        or registry identity differs from the plan's bound state,
         refuses ``stale_target_state`` and is never overwritten.  Nothing is
         written; an empty tuple means the binding still holds.
         """

@@ -1005,7 +1005,6 @@ def _scene_configuration_operation_policy(
         or scene_configuration_contract.proposed_errors(
             operation.target_id, proposed
         )
-        or current["loaded_matches_config"] is not True
         or any(
             current[key] != proposed[key]
             for key in ("config_id", "entity_id", "registry_entry_id")

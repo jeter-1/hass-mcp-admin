@@ -83,6 +83,23 @@ follow-up (section 0).
    mode-helper rule (D4). Gaps in
    consumer evidence are disclosed but do not elevate the policy. Risk labels are decision
    support only (`AGENTS.md`).
+6. **Option C (Josh, 2026-10-31, after Codex round 3).** "Verified" means
+   that the stored scene configuration reads back exactly (type-exact,
+   canonical JSON) and that its entity registry identity is unchanged.
+   Engineering claims nothing about the scene Home Assistant has loaded.
+   The R1/R2 loaded-state reload inference (pre-POST baseline, bounded poll,
+   visible-transition and re-add evidence, and its gateway, F3 and runtime
+   bridges) is removed. This supersedes R1-H1 and R2-H1 as written. Codex
+   R3-H1 showed that the inference could not be made sound: if another
+   writer reloads before this save, the old member attributes can stay
+   loaded while every visible component looks right. D1–D4 and the D3
+   disclosure are unchanged. This matches the automation family, which
+   verifies only the stored configuration (`_F3_GOVERNED_CONFIGURATION_OPERATIONS`
+   readback in `ha_core_readmission/routes.py`, and
+   `compare_resource_verification` in `governance/resources.py`). Every
+   surface carries the statement "Engineering verifies the saved scene and
+   its registry identity; it does not verify the scene Home Assistant has
+   loaded." (section 4).
 
 ## 1. Part 1 findings: the Core contract
 
@@ -135,14 +152,9 @@ an admin.
   `platform.async_reset()` (`:202`). That removes every scene created at
   runtime with `scene.create`. The plan discloses this.
 - **Loaded scene.** Its `unique_id` is the config id
-  (`homeassistant/scene.py:356`). Its state attributes are `entity_id`, the
-  member list, and `id`, the config id (`:364-366`).
-- **One parse per reload.** `reload_config` (`:182-211`) and
-  `_process_scenes_config` (`:308-328`) build each scene's name, icon,
-  member list and snapshots from one YAML parse, so they load together.
-  Only the name and icon (through the registry's `original_name` and
-  `original_icon`), the member list (`entity_id`) and `id` are observable
-  (`:362-367`). Member snapshots are not observable.
+  (`homeassistant/scene.py:356`), which is how the registry entry is bound.
+  Member snapshots of the loaded scene are not observable (`:362-367`), and
+  the tool does not read the loaded scene at all (decision 6).
 - **Activation.** `async_reproduce_state` (`helpers/state.py:27`) reproduces
   every domain in parallel (`asyncio.gather`, `:66`). Stored member order is
   therefore not an activation order.
@@ -214,8 +226,9 @@ Planning refuses before any dispatch, and creates no plan, when:
   entry matches), has configuration errors
   (`scene_configuration_target_unreviewable`) or is disabled
   (`scene_configuration_target_disabled`);
-- the loaded scene does not match the stored configuration, for example
-  because a reload is pending or failed (`scene_configuration_not_loaded`);
+- a stored scene has no registry entry yet (`scene_configuration_not_loaded`).
+  A stored scene whose loaded copy is stale is planned from storage; the
+  loaded copy is never read;
 - stored text is withheld by the screen (`scene_configuration_text_withheld`);
 - the edit changes nothing. The result is a truthful no-change refusal
   (`scene_configuration_no_change`, `already_satisfied`), with no plan;
@@ -234,19 +247,13 @@ Planning refuses before any dispatch, and creates no plan, when:
 ## 3. Fingerprint, disclosure and policy
 
 - **Binding.** The governed state is `config_id`, `entity_id`,
-  `registry_entry_id`, `config` (the exact GET body) and
-  `loaded_matches_config`.
+  `registry_entry_id` and `config` (the exact GET body). Nothing about the
+  loaded scene is part of the state.
 - **Stable read.** The state read works as follows:
-  1. Read the registry entry.
-  2. GET the stored configuration.
-  3. Poll the loaded scene, at most 10 times every 0.5 s.
-  4. GET the configuration again.
-
-  The loaded-scene check compares:
-  - the registry id, platform, `unique_id` and `disabled_by`;
-  - `original_name` and `original_icon`;
-  - the state attribute `id`;
-  - the sorted member list.
+  1. GET the stored configuration.
+  2. Read the registry entry (domain `scene`, platform `homeassistant`,
+     `unique_id` equal to the config id, not disabled).
+  3. GET the configuration again.
 
   If the configuration changed between the two GETs, the read is unstable
   and is refused as `scene_configuration_provider_unavailable`. Comparisons
@@ -281,14 +288,17 @@ Planning refuses before any dispatch, and creates no plan, when:
     with every domain in parallel, so stored order is not an activation
     ordering guarantee before or after this save."
   - The metadata text: metadata is never changed.
-  - The loaded-scene text: verification needs positive evidence that a
-    planned name, icon or member-list change moved from its pre-save
-    loaded value to the saved value; a loaded scene that merely matches
-    is never proof; a snapshot-only edit is never verified as loaded; an
-    already-stored configuration is refused without dispatch; otherwise
-    the task stays observing and then needs manual review, never verified,
-    and recovery is read-only (section 4).
+  - The verification-scope text (`verification_scope_disclosure`): the
+    statement "Engineering verifies the saved scene and its registry
+    identity; it does not verify the scene Home Assistant has loaded.",
+    what a verified result means, that the background reload is not
+    observed so the loaded scene can still differ, and that Engineering
+    never reloads, activates or resends.
   - The rollback, untrusted-text and consumer texts.
+
+  The disclosure also carries the scope fields `verification_scope`
+  (`stored_configuration_and_registry_identity`), `loaded_state`
+  (`not_verified`) and `verification_scope_statement`.
 
   The plan-level disclosure records:
   - target count 1;
@@ -343,8 +353,9 @@ Planning refuses before any dispatch, and creates no plan, when:
 
 ## 4. Apply, verification and recovery
 
-The F3 runtime is reused unchanged: durable intent, an exact-target lock,
-and `mark_provider_send()` at the send boundary. The locks are an exclusive
+The F3 runtime is reused: durable intent, an exact-target lock and
+`mark_provider_send()` at the send boundary. Its only scene addition is the
+additive scope projection (`scene_scope_fields`). The locks are an exclusive
 `scene_configuration` identity per config id plus the shared `reload:scene`
 identity.
 
@@ -374,70 +385,47 @@ identity.
     (`failed_post_dispatch`), and the readback decides it.
   - A lost response is never redispatched.
   - `{"result": "ok"}` is not success by itself; the readback decides it.
-- **Reload baseline.** Immediately before the POST the write reads the
-  scene state (`GET /api/states/{entity_id}`) and the registry entry. The
-  baseline holds `last_changed`, the state value and the loaded visible
-  identity B: `original_name`, `original_icon` and the sorted member list.
-  The target T is the visible identity of the POST body. If either cannot
-  be read or built, the POST is not sent
-  (`scene_configuration_reload_baseline_unavailable`).
-- **Readback (R1-H1, R2-H1).** The stored configuration must equal the
-  proposed configuration exactly, and the registry identity must be
-  unchanged. The loaded scene is verified only with *positive* evidence of
-  a reload after this plan's save. Evidence for a component k (name, icon
-  or member list) is latched at one poll of the bounded window (10 ×
-  0.5 s) when:
-  - `last_changed` differs from the pre-POST baseline while the state
-    value (the last activation time) is unchanged, so the scene was
-    re-added and not activated;
-  - B[k] differs from T[k]; and
-  - the loaded value of k at that same poll equals T[k].
-
-  The strategy requires the evidence to intersect the plan's own visible
-  changes (current against proposed configuration). Because Core loads
-  every component from one parse, a loaded value moving from B to T after
-  the POST proves that this save's file was loaded. A loaded scene that
-  merely matches the plan is never proof: a reload before the save
-  (B already equals T, or the old value is reloaded), an activation, or a
-  coincidental match without a visible transition is never evidence.
-  - Evidence observed, loaded scene consistent: `succeeded_verified`.
-  - Evidence observed, loaded scene different from the stored
-    configuration: a verification failure (`failed_post_dispatch`,
-    `verification_mismatch`, `exact_readback_not_verified`). Recovery is
-    read-only.
-  - A snapshot-only edit has no visible change, so it can never be
-    verified as loaded. It ends changed but unverified. This is disclosed.
-  - Not observed (the reload was prevented, failed, landed after the
-    window, or showed no planned visible change): the stored
-    configuration is verified but the loaded scene is not. The task stays
-    `observing` with
-    `scene_post_save_reload_unverified` and
-    `scene_stored_configuration_verified`; after the evidence deadline it
-    is `manual_review_required` (`f3_sequence_incomplete`). It is never
-    `succeeded_verified`, never a `verification_mismatch` caused only by a
-    late reload, and never redispatched.
-  - Recovery is read-only: inspect the task and the scene, and reload
-    scenes in Home Assistant yourself if the loaded scene is stale.
-    `reverify_configuration_task` does not apply, because it needs a
-    verification mismatch record.
-  - A stored-configuration or registry mismatch is a verification failure,
-    and recovery is read-only.
-- **Already stored.** When preflight finds the desired configuration
-  already stored, nothing this plan sent could have produced a reload, so
-  the scene strategy's `already_reached_gap` refuses the plan before
-  dispatch (`preflight_rejected`,
-  `scene_desired_configuration_already_stored` and
-  `scene_post_save_reload_unverified`). It is never `succeeded_verified`.
-- **Every verified path (R2-H1).** In the F3 configuration adapter only
-  two functions produce `succeeded_verified`: `verify`, which `_observe`
-  reaches only when `observation_gap` is empty (first apply,
-  re-observation and rollback plans), and `_preflight_already_reached`,
-  which scenes never reach because `already_reached_gap` runs first. A
-  scene's `observation_gap` is empty only with the evidence above. A
-  rollback plan is itself a scene edit and needs its own evidence, and it
-  requires the forward edit to be exactly verified. Task states aggregate
-  child outcomes. `PostSaveReloadRuleTests` pins the producer set with an
-  AST check and patches the evidence to empty on every edit shape.
+- **Readback (option C).** After the POST the runtime reads the governed
+  state again: the stored configuration (GET) and the registry entry. The
+  task is `succeeded_verified` exactly when the stored configuration equals
+  the proposed configuration type-exactly (canonical JSON, so `99` and
+  `99.0` differ, and an unrequested change is a difference) and the
+  registry identity (`config_id`, `entity_id`, `registry_entry_id`) is
+  unchanged. Nothing else is claimed:
+  - The loaded scene is never read and never verified. A reload by another
+    writer before the save, a failed reload or a late reload does not change
+    the outcome (Codex R3-H1 probe: the save verifies, the loaded attributes
+    stay old, and no surface claims the loaded scene).
+  - A stored mismatch (nothing stored, a type-inexact value, an
+    unrequested change) is a verification failure: `failed_post_dispatch`,
+    `verification_mismatch`, `exact_readback_not_verified`.
+  - A replaced registry entry or a renamed scene entity is a verification
+    failure in the same way.
+  - A removed or disabled registry entry, or a failed read, cannot be
+    observed: the task stays `observing` (then manual review) and is never
+    `succeeded_verified`.
+  - Recovery is read-only, and the send is never repeated.
+- **Scope fields.** Every scene apply result, its `execution_task`,
+  `get_execution_task` and a retained apply result carry
+  `verification_scope: "stored_configuration_and_registry_identity"`,
+  `loaded_state: "not_verified"` and `verification_scope_statement`:
+  "Engineering verifies the saved scene and its registry identity; it does
+  not verify the scene Home Assistant has loaded." The fields are additive
+  and appear only on tasks whose children are all scene operations. The
+  plan disclosure (section 3), the tool description and the capability
+  catalog carry the same scope. `VerificationScopeTests` holds a guard that
+  no surface claims loaded-state verification.
+- **Already stored.** When preflight finds the desired stored configuration
+  and registry identity already present, nothing is sent and the task is
+  `succeeded_verified` with `desired_state_already_reached`, the same
+  stored-only scope. Rollback is unavailable, because it needs one
+  dispatch.
+- **Every verified path.** In the F3 configuration adapter only two
+  functions produce `succeeded_verified`: `verify` (the exact readback) and
+  `_preflight_already_reached`. An AST check in `VerificationScopeTests`
+  pins that producer set. A rollback plan is itself a scene edit with the
+  same readback, and it requires the forward edit to be verified and
+  dispatched once.
 - **Rollback.** `rollback_change` creates a separate governed plan
   (`hamcp071-scene-configuration-restore-v1`). It restores the exact
   captured prior configuration, needs its own approval and does not activate
@@ -514,14 +502,14 @@ identity.
 | `profile_id` | `core_scene_configuration_operation_v1` |
 | `profile_version` | `1` |
 | `adapter_id` | `compiled-core-scene-configuration-operation-v1` |
-| `contract_fingerprint` | `sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2` |
+| `contract_fingerprint` | `sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb` |
 | `auto_eligible` | `true` (the default; every November-batch profile) |
 
 - **Required checks:** `rest_scene_config_get_by_config_id`,
   `rest_scene_config_post_by_config_id`, `rest_state_get_by_entity_id`,
   `websocket_entity_registry_list_and_get`,
-  `scene_config_and_loaded_scene_readback_exact` and
-  `scene_post_save_reload_evidence_required`.
+  `scene_config_and_registry_identity_readback_exact` and
+  `scene_loaded_state_not_verified_disclosed`.
 - **Provider boundary:** `direct_ha_api`.
 - **Predispatch:** `core_identity`, `capability_contract`,
   `target_fingerprint`, `session_fingerprint` and `generation`.
@@ -542,10 +530,10 @@ The response contract has these values:
   `POST /api/config/scene/config/{config_id}` and state
   `GET /api/states/{entity_id}`; commands read
   `config/entity_registry/get` and `config/entity_registry/list`;
-- state reads: `loaded_scene_state_and_post_save_reload_evidence`,
-  `member_device_class_when_the_registry_has_none`,
-  `member_existence_when_unregistered` and
-  `scene_state_reload_baseline_immediately_before_the_post`;
+- state reads (the `GET /api/states/{entity_id}` route is for members
+  only; the scene's own state is never read):
+  `member_device_class_when_the_registry_has_none` and
+  `member_existence_when_unregistered`;
 - consumer disclosure:
   `current_cached_dependency_index_snapshot_only_never_built_or_refreshed_gap_disclosed_when_not_current`;
 - arguments:
@@ -559,15 +547,18 @@ The response contract has these values:
 - never sent: `DELETE /api/config/scene/config/{config_id}`, `scene.apply`,
   `scene.create`, `scene.delete`, `scene.reload` and `scene.turn_on`;
 - side effect: `core_post_write_hook_reloads_all_ui_scenes`;
-- readback: `stored_config_exact_plus_registry_identity_plus_loaded_scene_consistent_plus_post_save_reload_observed` (the pinned string is unchanged; since R2-H1, "observed" means the positive visible-transition evidence in section 4);
-- unverified: `stored_config_verified_loaded_scene_unverified_observing_then_manual_review_never_verified`;
+- readback: `stored_config_exact_type_exact_plus_registry_identity_unchanged`;
+- verification scope: `stored_configuration_and_registry_identity`;
+- loaded state: `not_verified`;
 - concurrency: `no_core_compare_and_swap_upsert_concurrent_edit_overwritten_undetected_concurrent_delete_recreated_disclosed`;
 - recovery: `read_only_no_redispatch`.
 
 The fingerprint above is computed from the source at this head
 (`CORE_RUNTIME_CAPABILITY_PROFILES`). R1 (D2) changed it from
-`sha256:8fa78120…`; the profile is unsigned, so no signed fingerprint
-changed.
+`sha256:8fa78120…` to `sha256:d461fa2a…`, and option C changed it to the
+value above (required checks, state reads, readback and scope; the routes
+and request set are unchanged). The profile is unsigned, so no signed
+fingerprint changed.
 `ProfileShapeTests.test_seq16_profile_shape_is_the_documented_shape` pins the whole
 profile mapping, including this fingerprint, so a change to the shape
 breaks a test before signing. The signed-registry entry itself belongs with
@@ -587,16 +578,14 @@ Remaining for the November sequence-16 batch (not authorized here):
    fingerprint pin. Wiring it into `ci.yml` is a protected change.
 2. Sign sequence 16 with the profile in section 6.
 3. Run the lane and confirm these points, which are unverified offline:
-   - the GET/POST round trip;
-   - the background reload's timing against the loaded-scene poll (10 ×
-     0.5 s);
-   - the `original_name` and `original_icon` updates after a reload;
+   - the GET/POST round trip and the stored-configuration readback;
+   - the registry identity across the save's background reload;
    - id assignment for entries without an id.
 4. Part 3: CREATE, with the work listed in section 0, item 1.
 
 ## 8. Offline proof
 
-`tests/test_hamcp071_scene_configuration.py` has 175 tests and uses the
+`tests/test_hamcp071_scene_configuration.py` has 152 tests and uses the
 synthetic fixtures in `tests/hamcp071_fixtures.py`:
 - `scene.synthetic_lounge_dim`, config id `1700000000001`;
 - `scene.synthetic_leaving`, config id `1700000000002`;
@@ -616,9 +605,7 @@ cover:
 - the contract boundaries;
 - R1: the F3 write permit and withdrawn-admission reads
   (`AdmittedResourceWriteTests`), the switch rule (`SwitchMemberTests`),
-  post-save reload evidence (`LoadedSceneReloadEvidenceTests`: prevented,
-  failed, delayed inside and outside the window, name, icon and member-list
-  edits, an activation that is not evidence), the declared request set
+  the declared request set
   (`ReachableRequestSetTests`) and the upsert-race disclosure
   (`DisclosureTests.test_the_upsert_race_is_disclosed_and_never_claimed_detected`);
 - D4: the mode-helper rule (`ModeHelperMemberTests`): an `input_boolean`
@@ -626,15 +613,24 @@ cover:
   a light-only scene and `input_number`/`input_text` members stay
   standard; the policy floor refuses a basis without the D4 reason; an
   elevated plan applies after elevated approval and never activates;
-- R2: the post-save reload rule (`PostSaveReloadRuleTests`): the Codex R2
-  repros (an unrelated reload before the save, then a failed reload, for
-  snapshot, name, icon and member edits; an externally stored and unloaded
-  configuration), coincidental matches, a late reload, a genuine reload
-  with a different loaded scene, an unreadable registry baseline, guard
-  tests that patch the evidence to empty on every edit shape, the AST
-  check of the verified producers, and isolated tests for a state write or
-  registry change without a re-add, a reload between one poll's reads, and
-  the strict rollback projection.
+- option C (`VerificationScopeTests`): snapshot, name, icon, icon removal,
+  member add and member removal each reach `succeeded_verified` with the
+  scope fields on the result and the task; the Codex R3-H1 probe (another
+  writer's reload before the save, then a failed reload) verifies the
+  stored scene, leaves the loaded attributes old, reads no scene state and
+  claims nothing loaded; a failed reload; stored mismatches (nothing
+  stored, type-exact `99.0`, an unrequested name) and registry drift (a
+  replaced entry, a renamed entity) are verification failures; a removed or
+  disabled entry is never verified; a guard that no surface (apply result,
+  execution task, plan disclosure, tool description, catalog, profile)
+  claims loaded-state verification, with a control for the guard pattern;
+  a check that the reload inference is removed while `dispatch_scope` and
+  `preflight_evidence` stay; the AST check of the verified producers; and
+  the strict rollback projection; and two isolated controls for option C
+  mutants, `test_scope_fields_are_stamped_only_on_scene_tasks` (O11) and
+  `MutationSurvivorTests.test_response_identity_is_the_exact_config_id`
+  (O4). The R1 and R2 reload-evidence tests were removed with the code
+  they tested.
 
 The new tests found and fixed **two runtime defects**:
 1. **Invalid policy reason codes.** The policy emitted
@@ -682,8 +678,24 @@ Mutation evidence is in `docs/evidence/hamcp071-mutations/`; see
 - **R2 isolation:** G8, H10 and H13 lost their old killing paths with the
   R2 change and each got an isolated test; the rerun kills all three
   against a baseline of 282 tests (`r2-rerun-results.json`). So 122 of
-  123 are killed, and every mutant that removes an R2 evidence check is
-  killed.
+  123 were killed. (The R1 and R2 reload-evidence mutants are historical:
+  option C removed the code they mutated.)
+- **Option C full run:** 24 mutants were retired with the removed code
+  (T5, T9, T10, B9, B10, H8–H16 and E1–E10), H6 was re-anchored to the
+  kept permit consumption, and the other 99 were replayed. Eleven new
+  `O1`–`O11` mutants remove one option C check each: the registry
+  identity and `entity_id` in the projection, the stored-`config`
+  comparison, the response-identity check, the scope fields on the apply
+  result, the execution task, the retained result, the plan disclosure
+  and the catalog, `loaded_state: "verified"`, and the scope stamped on
+  every family. 107 of 110 killed, against a baseline of 257 tests
+  (`optc-results.json`).
+- **Option C isolation:** O4 and O11 each got an isolated test
+  (`test_response_identity_is_the_exact_config_id` and
+  `test_scope_fields_are_stamped_only_on_scene_tasks`); the rerun kills
+  both against a baseline of 259 tests (`optc-rerun-results.json`). So
+  **109 of 110** are killed, and every mutant that removes a stored
+  equality, registry identity or scope-field check is killed.
 - **Survivor:** A3, which removes the persistence-entry recheck. It is
   equivalent: the generic builder repeats the same gate as its first
   statement, and nothing yields between the two checks. The combined
@@ -709,15 +721,12 @@ Known limitations:
   the save recreate the scene, because Core's save is an upsert. The
   readback proves only this plan's stored result. The send is never
   repeated.
-- **Reload evidence is in memory.** An Engineering restart after the save,
-  or a reload that lands after the bounded window, leaves the result
-  unverified (observing, then manual review). A reload by anything else
-  before the save cannot produce evidence, because the loaded value would
-  still be the pre-save value.
-- **Snapshot-only edits are never verified as loaded.** Core does not
-  expose member snapshots, so an edit that changes only snapshots (for
-  example a brightness) ends changed but unverified, then manual review.
-  Josh can decide later whether that is acceptable.
+- **The loaded scene is not verified (option C).** Engineering verifies
+  the saved scene and its registry identity; it does not verify the scene
+  Home Assistant has loaded. A failed, late or concurrent reload can leave
+  the loaded scene different from the verified stored configuration. This
+  is disclosed on every surface; the remedy is to reload scenes in Home
+  Assistant, which Engineering never does.
 - **Consumers are cached.** The consumer disclosure uses only the cached
   dependency index and discloses a gap when it is missing or not current.
 - **Global reload.** The save reloads every UI and YAML scene and removes

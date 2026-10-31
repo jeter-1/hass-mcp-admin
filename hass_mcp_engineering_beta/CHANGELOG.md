@@ -8,7 +8,7 @@ Builds on 2.4.1-beta.51 (#331). Activates nothing new.
   refuses `pending_signed_registry_admission` before any read, request or
   persistence until a signed Core registry sequence names the runtime-only
   profile `core.scene_configuration_operation`
-  (`sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2`,
+  (`sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb`,
   planned sequence 16). Under sequence 14, health itemizes 26 compatible and
   5 withheld profiles.
 - Once admitted, one plan edits `name`, `icon` (or removes it) and member
@@ -17,24 +17,21 @@ Builds on 2.4.1-beta.51 (#331). Activates nothing new.
   - The write is one `POST /api/config/scene/config/{config_id}` with the
     full proposed configuration and no `id`, at most once. Unrequested keys
     and `metadata` are sent exactly as stored.
-  - The readback checks that the stored configuration is exact and the
-    registry identity is unchanged. The loaded scene is verified only with
-    positive evidence of a reload after this plan's save, observed within
-    the bounded window: the scene is re-added with its state value
-    unchanged, and a planned name, icon or member-list change moves from
-    its pre-save loaded value to the saved value. A loaded scene that
-    merely matches is never proof. Without the evidence the result is
-    changed but unverified (observing, then manual review, never
-    verified). With it, a differing loaded scene is a verification
-    failure. A snapshot-only edit is never verified as loaded, and an
-    already-stored configuration is refused without dispatch.
-    Comparisons are type-exact (canonical JSON).
+  - `succeeded_verified` means the stored configuration reads back
+    exactly and the registry identity is unchanged (Josh's option C).
+    Engineering verifies the saved scene and its registry identity; it
+    does not verify the scene Home Assistant has loaded. Every result,
+    task and plan disclosure carries
+    `verification_scope: "stored_configuration_and_registry_identity"` and
+    `loaded_state: "not_verified"`. A stored mismatch or registry drift is
+    a verification failure; an already-stored configuration is verified
+    without dispatch. Comparisons are type-exact (canonical JSON).
   - Saving never activates the scene. Nothing sends `scene.turn_on`,
     `scene.apply`, `scene.create`, `scene.reload`, `scene.delete` or the
     scene-config DELETE (which the route allowlist does not admit).
   - Planning refuses, before any dispatch:
     - integration scenes, YAML scenes outside `scenes.yaml`, and unknown,
-      mismatched, ambiguous, disabled, unloaded or unreviewable targets;
+      mismatched, ambiguous, disabled, unregistered or unreviewable targets;
     - unknown members and `scene.` members;
     - removing the last member;
     - invalid values;

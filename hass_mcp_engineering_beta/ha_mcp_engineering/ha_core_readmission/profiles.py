@@ -792,8 +792,10 @@ CORE_NOVEMBER_BATCH_PROFILES = (
     # 2026-10-30: Engineering-native direct Core provider, built inactive and
     # signed with the November batch.  The one write is the scene config POST
     # for the exact config id carrying the full proposed configuration without
-    # ``id``; the config GET plus the entity registry entry and the loaded
-    # scene are the authoritative readback.  Saving never activates the scene.
+    # ``id``; the config GET plus the entity registry identity are the
+    # authoritative readback.  Option C (Josh 2026-10-31): Engineering
+    # verifies the saved scene and its registry identity; it does not verify
+    # the scene Home Assistant has loaded.  Saving never activates the scene.
     # R1-M1 / D2: every Home Assistant request the provider can send is
     # declared (``SCENE_CONFIGURATION_REQUESTS``); consumer disclosure reads
     # only the already-built dependency index and never refreshes it.
@@ -806,8 +808,8 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             "rest_scene_config_post_by_config_id",
             "rest_state_get_by_entity_id",
             "websocket_entity_registry_list_and_get",
-            "scene_config_and_loaded_scene_readback_exact",
-            "scene_post_save_reload_evidence_required",
+            "scene_config_and_registry_identity_readback_exact",
+            "scene_loaded_state_not_verified_disclosed",
         ),
         provider_boundary="direct_ha_api",
         response_contract={
@@ -828,10 +830,8 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                 ],
             },
             "state_reads": [
-                "loaded_scene_state_and_post_save_reload_evidence",
                 "member_device_class_when_the_registry_has_none",
                 "member_existence_when_unregistered",
-                "scene_state_reload_baseline_immediately_before_the_post",
             ],
             "consumer_disclosure": (
                 "current_cached_dependency_index_snapshot_only_never_built_or_"
@@ -863,13 +863,11 @@ CORE_NOVEMBER_BATCH_PROFILES = (
             ],
             "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
             "readback": (
-                "stored_config_exact_plus_registry_identity_plus_loaded_scene_"
-                "consistent_plus_post_save_reload_observed"
+                "stored_config_exact_type_exact_plus_registry_identity_"
+                "unchanged"
             ),
-            "unverified": (
-                "stored_config_verified_loaded_scene_unverified_observing_then_"
-                "manual_review_never_verified"
-            ),
+            "verification_scope": "stored_configuration_and_registry_identity",
+            "loaded_state": "not_verified",
             "concurrency": (
                 "no_core_compare_and_swap_upsert_concurrent_edit_overwritten_"
                 "undetected_concurrent_delete_recreated_disclosed"

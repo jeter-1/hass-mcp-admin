@@ -1777,8 +1777,10 @@ async def create_scene_configuration_plan(
     activate the scene, and the reload of all scenes. Saving never activates
     the scene. External administrator approval and apply_change_plan are
     required; dispatch re-reads the scene and refuses if anything changed,
-    saves once, and verifies the stored configuration exactly by readback.
-    rollback_change plans a separately approved restore of the exact prior
+    saves once, and verifies the stored configuration and the scene's
+    registry identity exactly by readback. Engineering verifies the saved
+    scene and its registry identity; it does not verify the scene Home
+    Assistant has loaded. rollback_change plans a separately approved restore of the exact prior
     configuration. Until a signed registry admits this capability the tool
     refuses with pending_signed_registry_admission.
     """

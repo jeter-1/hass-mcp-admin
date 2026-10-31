@@ -13,9 +13,8 @@ Mutant classes:
   rechecked at plan persistence, removed from the generic builder, removed
   from the rollback route;
 - ``T*`` target refusal: integration (non-homeassistant platform) scene,
-  YAML-only scene, ambiguous unique_id, disabled entry, loaded scene not
-  matching the stored config, entity_id mismatch, absent scene, unstable
-  read, loaded name or member check removed;
+  YAML-only scene, ambiguous unique_id, disabled entry, entity_id
+  mismatch, absent scene, unstable read;
 - ``V*`` requested values: whitespace-only name, name bound removed, name
   stored trimmed, icon pattern weakened, icon clear ignored, scene member
   allowed, member bound removed, bare requested state allowed, non-finite
@@ -36,8 +35,7 @@ Mutant classes:
 - ``B*`` binding, preflight and readback: preflight comparison removed or
   type-inexact, missing scene or contract error not stale, strategy
   preflight skipped, already-reached type-inexact, exactly_equal
-  type-inexact, config or loaded flag dropped from the binding projection,
-  loaded poll result ignored;
+  type-inexact, config dropped from the binding projection;
 - ``R*`` rollback: drift check removed, unverified or undispatched forward
   allowed, forward fingerprint unchecked, no-change not mapped to drift,
   restore of the wrong configuration, lease recheck dropped;
@@ -48,23 +46,22 @@ Mutant classes:
   unchecked, no-F3 apply inventory entry dropped, runtime Core wiring
   dropped, F3 profile mapping dropped, apply Core status entry dropped;
 - ``H*`` (HAMCP-071 R1) guard removals: the F3 write permit (presence,
-  reuse, intent, target, command, consumption), read admission, the
-  post-save reload latch and its baseline, the poll exit, the strategy's
-  reload-evidence requirement and runtime passthrough, the switch rule
-  (planner, floor, domain match, statement), and the cached-only consumer
-  reader and its gap; ``H23``-``H31`` (D4) the mode-helper rule (each
-  domain, planner, floor, substring and widened match, statement, members
-  before the edit).
-- ``E*`` (HAMCP-071 R2-H1) post-save reload evidence on every verified
-  path: evidence without a planned visible difference or without the saved
-  value loaded, the registry baseline unchecked, the strategy ignoring the
-  plan's changed components or counting unchanged ones, the already-stored
-  gap ignored by the adapter or empty for scenes, the gateway evidence
-  bridge dropped, a loaded difference hidden as unverified instead of a
-  mismatch, and evidence taken from the re-add alone.  R2 also re-anchored
-  T10, H8, H11, H12, H14, H15 and H16 to the evidence code: H14 now drops
-  the plan-change intersection and H15 treats a missing check as full
-  evidence.
+  reuse, intent, target, command, consumption), read admission, the switch
+  rule (planner, floor, domain match, statement), and the cached-only
+  consumer reader and its gap; ``H23``-``H31`` (D4) the mode-helper rule
+  (each domain, planner, floor, substring and widened match, statement,
+  members before the edit).
+- ``O*`` (HAMCP-071 option C) verified means the stored configuration reads
+  back exactly and the registry identity is unchanged: the registry entry
+  id or entity_id dropped from the binding projection, the verification
+  projection reduced to identity only, the response identity unchecked; and
+  the scope statement on every surface: dropped from the apply result, the
+  execution task, the retained result, the plan disclosure or the catalog,
+  ``loaded_state`` claimed verified, or the scope stamped on other families.
+
+Retired by option C (the code they mutated was removed): T5, T9, T10, B9,
+B10, H8-H16 and E1-E10 (the loaded-scene reads, the post-save reload latch,
+poll and evidence).  H6 was re-anchored to the kept permit consumption.
 
 Usage (from the worktree root):
     systemd-run --user --unit hamcp071-mut --property=MemoryMax=3G \\
@@ -101,6 +98,7 @@ S = 'governance/service.py'
 GR = 'governance/runtime.py'
 AD = 'f3_configuration/adapter.py'
 GW = 'f3_configuration/gateway.py'
+CAP = 'capabilities.py'
 
 _PRE = ('        if not scene_configuration.exactly_equal(\n'
         '            scene_configuration.normalize_state(observed),\n'
@@ -175,8 +173,6 @@ M = [
        '            raise SceneConfigurationContractError("scene_configuration_target_disabled")\n',
        '        if False:\n'
        '            raise SceneConfigurationContractError("scene_configuration_target_disabled")\n')]),
- ('T5_not_loaded_allowed',
-  [(P, '    if current["loaded_matches_config"] is not True:\n', '    if False:\n')]),
  ('T6_entity_mismatch_allowed',
   [(P, '    if request.entity_id is not None and current["entity_id"] != request.entity_id:\n',
        '    if False:\n')]),
@@ -186,13 +182,6 @@ M = [
  ('T8_read_unstable_removed',
   [(C, '        if not exactly_equal(await self.read_config(config_id), config):\n',
        '        if False:\n')]),
- ('T9_loaded_name_unchecked',
-  [(C, '            or detail.get("original_name") != config["name"]\n', '')]),
- ('T10_loaded_members_unchecked',
-  [(C, '        return type(members) is list and sorted(\n'
-       '            str(item) for item in members\n'
-       '        ) == sorted(config["entities"]), state, detail\n',
-       '        return type(members) is list, state, detail\n')]),
  # ---- V: requested values.
  ('V1_whitespace_name_allowed',
   [(C, 'isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_NAME_LENGTH',
@@ -334,13 +323,6 @@ M = [
  ('B8_projection_drops_config',
   [(C, '    return json.loads(canonical({key: state[key] for key in STATE_KEYS}))\n',
        '    return json.loads(canonical({key: state[key] for key in STATE_KEYS if key != "config"}))\n')]),
- ('B9_projection_drops_loaded',
-  [(C, '    return json.loads(canonical({key: state[key] for key in STATE_KEYS}))\n',
-       '    return json.loads(canonical({key: state[key] for key in STATE_KEYS'
-       ' if key != "loaded_matches_config"}))\n')]),
- ('B10_loaded_poll_ignored',
-  [(C, '            "loaded_matches_config": loaded,\n',
-       '            "loaded_matches_config": True,\n')]),
  # ---- R: rollback.
  ('R1_rollback_drift_unchecked',
   [(RU, _DRIFT, _DRIFT.replace('            if not ', '            if False and not ', 1))]),
@@ -418,39 +400,12 @@ M = [
  ('H5_permit_command_unchecked',
   [(C, '            or permit.arguments_hash != stable_hash(command)\n', '')]),
  ('H6_permit_never_consumed',
-  [(C, '        slot.consumed = True  # type: ignore[union-attr]\n', '')]),
+  [(C, '        _WRITE_PERMIT.get().consumed = True  # type: ignore[union-attr]\n', '')]),
  ('H7_read_admission_unchecked',
   [(C, '        if self.read_refusal() is not None:\n'
        '            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)\n',
        '        if False:\n'
        '            raise SceneConfigurationContractError(PENDING_ADMISSION_REASON)\n')]),
- ('H8_reload_latch_always_true',
-  [(C, '        baseline = self._reload_baselines.get(config_id)\n'
-       '        if baseline is None:\n            return True\n',
-       '        return True\n')]),
- ('H9_activation_taken_as_reload',
-  [(C, '            and exactly_equal(state.get("state"), baseline.state)\n', '')]),
- ('H10_last_changed_unchecked',
-  [(C, '            and state["last_changed"] != baseline.last_changed\n', '')]),
- ('H11_reload_evidence_any_operation',
-  [(C, '        if baseline is None or baseline.operation_id != operation_id:\n',
-       '        if baseline is None:\n')]),
- ('H12_reload_baseline_check_removed',
-  [(C, '        if (\n            baseline_state is None\n'
-       '            or type(baseline_state.get("last_changed")) is not str\n'
-       '            or before is None\n            or target is None\n        ):\n',
-       '        if False:\n')]),
- ('H13_poll_stops_before_reload',
-  [(C, '            if loaded and reloaded:\n', '            if loaded:\n')]),
- ('H14_unobserved_reload_verified',
-  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
-        '        if type(evidence) is frozenset:\n')]),
- ('H15_missing_reload_check_verified',
-  [(ST, '            if check is not None\n            else None\n',
-        '            if check is not None\n            else frozenset({"name", "icon", "entities"})\n')]),
- ('H16_runtime_reload_passthrough_dropped',
-  [(RU, '    def scene_configuration_reload_evidence(self, target_id, operation_id):\n',
-        '    def _scene_configuration_reload_evidence_unused(self, target_id, operation_id):\n')]),
  ('H17_switch_reason_dropped_in_planner',
   [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef classify',
        '        reasons.update(_member_rule_reasons(entity_id) - {SWITCH_REASON})\n    return sorted(reasons)\n\n\ndef classify')]),
@@ -495,38 +450,38 @@ M = [
  ('H31_mode_helper_disclosure_after_edit_only',
   [(P, '    mode_helpers = mode_helper_members(members)\n',
        '    mode_helpers = mode_helper_members(config["entities"])\n')]),
- # ---- E (HAMCP-071 R2-H1): post-save reload evidence, per path.
- ('E1_evidence_without_a_planned_difference',
-  [(C, '                    if baseline.before[key] != baseline.target[key]\n'
-       '                    and loaded[key] == baseline.target[key]\n',
-       '                    if loaded[key] == baseline.target[key]\n')]),
- ('E2_evidence_without_the_saved_value_loaded',
-  [(C, '                    if baseline.before[key] != baseline.target[key]\n'
-       '                    and loaded[key] == baseline.target[key]\n',
-       '                    if baseline.before[key] != baseline.target[key]\n')]),
- ('E3_registry_baseline_unchecked',
-  [(C, '            or before is None\n            or target is None\n', '            or target is None\n')]),
- ('E4_strategy_ignores_planned_changes',
-  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
-        '        if type(evidence) is frozenset and evidence:\n')]),
- ('E5_planned_changes_include_unchanged',
-  [(C, '        key for key in VISIBLE_COMPONENTS if before[key] != after[key]\n',
-       '        key for key in VISIBLE_COMPONENTS\n')]),
- ('E6_already_reached_gap_ignored_by_adapter',
-  [(AD, '            if gap:\n                return self._preflight_rejected(operation, gap)\n', '')]),
- ('E7_scene_already_reached_gap_empty',
-  [(ST, '        del observed\n        return (\n            scene_configuration.ALREADY_STORED,\n',
-        '        del observed\n        return ()\n        return (\n            scene_configuration.ALREADY_STORED,\n')]),
- ('E8_gateway_evidence_bridge_dropped',
-  [(GW, '    def scene_configuration_reload_evidence(\n',
-        '    def _scene_configuration_reload_evidence_unused(\n')]),
- ('E9_loaded_difference_hidden_as_unverified',
-  [(ST, '        if type(evidence) is frozenset and changed & evidence:\n',
-        '        if (type(evidence) is frozenset and changed & evidence\n'
-        '                and observed.get("loaded_matches_config") is True):\n')]),
- ('E10_evidence_from_the_stale_latch',
-  [(C, '            baseline.observed = True\n            loaded = loaded_visible(detail, state)\n',
-       '            baseline.observed = True\n            loaded = dict(baseline.target)\n')]),
+ # ---- O (HAMCP-071 option C): verified means stored config exact plus
+ # registry identity unchanged, and every surface states the scope.
+ ('O1_projection_drops_registry_entry_id',
+  [(C, '    return json.loads(canonical({key: state[key] for key in STATE_KEYS}))\n',
+       '    return json.loads(canonical({key: state[key] for key in STATE_KEYS'
+       ' if key != "registry_entry_id"}))\n')]),
+ ('O2_projection_drops_entity_id',
+  [(C, '    return json.loads(canonical({key: state[key] for key in STATE_KEYS}))\n',
+       '    return json.loads(canonical({key: state[key] for key in STATE_KEYS'
+       ' if key != "entity_id"}))\n')]),
+ ('O3_verification_compares_identity_only',
+  [(RS, '        return scene_configuration.normalize_state(config)\n',
+        '        return (lambda s: s and {k: v for k, v in s.items() if k != "config"})'
+        '(scene_configuration.normalize_state(config))\n')]),
+ ('O4_response_identity_unchecked',
+  [(RS, '        return config.get("config_id") == resource_id\n', '        return True\n')]),
+ ('O5_scope_dropped_from_apply_result',
+  [(RU, '        scope = self.scene_scope_fields(task)\n        if scope:\n',
+        '        scope = {}\n        if scope:\n')]),
+ ('O6_scope_dropped_from_execution_task',
+  [(RU, '        value.update(self.scene_scope_fields(task))\n', '')]),
+ ('O7_scope_dropped_from_retained_result',
+  [(S, '            scope = self.f3_runtime.scene_scope_fields(task)\n',
+       '            scope = {}\n')]),
+ ('O8_scope_dropped_from_plan_disclosure',
+  [(P, '            **contract.verification_scope_fields(),\n', '')]),
+ ('O9_loaded_state_dropped_from_catalog',
+  [(CAP, '        "loaded_state": "not_verified",\n', '')]),
+ ('O10_loaded_state_claimed_verified',
+  [(C, 'LOADED_STATE = "not_verified"\n', 'LOADED_STATE = "verified"\n')]),
+ ('O11_scope_stamped_on_every_family',
+  [(RU, '        if declarations and all(\n', '        if True or declarations and all(\n')]),
 ]
 
 args = sys.argv[1:]

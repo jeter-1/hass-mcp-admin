@@ -6,8 +6,9 @@ a governed edit of one existing UI-managed scene, inactive. The new tool
 (`entities`) changes to one scene by `config_id`. It sends one
 `POST /api/config/scene/config/{config_id}` with the full proposed
 configuration (no `id`, `metadata` kept exactly). It verifies the result by
-exact readback of the stored configuration, the registry identity and the
-loaded scene. Saving never activates the scene, and the tool never sends
+exact readback of the stored configuration and the registry identity; it
+does not verify the scene Home Assistant has loaded
+(`loaded_state: "not_verified"`). Saving never activates the scene, and the tool never sends
 `scene.turn_on`, `scene.apply`, `scene.create`, `scene.reload`,
 `scene.delete` or the scene-config DELETE. It refuses
 `pending_signed_registry_admission` before any Home Assistant request or

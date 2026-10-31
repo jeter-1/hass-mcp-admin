@@ -29,8 +29,8 @@ scene, by `config_id`. The plan is approved externally and applied with
   in the governed F3 configuration-plan family. The one write is
   `POST /api/config/scene/config/{config_id}`, carrying the full proposed
   configuration without `id`. Unrequested keys, `metadata` included, are
-  sent exactly as stored. The readback is the stored configuration, the
-  registry entry and the loaded scene. It does not go through ha-mcp and
+  sent exactly as stored. The readback is the stored configuration and the
+  registry entry; the loaded scene is not read. It does not go through ha-mcp and
   has no fallback. The generic `create_configuration_plan` route and the
   delegated `ha_config_set_scene` were rejected, because each would change
   a signed or upstream contract (design section 0).
@@ -58,7 +58,7 @@ scene, by `config_id`. The plan is approved externally and applied with
 - **Planning.** Planning refuses these cases before any dispatch, with no
   plan:
   - unknown, mismatched, ambiguous, disabled or unreviewable targets;
-  - a loaded scene that does not match its stored configuration;
+  - a stored scene that has no registry entry yet;
   - invalid values and withheld text;
   - removing a member that is not in the scene, or removing the last
     member;
@@ -88,10 +88,10 @@ scene, by `config_id`. The plan is approved externally and applied with
     being detected, and a concurrent deletion can make the save recreate the
     scene. Verification proves only this plan's stored result. Josh accepted
     this race with this disclosure;
-  - verification needs positive evidence of a reload after this plan's
-    save; a loaded scene that merely matches is never proof, a
-    snapshot-only edit is never verified as loaded, and recovery is
-    read-only.
+  - "Engineering verifies the saved scene and its registry identity; it
+    does not verify the scene Home Assistant has loaded." The disclosure
+    carries `verification_scope` and `loaded_state: "not_verified"`, and
+    recovery is read-only.
 - **Policy.** If any member before or after the edit is a protected object
   under the OD-4 `object_protection` rules, the plan is `elevated_admin`,
   risk HIGH,
@@ -124,25 +124,26 @@ scene, by `config_id`. The plan is approved externally and applied with
   The write is dispatched at most once, with durable intent, no redispatch
   and truthful attribution. A 5xx or lost response is decided by the
   readback.
-- **Verification.** The stored configuration must be exact and the
-  registry identity unchanged. The loaded scene counts as verified only with
-  positive evidence that Home Assistant reloaded it after this plan's save.
-  Within the bounded window (10 × 0.5 s), the scene must be re-added
-  (`last_changed` moves while its state value stays the same), and a planned
-  name, icon or member-list change must move from its pre-save loaded value
-  to the saved value. A loaded scene that merely matches the plan is never
-  proof.
-  - Without that evidence the result is changed but unverified: the stored
-    configuration is verified and the loaded scene is not. The task stays
-    observing and then requires manual review. It is never verified and
-    never redispatched.
-  - With the evidence, a loaded scene that differs from the stored
-    configuration is a verification failure.
-  - An edit that changes only member snapshots is never verified as loaded,
-    because Core does not expose snapshots.
-  - A plan whose configuration is already stored is refused without
-    dispatch.
-  - Comparisons are type-exact.
+- **Verification (Josh's option C).** `succeeded_verified` means the
+  stored scene configuration reads back exactly (type-exact) and the
+  scene's entity registry identity is unchanged. Engineering claims nothing
+  about the scene Home Assistant has loaded; this matches the automation
+  family, which verifies only the stored configuration.
+  - Every scene apply result, execution task and retained result carries
+    `verification_scope: "stored_configuration_and_registry_identity"`,
+    `loaded_state: "not_verified"` and the statement "Engineering verifies
+    the saved scene and its registry identity; it does not verify the scene
+    Home Assistant has loaded."
+  - A stored mismatch or registry drift (a replaced entry or a renamed
+    entity) is a verification failure. A removed or disabled entry, or a
+    failed read, stays observing and then requires manual review. Nothing
+    is redispatched.
+  - A configuration that is already stored is `succeeded_verified` without
+    dispatch (`desired_state_already_reached`).
+  - The earlier loaded-scene reload inference (a pre-save baseline and a
+    bounded poll for re-add evidence) was removed: Codex review showed that
+    another writer's reload before the save could make it claim a loaded
+    scene that still held the old member states.
 - **Rollback.** `rollback_change` creates a separate governed plan that
   restores the exact prior configuration. It needs its own approval, and it
   does not activate the scene either.

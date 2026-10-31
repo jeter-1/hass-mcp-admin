@@ -1459,12 +1459,6 @@ class _AuditedConfigurationGateway:
             target_id, current, proposed
         )
 
-    def scene_configuration_reload_evidence(self, target_id, operation_id):
-        # HAMCP-071 R2-H1: read-only in-memory evidence; nothing is sent.
-        return self.delegate.scene_configuration_reload_evidence(
-            target_id, operation_id
-        )
-
     # HAMCP-232: options reads, the held flow and its abort pass through;
     # only the one step submit is the audited send.
     async def options_entry(self, entry_id):
@@ -3534,6 +3528,22 @@ class F3RuntimeIntegration:
     def setter_not_sent_fields() -> dict[str, Any]:
         return dict(SETTER_NOT_SENT_FIELDS)
 
+    def scene_scope_fields(self, task: Any) -> dict[str, Any]:
+        """HAMCP-071 option C: what a scene task's verification covers.
+
+        Additive and display only: a scene configuration task states that
+        Engineering verifies the saved scene and its registry identity, and
+        never the scene Home Assistant has loaded.  Other tasks get nothing.
+        """
+
+        declarations = self.children.declarations_for_task(task.task_id)
+        if declarations and all(
+            item.get("target_type") == scene_configuration_contract.RESOURCE_TYPE
+            for item in declarations
+        ):
+            return scene_configuration_contract.verification_scope_fields()
+        return {}
+
     def dispatch_facts_for_task(
         self,
         task: Any,
@@ -4365,6 +4375,10 @@ class F3RuntimeIntegration:
             result["execution_task"] = {
                 **result["execution_task"], **SETTER_NOT_SENT_FIELDS
             }
+        scope = self.scene_scope_fields(task)
+        if scope:
+            result.update(scope)
+            result["execution_task"] = {**result["execution_task"], **scope}
         # The status override stays keyed on the stored terminal outcome
         # (status preservation rule, design section 2.4.3 item 4).
         if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
@@ -5713,7 +5727,7 @@ class F3RuntimeIntegration:
                 ) from None
             item = prepared.items[0]
             # Any drift since the verified forward result (configuration,
-            # metadata, registry entry or loaded scene) refuses the restore.
+            # metadata or registry identity) refuses the restore.
             if not scene_configuration_contract.exactly_equal(
                 scene_configuration_contract.normalize_state(item.current),
                 scene_configuration_contract.normalize_state(forward_result),
@@ -6066,6 +6080,7 @@ class F3RuntimeIntegration:
         # HAMCP-181: one shared projection for every dispatch field.  The
         # #253 values below are re-applied verbatim (value-identical rule).
         value.update(facts.public_fields())
+        value.update(self.scene_scope_fields(task))
         if facts.not_sent and facts.setter_not_sent:
             value.update(SETTER_NOT_SENT_FIELDS)
             for detail in value["f3_children"]:

@@ -6,7 +6,10 @@ entity registry and state machine shaped from the architect's read-only
 observation.  Positive edits, inactive refusal, planning refusals, stale
 state, failure truthfulness, rollback, disclosure and redaction.  Saving a
 scene never activates it: every scene service, DELETE and reload fails the
-fixture.  No live Home Assistant.
+fixture.  Option C (Josh 2026-10-31): verified means the stored
+configuration reads back exactly and the registry identity is unchanged;
+nothing is claimed about the scene Home Assistant has loaded.  No live Home
+Assistant.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+import json
 import re
 import sys
 import unittest
@@ -39,6 +43,7 @@ from ha_mcp_engineering.governance import (  # noqa: E402
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationNotDispatchedError,
+    resource_identity_matches,
 )
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
@@ -78,6 +83,17 @@ INACTIVE_DETAILS = {
     "plan_created": False,
     "provider_dispatch_occurred": False,
 }
+
+
+# A claim that Home Assistant's loaded scene was verified, matched or
+# observed reloading (HAMCP-071 option C forbids every one).
+LOADED_CLAIM = re.compile(
+    r"loaded[_ ](scene[_ ])?(state[_ ])?(is[_ ]|was[_ ])?"
+    r"(verified|consistent|matches|match|observed|confirmed)"
+    r"|reload[_ ](was[_ ])?(observed|evidence|verified|confirmed)"
+    r"|loaded_matches_config|post_save_reload|scene_loaded_and",
+    re.IGNORECASE,
+)
 
 
 def body(config: dict) -> dict:
@@ -122,22 +138,30 @@ class _Base(SceneServiceTestCase):
         self.assert_refused(raised, reason_code, code)
         return raised.exception
 
-    def observation_codes(self, task_id: str) -> list[str]:
-        codes: list[str] = []
-        for record in self.child_records(task_id):
-            for event in record.events:
-                if event["event_type"] == "observation_recorded":
-                    codes.extend(event["diagnostic_codes"])
-        return codes
+    def assert_scope(self, value: dict) -> None:
+        """Option C: the stated scope is the stored scene and its identity."""
 
-    def assert_changed_but_unverified(self, result, writes: int = 1) -> None:
-        self.assertEqual(result["task_state"], "observing", result)
-        self.assertEqual(self.outcomes(result["task_id"]), ["observing"])
+        self.assertEqual(value["verification_scope"],
+                         "stored_configuration_and_registry_identity", value)
+        self.assertEqual(value["loaded_state"], "not_verified", value)
+        self.assertEqual(
+            value["verification_scope_statement"],
+            "Engineering verifies the saved scene and its registry identity; "
+            "it does not verify the scene Home Assistant has loaded.",
+        )
+        self.assert_no_loaded_claim(value)
+
+    def assert_no_loaded_claim(self, value) -> None:
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+        self.assertIsNone(LOADED_CLAIM.search(text), text)
+
+    def assert_verified_stored_only(self, result, writes: int = 1) -> None:
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(self.outcomes(result["task_id"]), ["succeeded_verified"])
         self.assertIs(result["provider_dispatch_occurred"], True)
-        codes = self.observation_codes(result["task_id"])
-        self.assertIn(contract.STORED_CONFIGURATION_VERIFIED, codes)
-        self.assertIn(contract.RELOAD_UNVERIFIED, codes)
-        self.assertNotIn("exact_readback_verified", self.child_codes(result["task_id"]))
+        self.assertIn("exact_readback_verified", self.child_codes(result["task_id"]))
+        self.assert_scope(result)
+        self.assert_scope(result["execution_task"])
         self.assertEqual(len(self.writes()), writes)
         self.assert_never_sent()
 
@@ -187,15 +211,7 @@ class PositiveTests(_Base):
                 self.scene_rest.set_external(LOUNGE, **lounge_config())
                 writes = len(self.writes())
                 _created, result = await self.applied(config_id=LOUNGE, **arguments)
-                if "entities" in arguments:
-                    # R2-H1: a snapshot-only edit changes no reload-visible
-                    # component, so the loaded scene is never verified.
-                    self.assert_changed_but_unverified(result, writes + 1)
-                else:
-                    self.assert_outcome(
-                        result, "succeeded_verified", ["succeeded_verified"],
-                        ["exact_readback_verified"],
-                    )
+                self.assert_verified_stored_only(result, writes + 1)
                 expected = lounge_config()
                 for key, value in change.items():
                     if value is None:
@@ -224,7 +240,7 @@ class PositiveTests(_Base):
         }
         self.assertEqual(self.writes(), [(LOUNGE, body(expected))])
         self.assertEqual(self.stored(), expected)
-        # The reload updated the loaded scene.
+        # The synthetic Core reloaded; Engineering never checks the loaded scene.
         loaded = self.scene_rest.states[LOUNGE_ENTITY]["attributes"]
         self.assertEqual(sorted(loaded["entity_id"]), sorted([LAMP, FAN]))
         self.assertEqual(self.ws.entries[LOUNGE_ENTITY]["original_name"],
@@ -241,13 +257,7 @@ class PositiveTests(_Base):
                 self.scene_rest.set_external(LOUNGE, **lounge_config())
                 writes = len(self.writes())
                 created, result = await self.applied(config_id=LOUNGE, entities=patch)
-                if change == "changed":
-                    # R2-H1: the member set is unchanged; snapshot-only.
-                    self.assert_changed_but_unverified(result, writes + 1)
-                else:
-                    self.assert_outcome(
-                        result, "succeeded_verified", ["succeeded_verified"]
-                    )
+                self.assert_verified_stored_only(result, writes + 1)
                 expected = lounge_config()["entities"]
                 for member, value in patch.items():
                     if value is None:
@@ -267,8 +277,7 @@ class PositiveTests(_Base):
         )
         _created, result = await self.applied(config_id=LOUNGE,
                                               entities={LAMP: snapshot})
-        # R2-H1: snapshot-only, so stored-exact but loaded-unverified.
-        self.assert_changed_but_unverified(result)
+        self.assert_verified_stored_only(result)
         stored = self.stored()["entities"]
         self.assertEqual(stored[LAMP], snapshot)
         self.assertEqual(contract.canonical(stored[LAMP]), contract.canonical(snapshot))
@@ -314,7 +323,11 @@ class PositiveTests(_Base):
         self.assertEqual(operation.target_id, LOUNGE)
         self.assertEqual(operation.current_config["config"], lounge_config())
         self.assertEqual(operation.current_config["entity_id"], LOUNGE_ENTITY)
-        self.assertIs(operation.current_config["loaded_matches_config"], True)
+        # Option C: the bound state is the stored scene and its identity only.
+        self.assertEqual(
+            set(operation.current_config),
+            {"config_id", "entity_id", "registry_entry_id", "config"},
+        )
         self.assertEqual(operation.proposed_config["config"]["name"],
                          "Synthetic Lounge bright")
 
@@ -422,10 +435,15 @@ class DisclosureTests(_Base):
             source,
         )
         self.assertIn(
-            '"readback": ("stored_config_exact_plus_registry_identity_plus_'
-            'loaded_scene_consistent_plus_post_save_reload_observed")',
+            '"readback": ("stored_config_exact_type_exact_plus_registry_identity_'
+            'unchanged")',
             source,
         )
+        self.assertIn(
+            '"verification_scope": "stored_configuration_and_registry_identity"',
+            source,
+        )
+        self.assertIn('"loaded_state": "not_verified"', source)
         documents = {
             "design": ROOT / "docs" / "HAMCP_071_SCENE_CONFIGURATION_DESIGN.md",
             "release notes": ROOT / "docs" / "V2_4_1_BETA52_RELEASE_NOTES.md",
@@ -632,12 +650,16 @@ class PlanningRefusalTests(_Base):
                 self.assertEqual(error.details.get("field"), "config_id")
         self.assertEqual(self.scene_rest.requests, [])
 
-    async def test_unloaded_scene_is_refused(self):
-        # Stored but not yet reloaded: the loaded scene does not match.
+    async def test_a_stored_but_unreloaded_scene_is_planned_from_storage(self):
+        # Option C: the loaded scene is neither bound nor compared, so a
+        # pending reload neither refuses planning nor enters the plan.
         self.scene_rest.set_external(LOUNGE, reload=False, name="Saved elsewhere")
-        await self.assert_create_refused(
-            "scene_configuration_not_loaded", config_id=LOUNGE, icon="mdi:a"
-        )
+        self.scene_rest.requests.clear()
+        created = await self.create(config_id=LOUNGE, icon="mdi:a")
+        self.assertEqual(created["status"], "awaiting_approval", created)
+        current = self.service._load(created["plan_id"]).operations[0].current_config
+        self.assertEqual(current["config"]["name"], "Saved elsewhere")
+        self.assertNotIn(("GET", f"/states/{LOUNGE_ENTITY}"), self.scene_rest.requests)
 
     async def test_scene_with_no_registry_entry_is_not_loaded(self):
         del self.ws.entries[LOUNGE_ENTITY]
@@ -1019,7 +1041,7 @@ class IsolatedControlTests(_Base):
             lambda s: s["config"]["entities"][STRIP].__setitem__("x", 1),
             lambda s: s["config"].pop("icon"),
             lambda s: s["config"]["metadata"].__setitem__("x", 1),
-            lambda s: s.__setitem__("loaded_matches_config", False),
+            lambda s: s.__setitem__("entity_id", "scene.synthetic_renamed"),
             lambda s: s.__setitem__("registry_entry_id", "scnother"),
         ):
             observed = deepcopy(proposed)
@@ -1207,30 +1229,10 @@ class AdmittedResourceWriteTests(_ResourceWriteAuthority, _Base):
         self.assertEqual(result, {"core_response": {"result": "ok"}})
         self.assertEqual(self.writes(), [(LOUNGE, self.valid_command()["body"])])
         self.assertEqual(self.stored()["name"], "Synthetic review name")
-        # R1-H1: the reload baseline is read before, and only before, the POST.
+        # Option C: the one POST alone; no loaded-scene baseline is read.
         self.assertEqual(
-            self.scene_rest.requests,
-            [
-                ("GET", f"/states/{LOUNGE_ENTITY}"),
-                ("POST", f"/config/scene/config/{LOUNGE}"),
-            ],
+            self.scene_rest.requests, [("POST", f"/config/scene/config/{LOUNGE}")]
         )
-
-    async def test_an_unreadable_reload_baseline_sends_nothing(self):
-        self.scene_rest.states.pop(LOUNGE_ENTITY, None)
-        async with _core_call_window(lambda: True):
-            with contract.write_permit(self.permit()):
-                with self.assertRaises(ConfigurationMutationNotDispatchedError) as raised:
-                    await self.resource_gateway.scene_configuration.write(
-                        LOUNGE, self.valid_command()
-                    )
-        self.assertEqual(
-            raised.exception.details["reason_code"],
-            contract.RELOAD_BASELINE_UNAVAILABLE_REASON,
-        )
-        self.assertIs(raised.exception.call_not_sent, True)
-        self.assertEqual(self.writes(), [])
-        self.assertEqual(self.stored(), lounge_config())
 
     async def test_withdrawn_admission_refuses_every_direct_read_with_no_call(self):
         gateway = self.resource_gateway.scene_configuration
@@ -1593,233 +1595,63 @@ class ModeHelperMemberTests(_Base):
         self.assertEqual(self.scene_rest.states[self.GUEST]["state"], "off")
 
 
-class LoadedSceneReloadEvidenceTests(_Base):
-    """HAMCP-071 R1-H1: verified only on post-save reload evidence.
+class VerificationScopeTests(_Base):
+    """HAMCP-071 option C (Josh 2026-10-31): the stored scene only.
 
-    Core's config view saves, then reloads scenes from a post-write hook
-    task (pinned components/config/view.py); a reload re-adds each scene
-    state, so ``last_changed`` moves while the restored state value (the
-    last activation time) stays (pinned core.py:2313, 2423-2470;
-    scene/__init__.py:123-132, 154-160).  Pre-reload state never verifies.
-    """
-
-    BRIGHT = {"entities": {LAMP: lamp_snapshot(brightness=200)}}
-
-    async def test_a_prevented_reload_of_a_snapshot_edit_is_not_verified(self):
-        # Same member, brightness only: the identity predicate alone would
-        # pass on the pre-reload loaded scene.
-        created = await self.approved(config_id=LOUNGE, **self.BRIGHT)
-        self.scene_rest.reload_after_state_reads = 10**6
-        loaded_before = deepcopy(self.scene_rest.states[LOUNGE_ENTITY])
-        result = await self.apply(created)
-        self.assert_changed_but_unverified(result)
-        self.assertEqual(self.stored()["entities"][LAMP]["brightness"], 200)
-        self.assertEqual(self.scene_rest.states[LOUNGE_ENTITY], loaded_before)
-
-    async def test_a_failed_reload_is_changed_but_unverified(self):
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_fails = True
-        result = await self.apply(created)
-        self.assert_changed_but_unverified(result)
-        self.assertNotIn("verification_mismatch", self.outcomes(result["task_id"]))
-        self.assertEqual(self.stored()["name"], "Requested")
-
-    async def assert_verified_after_a_delayed_reload(self, arguments) -> None:
-        created = await self.approved(config_id=LOUNGE, **arguments)
-        self.scene_rest.reload_after_state_reads = contract.LOADED_POLL_ATTEMPTS - 2
-        result = await self.apply(created)
-        self.assert_outcome(result, "succeeded_verified", ["succeeded_verified"],
-                            ["exact_readback_verified"])
-        self.assertEqual(len(self.writes()), 1)
-        gateway = self.resource_gateway.scene_configuration
-        self.assertTrue(gateway.reload_evidence(LOUNGE, "scene_configuration_1"))
-        # The evidence belongs to this operation's own save only (mutation H11).
-        self.assertEqual(
-            gateway.reload_evidence(LOUNGE, "scene_configuration_other"), frozenset()
-        )
-        return gateway.reload_evidence(LOUNGE, "scene_configuration_1")
-
-    async def test_a_delayed_reload_inside_the_window_verifies_a_name_edit(self):
-        evidence = await self.assert_verified_after_a_delayed_reload({"name": "Requested"})
-        self.assertEqual(evidence, frozenset({"name"}))
-
-    async def test_a_delayed_reload_inside_the_window_verifies_an_icon_edit(self):
-        evidence = await self.assert_verified_after_a_delayed_reload({"icon": "mdi:lamp"})
-        self.assertEqual(evidence, frozenset({"icon"}))
-
-    async def test_a_delayed_reload_inside_the_window_verifies_a_member_set_edit(self):
-        evidence = await self.assert_verified_after_a_delayed_reload(
-            {"entities": {FAN: {"state": "on"}}}
-        )
-        self.assertEqual(evidence, frozenset({"entities"}))
-
-    async def test_a_genuine_reload_of_a_snapshot_only_edit_is_never_verified(self):
-        # R2-H1: the reload re-added the scene after the save, but nothing
-        # it visibly changes differs, so it cannot be told from a reload that
-        # read the file before the save.
-        created = await self.approved(config_id=LOUNGE, **self.BRIGHT)
-        self.scene_rest.reload_after_state_reads = contract.LOADED_POLL_ATTEMPTS - 2
-        result = await self.apply(created)
-        self.assert_changed_but_unverified(result)
-        gateway = self.resource_gateway.scene_configuration
-        self.assertEqual(
-            gateway.reload_evidence(LOUNGE, "scene_configuration_1"), frozenset()
-        )
-
-    async def test_a_reload_after_the_window_is_never_verified_or_a_mismatch(self):
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_after_state_reads = contract.LOADED_POLL_ATTEMPTS + 1
-        result = await self.apply(created)
-        self.assert_changed_but_unverified(result)
-        self.clock[0] += timedelta(minutes=3)
-        later = await self.apply(created)
-        self.assertEqual(later["task_state"], "manual_review_required", later)
-        self.assertIs(later["redispatch_performed"], False)
-        self.assertEqual(self.outcomes(result["task_id"]), ["manual_review_required"])
-        self.assertEqual(len(self.writes()), 1)
-
-    async def assert_unverified_without_a_reload(self, arguments) -> None:
-        created = await self.approved(config_id=LOUNGE, **arguments)
-        self.scene_rest.reload_after_state_reads = 10**6
-        self.assert_changed_but_unverified(await self.apply(created))
-
-    async def test_a_name_edit_needs_reload_evidence(self):
-        await self.assert_unverified_without_a_reload({"name": "Requested"})
-
-    async def test_an_icon_edit_needs_reload_evidence(self):
-        await self.assert_unverified_without_a_reload({"icon": "mdi:lamp"})
-
-    async def test_an_icon_removal_needs_reload_evidence(self):
-        await self.assert_unverified_without_a_reload({"icon": None})
-
-    async def test_an_activation_is_not_reload_evidence(self):
-        # A name edit whose loaded scene is made to match by an activation
-        # that also moves last_changed: only a reload is evidence (H9).
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_after_state_reads = 10**6
-        real_read = self.scene_rest._state_read
-        activated = []
-
-        def activation_after_the_save(entity_id):
-            real_read(entity_id)
-            if (
-                entity_id == LOUNGE_ENTITY
-                and self.scene_rest.posts
-                and not activated
-            ):
-                # The loaded scene visibly reaches the saved name, but the
-                # state value moved too: an activation, never a reload (a
-                # reload restores the value), so it is never evidence.
-                self.scene_rest._reload()
-                state = self.scene_rest.states[entity_id]
-                activated.append(entity_id)
-                state["state"] = "2026-10-23T12:00:30+00:00"
-                state["last_changed"] = "2026-10-23T12:00:30+00:00"
-
-        self.scene_rest._state_read = activation_after_the_save
-        result = await self.apply(created)
-        self.assertEqual(activated, [LOUNGE_ENTITY])
-        self.assert_changed_but_unverified(result)
-        self.assertEqual(
-            self.resource_gateway.scene_configuration.reload_evidence(
-                LOUNGE, "scene_configuration_1"
-            ),
-            frozenset(),
-        )
-
-    async def test_strategy_without_reload_evidence_is_unverified(self):
-        # R2-H1: only a frozenset naming a component this plan visibly
-        # changes is evidence; a matching loaded scene alone never is.
-        from types import SimpleNamespace
-
-        from ha_mcp_engineering.f3_configuration.strategies import (
-            SceneConfigurationConfigurationStrategy,
-        )
-
-        strategy = SceneConfigurationConfigurationStrategy(contract.ACTION)
-        observed = await self.resource_gateway.scene_configuration.read_state(LOUNGE)
-        self.assertIs(observed["loaded_matches_config"], True)
-        before = deepcopy(observed)
-        before["config"]["name"] = "Synthetic Lounge before"
-
-        def operation(current):
-            return SimpleNamespace(
-                proposed_config=lambda: deepcopy(observed),
-                current_config=lambda: deepcopy(current),
-                target=SimpleNamespace(target_id=LOUNGE),
-                operation_id="scene_configuration_1",
-            )
-
-        def evidence(value):
-            return SimpleNamespace(scene_configuration_reload_evidence=lambda t, o: value)
-
-        unverified = (contract.STORED_CONFIGURATION_VERIFIED, contract.RELOAD_UNVERIFIED)
-        for gateway, current in (
-            (SimpleNamespace(), before),
-            (evidence(frozenset()), before),
-            (evidence({"name"}), before),
-            (evidence(["name"]), before),
-            (evidence(True), before),
-            (evidence(frozenset({"icon", "entities"})), before),
-            # The plan changes no visible component: never evidence.
-            (evidence(frozenset({"name", "icon", "entities"})), observed),
-            (evidence(frozenset({"name"})), None),
-        ):
-            with self.subTest(gateway=gateway, current=current is before):
-                self.assertEqual(
-                    await strategy.observation_gap(
-                        gateway, operation(current), deepcopy(observed)
-                    ),
-                    unverified,
-                )
-        calls = []
-        proven = SimpleNamespace(
-            scene_configuration_reload_evidence=lambda t, o: calls.append((t, o))
-            or frozenset({"name"})
-        )
-        self.assertEqual(
-            await strategy.observation_gap(proven, operation(before), deepcopy(observed)),
-            (),
-        )
-        self.assertEqual(calls, [(LOUNGE, "scene_configuration_1")])
-        # With evidence, a differing loaded scene is left to the exact
-        # readback (a mismatch), never hidden as incomplete evidence.
-        stale = {**deepcopy(observed), "loaded_matches_config": False}
-        self.assertEqual(
-            await strategy.observation_gap(proven, operation(before), stale), ()
-        )
-
-    def test_the_plan_discloses_the_reload_requirement(self):
-        text = planning.LOADED_SCENE_DISCLOSURE
-        self.assertIn("reloaded the scene after this save", text)
-        self.assertIn("never verified", text)
-        # R2-H1: a matching loaded scene is not proof; snapshot-only edits
-        # and already-stored plans are disclosed as never loaded-verified.
-        self.assertIn("merely matches the plan is never proof", text)
-        self.assertIn("changes only snapshots is never verified as loaded", text)
-        self.assertIn("already stored is refused without dispatch", text)
-        self.assertIn("Engineering never reloads, activates or resends", text)
-        self.assertNotIn("reverif", text)
-
-
-class PostSaveReloadRuleTests(_Base):
-    """HAMCP-071 R2-H1: "loaded scene verified" needs post-save reload evidence.
-
-    Core's config view writes scenes.yaml, schedules ``scene.reload`` as a
-    post-write task and answers (pinned components/config/view.py:128-137,
-    config/scene.py:25-29); the reload reads the file once and re-adds every
-    scene from that one parse (homeassistant/scene.py:182-211, 308-328).  A
-    re-add alone does not say whether that read preceded the save, so the
-    only accepted evidence is a component the plan changes visibly moving
-    from its pre-POST loaded value to the saved one.  A matching loaded
-    scene is necessary, never sufficient.
+    Verified means the stored scene configuration reads back exactly
+    (type-exact canonical) and the scene's entity registry identity is
+    unchanged.  Engineering verifies the saved scene and its registry
+    identity; it does not verify the scene Home Assistant has loaded, so no
+    loaded-scene state is read, inferred or claimed.  This supersedes the
+    post-save reload rule (R1-H1/R2-H1); the D3 race disclosure stays.
     """
 
     SNAPSHOT = {"entities": {LAMP: lamp_snapshot(brightness=99)}}
+    MEMBER_SET = {"entities": {FAN: {"state": "on"}}}
 
-    def reload_before_the_save_then_none(self) -> None:
-        # Codex R2 reproduction 1: an unrelated reload lands after the
-        # baseline but before Core writes the file; the save reload fails.
+    def scene_state_reads(self) -> list[tuple[str, str]]:
+        return [request for request in self.scene_rest.requests
+                if request == ("GET", f"/states/{LOUNGE_ENTITY}")]
+
+    def expected(self, arguments: dict) -> dict:
+        expected = lounge_config()
+        for key, value in arguments.items():
+            if key == "entities":
+                for member, snapshot in value.items():
+                    if snapshot is None:
+                        expected["entities"].pop(member)
+                    else:
+                        expected["entities"][member] = snapshot
+            elif value is None:
+                expected.pop(key)
+            else:
+                expected[key] = value
+        return expected
+
+    async def test_each_edit_kind_verifies_the_stored_scene_only(self):
+        cases = (
+            ("member attribute snapshot", self.SNAPSHOT),
+            ("name", {"name": "Synthetic Lounge bright"}),
+            ("icon", {"icon": "mdi:lamp"}),
+            ("icon removal", {"icon": None}),
+            ("member addition", self.MEMBER_SET),
+            ("member removal", {"entities": {STRIP: None}}),
+        )
+        for label, arguments in cases:
+            with self.subTest(edit=label):
+                self.scene_rest.set_external(LOUNGE, **lounge_config())
+                writes = len(self.writes())
+                self.scene_rest.requests.clear()
+                _created, result = await self.applied(config_id=LOUNGE, **arguments)
+                self.assert_verified_stored_only(result, writes + 1)
+                self.assertEqual(self.stored(), self.expected(arguments))
+                self.assertEqual(self.scene_state_reads(), [])
+
+    async def test_codex_r3_reload_before_the_save_claims_nothing_loaded(self):
+        # Codex R3-H1: another writer's reload lands after the final check
+        # but before Core writes the file, and this save's own reload never
+        # runs, so Home Assistant keeps the old scene loaded.  The stored
+        # scene verifies; the result claims nothing about the loaded scene.
         original = self.scene_rest._post
 
         def post(config_id, body):
@@ -1827,270 +1659,234 @@ class PostSaveReloadRuleTests(_Base):
             self.scene_rest.reload_fails = True
             return original(config_id, body)
 
-        self.scene_rest._post = post
+        for label, arguments in (("snapshot", self.SNAPSHOT),
+                                 ("member set", self.MEMBER_SET)):
+            with self.subTest(edit=label):
+                self.scene_rest.reload_fails = False
+                self.scene_rest.set_external(LOUNGE, **lounge_config())
+                writes = len(self.writes())
+                created = await self.approved(config_id=LOUNGE, **arguments)
+                loaded = deepcopy(self.scene_rest.states[LOUNGE_ENTITY]["attributes"])
+                self.scene_rest.requests.clear()
+                self.scene_rest._post = post
+                try:
+                    result = await self.apply(created)
+                finally:
+                    self.scene_rest._post = original
+                self.assert_verified_stored_only(result, writes + 1)
+                self.assertEqual(self.stored(), self.expected(arguments))
+                if label == "snapshot":
+                    self.assertEqual(self.stored()["entities"][LAMP]["brightness"], 99)
+                # Home Assistant still has the old scene loaded ...
+                self.assertEqual(
+                    self.scene_rest.states[LOUNGE_ENTITY]["attributes"], loaded
+                )
+                # ... and Engineering neither read nor claimed it.
+                self.assertEqual(self.scene_state_reads(), [])
+                retained = self.service.get_execution_task(result["task_id"])
+                self.assert_scope(retained)
+                self.assert_no_loaded_claim(retained)
 
-    async def assert_unrelated_reload_before_the_save_not_verified(self, arguments):
-        created = await self.approved(config_id=LOUNGE, **arguments)
-        self.reload_before_the_save_then_none()
-        result = await self.apply(created)
-        self.assert_changed_but_unverified(result)
-        self.assertEqual(
-            self.resource_gateway.scene_configuration.reload_evidence(
-                LOUNGE, "scene_configuration_1"
-            ),
-            frozenset(),
-        )
-        self.clock[0] += timedelta(minutes=3)
-        later = await self.apply(created)
-        self.assertEqual(later["task_state"], "manual_review_required", later)
-        self.assertEqual(len(self.writes()), 1)
-
-    async def test_codex_r2_unrelated_reload_before_a_snapshot_save(self):
-        await self.assert_unrelated_reload_before_the_save_not_verified(self.SNAPSHOT)
-
-    async def test_codex_r2_unrelated_reload_before_a_name_save(self):
-        await self.assert_unrelated_reload_before_the_save_not_verified(
-            {"name": "Requested"}
-        )
-
-    async def test_codex_r2_unrelated_reload_before_an_icon_save(self):
-        await self.assert_unrelated_reload_before_the_save_not_verified(
-            {"icon": "mdi:lamp"}
-        )
-
-    async def test_codex_r2_unrelated_reload_before_a_member_set_save(self):
-        await self.assert_unrelated_reload_before_the_save_not_verified(
-            {"entities": {FAN: {"state": "on"}}}
-        )
-
-    def assert_already_stored_not_verified(self, result) -> None:
-        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
-        self.assertEqual(self.outcomes(result["task_id"]), ["preflight_rejected"])
-        self.assertIs(result["provider_dispatch_occurred"], False)
-        self.assertNotEqual(
-            result["execution_task"].get("terminal_outcome"),
-            "desired_state_already_present_not_dispatched",
-        )
-        codes = self.child_codes(result["task_id"])
-        self.assertIn(contract.ALREADY_STORED, codes)
-        self.assertIn(contract.RELOAD_UNVERIFIED, codes)
-        self.assertNotIn("desired_state_already_reached", codes)
-        self.assertEqual(self.writes(), [])
-        self.assert_never_sent()
-
-    async def test_codex_r2_externally_stored_unloaded_snapshot_is_not_verified(self):
-        # Codex R2 reproduction 2: another writer stored the desired
-        # configuration without a reload; the loaded scene is stale.
-        desired = deepcopy(self.stored()["entities"])
-        desired[LAMP] = lamp_snapshot(brightness=99)
-        created = await self.approved(config_id=LOUNGE, entities=desired)
-        loaded = deepcopy(self.scene_rest.states[LOUNGE_ENTITY])
-        self.scene_rest.set_external(LOUNGE, reload=False, entities=desired)
-        result = await self.apply(created)
-        self.assert_already_stored_not_verified(result)
-        self.assertEqual(self.scene_rest.states[LOUNGE_ENTITY], loaded)
-
-    async def assert_coincidental_match_not_verified(self, arguments, change):
-        # Stored and loaded both already match the plan, but no save by this
-        # plan exists whose reload could prove it.
-        created = await self.approved(config_id=LOUNGE, **arguments)
-        self.scene_rest.set_external(LOUNGE, reload=True, **change)
-        observed = await self.resource_gateway.scene_configuration.read_state(LOUNGE)
-        self.assertIs(observed["loaded_matches_config"], True)
-        self.assert_already_stored_not_verified(await self.apply(created))
-        plan = self.service._load(created["plan_id"])
-        self.assertIs(plan.rollback.available, False)
-
-    async def test_a_coincidentally_matching_loaded_name_is_not_verified(self):
-        await self.assert_coincidental_match_not_verified(
-            {"name": "Reached"}, {"name": "Reached"}
-        )
-
-    async def test_a_coincidentally_matching_loaded_snapshot_is_not_verified(self):
-        await self.assert_coincidental_match_not_verified(
-            self.SNAPSHOT,
-            {"entities": {**lounge_config()["entities"], **self.SNAPSHOT["entities"]}},
-        )
-
-    async def test_a_genuine_post_save_reload_with_a_different_loaded_scene_fails(self):
-        # Evidence is present (the name moved to the saved value after the
-        # save) but the loaded icon then differs: a verification failure.
+    async def test_a_failed_reload_still_verifies_only_the_stored_scene(self):
         created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_after_state_reads = 2
-        real_read = self.scene_rest._state_read
-
-        def diverge_after_the_reload(entity_id):
-            real_read(entity_id)
-            entry = self.ws.entries[LOUNGE_ENTITY]
-            if self.scene_rest.posts and entry["original_name"] == "Requested":
-                entry["original_icon"] = "mdi:elsewhere"
-
-        self.scene_rest._state_read = diverge_after_the_reload
+        self.scene_rest.reload_fails = True
         result = await self.apply(created)
+        self.assert_verified_stored_only(result)
+        self.assertEqual(self.stored()["name"], "Requested")
         self.assertEqual(
-            self.resource_gateway.scene_configuration.reload_evidence(
-                LOUNGE, "scene_configuration_1"
-            ),
-            frozenset({"name"}),
+            self.scene_rest.states[LOUNGE_ENTITY]["attributes"]["friendly_name"],
+            "Synthetic Lounge dim",
         )
-        self.assertEqual(result["task_state"], "failed_post_dispatch", result)
-        self.assertEqual(self.outcomes(result["task_id"]), ["verification_mismatch"])
-        self.assertIn("exact_readback_not_verified", self.child_codes(result["task_id"]))
-        self.assertEqual(len(self.writes()), 1)
 
-    async def test_codex_r2_late_reload_of_a_snapshot_edit_is_not_verified(self):
+    async def test_a_stored_mismatch_is_a_verification_failure(self):
+        cases = (
+            ("nothing stored", True, {}),
+            ("type-exact 99.0", False,
+             {"entities": {LAMP: lamp_snapshot(brightness=99.0),
+                           STRIP: strip_snapshot()}}),
+            ("unrequested name", False, {"name": "Synthetic other"}),
+        )
+        for label, ignore, drift in cases:
+            with self.subTest(case=label):
+                self.scene_rest.set_external(LOUNGE, **lounge_config())
+                writes = len(self.writes())
+                created = await self.approved(config_id=LOUNGE, **self.SNAPSHOT)
+                self.scene_rest.ignore_writes, self.scene_rest.drift = ignore, drift
+                try:
+                    result = await self.apply(created)
+                finally:
+                    self.scene_rest.ignore_writes, self.scene_rest.drift = False, {}
+                self.assert_outcome(result, "failed_post_dispatch",
+                                    ["verification_mismatch"],
+                                    ["exact_readback_not_verified"])
+                self.assertNotIn("exact_readback_verified",
+                                 self.child_codes(result["task_id"]))
+                self.assertEqual(len(self.writes()), writes + 1)
+                self.assert_no_loaded_claim(result)
+
+    async def apply_then_change_registry(self, change) -> dict:
         created = await self.approved(config_id=LOUNGE, **self.SNAPSHOT)
-        self.scene_rest.reload_after_state_reads = 10**6
-        self.assert_changed_but_unverified(await self.apply(created))
-        self.scene_rest._reload()
-        self.clock[0] += timedelta(minutes=3)
-        later = await self.apply(created)
-        self.assertNotEqual(later["task_state"], "succeeded_verified", later)
-        self.assertNotIn("verification_mismatch", self.outcomes(later["task_id"]))
-        self.assertEqual(len(self.writes()), 1)
+        original = self.scene_rest._post
 
-    async def test_an_unreadable_registry_baseline_sends_nothing(self):
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        gateway = self.resource_gateway.scene_configuration
-        real_detail = gateway.registry_detail
-        reads = []
+        def post(config_id, body):
+            answer = original(config_id, body)
+            change(self.ws.entries)
+            return answer
 
-        async def no_detail_once_dispatching(entity_id):
-            slot = contract._WRITE_PERMIT.get()
-            if slot is not None and slot.consumed and not reads:
-                # The pre-POST baseline read inside the one permitted send.
-                reads.append(entity_id)
-                return None
-            return await real_detail(entity_id)
+        self.scene_rest._post = post
+        try:
+            return await self.apply(created)
+        finally:
+            self.scene_rest._post = original
 
-        gateway.registry_detail = no_detail_once_dispatching
-        result = await self.apply(created)
-        self.assertEqual(reads, [LOUNGE_ENTITY])
-        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
-        self.assertIs(result["provider_dispatch_occurred"], False)
-        self.assertEqual(self.writes(), [])
+    async def test_a_replaced_registry_entry_is_a_verification_failure(self):
+        def replace_entry(entries):
+            entries[LOUNGE_ENTITY]["id"] = "scnreplaced"
 
-    async def assert_never_verified_without_evidence(self, arguments) -> None:
-        # Guard: with the evidence withheld while Core reloads normally, no
-        # edit, re-observation or rollback ever reports succeeded_verified.
-        gateway = self.resource_gateway.scene_configuration
-        gateway.reload_evidence = lambda config_id, operation_id: frozenset()
-        created, result = await self.applied(config_id=LOUNGE, **arguments)
-        self.assert_changed_but_unverified(result)
+        result = await self.apply_then_change_registry(replace_entry)
+        self.assert_outcome(result, "failed_post_dispatch", ["verification_mismatch"],
+                            ["exact_readback_not_verified"])
+        # The stored configuration itself is exact; identity drift alone fails.
+        self.assertEqual(self.stored(), self.expected(self.SNAPSHOT))
+
+    async def test_a_renamed_scene_entity_is_a_verification_failure(self):
+        renamed = "scene.synthetic_lounge_renamed"
+
+        def rename(entries):
+            entry = entries.pop(LOUNGE_ENTITY)
+            entry["entity_id"] = renamed
+            entries[renamed] = entry
+
+        result = await self.apply_then_change_registry(rename)
+        self.assert_outcome(result, "failed_post_dispatch", ["verification_mismatch"],
+                            ["exact_readback_not_verified"])
+        self.assertEqual(self.stored(), self.expected(self.SNAPSHOT))
+
+    async def assert_never_verified_after(self, change) -> None:
+        # The registry entry is unreadable as the scene's identity after the
+        # save: the readback is unavailable, so the task stays observing.
+        result = await self.apply_then_change_registry(change)
+        self.assertEqual(result["task_state"], "observing", result)
+        self.assertEqual(self.outcomes(result["task_id"]), ["observing"])
+        self.assertNotIn("exact_readback_verified", self.child_codes(result["task_id"]))
+        self.assertEqual(self.stored(), self.expected(self.SNAPSHOT))
+        self.assert_no_loaded_claim(result)
+
+    async def test_a_removed_registry_entry_is_never_verified(self):
+        await self.assert_never_verified_after(
+            lambda entries: entries.pop(LOUNGE_ENTITY)
+        )
+
+    async def test_a_disabled_scene_entry_is_never_verified(self):
+        def disable(entries):
+            entries[LOUNGE_ENTITY]["disabled_by"] = "user"
+
+        await self.assert_never_verified_after(disable)
+
+    async def test_guard_no_surface_claims_loaded_state_verification(self):
+        # Every surface that describes a scene result states the scope and
+        # none claims the loaded scene was verified, matched or reloaded.
+        from ha_mcp_engineering.capabilities import capability_for_tool
+        from ha_mcp_engineering.tools.governance import (
+            create_scene_configuration_plan,
+        )
+
+        created, result = await self.applied(config_id=LOUNGE, **self.SNAPSHOT)
         again = await self.apply(created)
-        self.assertNotEqual(again["task_state"], "succeeded_verified", again)
-        self.clock[0] += timedelta(minutes=3)
-        later = await self.apply(created)
-        self.assertEqual(later["task_state"], "manual_review_required", later)
-        self.assertEqual(len(self.writes()), 1)
-        with self.assertRaises(GovernanceError) as raised:
-            await self.service.rollback_change(created["plan_id"])
-        self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
-
-    async def test_guard_name_edit_needs_evidence(self):
-        await self.assert_never_verified_without_evidence({"name": "Requested"})
-
-    async def test_guard_icon_edit_needs_evidence(self):
-        await self.assert_never_verified_without_evidence({"icon": "mdi:lamp"})
-
-    async def test_guard_icon_removal_needs_evidence(self):
-        await self.assert_never_verified_without_evidence({"icon": None})
-
-    async def test_guard_member_addition_needs_evidence(self):
-        await self.assert_never_verified_without_evidence(
-            {"entities": {FAN: {"state": "on"}}}
+        retained = self.service.get_execution_task(result["task_id"])
+        for label, value in (("apply result", result), ("re-apply", again),
+                             ("execution task", retained)):
+            with self.subTest(surface=label):
+                self.assert_scope(value)
+        plan = self.service._load(created["plan_id"])
+        disclosure = plan.dry_run_results["scene_configuration"]
+        self.assert_scope(disclosure)
+        self.assertEqual(disclosure["verification_scope_disclosure"],
+                         planning.VERIFICATION_SCOPE_DISCLOSURE)
+        self.assertTrue(planning.VERIFICATION_SCOPE_DISCLOSURE.startswith(
+            contract.VERIFICATION_SCOPE_STATEMENT))
+        self.assertNotIn("loaded_scene_verification", disclosure)
+        # The kept disclosures: reload of all scenes, runtime-created scenes
+        # lost, never activated, and the D3 race.
+        for key in ("reload", "activation", "residual_concurrency_window"):
+            self.assertIn(key, str(disclosure) + str(self.disclosure(created)))
+        self.assert_no_loaded_claim(plan.dry_run_results)
+        self.assert_no_loaded_claim(self.disclosure(created))
+        doc = " ".join(create_scene_configuration_plan.__doc__.split())
+        self.assertIn(contract.VERIFICATION_SCOPE_STATEMENT, doc)
+        self.assert_no_loaded_claim(doc)
+        catalog = capability_for_tool("create_scene_configuration_plan")
+        self.assertEqual(catalog["verification_scope"],
+                         "stored_configuration_and_registry_identity")
+        self.assertEqual(catalog["loaded_state"], "not_verified")
+        self.assert_no_loaded_claim(catalog)
+        from ha_mcp_engineering.ha_core_readmission.profiles import (
+            CORE_NOVEMBER_BATCH_PROFILES,
         )
 
-    async def test_guard_member_removal_needs_evidence(self):
-        await self.assert_never_verified_without_evidence({"entities": {STRIP: None}})
+        (profile,) = [item for item in CORE_NOVEMBER_BATCH_PROFILES
+                      if item.capability_id == contract.PROFILE]
+        self.assert_no_loaded_claim(profile.to_mapping())
 
-    async def test_guard_snapshot_edit_needs_evidence(self):
-        await self.assert_never_verified_without_evidence(self.SNAPSHOT)
+    def test_the_guard_pattern_catches_loaded_claims(self):
+        # The guard itself: each retired claim shape is caught; the option C
+        # scope wording is not.
+        for claim in ("loaded_scene_verified", "loaded scene consistent",
+                      "loaded_matches_config", "post_save_reload_observed",
+                      "reload observed", "reload_evidence",
+                      "scene_loaded_and_stored", "loaded_state_verified"):
+            with self.subTest(claim=claim):
+                self.assertIsNotNone(LOADED_CLAIM.search(claim))
+        for text in (contract.VERIFICATION_SCOPE_STATEMENT,
+                     planning.VERIFICATION_SCOPE_DISCLOSURE,
+                     json.dumps(contract.verification_scope_fields())):
+            self.assertIsNone(LOADED_CLAIM.search(text), text)
 
-    async def test_guard_every_field_edit_needs_evidence(self):
-        await self.assert_never_verified_without_evidence(
-            {"name": "All", "icon": None, "entities": {LAMP: None}}
+    def test_the_reload_inference_is_removed(self):
+        from ha_mcp_engineering.f3_configuration import gateway, strategies
+        from ha_mcp_engineering.f3_runtime import runtime
+
+        for retired in ("RELOAD_UNVERIFIED", "STORED_CONFIGURATION_VERIFIED",
+                        "ALREADY_STORED", "RELOAD_BASELINE_UNAVAILABLE_REASON",
+                        "LOADED_POLL_ATTEMPTS", "LOADED_POLL_INTERVAL_SECONDS",
+                        "VISIBLE_COMPONENTS", "LOADED_SCENE_DISCLOSURE"):
+            with self.subTest(name=retired):
+                self.assertFalse(hasattr(contract, retired))
+                self.assertFalse(hasattr(planning, retired))
+        scene_gateway = self.resource_gateway.scene_configuration
+        self.assertFalse(hasattr(scene_gateway, "reload_evidence"))
+        for owner in (gateway.ExistingConfigurationGatewayBridge,
+                      type(self.resource_gateway),
+                      runtime._AuditedConfigurationGateway):
+            self.assertFalse(hasattr(owner, "scene_configuration_reload_evidence"))
+        strategy = strategies.SceneConfigurationConfigurationStrategy
+        for hook in ("observation_gap", "already_reached_gap"):
+            self.assertFalse(hasattr(strategy, hook), hook)
+        # The kept hooks: the R1-H2 write permit and the stale recheck.
+        self.assertTrue(hasattr(strategy, "dispatch_scope"))
+        self.assertTrue(hasattr(strategy, "preflight_evidence"))
+
+    async def test_scope_fields_are_stamped_only_on_scene_tasks(self):
+        # Option C mutant O11: no other family runs through this suite, so
+        # the scene-only rule is pinned directly on the runtime projection.
+        from unittest.mock import patch
+
+        _created, result = await self.applied(config_id=LOUNGE, name="New")
+        task = self.service._load_task(result["task_id"])
+        scene = self.runtime.children.declarations_for_task(task.task_id)
+        self.assertEqual(self.runtime.scene_scope_fields(task),
+                         contract.verification_scope_fields())
+        cases = (
+            ("no declarations", []),
+            ("another family", [{**scene[0], "target_type": "automation"}]),
+            ("mixed", [*scene, {**scene[0], "target_type": "automation"}]),
         )
-
-    async def test_guard_already_stored_needs_evidence(self):
-        created = await self.approved(config_id=LOUNGE, name="Reached")
-        self.scene_rest.set_external(LOUNGE, name="Reached")
-        self.assert_already_stored_not_verified(await self.apply(created))
-
-    def after_the_first_post_save_state_read(self, action) -> list[str]:
-        # Runs ``action`` once, right after the first scene state read that
-        # follows the POST has been answered (before that poll's registry read).
-        original = self.scene_rest.request
-        done: list[str] = []
-
-        async def request(method, path, **kwargs):
-            value = await original(method, path, **kwargs)
-            if (
-                not done
-                and self.scene_rest.posts
-                and method == "GET"
-                and str(path).endswith(f"/states/{LOUNGE_ENTITY}")
+        for label, declarations in cases:
+            with self.subTest(case=label), patch.object(
+                self.runtime.children, "declarations_for_task",
+                return_value=declarations,
             ):
-                done.append(LOUNGE_ENTITY)
-                action()
-            return value
-
-        self.scene_rest.request = request
-        return done
-
-    async def assert_a_change_without_a_re_add_is_not_evidence(self, arguments, change):
-        created = await self.approved(config_id=LOUNGE, **arguments)
-        self.scene_rest.reload_fails = True
-        done = self.after_the_first_post_save_state_read(change)
-        result = await self.apply(created)
-        self.assertEqual(done, [LOUNGE_ENTITY])
-        self.assert_changed_but_unverified(result)
-        gateway = self.resource_gateway.scene_configuration
-        self.assertEqual(
-            gateway.reload_evidence(LOUNGE, "scene_configuration_1"), frozenset()
-        )
-        # The loaded scene now matches the plan: necessary, never sufficient.
-        self.assertIs((await gateway.read_state(LOUNGE))["loaded_matches_config"], True)
-
-    async def test_a_member_attribute_rewrite_is_not_reload_evidence(self):
-        # H10: a state write (not a reload) can set the member-list attribute;
-        # with the state value unchanged Core keeps last_changed, so nothing
-        # was re-added and nothing proves the saved file was loaded.
-        def rewrite():
-            state = self.scene_rest.states[LOUNGE_ENTITY]
-            state["attributes"]["entity_id"] = list(
-                self.scene_rest.config(LOUNGE)["entities"]
-            )
-
-        await self.assert_a_change_without_a_re_add_is_not_evidence(
-            {"entities": {FAN: {"state": "on"}}}, rewrite
-        )
-
-    async def test_a_registry_name_without_a_re_add_is_not_reload_evidence(self):
-        def rename():
-            self.ws.entries[LOUNGE_ENTITY]["original_name"] = "Requested"
-
-        await self.assert_a_change_without_a_re_add_is_not_evidence(
-            {"name": "Requested"}, rename
-        )
-
-    async def test_a_reload_between_one_polls_reads_verifies_at_the_next_poll(self):
-        # H13: the reload lands after a poll's state read and before its
-        # registry read, so that poll sees a matching loaded scene with no
-        # re-add yet. The poll must continue until the coherent evidence.
-        created = await self.approved(config_id=LOUNGE, name="Requested")
-        self.scene_rest.reload_fails = True
-        done = self.after_the_first_post_save_state_read(self.scene_rest._reload)
-        result = await self.apply(created)
-        self.assertEqual(done, [LOUNGE_ENTITY])
-        self.assertEqual(result["task_state"], "succeeded_verified", result)
-        self.assertEqual(
-            self.resource_gateway.scene_configuration.reload_evidence(
-                LOUNGE, "scene_configuration_1"
-            ),
-            frozenset({"name"}),
-        )
-        self.assertEqual(len(self.writes()), 1)
+                self.assertEqual(self.runtime.scene_scope_fields(task), {})
 
     async def test_rollback_projection_needs_a_verified_task_and_one_dispatch(self):
         # G8: the scene branch of the rollback projection. The generic branch
@@ -2128,7 +1924,7 @@ class PostSaveReloadRuleTests(_Base):
 
     def test_only_two_adapter_paths_can_report_verified(self):
         # Guard: a new SUCCEEDED_VERIFIED producer in the configuration
-        # adapter must be added here with its scene evidence requirement.
+        # adapter must be added here with its option C scope.
         import ast
         import inspect
 
@@ -2145,13 +1941,9 @@ class PostSaveReloadRuleTests(_Base):
                     ):
                         producers.add(node.name)
         self.assertEqual(producers, {"verify", "_preflight_already_reached"})
-        preflight = inspect.getsource(adapter.ConfigurationOperationAdapter.preflight)
-        self.assertLess(
-            preflight.index("already_reached_gap"),
-            preflight.index("_preflight_already_reached"),
-        )
-        observe = inspect.getsource(adapter.ConfigurationOperationAdapter._observe)
-        self.assertIn("observation_gap", observe)
+        source = inspect.getsource(adapter)
+        for retired in ("already_reached_gap", "observation_gap"):
+            self.assertNotIn(retired, source)
 
 
 class RuntimeCompositionTests(unittest.TestCase):
@@ -2247,7 +2039,8 @@ class ApplyBoundaryTests(_Base):
         self.assertEqual(self.outcomes(result["task_id"]), ["preflight_rejected"])
         self.assertEqual(self.writes(), [])
 
-    async def test_unloaded_change_before_dispatch_is_stale(self):
+    async def test_unreloaded_stored_change_before_dispatch_is_stale(self):
+        # The stored configuration changed; whether it was reloaded is moot.
         created = await self.approved(config_id=LOUNGE, name="Requested")
         self.scene_rest.set_external(LOUNGE, reload=False, icon="mdi:x")
         result = await self.apply(created)
@@ -2294,10 +2087,15 @@ class ApplyBoundaryTests(_Base):
         self.scene_rest.set_external(LOUNGE, name="Reached")
         result = await self.apply(created)
         self.assertEqual(self.writes(), [])
-        # R2-H1: no save by this plan, so never verified (Codex R2 repro 2).
-        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
-        self.assertEqual(self.outcomes(result["task_id"]), ["preflight_rejected"])
-        self.assertIn(contract.ALREADY_STORED, self.child_codes(result["task_id"]))
+        # Option C: the stored configuration and registry identity already
+        # equal the plan's final state, so it is verified without a save, as
+        # in every sibling configuration family; the loaded scene is not.
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(self.outcomes(result["task_id"]), ["succeeded_verified"])
+        self.assertIs(result["provider_dispatch_occurred"], False)
+        self.assertIn("desired_state_already_reached", self.child_codes(result["task_id"]))
+        self.assert_scope(result)
+        # No save by this plan, so there is nothing to restore.
         plan = self.service._load(created["plan_id"])
         self.assertIs(plan.rollback.available, False)
         with self.assertRaises(GovernanceError) as raised:
@@ -2569,7 +2367,6 @@ class ContractBoundaryTests(_Base):
         current = {
             "config_id": LOUNGE, "entity_id": LOUNGE_ENTITY,
             "registry_entry_id": "scnsyntheticloungedim", "config": lounge_config(),
-            "loaded_matches_config": True,
         }
         proposed = deepcopy(current)
         proposed["config"]["name"] = "Renamed"
@@ -2593,6 +2390,15 @@ class ContractBoundaryTests(_Base):
             contract.write_command(LOUNGE, current, deepcopy(current))
         with self.assertRaises(contract.SceneConfigurationContractError):
             contract.write_command(LOUNGE, None, proposed)
+        # Option C: a loaded-scene field is no longer part of the state.
+        with self.assertRaises(contract.SceneConfigurationContractError):
+            contract.write_command(
+                LOUNGE, {**current, "loaded_matches_config": True}, proposed
+            )
+        with self.assertRaises(contract.SceneConfigurationContractError):
+            contract.write_command(
+                LOUNGE, current, {**proposed, "loaded_matches_config": True}
+            )
 
     async def test_gateway_never_sends_outside_the_vocabulary(self):
         gateway = self.resource_gateway.scene_configuration
@@ -2659,14 +2465,6 @@ class MutationSurvivorTests(_Base):
                                   platform="synthetic_integration")
         await self.assert_create_refused(
             "scene_configuration_not_ui_managed", config_id=collide, name="x"
-        )
-
-    async def test_loaded_members_must_match_the_stored_members(self):
-        # Name and icon still match; only the loaded member list is stale.
-        self.scene_rest.set_external(LOUNGE, reload=False,
-                                     entities={LAMP: lamp_snapshot()})
-        await self.assert_create_refused(
-            "scene_configuration_not_loaded", config_id=LOUNGE, icon="mdi:a"
         )
 
     async def test_rollback_admission_is_checked_before_the_forward_state(self):
@@ -2890,6 +2688,20 @@ class MutationSurvivorTests(_Base):
         self.assertEqual(raised.exception.details["reason_code"],
                          "scene_configuration_rollback_baseline_drift")
 
+    async def test_response_identity_is_the_exact_config_id(self):
+        # Option C mutant O4: the scene read builds config_id from its own
+        # argument, so no full path can return another scene's identity.
+        # This pins the identity check itself for any generic caller.
+        state = await self.service._read_configuration_resource(
+            "scene_configuration", LOUNGE
+        )
+        self.assertTrue(resource_identity_matches("scene_configuration", LOUNGE, state))
+        for other in ({**state, "config_id": "1700000000099"},
+                      {k: v for k, v in state.items() if k != "config_id"}):
+            self.assertFalse(
+                resource_identity_matches("scene_configuration", LOUNGE, other)
+            )
+
 
 class ProfileShapeTests(unittest.TestCase):
     def test_seq16_profile_shape_is_the_documented_shape(self):
@@ -2908,15 +2720,15 @@ class ProfileShapeTests(unittest.TestCase):
             "profile_version": 1,
             "adapter_id": "compiled-core-scene-configuration-operation-v1",
             "contract_fingerprint": (
-                "sha256:d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2"
+                "sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb"
             ),
             "required_checks": [
                 "rest_scene_config_get_by_config_id",
                 "rest_scene_config_post_by_config_id",
                 "rest_state_get_by_entity_id",
                 "websocket_entity_registry_list_and_get",
-                "scene_config_and_loaded_scene_readback_exact",
-                "scene_post_save_reload_evidence_required",
+                "scene_config_and_registry_identity_readback_exact",
+                "scene_loaded_state_not_verified_disclosed",
             ],
             "auto_eligible": True,
         })

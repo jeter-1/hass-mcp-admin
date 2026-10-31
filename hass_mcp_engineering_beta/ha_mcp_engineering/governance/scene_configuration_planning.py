@@ -8,8 +8,9 @@ any attributes, stored exactly) or to ``null`` to remove it; members that
 are not named are kept exactly.  Input is validated before any Home
 Assistant read.
 
-Planning binds the exact stored configuration and the loaded scene, refuses
-integration, YAML, disabled, inconsistent and unreviewable scenes, refuses
+Planning binds the exact stored configuration and the scene's registry
+identity, refuses integration, YAML, unregistered, disabled and unreviewable
+scenes, refuses
 members that exist in neither the entity registry nor the state machine, and
 refuses a request that changes nothing with a truthful no-change reason and
 no plan.  Nothing here dispatches and nothing here activates a scene.
@@ -75,7 +76,7 @@ ID_ASSIGNMENT_DISCLOSURE = (
 )
 CONCURRENCY_DISCLOSURE = (
     "Core has no compare-and-swap for scene configuration, and its save is "
-    "an upsert. The stored configuration, registry entry and loaded scene "
+    "an upsert. The stored configuration and registry entry "
     "are rechecked immediately before the one save, but between that final "
     "check and the save: a concurrent edit to this scene can be overwritten "
     "without being detected (the readback sees only this plan's result), "
@@ -83,22 +84,18 @@ CONCURRENCY_DISCLOSURE = (
     "Verification proves this plan's stored result, not that no other "
     "change happened in that window."
 )
-LOADED_SCENE_DISCLOSURE = (
-    "Verification needs positive evidence that Home Assistant reloaded the "
-    "scene after this save: a name, icon or member-list change this plan "
-    "makes must be seen moving from the loaded value before the save to "
-    "the saved value. A loaded scene that merely matches the plan is never "
-    "proof. Member state or attribute snapshots are not observable, so an "
-    "edit that changes only snapshots is never verified as loaded: its "
-    "stored configuration may be verified while the loaded scene is not. "
-    "Without that evidence within the bounded observation window the task "
-    "stays observing and then requires manual review, never verified; a "
-    "plan whose configuration is already stored is refused without "
-    "dispatch. Recovery is read-only: inspect the task and the scene's "
-    "stored configuration and state, and reload scenes in Home Assistant "
-    "yourself if the loaded scene is stale; Engineering never reloads, "
-    "activates or resends. The evidence is held in memory, so an "
-    "Engineering restart after the save also leaves the result unverified."
+# HAMCP-071 option C (Josh's decision): verified means the stored
+# configuration reads back exactly and the registry identity is unchanged;
+# nothing is claimed about the scene Home Assistant has loaded.
+VERIFICATION_SCOPE_DISCLOSURE = (
+    contract.VERIFICATION_SCOPE_STATEMENT
+    + " A verified result means the stored scene configuration read back "
+    "exactly (type-exact) and the scene's entity registry identity is "
+    "unchanged. Home Assistant reloads scenes in the background after the "
+    "save; whether that reload loaded this save is not observed, so the "
+    "loaded scene can still differ (for example a concurrent reload or "
+    "edit). Engineering never reloads, activates or resends; reload scenes "
+    "in Home Assistant yourself if the loaded scene looks stale."
 )
 MEMBER_ORDER_DISCLOSURE = (
     "Members are saved in entity_id order. Core reproduces scene states "
@@ -558,14 +555,10 @@ async def prepare(
         raise Refusal("scene_configuration_target_not_found", kind="not_found")
     if request.entity_id is not None and current["entity_id"] != request.entity_id:
         raise Refusal("scene_configuration_target_mismatch", field="entity_id")
-    if current["loaded_matches_config"] is not True:
-        # The loaded scene does not reflect the stored configuration (a
-        # reload is pending or failed): the target cannot be bound exactly.
-        raise Refusal("scene_configuration_not_loaded", kind="unreviewable")
     if _withheld(current["config"]):
         raise Refusal("scene_configuration_text_withheld", field="config")
     config = proposed_config(current, request)
-    proposed = {**deepcopy(current), "config": config, "loaded_matches_config": True}
+    proposed = {**deepcopy(current), "config": config}
     if contract.exactly_equal(current["config"], config):
         raise Refusal(
             NO_CHANGE,
@@ -663,7 +656,8 @@ async def prepare(
                 else ROLLBACK_DISCLOSURE
             ),
             "residual_concurrency_window": CONCURRENCY_DISCLOSURE,
-            "loaded_scene_verification": LOADED_SCENE_DISCLOSURE,
+            **contract.verification_scope_fields(),
+            "verification_scope_disclosure": VERIFICATION_SCOPE_DISCLOSURE,
         },
     )
 

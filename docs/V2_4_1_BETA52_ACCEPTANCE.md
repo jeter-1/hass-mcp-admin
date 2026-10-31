@@ -47,7 +47,7 @@ Bind the following:
 
   | Profile | sha256 |
   |---|---|
-  | `core.scene_configuration_operation` | `d461fa2acc6cbb7c31aae4654ab6b2055ba5844762c9212b207fb15e8498fbb2` |
+  | `core.scene_configuration_operation` | `73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb` |
 
 The review needs a security section covering the following items:
 - **New write path, unreachable at release.** The path is
@@ -91,24 +91,22 @@ The review needs a security section covering the following items:
   - The fingerprint is checked immediately before the write.
   - The readback must show the stored configuration exactly and the
     registry identity unchanged.
-  - The loaded scene is verified only with positive evidence that Home
-    Assistant reloaded it after this plan's save, observed within the
-    bounded window (10 × 0.5 s). The evidence is a visible transition: the
-    scene is re-added (`last_changed` moves while its state value stays the
-    same), and a planned name, icon or member-list change moves from its
-    loaded value captured just before the POST to the saved value. A loaded
-    scene that merely matches the plan is never proof.
-  - Without that evidence the result is changed but unverified: the stored
-    configuration is verified and the loaded scene is not. The task stays
-    observing and then requires manual review. It is never
-    `succeeded_verified` from pre-save state, and a late reload alone is
-    never a verification mismatch. Recovery is read-only.
-  - With the evidence, a loaded scene that differs from the stored
-    configuration is a verification failure.
-  - An edit that changes only member snapshots is never verified as
-    loaded, because Core does not expose snapshots. A plan whose
-    configuration is already stored is refused without dispatch.
+  - Option C (Josh, 2026-10-31): `succeeded_verified` means exactly that
+    the stored configuration reads back type-exactly and the registry
+    identity is unchanged. Engineering does not read or verify the scene
+    Home Assistant has loaded. Every result, task and plan disclosure
+    carries `verification_scope: "stored_configuration_and_registry_identity"`,
+    `loaded_state: "not_verified"` and the statement "Engineering verifies
+    the saved scene and its registry identity; it does not verify the scene
+    Home Assistant has loaded."
+  - A stored mismatch or registry drift is a verification failure; a
+    removed or disabled entry or a failed read stays observing and then
+    requires manual review. Recovery is read-only.
+  - A configuration that is already stored is `succeeded_verified` without
+    dispatch (`desired_state_already_reached`).
   - Comparisons are type-exact.
+  - No surface claims loaded-state verification (a guard test enforces
+    this).
   - An indeterminate send is decided by readback and never redispatched.
 - **Rollback.** A separately approved restore plan of the exact prior
   configuration.
@@ -150,7 +148,7 @@ No test reaches a live system. Every fixture is synthetic:
 - the YAML scene `scene.synthetic_yaml_scene` (`1700000000009`).
 
 The offline proof consists of:
-- `tests/test_hamcp071_scene_configuration.py` (175 tests) with
+- `tests/test_hamcp071_scene_configuration.py` (152 tests) with
   `tests/hamcp071_fixtures.py`. These use the real service, the F3 runtime
   and the scene gateway, and cover:
   - positive edits of the name, the icon (including removal) and members
@@ -164,10 +162,10 @@ The offline proof consists of:
   - stale state at apply;
   - 4xx, 5xx and lost responses, decided truthfully;
   - readback mismatches;
-  - the post-save reload rule: the Codex R1 and R2 repros, coincidental
-    matches, late and unrelated reloads, a genuine reload with a matching
-    or a differing loaded scene, already-stored targets, and guard tests
-    that fail if any path verifies without evidence;
+  - the option C verification scope: every edit kind verifies the stored
+    scene only, with the scope fields; the Codex R3-H1 probe; stored
+    mismatches and registry drift as verification failures; already-stored
+    targets; and a guard that no surface claims loaded-state verification;
   - rollback and its refusals;
   - the contract boundaries.
 - `tests/test_hamcp242_core_authority_itemization.py`. It pins sequence 14
@@ -178,14 +176,16 @@ The offline proof consists of:
 - Pin updates across the suite: tool counts, F3 identities and registry
   size, capability metadata, and dormant lane sets.
 - Mutations: `docs/evidence/hamcp071-mutations/` (`README.md`,
-  `r2-results.json` and `r2-rerun-results.json`). The R2 full run
-  replays all 113 earlier mutants plus 10 new evidence-check removals
-  (`E1`–`E10`): 119 of 123 are killed against a 278-test baseline. The
-  three non-equivalent survivors (G8, H10 and H13) each got an isolated
-  test, and the rerun kills all three against a 282-test baseline. So 122
-  of 123 are killed. The one survivor, A3 (the persistence-entry
-  recheck), is equivalent, and its isolated control A3A4, which removes
-  both persistence gates, is killed.
+  `optc-results.json` and `optc-rerun-results.json`). The option C full
+  run retires the 24 mutants whose code was removed, replays the other
+  99, and adds 11 check removals (`O1`–`O11`: stored equality, registry
+  identity, response identity and the scope fields): 107 of 110 are
+  killed against a 257-test baseline. The two non-equivalent survivors
+  (O4 and O11) each got an isolated test, and the rerun kills both
+  against a 259-test baseline. So 109 of 110 are killed. The one
+  survivor, A3 (the persistence-entry recheck), is equivalent, and its
+  isolated control A3A4, which removes both persistence gates, is
+  killed.
 
 ### Downgrade rule
 
@@ -256,8 +256,9 @@ evidence, not here. **The scene is never activated** at any step: no
    disclosure:
    - the before and after values;
    - the consumers;
-   - the not-activated, reload, id-assignment, member-order, loaded-scene
-     and concurrency texts (the concurrency text discloses that a
+   - the not-activated, reload, id-assignment, member-order,
+     verification-scope and concurrency texts, and
+     `loaded_state: "not_verified"` (the concurrency text discloses that a
      concurrent edit can be overwritten undetected and a concurrent
      deletion can be recreated);
    - `standard_admin`.
@@ -266,16 +267,12 @@ evidence, not here. **The scene is never activated** at any step: no
    - the stored configuration equals the proposed one exactly;
    - the members and `metadata` are unchanged;
    - the registry entry and `entity_id` are unchanged;
-   - the loaded scene matches the intended fields exactly: the registry
-     `original_name` or `original_icon`, the state attribute `id` and the
-     member list;
-   - the task is `succeeded_verified` only with post-save reload evidence
-     (the planned name or icon moved from its pre-save loaded value to the
-     saved value). If it stays observing
-     (`scene_post_save_reload_unverified`), record that the result is
-     changed but unverified, inspect read-only, and do not reverify or
-     resend. A loaded scene that already shows the new value is not
-     evidence on its own;
+   - the task is `succeeded_verified` with
+     `verification_scope: "stored_configuration_and_registry_identity"`
+     and `loaded_state: "not_verified"`. Record separately, as Josh's own
+     observation and not as Engineering verification, whether the loaded
+     scene shows the new name or icon; if it does not, reload scenes in
+     Home Assistant yourself. Do not reverify or resend;
    - bounded no-activation evidence: the audit and the task record no
      scene service (`scene.turn_on`, `scene.apply`, `scene.create`,
      `scene.reload`, `scene.delete`) and only the one config POST, and the

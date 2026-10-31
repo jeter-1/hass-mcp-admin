@@ -642,8 +642,8 @@ or delegated provider.
   the plan discloses that.
 - **Target.** One existing scene: registry platform `homeassistant`, its
   `unique_id` equal to the config id, and a GET hit. Integration scenes,
-  YAML scenes outside `scenes.yaml`, and ambiguous, disabled or unloaded
-  targets are refused while planning. Because Core's POST is an upsert,
+  YAML scenes outside `scenes.yaml`, and ambiguous, disabled or
+  unregistered targets are refused while planning. Because Core's POST is an upsert,
   the scene is re-read immediately before the write, and a missing scene
   is refused as stale, never created.
 - **Approval and verification.**
@@ -653,8 +653,11 @@ or delegated provider.
   - A multi-operation plan containing a scene operation, or an incomplete
     operation, is `PROHIBITED`.
   - Drift is refused immediately before the write, compared type-exactly.
-  - The exact readback must show the stored configuration as proposed, the
-    registry identity unchanged and the loaded scene consistent.
+  - The exact readback must show the stored configuration as proposed and
+    the registry identity unchanged. Engineering verifies the saved scene
+    and its registry identity; it does not verify the scene Home Assistant
+    has loaded (`loaded_state: "not_verified"`, disclosed on every
+    result).
   - An indeterminate response is decided by readback. It is never
     redispatched.
 - **Untrusted text.** Planning screens scene names and stored text.

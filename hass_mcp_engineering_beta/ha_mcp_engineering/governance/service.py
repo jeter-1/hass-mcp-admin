@@ -7287,8 +7287,8 @@ class ChangeGovernanceService:
                     _dashboard_metadata_context.item(operation_id).current
                 )
             elif _scene_configuration_context is not None:
-                # The exact stored configuration and loaded scene read inside
-                # the planning lease.
+                # The exact stored configuration and registry identity read
+                # inside the planning lease.
                 current = deepcopy(
                     _scene_configuration_context.item(operation_id).current
                 )
@@ -10113,6 +10113,11 @@ class ChangeGovernanceService:
             ),
         }
         result.update(facts.public_fields())
+        if self.f3_runtime is not None:
+            # HAMCP-071 option C: a retained scene result keeps its scope.
+            scope = self.f3_runtime.scene_scope_fields(task)
+            result.update(scope)
+            result["task"].update(scope)
         # The status override stays keyed on the stored terminal outcome
         # (status preservation rule, design section 2.4.3 item 4).
         if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
