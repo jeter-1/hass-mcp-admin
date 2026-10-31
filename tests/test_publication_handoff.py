@@ -91,6 +91,8 @@ class HandoffTests(unittest.TestCase):
             for commit in (BASE, MERGE):
                 self.git_data[("rev-parse", f"{commit}:{path}")] = "reviewed policy " + path
         self.calls = []
+        self.sleeps = []
+        self.logs = []
         self.bind_artifact()
 
     def bind_artifact(self, raw=None):
@@ -114,7 +116,8 @@ class HandoffTests(unittest.TestCase):
                 "workflow_id": 8, "event": self.run["event"], "head_sha": self.run["head_sha"]}
 
     def verify(self):
-        return handoff_verify.verify(7, 1, MERGE, self.api, self.git)
+        return handoff_verify.verify(7, 1, MERGE, self.api, self.git,
+                                     sleep=self.sleeps.append, log=self.logs.append)
 
     def test_owner_ready_merge_round_trip_identifies_actual_merge_commit(self):
         env = {"GITHUB_REPOSITORY": handoff.REPOSITORY, "GITHUB_ACTOR": "jeter-1",
@@ -444,6 +447,181 @@ class HandoffTests(unittest.TestCase):
             handoff.merged_pr(5, base, head, merge, self.api, git)
             with self.assertRaises(ValueError):
                 handoff.merged_pr(5, head, base, merge, self.api, git)
+
+
+class SourceMergeJobRereadTests(unittest.TestCase):
+    """HAMCP-258: GitHub reported merge runs complete before their job records
+    settled (2026-10-30, runs 41122145397 and 41122307269), so one jobs
+    snapshot refused a lifecycle no-op and a successful merge."""
+
+    setUp, bind_artifact, api, git, verify = (
+        HandoffTests.setUp, HandoffTests.bind_artifact, HandoffTests.api, HandoffTests.git,
+        HandoffTests.verify)
+    JOBS = f"{PREFIX}/actions/runs/7/attempts/1/jobs?per_page=100"
+    RETIRE = {"head_sha": HEAD, "name": "retire-stale-ready-run", "run_id": 7, "run_attempt": 1,
+              "status": "completed", "conclusion": "skipped"}
+
+    def sequence(self, *snapshots):
+        """Serve one jobs snapshot per read; the last one repeats."""
+        reads = iter(snapshots)
+        last = None
+
+        def api(route, binary=False):
+            nonlocal last
+            if route == self.JOBS:
+                self.calls.append(route)
+                last = next(reads, last)
+                jobs = [self.RETIRE] + ([] if last is None else [last])
+                return deepcopy({"total_count": len(jobs), "jobs": jobs})
+            return HandoffTests.api(self, route, binary)
+        return api
+
+    def verify_with(self, api):
+        return handoff_verify.verify(7, 1, MERGE, api, self.git,
+                                     sleep=self.sleeps.append, log=self.logs.append)
+
+    def job_with(self, **fields):
+        return {**self.job, **fields}
+
+    def test_absent_then_successful_merge_job_publishes_the_merge(self):
+        # Reproduces #1118's window: the attempt's job records had not settled.
+        api = self.sequence(None, self.job_with(status="in_progress", conclusion=None), self.job)
+        result = self.verify_with(api)
+        self.assertEqual(result["release_action"], "inspect")
+        self.assertEqual(result["release_sha"], MERGE)
+        self.assertEqual(self.sleeps, [5, 10])
+        self.assertEqual(self.calls.count(self.JOBS), 3)
+        self.assertEqual(len(self.logs), 3)
+        self.assertIn("merge-authorized-head absent", self.logs[0])
+        self.assertIn("status in_progress, conclusion none, attempt 1", self.logs[1])
+        self.assertIn("status completed, conclusion success, attempt 1", self.logs[2])
+
+    def test_contradictory_unsuccessful_read_settles_to_success(self):
+        # The source run already concluded success, so a failed merge job is
+        # re-read rather than trusted; only the settled success publishes.
+        for transient in ("failure", "cancelled", None):
+            with self.subTest(transient=transient):
+                self.calls, self.sleeps, self.logs = [], [], []
+                api = self.sequence(self.job_with(conclusion=transient), self.job)
+                self.assertEqual(self.verify_with(api)["release_action"], "inspect")
+                self.assertEqual(self.sleeps, [5])
+
+    def test_absent_then_skipped_merge_job_is_a_lifecycle_no_op(self):
+        # Reproduces #1117: the skipped job record appeared after the check.
+        api = self.sequence(None, self.job_with(conclusion="skipped"))
+        self.assertEqual(self.verify_with(api), {"release_action": "none"})
+        self.assertEqual(self.sleeps, [5])
+        self.assertFalse(any("artifacts" in route for route in self.calls))
+
+    def test_settled_success_reads_once_without_waiting(self):
+        self.assertEqual(self.verify()["release_action"], "inspect")
+        self.assertEqual(self.sleeps, [])
+        self.assertEqual(self.calls.count(self.JOBS), 1)
+        self.assertEqual(self.logs, ["Source merge job read 1/6: run 7 attempt 1, 1 job(s) listed, "
+                                     "merge-authorized-head status completed, conclusion success, attempt 1"])
+
+    def assert_refused(self, api, category):
+        with self.assertRaises(handoff.Refusal) as refused:
+            self.verify_with(api)
+        self.assertEqual(str(refused.exception), category)
+        self.assertFalse(any("artifacts" in route for route in self.calls))
+
+    def test_truly_unsuccessful_merge_job_stays_source_merge_unsuccessful(self):
+        for conclusion in ("failure", "cancelled", "timed_out", "action_required"):
+            with self.subTest(conclusion=conclusion):
+                self.calls, self.sleeps, self.logs = [], [], []
+                self.assert_refused(self.sequence(self.job_with(conclusion=conclusion)),
+                                    "source_merge_unsuccessful")
+                self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
+                self.assertEqual(self.calls.count(self.JOBS), 6)
+                self.assertIn(f"read 6/6: run 7 attempt 1, 2 job(s) listed, merge-authorized-head "
+                              f"status completed, conclusion {conclusion}, attempt 1", self.logs[-1])
+
+    def test_status_still_not_final_after_the_window_has_its_own_reason(self):
+        for status, conclusion in (("in_progress", None), ("queued", None),
+                                   ("waiting", None), ("completed", None),
+                                   ("in_progress", "success"), (None, "success")):
+            with self.subTest(status=status, conclusion=conclusion):
+                self.calls, self.sleeps, self.logs = [], [], []
+                self.assert_refused(self.sequence(self.job_with(status=status, conclusion=conclusion)),
+                                    "source_merge_not_final")
+                self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
+                self.assertEqual(len(self.logs), 6)
+
+    def test_merge_job_still_absent_after_the_window_is_a_job_mismatch(self):
+        self.assert_refused(self.sequence(None), "source_job_mismatch")
+        self.assertEqual(self.sleeps, list(handoff.JOB_READ_DELAYS))
+        self.assertTrue(all(line.endswith("merge-authorized-head absent") for line in self.logs))
+
+    def test_wrong_run_attempt_or_head_binding_refuses_at_once(self):
+        for key, bad in (("run_id", 6), ("run_attempt", 2), ("head_sha", BASE),
+                         ("run_id", "7"), ("run_attempt", True)):
+            for before in ((), (None,), (self.job_with(status="in_progress", conclusion=None),)):
+                with self.subTest(key=key, bad=bad, before=before):
+                    self.calls, self.sleeps, self.logs = [], [], []
+                    # Even a "successful" job from another run or attempt is never read as ours.
+                    self.assert_refused(self.sequence(*before, self.job_with(**{key: bad})),
+                                        "source_job_mismatch")
+                    self.assertEqual(self.sleeps, [5] * len(before))
+
+    def test_duplicate_merge_jobs_refuse_at_once(self):
+        self.data[self.JOBS] = {"total_count": 2, "jobs": [self.job, deepcopy(self.job)]}
+        with self.assertRaises(handoff.Refusal) as refused:
+            self.verify()
+        self.assertEqual(str(refused.exception), "source_job_mismatch")
+        self.assertEqual(self.sleeps, [])
+
+    def test_only_the_triggering_attempt_route_is_read(self):
+        self.run["run_attempt"] = 2
+        self.data[f"{PREFIX}/actions/runs/7/attempts/2/jobs?per_page=100"] = {
+            "total_count": 1, "jobs": [self.job_with(run_attempt=2)]}
+        with self.assertRaises(handoff.Refusal):
+            handoff_verify.verify(7, 2, MERGE, self.api, self.git,
+                                  sleep=self.sleeps.append, log=self.logs.append)
+        jobs_routes = [route for route in self.calls if "/jobs" in route]
+        self.assertEqual(jobs_routes, [f"{PREFIX}/actions/runs/7/attempts/2/jobs?per_page=100"])
+        self.assertFalse(any("attempts/1/" in route for route in self.calls))
+
+    def test_refusal_log_is_bounded_and_carries_no_api_text(self):
+        hostile = "::add-mask::synthetic-secret-marker"
+        api = self.sequence(self.job_with(status=hostile, conclusion="Failure\nsynthetic-secret-marker"))
+        output = io.StringIO()
+        with redirect_stderr(output), self.assertRaises(handoff.Refusal) as refused:
+            handoff_verify.verify(7, 1, MERGE, api, self.git, sleep=self.sleeps.append)
+        self.assertEqual(str(refused.exception), "source_merge_not_final")
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertIn("merge-authorized-head status invalid, conclusion invalid, attempt 1", lines[-1])
+        self.assertNotIn("synthetic-secret-marker", output.getvalue())
+        self.assertNotIn("::", output.getvalue())
+
+    def test_observed_field_tokens(self):
+        self.assertEqual(handoff.observed(None), "none")
+        self.assertEqual(handoff.observed("completed"), "completed")
+        self.assertEqual(handoff.observed("timed_out"), "timed_out")
+        for bad in ("", "Success", "a" * 33, "in-progress", 1, ["success"], "success\n"):
+            with self.subTest(bad=bad):
+                self.assertEqual(handoff.observed(bad), "invalid")
+        self.assertEqual(handoff.observed("a" * 32), "a" * 32)
+
+    def test_cli_refusal_names_the_new_category(self):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["publication_handoff_verify.py"]), \
+                patch.object(handoff_verify, "verify",
+                             side_effect=handoff.Refusal("source_merge_not_final")), \
+                redirect_stderr(output):
+            with self.assertRaises(SystemExit) as stopped:
+                handoff_verify.main()
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(output.getvalue(), "Publication handoff refused: source_merge_not_final\n")
+
+    def test_read_window_is_bounded_inside_the_detect_job_timeout(self):
+        self.assertEqual(handoff.JOB_READ_DELAYS, (5, 10, 15, 20, 30))
+        workflow = yaml.safe_load((ROOT / ".github/workflows/publish-rc-image.yml").read_text())
+        detect = workflow["jobs"]["detect-release"]["timeout-minutes"] * 60
+        # Every read can take its full 30 s subprocess timeout; half the job stays free.
+        worst = sum(handoff.JOB_READ_DELAYS) + (len(handoff.JOB_READ_DELAYS) + 1) * 30
+        self.assertLessEqual(worst, detect / 2)
 
 
 class ClaimTests(unittest.TestCase):

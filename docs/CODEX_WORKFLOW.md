@@ -722,6 +722,15 @@ merge and recomputed tree. The exact merge must remain on main's first-parent
 history; Engineering source and staged state must agree with current authority.
 The receipt is data, not executable code or a substitute for these checks.
 
+GitHub can report the merge run complete before its job records settle
+(beta.50, HAMCP-258). The verifier therefore re-reads only the triggering run
+attempt's jobs, six times over at most 80 s. It stops at the first settled
+success or skip, and it logs each read's bounded status and conclusion. A job
+bound to another run, attempt or head, or a duplicate merge job, refuses at
+once. After the window, a completed unsuccessful job still refuses
+`source_merge_unsuccessful`. A job that never reached a final state refuses
+`source_merge_not_final`, and an absent job refuses `source_job_mismatch`.
+
 The read-only detector runs before complete publication CI. After authenticating
 the handoff and rechecking source-run identity, it reads the bounded, unambiguous
 Engineering version at the reviewed base and merged commit and refuses staged
