@@ -3,10 +3,19 @@
 ## 2.4.1-beta.52 incremental governance health (HAMCP-097)
 
 `get_server_health(check_ha=false)` no longer re-decodes and re-projects
-the whole retained plan and task history on every call. Its cost now
-scales with records that changed and with active work. Every governance
-field is identical to the full projection once startup validation has
-completed.
+the whole retained plan and task history on every call: an unchanged
+terminal record is not decoded or re-projected, and k changed records cost
+k re-projections. Total cost is still history-dependent. Every call still
+reads and hashes every record and rebuilds the overlay and snapshot, so
+warm cost grows with retained history. The retained benchmark
+(`docs/evidence/hamcp097-health-benchmark/`) times the governance
+component `service.async_health_summary`, not end-to-end MCP latency. Its
+first call after 5 changes is 714 ms at 1x (501 plans) and 1,739 ms at
+x4cap (1,226 plans and 1,024 tasks, 2.45 times 1x, not a full 4x store),
+above the 1.5 s warm SLO. Josh accepted that miss on 2026-10-31;
+HAMCP-259 (Medium) tracks the remaining scaling. The release notes give
+every measured value. Every governance field is identical to the full
+projection once startup validation has completed.
 
 **What is reused.** Four process-memory entries are reused, and nothing
 is persisted:
@@ -27,8 +36,12 @@ is persisted:
   quarantined task file may belong to the plan. If the quarantine
   directory cannot be listed, every plan is evaluated against storage.
 - The assembled summary. It is reused only when every proof and active
-  input is unchanged and the clock is still before the next lifecycle
-  deadline.
+  input is unchanged, the clock is still before the next lifecycle
+  deadline, and no quarantine changed. Its key includes the sorted
+  `*.corrupt` listings of the plan, operational and task quarantine
+  directories and each repository's quarantine generation, which every
+  quarantine and every plan-restoration pass increments. If a quarantine
+  directory cannot be listed, the summary is rebuilt.
 
 All four are discarded on `deep_storage_audit=true`, on
 `deep_audit_plan_store`, and on any storage, governance or unexpected
@@ -64,17 +77,23 @@ no record change reports 0 for both.
 **Startup historical validation.** After strict startup recovery, the
 add-on starts the historical validation in the background. It runs the
 same snapshot, persisted-record safety detector and terminal projection
-as a health call. It writes nothing: a plan whose lifecycle transition
-would persist (for example a due expiry) is deferred to the next health
-call. `governance.historical_validation` reports:
+as a health call. It never persists a lifecycle transition: a plan whose
+transition would persist (for example a due expiry) is deferred to the
+next health call. Like every scan, it still quarantines a corrupt record
+it meets. `governance.historical_validation` reports:
 
 - `state`: `not_started`, `in_progress`, `complete`, `failed` or
   `cancelled`;
 - `trigger`, `elapsed_ms`, `plans_validated`, `tasks_collected`,
   `deferred_lifecycle_plans`, `assembly_prewarmed` and
   `failure_category` (a bounded error code or exception class name);
-- `scope` (`startup_background`), `writes` (`none`) and
-  `wait_budget_ms` (3000).
+- `scope` (`startup_background`) and `wait_budget_ms` (3000);
+- `writes`: `corrupt_record_quarantine` when records were quarantined
+  while validation ran, otherwise `none`;
+- `lifecycle_writes`: always `none`;
+- `quarantined_records`: `{plans, tasks}`, the number of records
+  quarantined while validation ran, by any caller, frozen when it ends.
+  It holds counts only, never a plan ID, path or record content.
 
 **Truthful in-progress answer.** While validation is in progress, a
 health call waits at most `wait_budget_ms`. If validation is still

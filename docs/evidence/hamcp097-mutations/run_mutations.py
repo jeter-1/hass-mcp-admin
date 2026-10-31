@@ -36,7 +36,15 @@ Classes:
   plan or an unproven task; quarantine ignored; replay without key match;
   no pruning; stale entry on a miss; not cleared by a discard; an unreadable
   quarantine read as empty; the ``.corrupt`` filter dropped; no keys at the
-  scan or startup-validation assembly).
+  scan or startup-validation assembly);
+- ``Q*``: Codex round 1 R1-H1, quarantine invalidating the assembled
+  aggregate (both or the task quarantine listing dropped from the
+  fingerprint; an unknown listing allowed; the quarantine generations
+  dropped; restoration, plan quarantine or task quarantine not bumping its
+  generation; an unlistable quarantine directory read as empty);
+- ``M*``: Codex round 1 R1-M1, startup validation reporting its quarantine
+  writes (``writes`` always ``none``; no corruption baseline; counts not
+  frozen when validation ends; task quarantines not counted).
 
 ``--source DIR`` copies a frozen export (``git archive <commit>``) instead of
 the live worktree, so concurrent edits never reach a run.
@@ -72,6 +80,24 @@ After both runs, mutant I9's id (originally ``I9-task-`` + ``record-prune-remove
 was renamed ``I9-task-prune-removed`` in this file and in both results
 files, by that exact string replacement only: the repository's
 credential-pattern scan matches ``sk-`` followed by 20 or more id characters.
+
+Round-1 corrections run (results-ba5af506.json, 2026-10-31 13:18:54Z to
+13:43:33Z, about 25 min): ``--source`` with ``git archive ba5af506`` plus
+this file, whose only change from ba5af506 is the T9 fragment re-anchored
+after R1-M1 inserted the corruption baseline at the same place (the
+mutation is unchanged: the launch guard becomes ``if True``). The baseline
+of the five modules passed (135 tests, 116 s). 68 mutants (the 56 above
+plus Q1-Q8 and M1-M4): 66 killed, and only the equivalent K4 and X3
+survive. Every Q and M mutant is killed by its intended test. The isolated
+controls for K4 and X3 (results-ba5af506-controls.json; fresh copy of the
+same export, ``--only``) pass all 135 tests again. After the run, three
+new ids were shortened by exact string replacement in this file and in
+results-ba5af506.json only, for the same credential-pattern scan as I9:
+Q3 (``...-without-task-`` + ``quarantine-listing``) became
+``Q3-fingerprint-without-task-listing``, Q7 (``Q7-task-`` +
+``quarantine-does-not-bump-generation``) became
+``Q7-quarantined-task-not-bumped``, and M4 (``M4-task-`` +
+``quarantine-not-counted``) became ``M4-quarantined-task-not-counted``.
 
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
@@ -230,8 +256,10 @@ MUTATIONS = [
            "                    else exc.code.value",
        "exc.code.value")),
     m("T9-validation-launched-twice", T,
-      (SV, "        if self._historical_validation_job is None:\n            self._historical_validation.update(",
-       "        if True:\n            self._historical_validation.update(")),
+      # Fragment re-anchored after R1-M1 inserted the corruption baseline.
+      (SV, "        if self._historical_validation_job is None:\n"
+           "            self._historical_validation_corruption_baseline = (",
+       "        if True:\n            self._historical_validation_corruption_baseline = (")),
     m("T10-f3-descriptor-reported-pending", T,
       (SV, '            static.add("f3")\n', "            pass\n")),
     # W: write-freedom
@@ -316,7 +344,7 @@ MUTATIONS = [
       (SV, "        if plan_quarantine is None or task_quarantine is None:\n"
            "            return None\n        plan_part = []\n",
        "        plan_part = []\n")),
-    m("Q3-fingerprint-without-task-quarantine-listing", Q,
+    m("Q3-fingerprint-without-task-listing", Q,
       (SV, "            plan_quarantine, task_quarantine,\n", "            plan_quarantine,\n")),
     m("Q4-fingerprint-without-quarantine-generations", Q,
       (SV, "            self.repository.quarantine_generation,\n"
@@ -328,7 +356,7 @@ MUTATIONS = [
     m("Q6-plan-quarantine-does-not-bump-generation", Q,
       (ST, "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
        "        self.corruption_count += 1\n")),
-    m("Q7-task-quarantine-does-not-bump-generation", Q,
+    m("Q7-quarantined-task-not-bumped", Q,
       (TS, "        self.corruption_count += 1\n        self.quarantine_generation += 1\n",
        "        self.corruption_count += 1\n")),
     m("Q8-quarantine-listing-error-reads-as-empty", Q,
@@ -348,7 +376,7 @@ MUTATIONS = [
            "            )\n", "")),
     m("M3-quarantine-count-not-frozen", M,
       (SV, '            state["quarantined_records"] = self._historical_validation_quarantined()\n', "")),
-    m("M4-task-quarantine-not-counted", M,
+    m("M4-quarantined-task-not-counted", M,
       (SV, '            "tasks": self.task_repository.corruption_count - baseline[1],\n',
        '            "tasks": 0,\n')),
 ]

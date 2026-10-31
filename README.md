@@ -1,10 +1,15 @@
 # HA MCP Engineering Server
 
-Staged, not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) makes
-`get_server_health(check_ha=false)` scale with changed records and active
-work instead of retained history. Terminal records and their projections
-are reused only for byte-identical input, and the historical validation
-now runs in the background at startup. Until it finishes, governance
+Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
+`get_server_health(check_ha=false)` from re-decoding and re-projecting
+unchanged history. Terminal records and their projections are reused only
+for byte-identical input, and the historical validation now runs in the
+background at startup. Cost still grows with retained history, because
+every record is still read and hashed: the offline benchmark of the
+governance component gives a warm median of 698 ms at today's 501 plans
+and 1,398 ms at 1,226 plans, and a first call after 5 changes of 1,739 ms
+at 1,226 plans. That miss of the 1.5 s warm SLO is accepted and tracked as
+HAMCP-259. Until it finishes, governance
 health says `historical_validation: in_progress` and reports every
 history-derived field as pending instead of guessing. Once it finishes,
 every field equals the full projection. No tool, input schema, persisted
