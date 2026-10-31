@@ -885,11 +885,13 @@ class ChangeGovernanceService:
             "state": "not_started", "trigger": None, "elapsed_ms": None,
             "plans_validated": None, "tasks_collected": None,
             "deferred_lifecycle_plans": None, "assembly_prewarmed": None,
-            "failure_category": None, "quarantined_records": None,
+            "failure_category": None, "quarantine_outcomes": None,
         }
-        # Plan and task corruption counts when validation started: the scan
+        # Plan and task quarantine outcomes when validation started: the scan
         # keeps the ordinary corrupt-record quarantine, and reports it.
-        self._historical_validation_corruption_baseline: tuple[int, int] | None = None
+        self._historical_validation_quarantine_baseline: (
+            tuple[dict[str, int], dict[str, int]] | None
+        ) = None
         self.historical_validation_wait_seconds = HISTORICAL_VALIDATION_WAIT_SECONDS
         self._health_cache = self._build_health_summary(
             include_provider_health=False
@@ -15585,9 +15587,9 @@ class ChangeGovernanceService:
         and reports how many it quarantined.
         """
         if self._historical_validation_job is None:
-            self._historical_validation_corruption_baseline = (
-                self.repository.corruption_count,
-                self.task_repository.corruption_count,
+            self._historical_validation_quarantine_baseline = (
+                dict(self.repository.quarantine_outcomes),
+                dict(self.task_repository.quarantine_outcomes),
             )
             self._historical_validation.update(
                 state="in_progress", trigger="startup"
@@ -15624,43 +15626,62 @@ class ChangeGovernanceService:
             state.update(state="complete", **outcome)
         finally:
             state["elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
-            state["quarantined_records"] = self._historical_validation_quarantined()
+            state["quarantine_outcomes"] = self._historical_validation_quarantine()
 
-    def _historical_validation_quarantined(self) -> dict[str, int]:
-        """Corrupt records quarantined since validation started.
+    def _historical_validation_quarantine(self) -> dict[str, dict[str, int]]:
+        """Quarantine outcomes since validation started, by outcome and kind.
 
-        Counts plan and task records moved to quarantine (or removed when the
-        move fails) while the validation ran, whichever caller met them.
+        Counts plan and task records that were moved to quarantine, removed
+        when the move failed, or left in place because both failed, while
+        the validation ran, whichever caller met them.
         """
-        baseline = self._historical_validation_corruption_baseline
-        if baseline is None:
-            return {"plans": 0, "tasks": 0}
+        current = (
+            self.repository.quarantine_outcomes,
+            self.task_repository.quarantine_outcomes,
+        )
+        baseline = self._historical_validation_quarantine_baseline or current
         return {
-            "plans": self.repository.corruption_count - baseline[0],
-            "tasks": self.task_repository.corruption_count - baseline[1],
+            outcome: {
+                kind: now[outcome] - base[outcome]
+                for kind, now, base in zip(("plans", "tasks"), current, baseline)
+            }
+            for outcome in ("moved", "removed", "failed")
         }
 
     def _historical_validation_health(self) -> dict[str, Any]:
         """Bounded state and counts only; never paths or record content.
 
         The validation never persists a lifecycle transition. ``writes`` is
-        ``none`` only when it quarantined nothing; otherwise it is
-        ``corrupt_record_quarantine`` with the counts in
-        ``quarantined_records`` (frozen when the validation ends).
+        ``corrupt_record_quarantine`` only when a quarantine move or removal
+        completed, with those counts in ``quarantined_records``. A record
+        whose move and removal both failed is not a write: it is counted in
+        ``quarantine_failures`` and makes ``failed_writes``
+        ``corrupt_record_quarantine``. Counts freeze when validation ends.
         """
-        quarantined = (
-            self._historical_validation["quarantined_records"]
-            or self._historical_validation_quarantined()
+        outcomes = (
+            self._historical_validation["quarantine_outcomes"]
+            or self._historical_validation_quarantine()
         )
+        completed = {
+            kind: outcomes["moved"][kind] + outcomes["removed"][kind]
+            for kind in ("plans", "tasks")
+        }
+        failed = dict(outcomes["failed"])
         return {
             **self._historical_validation,
             "scope": "startup_background",
             "writes": (
-                "corrupt_record_quarantine"
-                if quarantined["plans"] or quarantined["tasks"] else "none"
+                "corrupt_record_quarantine" if any(completed.values()) else "none"
+            ),
+            "failed_writes": (
+                "corrupt_record_quarantine" if any(failed.values()) else "none"
             ),
             "lifecycle_writes": "none",
-            "quarantined_records": dict(quarantined),
+            "quarantined_records": completed,
+            "quarantine_failures": failed,
+            "quarantine_outcomes": {
+                outcome: dict(counts) for outcome, counts in outcomes.items()
+            },
             "wait_budget_ms": round(
                 self.historical_validation_wait_seconds * 1000.0, 3
             ),

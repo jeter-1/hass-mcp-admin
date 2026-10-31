@@ -515,6 +515,41 @@ class LegacyScalingTests(_DistinctPlans, fixtures.GovernanceTestCase):
                 self.assertEqual(governed(changed), governed(baseline))
 
 
+class _DeniedQuarantine:
+    """Deny the quarantine move and/or the fallback removal of chosen files.
+
+    Every other ``os.replace`` and ``Path.unlink`` runs normally.
+    """
+
+    def __init__(self, *, move=(), remove=()):
+        self.move, self.remove = set(move), set(remove)
+
+    def __enter__(self):
+        real_replace, real_unlink = os.replace, Path.unlink
+
+        def replace(source, destination, *args, **kwargs):
+            if Path(source) in self.move:
+                raise PermissionError("synthetic quarantine move denied")
+            return real_replace(source, destination, *args, **kwargs)
+
+        def unlink(path, *args, **kwargs):
+            if path in self.remove:
+                raise PermissionError("synthetic quarantine removal denied")
+            return real_unlink(path, *args, **kwargs)
+
+        self._patches = (
+            patch.object(os, "replace", replace),
+            patch.object(Path, "unlink", unlink),
+        )
+        for active in self._patches:
+            active.start()
+        return self
+
+    def __exit__(self, *exc):
+        for active in reversed(self._patches):
+            active.stop()
+
+
 class _ControlledValidation:
     """Hold the safety detector in its worker until released."""
 
@@ -680,6 +715,9 @@ class HistoricalValidationTests(
                 self.assertEqual(report["lifecycle_writes"], "none")
                 expected = {"plans": 0, "tasks": 0, kind: 1}
                 self.assertEqual(report["quarantined_records"], expected)
+                self.assertEqual(report["failed_writes"], "none")
+                self.assertEqual(report["quarantine_failures"], {"plans": 0, "tasks": 0})
+                self.assertEqual(report["quarantine_outcomes"]["moved"], expected)
                 summary = await self.service.async_health_summary()
                 self.assertEqual(summary["historical_validation"]["quarantined_records"],
                                  expected)
@@ -708,6 +746,151 @@ class HistoricalValidationTests(
         self.assertEqual(report["writes"], "none")
         self.assertEqual(report["lifecycle_writes"], "none")
         self.assertEqual(report["quarantined_records"], {"plans": 0, "tasks": 0})
+        self.assertEqual(report["failed_writes"], "none")
+        self.assertEqual(report["quarantine_failures"], {"plans": 0, "tasks": 0})
+        zero = {"plans": 0, "tasks": 0}
+        self.assertEqual(report["quarantine_outcomes"],
+                         {"moved": zero, "removed": zero, "failed": zero})
+
+    def corrupt_records(self, count, *, tasks=False):
+        """Synthetic corrupt plan (or task) files, created in sorted order."""
+        if tasks:
+            root = self.service.task_repository.root
+            names = (f"{f'{index:x}' * 32}"[:32] + "." + "f" * 32 for index in range(count))
+        else:
+            root = self.repository.root
+            names = (f"{f'{index:x}' * 32}"[:32] for index in range(count))
+        paths = []
+        for name in names:
+            path = root / f"{name}.json"
+            path.write_text('{"synthetic-corrupt-marker": ', encoding="utf-8")
+            paths.append(path)
+        return paths
+
+    def store_bytes(self):
+        roots = (self.repository.root, self.service.task_repository.root)
+        return {p: p.read_bytes() for root in roots for p in root.rglob("*") if p.is_file()}
+
+    def assert_no_sensitive_text(self, report, paths):
+        text = json.dumps(report)
+        for path in paths:
+            for secret in (path.stem, *path.stem.split("."), str(path.parent)):
+                self.assertNotIn(secret, text)
+        for secret in ("synthetic-corrupt-marker", ".corrupt", "denied", "PermissionError"):
+            self.assertNotIn(secret, text)
+
+    # R2-M1 (Codex round 2): only a completed move or removal is a write.
+    # Kills mutants F1-F10.
+    async def test_failed_quarantine_is_reported_as_a_failure_not_a_write(self):
+        await self.history()
+        for kind in ("plans", "tasks"):
+            with self.subTest(kind=kind):
+                self.service = await self.fresh_service()
+                repository = (self.service.task_repository if kind == "tasks"
+                              else self.service.repository)
+                (path,) = self.corrupt_records(1, tasks=kind == "tasks")
+                before = self.store_bytes()
+                generation = repository.quarantine_generation
+                with _DeniedQuarantine(move={path}, remove={path}):
+                    await self.service.start_historical_validation()
+                    # The record stays in place and nothing on disk changed.
+                    self.assertTrue(path.exists())
+                    self.assertEqual(self.store_bytes(), before)
+                    self.assertFalse(list(repository.quarantine.glob("*.corrupt")))
+                    report = self.service._historical_validation_health()
+                    self.assertEqual(report["state"], "failed")
+                    self.assertEqual(report["writes"], "none")
+                    self.assertEqual(report["failed_writes"], "corrupt_record_quarantine")
+                    self.assertEqual(report["lifecycle_writes"], "none")
+                    self.assertEqual(report["quarantined_records"], {"plans": 0, "tasks": 0})
+                    failed = {"plans": 0, "tasks": 0, kind: 1}
+                    self.assertEqual(report["quarantine_failures"], failed)
+                    zero = {"plans": 0, "tasks": 0}
+                    self.assertEqual(report["quarantine_outcomes"],
+                                     {"moved": zero, "removed": zero, "failed": failed})
+                    # Derived health is still invalidated, and health keeps
+                    # failing closed while the corrupt record stays in place.
+                    self.assertGreater(repository.quarantine_generation, generation)
+                    with self.assertRaises(GovernanceError):
+                        await self.service.async_health_summary()
+                    # Frozen: the later failed attempt is not attributed to it.
+                    self.assertEqual(self.service._historical_validation_health(), report)
+                self.assert_no_sensitive_text(report, [path])
+                path.unlink()
+
+    async def test_fallback_removal_is_reported_as_a_completed_write(self):
+        await self.history()
+        for kind in ("plans", "tasks"):
+            with self.subTest(kind=kind):
+                self.service = await self.fresh_service()
+                repository = (self.service.task_repository if kind == "tasks"
+                              else self.service.repository)
+                (path,) = self.corrupt_records(1, tasks=kind == "tasks")
+                with _DeniedQuarantine(move={path}):
+                    await self.service.start_historical_validation()
+                self.assertFalse(path.exists())
+                self.assertFalse(list(repository.quarantine.glob("*.corrupt")))
+                report = (await self.service.async_health_summary())["historical_validation"]
+                self.assertEqual(report["writes"], "corrupt_record_quarantine")
+                self.assertEqual(report["failed_writes"], "none")
+                self.assertEqual(report["lifecycle_writes"], "none")
+                removed = {"plans": 0, "tasks": 0, kind: 1}
+                zero = {"plans": 0, "tasks": 0}
+                self.assertEqual(report["quarantined_records"], removed)
+                self.assertEqual(report["quarantine_failures"], zero)
+                self.assertEqual(report["quarantine_outcomes"],
+                                 {"moved": zero, "removed": removed, "failed": zero})
+                self.assert_no_sensitive_text(report, [path])
+
+    async def test_mixed_quarantine_outcomes_are_counted_exactly(self):
+        await self.history()
+        self.service = await self.fresh_service()
+        plans = self.corrupt_records(4)
+        tasks = self.corrupt_records(3, tasks=True)
+        for path in plans + tasks:
+            path.rename(path.with_suffix(".held"))
+        # Plans: two moved, one removed, one failed. Tasks: one of each.
+        denied = _DeniedQuarantine(move={plans[2], plans[3], tasks[1], tasks[2]},
+                                   remove={plans[3], tasks[2]})
+        controlled = _ControlledValidation()
+        with denied, patch.object(service_module, "_validate_health_records",
+                                  side_effect=controlled):
+            job = self.service.start_historical_validation()
+            await controlled.wait_entered()
+            # Another caller meets every corrupt record while validation runs.
+            for path in plans + tasks:
+                path.with_suffix(".held").rename(path)
+            self.service.repository.list()
+            self.service.task_repository.list()
+            controlled.release.set()
+            await asyncio.gather(job, return_exceptions=True)
+        self.assertEqual([path.exists() for path in plans], [False, False, False, True])
+        self.assertEqual([path.exists() for path in tasks], [False, False, True])
+        self.assertEqual(len(list(self.service.repository.quarantine.glob("*.corrupt"))), 2)
+        self.assertEqual(len(list(self.service.task_repository.quarantine.glob("*.corrupt"))), 1)
+        report = self.service._historical_validation_health()
+        self.assertEqual(report["writes"], "corrupt_record_quarantine")
+        self.assertEqual(report["failed_writes"], "corrupt_record_quarantine")
+        self.assertEqual(report["lifecycle_writes"], "none")
+        self.assertEqual(report["quarantined_records"], {"plans": 3, "tasks": 2})
+        self.assertEqual(report["quarantine_failures"], {"plans": 1, "tasks": 1})
+        self.assertEqual(report["quarantine_outcomes"], {
+            "moved": {"plans": 2, "tasks": 1},
+            "removed": {"plans": 1, "tasks": 1},
+            "failed": {"plans": 1, "tasks": 1},
+        })
+        self.assert_no_sensitive_text(report, plans + tasks)
+
+    async def test_quarantine_of_an_absent_record_writes_nothing(self):
+        # Another caller already moved or removed it: this call wrote nothing,
+        # and nothing failed.
+        for repository in (self.service.repository, self.service.task_repository):
+            with self.subTest(repository=type(repository).__name__):
+                before = dict(repository.quarantine_outcomes)
+                generation = repository.quarantine_generation
+                repository._quarantine(repository.root / f"{'b' * 32}.{'f' * 32}.json")
+                self.assertEqual(repository.quarantine_outcomes, before)
+                self.assertGreater(repository.quarantine_generation, generation)
 
     async def test_failed_validation_is_reported_and_health_still_scans(self):
         await self.history()

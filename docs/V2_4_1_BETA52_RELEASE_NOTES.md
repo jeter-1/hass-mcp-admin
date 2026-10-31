@@ -58,9 +58,14 @@ before the first health call.
   reuse entries. It never persists a lifecycle transition: a plan whose
   lifecycle would persist is left to the next health call. Like every
   scan, it still quarantines a corrupt record it meets, and it reports
-  that truthfully: `writes` is `corrupt_record_quarantine` and
-  `quarantined_records` gives the plan and task counts, otherwise
-  `writes` is `none`. `lifecycle_writes` is always `none`.
+  what actually happened: `writes` is `corrupt_record_quarantine` only
+  when a record was moved to quarantine or, if the move failed, removed,
+  and `quarantined_records` gives those plan and task counts; otherwise
+  `writes` is `none`. A record whose move and removal both failed stays
+  in place and is not a write: it is counted in `quarantine_failures`
+  and sets `failed_writes` to `corrupt_record_quarantine`.
+  `quarantine_outcomes` splits the counts into `moved`, `removed` and
+  `failed`. `lifecycle_writes` is always `none`.
 - **Truthful while in progress.** A health call waits at most 3 s for
   validation. If validation is still running, governance answers:
   - `status: "pending"`;
@@ -72,7 +77,8 @@ before the first health call.
 - **Counters.** `plan_store_scaling.incremental_health_index` (hits,
   misses, invalidations, discards, last run, totals) and
   `governance.historical_validation` (state, elapsed, counts, failure
-  category, `writes`, `lifecycle_writes`, `quarantined_records`).
+  category, `writes`, `failed_writes`, `lifecycle_writes`,
+  `quarantined_records`, `quarantine_failures`, `quarantine_outcomes`).
 
 ## Measured
 

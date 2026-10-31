@@ -1,0 +1,62 @@
+{
+ "source": ".artifacts/h097-frozen-r2/src",
+ "baseline": {
+  "log_path": "mutation-logs/baseline.log",
+  "modules": [
+   "test_hamcp097_incremental_health",
+   "test_governance_async_health",
+   "test_f3_health_responsiveness",
+   "test_beta34_historical_policy_projection",
+   "test_governance_health_cache"
+  ],
+  "returncode": 0,
+  "tests": 139,
+  "seconds": 145.3,
+  "summary": "OK"
+ },
+ "mutation_count": 2,
+ "killed": 0,
+ "survived": [
+  "K4-projection-key-drops-verdict-context",
+  "X3-actionable-key-drops-context"
+ ],
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "K4-projection-key-drops-verdict-context",
+   "class": "memo key weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "(proof, plan_tasks.get(plan.plan_id, (\"absent\",)), context)",
+     "(proof, plan_tasks.get(plan.plan_id, (\"absent\",)))"
+    ]
+   ],
+   "log_path": "mutation-logs/K4-projection-key-drops-verdict-context.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 148.7
+  },
+  {
+   "id": "X3-actionable-key-drops-context",
+   "class": "approval actionability memo (c575723c) weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "keys[plan.plan_id] = (proof, plan_tasks, context)",
+     "keys[plan.plan_id] = (proof, plan_tasks)"
+    ]
+   ],
+   "log_path": "mutation-logs/X3-actionable-key-drops-context.log",
+   "returncode": 0,
+   "killed": false,
+   "timed_out": false,
+   "killed_by_import_or_syntax_error": false,
+   "first_failures": [],
+   "seconds": 140.2
+  }
+ ]
+}

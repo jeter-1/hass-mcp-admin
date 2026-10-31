@@ -43,8 +43,13 @@ Classes:
   dropped; restoration, plan quarantine or task quarantine not bumping its
   generation; an unlistable quarantine directory read as empty);
 - ``M*``: Codex round 1 R1-M1, startup validation reporting its quarantine
-  writes (``writes`` always ``none``; no corruption baseline; counts not
-  frozen when validation ends; task quarantines not counted).
+  writes (``writes`` always ``none``; no outcome baseline; counts not
+  frozen when validation ends; task quarantines not counted);
+- ``F*``: Codex round 2 R2-M1, each quarantine reported by what it did
+  (a failed move and removal not counted, or counted as a removal or as a
+  completed write; ``failed_writes`` always ``none``; failures not
+  reported; a fallback removal not counted; an already-absent plan or
+  task record counted as removed).
 
 ``--source DIR`` copies a frozen export (``git archive <commit>``) instead of
 the live worktree, so concurrent edits never reach a run.
@@ -99,6 +104,19 @@ Q3 (``...-without-task-`` + ``quarantine-listing``) became
 ``Q7-quarantined-task-not-bumped``, and M4 (``M4-task-`` +
 ``quarantine-not-counted``) became ``M4-quarantined-task-not-counted``.
 
+Round-2 correction run (results-r2.json, 2026-10-31 16:28:07Z to about
+17:00Z, about 32 min): ``--source`` with a copy of the uncommitted R2-M1
+correction tree (``git ls-files``), whose files outside this directory were
+confirmed byte-identical (SHA-256) to the committed correction afterwards.
+The R2-M1 change replaced the corruption-count baseline with per-outcome
+quarantine counts, so T9 and M1-M4 were re-anchored to the new code with
+the same intent and ids (M4 now drops the task repository's ``moved``
+count). F1-F11 are new. The baseline of the five modules passed (139
+tests, 149 s). 79 mutants: 77 killed, no timeout and no import or syntax
+kill; only the equivalent K4 and X3 survive. Every M and F mutant is killed
+by its intended test. The isolated controls for K4 and X3
+(results-r2-controls.json, fresh copy, ``--only``) pass all 139 tests again.
+
 Usage:
     systemd-run --user --scope -p MemoryMax=3G -p OOMPolicy=continue \\
         env TMPDIR=$PWD/.artifacts/tmp DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \\
@@ -138,6 +156,7 @@ C = "incremental counters wrong"
 X = "approval actionability memo (c575723c) weakened"
 Q = "aggregate reused across a quarantine-only change (R1-H1)"
 M = "startup quarantine not reported as a write (R1-M1)"
+F = "quarantine outcome misreported; a failed move and removal counted as a write (R2-M1)"
 
 PROJECTION_KEY = '(proof, plan_tasks.get(plan.plan_id, ("absent",)), context)'
 DEEP_DISCARD = (
@@ -256,10 +275,11 @@ MUTATIONS = [
            "                    else exc.code.value",
        "exc.code.value")),
     m("T9-validation-launched-twice", T,
-      # Fragment re-anchored after R1-M1 inserted the corruption baseline.
+      # Fragment re-anchored after R1-M1 inserted the corruption baseline,
+      # and again after R2-M1 renamed it the quarantine baseline.
       (SV, "        if self._historical_validation_job is None:\n"
-           "            self._historical_validation_corruption_baseline = (",
-       "        if True:\n            self._historical_validation_corruption_baseline = (")),
+           "            self._historical_validation_quarantine_baseline = (",
+       "        if True:\n            self._historical_validation_quarantine_baseline = (")),
     m("T10-f3-descriptor-reported-pending", T,
       (SV, '            static.add("f3")\n', "            pass\n")),
     # W: write-freedom
@@ -366,19 +386,52 @@ MUTATIONS = [
            "        except OSError:\n            return ()\n")),
     # M: R1-M1 truthful startup write reporting (Codex round 1)
     m("M1-writes-always-none", M,
-      (SV, '                "corrupt_record_quarantine"\n'
-           '                if quarantined["plans"] or quarantined["tasks"] else "none"\n',
+      (SV, '                "corrupt_record_quarantine" if any(completed.values()) else "none"\n',
        '                "none"\n')),
     m("M2-no-corruption-baseline", M,
-      (SV, "            self._historical_validation_corruption_baseline = (\n"
-           "                self.repository.corruption_count,\n"
-           "                self.task_repository.corruption_count,\n"
+      (SV, "            self._historical_validation_quarantine_baseline = (\n"
+           "                dict(self.repository.quarantine_outcomes),\n"
+           "                dict(self.task_repository.quarantine_outcomes),\n"
            "            )\n", "")),
     m("M3-quarantine-count-not-frozen", M,
-      (SV, '            state["quarantined_records"] = self._historical_validation_quarantined()\n', "")),
+      (SV, '            state["quarantine_outcomes"] = self._historical_validation_quarantine()\n', "")),
     m("M4-quarantined-task-not-counted", M,
-      (SV, '            "tasks": self.task_repository.corruption_count - baseline[1],\n',
-       '            "tasks": 0,\n')),
+      (TS, '        else:\n            self.quarantine_outcomes["moved"] += 1\n', "")),
+    # F: R2-M1 quarantine outcomes; a failed move and removal is no write (Codex round 2)
+    m("F1-failed-plan-not-counted", F,
+      (ST, '            except OSError:\n                self.quarantine_outcomes["failed"] += 1\n',
+       '            except OSError:\n')),
+    m("F2-failed-task-not-counted", F,
+      (TS, '            except OSError:\n                self.quarantine_outcomes["failed"] += 1\n',
+       '            except OSError:\n')),
+    m("F3-failed-plan-counted-as-removed", F,
+      (ST, '                self.quarantine_outcomes["failed"] += 1\n                return\n',
+       '                pass\n')),
+    m("F4-failed-task-counted-as-removed", F,
+      (TS, '                self.quarantine_outcomes["failed"] += 1\n                return\n',
+       '                pass\n')),
+    m("F5-failed-writes-always-none", F,
+      (SV, '                "corrupt_record_quarantine" if any(failed.values()) else "none"\n',
+       '                "none"\n')),
+    m("F6-failures-counted-as-quarantined", F,
+      (SV, '            kind: outcomes["moved"][kind] + outcomes["removed"][kind]\n',
+       '            kind: outcomes["moved"][kind] + outcomes["removed"][kind]\n'
+           '            + outcomes["failed"][kind]\n')),
+    m("F7-removed-plan-not-counted", F,
+      (ST, '            self.quarantine_outcomes["removed"] += 1\n', "")),
+    m("F8-removed-task-not-counted", F,
+      (TS, '            self.quarantine_outcomes["removed"] += 1\n', "")),
+    m("F9-failures-not-reported", F,
+      (SV, '            "quarantine_failures": failed,\n',
+       '            "quarantine_failures": {"plans": 0, "tasks": 0},\n')),
+    m("F10-absent-plan-counted-as-removed", F,
+      (ST, "            except FileNotFoundError:\n                # Already gone: this call wrote nothing.\n"
+           "                return\n",
+       "            except FileNotFoundError:\n                pass\n")),
+    m("F11-absent-task-counted-as-removed", F,
+      (TS, "            except FileNotFoundError:\n                # Already gone: this call wrote nothing.\n"
+           "                return\n",
+       "            except FileNotFoundError:\n                pass\n")),
 ]
 
 base.MODULES = ("test_hamcp097_incremental_health", "test_governance_async_health",

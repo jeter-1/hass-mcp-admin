@@ -23,7 +23,10 @@ dispatch, persisted format or Home Assistant write change.
   lifecycle would persist is deferred to the next health call. A corrupt
   record it meets is still quarantined and reported as
   `writes: "corrupt_record_quarantine"` with `quarantined_records`
-  counts; otherwise `writes` is `none`. A health call waits at most 3 s for
+  counts; otherwise `writes` is `none`. A record whose quarantine move
+  and fallback removal both failed is not reported as a write: it is
+  counted in `quarantine_failures` with
+  `failed_writes: "corrupt_record_quarantine"`. A health call waits at most 3 s for
   it. If validation is still running, governance answers
   `status: "pending"`, `historical_validation.state: "in_progress"`, and
   every history-derived field `null` and listed in `pending_fields`.

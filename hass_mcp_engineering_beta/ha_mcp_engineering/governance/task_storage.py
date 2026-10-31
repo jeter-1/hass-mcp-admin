@@ -92,6 +92,7 @@ class ExecutionTaskRepository:
         self.corruption_count = 0
         # HAMCP-097: bumped by every quarantine; see ChangePlanRepository.
         self.quarantine_generation = 0
+        self.quarantine_outcomes = {"moved": 0, "removed": 0, "failed": 0}
         self.write_failures = 0
         self.event_write_failures = 0
         self.materialization_failures = 0
@@ -834,9 +835,16 @@ class ExecutionTaskRepository:
             os.replace(path, destination)
         except OSError:
             try:
-                path.unlink(missing_ok=True)
+                path.unlink()
+            except FileNotFoundError:
+                # Already gone: this call wrote nothing.
+                return
             except OSError:
-                pass
+                self.quarantine_outcomes["failed"] += 1
+                return
+            self.quarantine_outcomes["removed"] += 1
+        else:
+            self.quarantine_outcomes["moved"] += 1
 
     def cleanup(self, *, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)

@@ -487,6 +487,8 @@ class ChangePlanRepository:
         # HAMCP-097: bumped by every quarantine and restoration, so derived
         # health is never reused across one even when no record proof moved.
         self.quarantine_generation = 0
+        # HAMCP-097: what each quarantine actually did to the record file.
+        self.quarantine_outcomes = {"moved": 0, "removed": 0, "failed": 0}
         self.quarantine_restoration: dict[str, Any] = {
             "performed": False,
             "restored": 0,
@@ -1181,9 +1183,16 @@ class ChangePlanRepository:
             os.replace(path, destination)
         except OSError:
             try:
-                path.unlink(missing_ok=True)
+                path.unlink()
+            except FileNotFoundError:
+                # Already gone: this call wrote nothing.
+                return
             except OSError:
-                pass
+                self.quarantine_outcomes["failed"] += 1
+                return
+            self.quarantine_outcomes["removed"] += 1
+        else:
+            self.quarantine_outcomes["moved"] += 1
 
     def restore_quarantined_records(self) -> dict[str, Any]:
         """HAMCP-213 batch 4 (H6): return rollback-quarantined plans to service.

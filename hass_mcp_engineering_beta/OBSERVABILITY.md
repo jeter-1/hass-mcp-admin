@@ -88,12 +88,20 @@ it meets. `governance.historical_validation` reports:
   `deferred_lifecycle_plans`, `assembly_prewarmed` and
   `failure_category` (a bounded error code or exception class name);
 - `scope` (`startup_background`) and `wait_budget_ms` (3000);
-- `writes`: `corrupt_record_quarantine` when records were quarantined
-  while validation ran, otherwise `none`;
+- `writes`: `corrupt_record_quarantine` when a corrupt record was
+  moved to quarantine or, if the move failed, removed while validation
+  ran, otherwise `none`;
+- `failed_writes`: `corrupt_record_quarantine` when both the move and
+  the removal of a corrupt record failed, otherwise `none`. Such a
+  record stays in place, is not counted as a write, and health keeps
+  failing closed on it;
 - `lifecycle_writes`: always `none`;
-- `quarantined_records`: `{plans, tasks}`, the number of records
-  quarantined while validation ran, by any caller, frozen when it ends.
-  It holds counts only, never a plan ID, path or record content.
+- `quarantined_records`: `{plans, tasks}`, the records actually moved
+  or removed; `quarantine_failures`: `{plans, tasks}`, the records whose
+  move and removal both failed; `quarantine_outcomes`: the same counts
+  split into `moved`, `removed` and `failed`. All count quarantines by
+  any caller while validation ran and freeze when it ends. They hold
+  counts only, never a plan ID, path, error or record content.
 
 **Truthful in-progress answer.** While validation is in progress, a
 health call waits at most `wait_budget_ms`. If validation is still

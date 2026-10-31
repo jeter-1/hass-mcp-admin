@@ -58,7 +58,10 @@ The review needs a security section covering:
   reload, provider, route, fallback or upstream dispatch. The startup
   validation never persists a lifecycle transition. Its only write is the
   pre-existing corrupt-record quarantine, which it reports as
-  `writes: "corrupt_record_quarantine"` with plan and task counts.
+  `writes: "corrupt_record_quarantine"` with plan and task counts only
+  when the move or fallback removal completed. A record whose move and
+  removal both failed is reported in `quarantine_failures` and
+  `failed_writes`, never as a write.
 - **Authorization unchanged.** Approve, apply and rollback never consult
   the reuse entries. A test patches the lookup to fail and proves that.
 - **Fail closed.** A reuse entry needs an exact path, stat and SHA-256
@@ -90,6 +93,11 @@ Required offline evidence:
   - a startup that quarantines reports `corrupt_record_quarantine` with
     counts and no identifier or path, and a clean startup reports
     `writes: "none"`;
+  - for plans and tasks, a completed move, a failed move with a
+    completed removal, and a failed move and removal are each reported
+    as what happened (the last as a failure with zero completed writes),
+    a mixed batch is counted exactly, and an already-absent record
+    counts as nothing;
   - tamper detection, and that authorization never reads the index;
 - the existing governance, health-responsiveness, F3, approval and
   rollback suites, unchanged apart from the disclosed reviewed caller set;
