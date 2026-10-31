@@ -66,6 +66,9 @@ Required offline evidence:
     and restart;
   - 0 terminal records decoded on a warm no-change call;
   - exactly k re-projections for k changes, flat at 2x and 4x history;
+  - approval actionability re-evaluated only for changed plans, and for
+    every plan that may own a quarantined task file, when the quarantine
+    listing fails, and on a deep audit;
   - in-progress markers, deep-audit wait, never persisting, failure and
     cancellation;
   - tamper detection, and that authorization never reads the index;

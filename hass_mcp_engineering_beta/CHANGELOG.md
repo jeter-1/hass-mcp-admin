@@ -11,7 +11,9 @@ dispatch, persisted format or Home Assistant write change.
   detector context. The key is the safety-verdict cache key. Every record
   is still read and hashed on every call. A warm call with no change
   decodes 0 terminal records, and k changed records cost exactly k
-  re-projections. The entries are process memory only. They are discarded
+  re-projections. Reassembling the summary after a change re-evaluates
+  approval actionability only for the changed plans. Previously it
+  re-read every prohibited plan's task. The entries are process memory only. They are discarded
   on `deep_storage_audit=true` and on any scan error. Authorization paths
   never read them.
 - The historical validation now starts in the background after startup

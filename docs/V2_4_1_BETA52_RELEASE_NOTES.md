@@ -36,7 +36,10 @@ before the first health call.
   this call, and the detector context all match. This is the
   safety-verdict cache key. Every record is still read and hashed on every
   call. Active records are always decoded afresh. The summary is reused
-  only before the next lifecycle deadline.
+  only before the next lifecycle deadline. When a change forces it to be
+  reassembled, approval actionability is re-evaluated only for the
+  changed plans. A plan that may own a quarantined task file is always
+  re-evaluated.
 - **Discarded, never trusted.** Every entry is dropped on
   `deep_storage_audit=true`, on `deep_audit_plan_store`, and on any
   storage, governance or unexpected error. Approval, apply and rollback

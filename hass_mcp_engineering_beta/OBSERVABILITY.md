@@ -8,7 +8,7 @@ scales with records that changed and with active work. Every governance
 field is identical to the full projection once startup validation has
 completed.
 
-**What is reused.** Three process-memory entries are reused, and nothing
+**What is reused.** Four process-memory entries are reused, and nothing
 is persisted:
 
 - A decoded terminal plan or task record. It is reused only when the
@@ -21,11 +21,16 @@ is persisted:
 - A terminal plan's projection outcome. It is keyed by that plan's proof,
   its task's proof (or its absence) and the detector context. The
   classified outcomes recorded when it was computed are replayed on reuse.
+- A terminal plan's approval actionability, used when the summary is
+  reassembled. It is keyed by that plan's proof, the proofs of every task
+  it owns and the detector context. It is replayed only when no
+  quarantined task file may belong to the plan. If the quarantine
+  directory cannot be listed, every plan is evaluated against storage.
 - The assembled summary. It is reused only when every proof and active
   input is unchanged and the clock is still before the next lifecycle
   deadline.
 
-All three are discarded on `deep_storage_audit=true`, on
+All four are discarded on `deep_storage_audit=true`, on
 `deep_audit_plan_store`, and on any storage, governance or unexpected
 error during a scan. The next call then decodes afresh. Approval, apply,
 rollback and every other authorization path read persisted records
@@ -40,11 +45,13 @@ reports:
 - `plan_records` and `task_records`: `{entries, hits, misses,
   invalidations, discards}`. An invalidation is a reused path whose bytes
   changed, or a record that disappeared;
-- `projection_entries`;
+- `projection_entries` and `actionable_entries`;
 - `last_run`: `{mode, projection_hits, projection_misses,
-  projection_invalidations, assembly}`. `mode` is `incremental`,
-  `deep_rescan` or `startup_validation`; `assembly` is `reused` or
-  `rebuilt`;
+  projection_invalidations, assembly, actionable_hits,
+  actionable_misses}`. `mode` is `incremental`, `deep_rescan` or
+  `startup_validation`; `assembly` is `reused`, `rebuilt` or (startup
+  validation only) `deferred`. The actionable counters are 0 when the
+  assembly is reused;
 - `totals`: `{projection_hits, projection_misses,
   projection_invalidations, assembly_reuses, assembly_rebuilds,
   discards}`.
