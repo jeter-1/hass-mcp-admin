@@ -2,7 +2,7 @@
 
 ## 2.4.1-beta.53 - Governed scene configuration edit built inactive (HAMCP-071) (staged)
 
-Builds on 2.4.1-beta.51 (#331). Activates nothing new.
+Builds on 2.4.1-beta.52 (#334). Activates nothing new.
 
 - New tool `create_scene_configuration_plan` (static tools 78 -> 79). It
   refuses `pending_signed_registry_admission` before any read, request or

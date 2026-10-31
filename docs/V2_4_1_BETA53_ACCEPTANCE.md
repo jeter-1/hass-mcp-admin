@@ -7,7 +7,7 @@ It adds one tool, `create_scene_configuration_plan`, and one runtime-only
 Core capability profile, `core.scene_configuration_operation`. Neither the
 signed registry (sequence 14) nor the sequence-15 batch references that
 profile. The release activates nothing new; the tool switches on with the
-sequence-16 signing. It follows 2.4.1-beta.51 (HAMCP-252).
+sequence-16 signing. It follows 2.4.1-beta.52 (HAMCP-097).
 
 See also:
 - Release notes:
@@ -21,9 +21,9 @@ version authorities on the HAMCP-071 branch:
 - `ha_mcp_engineering/version.py` `SERVER_VERSION`;
 - `scripts/validate_addon_metadata.py` `BETA_VERSION`.
 
-`.release/` holds no staged declaration. 2.4.1-beta.51 (HAMCP-252, #331)
+`.release/` holds no staged declaration. 2.4.1-beta.52 (HAMCP-097, #334)
 has merged, and this branch merged `main` after it. The transition that
-`scripts/release_transition.py` checks is therefore beta.51 → beta.53.
+`scripts/release_transition.py` checks is therefore beta.52 → beta.53.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -189,7 +189,7 @@ The offline proof consists of:
 
 ### Downgrade rule
 
-Rollback is reinstalling **2.4.1-beta.51**. Under sequence 14, beta.53
+Rollback is reinstalling **2.4.1-beta.52**. Under sequence 14, beta.53
 writes no new record shape, because the new family refuses before
 persistence. After a future signed sequence admits the profile, a downgrade
 below beta.53 must be re-evaluated before it is supported; that is not

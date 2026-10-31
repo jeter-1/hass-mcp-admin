@@ -16,12 +16,12 @@ persistence until a signed Core registry sequence (planned 16) names
 `core.scene_configuration_operation`. Creating a scene is a follow-up
 (HAMCP-071 Part 3). No signed registry, signed profile, existing
 fingerprint or existing schema changes. Static tools 79; advertised catalog
-107 (108 with the optional YAML reader). Rollback is reinstalling beta.51.
+107 (108 with the optional YAML reader). Rollback is reinstalling beta.52.
 Read the
 [2.4.1-beta.53 release notes](docs/V2_4_1_BETA53_RELEASE_NOTES.md) and
 [2.4.1-beta.53 acceptance contract](docs/V2_4_1_BETA53_ACCEPTANCE.md).
 
-It builds on beta.51 and the releases below.
+It builds on beta.52 and the releases below.
 
 Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
 `get_server_health(check_ha=false)` from re-decoding and re-projecting
