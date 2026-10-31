@@ -868,6 +868,8 @@ class ChangeGovernanceService:
             str, tuple[tuple[Any, ...], ErrorCode | None, tuple[str, ...]]
         ] = {}
         self._health_assembly_memo: dict[str, Any] | None = None
+        self._health_actionable_memo: dict[str, tuple[tuple[Any, ...], bool]] = {}
+        self._health_actionable_run = {"hits": 0, "misses": 0}
         self._health_incremental_totals = {
             "projection_hits": 0, "projection_misses": 0,
             "projection_invalidations": 0, "assembly_reuses": 0,
@@ -15805,6 +15807,7 @@ class ChangeGovernanceService:
                     ),
                     "projection_hits": 0, "projection_misses": 0,
                     "projection_invalidations": 0, "assembly": "rebuilt",
+                    "actionable_hits": 0, "actionable_misses": 0,
                 }
                 deferred = 0
                 for plan in plans:
@@ -15898,9 +15901,13 @@ class ChangeGovernanceService:
                         resolved_history=(resolved, failures),
                         captured_plan_generation=plan_generation,
                         captured_built_at=built_at, collected_tasks=tasks,
+                        actionable_keys=self._health_actionable_keys(
+                            plans, evidence, tasks, task_proofs),
                     )
                     self._health_cache_rebuild_count += 1
                     self._health_assembly_remember(fingerprint)
+                    incremental["actionable_hits"] = self._health_actionable_run["hits"]
+                    incremental["actionable_misses"] = self._health_actionable_run["misses"]
                 phases["assembly_ms"] = (time.monotonic() - phase_started) * 1000.0
                 self._health_incremental_record(incremental)
                 phase_started = time.monotonic()
@@ -15990,9 +15997,13 @@ class ChangeGovernanceService:
                 resolved_history=(resolved, failures),
                 captured_plan_generation=plan_generation,
                 captured_built_at=built_at, collected_tasks=tasks,
+                actionable_keys=self._health_actionable_keys(
+                    plans, evidence, tasks, task_proofs),
             )
             self._health_cache_rebuild_count += 1
             self._health_assembly_remember(fingerprint)
+            incremental["actionable_hits"] = self._health_actionable_run["hits"]
+            incremental["actionable_misses"] = self._health_actionable_run["misses"]
             prewarmed = self._health_assembly_memo is not None
         else:
             incremental["assembly"] = "deferred"
@@ -16038,6 +16049,67 @@ class ChangeGovernanceService:
             self.f3_runtime is not None,
             self._safety_verdict_context(),
         )
+
+    def _health_actionable_keys(
+        self,
+        plans: list[ChangePlan],
+        evidence: dict[str, PlanRecordEvidence],
+        tasks: list[ExecutionTask],
+        task_proofs: dict[str, tuple[str, tuple[int, int, int], str] | None],
+    ) -> dict[str, tuple[Any, ...]]:
+        """Exact per-plan actionability input for terminal plans with proof."""
+        owned: dict[str, list[tuple[str, Any]]] = {}
+        for task in tasks:
+            owned.setdefault(task.plan_id, []).append(
+                (task.task_id, task_proofs.get(task.task_id)))
+        context = self._safety_verdict_context()
+        keys: dict[str, tuple[Any, ...]] = {}
+        for plan in plans:
+            proof = _health_record_proof(evidence.get(plan.plan_id))
+            plan_tasks = tuple(sorted(owned.get(plan.plan_id, ())))
+            if (proof is None or not is_terminal_plan(plan)
+                    or any(item[1] is None for item in plan_tasks)):
+                continue
+            keys[plan.plan_id] = (proof, plan_tasks, context)
+        return keys
+
+    def _health_actionable_flags(
+        self,
+        plans: list[ChangePlan],
+        keys: dict[str, tuple[Any, ...]] | None,
+    ) -> dict[str, bool]:
+        """Approval actionability per plan, for health assembly only.
+
+        With ``keys`` (incremental health), a terminal plan whose exact plan
+        bytes, owned task bytes and detector context are unchanged replays
+        its earlier answer, unless a task file for it may be quarantined.
+        Everything else is evaluated against storage exactly as before.
+        """
+        quarantined = (
+            None if keys is None
+            else self.task_repository.quarantined_plan_prefixes()
+        )
+        run = {"hits": 0, "misses": 0}
+        flags: dict[str, bool] = {}
+        for plan in plans:
+            key = None if keys is None else keys.get(plan.plan_id)
+            memo = self._health_actionable_memo.get(plan.plan_id)
+            if (key is not None and quarantined is not None
+                    and plan.plan_id not in quarantined
+                    and memo is not None and memo[0] == key):
+                flags[plan.plan_id] = memo[1]
+                run["hits"] += 1
+                continue
+            self._health_actionable_memo.pop(plan.plan_id, None)
+            flags[plan.plan_id] = self._approval_is_actionable(plan)
+            run["misses"] += 1
+            if key is not None:
+                self._health_actionable_memo[plan.plan_id] = (
+                    key, flags[plan.plan_id])
+        for plan_id in [item for item in self._health_actionable_memo if item not in flags]:
+            del self._health_actionable_memo[plan_id]
+        self._health_actionable_run = run
+        return flags
 
     def _health_assembly_reusable(self, fingerprint: tuple[Any, ...] | None) -> bool:
         """Reuse only identical input before its next clock-driven transition."""
@@ -16090,8 +16162,10 @@ class ChangeGovernanceService:
         """Drop every derived health entry; the next call decodes afresh."""
         self.repository.health_record_memo.discard()
         self.task_repository.health_record_memo.discard()
-        if self._health_projection_memo or self._health_assembly_memo is not None:
+        if (self._health_projection_memo or self._health_actionable_memo
+                or self._health_assembly_memo is not None):
             self._health_projection_memo.clear()
+            self._health_actionable_memo.clear()
             self._health_assembly_memo = None
             self._health_incremental_totals["discards"] += 1
 
@@ -16106,6 +16180,7 @@ class ChangeGovernanceService:
             "plan_records": self.repository.health_record_memo.metrics(),
             "task_records": self.task_repository.health_record_memo.metrics(),
             "projection_entries": len(self._health_projection_memo),
+            "actionable_entries": len(self._health_actionable_memo),
             "last_run": (
                 None if self._health_incremental_last_run is None
                 else dict(self._health_incremental_last_run)
@@ -16969,6 +17044,7 @@ class ChangeGovernanceService:
         captured_plan_generation: int | None = None,
         captured_built_at: datetime | None = None,
         collected_tasks: list[ExecutionTask] | None = None,
+        actionable_keys: dict[str, tuple[Any, ...]] | None = None,
     ) -> dict[str, Any]:
         # Invalidate before rebuilding: an exception must never leave an old
         # ready aggregate reusable. There is no await/provider read in this
@@ -17133,6 +17209,7 @@ class ChangeGovernanceService:
                 )
             )
 
+        actionable = self._health_actionable_flags(plans, actionable_keys)
         summary = {
             "enabled": True,
             "storage": storage,
@@ -17141,11 +17218,11 @@ class ChangeGovernanceService:
             "total_plans": total_plans,
             "plans_awaiting_approval": sum(
                 plan.status == PlanStatus.AWAITING_APPROVAL
-                and self._approval_is_actionable(plan)
+                and actionable[plan.plan_id]
                 for plan in plans
             ),
             "plans_requiring_approval": sum(
-                self._approval_is_actionable(plan)
+                actionable[plan.plan_id]
                 for plan in plans
             ),
             "external_approval_enabled": True,

@@ -703,6 +703,131 @@ class F3DifferentialTests(_DifferentialMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(back["total_plans"], 1)
 
 
+class ProhibitedActionabilityTests(
+    _DifferentialMixin, _DistinctPlans, fixtures.GovernanceTestCase
+):
+    """Assembly re-evaluates actionability only for changed or quarantined plans.
+
+    Deciding whether a prohibited plan's approval is actionable consults
+    ``get_for_plan``: the assembly cost that previously grew with retained
+    history whenever any record changed.
+    """
+
+    fresh_service = LegacyDifferentialTests.fresh_service
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        for revision in range(2):
+            proposed = copy.deepcopy(fixtures.CURRENT)
+            proposed["action"] = [{"service": "lock.unlock",
+                                   "target": {"entity_id": f"lock.hamcp097_{revision}"}}]
+            created = await self.update_plan(proposed)
+            self.assertEqual(created["policy_decision"]["policy_class"], "prohibited")
+        self.paths = {path.stem: path for path in self.repository.root.glob("*.json")}
+        self.ids = sorted(self.paths)
+        self.assertEqual(len(self.ids), 2)
+        for plan_id in self.ids:
+            with self.lookups() as lookup:
+                self.assertFalse(self.service._approval_is_actionable(
+                    self.service.repository.get(plan_id)))
+            self.assertEqual([call.args[0] for call in lookup.call_args_list], [plan_id])
+        self.consulted, self.other = self.ids
+        await self.service.async_health_summary()
+        self.warm = await self.service.async_health_summary()
+        self.assertEqual(index_of(self.warm)["last_run"]["assembly"], "reused")
+
+    def lookups(self):
+        repository = self.service.task_repository
+        return patch.object(repository, "get_for_plan", wraps=repository.get_for_plan)
+
+    def touch(self, plan_id):
+        stat = self.paths[plan_id].stat()
+        os.utime(self.paths[plan_id], ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+
+    async def evaluated(self, **kwargs):
+        """Health result, plans evaluated for actionability, storage lookups."""
+        service = self.service
+        with patch.object(service, "_approval_is_actionable",
+                          wraps=service._approval_is_actionable) as evaluate:
+            with self.lookups() as lookup:
+                result = await service.async_health_summary(**kwargs)
+        return (result, [call.args[0].plan_id for call in evaluate.call_args_list],
+                [call.args[0] for call in lookup.call_args_list])
+
+    async def test_unchanged_plans_are_not_reevaluated(self):
+        self.touch(self.other)
+        changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(index_of(changed)["last_run"]["assembly"], "rebuilt")
+        self.assertEqual(evaluated, [self.other])
+        self.assertNotIn(self.consulted, lookups)
+        run = index_of(changed)["last_run"]
+        self.assertEqual((run["actionable_hits"], run["actionable_misses"]), (1, 1))
+        self.assertEqual(index_of(changed)["actionable_entries"], 2)
+        self.assertEqual(changed["plans_by_policy_class"]["prohibited"], 2)
+        self.assertEqual(governed(changed), governed(self.warm))
+        self.assertEqual(governed(changed, restart=True),
+                         governed(await self.full_projection(), restart=True))
+
+    async def test_changed_plan_reconsults_task_storage(self):
+        self.touch(self.consulted)
+        changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(evaluated, [self.consulted])
+        self.assertIn(self.consulted, lookups)
+        run = index_of(changed)["last_run"]
+        self.assertEqual((run["actionable_hits"], run["actionable_misses"]), (1, 1))
+        self.assertEqual(governed(changed), governed(self.warm))
+
+    async def test_quarantined_task_file_is_evaluated_against_storage(self):
+        quarantine = self.service.task_repository.quarantine
+        quarantine.mkdir(parents=True, exist_ok=True)
+        (quarantine / f"{self.consulted}.{'e' * 32}.1.corrupt").write_text("{")
+        self.touch(self.other)
+        service = self.service
+        with patch.object(service, "_approval_is_actionable",
+                          wraps=service._approval_is_actionable) as evaluate:
+            with self.assertRaises(GovernanceError) as raised:
+                await service.async_health_summary()
+        self.assertEqual(raised.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        self.assertIn(self.consulted, [call.args[0].plan_id for call in evaluate.call_args_list])
+        # The failure discards every derived entry, and a full projection
+        # refuses identically.
+        self.assertEqual(service._health_incremental_health()["actionable_entries"], 0)
+        with self.assertRaises(GovernanceError) as full:
+            await self.full_projection()
+        self.assertEqual(full.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+    async def test_unknown_quarantine_listing_evaluates_every_plan(self):
+        self.touch(self.other)
+        with patch.object(self.service.task_repository, "quarantined_plan_prefixes",
+                          return_value=None):
+            changed, evaluated, lookups = await self.evaluated()
+        self.assertEqual(sorted(evaluated), self.ids)
+        self.assertIn(self.consulted, lookups)
+        run = index_of(changed)["last_run"]
+        self.assertEqual((run["actionable_hits"], run["actionable_misses"]), (0, 2))
+        self.assertEqual(governed(changed), governed(self.warm))
+
+    async def test_deep_audit_reevaluates_every_plan(self):
+        deep, evaluated, lookups = await self.evaluated(deep_storage_audit=True)
+        self.assertEqual(sorted(evaluated), self.ids)
+        self.assertIn(self.consulted, lookups)
+        run = index_of(deep)["last_run"]
+        self.assertEqual((run["mode"], run["actionable_hits"], run["actionable_misses"]),
+                         ("deep_rescan", 0, 2))
+
+    async def test_authorization_never_reads_the_actionability_memo(self):
+        self.service._health_actionable_memo = _Untouchable()
+        with self.lookups() as lookup:
+            public = self.service.get_plan(self.consulted)
+        self.assertFalse(public["approval_actionable"])
+        self.assertIn(self.consulted, [call.args[0] for call in lookup.call_args_list])
+
+
+class _Untouchable(dict):
+    def __getattribute__(self, name):
+        raise AssertionError(f"authorization read the health memo: {name}")
+
+
 class ServeLaunchTests(unittest.IsolatedAsyncioTestCase):
     """The add-on starts validation after strict recovery and cancels it."""
 

@@ -576,6 +576,27 @@ class ExecutionTaskRepository:
                 self._mark_navigation_current()
             return task
 
+    def quarantined_plan_prefixes(self) -> frozenset[str] | None:
+        """Plan identifiers that may own a quarantined task file.
+
+        Health assembly only. The result is a superset of every
+        ``get_for_plan`` quarantine match; ``None`` means unknown, and the
+        caller then evaluates every plan against storage afresh.
+        """
+
+        with self._lock:
+            try:
+                names = [entry.name for entry in os.scandir(self.quarantine)]
+            except FileNotFoundError:
+                return frozenset()
+            except OSError:
+                return None
+        return frozenset(
+            name.split(".", 1)[0]
+            for name in names
+            if name.endswith(".corrupt")
+        )
+
     def get_for_plan(self, plan_id: str) -> ExecutionTask | None:
         if not PLAN_ID.fullmatch(plan_id):
             return None
