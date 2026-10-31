@@ -70,7 +70,8 @@ scene, by `config_id`. The plan is approved externally and applied with
   plan.
 - **Disclosure.** The plan shows the name and icon before and after, each
   changed member's snapshot before and after, and the consumers: the
-  automations and scripts that reference the scene, and the switch members.
+  automations and scripts that reference the scene, the switch members and
+  the `input_boolean`/`input_select` members.
   Consumers come only from the cached dependency index, which planning never
   refreshes. When the index is unavailable or not current, the gap is
   disclosed instead.
@@ -104,6 +105,11 @@ scene, by `config_id`. The plan is approved externally and applied with
   Any `switch` member before or after the edit also makes the plan
   `elevated_admin`, because a switch's purpose cannot be resolved from its
   entity id. The switch entity ids are disclosed.
+  Any `input_boolean` or `input_select` member before or after the edit
+  also makes the plan `elevated_admin` (Josh's decision D4): mode/helper
+  members can change how automations behave, for example a guest mode that
+  disables camera alerts. Their entity ids are disclosed. `input_number`
+  and `input_text` members do not elevate.
   A member whose device class cannot be read also counts as protected.
   Otherwise the plan is `standard_admin`, risk LOW, physical consequence
   none. A multi-operation or incomplete scene plan is `PROHIBITED`.

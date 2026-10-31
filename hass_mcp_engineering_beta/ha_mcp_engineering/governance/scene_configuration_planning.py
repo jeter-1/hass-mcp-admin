@@ -53,6 +53,13 @@ DEVICE_CLASS_DOMAINS = frozenset({"cover", "binary_sensor"})
 # the edit is protected in addition to object_protection.
 SWITCH_DOMAIN = "switch"
 SWITCH_REASON = "switch_domain"
+# HAMCP-071 D4 (Josh): mode helpers gate security automations (a camera
+# alert that requires the away, guest and cleaner modes off), so a scene
+# that sets one can silently change how automations behave.  Every
+# input_boolean or input_select member before or after the edit elevates;
+# other input_* helpers are unchanged.
+MODE_HELPER_DOMAINS = frozenset({"input_boolean", "input_select"})
+MODE_HELPER_REASON = "mode_helper_domain"
 NOT_ACTIVATED_DISCLOSURE = (
     "Saving this scene does not activate it: no device changes state when "
     "the plan is applied. The stored states take effect only when the scene "
@@ -298,19 +305,43 @@ def id_protection_reasons(entity_ids: Any) -> list[str]:
             # A classless cover is decided by the planner's device-class read.
             if reason != "cover_device_class_unresolved"
         )
-        if _is_switch(entity_id):
-            reasons.add(SWITCH_REASON)
+        reasons.update(_member_rule_reasons(entity_id))
     return sorted(reasons)
 
 
+def _domain(entity_id: Any) -> str | None:
+    return entity_id.split(".", 1)[0] if isinstance(entity_id, str) else None
+
+
 def _is_switch(entity_id: Any) -> bool:
-    return isinstance(entity_id, str) and entity_id.split(".", 1)[0] == SWITCH_DOMAIN
+    return _domain(entity_id) == SWITCH_DOMAIN
+
+
+def _is_mode_helper(entity_id: Any) -> bool:
+    return _domain(entity_id) in MODE_HELPER_DOMAINS
+
+
+def _member_rule_reasons(entity_id: Any) -> set[str]:
+    """The scene-member rules (D1, D4) on top of object_protection."""
+
+    reasons: set[str] = set()
+    if _is_switch(entity_id):
+        reasons.add(SWITCH_REASON)
+    if _is_mode_helper(entity_id):
+        reasons.add(MODE_HELPER_REASON)
+    return reasons
 
 
 def switch_members(entity_ids: Any) -> list[str]:
     """The switch members before and after the edit, for the disclosure."""
 
     return sorted({item for item in entity_ids if _is_switch(item)})
+
+
+def mode_helper_members(entity_ids: Any) -> list[str]:
+    """The input_boolean/input_select members before and after the edit."""
+
+    return sorted({item for item in entity_ids if _is_mode_helper(item)})
 
 
 async def protection_reasons(gateway: Any, entity_ids: list[str]) -> list[str]:
@@ -326,13 +357,14 @@ async def protection_reasons(gateway: Any, entity_ids: list[str]) -> list[str]:
                 # Unresolved evidence is protected, never assumed harmless.
                 reasons.add("device_class_unresolved")
         reasons.update(object_protection(entry))
-        if _is_switch(entity_id):
-            reasons.add(SWITCH_REASON)
+        reasons.update(_member_rule_reasons(entity_id))
     return sorted(reasons)
 
 
 def classify(
-    reasons: list[str], switches: tuple[str, ...] | list[str] = ()
+    reasons: list[str],
+    switches: tuple[str, ...] | list[str] = (),
+    mode_helpers: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     if reasons:
         statements = [
@@ -345,6 +377,14 @@ def classify(
                 "after this edit; a switch's purpose cannot be resolved from "
                 "Home Assistant, so it is treated as protected: "
                 + ", ".join(switches)
+                + "."
+            )
+        if mode_helpers:
+            statements.append(
+                "Elevated because the scene has input_boolean or "
+                "input_select members before or after this edit; "
+                "mode/helper members can change how automations behave: "
+                + ", ".join(mode_helpers)
                 + "."
             )
         return {
@@ -562,7 +602,8 @@ async def prepare(
     members = [*current["config"]["entities"], *config["entities"]]
     reasons = await protection_reasons(gateway, members)
     switches = switch_members(members)
-    classification = classify(reasons, switches)
+    mode_helpers = mode_helper_members(members)
+    classification = classify(reasons, switches, mode_helpers)
     rows, unchanged = entity_rows(current["config"]["entities"], config["entities"])
     disclosure = {
         "model": DISCLOSURE_MODEL,
@@ -587,6 +628,7 @@ async def prepare(
         "consumers": await consumer_disclosure(gateway, current["entity_id"]),
         "consequence_statements": list(classification["statements"]),
         "switch_members": switches,
+        "mode_helper_members": mode_helpers,
         "untrusted_text": UNTRUSTED_DISCLOSURE,
         "provider": contract.PROVIDER,
         "fallback": "none",
@@ -643,6 +685,7 @@ __all__ = [
     "FIELD_NOT_SUPPORTED",
     "INVALID_VALUE",
     "Item",
+    "MODE_HELPER_REASON",
     "NO_CHANGE",
     "OPERATION_ID",
     "POLICY_TRIGGER",
@@ -654,6 +697,7 @@ __all__ = [
     "UNKNOWN_ENTITIES",
     "classify",
     "id_protection_reasons",
+    "mode_helper_members",
     "prepare",
     "projection",
     "restore_request",

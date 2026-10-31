@@ -52,12 +52,15 @@ Mutant classes:
   post-save reload latch and its baseline, the poll exit, the strategy's
   reload-evidence requirement and runtime passthrough, the switch rule
   (planner, floor, domain match, statement), and the cached-only consumer
-  reader and its gap.
+  reader and its gap; ``H23``-``H31`` (D4) the mode-helper rule (each
+  domain, planner, floor, substring and widened match, statement, members
+  before the edit).
 
 Usage (from the worktree root):
     systemd-run --user --unit hamcp071-mut --property=MemoryMax=3G \\
         --property=OOMPolicy=continue --working-directory=<worktree> \\
-        .artifacts/venv/bin/python docs/evidence/hamcp071-mutations/run_mutations.py [ids...]
+        .artifacts/venv/bin/python docs/evidence/hamcp071-mutations/run_mutations.py \\
+        [--out NAME.json] [ids...]
 """
 import concurrent.futures, json, os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -433,15 +436,14 @@ M = [
   [(RU, '    def scene_configuration_reload_observed(self, target_id, operation_id):\n',
         '    def _scene_configuration_reload_observed_unused(self, target_id, operation_id):\n')]),
  ('H17_switch_reason_dropped_in_planner',
-  [(P, '        if _is_switch(entity_id):\n            reasons.add(SWITCH_REASON)\n'
-       '    return sorted(reasons)\n\n\ndef classify',
-       '    return sorted(reasons)\n\n\ndef classify')]),
+  [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef classify',
+       '        reasons.update(_member_rule_reasons(entity_id) - {SWITCH_REASON})\n    return sorted(reasons)\n\n\ndef classify')]),
  ('H18_switch_reason_dropped_from_floor',
-  [(P, '        if _is_switch(entity_id):\n            reasons.add(SWITCH_REASON)\n'
-       '    return sorted(reasons)\n\n\ndef _is_switch',
-       '    return sorted(reasons)\n\n\ndef _is_switch')]),
+  [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef _domain',
+       '        reasons.update(_member_rule_reasons(entity_id) - {SWITCH_REASON})\n    return sorted(reasons)\n\n\ndef _domain')]),
  ('H19_switch_rule_on_substring',
-  [(P, 'entity_id.split(".", 1)[0] == SWITCH_DOMAIN', 'SWITCH_DOMAIN in entity_id')]),
+  [(P, '    return _domain(entity_id) == SWITCH_DOMAIN\n',
+       '    return isinstance(entity_id, str) and SWITCH_DOMAIN in entity_id\n')]),
  ('H20_switch_statement_dropped',
   [(P, '        if switches:\n', '        if False:\n')]),
  ('H21_consumer_reader_refreshes',
@@ -450,9 +452,42 @@ M = [
  ('H22_consumer_gap_not_disclosed',
   [(C, '        if snapshot is None:\n            evidence["evidence_gaps"] = sorted(\n',
        '        if False:\n            evidence["evidence_gaps"] = sorted(\n')]),
+ # ---- H23-H31: HAMCP-071 D4 (Josh) mode-helper rule: each domain's check
+ # removed, the rule removed in the planner or the floor, a substring or
+ # widened domain match, the statement and the before-edit members.
+ ('H23_input_boolean_domain_removed',
+  [(P, 'frozenset({"input_boolean", "input_select"})', 'frozenset({"input_select"})')]),
+ ('H24_input_select_domain_removed',
+  [(P, 'frozenset({"input_boolean", "input_select"})', 'frozenset({"input_boolean"})')]),
+ ('H25_mode_helper_check_removed',
+  [(P, '    if _is_mode_helper(entity_id):\n        reasons.add(MODE_HELPER_REASON)\n', '')]),
+ ('H26_mode_helper_reason_dropped_in_planner',
+  [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef classify',
+       '        reasons.update(_member_rule_reasons(entity_id) - {MODE_HELPER_REASON})\n    return sorted(reasons)\n\n\ndef classify')]),
+ ('H27_mode_helper_reason_dropped_from_floor',
+  [(P, '        reasons.update(_member_rule_reasons(entity_id))\n    return sorted(reasons)\n\n\ndef _domain',
+       '        reasons.update(_member_rule_reasons(entity_id) - {MODE_HELPER_REASON})\n    return sorted(reasons)\n\n\ndef _domain')]),
+ ('H28_mode_helper_rule_on_substring',
+  [(P, '    return _domain(entity_id) in MODE_HELPER_DOMAINS\n',
+       '    return isinstance(entity_id, str) and any(\n'
+       '        domain in entity_id for domain in MODE_HELPER_DOMAINS)\n')]),
+ ('H29_mode_helper_rule_on_every_input_domain',
+  [(P, '    return _domain(entity_id) in MODE_HELPER_DOMAINS\n',
+       '    return str(_domain(entity_id)).startswith("input_")\n')]),
+ ('H30_mode_helper_statement_dropped',
+  [(P, '        if mode_helpers:\n', '        if False:\n')]),
+ ('H31_mode_helper_disclosure_after_edit_only',
+  [(P, '    mode_helpers = mode_helper_members(members)\n',
+       '    mode_helpers = mode_helper_members(config["entities"])\n')]),
 ]
 
-only = set(sys.argv[1:])
+args = sys.argv[1:]
+OUT = None
+if '--out' in args:
+    i = args.index('--out')
+    OUT = args[i + 1]
+    del args[i:i + 2]
+only = set(args)
 if only:
     M = [m for m in M if m[0] in only]
 
@@ -515,12 +550,12 @@ def main():
     if M and M[0][0] == 'baseline':
         rows.append(run(M[0]))
         if not rows[0]['baseline_ok']:
-            (BASE / 'results.json').write_text(json.dumps(rows, indent=2) + '\n')
+            (BASE / (OUT or 'results.json')).write_text(json.dumps(rows, indent=2) + '\n')
             print('baseline failed; mutants not run', flush=True)
             return 2
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         rows += list(pool.map(run, [m for m in M if m[0] != 'baseline']))
-    (BASE / ('results.json' if not only else 'results-partial.json')).write_text(
+    (BASE / (OUT or ('results.json' if not only else 'results-partial.json'))).write_text(
         json.dumps(rows, indent=2) + '\n')
     mutants = [r for r in rows if r['name'] != 'baseline']
     print(f"done: {sum(bool(r['killed']) for r in mutants)}/{len(mutants)} killed; survivors: "

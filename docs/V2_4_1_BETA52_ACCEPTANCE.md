@@ -81,8 +81,9 @@ The review needs a security section covering the following items:
 - **Write permit.** The lowest write layer sends only under an F3 write
   permit bound to the plan, target, command and dispatch intent.
 - **Approval.**
-  - A protected member, or any `switch` member, before or after the edit
-    is `elevated_admin` / HIGH / `indirect`. Otherwise the plan is
+  - A protected member, or any `switch`, `input_boolean` or
+    `input_select` member, before or after the edit is `elevated_admin` /
+    HIGH / `indirect`. Otherwise the plan is
     `standard_admin` / LOW / none.
   - A multi-operation or incomplete scene plan is `PROHIBITED`.
   - The planning caller cannot approve.
@@ -224,8 +225,8 @@ These steps require all of the following:
 
 **Josh approves each live change at the time.** The target is one
 pre-existing, harmless UI-managed scene that Josh selects at the time,
-with no protected members and no `switch` member (a switch makes the plan
-`elevated_admin`). Its config id and entity id are recorded in the run
+with no protected members and no `switch`, `input_boolean` or
+`input_select` member (each makes the plan `elevated_admin`). Its config id and entity id are recorded in the run
 evidence, not here. **The scene is never activated** at any step: no
 `scene.turn_on`, no `scene.apply`, and no dashboard or voice activation.
 

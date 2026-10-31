@@ -36,13 +36,15 @@ Builds on 2.4.1-beta.51 (#331). Activates nothing new.
     It refuses a no-op with no plan.
   - The plan discloses each change before and after, the consumer
     automations and scripts from the cached index only (or the evidence
-    gap), the switch members, the global scene reload, id assignment,
+    gap), the switch and mode-helper members, the global scene reload, id assignment,
     member order and the residual concurrency window: Core's save is an
     upsert, so a concurrent edit can be overwritten undetected and a
     concurrent deletion can be recreated (accepted, disclosed).
   - A protected member before or after the edit makes the plan
     `elevated_admin` (risk HIGH, physical consequence `indirect`), and so
-    does any `switch` member before or after the edit.
+    does any `switch` member before or after the edit, and (Josh, D4) any
+    `input_boolean` or `input_select` member before or after the edit,
+    because mode/helper members can change how automations behave.
     Otherwise it is `standard_admin`.
   - Drift is refused as `stale_target_state`, and a scene missing at the
     final check is refused.

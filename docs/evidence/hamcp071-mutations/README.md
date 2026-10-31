@@ -28,6 +28,7 @@ TMPDIR and HOME, and the logs. Each run was a `systemd-run --user` unit
 | `pre-r1-results.json` | final before the Codex R1 corrections: round 0 with the round-1 rows and the round-1 baseline | 219 OK | 82 | **81** |
 | `results.json` | R1 full run: all 82 replayed plus 22 new `H*` guard removals, after the R1 corrections | 246 OK | 104 | 99 |
 | `r1-rerun-results.json` | the 5 R1 survivors plus the H14 control, after the new R1 isolation tests | 247 OK | 6 | 5 |
+| `d4-results.json` | D4 full run: all 104 replayed plus 9 new D4 `H23`–`H31` mutants, after the D4 change | 258 OK | 113 | **112** |
 
 No mutant timed out and none had an import error in any round.
 
@@ -82,6 +83,30 @@ has an isolated test, confirmed in `r1-rerun-results.json`:
 `H14_unobserved_reload_verified` was killed in the full run; the rerun
 includes it as a control (5 failures).
 
+## D4 mode-helper rule (round 3)
+
+Josh's decision D4 makes any `input_boolean` or `input_select` member,
+before or after the edit, elevate the plan. The D1 and D4 rules now share
+`_member_rule_reasons`, so H17–H19 were re-anchored onto it: H17/H18 drop
+only `SWITCH_REASON` in the planner or the floor, and H19 matches the
+switch domain as a substring. The runner gained `--out NAME.json`, and this
+run wrote `d4-results.json` with every earlier mutant replayed in copied
+trees. Each new mutant is killed:
+
+| Mutant | What it does | Killing tests (examples) |
+|---|---|---|
+| H23 | removes `input_boolean` from the D4 domains | `test_an_input_boolean_member_elevates`, `test_a_helper_present_only_before_the_edit_elevates` |
+| H24 | removes `input_select` from the D4 domains | `test_an_input_select_member_elevates`, `test_an_input_select_present_only_before_the_edit_elevates` |
+| H25 | removes the mode-helper check | the elevation tests for both domains |
+| H26 | drops the D4 reason in the planner only | the elevation tests (the policy floor then prohibits the plan) |
+| H27 | drops the D4 reason from the policy floor only | `test_the_policy_floor_refuses_a_basis_without_the_helper_reason`, `test_the_id_floor_names_only_the_two_helper_domains` |
+| H28 | matches a helper domain as a substring | `test_the_id_floor_names_only_the_two_helper_domains` (`light.input_boolean_room`) |
+| H29 | widens D4 to every `input_*` domain | `test_input_number_and_input_text_members_are_unchanged` (the bounded control) |
+| H30 | drops the D4 statement | the elevation tests |
+| H31 | discloses only the members after the edit | the before-the-edit tests |
+
+No mutant timed out and none had an import error.
+
 ## Remaining survivor (1): equivalent
 
 - **A3: the persistence-entry recheck is removed.** Equivalent.
@@ -95,7 +120,7 @@ includes it as a control (5 failures).
   checks and is killed in round 1 (2 failures).
 - **A4 alone** (only the generic-builder check removed) was killed in
   round 0.
-- A3 survives again in both R1 runs, for the same reason.
+- A3 survives again in both R1 runs and the D4 run, for the same reason.
 
 ## Usage
 
@@ -108,5 +133,6 @@ From the worktree root:
 With no ids, the runner runs the baseline and then every mutant, and writes
 `results.json`. With ids, it runs only those mutants (pass `baseline` to
 include it) and writes `results-partial.json`; the R1 rerun's copy is
-`r1-rerun-results.json`. The R1 units also set
+`r1-rerun-results.json`. `--out NAME.json` overrides the output file (the
+D4 run used `--out d4-results.json`). The R1 and D4 units also set
 `TMPDIR=<worktree>/.artifacts/tmp`.

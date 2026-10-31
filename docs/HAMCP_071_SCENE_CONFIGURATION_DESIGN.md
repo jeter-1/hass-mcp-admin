@@ -64,6 +64,12 @@ follow-up (section 0).
      state read. It is unsigned, so its fingerprint changed (section 6).
    - **D3.** The Core upsert race is accepted and disclosed. No mechanism
      closes it.
+   - **D4 (Josh, 2026-10-31).** Any `input_boolean` or `input_select`
+     member, before or after the edit, makes the plan `elevated_admin`, in
+     addition to D1 and object protection. Mode helpers gate security
+     automations: a camera alert that requires the away, guest and cleaner
+     modes off is silently disabled by a scene that turns guest mode on.
+     Other `input_*` helpers (`input_number`, `input_text`) are unchanged.
 3. **Built inactive.** The new compiled Core profile
    `core.scene_configuration_operation` is runtime-only and sits in
    `CORE_NOVEMBER_BATCH_PROFILES`. No release in signed sequences 1–14 names
@@ -73,7 +79,8 @@ follow-up (section 0).
    [`HAMCP_222_SIGNED_COVERAGE_AUDIT.md`](HAMCP_222_SIGNED_COVERAGE_AUDIT.md).
 4. **Classification reuses object protection.** It uses `object_protection`
    from `governance/entity_availability_exposure_planning.py:189` over every
-   member before *and* after the edit, plus the switch rule (D1). Gaps in
+   member before *and* after the edit, plus the switch rule (D1) and the
+   mode-helper rule (D4). Gaps in
    consumer evidence are disclosed but do not elevate the policy. Risk labels are decision
    support only (`AGENTS.md`).
 
@@ -252,7 +259,9 @@ Planning refuses before any dispatch, and creates no plan, when:
     `unavailable` with `evidence_gaps` `["dependency_index_unavailable"]`;
     when the cached snapshot is not current, the gap is
     `dependency_index_not_current`. Neither is ever "no consumers".
-  - the switch members before and after the edit (entity ids only).
+  - the switch members before and after the edit (entity ids only);
+  - the `input_boolean` and `input_select` members before and after the
+    edit (`mode_helper_members`, entity ids only).
 
   It also carries these fixed texts:
   - "Saving this scene does not activate it: no device changes state when
@@ -301,6 +310,15 @@ Planning refuses before any dispatch, and creates no plan, when:
     Home Assistant, so it is treated as protected: ...". The rule is on the
     domain only, so
     `light.switch_room` is not a switch.
+  - Any `input_boolean` or `input_select` member before or after the edit
+    (D4): `elevated_admin`, with `scene_protected_member_mode_helper_domain`.
+    A statement names the helper entity ids (never their states or
+    options): "Elevated because the scene has input_boolean or input_select
+    members before or after this edit; mode/helper members can change how
+    automations behave: ...". The rule is on the domain only, so
+    `light.input_boolean_room` is not a helper, and `input_number` and
+    `input_text` members do not elevate. An elevated plan stays actionable
+    after elevated approval.
   - Otherwise: `standard_admin`, risk `LOW`, physical consequence `none`.
     The reason codes are `scene_configuration_standard_policy` and
     `supported_configuration_change`.
@@ -531,7 +549,7 @@ Remaining for the November sequence-16 batch (not authorized here):
 
 ## 8. Offline proof
 
-`tests/test_hamcp071_scene_configuration.py` has 140 tests and uses the
+`tests/test_hamcp071_scene_configuration.py` has 151 tests and uses the
 synthetic fixtures in `tests/hamcp071_fixtures.py`:
 - `scene.synthetic_lounge_dim`, config id `1700000000001`;
 - `scene.synthetic_leaving`, config id `1700000000002`;
@@ -555,7 +573,12 @@ cover:
   failed, delayed inside and outside the window, name and icon edits, an
   activation that is not evidence), the declared request set
   (`ReachableRequestSetTests`) and the upsert-race disclosure
-  (`DisclosureTests.test_the_upsert_race_is_disclosed_and_never_claimed_detected`).
+  (`DisclosureTests.test_the_upsert_race_is_disclosed_and_never_claimed_detected`);
+- D4: the mode-helper rule (`ModeHelperMemberTests`): an `input_boolean`
+  or `input_select` member elevates, before or after the edit or unchanged;
+  a light-only scene and `input_number`/`input_text` members stay
+  standard; the policy floor refuses a basis without the D4 reason; an
+  elevated plan applies after elevated approval and never activates.
 
 The new tests found and fixed **two runtime defects**:
 1. **Invalid policy reason codes.** The policy emitted
@@ -590,6 +613,12 @@ Mutation evidence is in `docs/evidence/hamcp071-mutations/`; see
 - **R1 isolation:** the four masked survivors W6, H9, H11 and H15 each got
   an isolated test; the rerun kills all four, plus the H14 control, against
   a baseline of 247 tests (`r1-rerun-results.json`).
+- **D4 full run:** all 104 replayed plus 9 new D4 mutants `H23`–`H31`
+  (each helper domain removed, the rule removed in the planner or the
+  floor, substring and every-`input_*` matches, the statement, and the
+  before-edit members): 112 of 113 killed, against a baseline of 258 tests
+  (`d4-results.json`). H17–H19 were re-anchored onto the shared member
+  rule.
 - **Survivor:** A3, which removes the persistence-entry recheck. It is
   equivalent: the generic builder repeats the same gate as its first
   statement, and nothing yields between the two checks. The combined

@@ -1383,6 +1383,185 @@ class SwitchMemberTests(_Base):
         self.assertEqual(self.scene_rest.states[self.SIREN]["state"], "off")
 
 
+class ModeHelperMemberTests(_Base):
+    """HAMCP-071 D4 (Josh): input_boolean/input_select members elevate.
+
+    Mode helpers gate security automations (a camera alert that requires
+    the away, guest and cleaner modes off), so a scene that turns guest
+    mode on would silently disable those alerts.  The rule is bounded to
+    the two D4 domains: input_number and input_text are unchanged.
+    """
+
+    GUEST = "input_boolean.synthetic_guest_mode"
+    HOUSE_MODE = "input_select.synthetic_house_mode"
+    TARGET = "input_number.synthetic_target_temperature"
+    NOTE = "input_text.synthetic_note"
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.scene_rest.add_member(self.GUEST, "off")
+        self.scene_rest.add_member(self.HOUSE_MODE, "Home",
+                                   options=["Home", "Away", "Guest"])
+        self.scene_rest.add_member(self.TARGET, "20.0")
+        self.scene_rest.add_member(self.NOTE, "synthetic")
+
+    def assert_helper_elevated(self, created: dict, helpers: list[str]) -> None:
+        decision = created["policy_decision"]
+        self.assertEqual(decision["policy_class"], "elevated_admin")
+        self.assertEqual(decision["physical_consequence"], "indirect")
+        codes = self.service._load(created["plan_id"]).policy_decision.reason_codes
+        self.assertIn("scene_configuration_protected_member", codes)
+        self.assertIn("scene_protected_member_mode_helper_domain", codes)
+        self.assertNotIn("scene_protected_member_switch_domain", codes)
+        disclosure = self.disclosure(created)
+        self.assertEqual(disclosure["mode_helper_members"], helpers)
+        self.assertEqual(disclosure["switch_members"], [])
+        self.assertEqual(disclosure["policy_basis"]["basis"],
+                         [planning.MODE_HELPER_REASON])
+        statements = disclosure["consequence_statements"]
+        self.assertEqual(len(statements), 2)
+        self.assertIn(
+            "mode/helper members can change how automations behave", statements[1]
+        )
+        self.assertIn("before or after this edit", statements[1])
+        for entity_id in helpers:
+            self.assertIn(entity_id, statements[1])
+        # Entity_ids only: no helper state, option or attribute is disclosed.
+        self.assertNotIn("Guest", statements[1])
+
+    def assert_standard(self, created: dict) -> None:
+        self.assertEqual(created["policy_decision"]["policy_class"], "standard_admin")
+        codes = self.service._load(created["plan_id"]).policy_decision.reason_codes
+        self.assertFalse(
+            [code for code in codes if code.startswith("scene_protected_member")],
+            codes,
+        )
+        disclosure = self.disclosure(created)
+        self.assertEqual(disclosure["mode_helper_members"], [])
+        self.assertEqual(disclosure["switch_members"], [])
+        self.assertEqual(disclosure["consequence_statements"], [])
+        self.assertEqual(disclosure["policy_basis"]["basis"], [])
+
+    async def test_an_input_boolean_member_elevates(self):
+        created = await self.create(
+            config_id=LOUNGE, entities={self.GUEST: {"state": "on"}}
+        )
+        self.assert_helper_elevated(created, [self.GUEST])
+
+    async def test_an_input_select_member_elevates(self):
+        created = await self.create(
+            config_id=LOUNGE, entities={self.HOUSE_MODE: {"state": "Guest"}}
+        )
+        self.assert_helper_elevated(created, [self.HOUSE_MODE])
+
+    async def test_a_helper_present_only_before_the_edit_elevates(self):
+        entities = {**lounge_config()["entities"], self.GUEST: {"state": "on"}}
+        self.scene_rest.set_external(LOUNGE, entities=entities)
+        created = await self.create(config_id=LOUNGE, entities={self.GUEST: None})
+        self.assert_helper_elevated(created, [self.GUEST])
+        proposed = self.service._load(created["plan_id"]).operations[0].proposed_config
+        self.assertNotIn(self.GUEST, proposed["config"]["entities"])
+
+    async def test_an_input_select_present_only_before_the_edit_elevates(self):
+        entities = {**lounge_config()["entities"],
+                    self.HOUSE_MODE: {"state": "Away"}}
+        self.scene_rest.set_external(LOUNGE, entities=entities)
+        created = await self.create(
+            config_id=LOUNGE, entities={self.HOUSE_MODE: None}
+        )
+        self.assert_helper_elevated(created, [self.HOUSE_MODE])
+
+    async def test_an_unchanged_helper_member_elevates_a_name_edit(self):
+        entities = {**lounge_config()["entities"], self.GUEST: {"state": "off"}}
+        self.scene_rest.set_external(LOUNGE, entities=entities)
+        created = await self.create(config_id=LOUNGE, name="Renamed")
+        self.assert_helper_elevated(created, [self.GUEST])
+
+    async def test_both_helper_domains_are_named_together(self):
+        created = await self.create(config_id=LOUNGE, entities={
+            self.GUEST: {"state": "on"}, self.HOUSE_MODE: {"state": "Guest"},
+        })
+        self.assert_helper_elevated(created, [self.GUEST, self.HOUSE_MODE])
+
+    async def test_a_light_only_scene_stays_standard(self):
+        self.assert_standard(await self.create(config_id=LOUNGE, name="Renamed"))
+
+    async def test_input_number_and_input_text_members_are_unchanged(self):
+        # Control: D4 is bounded to input_boolean and input_select.
+        self.assert_standard(await self.create(config_id=LOUNGE, entities={
+            self.TARGET: {"state": "21.5"}, self.NOTE: {"state": "synthetic"},
+        }))
+
+    def test_the_id_floor_names_only_the_two_helper_domains(self):
+        self.assertEqual(planning.id_protection_reasons([self.GUEST]),
+                         [planning.MODE_HELPER_REASON])
+        self.assertEqual(planning.id_protection_reasons([self.HOUSE_MODE]),
+                         [planning.MODE_HELPER_REASON])
+        self.assertEqual(
+            planning.id_protection_reasons([self.TARGET, self.NOTE, LAMP]), []
+        )
+        # A name that merely contains a helper domain is not a helper.
+        self.assertEqual(
+            planning.id_protection_reasons(["light.input_boolean_room"]), []
+        )
+        self.assertEqual(
+            planning.id_protection_reasons(["switch.plug", self.GUEST]),
+            sorted([planning.SWITCH_REASON, planning.MODE_HELPER_REASON]),
+        )
+        self.assertEqual(
+            planning.mode_helper_members(
+                [LAMP, self.HOUSE_MODE, self.GUEST, self.GUEST, self.TARGET]
+            ),
+            [self.GUEST, self.HOUSE_MODE],
+        )
+
+    async def test_the_policy_floor_refuses_a_basis_without_the_helper_reason(self):
+        from ha_mcp_engineering.governance.models import (
+            ApprovalPolicyClass, RiskLevel,
+        )
+        from ha_mcp_engineering.governance.policy import (
+            SCENE_CONFIGURATION_INCOMPLETE, _scene_configuration_operation_policy,
+        )
+
+        for helper, state in ((self.GUEST, "on"), (self.HOUSE_MODE, "Guest")):
+            with self.subTest(helper=helper):
+                created = await self.create(
+                    config_id=LOUNGE, entities={helper: {"state": state}}
+                )
+                operation = deepcopy(
+                    self.service._load(created["plan_id"]).operations[0]
+                )
+                self.assertEqual(
+                    _scene_configuration_operation_policy(operation).policy_class,
+                    ApprovalPolicyClass.ELEVATED_ADMIN,
+                )
+                # A standard-shaped marker with the D4 floor dropped.
+                operation.risk.evidence = [
+                    dict(item, basis="", policy="standard",
+                         physical_consequence="none")
+                    if isinstance(item, dict)
+                    and item.get("trigger") == planning.POLICY_TRIGGER
+                    else item
+                    for item in operation.risk.evidence
+                ]
+                operation.risk.level = RiskLevel.LOW
+                decision = _scene_configuration_operation_policy(operation)
+                self.assertEqual(decision.policy_class, ApprovalPolicyClass.PROHIBITED)
+                self.assertEqual(decision.reason_codes,
+                                 (SCENE_CONFIGURATION_INCOMPLETE,))
+
+    async def test_an_elevated_helper_plan_applies_after_elevated_approval(self):
+        created, result = await self.applied(
+            config_id=LOUNGE, entities={self.GUEST: {"state": "on"}}
+        )
+        self.assertEqual(created["policy_decision"]["policy_class"], "elevated_admin")
+        self.assert_outcome(result, "succeeded_verified", ["succeeded_verified"],
+                            ["exact_readback_verified"])
+        self.assertEqual(self.stored()["entities"][self.GUEST], {"state": "on"})
+        # Saving never activated the scene: guest mode stays off.
+        self.assertEqual(self.scene_rest.states[self.GUEST]["state"], "off")
+
+
 class LoadedSceneReloadEvidenceTests(_Base):
     """HAMCP-071 R1-H1: verified only on post-save reload evidence.
 
