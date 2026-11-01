@@ -75,6 +75,7 @@ from ..f3.operational_adapter import (
 from ..f3.operational_models import (
     CAPABILITY_IDENTITIES,
     EVIDENCE_DEADLINE_SECONDS,
+    OPERATIONAL_ADAPTER_ID,
     OPERATIONAL_EVIDENCE_PROJECTION_MODEL,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
     OperationalAuthoritySnapshot,
@@ -161,7 +162,11 @@ from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
 from ..request_context import begin_request, current_telemetry, end_request
-from .registry import ClosedAdapterRegistry
+from .registry import (
+    HELPER_STATE_REGISTRATION,
+    INPUT_SELECT_REGISTRATION,
+    ClosedAdapterRegistry,
+)
 from . import dispatch_facts as dispatch_projection
 from . import pre_dispatch_reasons
 from .dispatch_facts import (
@@ -214,6 +219,46 @@ TERMINAL_PARENT_CLEANUP_PENDING = "terminal_parent_child_cleanup_pending"
 # outcome are released; an unresolved manual-review child keeps only its
 # declared target keys and releases its shared dependency keys.
 TERMINAL_POST_INTENT_LOCK_RELEASE = "terminal_post_intent_lock_release"
+# HAMCP-271: every configuration capability shares this adapter and its one
+# exact readback; it has the same 120 s lease and evidence window.
+CONFIGURATION_ADAPTER_ID = "configuration_operation"
+
+
+_CONFIGURATION_PLAN_OPERATIONS = frozenset(
+    {
+        ChangeOperation.CREATE_AUTOMATION,
+        ChangeOperation.UPDATE_AUTOMATION,
+        ChangeOperation.CONFIGURATION_PLAN,
+    }
+)
+
+
+def _terminal_parent_readback_operations() -> dict[str, Any]:
+    """HAMCP-271: families whose stranded post-intent child may be settled.
+
+    Maps an adapter id to its eligible capability ids (``None`` admits every
+    capability the registry assigns to that adapter, each then requiring a
+    plan operation in ``_CONFIGURATION_PLAN_OPERATIONS``) and the plan
+    operation each requires. Only families with an exact read-only readback and a lease
+    no longer than their evidence window are listed. Backup, reload and
+    restarts keep their own long windows; fan and power are separate. Built
+    at call time so it always reflects the imported adapter identities.
+    """
+
+    return {
+        DASHBOARD_ADAPTER_ID: {
+            DASHBOARD_CAPABILITY_ID: ChangeOperation.UPDATE_DASHBOARD,
+        },
+        CONFIGURATION_ADAPTER_ID: None,
+        OPERATIONAL_ADAPTER_ID: {
+            HELPER_STATE_REGISTRATION[0]: (
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE
+            ),
+            INPUT_SELECT_REGISTRATION[0]: (
+                ChangeOperation.SET_INPUT_SELECT_OPTION
+            ),
+        },
+    }
 # O9: abandoned pre-intent work whose dispatch authority has expired keeps its
 # bounded retries for this long after the durable expiry, then is rejected
 # before dispatch.  Backoff only grows, so at most a handful of retries fit.
@@ -3439,11 +3484,13 @@ class F3RuntimeIntegration:
         executor_options: dict[str, bool] = {}
         if terminal_parent_readback:
             executor_options["terminal_parent_readback"] = True
-        # HAMCP-263: the 120 s apply lease ends with the 120 s evidence
-        # window, so dashboard readback recovery can only take over at the
-        # deadline. One read-only final read decides it instead of manual
-        # review without any read (as HAMCP-192 does for fan).
-        if readback_only and plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+        # HAMCP-263/271: the 120 s apply lease ends with the 120 s evidence
+        # window, so readback recovery can only take over at the deadline.
+        # In every listed family one read-only final read decides it instead
+        # of manual review without any read (as HAMCP-192 does for fan).
+        if readback_only and self._terminal_parent_readback_family(
+            declaration, record, plan
+        ):
             executor_options["final_read_at_deadline"] = True
         executor = self._executor(evidence_seconds, **executor_options)
         if plan.contract_version in {1, 2}:
@@ -7665,7 +7712,7 @@ class F3RuntimeIntegration:
                 and record is not None
                 and record.terminal
                 and record.dispatch_intent is not None
-                and record.adapter_id == DASHBOARD_ADAPTER_ID
+                and self._terminal_parent_readback_family(declaration, record)
                 and runtime["reconciliation_result"]
                 == TERMINAL_PARENT_CLEANUP_PENDING
             )
@@ -7683,8 +7730,9 @@ class F3RuntimeIntegration:
             # terminal parent is excluded from active recovery, so only this
             # historical scan can settle it. It is collected for one async
             # read-only readback; the parent itself is never changed.
-            # Only the dashboard family reads once at its expired deadline;
-            # other families keep their existing recovery (gap reported only).
+            # HAMCP-271: every family listed in
+            # _terminal_parent_readback_operations reads once at its expired
+            # deadline; any other family keeps its existing recovery.
             terminal_parent_readback = False
             if (
                 not pending
@@ -7692,7 +7740,7 @@ class F3RuntimeIntegration:
                 and record is not None
                 and (not record.terminal or terminal_parent_cleanup)
                 and record.dispatch_intent is not None
-                and record.adapter_id == DASHBOARD_ADAPTER_ID
+                and self._terminal_parent_readback_family(declaration, record)
             ):
                 # Only nonterminal post-intent children, or terminal ones with
                 # a pending cleanup marker, reach this read; any other
@@ -7822,12 +7870,11 @@ class F3RuntimeIntegration:
                 or self.service.plan_hash(plan) != current["plan_hash"]
             ):
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-            if (
-                record.adapter_id != DASHBOARD_ADAPTER_ID
-                or plan.operation is not ChangeOperation.UPDATE_DASHBOARD
+            if not self._terminal_parent_readback_family(
+                current, record, plan
             ):
-                # Other adapters skip the read past their deadline; releasing
-                # their locks without a read is not authorized here.
+                # An unlisted family has no final read past its deadline;
+                # releasing its locks without a read is not authorized here.
                 raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
             prepared, requests = await self._load_prepared(
                 plan, task, readback_child_id=child_id
@@ -7908,6 +7955,35 @@ class F3RuntimeIntegration:
             )
             return False
 
+    def _terminal_parent_readback_family(
+        self, declaration: dict[str, Any], record: Any, plan: Any = None
+    ) -> bool:
+        """HAMCP-271: the child is in a family settled by one readback.
+
+        The durable child's adapter, the declaration's registered adapter and
+        (when given) the plan operation must all agree with one listed
+        family; anything else keeps its existing recovery.
+        """
+
+        families = _terminal_parent_readback_operations()
+        adapter_id = getattr(record, "adapter_id", None)
+        if adapter_id not in families:
+            return False
+        capability_id = declaration.get("capability_id")
+        try:
+            if self.registry.entry(capability_id).adapter_id != adapter_id:
+                return False
+        except Exception:
+            return False
+        capabilities = families[adapter_id]
+        if capabilities is not None and capability_id not in capabilities:
+            return False
+        if plan is None:
+            return True
+        if capabilities is not None:
+            return plan.operation is capabilities[capability_id]
+        return plan.operation in _CONFIGURATION_PLAN_OPERATIONS
+
     def _terminal_parent_cleanup_marked(self, child_id: str) -> bool:
         """HAMCP-263 R1: a terminal child still owes terminal-parent cleanup."""
 
@@ -7985,7 +8061,9 @@ class F3RuntimeIntegration:
             record = self.children.get(child_id)
             if (
                 record is None
-                or record.adapter_id != DASHBOARD_ADAPTER_ID
+                or not self._terminal_parent_readback_family(
+                    declaration, record
+                )
                 or not self._terminal_parent_cleanup_marked(child_id)
             ):
                 return False

@@ -981,11 +981,14 @@ class ResponseAndProcessLossTests(LifecycleTestCase):
 
     async def test_unreadable_recovery_observes_until_fixed_deadline_then_manual_review(self):
         _p, gateway, adapter, prepared, _preflight = await self.eligible()
-        gateway.read_error_count = 1
+        # HAMCP-271: past the deadline recovery performs one final read, so
+        # the target stays unreadable for that read too.
+        gateway.read_error_count = 2
         harness = ConfigurationLifecycleHarness(adapter)
         observation = await harness.recover(prepared, recovery_context())
         self.assertFalse(observation.observation_complete)
         self.assertEqual(observation.outcome, NormalizedOperationOutcome.OBSERVING)
+        reads = gateway.counters.reads
         expired = await harness.recover(
             prepared,
             recovery_context(deadline="2026-08-04T11:59:59+00:00"),
@@ -994,6 +997,7 @@ class ResponseAndProcessLossTests(LifecycleTestCase):
             expired.outcome,
             NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
         )
+        self.assertEqual(gateway.counters.reads - reads, 1)
         self.assertEqual(gateway.counters.dispatches, 0)
 
     async def test_contradictory_recovery_context_fails_closed(self):

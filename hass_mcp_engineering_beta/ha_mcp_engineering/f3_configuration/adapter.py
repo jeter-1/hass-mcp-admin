@@ -775,26 +775,40 @@ class ConfigurationOperationAdapter:
                 evidence_hash=None,
                 diagnostic_codes=("recovery_context_contradictory",),
             )
-        if self._deadline_expired(context.post_dispatch_deadline):
-            self._increment("manual_review_transitions")
-            return ConfigurationObservationResult(
-                outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
-                attempt_count=max(1, context.prior_observation_attempts + 1),
-                observation_complete=False,
-                provider_reachable=None,
-                target_reachable=None,
-                readback_state_fingerprint=None,
-                intended_result_observed=None,
-                mismatch_fields=(),
-                evidence_hash=None,
-                diagnostic_codes=("post_dispatch_evidence_deadline_expired",),
-            )
-        return await self._observe(
+        observation = await self._observe(
             operation,
             attempt_count=max(1, context.prior_observation_attempts + 1),
             error_result_sent=ERROR_RESULT_AFTER_SEND
             in tuple(getattr(context, "dispatch_diagnostic_codes", ()) or ()),
         )
+        # HAMCP-271: past the deadline this was the one final read. A
+        # complete observation is decided by exact verification; anything
+        # less is indeterminate and never waits for another read.
+        if (
+            self._deadline_expired(context.post_dispatch_deadline)
+            and not observation.observation_complete
+        ):
+            self._increment("manual_review_transitions")
+            return ConfigurationObservationResult(
+                outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+                attempt_count=observation.attempt_count,
+                observation_complete=False,
+                provider_reachable=observation.provider_reachable,
+                target_reachable=observation.target_reachable,
+                readback_state_fingerprint=None,
+                intended_result_observed=None,
+                mismatch_fields=(),
+                evidence_hash=None,
+                diagnostic_codes=tuple(
+                    dict.fromkeys(
+                        (
+                            *observation.diagnostic_codes,
+                            "post_dispatch_evidence_deadline_expired",
+                        )
+                    )
+                ),
+            )
+        return observation
 
     async def prepare_rollback(
         self,
