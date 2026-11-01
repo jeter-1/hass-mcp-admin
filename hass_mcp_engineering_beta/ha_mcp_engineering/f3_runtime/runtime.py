@@ -206,6 +206,10 @@ ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
 # read-only readback that terminalizes only the child and releases its locks.
 TERMINAL_PARENT_READBACK_RESULT = "terminal_parent_child_readback_settled"
 TERMINAL_PARENT_READBACK_PENDING = "terminal_parent_child_readback_pending"
+# HAMCP-263 R1: durable marker written before that readback can terminalize
+# the child and cleared only after its last exact-owner lock is released, so
+# an interrupted cleanup resumes on a later sweep (including after restart).
+TERMINAL_PARENT_CLEANUP_PENDING = "terminal_parent_child_cleanup_pending"
 # HAMCP-263: expired leases of a terminal post-intent child with a decided
 # outcome are released; an unresolved manual-review child keeps only its
 # declared target keys and releases its shared dependency keys.
@@ -6313,6 +6317,10 @@ class F3RuntimeIntegration:
                 and record.terminal
                 and not runtime["selective_hold_tokens"]
                 and not cleanup_pending
+                # HAMCP-263 R1: unfinished terminal-parent lock cleanup is
+                # pending reconciliation work until its marker clears.
+                and runtime["reconciliation_result"]
+                != TERMINAL_PARENT_CLEANUP_PENDING
                 and not (declaration["child_id"] in lock_task_ids
                          and self._inverse_lock_context(declaration["child_id"], health_data=health_data) is not None)
             ):
@@ -7649,6 +7657,18 @@ class F3RuntimeIntegration:
                 runtime=runtime,
                 lock_records=lock_records,
             )
+            # HAMCP-263 R1: a terminal-parent child whose durable cleanup
+            # marker survived a fault or restart only finishes releasing its
+            # exact-owner locks. It never reads, dispatches or projects.
+            terminal_parent_cleanup = bool(
+                not pending
+                and record is not None
+                and record.terminal
+                and record.dispatch_intent is not None
+                and record.adapter_id == DASHBOARD_ADAPTER_ID
+                and runtime["reconciliation_result"]
+                == TERMINAL_PARENT_CLEANUP_PENDING
+            )
             # Preserve existing orphan cleanup when it still has work. All
             # other known terminal faults use exact projection reconciliation,
             # including verified no-ops and pre-dispatch terminal outcomes.
@@ -7657,6 +7677,7 @@ class F3RuntimeIntegration:
                 and parent is not None and parent.state in TERMINAL_TASK_STATES
                 and record is not None and record.terminal
                 and not pending
+                and not terminal_parent_cleanup
             )
             # HAMCP-263: a possibly dispatched child under an already
             # terminal parent is excluded from active recovery, so only this
@@ -7669,11 +7690,12 @@ class F3RuntimeIntegration:
                 not pending
                 and not terminal_fault
                 and record is not None
-                and not record.terminal
+                and (not record.terminal or terminal_parent_cleanup)
                 and record.dispatch_intent is not None
                 and record.adapter_id == DASHBOARD_ADAPTER_ID
             ):
-                # Only nonterminal post-intent children reach this read; a
+                # Only nonterminal post-intent children, or terminal ones with
+                # a pending cleanup marker, reach this read; any other
                 # terminal dispatched child still reads no parent (HAMCP-171).
                 # An unreadable parent stays with active recovery and health.
                 try:
@@ -7761,11 +7783,19 @@ class F3RuntimeIntegration:
         manual review with its reason. The child's locks are released rather
         than held because nothing will ever reconcile this child again. The
         terminal parent record is never rewritten: acknowledgment of its
-        outcome is separate operator work. Returns whether the child is now
-        terminal; failure keeps a bounded retry with a readiness fault.
+        outcome is separate operator work. A durable cleanup marker is
+        written before the readback can terminalize the child and is cleared
+        only once no exact-owner lock remains, so a fault or restart anywhere
+        in between resumes through the cleanup-only path without another read.
+        Returns whether the child is now terminal with its cleanup complete;
+        failure keeps a bounded retry with a readiness fault.
         """
 
         child_id = declaration["child_id"]
+        if self._terminal_parent_cleanup_marked(child_id):
+            return self._finish_terminal_parent_child_cleanup(
+                declaration, now=now
+            )
         fault_key = "recovery_child:" + child_id
         with self._readiness_lock:
             fault_revision = self._readiness_faults.get(fault_key)
@@ -7802,6 +7832,14 @@ class F3RuntimeIntegration:
             prepared, requests = await self._load_prepared(
                 plan, task, readback_child_id=child_id
             )
+            # Durable before the executor can persist a terminal child.
+            self.children.update_runtime(
+                child_id,
+                changes={
+                    "last_reconciliation_at": now.isoformat(),
+                    "reconciliation_result": TERMINAL_PARENT_CLEANUP_PENDING,
+                },
+            )
             await self._execute_child(
                 plan,
                 task,
@@ -7814,7 +7852,12 @@ class F3RuntimeIntegration:
             latest = self.children.get(child_id)
             if latest is not None:
                 self._audit_record_events(current, latest)
-            settled = latest is not None and latest.terminal
+            terminal = latest is not None and latest.terminal
+            # The executor's own release may have been fenced or failed and
+            # suppressed; release any remaining exact-owner lock here.
+            settled = terminal and not self._release_terminal_parent_child_locks(
+                current, latest
+            )
             runtime = self.children.runtime(child_id)
             backoff = (
                 0
@@ -7828,6 +7871,8 @@ class F3RuntimeIntegration:
                     "reconciliation_result": (
                         TERMINAL_PARENT_READBACK_RESULT
                         if settled
+                        else TERMINAL_PARENT_CLEANUP_PENDING
+                        if terminal
                         else TERMINAL_PARENT_READBACK_PENDING
                     ),
                     "backoff_seconds": backoff,
@@ -7849,7 +7894,134 @@ class F3RuntimeIntegration:
                 child_id,
                 changes={
                     "last_reconciliation_at": now.isoformat(),
-                    "reconciliation_result": "bounded_retry",
+                    # A terminal child keeps its cleanup marker for resume.
+                    "reconciliation_result": (
+                        TERMINAL_PARENT_CLEANUP_PENDING
+                        if self._terminal_parent_cleanup_marked(child_id)
+                        else "bounded_retry"
+                    ),
+                    "backoff_seconds": backoff,
+                    "next_eligible_at": (
+                        now + timedelta(seconds=backoff)
+                    ).isoformat(),
+                },
+            )
+            return False
+
+    def _terminal_parent_cleanup_marked(self, child_id: str) -> bool:
+        """HAMCP-263 R1: a terminal child still owes terminal-parent cleanup."""
+
+        record = self.children.get(child_id)
+        return bool(
+            record is not None
+            and record.terminal
+            and record.dispatch_intent is not None
+            and self.children.runtime(child_id)["reconciliation_result"]
+            == TERMINAL_PARENT_CLEANUP_PENDING
+        )
+
+    def _release_terminal_parent_child_locks(
+        self, declaration: dict[str, Any], record: Any
+    ) -> int:
+        """HAMCP-263 R1: release a terminal child's exact-owner locks.
+
+        Only records whose key, generation, mode and owner match the child's
+        own durable tokens are released, through the fenced exact-handle
+        release. Any other related record, or a conflict hold, is ambiguous
+        authority and fails closed. Returns how many related records remain.
+        """
+
+        if not record.terminal or record.dispatch_intent is None:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
+        lock_records = self._related_lock_records(
+            declaration, record, self.locks.records()
+        )
+        if not lock_records:
+            return 0
+        if any(
+            item.conflict_hold
+            or not self._lock_record_matches_execution_authority(
+                declaration, record, item
+            )
+            for item in lock_records
+        ):
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        owner = self._exact_lock_owner(declaration, record, lock_records)
+        ordered = sorted(lock_records, key=lambda item: item.key.encode("utf-8"))
+        self.locks.release(
+            LockHandle(
+                owner=owner,
+                tokens=tuple(
+                    LockToken(item.key, item.generation, item.mode)
+                    for item in ordered
+                ),
+                acquired_at=ordered[0].acquired_at,
+                lease_expires_at=ordered[0].lease_expires_at,
+                timing=PRODUCTION_LOCK_TIMING,
+            )
+        )
+        return len(
+            self._related_lock_records(declaration, record, self.locks.records())
+        )
+
+    def _finish_terminal_parent_child_cleanup(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> bool:
+        """HAMCP-263 R1: resume an interrupted terminal-parent lock cleanup.
+
+        The child already holds its terminal outcome from its one readback,
+        so this step never prepares, reads, dispatches or projects, and the
+        terminal parent is never rewritten. It rechecks the exact durable
+        shape, releases only the child's exact-owner locks and clears the
+        marker once none remain. Failure keeps the marker with a bounded
+        retry. Returns False: no child is terminalized here.
+        """
+
+        child_id = declaration["child_id"]
+        fault_key = "recovery_child:" + child_id
+        with self._readiness_lock:
+            fault_revision = self._readiness_faults.get(fault_key)
+        try:
+            record = self.children.get(child_id)
+            if (
+                record is None
+                or record.adapter_id != DASHBOARD_ADAPTER_ID
+                or not self._terminal_parent_cleanup_marked(child_id)
+            ):
+                return False
+            parent = self.service.task_repository.get(
+                declaration["public_task_id"]
+            )
+            if (
+                parent is None
+                or parent.state not in TERMINAL_TASK_STATES
+                or parent.legacy_projection.get("execution_authority")
+                != F3_EXECUTION_AUTHORITY
+            ):
+                return False
+            if self._release_terminal_parent_child_locks(declaration, record):
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            self._audit_record_events(declaration, record)
+            self.children.update_runtime(
+                child_id,
+                changes={
+                    "last_reconciliation_at": now.isoformat(),
+                    "reconciliation_result": TERMINAL_PARENT_READBACK_RESULT,
+                    "backoff_seconds": 0,
+                    "next_eligible_at": None,
+                },
+            )
+            self._clear_readiness_fault(fault_key, fault_revision)
+            return False
+        except Exception:
+            self._readiness_fault(fault_key)
+            self._sweep_failures += 1
+            runtime = self.children.runtime(child_id)
+            backoff = min(max(5, int(runtime["backoff_seconds"]) * 2), 300)
+            self.children.update_runtime(
+                child_id,
+                changes={
+                    "last_reconciliation_at": now.isoformat(),
                     "backoff_seconds": backoff,
                     "next_eligible_at": (
                         now + timedelta(seconds=backoff)

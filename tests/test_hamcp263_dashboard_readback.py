@@ -18,7 +18,11 @@ every path:
   while the terminal parent record is unchanged;
 * expired leases of a terminal post-intent owner are released, except the
   declared target keys of an unresolved manual-review owner, and live leases
-  are never released.
+  are never released;
+* (R1) the terminal-parent lock cleanup is crash-safe: a durable marker is
+  written before the readback can terminalize the child and cleared only
+  after its last exact-owner lock is released, so a fault or process stop at
+  any point resumes on a later sweep without another read or dispatch.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3_EXECUTION_AUTHORITY,
     F3RuntimeIntegration,
     LockStorageError,
+    TERMINAL_PARENT_CLEANUP_PENDING,
     TERMINAL_PARENT_READBACK_PENDING,
     TERMINAL_PARENT_READBACK_RESULT,
     _TerminalParentReadbackLockStore,
@@ -63,7 +68,16 @@ from tests.test_f3_runtime_integration import (  # noqa: E402
 )
 
 LIVE_REASON = "dispatched_task_has_no_readback_reconciler"
+LIVE_LOCKS = {
+    ("addon:ha_mcp", "shared"),
+    ("dashboard:main-operations", "exclusive"),
+    ("home_assistant:core", "shared"),
+}
 SWEEP_STEP = timedelta(seconds=40)
+
+
+class _Crash(BaseException):
+    """Abrupt process stop: escapes every ``except Exception`` handler."""
 
 
 class _ReadbackGateway(dashboard_suite._DashboardGateway):
@@ -867,6 +881,384 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             self.runtime.owns_post_intent_reconciliation(dispatched)
         )
+
+
+    # -- R1: crash-safe, resumable terminal-parent lock cleanup ---------------
+
+    def _parent_bytes(self, task_id):
+        return self.service.task_repository._path(task_id).read_bytes()
+
+    def _marker(self, child_id):
+        return self.runtime.children.runtime(child_id)["reconciliation_result"]
+
+    async def _stop_during_cleanup(self, *, unavailable: bool, stop):
+        """Run the first terminal-parent recovery pass until ``stop`` fires."""
+
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        if unavailable:
+            self.dashboard.fail_reads_after_write = 100
+        reads = self.dashboard.post_write_reads
+        with stop():
+            with self.assertRaises(_Crash):
+                await self.runtime.recover_once("periodic")
+        child = self.runtime.children.get(child_id)
+        self.assertTrue(child.terminal)
+        self.assertEqual(
+            "manual_review_required" if unavailable else "succeeded_verified",
+            child.normalized_outcome,
+        )
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        self.assertEqual(1, self.dashboard.post_write_reads - reads)
+        self.assertEqual(before, self._parent_bytes(task_id))
+        return task_id, child_id, before, reads
+
+    async def _restart_and_assert_settled(
+        self, task_id, child_id, before, reads, *, outcome
+    ):
+        self.dashboard.fail_reads_after_write = 0
+        self.clock[0] += timedelta(minutes=10)
+        self._compose()
+        await self.runtime.recover_once("startup")
+        await self._pass()
+        child = self.runtime.children.get(child_id)
+        self.assertEqual(outcome, child.normalized_outcome)
+        self.assertEqual(1, child.dispatch_count)
+        self.assertEqual((), self.runtime.locks.records())
+        self.assertEqual(TERMINAL_PARENT_READBACK_RESULT, self._marker(child_id))
+        self.assertNotEqual("recovering", await self._f3_status())
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self.dashboard.post_write_reads - reads)
+        self.assertEqual(1, self.dashboard.write_count)
+        # Repeated sweeps and restarts are idempotent: nothing is re-read,
+        # rewritten or released again.
+        settled = self.runtime.children.get(child_id)
+        settled_runtime = self.runtime.children.runtime(child_id)
+        for _ in range(2):
+            self._compose()
+            await self.runtime.recover_once("startup")
+            await self._pass()
+        self.assertEqual(settled, self.runtime.children.get(child_id))
+        self.assertEqual(settled_runtime, self.runtime.children.runtime(child_id))
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self.dashboard.post_write_reads - reads)
+        # The Step 1 regression shape: an unrelated governed apply succeeds.
+        applied, _calls = await self._unrelated_apply()
+        self.assertEqual("succeeded_verified", applied["task_state"])
+        self.assertEqual(1, self.dashboard.write_count)
+
+    def _assert_cleanup_pending_after_restart(self, child_id):
+        # The stopped process is faulted; a fresh composition reads only the
+        # durable state, which still reports the unfinished cleanup as
+        # pending reconciliation work rather than settled.
+        self._compose()
+        self.assertIn(child_id, repr(self.runtime.reconciliation_items()))
+        self.assertNotEqual("ready", self.runtime._health()["status"])
+
+    def _stop_at_release(self):
+        return patch.object(
+            type(self.runtime.locks), "release", side_effect=_Crash()
+        )
+
+    async def test_r1_stop_after_terminal_before_any_release(self):
+        task_id, child_id, before, reads = await self._stop_during_cleanup(
+            unavailable=True, stop=self._stop_at_release
+        )
+        self.assertEqual(LIVE_LOCKS, {
+            (item.key, item.mode) for item in self.runtime.locks.records()
+        })
+        self._assert_cleanup_pending_after_restart(child_id)
+        await self._restart_and_assert_settled(
+            task_id, child_id, before, reads, outcome="manual_review_required"
+        )
+
+    async def test_r1_stop_after_verified_terminal_before_any_release(self):
+        task_id, child_id, before, reads = await self._stop_during_cleanup(
+            unavailable=False, stop=self._stop_at_release
+        )
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        await self._restart_and_assert_settled(
+            task_id, child_id, before, reads, outcome="succeeded_verified"
+        )
+
+    async def test_r1_stop_after_partial_release(self):
+        store_type = type(self.runtime.locks)
+        original = store_type.release
+
+        def release_one_then_stop(store, handle, **kwargs):
+            original(store, replace(handle, tokens=handle.tokens[:1]), **kwargs)
+            raise _Crash()
+
+        task_id, child_id, before, reads = await self._stop_during_cleanup(
+            unavailable=True,
+            stop=lambda: patch.object(
+                store_type, "release", release_one_then_stop
+            ),
+        )
+        self.assertEqual(2, len(self.runtime.locks.records()))
+        await self._restart_and_assert_settled(
+            task_id, child_id, before, reads, outcome="manual_review_required"
+        )
+
+    async def test_r1_stop_after_all_releases_before_marker_clears(self):
+        original = F3RuntimeIntegration._release_terminal_parent_child_locks
+
+        def release_then_stop(runtime, declaration, record):
+            original(runtime, declaration, record)
+            raise _Crash()
+
+        task_id, child_id, before, reads = await self._stop_during_cleanup(
+            unavailable=True,
+            stop=lambda: patch.object(
+                F3RuntimeIntegration,
+                "_release_terminal_parent_child_locks",
+                release_then_stop,
+            ),
+        )
+        self.assertEqual((), self.runtime.locks.records())
+        self._assert_cleanup_pending_after_restart(child_id)
+        await self._restart_and_assert_settled(
+            task_id, child_id, before, reads, outcome="manual_review_required"
+        )
+
+    async def test_r1_stop_after_marker_before_terminal_reads_once(self):
+        # The marker is durable before the executor runs. A stop before the
+        # child is terminal leaves a nonterminal child that still receives
+        # its one readback; the marker alone never skips that read.
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        reads = self.dashboard.post_write_reads
+        with patch.object(
+            F3RuntimeIntegration, "_execute_child", side_effect=_Crash()
+        ):
+            with self.assertRaises(_Crash):
+                await self.runtime.recover_once("periodic")
+        self.assertFalse(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        self.assertEqual(0, self.dashboard.post_write_reads - reads)
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self._compose()
+        await self.runtime.recover_once("startup")
+        child = self.runtime.children.get(child_id)
+        self.assertEqual("succeeded_verified", child.normalized_outcome)
+        self.assertEqual((), self.runtime.locks.records())
+        self.assertEqual(TERMINAL_PARENT_READBACK_RESULT, self._marker(child_id))
+        self.assertEqual(1, self.dashboard.post_write_reads - reads)
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self.dashboard.write_count)
+
+    async def test_r1_transient_release_failure_resumes_without_projection(
+        self,
+    ):
+        # The reviewer's reproduction: release fails transiently during the
+        # first pass and the executor suppresses it after persisting the
+        # terminal child. Cleanup is not reported settled; the next eligible
+        # sweep in the same process (with its readiness fault still set)
+        # finishes it through the cleanup path, never terminal projection.
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        self.dashboard.fail_reads_after_write = 100
+        reads = self.dashboard.post_write_reads
+        with patch.object(
+            type(self.runtime.locks),
+            "release",
+            side_effect=LockStorageError("synthetic transient write failure"),
+        ):
+            await self.runtime.recover_once("periodic")
+        child = self.runtime.children.get(child_id)
+        self.assertEqual("manual_review_required", child.normalized_outcome)
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        self.assertIsNotNone(
+            self.runtime.children.runtime(child_id)["next_eligible_at"]
+        )
+        self.assertNotEqual("ready", await self._f3_status())
+        self.clock[0] += timedelta(minutes=10)
+        with patch.object(
+            self.runtime,
+            "_reconcile_terminal_child_fault",
+            side_effect=AssertionError("terminal projection"),
+        ), patch.object(
+            self.runtime, "_load_prepared", side_effect=AssertionError("read")
+        ):
+            await self.runtime.recover_once("periodic")
+        self.assertEqual((), self.runtime.locks.records())
+        self.assertEqual(TERMINAL_PARENT_READBACK_RESULT, self._marker(child_id))
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self.dashboard.post_write_reads - reads)
+        await self._restart_and_assert_settled(
+            task_id, child_id, before, reads, outcome="manual_review_required"
+        )
+
+    async def _pending_cleanup(self):
+        task_id, child_id, before, _reads = await self._stop_during_cleanup(
+            unavailable=True, stop=self._stop_at_release
+        )
+        self._compose()
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        return task_id, child_id, before, declaration
+
+    async def _assert_cleanup_refused(self, task_id, child_id, before,
+                                      declaration, *, retry: bool):
+        runtime_before = self.runtime.children.runtime(child_id)
+        self.assertFalse(
+            self.runtime._finish_terminal_parent_child_cleanup(
+                declaration, now=self.clock[0]
+            )
+        )
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        runtime_after = self.runtime.children.runtime(child_id)
+        if retry:
+            self.assertGreater(
+                datetime.fromisoformat(runtime_after["next_eligible_at"]),
+                self.clock[0],
+            )
+        else:
+            self.assertEqual(runtime_before, runtime_after)
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self.dashboard.write_count)
+
+    async def test_r1_cleanup_refuses_a_foreign_lock_owner(self):
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        records = self.runtime.locks.records
+
+        def foreign(*args, **kwargs):
+            return tuple(
+                replace(item, owner_id="foreign-owner")
+                if item.key == "dashboard:main-operations" else item
+                for item in records(*args, **kwargs)
+            )
+
+        with patch.object(self.runtime.locks, "records", side_effect=foreign):
+            await self._assert_cleanup_refused(
+                task_id, child_id, before, declaration, retry=True
+            )
+
+    async def test_r1_cleanup_refuses_a_changed_lock_mode(self):
+        # Mode is not part of the store's release fence; the exact-authority
+        # check is what refuses it.
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        records = self.runtime.locks.records
+
+        def shared(*args, **kwargs):
+            return tuple(
+                replace(item, mode="shared")
+                if item.key == "dashboard:main-operations" else item
+                for item in records(*args, **kwargs)
+            )
+
+        with patch.object(self.runtime.locks, "records", side_effect=shared):
+            await self._assert_cleanup_refused(
+                task_id, child_id, before, declaration, retry=True
+            )
+
+    async def test_r1_cleanup_never_releases_a_conflict_hold(self):
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        records = self.runtime.locks.records
+
+        def held(*args, **kwargs):
+            return tuple(
+                replace(item, conflict_hold=True)
+                if item.key == "dashboard:main-operations" else item
+                for item in records(*args, **kwargs)
+            )
+
+        with patch.object(self.runtime.locks, "records", side_effect=held):
+            await self._assert_cleanup_refused(
+                task_id, child_id, before, declaration, retry=True
+            )
+
+    async def test_r1_cleanup_requires_a_terminal_f3_parent(self):
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        repository = self.service.task_repository
+        parent = repository.get(task_id)
+        for substitute in (
+            replace(parent, state=type(parent.state)("observing")),
+            replace(parent, legacy_projection={}),
+            None,
+        ):
+            with self.subTest(substitute=getattr(substitute, "state", None)):
+                with patch.object(repository, "get", return_value=substitute):
+                    await self._assert_cleanup_refused(
+                        task_id, child_id, before, declaration, retry=False
+                    )
+
+    async def test_r1_cleanup_requires_the_dashboard_adapter(self):
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        children = self.runtime.children
+        get = children.get
+
+        def other_adapter(child):
+            record = get(child)
+            return replace(record, adapter_id="configuration")
+
+        with patch.object(children, "get", side_effect=other_adapter):
+            await self._assert_cleanup_refused(
+                task_id, child_id, before, declaration, retry=False
+            )
+
+    async def test_r1_cleanup_keeps_marker_while_locks_remain(self):
+        task_id, child_id, before, declaration = await self._pending_cleanup()
+        with patch.object(
+            self.runtime, "_release_terminal_parent_child_locks", return_value=1
+        ):
+            await self._assert_cleanup_refused(
+                task_id, child_id, before, declaration, retry=True
+            )
+
+    async def test_r1_cleanup_never_releases_a_live_nonterminal_owner(self):
+        # A marker on a nonterminal child (stop before terminal persistence)
+        # is not cleanup authority: the release step itself refuses.
+        task_id, child_id, _parent = await self._live_shape()
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        record = self.runtime.children.get(child_id)
+        with self.assertRaises(GovernanceError) as error:
+            self.runtime._release_terminal_parent_child_locks(
+                declaration, record
+            )
+        self.assertEqual(
+            ErrorCode.EXECUTION_TASK_INVALID_STATE, error.exception.code
+        )
+        self.runtime.children.update_runtime(
+            child_id,
+            changes={"reconciliation_result": TERMINAL_PARENT_CLEANUP_PENDING},
+        )
+        runtime_before = self.runtime.children.runtime(child_id)
+        self.assertFalse(
+            self.runtime._finish_terminal_parent_child_cleanup(
+                declaration, now=self.clock[0]
+            )
+        )
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(
+            runtime_before, self.runtime.children.runtime(child_id)
+        )
+
+    async def test_r1_ordinary_manual_review_hold_is_not_cleanup(self):
+        # An active-parent manual-review child never carries the marker, so
+        # its declared target key stays retained across sweeps and restarts.
+        task_id, child_id = await self._dispatch_observing(failed_reads=100)
+        with patch.object(
+            type(self.runtime.locks),
+            "promote_to_conflict_hold",
+            side_effect=LockStorageError("synthetic"),
+        ):
+            for _ in range(4):
+                await self._pass()
+        self.assertNotEqual(
+            TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id)
+        )
+        self.clock[0] += timedelta(seconds=180)
+        for _ in range(2):
+            self._compose()
+            await self.runtime.recover_once("startup")
+            await self._pass()
+        self.assertEqual(
+            ["dashboard:main-operations"],
+            [item.key for item in self.runtime.locks.records()],
+        )
+        del task_id
 
 
 if __name__ == "__main__":
