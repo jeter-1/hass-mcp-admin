@@ -70,7 +70,7 @@ def run():
     env = dict(os.environ, TMPDIR=str(HERE.parent / "tmp"), PYTHONDONTWRITEBYTECODE="1")
     t = time.time()
     p = subprocess.run([PY, "-m", "unittest", TEST], cwd=TREE, env=env, capture_output=True, text=True, timeout=300)
-    return p.returncode, round(time.time() - t, 1), p.stderr.strip().splitlines()[-1:] 
+    return p.returncode, round(time.time() - t, 1), p.stderr.strip().splitlines()[-1:]
 results = {}
 rc, dur, tail = run()
 results["control_baseline"] = {"rc": rc, "s": dur, "tail": tail}
