@@ -512,10 +512,11 @@ class ControlledSleep:
 class BudgetReader(FakeReader):
     """A reader whose list and reads move the simulated clock or never return."""
 
-    def __init__(self, documents, clock, *, list_cost=0.0, read_cost=0.0,
+    def __init__(self, documents, clock, *, session_cost=0.0, list_cost=0.0, read_cost=0.0,
                  hang_list=False, hang_reads=False, on_hang=None, **kwargs):
         super().__init__(documents, **kwargs)
         self.clock = clock
+        self.session_cost = session_cost
         self.list_cost, self.read_cost = list_cost, read_cost
         self.hang_list, self.hang_reads, self.on_hang = hang_list, hang_reads, on_hang
         self.sessions_open = 0
@@ -525,6 +526,7 @@ class BudgetReader(FakeReader):
     @asynccontextmanager
     async def session(self):
         self.sessions_open += 1
+        self.clock.now += self.session_cost
         try:
             yield self
         finally:
@@ -582,6 +584,15 @@ class DashboardBudgetTests(unittest.TestCase):
         self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
         self.assertEqual(sleep.durations, [g.DASHBOARD_SCAN_SECONDS])
         self.assertEqual([t.reason_code for t in result["terminals"]], ["dashboard_scan_budget_exhausted"])
+
+    def test_session_that_consumes_the_budget_lists_nothing(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        reader = BudgetReader(self.DOCUMENTS, clock, session_cost=g.DASHBOARD_SCAN_SECONDS)
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "unavailable")
+        self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1})
+        self.assertEqual((reader.lists, reader.reads), (0, []))
+        self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
 
     def test_list_that_consumes_the_budget_starts_no_read(self):
         clock, sleep = FakeClock(), ControlledSleep()

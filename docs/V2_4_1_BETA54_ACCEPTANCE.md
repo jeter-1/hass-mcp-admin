@@ -120,7 +120,7 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
 (`scene.synthetic_evening`, `group.synthetic_downstairs`, dashboards
 `lovelace` and `synthetic-two`).
 
-- `tests/test_hamcp227_global_sources.py` (69 tests):
+- `tests/test_hamcp227_global_sources.py` (70 tests):
   - scene and group references at `$.attributes.entity_id[n]`, and every
     completeness state, with exact-boundary controls for each bound;
   - dashboard references at exact paths through conditional, stack and grid
@@ -128,7 +128,8 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
     read failure isolated to its dashboard; missing `lovelace`; truncated or
     partial list; budget overrun; concurrency bound; projection and finding
     bounds; no reader; list failure; retired authority;
-  - the dashboard budget on a simulated clock (R1-M1): a list that never
+  - the dashboard budget on a simulated clock (R1-M1): a session that
+    consumes the budget, a list that never
     returns, a list that consumes the budget, an overrun mid-list, reads in
     flight at the deadline, within budget, an oversize document through the
     reviewed size cap, zero reads after the deadline, the lease released,
