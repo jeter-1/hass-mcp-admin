@@ -184,13 +184,13 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(set(boundary.WRITE_COMMANDS.values()), {LABEL_CREATE, LABEL_UPDATE})
         self.assertNotIn("delete", json.dumps(profile.required_checks))
 
-    def test_signed_sequences_13_and_14_reference_it_exactly(self):
+    def test_signed_sequences_13_through_15_reference_it_exactly(self):
         # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
-        # 2026.10.3; no earlier envelope and no other entry carries it.
+        # 2026.10.3; sequence 15 retains both references unchanged.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 14)
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 15)
         (profile,) = CORE_LABEL_REGISTRY_PROFILES
         carriers = set()
         for envelope in registry["envelopes"]:
@@ -202,7 +202,8 @@ class DormantProfileTests(unittest.TestCase):
                             item, {key: profile.to_mapping()[key] for key in item}
                         )
         self.assertEqual(
-            carriers, {(13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3")}
+            carriers, {(13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3"),
+                       (15, "2026.10.1"), (15, "2026.10.3")}
         )
 
     def test_signed_sibling_fingerprints_are_unchanged(self):

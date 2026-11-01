@@ -1,5 +1,10 @@
 # HAMCP-269: five-capability disposable Core evidence
 
+Part 2 below is the historical evidence scope merged in PR #336. Josh later
+selected **2026.10.3 only** for production sequence 15; 2026.10.1 stays at 26
+references. See the [signed sequence-15 record](evidence/hamcp269/README.md)
+for owner signing, exact evidence and the separate publication/activation boundary.
+
 This task prepares evidence for additive capability extensions on **2026.10.1
 and 2026.10.3**. Josh's 2026-11-01 direction supersedes HAMCP-232/145 OD-13's
 2026.10.3-only scope and HAMCP-071's later-batch placement. The five compiled

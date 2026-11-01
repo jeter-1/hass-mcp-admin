@@ -1,0 +1,125 @@
+{
+  "added_capabilities": [
+    {
+      "adapter_id": "compiled-core-typed-input-select-option-operation-v1",
+      "capability_id": "core.typed_input_select_option_operation",
+      "contract_fingerprint": "sha256:e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d",
+      "profile_id": "core_typed_input_select_option_operation_v1",
+      "profile_version": 1
+    }
+  ],
+  "authority_instances": "separate_ephemeral_registries",
+  "authority_transition": [
+    26,
+    27
+  ],
+  "batch_health": {
+    "compatible_count": 31,
+    "withheld_count": 0
+  },
+  "core": "2026.10.3",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.10.3@sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "engineering_command_types": [
+    "GET /states/{}",
+    "call_service:input_select.select_option"
+  ],
+  "engineering_source": {
+    "commit": "576d17d4513fa28f9fcd2e3419a501290f8f6dfe",
+    "runtime_tree": "731c5251121f7503115699e708517bbec66e6fc9"
+  },
+  "fixture_absence": {
+    "config_entries": true,
+    "dashboard": true,
+    "entities": true,
+    "input_select": true,
+    "scene": true,
+    "script": true
+  },
+  "fixture_cleanup": true,
+  "image_index_digest": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "image_receipt_sha256": "1cabbf7320a44a49d64db115d4345748b9a8ccd0728a6ded0f74b1f62577431c",
+  "lane": "input_select_option",
+  "predecessor_admission": {
+    "control_capability_acquired": true,
+    "ha_requests": 0,
+    "ha_writes": 0,
+    "route_acquired": false,
+    "route_available": false,
+    "service_reason_code": "pending_signed_registry_admission"
+  },
+  "predecessor_capabilities_sha256": "652beb1185adc49d471aa5db4165fbc2f0a8534cda9da016b9144291f13b997c",
+  "production_authority": false,
+  "provider_identity": "synthetic_disposable_lane",
+  "result": "PASS",
+  "scenarios": {
+    "already_desired": {
+      "ha_writes": 0,
+      "outcome": "already_desired",
+      "plan_created": false,
+      "result": "PASS",
+      "status": "no_change"
+    },
+    "flip": {
+      "diagnostic_codes": [
+        "exact_readback_verified",
+        "input_select_option_verified",
+        "possibly_dispatched",
+        "provider_response_received"
+      ],
+      "dispatch_counts": [
+        1
+      ],
+      "expected": "Away",
+      "ha_writes": 1,
+      "readback": "Away",
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "call_service:input_select.select_option"
+      ]
+    },
+    "option_not_available": {
+      "error_code": "invalid_request",
+      "ha_commands": 1,
+      "ha_writes": 0,
+      "plan_created": false,
+      "reason_code": "option_not_available",
+      "result": "PASS"
+    },
+    "options_changed": {
+      "diagnostic_codes": [
+        "stale_target_state"
+      ],
+      "dispatch_counts": [
+        0
+      ],
+      "drift_retained": true,
+      "ha_writes": 0,
+      "result": "PASS",
+      "task_state": "failed_pre_dispatch",
+      "write_types": []
+    },
+    "rollback": {
+      "diagnostic_codes": [
+        "exact_readback_verified",
+        "input_select_option_verified",
+        "possibly_dispatched",
+        "provider_response_received"
+      ],
+      "dispatch_counts": [
+        1
+      ],
+      "expected": "Home",
+      "ha_writes": 1,
+      "prior": "Home",
+      "readback": "Home",
+      "result": "PASS",
+      "status": "rollback_plan_created",
+      "task_state": "succeeded_verified",
+      "write_types": [
+        "call_service:input_select.select_option"
+      ]
+    }
+  },
+  "support_slot": "candidate"
+}
