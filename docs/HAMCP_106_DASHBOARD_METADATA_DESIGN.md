@@ -1,5 +1,11 @@
 # HAMCP-106 governed dashboard metadata (built inactive)
 
+> **2026-11-01 scope update (HAMCP-269):** Josh authorized disposable evidence
+> for all five compiled profiles on both Core 2026.10.1 and 2026.10.3.
+> [The evidence task](HAMCP_269_SEQ15_CORE_EVIDENCE.md) supersedes the historical
+> batch-placement and dormant-wiring statements below. Runtime and production
+> registry authority remain unchanged; execution results are recorded in its PR.
+
 `create_dashboard_metadata_plan` proposes one change to the metadata of one
 existing storage dashboard: `title`, `icon`, `show_in_sidebar` and
 `require_admin`. It is Engineering-native and built **inactive**: it refuses

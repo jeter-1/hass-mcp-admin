@@ -1,5 +1,11 @@
 # HAMCP-232 + HAMCP-145 (input_select): governed edits to existing UI helpers and setting an input_select value — design
 
+> **2026-11-01 scope update (HAMCP-269):** Josh authorized disposable evidence
+> for all five compiled profiles on both Core 2026.10.1 and 2026.10.3.
+> [The evidence task](HAMCP_269_SEQ15_CORE_EVIDENCE.md) supersedes the historical
+> batch-placement and dormant-wiring statements below. Runtime and production
+> registry authority remain unchanged; execution results are recorded in its PR.
+
 Status: **Part 0 (signed-coverage gate) and Part 1 (design) complete; Josh's
 decisions recorded in §0 (2026-10-26); Part 2 builds all three families
 INACTIVE.** Nothing here authorizes a release, deployment, live Home Assistant
