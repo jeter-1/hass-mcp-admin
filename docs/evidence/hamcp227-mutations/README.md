@@ -53,3 +53,57 @@ target.
 
 M56 is killed by `test_impact_reports_deferred_template_coverage`, which
 asserts the template row's provider `none` and capability `not_supported`.
+
+## Round 3 (Codex round 1 corrections)
+
+`run_round3.py` reuses the `run_mutations.py` setup (saved as `run.py`
+beside it in the scratch directory `.artifacts/mut3/`) and the reviewer's
+isolated targets (`isolated_targets.py`, copied from the round-1 review). It replays M01–M56 and adds
+M57–M70 for the R1 enforcement points. Every mutant gets two runs: the full
+module, and its isolated target test alone. In the full replay each of the 47 target tests
+first passes alone on the clean tree (its control), and the full-module
+control passes before and after. A timeout is never a kill.
+
+| File | Run | Tests | Mutants | Killed (module) | Killed (isolated) |
+|---|---|---|---|---|---|
+| `round3-first-pass-results.json` | first pass at 11f2c73e (M56 omitted) | 70 OK | 69 | 68 | 68 |
+| `round3-results.json` | full replay at 29d3ce1e | 71 OK | 70 | **70** | **70** |
+
+The first pass left one survivor, M68: a failing diagnostic identity read
+as "no partition". It survived because the stored identity was never empty
+in the test. `test_failing_identity_is_not_read_as_an_absent_partition` now
+covers a snapshot without a partition, and it kills M68. The first pass also
+left out M56 (which lived in `run_m56.py`); the full replay includes it.
+
+The R1 rewrite of `collect_dashboard_sources` moved three anchors. M20, M22
+and M54 are re-anchored with the same intent (`reanchored` in the JSON). M19,
+M20 and M28 pointed at the removed wall-clock budget test. They now point
+at its simulated-clock replacements.
+
+New mutants:
+
+| Mutant | File | Removes or breaks | Isolated target |
+|---|---|---|---|
+| M57 | `global_sources.py` | the worker's deadline gate | `test_budget_overrun_mid_list_leaves_the_rest_unread` |
+| M58 | `global_sources.py` | the gate after the session opens and before the list | `test_session_that_consumes_the_budget_lists_nothing` |
+| M59 | `global_sources.py` | waiting on the watchdog | `test_list_that_never_returns_is_unavailable_and_reads_nothing` |
+| M60 | `global_sources.py` | cancelling in-flight work at the deadline | `test_reads_in_flight_at_the_deadline_are_cancelled_and_counted` |
+| M61 | `global_sources.py` | marking watchdog expiry as budget exhaustion | `test_list_that_never_returns_is_unavailable_and_reads_nothing` |
+| M62 | `global_sources.py` | the budget terminal in `bounded_sources` | `test_budget_overrun_mid_list_leaves_the_rest_unread` |
+| M63 | `global_sources.py` | the oversize-document terminal | `test_oversize_document_is_partial_with_a_document_terminal` |
+| M64 | `global_sources.py` | counting unread dashboards | `test_list_that_consumes_the_budget_starts_no_read` |
+| M65 | `global_sources.py` | binding the watchdog to the deadline | `test_list_that_never_returns_is_unavailable_and_reads_nothing` |
+| M66 | `impact/service.py` | the continuation's diagnostic check | `test_retired_dashboard_authority_makes_the_cursor_stale` |
+| M67 | `impact/service.py` | the commit's diagnostic check | `test_diagnostic_change_before_commit_refuses_the_cursor` |
+| M68 | `impact/service.py` | a failing identity returning `None` (now `""`) | `test_failing_identity_is_not_read_as_an_absent_partition` |
+| M69 | `impact/provider.py` | the bundle's diagnostic fingerprint | `test_unchanged_partition_pages_are_consistent_and_read_nothing` |
+| M70 | `bounded_sources.py` | the budget's `bounded_sources` row | `test_bound_table_names_the_partition_limits` |
+
+Test-level error kills (`FAILED (errors=N)`; all tests ran, and none is an
+import error):
+- M41 and M53: as in round 2.
+- M59 and M60: the budget tests' 30 s `wait_for` hang guard raised
+  `TimeoutError` (63 s per mutant). A correct collector never reaches the
+  guard; it exists so that broken cancellation fails rather than hangs.
+- M69: `ANALYSIS_UNAVAILABLE` at the snapshot commit in the pagination
+  tests.

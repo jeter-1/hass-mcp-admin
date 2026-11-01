@@ -120,7 +120,7 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
 (`scene.synthetic_evening`, `group.synthetic_downstairs`, dashboards
 `lovelace` and `synthetic-two`).
 
-- `tests/test_hamcp227_global_sources.py` (70 tests):
+- `tests/test_hamcp227_global_sources.py` (71 tests):
   - scene and group references at `$.attributes.entity_id[n]`, and every
     completeness state, with exact-boundary controls for each bound;
   - dashboard references at exact paths through conditional, stack and grid
@@ -137,7 +137,8 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
   - impact pagination (R1-M2): consistent pages with no extra read, stale
     cursor after authority retirement, a replaced partition and an index
     refresh, refusal when the partition changes before commit, a failing
-    identity fails closed, and the counters;
+    identity fails closed (also when no partition was stored), and the
+    counters;
   - the reader: exactly 1 list + N reads, the lease lifecycle, refusals
     with zero dispatch, drift after the list, caller and audit attribution,
     screened paths;
@@ -152,7 +153,10 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
   - the bound table names every partition limit.
 - Mutations in a copied tree (`docs/evidence/hamcp227-mutations/`): round 1
   killed 48 of 55; the 7 survivors each got an isolated test; round 2
-  killed 55 of 55; M56 (provider attribution) is killed.
+  killed 55 of 55; M56 (provider attribution) is killed. Round 3 replays
+  M01–M56 and adds M57–M70 for the R1 budget and cursor enforcement
+  points: 70 of 70 killed, both in the full module and by each mutant's
+  isolated target test, after one survivor (M68) got its own test.
 
 ### 1.3 Review item: governed rename or removal disclosure
 
