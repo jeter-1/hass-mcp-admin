@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.4.1-beta.54 - Scene, group and dashboard reference coverage in dependency and impact analysis (HAMCP-227) (staged)
+## 2.4.1-beta.55 - Scene, group and dashboard reference coverage in dependency and impact analysis (HAMCP-227) (staged)
 
-Builds on 2.4.1-beta.53 (HAMCP-071). Read-only. No tool,
+Builds on 2.4.1-beta.54 (HAMCP-263, #339). Read-only. No tool,
 input schema, write path, route, fallback, persisted format, signed profile
 or snapshot fingerprint change.
 

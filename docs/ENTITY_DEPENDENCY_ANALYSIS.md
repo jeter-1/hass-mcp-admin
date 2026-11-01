@@ -117,7 +117,7 @@ as generic entity references. No script is run by analysis. The original
 [beta.1 acceptance](V2_4_0_BETA1_ACCEPTANCE.md) remains historical; the new contract
 defines additional source/disposable and separately authorized installed checks.
 
-### Scene, group and dashboard diagnostics — HAMCP-227 (2.4.1-beta.54)
+### Scene, group and dashboard diagnostics — HAMCP-227 (2.4.1-beta.55)
 
 These references live in `GlobalSourceDiagnostics`, a second diagnostic
 partition. Like the script partition, it is outside the helper obligation
@@ -127,7 +127,7 @@ fingerprint. The snapshot rows for scene, group, template and dashboard keep
 their fingerprinted `unavailable` state; `entity_dependency_analysis` and
 `change_impact_analysis` overlay the partition rows. The integrity, incident
 and handoff analyses do not merge it yet (HAMCP-267). Governed plan
-disclosure does not include it (see the beta.54 acceptance, section 1.3).
+disclosure does not include it (see the beta.55 acceptance, section 1.3).
 
 - **Scenes and groups.** Each `scene.*` and `group.*` state's `entity_id`
   attribute is read at `$.attributes.entity_id[n]`. This is loaded

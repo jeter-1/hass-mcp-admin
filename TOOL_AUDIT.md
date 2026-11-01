@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Scene, group and dashboard dependency coverage (2.4.1-beta.54, HAMCP-227)
+## Scene, group and dashboard dependency coverage (2.4.1-beta.55, HAMCP-227)
 
 No tool, descriptor or input schema changes. `entity_dependency_analysis`
 and `change_impact_analysis` stay read-only and merge a diagnostic partition

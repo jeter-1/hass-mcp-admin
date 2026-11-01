@@ -1,4 +1,4 @@
-# Engineering 2.4.1-beta.54 acceptance
+# Engineering 2.4.1-beta.55 acceptance
 
 This contract covers HAMCP-227 Part 2: scene, group and dashboard reference
 coverage in `entity_dependency_analysis` and `change_impact_analysis`. It is
@@ -7,22 +7,21 @@ fallback.
 
 See also:
 - Release notes:
-  [`V2_4_1_BETA54_RELEASE_NOTES.md`](V2_4_1_BETA54_RELEASE_NOTES.md).
+  [`V2_4_1_BETA55_RELEASE_NOTES.md`](V2_4_1_BETA55_RELEASE_NOTES.md).
 - Coverage contract:
   [`ENTITY_DEPENDENCY_ANALYSIS.md`](ENTITY_DEPENDENCY_ANALYSIS.md).
 
-**Release target.** `2.4.1-beta.54`, the next free beta after `main`'s
-2.4.1-beta.53 (HAMCP-071). It is staged in `.release/next-version` and
+**Release target.** `2.4.1-beta.55`, the next free beta after `main`'s
+2.4.1-beta.54 (HAMCP-263, #339). It is staged in `.release/next-version` and
 materialized on this branch by `python scripts/promote_next_release.py
---apply` (beta.53 → beta.54) in a separate commit that updates the three
+--apply` (beta.54 → beta.55) in a separate commit that updates the three
 version authorities:
 - `hass_mcp_engineering_beta/config.yaml`;
 - `ha_mcp_engineering/version.py` `SERVER_VERSION`;
 - `scripts/validate_addon_metadata.py` `BETA_VERSION`.
 
-HAMCP-263 (PR #339) also targets beta.54. Whichever pull request merges
-first keeps beta.54; the other merges `main` and restages to the next free
-beta.
+HAMCP-263 (PR #339) merged first with beta.54, so this pull request merged
+`main` and restaged to beta.55.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -35,7 +34,7 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- `2.4.1-beta.54` in all three version authorities,
+- `2.4.1-beta.55` in all three version authorities,
   with exact acceptance and release-note resolution from
   `scripts/codex-context.py`;
 - the PR head SHA;
@@ -190,7 +189,7 @@ re-trigger approval. A follow-up would need:
 
 ### Downgrade rule
 
-Rollback is reinstalling **2.4.1-beta.53**. beta.54 writes no new
+Rollback is reinstalling **2.4.1-beta.54**. beta.55 writes no new
 persisted record. Never
 clear F3 journals, task files or locks.
 
