@@ -556,15 +556,37 @@ class BudgetReader(FakeReader):
         return await super().read(path)
 
 
-# Failure detector only: a correct collector finishes on the simulated clock and
-# never reaches it. It turns broken cancellation into a failure, not a hang.
-HANG_GUARD_SECONDS = 30
+# Event-loop turns the collector may take. Nothing here does I/O or waits on
+# wall-clock time, so a correct collector finishes in the same few turns on every
+# run. A collector that ignores the watchdog, or never cancels the work it
+# guards, is still pending afterwards and fails the completion assertion.
+COLLECTION_TURNS = 200
 
 
 def collect_budget(reader, clock, sleep):
-    return asyncio.run(asyncio.wait_for(
-        g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep), HANG_GUARD_SECONDS,
-    ))
+    async def drive():
+        task = asyncio.ensure_future(
+            g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep))
+        try:
+            for _ in range(COLLECTION_TURNS):
+                if task.done():
+                    break
+                await asyncio.sleep(0)
+            if not task.done():
+                raise AssertionError("dashboard collection still pending after the simulated deadline")
+            return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    return asyncio.run(drive())
+
+
+def deadline_reached(clock, sleep):
+    """Move the simulated clock to the deadline and fire the watchdog."""
+    clock.now = g.DASHBOARD_SCAN_SECONDS
+    sleep.fire.set()
 
 
 class DashboardBudgetTests(unittest.TestCase):
@@ -576,7 +598,7 @@ class DashboardBudgetTests(unittest.TestCase):
 
     def test_list_that_never_returns_is_unavailable_and_reads_nothing(self):
         clock, sleep = FakeClock(), ControlledSleep()
-        reader = BudgetReader(self.DOCUMENTS, clock, hang_list=True, on_hang=lambda _: sleep.fire.set())
+        reader = BudgetReader(self.DOCUMENTS, clock, hang_list=True, on_hang=lambda _: deadline_reached(clock, sleep))
         result = collect_budget(reader, clock, sleep)
         self.assertEqual(result["coverage"].completeness, "unavailable")
         self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1})
@@ -624,7 +646,7 @@ class DashboardBudgetTests(unittest.TestCase):
         def on_hang(name):
             started.append(name)
             if len(started) == g.DASHBOARD_READ_CONCURRENCY:
-                sleep.fire.set()
+                deadline_reached(clock, sleep)
 
         reader = BudgetReader(self.DOCUMENTS, clock, hang_reads=True, on_hang=on_hang)
         result = collect_budget(reader, clock, sleep)
