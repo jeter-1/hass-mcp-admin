@@ -723,6 +723,24 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [child_id], [item["child_id"] for item in collected(task_id)]
         )
+        # A terminal parent without F3 authority, or one that cannot be
+        # read, is never collected.
+        parent = self.service.task_repository.get(task_id)
+        legacy = replace(
+            parent,
+            legacy_projection={
+                **dict(parent.legacy_projection),
+                "execution_authority": "legacy",
+            },
+        )
+        repository = self.service.task_repository
+        with patch.object(repository, "get", return_value=legacy):
+            self.assertEqual((), collected(task_id))
+        with patch.object(repository, "get", side_effect=OSError("synthetic")):
+            self.assertEqual((), collected(task_id))
+        self.assertEqual(
+            [child_id], [item["child_id"] for item in collected(task_id)]
+        )
 
     def test_terminal_post_intent_key_release_rule(self):
         class _Record:
