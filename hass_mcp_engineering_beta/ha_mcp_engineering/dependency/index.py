@@ -533,20 +533,31 @@ class DependencyIndex:
             or obligations_truncated
         ):
             METRICS.record_dependency_truncation()
+            # HAMCP-227: any truncation keeps automation partial, as before,
+            # and every other source with dropped evidence is partial too.
+            truncated_sources = {"automation"} | {
+                item.source_type
+                for item in (
+                    *sorted(scan.findings, key=lambda item: item.evidence_id)[self.max_edges:],
+                    *dynamic_reference_overflow,
+                    *obligation_overflow,
+                )
+            }
             coverage = [
                 replace(
                     item,
                     completeness=(
                         "partial"
-                        if item.source_type == "automation"
+                        if item.source_type in truncated_sources
+                        and item.completeness == "complete"
                         else item.completeness
                     ),
                     warnings=(
                         [
                             *item.warnings,
-                            "Automation dependency evidence exceeded the bounded index payload.",
+                            f"{item.source_type.capitalize()} dependency evidence exceeded the bounded index payload.",
                         ]
-                        if item.source_type == "automation"
+                        if item.source_type in truncated_sources
                         else list(item.warnings)
                     ),
                 )
@@ -643,6 +654,7 @@ class DependencyIndex:
             source_epoch=source_epoch,
             semantic_evidence=scan.semantic_evidence,
             script_diagnostics=(scan.script_diagnostics.visible() if scan.script_diagnostics is not None else None),
+            global_sources=scan.global_sources,
             state_trigger_values=tuple(scan.state_trigger_values),
             sanitizer_registry=registry,
         )
