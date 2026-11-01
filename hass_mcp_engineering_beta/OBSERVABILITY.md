@@ -929,6 +929,16 @@ last successful build, cumulative truncation events, and the current index's unr
 dynamic-reference count. Entity IDs
 are never metric labels. Health exposes no findings or raw configuration.
 
+Since 2.4.1-beta.55 (HAMCP-227) the build profile's
+`request_count_by_operation` adds `dashboard_list` (at most 1 per build) and
+`dashboard_configuration` (one per dashboard read attempt). Scenes and groups
+add no request. Each dashboard dispatch writes an audit event
+(`dependency_dashboard_list` or `dependency_dashboard_read`) with its own
+`request_id`, the build's `parent_request_id`, provider `upstream_dashboard`,
+the upstream operation, `result_status` and `fallback_occurred: false`.
+`get_server_health` reports the profile of the last build and never builds
+the index itself.
+
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational
 latency. Transport completions are counted separately without treating session
 lifetime as request-processing time. Metrics are process-local and reset

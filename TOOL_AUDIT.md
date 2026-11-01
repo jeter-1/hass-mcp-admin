@@ -2,6 +2,18 @@
 
 Date: 2026-07-10
 
+## Scene, group and dashboard dependency coverage (2.4.1-beta.55, HAMCP-227)
+
+No tool, descriptor or input schema changes. `entity_dependency_analysis`
+and `change_impact_analysis` stay read-only and merge a diagnostic partition
+outside the governance-bound index. Scenes and groups reuse the states
+already read (`direct_ha_api`, no request). Dashboards use only the reviewed
+`list_dashboards` and analysis read path (`upstream_dashboard`), under the
+build's authority and a `core.dashboard_configuration_read` lease, with one
+audited child request per dispatch, no fallback and no write. Templates are
+deferred (HAMCP-264). An unread partition row is attributed to `none`. The
+catalog count is the base's (79 static; 107, or 108 with the YAML reader).
+
 ## Scene configuration edit, inactive (2.4.1-beta.53, HAMCP-071)
 
 `create_scene_configuration_plan` is a native governed planning tool:

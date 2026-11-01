@@ -30,7 +30,9 @@ entity is analyzed normally because stale references may remain.
 | Entity current state | transitional direct | Exact entity state requires direct HA REST; no fallback or Standard MCP claim |
 | Entity registry | transitional direct | HA WebSocket entity registry |
 | Scripts (introduced in 2.4.0-beta.1; loaded source HAMCP-212) | partial or unavailable | Loaded configuration via fixed read-only `script/config`/`search/related` on the shared HAMCP-209 batch; admitted internal `ha_config_get_script` for counted stored fallbacks; exact registry identity |
-| Scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
+| Scenes and groups (HAMCP-227) | complete or partial | Loaded membership from the `entity_id` attribute of the states already read; no extra request; `direct_ha_api` |
+| Dashboards (HAMCP-227) | complete, partial or unavailable | Reviewed `list_dashboards` and analysis read path plus the dashboard walker; `upstream_dashboard`; no fallback |
+| Template source | unavailable | Deferred (HAMCP-264); the template-platform registry count is reported |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
 Direct inventory and automation evidence is labeled `direct_ha_api`. Script
@@ -114,6 +116,51 @@ partition, using registry storage-key mappings rather than treating service name
 as generic entity references. No script is run by analysis. The original
 [beta.1 acceptance](V2_4_0_BETA1_ACCEPTANCE.md) remains historical; the new contract
 defines additional source/disposable and separately authorized installed checks.
+
+### Scene, group and dashboard diagnostics — HAMCP-227 (2.4.1-beta.55)
+
+These references live in `GlobalSourceDiagnostics`, a second diagnostic
+partition. Like the script partition, it is outside the helper obligation
+ledger, the snapshot findings and the snapshot fingerprint: governance
+cannot be downgraded by it, and a dashboard edit changes no approval-bound
+fingerprint. The snapshot rows for scene, group, template and dashboard keep
+their fingerprinted `unavailable` state; `entity_dependency_analysis` and
+`change_impact_analysis` overlay the partition rows. The integrity, incident
+and handoff analyses do not merge it yet (HAMCP-267). Governed plan
+disclosure does not include it (see the beta.55 acceptance, section 1.3).
+
+- **Scenes and groups.** Each `scene.*` and `group.*` state's `entity_id`
+  attribute is read at `$.attributes.entity_id[n]`. This is loaded
+  membership, not stored configuration, and is labeled so. No request is
+  made beyond the states and registry the build already reads. A source
+  without a member list, a registry-only scene or stateless group helper,
+  an incomplete registry, a withheld member or identity, and the bounds
+  (1,000 scenes, 1,000 groups, 256 members each, 10,000 findings) are
+  partial with counted reasons.
+- **Dashboards.** One reviewed `list_dashboards` request, then one reviewed
+  analysis read per dashboard (at most 50, 4 concurrent, 6 s budget,
+  concurrent with the rest of the build). The dashboard walker extracts
+  entity references through conditional, stack and grid cards and reports
+  the exact path, for example `$.views[0].cards[1].cards[0].entity`. A
+  custom card, an unsupported component, a dashboard or view strategy, a
+  missing `lovelace`, a truncated or partial list, a projection over 1,024
+  walker items, more than 10,000 findings, a read failure and a budget
+  overrun are partial with counted reasons. A read failure stays with its
+  dashboard. A list failure or a missing reader is unavailable with the
+  reason. Each dispatch is leased (`core.dashboard_configuration_read`),
+  revalidated, and audited as a child of the build request. Cached evidence
+  is withheld when that authority retires.
+- **Templates and scripts.** Template configuration enumeration is deferred
+  (HAMCP-264): there is no audited read purpose for YAML templates, and the
+  only path to UI template helper configuration is an options flow that can
+  write. The template row is unavailable and reports the template-platform
+  registry count as a lower bound. The script row states that complete
+  script enumeration is deferred.
+- **Truncation.** When the bounded index drops evidence, every source type
+  with dropped evidence is partial, not only automations.
+- **Policy.** These rows only add evidence: a partial or unavailable source
+  keeps the assessment from claiming complete coverage, and an unread row
+  is attributed to provider `none`.
 
 ## Matching and response semantics
 
