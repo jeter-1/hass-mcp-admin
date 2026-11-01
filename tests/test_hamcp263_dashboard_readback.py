@@ -795,6 +795,16 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((), collected(task_id))
         with patch.object(repository, "get", side_effect=OSError("synthetic")):
             self.assertEqual((), collected(task_id))
+        # Under the same terminal parent, an already terminal child and a
+        # child without a dispatch intent are never collected for a read.
+        children = self.runtime.children
+        record = children.get(child_id)
+        for shape in (
+            replace(record, terminal=True),
+            replace(record, dispatch_intent=None),
+        ):
+            with patch.object(children, "get", return_value=shape):
+                self.assertEqual((), collected(task_id))
         self.assertEqual(
             [child_id], [item["child_id"] for item in collected(task_id)]
         )
