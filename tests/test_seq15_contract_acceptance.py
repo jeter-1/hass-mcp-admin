@@ -1,8 +1,6 @@
-"""Offline controls for the HAMCP-232/145/106 seq-15 lane receipts, not Core execution.
+"""Offline refusal controls for the five exact-Core seq-15 evidence lanes.
 
-The lanes are defined but dormant: they run only inside the disposable Real HA
-job for the exact 2026.10.3 candidate slot when ``REAL_HA_SEQ15_LANES`` is
-``enabled``, which no committed workflow sets. Receipts here are synthetic.
+These receipts are synthetic; they never substitute for disposable Core CI.
 """
 import copy
 import inspect
@@ -25,9 +23,10 @@ from test_alarmo_interval_observer import NOT_SLOTS, NOT_STRINGS, SLOT_VERSIONS 
 
 CORE = seq15.TARGET_CORE
 CORE_SLOT = next(slot for slot, version in SLOT_VERSIONS.items() if version == CORE)
-OTHER_CORES = [version for version in SLOT_VERSIONS.values() if version != CORE]
+OTHER_CORES = [version for version in SLOT_VERSIONS.values() if version not in seq15.TARGET_CORES]
 REFUSED = (AssertionError, ValueError, KeyError, TypeError)
 FINGERPRINTS = {
+    "scene_configuration": ["sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb"],
     "helper_options": ["sha256:ce2765dc5caf616ae199fdccf64ce6ec68e1386bb0949099d1896bcb50dd98d8"],
     "input_select_option": ["sha256:e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d"],
     "script_traces": ["sha256:749904fe40b13db4289301d24b958836fc72c810829611729d8c26080f06ca03"],
@@ -118,6 +117,8 @@ def dashboard_scenarios():
     scenarios["rollback"] = {**update(current, prior, seq15.DASHBOARD_FIELDS), "status": "rollback_plan_created",
                              "prior": dict(prior)}
     scenarios["rollback"].pop("icon_key_absent")
+    scenarios["unknown_id"] = {"result": "PASS", "error_code": "not_found", "inventory_unchanged": True}
+    scenarios["immutable_fields"] = {"result": "PASS", "errors": dict.fromkeys(("url_path", "mode"), "invalid_format"), "row_unchanged": True}
     return {**scenarios,
             "no_change": refused(seq15.DASHBOARD_NO_CHANGE, error_code="invalid_request", commands=3),
             "default_dashboard": refused(seq15.DASHBOARD_DEFAULT_REFUSED, error_code="invalid_request", commands=0),
@@ -126,8 +127,27 @@ def dashboard_scenarios():
             "stale_state": stale(), "content_drift": stale()}
 
 
+def scene_scenarios():
+    from seq15_scene_contract import EDITS, SCOPE
+    rows = {name: {**governed(seq15.SCENE_POST, expected={"id": "seq15_12345678", "name": "Exact "}),
+                   "registry_identity_unchanged": True, "member_state_unchanged": True,
+                   "full_entry_preserved": True, "verification_scope": SCOPE, "loaded_state": "not_verified"}
+            for name in (*EDITS, "rollback")}
+    rows["rollback"]["status"] = "rollback_plan_created"
+    for name, reason in {"no_change": "no_change", "not_found": "target_not_found",
+                         "unknown_member": "unknown_entities", "target_mismatch": "target_mismatch"}.items():
+        rows[name] = refused("scene_configuration_" + reason)
+    rows["stale_state"] = stale()
+    rows["stored_mismatch"] = {"result": "PASS", "task_state": "failed_post_dispatch", "dispatch_counts": [1],
+                               "ha_writes": 1, "write_types": [seq15.SCENE_POST], "diagnostic_codes": ["exact_readback_not_verified"],
+                               "mismatch_retained": True, "member_state_unchanged": True}
+    rows["id_assignment"] = {"result": "PASS", "assigned_id_valid": True, "unrequested_keys_preserved": True}
+    return rows
+
+
 SCENARIOS = {"helper_options": helper_scenarios, "input_select_option": input_select_scenarios,
-             "script_traces": script_trace_scenarios, "dashboard_metadata": dashboard_scenarios}
+             "script_traces": script_trace_scenarios, "dashboard_metadata": dashboard_scenarios,
+             "scene_configuration": scene_scenarios}
 
 
 def complete_receipt(lane_key, core_version=CORE):
@@ -145,6 +165,7 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_transition": list(lane["authority_transition"]),
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
+        "batch_health": {"compatible_count": 31, "withheld_count": 0},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
@@ -153,10 +174,61 @@ def complete_receipt(lane_key, core_version=CORE):
         "fixture_absence": dict.fromkeys(seq15.FIXTURE_ABSENCE, True)}
 
 
+class InputSelectDriftFixtureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_lane_drift_supplies_cores_required_name_and_preserves_state(self):
+        current = {"state": "Home", "attributes": {"options": ["Home", "Away", "Night"]}}
+        fixture, updates = {}, []
+
+        async def ok(payload):
+            if payload["type"] == "input_select/create":
+                fixture.update(id="seq15_test", name=payload["name"], options=payload["options"])
+                return dict(fixture)
+            self.assertEqual(payload["type"], "input_select/update")
+            # Exact Core STORAGE_FIELDS requires name AND options on update.
+            self.assertEqual(payload["name"], fixture["name"])
+            self.assertEqual(payload["input_select_id"], fixture["id"])
+            self.assertEqual(set(payload), {"type", "input_select_id", "name", "options"})
+            updates.append(payload)
+            current["attributes"]["options"] = payload["options"]
+
+        async def status(*_args):
+            return 200, copy.deepcopy(current)
+
+        async def plan(*_args):
+            return {"status": "no_change", "outcome": "already_desired", "plan_created": False}
+
+        async def refused_plan(*_args):
+            return refused("option_not_available")
+
+        async def apply_created(_created):
+            current["state"] = "Home"
+            return governed(seq15.SELECT_OPTION, expected="Home")
+
+        async def rollback(_plan_id):
+            return {"status": "rollback_plan_created"}, {"plan_id": "reverse"}
+
+        async def apply(_runtime, arguments, *, observed=None, between=None):
+            if between:
+                await between()
+                return stale()
+            observed["plan"] = {"plan_id": "forward"}
+            current["state"] = arguments["option"]
+            return governed(seq15.SELECT_OPTION, expected=arguments["option"])
+
+        result = await seq15._input_select_scenarios({
+            "stage": ["test"], "owned": {}, "raw": SimpleNamespace(ok=ok, status=status),
+            "runtime": None, "log": SimpleNamespace(writes=[]), "plan": plan,
+            "refused_plan": refused_plan, "governed": apply, "rollback": rollback,
+            "apply_created": apply_created})
+        self.assertEqual(len(updates), 1)
+        for name, value in result.items():
+            seq15.CHECKS["input_select_option"](name, value)
+
+
 class LaneDefinitionTests(unittest.TestCase):
     def test_lanes_bind_the_dormant_seq15_profiles_from_source(self):
         self.assertEqual(sorted(seq15.LANES),
-                         ["dashboard_metadata", "helper_options", "input_select_option", "script_traces"])
+                         ["dashboard_metadata", "helper_options", "input_select_option", "scene_configuration", "script_traces"])
         fingerprints = {key: [r["contract_fingerprint"] for r in seq15.source_profiles(lane)]
                         for key, lane in seq15.LANES.items()}
         self.assertEqual(fingerprints, FINGERPRINTS)
@@ -177,8 +249,8 @@ class LaneDefinitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "adapter differs"):
             seq15.source_profiles(lane)
 
-    def test_only_the_2026_10_3_slot_is_extended(self):
-        # OD-13: seq 15 extends the candidate slot only; current and rollback stay unextended.
+    def test_exact_two_releases_are_extended(self):
+        self.assertEqual(seq15.TARGET_CORES, {"2026.10.1", "2026.10.3"})
         self.assertEqual(SLOT_VERSIONS["candidate"], "2026.10.3")
         self.assertEqual(seq15.TARGET_CORE, "2026.10.3")
         self.assertNotIn(seq15.TARGET_CORE, (SLOT_VERSIONS["current"], SLOT_VERSIONS["rollback"]))
@@ -188,8 +260,11 @@ class LaneDefinitionTests(unittest.TestCase):
         refs = seq15.predecessor_references()
         ids = {r["capability_id"] for r in refs}
         self.assertEqual(len(refs), 26)
-        self.assertFalse(ids & seq15.SEQ15_DORMANT)
-        self.assertEqual(ids | seq15.SEQ15_DORMANT, {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT))
+        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT,
+                         {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        # HAMCP-269 includes the scene profile in this five-capability batch.
+        self.assertEqual(seq15.SEQ16_DORMANT, set())
         registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
         (signed,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == seq15.TARGET_CORE]
         self.assertEqual(sorted(c["capability_id"] for c in signed["capabilities"]), sorted(ids))
@@ -231,7 +306,8 @@ class LaneDefinitionTests(unittest.TestCase):
                                  {"helper_options": {seq15.OPTIONS_SUBMIT},
                                   "input_select_option": {seq15.SELECT_OPTION},
                                   "script_traces": set(),
-                                  "dashboard_metadata": {seq15.DASHBOARD_UPDATE}}[key])
+                                  "dashboard_metadata": {seq15.DASHBOARD_UPDATE},
+                                  "scene_configuration": {seq15.SCENE_POST}}[key])
         self.assertIn("call_service", seq15.LANES["helper_options"]["never_sent"])
         self.assertIn("POST /config/config_entries/flow", seq15.LANES["helper_options"]["never_sent"])
         self.assertIn("call_service:input_select.set_options", seq15.LANES["input_select_option"]["never_sent"])
@@ -357,6 +433,8 @@ class ReceiptTests(unittest.TestCase):
             lambda v: v["fixture_absence"].pop("script"),
             lambda v: v["fixture_absence"].update(unverified=True),
             lambda v: v.update(provider_identity="supervisor"),
+            lambda v: v["batch_health"].update(withheld_count=1),
+            lambda v: v["batch_health"].update(compatible_count=30),
             lambda v: v.update(predecessor_capabilities_sha256="2" * 64),
             lambda v: v["predecessor_admission"].update(route_acquired=True),
             lambda v: v["predecessor_admission"].update(route_available=True),
@@ -530,6 +608,10 @@ class ReceiptTests(unittest.TestCase):
             "default_planned": lambda s: s["default_dashboard"].update(plan_created=True),
             "default_wrong_error": lambda s: s["default_dashboard"].update(error_code="validation_failed"),
             "default_wrong_reason": lambda s: s["default_dashboard"].update(reason_code=seq15.DASHBOARD_NO_CHANGE),
+            "unknown_id_created": lambda s: s["unknown_id"].update(inventory_unchanged=False),
+            "unknown_id_wrong_error": lambda s: s["unknown_id"].update(error_code="invalid_format"),
+            "immutable_accepted": lambda s: s["immutable_fields"]["errors"].update(mode=None),
+            "immutable_changed": lambda s: s["immutable_fields"].update(row_unchanged=False),
             "content_changed": lambda s: s["content_unchanged"].update(raw_config_unchanged=False),
             "content_fingerprint_differs": lambda s: s["content_unchanged"].update(fingerprints_match=False),
             "content_never_read": lambda s: s["content_unchanged"].update(fingerprint_reads=0),
@@ -544,6 +626,46 @@ class ReceiptTests(unittest.TestCase):
                }.items()},
         }
         self.assert_scenarios_refuse("dashboard_metadata", mutations)
+
+    def test_scene_receipt_requires_exact_readback_preservation_and_no_activation(self):
+        mutations = {
+            **self.missing("scene_configuration"),
+            **{name + "_" + key: (lambda name, key: lambda s: s[name].update({key: False}))(name, key)
+               for name in (*seq15.scene_contract.EDITS, "rollback")
+               for key in ("registry_identity_unchanged", "member_state_unchanged", "full_entry_preserved")},
+            "type_mismatch": lambda s: s["members"].update(expected={"state": 1}, readback={"state": True}),
+            "loaded_claim": lambda s: s["name"].update(loaded_state="verified"),
+            "wrong_scope": lambda s: s["icon"].update(verification_scope="loaded"),
+            "redispatch": lambda s: s["name"].update(dispatch_counts=[2]),
+            "activation": lambda s: s["name"].update(write_types=["call_service:scene.turn_on"]),
+            "missing_preserved_key": lambda s: s["icon_clear"]["readback"].pop("id"),
+            "stale_wrote": lambda s: s["stale_state"].update(ha_writes=1),
+            "mismatch_passed": lambda s: s["stored_mismatch"].update(task_state="succeeded_verified"),
+            "mismatch_verified": lambda s: s["stored_mismatch"].update(diagnostic_codes=["exact_readback_verified"]),
+            "mismatch_unexplained": lambda s: s["stored_mismatch"].update(diagnostic_codes=[]),
+            "mismatch_retried": lambda s: s["stored_mismatch"].update(dispatch_counts=[2]),
+            "mismatch_overwritten": lambda s: s["stored_mismatch"].update(mismatch_retained=False),
+            "mismatch_wrong_write": lambda s: s["stored_mismatch"].update(write_types=[seq15.SELECT_OPTION]),
+            "id_not_assigned": lambda s: s["id_assignment"].update(assigned_id_valid=False),
+            "other_entry_changed": lambda s: s["id_assignment"].update(unrequested_keys_preserved=False),
+            **{name + "_accepted": (lambda name: lambda s: s[name].update(plan_created=True))(name)
+               for name in ("no_change", "not_found", "unknown_member", "target_mismatch")},
+        }
+        self.assert_scenarios_refuse("scene_configuration", mutations)
+
+    def test_every_lane_binds_each_exact_release_and_signed_prefix(self):
+        for core in sorted(seq15.TARGET_CORES):
+            binding = alarmo.slot_binding(core)
+            registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
+            (entry,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == core]
+            self.assertEqual(seq15.predecessor_references(core), entry["capabilities"])
+            for lane in seq15.LANES:
+                value = complete_receipt(lane, core)
+                with self.subTest(core=core, lane=lane):
+                    self.verify(lane, value, core, binding["slot"])
+                    value["image_index_digest"] = "sha256:" + "0" * 64
+                    with self.assertRaises(REFUSED):
+                        self.verify(lane, value, core, binding["slot"])
 
     def missing(self, lane_key):
         return {"missing_" + name: (lambda name: lambda s: s.pop(name))(name)
@@ -569,10 +691,10 @@ class FixturePeer:
     def __init__(self, retain=()):
         self.retain = set(retain)
         self.owned = {"config_entries": list(self.ENTRIES), "input_select": self.SELECT, "script": self.SCRIPT,
-                      "dashboard": self.DASHBOARD}
+                      "dashboard": self.DASHBOARD, "scenes": [self.SCRIPT]}
         self.state = {"config_entries": set(self.ENTRIES),
                       "entities": {"sensor." + e.lower(): e for e in self.ENTRIES},
-                      "input_select": {self.SELECT}, "script": {self.SCRIPT}, "dashboard": {self.DASHBOARD}}
+                      "input_select": {self.SELECT}, "script": {self.SCRIPT}, "dashboard": {self.DASHBOARD}, "scene": {self.SCRIPT}}
         self.commands = []
         self.deleted_entries = []
 
@@ -609,27 +731,31 @@ class FixturePeer:
         raise AssertionError("Unexpected synthetic command")
 
     async def rest(self, method, path, body=None):
-        assert method == "DELETE" and path == "/config/script/config/" + self.SCRIPT
-        self.commands.append("DELETE script")
-        if "script" not in self.retain:
-            self.state["script"].discard(self.SCRIPT)
+        kind = path.split("/")[2]
+        assert method == "DELETE" and kind in {"scene", "script"}
+        assert path == "/config/" + kind + "/config/" + self.SCRIPT
+        self.commands.append("DELETE " + kind)
+        if kind not in self.retain:
+            self.state[kind].discard(self.SCRIPT)
 
     async def status(self, method, path, body=None):
-        assert method == "GET" and path == "/config/script/config/" + self.SCRIPT
-        self.commands.append("GET script")
-        return (200, {"alias": "x"}) if self.SCRIPT in self.state["script"] else (404, None)
+        kind = path.split("/")[2]
+        assert method == "GET" and kind in {"scene", "script"}
+        assert path == "/config/" + kind + "/config/" + self.SCRIPT
+        self.commands.append("GET " + kind)
+        return (200, {"alias": "x"}) if self.SCRIPT in self.state[kind] else (404, None)
 
 
 class FixtureCleanupTests(unittest.IsolatedAsyncioTestCase):
     COMPLETE = dict.fromkeys(seq15.FIXTURE_ABSENCE, True)
     READS = {"config_entries": "config_entries/get", "entities": seq15.REGISTRY_LIST,
-             "input_select": "input_select/list", "script": "GET script", "dashboard": seq15.DASHBOARD_LIST}
+             "input_select": "input_select/list", "script": "GET script", "dashboard": seq15.DASHBOARD_LIST, "scene": "GET scene"}
 
     async def test_complete_cleanup_reads_back_every_owned_type(self):
         peer = FixturePeer()
         absence = await seq15.cleanup_fixtures(peer, peer.owned, attempts=2, delay=0)
         self.assertEqual(absence, self.COMPLETE)
-        self.assertEqual(set(peer.commands) - {"DELETE config_entry", "input_select/delete", "DELETE script",
+        self.assertEqual(set(peer.commands) - {"DELETE config_entry", "input_select/delete", "DELETE script", "DELETE scene",
                                                "lovelace/dashboards/delete"},
                          set(self.READS.values()))
         self.assertTrue(all(not items for items in peer.state.values()))
@@ -793,7 +919,8 @@ class DormancyTests(unittest.IsolatedAsyncioTestCase):
                 await seq15.run_disposable("helper_options", private, expected_image=private, core_version=private)
         diagnostic = found.exception.contract_diagnostic
         self.assertEqual(set(diagnostic), {"seq15_source_lines", "seq15_stage"})
-        self.assertTrue(all(type(line) is int for line in diagnostic["seq15_source_lines"]))
+        self.assertTrue(all(type(line["line"]) is int and line["file"] in {"seq15_contract_acceptance.py", "seq15_scene_contract.py"}
+                            for line in diagnostic["seq15_source_lines"]))
         self.assertNotIn(private, json.dumps(diagnostic))
         with patch.dict(os.environ, {seq15.ENABLE_FLAG: seq15.ENABLED}), self.assertRaises(KeyError) as found:
             await seq15.run_disposable(private, None, expected_image=private, core_version=private)
@@ -814,7 +941,7 @@ class DormancyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.count("import seq15_contract_acceptance"), 1)
         self.assertEqual(source.count("seq15.run_disposable("), 1)
         self.assertEqual(source.count("retained.update(seq15_results)"), 1)
-        self.assertEqual(source.count("if EXPECTED_HA_VERSION == seq15.TARGET_CORE else ()"), 1)
+        self.assertEqual(source.count("if EXPECTED_HA_VERSION in seq15.TARGET_CORES else ()"), 1)
         hook = source.index(flag)
         self.assertLess(hook, source.index("import seq15_contract_acceptance"))
         self.assertLess(source.index("import seq15_contract_acceptance"), source.index("seq15.run_disposable("))
@@ -839,7 +966,7 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
             (local, binding["image"].split("@")[0], CORE, binding["lane"]),
             (SimpleNamespace(ha_url="http://homeassistant.local:8123"), binding["image"], CORE, binding["lane"]),
         ]
-        # OD-13: an exactly bound 2026.10.1 or 2026.10.0 slot is still refused.
+        # Releases outside the two exact targets remain refused.
         for other in OTHER_CORES:
             own = alarmo.slot_binding(other)
             cases.append((local, own["image"], other, own["lane"]))

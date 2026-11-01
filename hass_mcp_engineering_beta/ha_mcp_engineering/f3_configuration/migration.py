@@ -52,6 +52,7 @@ def proposal_from_configuration_operation(
         "label_registry_entry",
         "config_entry_helper_options",
         "dashboard_metadata",
+        "scene_configuration",
     }:
         raise ValueError("configuration resource type is not reviewed")
     if plan.policy_decision is None:

@@ -6,12 +6,35 @@ through one read-only readback, never a redispatch. It settles a
 dashboard child stranded under an already-terminal parent without
 changing that parent, and releases the expired locks such a child kept,
 which blocked later governed configuration applies. No tool, input
-schema, persisted format or Home Assistant write changes. Rollback is
-reinstalling beta.52. Read the
+schema, persisted format or Home Assistant write changes. It builds on
+beta.53. Rollback is reinstalling beta.53. Read the
 [2.4.1-beta.54 release notes](docs/V2_4_1_BETA54_RELEASE_NOTES.md) and the
 [2.4.1-beta.54 acceptance contract](docs/V2_4_1_BETA54_ACCEPTANCE.md).
 
-Engineering **2.4.1-beta.52** (HAMCP-097) stops
+Staged, not yet released: Engineering **2.4.1-beta.53** (HAMCP-071) builds
+a governed edit of one existing UI-managed scene, inactive. The new tool
+`create_scene_configuration_plan` proposes `name`, `icon` and member-state
+(`entities`) changes to one scene by `config_id`. It sends one
+`POST /api/config/scene/config/{config_id}` with the full proposed
+configuration (no `id`, `metadata` kept exactly). It verifies the result by
+exact readback of the stored configuration and the registry identity; it
+does not verify the scene Home Assistant has loaded
+(`loaded_state: "not_verified"`). Saving never activates the scene, and the tool never sends
+`scene.turn_on`, `scene.apply`, `scene.create`, `scene.reload`,
+`scene.delete` or the scene-config DELETE. It refuses
+`pending_signed_registry_admission` before any Home Assistant request or
+persistence until a signed Core registry sequence (planned 16) names
+`core.scene_configuration_operation`. Creating a scene is a follow-up
+(HAMCP-071 Part 3). No signed registry, signed profile, existing
+fingerprint or existing schema changes. Static tools 79; advertised catalog
+107 (108 with the optional YAML reader). Rollback is reinstalling beta.52.
+Read the
+[2.4.1-beta.53 release notes](docs/V2_4_1_BETA53_RELEASE_NOTES.md) and
+[2.4.1-beta.53 acceptance contract](docs/V2_4_1_BETA53_ACCEPTANCE.md).
+
+It builds on beta.52 and the releases below.
+
+Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
 `get_server_health(check_ha=false)` from re-decoding and re-projecting
 unchanged history. Terminal records and their projections are reused only
 for byte-identical input, and the historical validation now runs in the

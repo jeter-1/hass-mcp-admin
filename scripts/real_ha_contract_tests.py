@@ -3671,18 +3671,27 @@ async def _run_core_2026_9_child_contract(
                     core_version=EXPECTED_HA_VERSION)
                 if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
                     raise RuntimeError("Required seq-13 disposable scenario did not pass")
-            # HAMCP-232/145: the seq-15 lanes extend 2026.10.3 only (OD-13) and run only
+            # HAMCP-269: the seq-15 lanes cover both exact reviewed releases and run only
             # when the batch evidence run sets REAL_HA_SEQ15_LANES=enabled.
             seq15_results = {}
             if os.environ.get("REAL_HA_SEQ15_LANES") == "enabled":
                 import seq15_contract_acceptance as seq15
                 # Only the target slot runs them; the CI upload then requires every receipt.
-                for lane_key in seq15.LANES if EXPECTED_HA_VERSION == seq15.TARGET_CORE else ():
-                    seq15_results["seq15_" + lane_key] = await seq15.run_disposable(
-                        lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
-                        core_version=EXPECTED_HA_VERSION)
-                    if seq15_results["seq15_" + lane_key].get("result") != "PASS":
-                        raise RuntimeError("Required seq-15 disposable scenario did not pass")
+                for lane_key in seq15.LANES if EXPECTED_HA_VERSION in seq15.TARGET_CORES else ():
+                    try:
+                        result = await seq15.run_disposable(
+                            lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                            core_version=EXPECTED_HA_VERSION)
+                    except Exception as exc:
+                        # Continue independent lanes, retaining only closed/sanitized diagnostics.
+                        output = Path(os.environ[seq15.LANES[lane_key]["output_env"]])
+                        retained_failure = seq15.load_receipt(output.read_bytes()) if output.exists() else {}
+                        result = {**retained_failure, "result": "FAIL", "lane": lane_key,
+                                  "diagnostic": getattr(exc, "contract_diagnostic", {})}
+                        output.write_bytes(seq15.receipt_bytes(result))
+                        print("Seq-15 lane failed: " + json.dumps(
+                            {key: result[key] for key in ("result", "lane", "diagnostic")}, sort_keys=True))
+                    seq15_results["seq15_" + lane_key] = result
             # The existing required artifact carries every clearly named proof.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.
@@ -3692,6 +3701,8 @@ async def _run_core_2026_9_child_contract(
             retained.update(seq13_results)
             retained.update(seq15_results)
             receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
+            if any(value.get("result") != "PASS" for value in seq15_results.values()):
+                raise RuntimeError("Required seq-15 disposable scenarios failed; inspect retained receipts")
         # Native interval observations must finish before the independent
         # upstream client starts its background traffic. Unexpected commands
         # still fail the observer; they are not silently attributed away.

@@ -2,9 +2,9 @@
 
 ## 2.4.1-beta.54 - Dashboard readback recovery settles dispatched updates; stranded post-intent locks released (HAMCP-263)
 
-Builds on 2.4.1-beta.52 (2.4.1-beta.53 is staged in #333). No tool, input
-schema, route, provider, persisted format or Home Assistant write change.
-Nothing is ever redispatched.
+Builds on 2.4.1-beta.53 (#333). No tool, input schema, route, provider,
+persisted format or Home Assistant write change. Nothing is ever
+redispatched.
 
 - Dashboard readback recovery now resolves its exact persisted provider
   binding (`provider_operation` is a class constant; the prepared hash is
@@ -20,6 +20,73 @@ Nothing is ever redispatched.
   unresolved manual-review owner keeps its declared target hold keys.
 - Other families keep a "lease equals evidence window" gap; it is reported
   in the release notes and not fixed here.
+
+## 2.4.1-beta.53 - Governed scene configuration edit built inactive (HAMCP-071) (staged)
+
+Builds on 2.4.1-beta.52 (#334). Activates nothing new.
+
+- New tool `create_scene_configuration_plan` (static tools 78 -> 79). It
+  refuses `pending_signed_registry_admission` before any read, request or
+  persistence until a signed Core registry sequence names the runtime-only
+  profile `core.scene_configuration_operation`
+  (`sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb`,
+  planned sequence 16). Under sequence 14, health itemizes 26 compatible and
+  5 withheld profiles.
+- Once admitted, one plan edits `name`, `icon` (or removes it) and member
+  states (`entities` merge patch; `null` removes a member) of one existing
+  UI-managed scene by `config_id`:
+  - The write is one `POST /api/config/scene/config/{config_id}` with the
+    full proposed configuration and no `id`, at most once. Unrequested keys
+    and `metadata` are sent exactly as stored.
+  - `succeeded_verified` means the stored configuration reads back
+    exactly and the registry identity is unchanged (Josh's option C).
+    Engineering verifies the saved scene and its registry identity; it
+    does not verify the scene Home Assistant has loaded. Every result,
+    task and plan disclosure carries
+    `verification_scope: "stored_configuration_and_registry_identity"` and
+    `loaded_state: "not_verified"`. A stored mismatch or registry drift is
+    a verification failure; an already-stored configuration is verified
+    without dispatch. Comparisons are type-exact (canonical JSON).
+  - Saving never activates the scene. Nothing sends `scene.turn_on`,
+    `scene.apply`, `scene.create`, `scene.reload`, `scene.delete` or the
+    scene-config DELETE (which the route allowlist does not admit).
+  - Planning refuses, before any dispatch:
+    - integration scenes, YAML scenes outside `scenes.yaml`, and unknown,
+      mismatched, ambiguous, disabled, unregistered or unreviewable targets;
+    - unknown members and `scene.` members;
+    - removing the last member;
+    - invalid values;
+    - stored values that the closed POST could not send or restore.
+
+    It refuses a no-op with no plan.
+  - The plan discloses each change before and after, the consumer
+    automations and scripts from the cached index only (or the evidence
+    gap), the switch and mode-helper members, the global scene reload, id assignment,
+    member order and the residual concurrency window: Core's save is an
+    upsert, so a concurrent edit can be overwritten undetected and a
+    concurrent deletion can be recreated (accepted, disclosed).
+  - A protected member before or after the edit makes the plan
+    `elevated_admin` (risk HIGH, physical consequence `indirect`), and so
+    does any `switch` member before or after the edit, and (Josh, D4) any
+    `input_boolean` or `input_select` member before or after the edit,
+    because mode/helper members can change how automations behave.
+    Otherwise it is `standard_admin`.
+  - Drift is refused as `stale_target_state`, and a scene missing at the
+    final check is refused.
+  - `rollback_change` creates a separately approved restore plan for the
+    exact prior configuration.
+  - The send boundary refuses a complete, valid command before sending
+    unless Core admits the profile, the call runs inside the F3 dispatch
+    window, and an F3 write permit binds the plan, target, command and
+    dispatch intent. Direct reads refuse with 0 calls while admission is
+    withdrawn. The inactive profile declares every Home Assistant request.
+    A legacy apply without F3 refuses `core_authority_unavailable`.
+  - There is no delegated provider and no fallback.
+- Two defects in the new code, found by its tests and fixed:
+  - elevated-plan policy reason codes (`protected_object:<x>` was invalid);
+  - type-loose already-reached, preflight and rollback-drift comparisons.
+- Edit only: creating a scene is HAMCP-071 Part 3. No scene evidence lane
+  yet; `ci.yml` is unchanged.
 
 ## 2.4.1-beta.52 - Governance health stops re-projecting unchanged history; startup historical validation (HAMCP-097)
 

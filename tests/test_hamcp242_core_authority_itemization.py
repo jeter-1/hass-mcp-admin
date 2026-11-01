@@ -79,6 +79,7 @@ INPUT_SELECT = "core.typed_input_select_option_operation"
 SCRIPT_TRACE = "core.script_trace_read"
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
 DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
+SCENE_CONFIGURATION = "core.scene_configuration_operation"  # HAMCP-071 seq 16
 MISSING = "positive_authority_missing"
 
 # The public block before HAMCP-242, in order; it must survive unchanged.
@@ -137,9 +138,10 @@ REFUSED_BLOCK_KEYS = (
 ENTRY_KEYS = ("capability_id", "disposition", "reason_code", "affected_tools")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
 
-# The four profiles the signed sequence-14 2026.10.3 entry does not name
-# (three HAMCP-232/145 plus HAMCP-106 dashboard metadata), with the tools
-# routes.py maps to each (pinned by hand, not derived).
+# The five profiles the signed sequence-14 2026.10.3 entry does not name
+# (three HAMCP-232/145, HAMCP-106 dashboard metadata and the HAMCP-071 seq 16
+# scene configuration), with the tools routes.py maps to each (pinned by
+# hand, not derived).
 EXPECTED_LIVE_WITHHELD = [
     {
         "capability_id": HELPER_OPTIONS,
@@ -152,6 +154,12 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["create_dashboard_metadata_plan"],
+    },
+    {
+        "capability_id": SCENE_CONFIGURATION,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": ["create_scene_configuration_plan"],
     },
     {
         "capability_id": SCRIPT_TRACE,
@@ -222,6 +230,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "list_dashboards",
     ],
     "core.dashboard_metadata_operation": ["create_dashboard_metadata_plan"],
+    "core.scene_configuration_operation": ["create_scene_configuration_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",
         "change_impact_analysis",
@@ -287,8 +296,12 @@ def signed_sequence_14_entry(version: str = LIVE_CORE) -> dict:
     return deepcopy(entry)
 
 
-def sequence_15_entry() -> dict:
-    """Sequence 14 plus the four dormant November references (synthetic)."""
+def sequence_15_entry(sequence_16: bool = False) -> dict:
+    """Sequence 14 plus the four dormant seq-15 November references (synthetic).
+
+    HAMCP-071 seq 16: the scene configuration reference is signed by
+    sequence 16, never by a sequence-15 lane; ``sequence_16`` adds it.
+    """
 
     entry = signed_sequence_14_entry()
     named = {item["capability_id"] for item in entry["capabilities"]}
@@ -307,6 +320,7 @@ def sequence_15_entry() -> dict:
             }
             for profile in CORE_NOVEMBER_BATCH_PROFILES
             if profile.capability_id not in named
+            and (sequence_16 or profile.capability_id != SCENE_CONFIGURATION)
         ],
         key=lambda item: item["capability_id"],
     )
@@ -412,9 +426,10 @@ class LiveCaseTests(_LiveCase):
                 "compatible_count": 26,
                 "held_count": 0,
                 "quarantined_count": 0,
-                # +1 HAMCP-106 dashboard metadata (dormant November batch)
-                "unavailable_count": 4,
-                "withheld_count": 4,
+                # +1 HAMCP-106 dashboard metadata (dormant November batch),
+                # +1 HAMCP-071 seq 16 scene configuration
+                "unavailable_count": 5,
+                "withheld_count": 5,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -429,14 +444,37 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # The four withheld profiles are still refused.
-        for capability in (INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA):
+        # The five withheld profiles are still refused.
+        for capability in (
+            INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
+        ):
             self.assertIsNone(self.core.acquire((capability,)))
 
     async def test_after_sequence_15_the_list_is_empty_and_compatible_is_29(self):
         projection = await self.admit(sequence_15_entry())
-        # The name predates HAMCP-106, which adds a 30th profile.
+        # The name predates HAMCP-106, which adds a 30th profile.  HAMCP-071
+        # seq 16: sequence 15 does not name the scene configuration profile,
+        # so it alone stays withheld until sequence 16.
         self.assertEqual(projection["compatible_count"], 30)
+        self.assertEqual(projection["withheld_count"], 1)
+        self.assertEqual(projection["unavailable_count"], 1)
+        self.assertEqual(
+            projection["withheld_capabilities"],
+            [item for item in EXPECTED_LIVE_WITHHELD
+             if item["capability_id"] == SCENE_CONFIGURATION],
+        )
+        self.assertIs(projection["withheld_capabilities_truncated"], False)
+        self.assertEqual(
+            (await self.public_block())["withheld_capabilities"],
+            projection["withheld_capabilities"],
+        )
+        self.assertIsNone(self.core.acquire((SCENE_CONFIGURATION,)))
+
+    async def test_after_sequence_16_the_list_is_empty_and_compatible_is_31(self):
+        # HAMCP-071 seq 16: the synthetic sequence-16 entry names every profile.
+        projection = await self.admit(sequence_15_entry(sequence_16=True))
+        self.assertEqual(projection["compatible_count"], 31)
+        self.assertEqual(projection["compatible_count"], len(CORE_RUNTIME_CAPABILITY_PROFILES))
         self.assertEqual(projection["withheld_count"], 0)
         self.assertEqual(projection["unavailable_count"], 0)
         self.assertEqual(projection["withheld_capabilities"], [])
@@ -922,6 +960,9 @@ class AffectedToolsTests(unittest.TestCase):
         self.assertEqual(static_tools_requiring(SCRIPT_TRACE), ("get_script_trace", "list_script_traces"))
         self.assertEqual(static_tools_requiring(INPUT_SELECT), ("create_input_select_option_plan",))
         self.assertEqual(static_tools_requiring(HELPER_OPTIONS), ("create_helper_options_plan",))
+        self.assertEqual(
+            static_tools_requiring(SCENE_CONFIGURATION), ("create_scene_configuration_plan",)
+        )
 
     def test_delegated_and_unknown_names_are_not_listed(self):
         self.assertEqual(static_tools_requiring("core.unsupported_f3_operation"), ())

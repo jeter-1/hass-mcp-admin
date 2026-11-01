@@ -1,0 +1,67 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 143.6,
+    "tests": [
+      "259"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": null,
+    "baseline_ok": true
+  },
+  {
+    "name": "A3_persist_recheck_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 169.9,
+    "tests": [
+      "259"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "O4_response_identity_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 169.7,
+    "tests": [
+      "259"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_response_identity_is_the_exact_config_id"
+    ],
+    "killed": true
+  },
+  {
+    "name": "O11_scope_stamped_on_every_family",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 168.9,
+    "tests": [
+      "259"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_scope_fields_are_stamped_only_on_scene_tasks"
+    ],
+    "killed": true
+  }
+]

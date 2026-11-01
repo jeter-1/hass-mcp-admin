@@ -557,7 +557,8 @@ class ConfigurationOperationAdapter:
             )
 
         try:
-            await self._send(operation, provider_config)
+            with self.strategy.dispatch_scope(operation, provider_config):
+                await self._send(operation, provider_config)
         except ConfigurationMutationNotDispatchedError as exc:
             self._increment("intents_committed")
             self._increment("dispatch_attempts")

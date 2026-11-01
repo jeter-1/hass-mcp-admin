@@ -5,8 +5,8 @@ that was dispatched but not yet verified reach a truthful terminal outcome
 through one actual read-only readback. Nothing is dispatched again. It
 also releases locks retained by a child that will never reconcile again,
 which today block every later governed configuration apply. It builds on
-2.4.1-beta.52. 2.4.1-beta.53 is staged in #333 (HAMCP-071); if that
-merges first, this change is restaged. No tool, input schema, route,
+2.4.1-beta.53 (#333, HAMCP-071), which builds on 2.4.1-beta.52. No tool,
+input schema, route,
 provider, persisted format, retention or Home Assistant write changes.
 
 Acceptance: [`V2_4_1_BETA54_ACCEPTANCE.md`](V2_4_1_BETA54_ACCEPTANCE.md).
@@ -87,7 +87,8 @@ evidence window:
 
 - all configuration families (automation, script, input_boolean,
   input_number, entity metadata/availability/exposure, labels, delete,
-  helper options, dashboard metadata);
+  helper options, dashboard metadata, and the beta.53 scene configuration
+  edit, which uses the same configuration adapter);
 - operational `set_input_boolean_state` and `set_input_select_option`.
 
 Enabling a final read is not enough for configuration families: their
@@ -98,5 +99,5 @@ and a final read, so they have no gap either.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.52. No persisted format changed. Children settled by
+Reinstall 2.4.1-beta.53. No persisted format changed. Children settled by
 this release stay settled; rolling back does not reopen them.

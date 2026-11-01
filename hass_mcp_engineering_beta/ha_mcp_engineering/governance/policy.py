@@ -52,6 +52,11 @@ from . import dashboard_metadata as dashboard_metadata_contract
 from .dashboard_metadata_planning import (
     POLICY_TRIGGER as DASHBOARD_METADATA_POLICY_TRIGGER,
 )
+from . import scene_configuration as scene_configuration_contract
+from .scene_configuration_planning import (
+    POLICY_TRIGGER as SCENE_CONFIGURATION_POLICY_TRIGGER,
+    id_protection_reasons as scene_id_protection_reasons,
+)
 from .configuration_delete import (
     ACTION as CONFIGURATION_DELETE_ACTION,
     INTENT_KEY as CONFIGURATION_DELETE_INTENT_KEY,
@@ -963,6 +968,98 @@ def _dashboard_metadata_operation_policy(
     )
 
 
+SCENE_CONFIGURATION_INCOMPLETE = "scene_configuration_execution_contract_incomplete"
+
+
+def _scene_configuration_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one scene configuration update (HAMCP-071).
+
+    Saving a scene never activates it, so the save itself has no direct
+    device effect; a scene storing states for a protected object (OD-4
+    object protection over every member before and after) can change that
+    object when it is activated later, which is an indirect consequence and
+    elevated_admin.  Every other complete child is standard_admin.  The
+    entity_id-derivable protection floor is recomputed here and must be in
+    the bound basis; any gap in the bound contract is prohibited.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (SCENE_CONFIGURATION_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == SCENE_CONFIGURATION_POLICY_TRIGGER
+    ]
+    current, proposed = operation.current_config, operation.proposed_config
+    if (
+        operation.action != scene_configuration_contract.ACTION
+        or operation.helper_type is not None
+        or scene_configuration_contract.state_errors(operation.target_id, current)
+        or scene_configuration_contract.proposed_errors(
+            operation.target_id, proposed
+        )
+        or any(
+            current[key] != proposed[key]
+            for key in ("config_id", "entity_id", "registry_entry_id")
+        )
+        or not scene_configuration_contract.changed_fields(current, proposed)
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str) or marker.get("field") != operation.operation_id:
+        return incomplete
+    reasons = [item for item in basis.split(",") if item]
+    floor = scene_id_protection_reasons(
+        [*current["config"]["entities"], *proposed["config"]["entities"]]
+    )
+    if reasons != sorted(set(reasons)) or not set(floor) <= set(reasons):
+        return incomplete
+    if reasons:
+        if (
+            marker.get("policy") != "elevated"
+            or marker.get("physical_consequence")
+            != PhysicalConsequence.INDIRECT.value
+            or operation.risk.level is not RiskLevel.HIGH
+        ):
+            return incomplete
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            PhysicalConsequence.INDIRECT,
+            # Policy reason codes are sorted lowercase identifiers.
+            tuple(sorted({
+                "scene_configuration_protected_member",
+                *(f"scene_protected_member_{item}" for item in reasons),
+            })),
+        )
+    if (
+        marker.get("policy") != "standard"
+        or marker.get("physical_consequence") != PhysicalConsequence.NONE.value
+        or operation.risk.level is not RiskLevel.LOW
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.STANDARD_ADMIN,
+        RiskDelta.LOW,
+        PhysicalConsequence.NONE,
+        ("scene_configuration_standard_policy", "supported_configuration_change"),
+    )
+
+
 def _label_plan_complete(operations) -> bool:
     """Design §7: label children first, then entity assignment children.
 
@@ -1309,6 +1406,8 @@ def configuration_operation_policy(
         return _label_operation_policy(operation)
     if operation.resource_type == dashboard_metadata_contract.RESOURCE_TYPE:
         return _dashboard_metadata_operation_policy(operation)
+    if operation.resource_type == scene_configuration_contract.RESOURCE_TYPE:
+        return _scene_configuration_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
     if operation.resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
@@ -1777,6 +1876,19 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.UNKNOWN,
                     (DASHBOARD_METADATA_INCOMPLETE,),
+                ),
+            )
+        if len(plan.operations) != 1 and any(
+            op.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            for op in plan.operations
+        ):
+            # HAMCP-071: a scene configuration update is always alone.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (SCENE_CONFIGURATION_INCOMPLETE,),
                 ),
             )
         if any(

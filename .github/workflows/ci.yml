@@ -363,9 +363,9 @@ jobs:
       # HAMCP-165/069B/155: the seq-13 contract lanes run only when the batch
       # evidence run sets this to "enabled"; any other value keeps them dormant.
       REAL_HA_SEQ13_LANES: dormant
-      # HAMCP-232/145: the seq-15 lanes extend the candidate slot's Core only
-      # (OD-13); the batch evidence run sets this to "enabled".
-      REAL_HA_SEQ15_LANES: dormant
+      # HAMCP-269: five profiles on the two exact reviewed October releases.
+      # Synthetic CI signing only; production authority is never changed.
+      REAL_HA_SEQ15_LANES: enabled
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -432,6 +432,14 @@ jobs:
             docker network inspect --format '{{.Internal}}' "$HA_CONTRACT_NETWORK"
           )"
           test "$actual_network_internal" = "$expected_network_internal"
+      - name: Seed seq-15 disposable scene configuration
+        if: matrix.alarmo && contains(fromJSON('["2026.10.1","2026.10.3"]'), matrix.ha_version) && env.REAL_HA_SEQ15_LANES == 'enabled'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "$REAL_HA_CONTRACT_DIR/scenes.yaml"
+          printf '%s\n' 'scene: !include scenes.yaml' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          printf '%s\n' '- name: Seq15 Id Assignment' '  entities:' '    input_boolean.seq15_seed_member: "off"' > "$REAL_HA_CONTRACT_DIR/scenes.yaml"
       - name: Persist migration fixture with exact Home Assistant 2026.7.2
         shell: bash
         env:
@@ -544,7 +552,7 @@ jobs:
             printf 'REAL_HA_CONFIGURATION_DELETE_RESULT=%s\n' "$RUNNER_TEMP/seq13-configuration-delete-$HA_CONTRACT_LANE.json"
           } >> "$GITHUB_ENV"
       - name: Stage seq-15 contract evidence paths
-        if: matrix.alarmo && matrix.support_slot == 'candidate' && env.REAL_HA_SEQ15_LANES == 'enabled'
+        if: matrix.alarmo && contains(fromJSON('["2026.10.1","2026.10.3"]'), matrix.ha_version) && env.REAL_HA_SEQ15_LANES == 'enabled'
         shell: bash
         run: |
           set -euo pipefail
@@ -552,6 +560,8 @@ jobs:
             printf 'REAL_HA_HELPER_OPTIONS_RESULT=%s\n' "$RUNNER_TEMP/seq15-helper-options-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_INPUT_SELECT_OPTION_RESULT=%s\n' "$RUNNER_TEMP/seq15-input-select-option-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_SCRIPT_TRACES_RESULT=%s\n' "$RUNNER_TEMP/seq15-script-traces-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_DASHBOARD_METADATA_RESULT=%s\n' "$RUNNER_TEMP/seq15-dashboard-metadata-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_SCENE_CONFIGURATION_RESULT=%s\n' "$RUNNER_TEMP/seq15-scene-configuration-$HA_CONTRACT_LANE.json"
           } >> "$GITHUB_ENV"
       - name: Run real Home Assistant contracts
         env:
@@ -621,8 +631,8 @@ jobs:
             ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
-      - name: Upload bounded seq-15 helper options, input select and script trace contract evidence
-        if: always() && matrix.alarmo && matrix.support_slot == 'candidate' && env.REAL_HA_SEQ15_LANES == 'enabled'
+      - name: Upload bounded seq-15 five-capability contract evidence
+        if: always() && matrix.alarmo && contains(fromJSON('["2026.10.1","2026.10.3"]'), matrix.ha_version) && env.REAL_HA_SEQ15_LANES == 'enabled'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: seq15-contracts-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-${{ matrix.lane }}
@@ -630,6 +640,8 @@ jobs:
             ${{ runner.temp }}/seq15-helper-options-${{ matrix.lane }}.json
             ${{ runner.temp }}/seq15-input-select-option-${{ matrix.lane }}.json
             ${{ runner.temp }}/seq15-script-traces-${{ matrix.lane }}.json
+            ${{ runner.temp }}/seq15-dashboard-metadata-${{ matrix.lane }}.json
+            ${{ runner.temp }}/seq15-scene-configuration-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
 

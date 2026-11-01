@@ -3,17 +3,15 @@
 This contract covers HAMCP-263: a dispatched governed dashboard update
 reaches a truthful terminal outcome through an actual readback, and a
 child of an already-terminal parent is settled with its locks released.
-It follows 2.4.1-beta.52 and includes it.
+It follows 2.4.1-beta.53 and includes it.
 
 See also the release notes:
 [`V2_4_1_BETA54_RELEASE_NOTES.md`](V2_4_1_BETA54_RELEASE_NOTES.md).
 
-**Release target.** `2.4.1-beta.54`. 2.4.1-beta.53 is staged in #333
-(HAMCP-071). If that merges first, this branch merges `main` and keeps
-beta.54. If this merges first, the transition from beta.52 must be
-restaged at the next free beta and these documents renamed. It is
-materialized in all three version authorities with no staged declaration
-left. Nothing is published or deployed.
+**Release target.** `2.4.1-beta.54`, following 2.4.1-beta.53 (#333,
+HAMCP-071), which merged first; this branch merged `main` and kept
+beta.54. It is materialized in all three version authorities with no
+staged declaration left. Nothing is published or deployed.
 
 The contract has four stages:
 1. source and offline acceptance;
@@ -78,10 +76,8 @@ Required offline evidence, `tests/test_hamcp263_dashboard_readback.py`:
 
 ## 2. Release CI
 
-The exact materialized head's `validate` check passes. Until #333's
-beta.53 reaches `main`, the release-transition check refuses
-beta.52 → beta.54 as `Unsupported Engineering release transition`. This
-is expected and is resolved by merging `main` after #333.
+The exact materialized head's `validate` check passes, including the
+beta.53 → beta.54 release transition.
 
 ## 3. Publication
 

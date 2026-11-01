@@ -2,6 +2,39 @@
 
 Date: 2026-07-10
 
+## Scene configuration edit, inactive (2.4.1-beta.53, HAMCP-071)
+
+`create_scene_configuration_plan` is a native governed planning tool:
+- category `governed_configuration`, routing `engineering_native`,
+  operation class `proposal`;
+- risk `scene_configuration_write`;
+- provider `direct_home_assistant_scene_configuration`
+  (`direct-ha-exact-scene-configuration-v1`);
+- policy `governed_scene_configuration_proposal`, with approval policy
+  `standard_admin_or_elevated_for_protected_members`;
+- fallback none, external approval required;
+- annotations `readOnlyHint` false, `destructiveHint` false,
+  `idempotentHint` false and `openWorldHint` false.
+
+It requires only the new runtime-only profile
+`core.scene_configuration_operation`. The signed registry (sequence 14)
+does not name that profile, so the tool refuses
+`pending_signed_registry_admission` before any read, request or
+persistence.
+
+Once admitted, one plan sends one
+`POST /api/config/scene/config/{config_id}` carrying the full proposed
+configuration without `id`. Only `name`, `icon` and `entities` may change;
+everything else is sent exactly as stored. The plan verifies through the
+scene-config GET, `config/entity_registry/list` and `get`, and the loaded
+scene's state.
+
+The capability declares `scene_activation` `never`, `ui_managed_only`,
+`create_supported` false, `delete_supported` false and one scene per plan.
+Rollback is a separately approved restore plan. The catalog is 79 static +
+28 delegated = 107 (108 with the optional YAML reader). See
+[HAMCP_071_SCENE_CONFIGURATION_DESIGN.md](docs/HAMCP_071_SCENE_CONFIGURATION_DESIGN.md).
+
 ## Dashboard metadata, inactive (2.4.1-beta.50, HAMCP-106)
 
 `create_dashboard_metadata_plan` is a native governed planning tool:

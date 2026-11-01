@@ -228,7 +228,8 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
         # 22 through 069A, plus the two dormant 069B profiles, the dormant
         # 165 label profile and the dormant HAMCP-155 deletion profile.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 30)  # + HAMCP-232/145 November batch, + HAMCP-106
+        # + HAMCP-232/145 November batch, + HAMCP-106, + HAMCP-071 seq 16
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 31)
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -572,11 +573,12 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_label_plan",
                 # HAMCP-155 binds its own exact deletion targets (its tests cover it).
                 "create_configuration_delete_plan",
-                # HAMCP-232/145 and HAMCP-106 bind their own exact targets
-                # (their tests cover them).
+                # HAMCP-232/145, HAMCP-106 and HAMCP-071 bind their own exact
+                # targets (their tests cover them).
                 "create_helper_options_plan",
                 "create_input_select_option_plan",
                 "create_dashboard_metadata_plan",
+                "create_scene_configuration_plan",
             },
         )
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
@@ -598,6 +600,7 @@ class StaticToolCompletenessTests(unittest.TestCase):
                 "create_helper_options_plan",
                 "create_input_select_option_plan",
                 "create_dashboard_metadata_plan",
+                "create_scene_configuration_plan",
             }:
                 for arguments in shapes:
                     with self.subTest(tool=name, arguments=repr(arguments)[:40]):
@@ -687,12 +690,13 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 "create_entity_availability_exposure_plan",
                 "create_label_plan",
                 "create_configuration_delete_plan",
-                # HAMCP-232/145, HAMCP-106 and the script-trace reads: refused
-                # pending signed-registry admission before any acquisition
-                # (their tests cover it).
+                # HAMCP-232/145, HAMCP-106, HAMCP-071 and the script-trace
+                # reads: refused pending signed-registry admission before any
+                # acquisition (their tests cover it).
                 "create_helper_options_plan",
                 "create_input_select_option_plan",
                 "create_dashboard_metadata_plan",
+                "create_scene_configuration_plan",
                 "list_script_traces",
                 "get_script_trace",
             }:

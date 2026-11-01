@@ -30,6 +30,7 @@ from ha_mcp_engineering.governance import configuration_delete, label_registry  
 from ha_mcp_engineering.governance import dashboard_metadata as dashboard_metadata_contract  # noqa: E402
 from ha_mcp_engineering.governance import helper_options as helper_options_contract  # noqa: E402
 from ha_mcp_engineering.governance import input_select_option as input_select_contract  # noqa: E402
+from ha_mcp_engineering.governance import scene_configuration as scene_configuration_contract  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import SCRIPT_TRACE_PROFILE  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
@@ -73,6 +74,11 @@ PROVIDERS = {
     "dashboard_metadata_provider": (
         (dashboard_metadata_contract.PROFILE,),
         dashboard_metadata_contract.PENDING_ADMISSION_REASON,
+    ),
+    # HAMCP-071: the dormant scene configuration provider joins the snapshot.
+    "scene_configuration_provider": (
+        (scene_configuration_contract.PROFILE,),
+        scene_configuration_contract.PENDING_ADMISSION_REASON,
     ),
 }
 # The script-trace provider backs two tools (list_script_traces and
