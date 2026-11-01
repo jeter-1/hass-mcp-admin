@@ -76,6 +76,12 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
 
         return self.index.active_identity()
 
+    def active_diagnostic_identity(self) -> str:
+        """The committed diagnostic partition as visible now (authority rechecked)."""
+
+        global_sources = getattr(getattr(self.index, "snapshot", None), "global_sources", None)
+        return global_sources.visible().fingerprint if global_sources is not None else ""
+
     async def fetch(self, request: EvidenceRequest) -> ProviderResult:
         started = time.perf_counter()
         try:
@@ -531,6 +537,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         direct_dependencies = [item for item in dependencies if item["direct"]]
         indirect_dependencies = [item for item in dependencies if not item["direct"]]
         return ImpactEvidenceBundle(
+            diagnostic_fingerprint=(
+                global_sources.fingerprint if global_sources is not None else ""
+            ),
             entity_id=entity_id,
             operation=operation,
             replacement_entity_id=replacement,

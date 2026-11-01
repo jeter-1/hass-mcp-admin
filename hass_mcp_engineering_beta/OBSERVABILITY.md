@@ -938,6 +938,10 @@ add no request. Each dashboard dispatch writes an audit event
 the upstream operation, `result_status` and `fallback_occurred: false`.
 `get_server_health` reports the profile of the last build and never builds
 the index itself.
+A dashboard budget overrun appears in the dashboard coverage row
+(`dashboard_scan_budget_exhausted`, `dashboard_not_read`) and in
+`bounded_sources`. An impact continuation refused because the diagnostic
+partition changed increments `stale_cursor_events` like any stale cursor.
 
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational
 latency. Transport completions are counted separately without treating session

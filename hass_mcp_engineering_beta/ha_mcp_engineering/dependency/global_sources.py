@@ -365,9 +365,18 @@ def dashboard_findings(
     return findings
 
 
-async def collect_dashboard_sources(reader, *, secret: str) -> dict[str, Any]:
-    """Read each listed dashboard once, isolated per dashboard, within one budget."""
-    started = time.monotonic()
+async def collect_dashboard_sources(
+    reader, *, secret: str, clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], Any] = asyncio.sleep,
+) -> dict[str, Any]:
+    """Read each listed dashboard once, isolated per dashboard, within one budget.
+
+    One deadline covers the session, the list and every read. No read starts
+    once the deadline has passed, and a watchdog cancels whatever is still in
+    flight when it expires; the session context then releases its lease.
+    """
+    started = clock()
+    deadline = started + DASHBOARD_SCAN_SECONDS
     errors: Counter[str] = Counter()
     terminals: list[GlobalBoundedTerminal] = []
     findings: list[DependencyFinding] = []
@@ -376,100 +385,127 @@ async def collect_dashboard_sources(reader, *, secret: str) -> dict[str, Any]:
     profile = {"list_requests": 0, "read_attempts": 0, "successful_documents": 0,
                "maximum_concurrent_reads": 0, "read_time_ms": 0.0}
     findings_bounded = False
+    budget_exhausted = False
     inventory_read = False
     listed: list[dict] = []
+    completed: set[str] = set()
+
+    def expired() -> bool:
+        nonlocal budget_exhausted
+        if clock() >= deadline:
+            budget_exhausted = True
+        return budget_exhausted
+
+    async def run() -> None:
+        nonlocal listed, inventory_read
+        async with reader.session() as session:
+            if expired():
+                return
+            profile["list_requests"] += 1
+            inventory = await session.list(MAX_DEPENDENCY_DASHBOARDS + 1)
+            inventory_read = True
+            listed = list(inventory["dashboards"])
+            if inventory.get("partial"):
+                errors["dashboard_inventory_partial"] += 1
+            paths = [item["url_path"] for item in listed]
+            if DEFAULT_DASHBOARD_PATH not in paths:
+                errors["dashboard_default_not_listed"] += 1
+            if len(listed) > MAX_DEPENDENCY_DASHBOARDS or inventory.get("truncated"):
+                errors["dashboard_inventory_limit_exceeded"] += 1
+                terminals.append(GlobalBoundedTerminal(
+                    "dashboard", "dependency_provider", None, "dashboard_inventory_limit_exceeded",
+                ))
+            listed = listed[:MAX_DEPENDENCY_DASHBOARDS]
+            queue = iter(listed)
+            active = 0
+
+            async def process(entry: dict) -> None:
+                nonlocal active, findings_bounded
+                path = entry["url_path"]
+                read_started = clock()
+                profile["read_attempts"] += 1
+                active += 1
+                profile["maximum_concurrent_reads"] = max(profile["maximum_concurrent_reads"], active)
+                try:
+                    document = await session.read(path)
+                finally:
+                    active -= 1
+                    profile["read_time_ms"] += (clock() - read_started) * 1000
+                completed.add(path)
+                if document.get("failure"):
+                    errors[f"dashboard_read_{document['failure']}"] += 1
+                    failed_paths.append(path)
+                    if document["failure"] == "response_limit":
+                        terminals.append(GlobalBoundedTerminal(
+                            "dashboard", path, None, "dashboard_document_limit_exceeded",
+                        ))
+                    return
+                profile["successful_documents"] += 1
+                documents.append((path, str(document.get("projection_hash") or "")))
+                for reason, count in document.get("gaps", {}).items():
+                    errors[f"dashboard_{reason}"] += count
+                if document.get("processing_truncated"):
+                    errors["dashboard_projection_limit_exceeded"] += 1
+                    terminals.append(GlobalBoundedTerminal(
+                        "dashboard", path, None, "dashboard_projection_limit_exceeded",
+                    ))
+                extracted = dashboard_findings(path, entry.get("title"), document.get("items", []), secret=secret)
+                if len(findings) + len(extracted) > MAX_DASHBOARD_FINDINGS:
+                    findings_bounded = True
+                findings[:] = heapq.nsmallest(
+                    MAX_DASHBOARD_FINDINGS, [*findings, *extracted], key=lambda item: item.evidence_id,
+                )
+
+            async def worker() -> None:
+                for entry in queue:
+                    if expired() or not reader.current():
+                        return
+                    try:
+                        await process(entry)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        completed.add(entry["url_path"])
+                        failed_paths.append(entry["url_path"])
+                        errors["dashboard_read_or_parse_failure"] += 1
+
+            workers = [asyncio.create_task(worker())
+                       for _ in range(min(len(listed), DASHBOARD_READ_CONCURRENCY))]
+            try:
+                await asyncio.gather(*workers)
+            finally:
+                for task in workers:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+
     if reader is None:
         errors["dashboard_provider_unavailable"] += 1
     else:
+        collection = asyncio.ensure_future(run())
+        watchdog = asyncio.ensure_future(sleep(max(0.0, deadline - clock())))
         try:
-            async with reader.session() as session:
-                profile["list_requests"] += 1
-                inventory = await session.list(MAX_DEPENDENCY_DASHBOARDS + 1)
-                inventory_read = True
-                listed = list(inventory["dashboards"])
-                if inventory.get("partial"):
-                    errors["dashboard_inventory_partial"] += 1
-                paths = [item["url_path"] for item in listed]
-                if DEFAULT_DASHBOARD_PATH not in paths:
-                    errors["dashboard_default_not_listed"] += 1
-                if len(listed) > MAX_DEPENDENCY_DASHBOARDS or inventory.get("truncated"):
-                    errors["dashboard_inventory_limit_exceeded"] += 1
-                    terminals.append(GlobalBoundedTerminal(
-                        "dashboard", "dependency_provider", None, "dashboard_inventory_limit_exceeded",
-                    ))
-                listed = listed[:MAX_DEPENDENCY_DASHBOARDS]
-                queue = iter(listed)
-                completed: set[str] = set()
-                active = 0
-
-                async def process(entry: dict) -> None:
-                    nonlocal active, findings_bounded
-                    path = entry["url_path"]
-                    read_started = time.monotonic()
-                    profile["read_attempts"] += 1
-                    active += 1
-                    profile["maximum_concurrent_reads"] = max(profile["maximum_concurrent_reads"], active)
-                    try:
-                        document = await session.read(path)
-                    finally:
-                        active -= 1
-                        profile["read_time_ms"] += (time.monotonic() - read_started) * 1000
-                    completed.add(path)
-                    if document.get("failure"):
-                        errors[f"dashboard_read_{document['failure']}"] += 1
-                        failed_paths.append(path)
-                        return
-                    profile["successful_documents"] += 1
-                    documents.append((path, str(document.get("projection_hash") or "")))
-                    for reason, count in document.get("gaps", {}).items():
-                        errors[f"dashboard_{reason}"] += count
-                    if document.get("processing_truncated"):
-                        errors["dashboard_projection_limit_exceeded"] += 1
-                        terminals.append(GlobalBoundedTerminal(
-                            "dashboard", path, None, "dashboard_projection_limit_exceeded",
-                        ))
-                    extracted = dashboard_findings(path, entry.get("title"), document.get("items", []), secret=secret)
-                    if len(findings) + len(extracted) > MAX_DASHBOARD_FINDINGS:
-                        findings_bounded = True
-                    findings[:] = heapq.nsmallest(
-                        MAX_DASHBOARD_FINDINGS, [*findings, *extracted], key=lambda item: item.evidence_id,
-                    )
-
-                async def worker() -> None:
-                    for entry in queue:
-                        if not reader.current():
-                            return
-                        try:
-                            await process(entry)
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception:
-                            completed.add(entry["url_path"])
-                            failed_paths.append(entry["url_path"])
-                            errors["dashboard_read_or_parse_failure"] += 1
-
-                workers = [asyncio.create_task(worker())
-                           for _ in range(min(len(listed), DASHBOARD_READ_CONCURRENCY))]
-                try:
-                    async with asyncio.timeout(max(0.001, DASHBOARD_SCAN_SECONDS - (time.monotonic() - started))):
-                        await asyncio.gather(*workers)
-                except TimeoutError:
-                    errors["dashboard_scan_budget_exhausted"] += 1
-                finally:
-                    for task in workers:
-                        if not task.done():
-                            task.cancel()
-                    await asyncio.gather(*workers, return_exceptions=True)
-                not_read = len(listed) - len(completed)
-                if not_read:
-                    errors["dashboard_not_read"] += not_read
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            reason = getattr(error, "reason", None)
+            await asyncio.wait((collection, watchdog), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            watchdog.cancel()
+            if not collection.done():
+                budget_exhausted = True
+                collection.cancel()
+            await asyncio.gather(watchdog, return_exceptions=True)
+            outcome = (await asyncio.gather(collection, return_exceptions=True))[0]
+        if isinstance(outcome, Exception):
+            reason = getattr(outcome, "reason", None)
             errors[f"dashboard_inventory_{reason}" if reason in ANALYSIS_REASONS and not inventory_read
                    else "dashboard_inventory_unavailable" if not inventory_read
                    else "dashboard_read_or_parse_failure"] += 1
+        if budget_exhausted:
+            errors["dashboard_scan_budget_exhausted"] += 1
+            terminals.append(GlobalBoundedTerminal(
+                "dashboard", "dependency_provider", None, "dashboard_scan_budget_exhausted",
+            ))
+        not_read = len(listed) - len(completed)
+        if not_read:
+            errors["dashboard_not_read"] += not_read
     if findings_bounded:
         errors["dashboard_finding_limit_exceeded"] += 1
         terminals.append(GlobalBoundedTerminal(
@@ -497,7 +533,7 @@ async def collect_dashboard_sources(reader, *, secret: str) -> dict[str, Any]:
     coverage = SourceCoverageItem(
         "dashboard", DASHBOARD_PROVIDER if reader is not None else "none", "dashboard_configuration",
         completeness, evidence_count=len(findings), failed_item_count=sum(errors.values()),
-        warnings=warnings, duration_ms=(time.monotonic() - started) * 1000,
+        warnings=warnings, duration_ms=(clock() - started) * 1000,
         policy=(f"{reader.provenance}; diagnostic only, outside the governance-bound index"
                 if reader is not None else "admitted dashboard reader unavailable; no fallback"),
         obligation_ledger_completeness="unavailable",

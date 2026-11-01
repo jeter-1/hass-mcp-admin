@@ -86,7 +86,16 @@ The review needs a security section covering the following items:
   10,000 membership findings, 50 dashboards, 10,000 dashboard findings,
   1,024 walker items per dashboard and 1,000 bounded terminals; 4
   concurrent dashboard reads and a 6 s dashboard budget, run concurrently
-  with the rest of the build. Each bound marks its source partial with a
+  with the rest of the build. One 6 s deadline covers the dashboard
+  session, the list and every read:
+  no read starts after it, and work still in flight when it expires is
+  cancelled and its lease released. An overrun counts
+  `dashboard_scan_budget_exhausted` (named in `bounded_sources`) and one
+  `dashboard_not_read` per unread dashboard; it is unavailable if the list
+  never returned, otherwise partial. A document over the reviewed 2 MiB cap
+  is refused (`dashboard_read_response_limit`, terminal
+  `dashboard_document_limit_exceeded`) and its dashboard is partial. Each
+  bound marks its source partial with a
   counted reason. `get_server_health` never builds the index.
 
 Preserve the following:
@@ -119,7 +128,7 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
 (`scene.synthetic_evening`, `group.synthetic_downstairs`, dashboards
 `lovelace` and `synthetic-two`).
 
-- `tests/test_hamcp227_global_sources.py` (56 tests):
+- `tests/test_hamcp227_global_sources.py` (69 tests):
   - scene and group references at `$.attributes.entity_id[n]`, and every
     completeness state, with exact-boundary controls for each bound;
   - dashboard references at exact paths through conditional, stack and grid
@@ -127,6 +136,15 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
     read failure isolated to its dashboard; missing `lovelace`; truncated or
     partial list; budget overrun; concurrency bound; projection and finding
     bounds; no reader; list failure; retired authority;
+  - the dashboard budget on a simulated clock (R1-M1): a list that never
+    returns, a list that consumes the budget, an overrun mid-list, reads in
+    flight at the deadline, within budget, an oversize document through the
+    reviewed size cap, zero reads after the deadline, the lease released,
+    and scene, group and automation evidence preserved;
+  - impact pagination (R1-M2): consistent pages with no extra read, stale
+    cursor after authority retirement, a replaced partition and an index
+    refresh, refusal when the partition changes before commit, a failing
+    identity fails closed, and the counters;
   - the reader: exactly 1 list + N reads, the lease lifecycle, refusals
     with zero dispatch, drift after the list, caller and audit attribution,
     screened paths;
@@ -198,8 +216,9 @@ Installation needs separate authorization. Every step is read-only.
    commit.
 2. **Catalog.** `tools/list` shows 107 tools, or 108 with the YAML reader
    admitted.
-3. **Coverage.** `entity_dependency_analysis` for `input_boolean.guest_mode`
-   with `refresh: true`:
+3. **Coverage.** `entity_dependency_analysis` for `<architect-selected
+   target entity>` with `refresh_index: true` (the target is recorded in the
+   private acceptance handoff, not in this repository):
    - the scene, group and dashboard rows are no longer `unavailable`
      (`complete` or `partial` with counted reasons; dashboards are expected
      to be partial on a Core version the walker does not pin);

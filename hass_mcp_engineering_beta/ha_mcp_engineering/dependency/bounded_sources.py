@@ -132,6 +132,8 @@ def bound_table() -> dict[str, tuple[str, int]]:
         "dashboard_inventory_limit_exceeded": bound(g, "MAX_DEPENDENCY_DASHBOARDS"),
         "dashboard_finding_limit_exceeded": bound(g, "MAX_DASHBOARD_FINDINGS"),
         "dashboard_projection_limit_exceeded": bound(d, "ITEMS"),
+        "dashboard_document_limit_exceeded": bound(d, "DASHBOARD_BYTES"),
+        "dashboard_scan_budget_exhausted": bound(g, "DASHBOARD_SCAN_SECONDS"),
     }
 
 

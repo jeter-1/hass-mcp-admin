@@ -20,6 +20,13 @@ or snapshot fingerprint change.
   member list, a stateless group helper, a custom card, a strategy, a
   missing `lovelace`, truncation and a budget overrun are partial with
   counted reasons.
+- One 6 s deadline covers the dashboard list and every read; no read starts
+  after it and in-flight work is cancelled with its lease released
+  (`dashboard_scan_budget_exhausted`, `dashboard_not_read`). An oversize
+  document is partial (`dashboard_document_limit_exceeded`).
+- `change_impact_analysis` cursors are bound to the visible diagnostic
+  partition; a continuation after dashboard authority retires or the
+  partition changes is `stale_cursor` (`diagnostic_evidence_changed`).
 - Templates and complete script enumeration are deferred (HAMCP-264) and
   reported as unavailable with the reason and the template count.
 - Index truncation marks every source with dropped evidence partial, not

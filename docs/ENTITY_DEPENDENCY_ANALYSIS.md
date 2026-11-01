@@ -147,7 +147,20 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   walker items, more than 10,000 findings, a read failure and a budget
   overrun are partial with counted reasons. A read failure stays with its
   dashboard. A list failure or a missing reader is unavailable with the
-  reason. Each dispatch is leased (`core.dashboard_configuration_read`),
+  reason. One 6 s deadline covers the dashboard session, the list and
+  every read:
+  no read starts after it, and work still in flight when it expires is
+  cancelled and its lease released. An overrun counts
+  `dashboard_scan_budget_exhausted` (named in `bounded_sources`) and one
+  `dashboard_not_read` per unread dashboard; it is unavailable if the list
+  never returned, otherwise partial. A document over the reviewed 2 MiB cap
+  is refused (`dashboard_read_response_limit`, terminal
+  `dashboard_document_limit_exceeded`) and its dashboard is partial.
+  `change_impact_analysis` cursors are bound to the visible diagnostic
+  partition as well as the index: when dashboard authority retires or the
+  partition changes, a continuation returns `stale_cursor`
+  (`diagnostic_evidence_changed`) and never serves cached pages. Each
+  dispatch is leased (`core.dashboard_configuration_read`),
   revalidated, and audited as a child of the build request. Cached evidence
   is withheld when that authority retires.
 - **Templates and scripts.** Template configuration enumeration is deferred

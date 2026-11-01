@@ -56,7 +56,9 @@ from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import DirectHaDependencyProvider  # noqa: E402
 from ha_mcp_engineering.dependency.script_sources import _GAPS as SCRIPT_GAPS  # noqa: E402
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
+from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.impact.service import ChangeImpactAnalysisService  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, current_telemetry, end_request  # noqa: E402
 from tests.hamcp209_fixtures import read_blueprint, representative_automations  # noqa: E402
@@ -412,16 +414,6 @@ class DashboardWalkTests(unittest.TestCase):
         self.assertEqual(errors(result), {"dashboard_inventory_partial": 1})
         self.assertEqual(result["coverage"].completeness, "partial")
 
-    def test_budget_overrun_is_partial_and_counts_unread_dashboards(self):
-        documents = {"lovelace": DEFAULT_DASHBOARD, **{f"synthetic-{i}": DEFAULT_DASHBOARD for i in range(7)}}
-        with patch.object(g, "DASHBOARD_SCAN_SECONDS", 0.05):
-            result = collect(FakeReader(documents, delay=0.2))
-        self.assertEqual(result["coverage"].completeness, "partial")
-        found = errors(result)
-        self.assertEqual(found["dashboard_scan_budget_exhausted"], 1)
-        self.assertEqual(found["dashboard_not_read"], len(documents))
-        self.assertLessEqual(result["profile"]["maximum_concurrent_reads"], g.DASHBOARD_READ_CONCURRENCY)
-
     def test_reads_are_bounded_by_the_concurrency_limit(self):
         documents = {"lovelace": DEFAULT_DASHBOARD, **{f"synthetic-{i}": DEFAULT_DASHBOARD for i in range(9)}}
         result = collect(FakeReader(documents, delay=0.01))
@@ -493,6 +485,158 @@ class DashboardWalkTests(unittest.TestCase):
         self.assertEqual(findings[0].config_path, "$.views[0].<key>.entity")
         self.assertTrue(findings[0].source_name.startswith("T" * 150))
         self.assertLess(len(findings[0].source_name), 200)
+
+
+class FakeClock:
+    """Simulated monotonic clock; only the test advances it."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+class ControlledSleep:
+    """The watchdog's sleep; it returns only when the test fires it."""
+
+    def __init__(self):
+        self.fire = asyncio.Event()
+        self.durations: list[float] = []
+
+    async def __call__(self, seconds):
+        self.durations.append(seconds)
+        await self.fire.wait()
+
+
+class BudgetReader(FakeReader):
+    """A reader whose list and reads move the simulated clock or never return."""
+
+    def __init__(self, documents, clock, *, list_cost=0.0, read_cost=0.0,
+                 hang_list=False, hang_reads=False, on_hang=None, **kwargs):
+        super().__init__(documents, **kwargs)
+        self.clock = clock
+        self.list_cost, self.read_cost = list_cost, read_cost
+        self.hang_list, self.hang_reads, self.on_hang = hang_list, hang_reads, on_hang
+        self.sessions_open = 0
+        self.sessions_closed = 0
+        self.cancelled: list[str] = []
+
+    @asynccontextmanager
+    async def session(self):
+        self.sessions_open += 1
+        try:
+            yield self
+        finally:
+            self.sessions_closed += 1
+
+    async def _hang(self, name):
+        if self.on_hang is not None:
+            self.on_hang(name)
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.append(name)
+            raise
+
+    async def list(self, limit):
+        if self.hang_list:
+            self.lists += 1
+            await self._hang("list")
+        self.clock.now += self.list_cost
+        return await super().list(limit)
+
+    async def read(self, path):
+        if self.hang_reads:
+            self.reads.append(path)
+            await self._hang(path)
+        self.clock.now += self.read_cost
+        return await super().read(path)
+
+
+def collect_budget(reader, clock, sleep):
+    return asyncio.run(g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep))
+
+
+class DashboardBudgetTests(unittest.TestCase):
+    """R1-M1: one deadline covers the session, the list and every read."""
+
+    DOCUMENTS = {"lovelace": DEFAULT_DASHBOARD, **{
+        f"synthetic-{i}": {"views": [{"cards": [{"type": "tile", "entity": f"light.synthetic_{i}"}]}]}
+        for i in range(7)}}
+
+    def test_list_that_never_returns_is_unavailable_and_reads_nothing(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        reader = BudgetReader(self.DOCUMENTS, clock, hang_list=True, on_hang=lambda _: sleep.fire.set())
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "unavailable")
+        self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1})
+        self.assertEqual((reader.lists, reader.reads, reader.cancelled), (1, [], ["list"]))
+        self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
+        self.assertEqual(sleep.durations, [g.DASHBOARD_SCAN_SECONDS])
+        self.assertEqual([t.reason_code for t in result["terminals"]], ["dashboard_scan_budget_exhausted"])
+
+    def test_list_that_consumes_the_budget_starts_no_read(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        reader = BudgetReader(self.DOCUMENTS, clock, list_cost=g.DASHBOARD_SCAN_SECONDS)
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(reader.reads, [])
+        self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
+                                          "dashboard_not_read": len(self.DOCUMENTS)})
+        self.assertEqual(result["findings"], [])
+        self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
+
+    def test_budget_overrun_mid_list_leaves_the_rest_unread(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        reader = BudgetReader(self.DOCUMENTS, clock, read_cost=2.0)
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(len(reader.reads), 3)
+        self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
+                                          "dashboard_not_read": len(self.DOCUMENTS) - 3})
+        self.assertEqual({item.source_id for item in result["findings"]}, set(reader.reads))
+        self.assertIn(("dependency_provider", "dashboard_scan_budget_exhausted"),
+                      [(t.source_id, t.reason_code) for t in result["terminals"]])
+
+    def test_reads_in_flight_at_the_deadline_are_cancelled_and_counted(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        started = []
+
+        def on_hang(name):
+            started.append(name)
+            if len(started) == g.DASHBOARD_READ_CONCURRENCY:
+                sleep.fire.set()
+
+        reader = BudgetReader(self.DOCUMENTS, clock, hang_reads=True, on_hang=on_hang)
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(len(reader.reads), g.DASHBOARD_READ_CONCURRENCY)
+        self.assertEqual(sorted(reader.cancelled), sorted(reader.reads))
+        self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
+                                          "dashboard_not_read": len(self.DOCUMENTS)})
+        self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
+
+    def test_within_the_budget_is_complete(self):
+        clock, sleep = FakeClock(), ControlledSleep()
+        cost = g.DASHBOARD_SCAN_SECONDS / (len(self.DOCUMENTS) + 2)
+        reader = BudgetReader(self.DOCUMENTS, clock, list_cost=cost, read_cost=cost)
+        result = collect_budget(reader, clock, sleep)
+        self.assertEqual(result["coverage"].completeness, "complete")
+        self.assertEqual(errors(result), {})
+        self.assertEqual(sorted(reader.reads), sorted(self.DOCUMENTS))
+        self.assertEqual(result["terminals"], [])
+        self.assertLess(clock.now, g.DASHBOARD_SCAN_SECONDS)
+
+    def test_oversize_document_is_partial_with_a_document_terminal(self):
+        reader = FakeReader(self.DOCUMENTS, failures={"synthetic-3": "response_limit"})
+        result = collect(reader)
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(errors(result), {"dashboard_read_response_limit": 1})
+        self.assertEqual([(t.source_id, t.reason_code) for t in result["terminals"]],
+                         [("synthetic-3", "dashboard_document_limit_exceeded")])
+        self.assertNotIn("synthetic-3", {item.source_id for item in result["findings"]})
+        self.assertEqual(len({item.source_id for item in result["findings"]}), len(self.DOCUMENTS) - 1)
 
 
 class FakeCoreRuntime:
@@ -658,6 +802,28 @@ class DashboardDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call[0] for call in self.upstream.calls], ["list"])
         self.assertEqual([event["event"] for event in self.audit.events], ["dependency_dashboard_list"])
 
+    async def test_oversize_document_is_refused_by_the_reviewed_size_cap(self):
+        from ha_mcp_engineering.providers.upstream_dashboard import _analysis_configuration
+
+        oversize = {"content": [{"type": "text", "text": " " * (dc.DASHBOARD_BYTES + 1)}]}
+        original = self.upstream.get_analysis_configuration
+
+        async def read(*, url_path, authorize, budget):
+            if url_path == "synthetic-two":
+                authorize()
+                self.upstream.calls.append(("read", url_path))
+                return _analysis_configuration(oversize, url_path), {}
+            return await original(url_path=url_path, authorize=authorize, budget=budget)
+
+        self.upstream.get_analysis_configuration = read
+        _, result = await self.collect()
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(errors(result), {"dashboard_read_response_limit": 1})
+        self.assertEqual([(t.source_id, t.reason_code) for t in result["terminals"]],
+                         [("synthetic-two", "dashboard_document_limit_exceeded")])
+        self.assertEqual({item.source_id for item in result["findings"]}, {"lovelace"})
+        self.assertEqual(self.core.calls, ["acquire", "consume", "finish"])
+
     async def test_invalid_and_secret_shaped_paths_are_screened(self):
         self.upstream.listed = [{"url_path": "lovelace", "title": 5},
                                 {"url_path": "Bad Path"}, {"url_path": SECRET}, "not-a-dict"]
@@ -753,6 +919,24 @@ class DependencyBuildTests(unittest.IsolatedAsyncioTestCase):
         row = snapshot.global_sources.coverage_for("dashboard")
         self.assertEqual((row.provider, row.completeness), ("none", "unavailable"))
         self.assertEqual(snapshot.global_sources.coverage_for("scene").completeness, "complete")
+
+    async def test_exhausted_dashboard_budget_preserves_the_other_sources(self):
+        home = Home()
+        _, baseline, _, _ = await build(home)
+        reader = BudgetReader({"lovelace": DEFAULT_DASHBOARD}, FakeClock(), hang_list=True)
+        with patch.object(g, "DASHBOARD_SCAN_SECONDS", 0.0):
+            _, snapshot, _, _ = await build(home, reader)
+        self.assertEqual((reader.lists, reader.reads), (0, []))
+        self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
+        row = snapshot.global_sources.coverage_for("dashboard")
+        self.assertEqual(row.completeness, "unavailable")
+        self.assertIn("dashboard_scan_budget_exhausted: 1", row.warnings)
+        for source_type in ("scene", "group"):
+            self.assertEqual(snapshot.global_sources.coverage_for(source_type).completeness, "complete")
+        self.assertEqual(snapshot.fingerprint, baseline.fingerprint)
+        self.assertEqual(snapshot.findings, baseline.findings)
+        self.assertEqual(
+            {item.source_type for item in snapshot.global_sources.findings}, {"scene", "group"})
 
     async def test_index_truncation_marks_every_dropped_source_partial(self):
         async def build_truncated(max_edges):
@@ -898,6 +1082,118 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("HAMCP-264" in warning for warning in template["warnings"]))
 
 
+class ImpactPaginationBindingTests(unittest.IsolatedAsyncioTestCase):
+    """R1-M2: impact cursors are bound to the visible diagnostic partition."""
+
+    TARGET = "light.synthetic_only_dashboard"
+
+    async def asyncSetUp(self):
+        self.home = Home()
+        self.documents = {"lovelace": DEFAULT_DASHBOARD, **{
+            f"synthetic-{i}": {"views": [{"cards": [{"type": "tile", "entity": self.TARGET}]}]}
+            for i in range(5)}}
+        self.reader = FakeReader(self.documents)
+        self.index, _, self.rest, self.websocket = await build(self.home, self.reader)
+        self.patch = patch(BLUEPRINT_READER, side_effect=read_blueprint)
+        self.patch.start()
+        self.service = ChangeImpactAnalysisService(DirectHaImpactProvider(
+            self.index, self.rest, self.websocket, secret=SECRET, ha_token=SECRET))
+        METRICS.reset()
+
+    async def asyncTearDown(self):
+        self.patch.stop()
+        METRICS.reset()
+
+    async def page(self, cursor="", limit=1):
+        output = await self.service.analyze(
+            entity_id=self.TARGET, operation="remove_entity", detail_level="evidence",
+            source_types=ALL_SOURCES, limit=limit, cursor=cursor)
+        return output.data
+
+    async def stale(self, cursor):
+        with self.assertRaises(GovernanceError) as raised:
+            await self.page(cursor)
+        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+        return raised.exception.details["reason"]
+
+    def governance_binding(self):
+        snapshot = self.index.snapshot
+        return (snapshot.fingerprint, snapshot.generation, snapshot.findings, snapshot.obligations)
+
+    def metrics(self):
+        return METRICS.snapshot()["change_impact_analysis"]
+
+    def dashboard_ids(self, findings):
+        return {item["affected_object_id"] for item in findings
+                if item["affected_object_type"] == "dashboard"}
+
+    async def test_unchanged_partition_pages_are_consistent_and_read_nothing(self):
+        whole = await self.page(limit=100)
+        reads = list(self.reader.reads)
+        first = await self.page()
+        pages, cursor = [first], first["pagination"]["next_cursor"]
+        while cursor:
+            pages.append(await self.page(cursor))
+            cursor = pages[-1]["pagination"]["next_cursor"]
+        ids = [item["finding_id"] for data in pages for item in data["findings"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(sorted(ids), sorted(item["finding_id"] for item in whole["findings"]))
+        self.assertEqual(len(self.dashboard_ids(whole["findings"])), len(self.documents))
+        self.assertEqual(self.reader.reads, reads)
+        metrics = self.metrics()
+        self.assertEqual(metrics["cursor_continuations"], len(pages) - 1)
+        self.assertEqual(metrics["stale_cursor_events"], 0)
+
+    async def test_retired_dashboard_authority_makes_the_cursor_stale(self):
+        first = await self.page()
+        reads, binding = list(self.reader.reads), self.governance_binding()
+        self.reader.is_current = False
+        self.assertEqual(await self.stale(first["pagination"]["next_cursor"]), "diagnostic_evidence_changed")
+        metrics = self.metrics()
+        self.assertEqual((metrics["cursor_continuations"], metrics["stale_cursor_events"]), (1, 1))
+        fresh = await self.page(limit=100)
+        self.assertEqual(self.dashboard_ids(fresh["findings"]), set())
+        row = next(item for item in fresh["source_coverage_matrix"] if item["source_type"] == "dashboard")
+        self.assertEqual(row["completeness"], "unavailable")
+        self.assertEqual(self.reader.reads, reads)
+        self.assertEqual(self.governance_binding(), binding)
+
+    async def test_replaced_partition_without_an_index_rebuild_makes_the_cursor_stale(self):
+        first = await self.page()
+        binding = self.governance_binding()
+        smaller = FakeReader({"lovelace": DEFAULT_DASHBOARD})
+        dashboards = await g.collect_dashboard_sources(smaller, secret=SECRET)
+        snapshot = self.index.snapshot
+        self.index.snapshot = replace(snapshot, global_sources=await g.collect_global_sources(
+            [], [], registry_complete=True, secret=SECRET, dashboards=dashboards))
+        self.assertEqual(self.governance_binding(), binding)
+        self.assertEqual(await self.stale(first["pagination"]["next_cursor"]), "diagnostic_evidence_changed")
+        self.assertEqual(self.metrics()["stale_cursor_events"], 1)
+
+    async def test_index_refresh_makes_the_cursor_stale(self):
+        first = await self.page()
+        await self.index.get(refresh=True)
+        self.assertEqual(await self.stale(first["pagination"]["next_cursor"]),
+                         "active_index_replaced_or_invalidated")
+        self.assertEqual(self.metrics()["stale_cursor_events"], 1)
+
+    async def test_diagnostic_change_before_commit_refuses_the_cursor(self):
+        provider = self.service.provider
+        with patch.object(type(provider), "active_diagnostic_identity", return_value="changed"):
+            with self.assertRaises(GovernanceError) as raised:
+                await self.page()
+        self.assertEqual(raised.exception.code, ErrorCode.ANALYSIS_UNAVAILABLE)
+        self.assertEqual(raised.exception.details["reason"], "index_changed_before_snapshot_commit")
+        self.assertEqual(self.service.pagination_snapshots._values, {})
+
+    async def test_failing_diagnostic_identity_fails_closed(self):
+        first = await self.page()
+        with patch.object(type(self.service.provider), "active_diagnostic_identity",
+                          side_effect=RuntimeError("synthetic")):
+            self.assertEqual(await self.stale(first["pagination"]["next_cursor"]),
+                             "diagnostic_evidence_changed")
+
+
 class PolicyNoDowngradeTests(unittest.IsolatedAsyncioTestCase):
     SEVERITY = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
@@ -948,6 +1244,8 @@ class BoundTableTests(unittest.TestCase):
             "dashboard_inventory_limit_exceeded": g.MAX_DEPENDENCY_DASHBOARDS,
             "dashboard_finding_limit_exceeded": g.MAX_DASHBOARD_FINDINGS,
             "dashboard_projection_limit_exceeded": dc.ITEMS,
+            "dashboard_document_limit_exceeded": dc.DASHBOARD_BYTES,
+            "dashboard_scan_budget_exhausted": int(g.DASHBOARD_SCAN_SECONDS),
         }
         for reason, limit in expected.items():
             self.assertIn(reason, table)
