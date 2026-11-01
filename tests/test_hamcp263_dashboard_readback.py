@@ -39,11 +39,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import test_dashboard_update_mvp as dashboard_suite  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
-from ha_mcp_engineering.f3.locks import LockStorageError  # noqa: E402
 from ha_mcp_engineering.f3_runtime import runtime as runtime_module  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3_EXECUTION_AUTHORITY,
     F3RuntimeIntegration,
+    LockStorageError,
     TERMINAL_PARENT_READBACK_PENDING,
     TERMINAL_PARENT_READBACK_RESULT,
     _TerminalParentReadbackLockStore,

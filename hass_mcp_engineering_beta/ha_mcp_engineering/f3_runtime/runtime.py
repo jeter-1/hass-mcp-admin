@@ -3431,18 +3431,17 @@ class F3RuntimeIntegration:
         evidence_seconds = int(
             getattr(prepared, "evidence_deadline_seconds", 120)
         )
-        executor = self._executor(
-            evidence_seconds,
-            terminal_parent_readback=terminal_parent_readback,
-            # HAMCP-263: the 120 s apply lease ends with the 120 s evidence
-            # window, so dashboard readback recovery can only take over at
-            # the deadline. One read-only final read decides it instead of
-            # manual review without any read (as HAMCP-192 does for fan).
-            final_read_at_deadline=bool(
-                readback_only
-                and plan.operation is ChangeOperation.UPDATE_DASHBOARD
-            ),
-        )
+        # The ordinary path keeps the one-argument executor contract.
+        executor_options: dict[str, bool] = {}
+        if terminal_parent_readback:
+            executor_options["terminal_parent_readback"] = True
+        # HAMCP-263: the 120 s apply lease ends with the 120 s evidence
+        # window, so dashboard readback recovery can only take over at the
+        # deadline. One read-only final read decides it instead of manual
+        # review without any read (as HAMCP-192 does for fan).
+        if readback_only and plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+            executor_options["final_read_at_deadline"] = True
+        executor = self._executor(evidence_seconds, **executor_options)
         if plan.contract_version in {1, 2}:
             from ..governance.configuration_eligibility import bound_proof, markers
 
