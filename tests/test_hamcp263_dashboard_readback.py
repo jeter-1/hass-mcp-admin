@@ -44,6 +44,7 @@ from ha_mcp_engineering.f3_runtime import runtime as runtime_module  # noqa: E40
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3_EXECUTION_AUTHORITY,
     F3RuntimeIntegration,
+    TERMINAL_PARENT_READBACK_PENDING,
     TERMINAL_PARENT_READBACK_RESULT,
     _TerminalParentReadbackLockStore,
 )
@@ -612,6 +613,36 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ["dashboard:main-operations"],
             [item.key for item in store.records()],
         )
+        self.assertEqual(1, self.dashboard.write_count)
+
+    async def test_terminal_parent_readback_inside_lease_waits_bounded(self):
+        # The pre-fix sweep terminalized the parent about 30 s after
+        # dispatch, while the apply lease was still active. An unsettled
+        # readback waits with a bounded backoff rather than spinning.
+        task_id, child_id = await self._dispatch_observing(failed_reads=100)
+        with patch.object(
+            self.service,
+            "_f3_owns_post_dispatch_reconciliation",
+            return_value=False,
+        ):
+            await self._pass()
+        parent = self.service.task_repository.get(task_id)
+        self.assertEqual("manual_review_required", parent.state.value)
+        # Past active recovery's backoff, still inside the 120 s lease.
+        self.clock[0] += timedelta(seconds=31)
+        await self.runtime.recover_once("periodic")
+        runtime = self.runtime.children.runtime(child_id)
+        self.assertEqual(
+            TERMINAL_PARENT_READBACK_PENDING, runtime["reconciliation_result"]
+        )
+        self.assertTrue(30 <= runtime["backoff_seconds"] <= 300)
+        self.assertGreater(
+            datetime.fromisoformat(runtime["next_eligible_at"]),
+            self.clock[0],
+        )
+        self.assertFalse(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(parent, self.service.task_repository.get(task_id))
         self.assertEqual(1, self.dashboard.write_count)
 
     async def test_terminal_parent_readback_refuses_an_active_parent(self):
