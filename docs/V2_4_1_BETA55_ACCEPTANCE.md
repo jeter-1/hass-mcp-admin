@@ -154,8 +154,12 @@ No test reaches a live system. Every fixture is synthetic and live-shaped
   killed 48 of 55; the 7 survivors each got an isolated test; round 2
   killed 55 of 55; M56 (provider attribution) is killed. Round 3 replays
   M01–M56 and adds M57–M70 for the R1 budget and cursor enforcement
-  points: 70 of 70 killed, both in the full module and by each mutant's
-  isolated target test, after one survivor (M68) got its own test.
+  points: 68 valid kills in both modes, after one survivor (M68) got its
+  own test. Its M59 and M60 kills were wall-clock `TimeoutError`s, which
+  are not kills. Round 4 makes the budget tests deterministic (no wall
+  clock) and treats any timeout, import or network failure as invalid: 70
+  of 70 valid kills in the full module and in each mutant's isolated target
+  test, with M59 and M60 failing by assertion.
 
 ### 1.3 Review item: governed rename or removal disclosure
 

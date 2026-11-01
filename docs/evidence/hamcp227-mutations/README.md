@@ -62,12 +62,19 @@ isolated targets (`isolated_targets.py`, copied from the round-1 review). It rep
 M57–M70 for the R1 enforcement points. Every mutant gets two runs: the full
 module, and its isolated target test alone. In the full replay each of the 47 target tests
 first passes alone on the clean tree (its control), and the full-module
-control passes before and after. A timeout is never a kill.
+control passes before and after.
 
-| File | Run | Tests | Mutants | Killed (module) | Killed (isolated) |
-|---|---|---|---|---|---|
-| `round3-first-pass-results.json` | first pass at 11f2c73e (M56 omitted) | 70 OK | 69 | 68 | 68 |
-| `round3-results.json` | full replay at 29d3ce1e | 71 OK | 70 | **70** | **70** |
+Correction (Codex round 2, R2-L1): `run_round3.py` excluded only the outer
+300 s subprocess timeout, so it counted M59 and M60 as killed although they
+died through a test-level `TimeoutError` from the budget tests' 30 s
+wall-clock hang guard. A timeout is not a kill. The valid counts below
+exclude them; the JSON files keep the original `killed` labels as recorded.
+Round 4 replaces that mechanism (below).
+
+| File | Run | Tests | Mutants | Valid kills (module) | Valid kills (isolated) | Invalid (timeout) |
+|---|---|---|---|---|---|---|
+| `round3-first-pass-results.json` | first pass at 11f2c73e (M56 omitted) | 70 OK | 69 | 66 | 66 | M59, M60 |
+| `round3-results.json` | full replay at 29d3ce1e | 71 OK | 70 | 68 | 68 | M59, M60 |
 
 The first pass left one survivor, M68: a failing diagnostic identity read
 as "no partition". It survived because the stored identity was never empty
@@ -102,8 +109,48 @@ New mutants:
 Test-level error kills (`FAILED (errors=N)`; all tests ran, and none is an
 import error):
 - M41 and M53: as in round 2.
-- M59 and M60: the budget tests' 30 s `wait_for` hang guard raised
-  `TimeoutError` (63 s per mutant). A correct collector never reaches the
-  guard; it exists so that broken cancellation fails rather than hangs.
+- M59 and M60 were NOT valid kills: the budget tests' 30 s `wait_for` hang
+  guard raised `TimeoutError` (63 s per mutant). See round 4.
 - M69: `ANALYSIS_UNAVAILABLE` at the snapshot commit in the pagination
   tests.
+
+## Round 4 (Codex round 2, R2-L1)
+
+The budget tests no longer use a wall-clock guard. `collect_budget` drives
+the collector for at most 200 event-loop turns (`COLLECTION_TURNS`) and then
+asserts that it completed (`dashboard collection still pending after the
+simulated deadline`). The simulated deadline moves the fake clock to
+`DASHBOARD_SCAN_SECONDS` and fires the watchdog's controlled sleep. Nothing
+in these tests does I/O or reads the wall clock, so a correct collector
+finishes in the same turns on every run, and a collector that ignores the
+watchdog (M59) or never cancels the work it guards (M60) fails the
+assertion. If an assertion fails, the driver cancels the collector and
+drains it, so a broken mutant cannot hang the run.
+
+`run_round4.py` replays round 3's 70 mutants and isolated targets unchanged
+(it reads them from `run_round3.py`) at c8e3785b, in a `git clone --shared`
+copy under `.artifacts/mut4/`. Every run goes through a runner that denies
+external network access (`socket.connect` and `socket.getaddrinfo`). A run
+is a valid kill only when every expected test ran (71 for the module, 1 for
+the isolated target) and it reported a test failure or test-level error.
+These are invalid and never kills: the 300 s subprocess timeout, a
+test-level `TimeoutError`, an import, syntax or collection error (or fewer
+tests ran), and a network attempt.
+
+| File | Run | Tests | Mutants | Valid kills (module) | Valid kills (isolated) | Invalid | Survived |
+|---|---|---|---|---|---|---|---|
+| `round4-results.json` | full replay at c8e3785b | 71 OK | 70 | **70** | **70** | 0 | 0 |
+
+The full-module control passed before and after (71 tests), and each of the
+47 isolated target tests passed alone on the clean tree.
+
+- M59 (ignores the watchdog) and M60 (never cancels in-flight work) now fail
+  by assertion (`FAIL:`, kind `failure`): in the module run both
+  `test_list_that_never_returns_is_unavailable_and_reads_nothing` and
+  `test_reads_in_flight_at_the_deadline_are_cancelled_and_counted` fail
+  (2.5 s and 2.6 s for all 71 tests); in isolation each fails its own target
+  (1.7 s).
+- 67 mutants are killed by assertion failures. Three are killed by
+  test-level errors with all tests run and no import error, as in round 3:
+  M41 and M53 (a `KeyError` in one test body) and M69
+  (`ANALYSIS_UNAVAILABLE` at the snapshot commit).
