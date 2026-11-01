@@ -1,5 +1,11 @@
 # HAMCP-071 governed scene configuration edit (built inactive)
 
+> **2026-11-01 scope update (HAMCP-269):** Josh authorized disposable evidence
+> for all five compiled profiles on both Core 2026.10.1 and 2026.10.3.
+> [The evidence task](HAMCP_269_SEQ15_CORE_EVIDENCE.md) supersedes the historical
+> batch-placement and dormant-wiring statements below. Runtime and production
+> registry authority remain unchanged; execution results are recorded in its PR.
+
 `create_scene_configuration_plan` proposes one edit to one existing
 UI-managed scene: its `name`, its `icon`, or the stored state of its member
 entities. It is Engineering-native and built **inactive**. It refuses with

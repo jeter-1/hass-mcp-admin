@@ -1,15 +1,13 @@
-"""HAMCP-232/145/106 exact-Core evidence lanes for the seq-15 signing batch (design §6.4).
+"""HAMCP-269 five-profile exact-Core evidence for 2026.10.1 and 2026.10.3.
 
-Defined, not wired: the disposable Alarmo-slot harness calls these lanes only
-when ``REAL_HA_SEQ15_LANES`` is ``enabled`` and the slot's Core is exactly
-2026.10.3 (OD-13), and no CI job sets that value until the owner wires the
-seq-15 batch evidence run. No standalone or live CLI.
+The disposable harness calls these lanes only when REAL_HA_SEQ15_LANES is
+enabled and the Core matches one of the two exact bindings. No live CLI.
 
 Each lane exercises one dormant profile against the exact window Core under
 two CI-only ephemeral authorities: a predecessor holding the seq-14 signed
-2026.10.3 set without it (must refuse before Home Assistant) and an extension
+release set without it (must refuse before Home Assistant) and an extension
 with the lane's profile appended. The production signed registry is never read
-for authority, changed or signed; its committed 2026.10.3 entry is only
+for authority, changed or signed; its committed exact-release entry is only
 compared with the predecessor. Every Home Assistant object a lane writes is
 synthetic and created inside the disposable instance, then deleted and read
 back as absent by the lane's own raw client; the governed paths never delete.
@@ -46,15 +44,17 @@ from ha_mcp_engineering.script_traces import NEVER_SENT_COMMANDS  # noqa: E402
 
 ENABLE_FLAG = "REAL_HA_SEQ15_LANES"
 ENABLED = "enabled"
-# OD-13: seq 15 extends 2026.10.3 only; 2026.10.1 and 2026.10.0 stay unextended.
-TARGET_CORE = "2026.10.3"
+# Josh's 2026-11-01 direction supersedes OD-13: extend both October releases.
+TARGET_CORE = "2026.10.3"  # Default for historical offline receipt fixtures only.
+TARGET_CORES = frozenset({"2026.10.1", "2026.10.3"})
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
 INPUT_SELECT = "core.typed_input_select_option_operation"
 SCRIPT_TRACE = "core.script_trace_read"
 DASHBOARD_METADATA = "core.dashboard_metadata_operation"
-SEQ15_DORMANT = frozenset({HELPER_OPTIONS, INPUT_SELECT, SCRIPT_TRACE, DASHBOARD_METADATA})
-# HAMCP-071: compiled and dormant, but signed with seq 16, never by a seq-15 lane.
-SEQ16_DORMANT = frozenset({"core.scene_configuration_operation"})
+SCENE = "core.scene_configuration_operation"
+SEQ15_DORMANT = frozenset({HELPER_OPTIONS, INPUT_SELECT, SCRIPT_TRACE, DASHBOARD_METADATA, SCENE})
+# Compatibility name for older fixture imports; all five join this batch.
+SEQ16_DORMANT = frozenset()
 assert not SEQ15_DORMANT & SEQ16_DORMANT and SEQ15_DORMANT | SEQ16_DORMANT == NOVEMBER_DORMANT
 # The seq-14 signed 2026.10.3 entry (upstream-trust/ha-core-release-registry.json).
 PREDECESSOR_COUNT = 26
@@ -75,8 +75,10 @@ TRACE_LIST, TRACE_GET = "trace/list", "trace/get"
 # The admitted get_dashboard_config read's own Core command (ha-mcp sends it with force).
 LOVELACE_CONFIG = "lovelace/config"
 # Only these count as Home Assistant writes in a lane's Engineering clients.
-WRITE_REQUESTS = frozenset({OPTIONS_SUBMIT, SELECT_OPTION, DASHBOARD_UPDATE})
-FIXTURE_ABSENCE = ("config_entries", "entities", "input_select", "script", "dashboard")
+SCENE_GET = "GET /config/scene/config/{}"
+SCENE_POST = "POST /config/scene/config/{}"
+WRITE_REQUESTS = frozenset({OPTIONS_SUBMIT, SELECT_OPTION, DASHBOARD_UPDATE, SCENE_POST})
+FIXTURE_ABSENCE = ("config_entries", "entities", "input_select", "script", "dashboard", "scene")
 TRACE_SECRET_KEY = "seq15_probe"
 LONG_VALUE = 5_000
 
@@ -137,15 +139,13 @@ LANES = {
         required={DASHBOARD_LIST, DASHBOARD_UPDATE, LOVELACE_CONFIG},
         never_sent=DASHBOARD_NEVER_SENT,
         scenarios=("title", "icon", "icon_clear", "show_in_sidebar", "require_admin", "all_fields", "rollback",
-                   "no_change", "default_dashboard", "content_unchanged", "stale_state", "content_drift"),
+                   "no_change", "default_dashboard", "content_unchanged", "stale_state", "content_drift",
+                   "unknown_id", "immutable_fields"),
         predecessor_probe={"url_path": "seq15-absent", "title": "x"},
         predecessor_reason=PENDING),
 }
-# HAMCP-106: lanes defined here whose evidence path and upload entry are not yet in
-# .github/workflows/ci.yml (protected; deferred to the November seq-15 batch). Enabling
-# REAL_HA_SEQ15_LANES needs that workflow edit anyway, and until it lands this lane's
-# output_env is unset, so a run fails closed instead of producing evidence.
-WORKFLOW_PENDING_LANES = frozenset({"dashboard_metadata"})
+# Every lane now has a required evidence path and artifact entry.
+WORKFLOW_PENDING_LANES = frozenset()
 DASHBOARD_EDITS = ("title", "icon", "icon_clear", "show_in_sidebar", "require_admin", "all_fields")
 # Stored exactly: the trailing space must survive the update and the readback.
 DASHBOARD_TITLE = "Seq15 Map "
@@ -157,7 +157,8 @@ RAW_ROUTE = re.compile(
     r"/config/config_entries/(?:flow|flow/[0-9A-Za-z]{1,64}|entry/[0-9A-Za-z]{1,64}"
     r"|options/flow|options/flow/[0-9a-f]{32})"
     r"|/config/script/config/seq15_[0-9a-f]{8}"
-    r"|/states/(?:input_select|script)\.seq15_[0-9a-z_]{1,64}")
+    r"|/config/scene/config/(?:seq15_[0-9a-f]{8}|[0-9a-f]{32})"
+    r"|/states/(?:input_select|binary_sensor|script|scene)\.seq15_[0-9a-z_]{1,64}")
 _FLOW_ID = re.compile(r"/[0-9a-f]{32}\Z")
 
 
@@ -178,22 +179,24 @@ def source_profiles(lane):
     return references
 
 
-def predecessor_references():
-    """The seq-14 2026.10.3 set: every compiled profile except the November batch (seq 15 and 16).
+def predecessor_references(core_version=TARGET_CORE):
+    """The exact ordered seq-14 release set, excluding the five additions.
 
-    Compared, never trusted: it must equal the committed signed 2026.10.3 entry.
+    Compared, never trusted: it must equal the committed signed exact-release entry.
     """
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
             if p.capability_id not in SEQ15_DORMANT | SEQ16_DORMANT]
     assert len(refs) == PREDECESSOR_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     registry = json.loads(SIGNED_REGISTRY.read_text())
-    (signed,) = [entry for entry in registry["envelopes"][-1]["entries"] if entry["version"] == TARGET_CORE]
+    assert core_version in TARGET_CORES
+    (signed,) = [entry for entry in registry["envelopes"][-1]["entries"] if entry["version"] == core_version]
 
     def key(reference):
         return reference["capability_id"]
     assert sorted(refs, key=key) == sorted(signed["capabilities"], key=key)
-    return refs
+    # Preserve the actual signed order, never the order of a reconstructed set.
+    return signed["capabilities"]
 
 
 def observed_rest_route(method, path):
@@ -201,6 +204,8 @@ def observed_rest_route(method, path):
     path = str(path)
     if path.startswith("/states/"):
         return method + " /states/{}"
+    if path.startswith("/config/scene/config/"):
+        return method + " /config/scene/config/{}"
     if path.startswith("/config/config_entries/entry/"):
         tail = path.removeprefix("/config/config_entries/entry/").split("/", 1)
         return method + " /config/config_entries/entry/{}" + ("/" + tail[1] if len(tail) == 2 else "")
@@ -314,6 +319,11 @@ def _dashboard_metadata_checks(name, value):
         assert type(value["fingerprint_reads"]) is int and value["fingerprint_reads"] >= 1
     if name in {"stale_state", "content_drift"}:
         _stale(value)
+    if name == "unknown_id":
+        assert value["error_code"] == "not_found" and value["inventory_unchanged"] is True
+    if name == "immutable_fields":
+        assert value["errors"] == dict.fromkeys(("url_path", "mode"), "invalid_format")
+        assert value["row_unchanged"] is True
 
 
 CHECKS = {"helper_options": _helper_options_checks, "input_select_option": _input_select_checks,
@@ -329,7 +339,7 @@ def verify_result(lane_key, result, *, core_version, support_slot):
     """
     from alarmo_inspection_contract_acceptance import slot_binding
     lane = LANES[lane_key]
-    assert type(core_version) is str and type(support_slot) is str and core_version == TARGET_CORE
+    assert type(core_version) is str and type(support_slot) is str and core_version in TARGET_CORES
     binding = slot_binding(core_version)
     assert binding["slot"] == support_slot
     assert result["result"] == "PASS" and result["lane"] == lane_key and result["core"] == core_version
@@ -346,9 +356,10 @@ def verify_result(lane_key, result, *, core_version, support_slot):
     assert result["production_authority"] is False and result["fixture_cleanup"] is True
     assert result["fixture_absence"] == dict.fromkeys(FIXTURE_ABSENCE, True)
     assert result["provider_identity"] == "synthetic_disposable_lane"
+    assert result["batch_health"] == {"compatible_count": 31, "withheld_count": 0}
     from ha_mcp_engineering.signed_registry import canonical_json
     assert result["predecessor_capabilities_sha256"] == hashlib.sha256(
-        canonical_json(predecessor_references())).hexdigest()
+        canonical_json(predecessor_references(core_version))).hexdigest()
     assert result["predecessor_admission"] == {
         "route_acquired": False, "route_available": False,
         "service_reason_code": lane["predecessor_reason"],
@@ -499,10 +510,15 @@ class ObservedRest:
     def __init__(self, inner, log):
         self.inner = inner
         self.log = log
+        self.after_scene_save = None
 
     async def request(self, method, path, *args, **kwargs):
         self.log.record(observed_rest_route(method, path), None)
-        return await self.inner.request(method, path, *args, **kwargs)
+        result = await self.inner.request(method, path, *args, **kwargs)
+        if method == "POST" and path.startswith("/config/scene/config/") and self.after_scene_save:
+            callback, self.after_scene_save = self.after_scene_save, None
+            await callback()
+        return result
 
     def __getattr__(self, name):
         return getattr(self.inner, name)
@@ -539,6 +555,8 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         await raw.rest("DELETE", "/config/script/config/" + owned["script"])
     if owned.get("dashboard"):
         await raw.ok({"type": "lovelace/dashboards/delete", "dashboard_id": owned["dashboard"]})
+    for config_id in owned.get("scenes", []):
+        await raw.rest("DELETE", "/config/scene/config/" + config_id)
     entries = set(owned.get("config_entries", []))
 
     async def config_entries_absent():
@@ -559,8 +577,15 @@ async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
         return not owned.get("dashboard") or owned["dashboard"] not in {
             item.get("id") for item in await raw.ok({"type": DASHBOARD_LIST})}
 
+    async def scenes_absent():
+        for config_id in owned.get("scenes", []):
+            if (await raw.status("GET", "/config/scene/config/" + config_id))[0] != 404:
+                return False
+        return True
+
     checks = {"config_entries": config_entries_absent, "entities": entities_absent,
-              "input_select": input_select_absent, "script": script_absent, "dashboard": dashboard_absent}
+              "input_select": input_select_absent, "script": script_absent, "dashboard": dashboard_absent,
+              "scene": scenes_absent}
     absence = {}
     for name in FIXTURE_ABSENCE:
         for _ in range(attempts):
@@ -584,8 +609,8 @@ async def run_disposable(lane_key, configured, *, expected_image, core_version):
         cursor = exc.__traceback__
         lines = []
         while cursor is not None:
-            if cursor.tb_frame.f_code.co_filename == __file__:
-                lines.append(cursor.tb_lineno)
+            if Path(cursor.tb_frame.f_code.co_filename).name in {"seq15_contract_acceptance.py", "seq15_scene_contract.py"}:
+                lines.append({"file": Path(cursor.tb_frame.f_code.co_filename).name, "line": cursor.tb_lineno})
             cursor = cursor.tb_next
         exc.contract_missing_key = "seq15_" + str(lane_key if lane_key in LANES else "unknown")
         exc.contract_diagnostic = {"seq15_source_lines": lines[:12], "seq15_stage": stage[0]}
@@ -621,7 +646,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
 
     binding = slot_binding(core_version)
     entry = lane_entry(core_version)
-    if (core_version != TARGET_CORE
+    if (core_version not in TARGET_CORES
             or urlsplit(configured.ha_url).hostname not in {"127.0.0.1", "localhost", "::1"}
             or os.environ.get("HA_CONTRACT_LANE") != binding["lane"]
             or expected_image != binding["image"]
@@ -634,7 +659,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
     output = Path(os.environ[lane["output_env"]])
     probe_profile = probe_profile_for(core_version)
     added = source_profiles(lane)
-    old = predecessor_references()
+    old = predecessor_references(core_version)
     new = old + added
     assert [len(old), len(new)] == lane["authority_transition"]
     key = Ed25519PrivateKey.generate()
@@ -689,6 +714,9 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
             resource_gateway.entity_metadata_consumer_evidence = runtime_consumer_evidence()
             resource_gateway.availability_exposure_snapshot_reader = read_runtime_dependency_snapshot
             resource_gateway.dashboard_metadata.core_runtime = runtime
+            resource_gateway.scene_configuration.core_runtime = runtime
+            from ha_mcp_engineering.governance.entity_metadata_disclosure import read_cached_dependency_snapshot
+            resource_gateway.scene_configuration.consumer_snapshot_reader = read_cached_dependency_snapshot
             resource_gateway.dashboard_metadata.content_reader = _dashboard_content_fingerprint_reader(
                 DashboardContentRead(engineering_ws, content_seen), configured.response_size_limit)
             audit_secret = "seq15-" + lane["key"] + "-disposable-audit"
@@ -702,7 +730,8 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                 label_registry_gateway=resource_gateway.label_registry,
                 input_select_gateway=input_select_gateway,
                 helper_options_gateway=resource_gateway.helper_options,
-                dashboard_metadata_gateway=resource_gateway.dashboard_metadata)
+                dashboard_metadata_gateway=resource_gateway.dashboard_metadata,
+                scene_configuration_gateway=resource_gateway.scene_configuration)
 
             async def provider_identity():
                 return {"slug": "seq15_disposable_lane",
@@ -809,7 +838,9 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
             applied = await approve_apply(created)
             counts, codes = child_facts(applied["task_id"])
             sent = log.writes[writes:]
-            return {"result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
+            scope = ({key: applied.get(key) for key in ("verification_scope", "loaded_state")}
+                     if lane["key"] == "scene_configuration" else {})
+            return {**scope, "result": "PASS", "task_state": applied["task_state"], "dispatch_counts": counts,
                     "diagnostic_codes": codes, "ha_writes": len(sent), "write_types": list(sent)}
 
         async def governed(runtime, arguments, *, between=None, observed=None):
@@ -894,11 +925,14 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                        "refused_rollback": refused_rollback, "routed": routed, "traces": traces,
                        "owner_request": owner_request, "end_request": end_request,
                        "lane_secret": lane_secret, "GovernanceError": GovernanceError,
-                       "content_seen": content_seen}
+                       "content_seen": content_seen, "observed_rest": rest}
             with patch.object(dependency_package, "DEPENDENCY_ANALYSIS", dependency_runtime):
                 scenarios = await SCENARIOS[lane["key"]](context)
             assert all(runtime.health_snapshot()[name] == 0 for name in (
                 "issued_lease_count", "active_commit_count", "fallback_count"))
+            batch = await authority(old + [ref for item in LANES.values() for ref in source_profiles(item)], "batch")
+            batch_health = {name: batch.health_snapshot()[name] for name in ("compatible_count", "withheld_count")}
+            assert batch_health == {"compatible_count": 31, "withheld_count": 0}
             result = {
                 "result": "PASS", "lane": lane["key"], "core": core_version, "support_slot": binding["slot"],
                 "core_image": binding["image"], "image_index_digest": binding["image_index_digest"],
@@ -907,7 +941,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                 "predecessor_capabilities_sha256": hashlib.sha256(canonical_json(old)).hexdigest(),
                 "authority_transition": [len(old), len(new)],
                 "authority_instances": "separate_ephemeral_registries", "production_authority": False,
-                "provider_identity": "synthetic_disposable_lane",
+                "provider_identity": "synthetic_disposable_lane", "batch_health": batch_health,
                 "predecessor_admission": predecessor_admission,
                 "engineering_command_types": sorted(set(log.command_types)),
                 "scenarios": scenarios, "fixture_cleanup": False}
@@ -1036,7 +1070,8 @@ async def _helper_options_scenarios(c):
 async def _input_select_scenarios(c):
     stage, owned, raw, runtime = c["stage"], c["owned"], c["raw"], c["runtime"]
     stage[0] = "fixture_setup"
-    created = await raw.ok({"type": "input_select/create", "name": "Seq15 Select " + secrets.token_hex(4),
+    fixture_name = "Seq15 Select " + secrets.token_hex(4)
+    created = await raw.ok({"type": "input_select/create", "name": fixture_name,
                             "options": ["Home", "Away", "Night"]})
     owned["input_select"] = created["id"]
     entity_id = "input_select." + owned["input_select"]
@@ -1079,7 +1114,7 @@ async def _input_select_scenarios(c):
     async def raw_drift():
         # The reviewed reorder drift (tests/test_hamcp145_input_select_option.py).
         await raw.ok({"type": "input_select/update", "input_select_id": owned["input_select"],
-                      "options": ["Away", "Home", "Night"]})
+                      "name": fixture_name, "options": ["Away", "Home", "Night"]})
     value = await c["governed"](runtime, {"entity_id": entity_id, "option": "Night", "reason": "Seq-15 stale"},
                                 between=raw_drift)
     after = await state()
@@ -1201,6 +1236,19 @@ async def _dashboard_metadata_scenarios(c):
     content_before = await content()
     scenarios = {}
 
+    stage[0] = "unknown_id"
+    inventory = await raw.ok({"type": DASHBOARD_LIST})
+    code = await raw.refused({"type": DASHBOARD_UPDATE, "dashboard_id": "seq15_absent_" + secrets.token_hex(4),
+                              "title": "No implicit create"})
+    scenarios["unknown_id"] = {"result": "PASS", "error_code": code,
+                               "inventory_unchanged": await raw.ok({"type": DASHBOARD_LIST}) == inventory}
+    stage[0] = "immutable_fields"
+    baseline = await row()
+    errors = {}
+    for field, value in (("url_path", "seq15-other"), ("mode", "yaml")):
+        errors[field] = await raw.refused({"type": DASHBOARD_UPDATE, "dashboard_id": owned["dashboard"], field: value})
+    scenarios["immutable_fields"] = {"result": "PASS", "errors": errors, "row_unchanged": await row() == baseline}
+
     stage[0] = "default_dashboard"
     scenarios["default_dashboard"] = await c["refused_plan"](runtime, {
         "url_path": DEFAULT_DASHBOARD_URL_PATH, "title": "Seq15"})
@@ -1263,3 +1311,17 @@ async def _dashboard_metadata_scenarios(c):
 
 SCENARIOS = {"helper_options": _helper_options_scenarios, "input_select_option": _input_select_scenarios,
              "script_traces": _script_trace_scenarios, "dashboard_metadata": _dashboard_metadata_scenarios}
+
+# Kept separate so the new scene harness cannot alter any runtime module.
+import seq15_scene_contract as scene_contract  # noqa: E402
+LANES["scene_configuration"] = _lane(
+    "scene_configuration", capability=SCENE, adapter="compiled-core-scene-configuration-operation-v1",
+    tool="create_scene_configuration_plan", output_env="REAL_HA_SCENE_CONFIGURATION_RESULT",
+    reviewed={SCENE_GET, SCENE_POST, STATE_READ, ENTITY_GET, REGISTRY_LIST},
+    required={SCENE_GET, SCENE_POST, STATE_READ, ENTITY_GET, REGISTRY_LIST},
+    never_sent={"DELETE /config/scene/config/{}", "call_service", "scene.apply", "scene.create",
+                "scene.delete", "scene.reload", "scene.turn_on"},
+    scenarios=scene_contract.SCENARIOS,
+    predecessor_probe={"config_id": "seq15_00000000", "name": "Absent"}, predecessor_reason=PENDING)
+SCENARIOS["scene_configuration"] = scene_contract.run
+CHECKS["scene_configuration"] = scene_contract.checks
