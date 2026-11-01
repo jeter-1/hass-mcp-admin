@@ -684,11 +684,35 @@ class _MarkerPreservation:
             self.service, "_load_for_projection", side_effect=read
         ), calls
 
+    def _eligibility_fault(self, owner, name):
+        """Patch ``owner.name`` to fail only inside the eligibility check.
+
+        Other callers (projection, the generic sweep) keep the real answer,
+        so the test isolates the strict finish of the marked child.
+        """
+
+        original = getattr(owner, name)
+        calls = [0]
+
+        def lookup(*args, **kwargs):
+            # The mock's own call frames sit between this and the caller.
+            frame = sys._getframe(1)
+            for _ in range(8):
+                if frame is None:
+                    break
+                if frame.f_code.co_name == "_terminal_parent_readback_family":
+                    calls[0] += 1
+                    raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                frame = frame.f_back
+            return original(*args, **kwargs)
+
+        return patch.object(owner, name, side_effect=lookup), calls
+
     async def _unreadable_sweep(self, child_id, task_id, before, held, failing,
-                                *, minimum_calls):
+                                *, minimum_calls, fault=None):
         self.clock[0] += timedelta(minutes=10)
         retry = self.runtime.children.runtime(child_id)
-        reading, calls = self._plan_reads(failing)
+        reading, calls = fault or self._plan_reads(failing)
         with reading:
             try:
                 await self.runtime.recover_once("periodic")
@@ -787,6 +811,33 @@ class _MarkerPreservation:
 
         await self._unreadable_sweep(
             child_id, task_id, before, held, mismatched, minimum_calls=1
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=False
+        )
+
+    async def test_registry_lookup_failure_keeps_marker(self):
+        # An unreadable registry is unknown eligibility, never "another
+        # family" (which would return early and strand the locks).
+        task_id, child_id, before, reads, held = (
+            await self._marked_after_release_fault()
+        )
+        await self._unreadable_sweep(
+            child_id, task_id, before, held, None, minimum_calls=1,
+            fault=self._eligibility_fault(self.runtime.registry, "entry"),
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=True
+        )
+
+    async def test_rollback_marker_read_failure_keeps_marker(self):
+        # A failed HAMCP-135 inverse-marker check is unknown eligibility too.
+        task_id, child_id, before, reads, held = (
+            await self._marked_after_release_fault()
+        )
+        await self._unreadable_sweep(
+            child_id, task_id, before, held, None, minimum_calls=1,
+            fault=self._eligibility_fault(inverse_eligibility, "markers"),
         )
         await self._assert_resumed(
             task_id, child_id, before, reads, restart=False
