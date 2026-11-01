@@ -1,0 +1,18 @@
+{
+  "arm64_execution": false,
+  "configuration_digest": "sha256:1fa68f126b806ab91de56c2cd9a1d716910bc69e894812d7ca2437f19353cb53",
+  "container_identity_continuity": true,
+  "core_read_sources_sha256": {
+    "homeassistant/components/config/config_entries.py": "b2b7fd0dab2d7b4cea5569cba642c2b78c2ecb97341e8987861de3ea009ff2bb",
+    "homeassistant/components/config/entity_registry.py": "b932ed29ee9a4d8ec0cf6f52b7862e809acb92deecfdbcfbe92ca231194e293e",
+    "homeassistant/components/websocket_api/commands.py": "af8271175e357383797c955545afb6ea9bb4aa14bac2aa1da0a342aaca78d99e"
+  },
+  "core_version": "2026.10.3",
+  "index": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+  "platform": "linux/amd64",
+  "platform_manifest": "sha256:c32ab33f0b0589182b2f40324826acb02a104d1707c91573b6420fd622b82127",
+  "result": "PASS",
+  "source_archive_sha256": "57a15d2dcabb8703c9b9d08e8c243e8a7130db8cb8618e1c799ae46e1c75e4e9",
+  "source_commit": "1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
+  "support_slot": "candidate"
+}

@@ -249,7 +249,7 @@ class LaneDefinitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "adapter differs"):
             seq15.source_profiles(lane)
 
-    def test_exact_two_releases_are_extended(self):
+    def test_evidence_covers_both_exact_releases(self):
         self.assertEqual(seq15.TARGET_CORES, {"2026.10.1", "2026.10.3"})
         self.assertEqual(SLOT_VERSIONS["candidate"], "2026.10.3")
         self.assertEqual(seq15.TARGET_CORE, "2026.10.3")
@@ -266,14 +266,16 @@ class LaneDefinitionTests(unittest.TestCase):
         # HAMCP-269 includes the scene profile in this five-capability batch.
         self.assertEqual(seq15.SEQ16_DORMANT, set())
         registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
-        (signed,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == seq15.TARGET_CORE]
+        (predecessor,) = [e for e in registry["envelopes"] if e["sequence"] == 14]
+        (signed,) = [e for e in predecessor["entries"] if e["version"] == seq15.TARGET_CORE]
         self.assertEqual(sorted(c["capability_id"] for c in signed["capabilities"]), sorted(ids))
 
     def test_predecessor_refuses_when_the_signed_entry_differs(self):
         registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
 
         def entry(value):
-            (found,) = [e for e in value["envelopes"][-1]["entries"] if e["version"] == seq15.TARGET_CORE]
+            (predecessor,) = [e for e in value["envelopes"] if e["sequence"] == 14]
+            (found,) = [e for e in predecessor["entries"] if e["version"] == seq15.TARGET_CORE]
             return found
         mutations = [
             lambda v: entry(v)["capabilities"].pop(),
@@ -657,8 +659,13 @@ class ReceiptTests(unittest.TestCase):
         for core in sorted(seq15.TARGET_CORES):
             binding = alarmo.slot_binding(core)
             registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
-            (entry,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == core]
+            (predecessor,) = [e for e in registry["envelopes"] if e["sequence"] == 14]
+            (entry,) = [e for e in predecessor["entries"] if e["version"] == core]
             self.assertEqual(seq15.predecessor_references(core), entry["capabilities"])
+            self.assertEqual(len(seq15.predecessor_references(core)), 26)
+            (current,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == core]
+            self.assertEqual(current["capabilities"][:26], entry["capabilities"])
+            self.assertEqual(len(current["capabilities"]), 31 if core == "2026.10.3" else 26)
             for lane in seq15.LANES:
                 value = complete_receipt(lane, core)
                 with self.subTest(core=core, lane=lane):
