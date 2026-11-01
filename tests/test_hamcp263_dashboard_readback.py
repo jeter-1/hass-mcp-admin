@@ -226,6 +226,13 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(call[0] == "write" for call in self.gateway.calls)
         )
+        # A declared child without a dispatch intent is not F3-owned
+        # post-dispatch work; the dispatched dashboard parent is.
+        self.assertIsNone(blocked_child.dispatch_intent)
+        self.assertFalse(
+            self.runtime.owns_post_intent_reconciliation(blocked["task_id"])
+        )
+        self.assertTrue(self.runtime.owns_post_intent_reconciliation(task_id))
         del provider_calls
         await self.runtime.recover_once("periodic")
         self.assertEqual((), self.runtime.locks.records())
@@ -367,7 +374,16 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             runtime_module, "DASHBOARD_ADAPTER_ID", "configuration_operation"
         ):
+            before = self.runtime.children.runtime(child_id)
             await self.runtime.recover_once("periodic")
+            # The historical scan does not collect it at all.
+            self.assertEqual(before, self.runtime.children.runtime(child_id))
+            with self.runtime._readiness_lock:
+                self.assertNotIn(
+                    "recovery_child:" + child_id,
+                    self.runtime._readiness_faults,
+                )
+            # The recovery step itself refuses a non-dashboard child too.
             declaration = self.runtime.children.declarations_for_task(
                 task_id
             )[0]
@@ -624,6 +640,67 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.service._f3_owns_post_dispatch_reconciliation(task))
         self.service.f3_runtime = None
         self.assertFalse(self.service._f3_owns_post_dispatch_reconciliation(task))
+
+    async def test_scan_collects_only_children_of_terminal_parents(self):
+        def collected(task_id):
+            return self.runtime._reconcile_orphaned_children(
+                declarations=tuple(
+                    self.runtime.children.declarations_for_task(task_id)
+                ),
+                now=self.clock[0],
+                sweep_started=0.0,
+                transition_limit=10,
+                monotonic=lambda: 0.0,
+            )["terminal_parent_readbacks"]
+
+        # A nonterminal parent's dispatched child belongs to active recovery.
+        task_id, child_id = await self._dispatch_observing(failed_reads=100)
+        self.assertEqual((), collected(task_id))
+        with patch.object(
+            self.service,
+            "_f3_owns_post_dispatch_reconciliation",
+            return_value=False,
+        ):
+            await self._pass()
+        self.assertEqual(
+            "manual_review_required",
+            self.service.task_repository.get(task_id).state.value,
+        )
+        self.clock[0] += timedelta(days=2)
+        self.assertEqual(
+            [child_id], [item["child_id"] for item in collected(task_id)]
+        )
+
+    def test_terminal_post_intent_key_release_rule(self):
+        class _Record:
+            def __init__(self, *, terminal=True, intent=True, outcome):
+                self.terminal = terminal
+                self.dispatch_intent = {"request_id": "r"} if intent else None
+                self.normalized_outcome = outcome
+
+        releasable = F3RuntimeIntegration._terminal_post_intent_key_releasable
+        held = {"selective_hold_keys": ["dashboard:main-operations"]}
+        verified = _Record(outcome="succeeded_verified")
+        review = _Record(outcome="manual_review_required")
+        self.assertTrue(releasable(held, verified, "dashboard:main-operations"))
+        self.assertFalse(
+            releasable(held, _Record(terminal=False, outcome="observing"), "x")
+        )
+        self.assertFalse(
+            releasable(held, _Record(intent=False, outcome="succeeded_verified"), "x")
+        )
+        self.assertFalse(releasable(held, review, "dashboard:main-operations"))
+        self.assertTrue(releasable(held, review, "home_assistant:core"))
+        # Unknown or empty declared hold keys retain every key.
+        for declaration in (
+            {},
+            {"selective_hold_keys": None},
+            {"selective_hold_keys": []},
+            {"selective_hold_keys": "home_assistant:core"},
+        ):
+            self.assertFalse(
+                releasable(declaration, review, "home_assistant:core")
+            )
 
     async def test_runtime_ownership_requires_a_dispatch_intent(self):
         self.assertFalse(

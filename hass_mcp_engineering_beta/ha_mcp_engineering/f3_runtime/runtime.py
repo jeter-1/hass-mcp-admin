@@ -3326,9 +3326,7 @@ class F3RuntimeIntegration:
             event_sink=self._emit_f3_audit_event,
             now=self.service.now,
             # One final read decides an expired evidence deadline.
-            final_read_at_deadline=(
-                terminal_parent_readback or final_read_at_deadline is True
-            ),
+            final_read_at_deadline=final_read_at_deadline is True,
         )
 
     async def _retry_bundle_check(self, plan, task, current_order, final):
