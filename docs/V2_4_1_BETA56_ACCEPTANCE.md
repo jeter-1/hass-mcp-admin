@@ -104,6 +104,45 @@ The families covered are configuration script update, operational
   - A family the registry does not list, or whose adapters disagree, is
     never eligible.
   - The parent is never rewritten.
+- **Cleanup-marker durability (review R1-M1).** Both review fault
+  probes are reproduced: one plan-read failure and two consecutive
+  plan-read failures, in the same process and across a restart. Also
+  covered are a mismatched plan read and a missing child record after
+  the readback. Each test asserts the following:
+  - During the failure, the marker stays
+    `terminal_parent_child_cleanup_pending`, the exclusive target locks
+    stay held, the parent bytes are unchanged and the bounded retry
+    bookkeeping advances.
+  - After a restart and a sweep, every lock is released, the result
+    marker is recorded, there is one read and one dispatch in total, the
+    parent bytes are unchanged and an unrelated apply succeeds.
+
+  Check-removal mutants of the marker-preservation path must be killed.
+- **Real stores per family (review R1-M2),
+  `tests/test_hamcp271_real_store_recovery.py`.** Each driver uses the
+  real F3 lock and execution stores, the real governance service, the
+  real provider gateway and Core admission, over a synthetic Home
+  Assistant transport. Nothing stubs the conflict path. The families are:
+  - automation and script update;
+  - helper configuration (`input_boolean`);
+  - helper options;
+  - entity metadata;
+  - labels;
+  - scene configuration edit;
+  - automation delete;
+  - `set_input_boolean_state`, through the real `HelperStateGateway`.
+
+  Each family proves the following. The unrelated apply is blocked
+  first. Then there is one readback and a truthful outcome for readable,
+  drifted and unreadable evidence. Exact-owner locks are released, the
+  parent bytes are unchanged and there is one provider write. A new
+  unrelated F3 operation succeeds. A stop mid-cleanup resumes across a
+  restart.
+
+  Helper options also proves that recovery submits nothing and that every
+  options flow is closed. `set_input_select_option` has the same proof in
+  `InputSelectFamilyTests`: the real `InputSelectGateway`, a synthetic
+  transport, real stores and the Core runtime.
 - **Active-recovery final read** at the deadline, for both a verified
   read and an unavailable one.
 - **Adapter-level final read** for automation, script, `input_boolean`
@@ -142,8 +181,16 @@ writes and needs Josh's explicit approval before it starts.
 The architect checks with read-only tools.
 
 1. **Health.** F3 status is not `recovering`.
-2. **No stranded children.** Check each terminal F3 parent. None has a
-   nonterminal child holding a dispatch intent. No child runtime shows
+2. **No stranded children.** Check each terminal F3 parent of a
+   covered forward family: dashboard update, every configuration family
+   and `set_input_boolean_state` / `set_input_select_option`. None has a
+   nonterminal child holding a dispatch intent. This check excludes:
+   - governed rollback (HAMCP-135 inverse plan) children, which keep
+     their conflict-held manual review by design;
+   - backup, reload, add-on restart and Core restart children, which
+     have their own long evidence windows.
+
+   Record any such child in HAMCP-271 as observed, not as a failure. No child runtime shows
    `terminal_parent_child_cleanup_pending`. A child settled by this
    release shows `terminal_parent_child_readback_settled`, and its audit
    shows exactly one readback and no dispatch. Do not infer a verified

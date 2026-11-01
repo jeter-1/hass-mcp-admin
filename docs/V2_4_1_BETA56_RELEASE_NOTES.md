@@ -81,6 +81,21 @@ The change generalizes the HAMCP-263 mechanism. It does not fork it.
     options.
   - The operational adapter already reads once in `recover`, so it
     needed no change.
+- **The cleanup marker records the obligation (review R1-M1).** A
+  terminal child carrying `terminal_parent_child_cleanup_pending` is
+  recognized as a pending cleanup by the marker alone. Family eligibility
+  is proved afterwards, by the cleanup step, before any release:
+  - The marker is written once, before the readback. It is cleared only
+    after the last exact-owner lock is released.
+  - A transient failure while proving eligibility keeps the marker
+    intact. This covers a failed or mismatched plan read, a failed
+    registry lookup and a missing child record after the readback. The
+    marker is never overwritten, cleared or downgraded. Only the bounded
+    retry bookkeeping advances. The next sweep, including one after a
+    restart, retries and releases the locks with no second read.
+  - Before this correction, such a failure dropped the child into
+    terminal-fault projection, which overwrote the marker and left the
+    locks held until manual repair.
 - **Unchanged from beta.55 (introduced in beta.54):**
   - the durable cleanup marker `terminal_parent_child_cleanup_pending`;
   - the readback result `terminal_parent_child_readback_settled`;
@@ -121,6 +136,19 @@ verifies. An unreadable one stays in manual review and keeps its hold.
   conflict-held. Eligibility rejects any plan carrying inverse markers.
   When a scan has no plan in hand, it decides from the exact durable
   plan, and an unreadable plan is never eligible.
+
+## Pre-existing behavior, unchanged
+
+The generic expired-lock loop in `recover_once` reads the durable plan
+through `_inverse_lock_context` to recognize governed rollback locks.
+That read is not guarded. If the plan read fails, the exception leaves
+`recover_once`, and that pass reports F3 status `unavailable` rather
+than `recovering`. The production recovery pass catches the exception
+and retries on its next interval. This release does not change that
+loop. The cleanup marker and the exclusive target-key locks stay intact
+across such a pass. Before the cleanup step runs, that loop may already
+release the expired shared keys (`home_assistant:core` and the reload
+key) of a terminal post-intent owner, as HAMCP-263 already does.
 
 ## Rollback
 
