@@ -403,6 +403,32 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parent, self.service.task_repository.get(task_id))
         self.assertEqual(1, self.dashboard.write_count)
 
+    async def test_live_shape_changed_plan_is_never_prepared_or_read(self):
+        # The persisted plan must still hash to the child's bound plan hash
+        # before anything is prepared, read or released.
+        task_id, child_id, parent = await self._live_shape()
+        reads = self.dashboard.post_write_reads
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        with patch.object(
+            self.service, "plan_hash", return_value="0" * 64
+        ), patch.object(
+            self.runtime, "_load_prepared", wraps=self.runtime._load_prepared
+        ) as load_prepared:
+            settled = await self.runtime._recover_terminal_parent_child(
+                declaration, now=self.clock[0]
+            )
+        self.assertFalse(settled)
+        load_prepared.assert_not_called()
+        self.assertEqual(
+            "bounded_retry",
+            self.runtime.children.runtime(child_id)["reconciliation_result"],
+        )
+        self.assertFalse(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(0, self.dashboard.post_write_reads - reads)
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(parent, self.service.task_repository.get(task_id))
+        self.assertEqual(1, self.dashboard.write_count)
+
     async def test_live_shape_restart_resumes_without_redispatch(self):
         task_id, child_id, parent = await self._live_shape()
         self._compose()
