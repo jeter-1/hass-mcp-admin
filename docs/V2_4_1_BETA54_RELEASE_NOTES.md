@@ -74,6 +74,14 @@ Root causes (none is a HAMCP-106/beta.50 regression):
   active lease is never expired, conflict holds are never released, and
   the owner must match the lock's exact execution authority, so live-owner
   exclusivity is unchanged.
+- **Crash-safe cleanup.** Before C's readback can terminalize the child,
+  recovery durably marks it `terminal_parent_child_cleanup_pending` in the
+  existing runtime field, and clears the marker only after the child's
+  last exact-owner lock is released. If a release fails or the process
+  stops anywhere in between, a later sweep (including the first after a
+  restart) finishes the release without another read, dispatch or parent
+  rewrite. Until then the child counts as pending reconciliation, so F3
+  never reports the cleanup settled while a lock remains.
 
 At-most-once dispatch, approval binding and the persisted formats are
 unchanged.
@@ -100,4 +108,6 @@ and a final read, so they have no gap either.
 ## Rollback
 
 Reinstall 2.4.1-beta.53. No persisted format changed. Children settled by
-this release stay settled; rolling back does not reopen them.
+this release stay settled; rolling back does not reopen them. A child
+whose cleanup is still pending at rollback keeps its remaining locks
+under beta.53; reinstalling beta.54 resumes the cleanup.

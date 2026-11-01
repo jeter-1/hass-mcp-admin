@@ -15,7 +15,10 @@ redispatched.
   marking it `dispatched_task_has_no_readback_reconciler`.
 - A nonterminal post-intent dashboard child of an already-terminal F3
   parent gets exactly one read-only readback, reaches a truthful terminal
-  state and has its locks released. The parent is never changed.
+  state and has its locks released. The parent is never changed. The
+  release is crash-safe: a durable cleanup marker, set before the readback
+  and cleared after the last exact-owner lock is released, lets a later
+  sweep or restart finish it without another read or dispatch.
 - Expired locks owned by a terminal post-intent child are released. An
   unresolved manual-review owner keeps its declared target hold keys.
 - Other families keep a "lease equals evidence window" gap; it is reported
