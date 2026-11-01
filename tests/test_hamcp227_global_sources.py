@@ -554,8 +554,15 @@ class BudgetReader(FakeReader):
         return await super().read(path)
 
 
+# Failure detector only: a correct collector finishes on the simulated clock and
+# never reaches it. It turns broken cancellation into a failure, not a hang.
+HANG_GUARD_SECONDS = 30
+
+
 def collect_budget(reader, clock, sleep):
-    return asyncio.run(g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep))
+    return asyncio.run(asyncio.wait_for(
+        g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep), HANG_GUARD_SECONDS,
+    ))
 
 
 class DashboardBudgetTests(unittest.TestCase):
