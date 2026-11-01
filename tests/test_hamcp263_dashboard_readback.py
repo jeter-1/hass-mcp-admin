@@ -270,7 +270,26 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ready", await self._f3_status())
         self.assertEqual(1, self.dashboard.write_count)
 
-        # Settled once: further passes read nothing and change nothing.
+        # Settled once: a direct readback of the terminal child is refused
+        # before any preparation, and further passes read nothing.
+        settled_child = self.runtime.children.get(child_id)
+        settled_runtime = self.runtime.children.runtime(child_id)
+        with patch.object(
+            self.runtime,
+            "_load_prepared",
+            wraps=self.runtime._load_prepared,
+        ) as load_prepared:
+            self.assertFalse(
+                await self.runtime._recover_terminal_parent_child(
+                    self.runtime.children.declarations_for_task(task_id)[0],
+                    now=self.clock[0],
+                )
+            )
+        load_prepared.assert_not_called()
+        self.assertEqual(settled_child, self.runtime.children.get(child_id))
+        self.assertEqual(
+            settled_runtime, self.runtime.children.runtime(child_id)
+        )
         await self._pass()
         await self._pass()
         self.assertEqual(1, self.dashboard.post_write_reads - reads)
