@@ -29,11 +29,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import test_dashboard_update_mvp as dashboard_suite  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
-from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     OPERATIONAL_REGISTRATIONS,
+)
+from ha_mcp_engineering.governance import (  # noqa: E402
+    configuration_rollback_eligibility as inverse_eligibility,
 )
 from ha_mcp_engineering.governance.models import ChangeOperation  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
@@ -879,13 +882,36 @@ class ConfigurationFinalReadTests(unittest.IsolatedAsyncioTestCase):
 class FamilyEligibilityTests(_StrandedFamilyHarness):
     """Only the listed families are read or released; nothing else is."""
 
-    def _eligible(self, capability_id, adapter_id, operation=None):
-        plan = None if operation is None else SimpleNamespace(operation=operation)
-        return self.runtime._terminal_parent_readback_family(
-            {"capability_id": capability_id},
-            SimpleNamespace(adapter_id=adapter_id),
-            plan,
+    def _plan(self, operation, *, inverse=False, plan_id="plan-271"):
+        evidence = (
+            [{"trigger": inverse_eligibility.TRIGGER, "proof": {}}]
+            if inverse
+            else []
         )
+        return SimpleNamespace(
+            plan_id=plan_id,
+            operation=operation,
+            operations=(
+                SimpleNamespace(risk=SimpleNamespace(evidence=evidence)),
+            ),
+        )
+
+    def _eligible(
+        self, capability_id, adapter_id, operation=None, *, durable=None
+    ):
+        """Without ``operation`` the durable plan (``durable``) decides."""
+
+        plan = None if operation is None else self._plan(operation)
+        if durable is None:
+            durable = self._plan(ChangeOperation.CONFIGURATION_PLAN)
+        with patch.object(
+            self.runtime.service, "_load_for_projection", return_value=durable
+        ):
+            return self.runtime._terminal_parent_readback_family(
+                {"capability_id": capability_id, "plan_id": "plan-271"},
+                SimpleNamespace(adapter_id=adapter_id),
+                plan,
+            )
 
     def test_every_registered_capability_is_classified(self):
         listed = {
@@ -971,6 +997,88 @@ class FamilyEligibilityTests(_StrandedFamilyHarness):
                             ChangeOperation.CONFIGURATION_PLAN,
                         )
                     )
+
+
+    def test_governed_rollback_plan_is_never_eligible(self):
+        # HAMCP-135: an inverse plan's post-intent child stays conflict-held
+        # for manual review; it is never read or released here.
+        capability = "update_script_configuration"
+        adapter_id = "configuration_operation"
+        for operation in (
+            ChangeOperation.CREATE_AUTOMATION,
+            ChangeOperation.UPDATE_AUTOMATION,
+            ChangeOperation.CONFIGURATION_PLAN,
+        ):
+            with self.subTest(operation=operation):
+                self.assertTrue(self._eligible(capability, adapter_id, operation))
+                inverse = self._plan(operation, inverse=True)
+                self.assertFalse(
+                    self.runtime._terminal_parent_readback_family(
+                        {"capability_id": capability}, SimpleNamespace(
+                            adapter_id=adapter_id), inverse
+                    )
+                )
+                self.assertFalse(
+                    self._eligible(capability, adapter_id, durable=inverse)
+                )
+
+    def test_configuration_without_a_readable_durable_plan_is_never_eligible(self):
+        capability = "update_script_configuration"
+        adapter_id = "configuration_operation"
+        self.assertTrue(self._eligible(capability, adapter_id))
+        self.assertFalse(
+            self._eligible(
+                capability,
+                adapter_id,
+                durable=self._plan(
+                    ChangeOperation.CONFIGURATION_PLAN, plan_id="other-plan"
+                ),
+            )
+        )
+        self.assertFalse(
+            self._eligible(
+                capability,
+                adapter_id,
+                durable=self._plan(ChangeOperation.UPDATE_DASHBOARD),
+            )
+        )
+        with patch.object(
+            self.runtime.service,
+            "_load_for_projection",
+            side_effect=GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR),
+        ):
+            self.assertFalse(
+                self.runtime._terminal_parent_readback_family(
+                    {"capability_id": capability, "plan_id": "plan-271"},
+                    SimpleNamespace(adapter_id=adapter_id),
+                )
+            )
+        self.assertFalse(
+            self.runtime._terminal_parent_readback_family(
+                {"capability_id": capability},
+                SimpleNamespace(adapter_id=adapter_id),
+            )
+        )
+
+    def test_other_families_never_load_a_durable_plan(self):
+        with patch.object(
+            self.runtime.service,
+            "_load_for_projection",
+            side_effect=AssertionError("no plan load"),
+        ) as load:
+            for capability, adapter_id in (
+                ("set_exact_input_boolean_state", "operational_administration"),
+                ("set_exact_input_select_option", "operational_administration"),
+                ("update_existing_dashboard", "dashboard_update"),
+            ):
+                with self.subTest(capability=capability):
+                    self.assertTrue(
+                        self.runtime._terminal_parent_readback_family(
+                            {"capability_id": capability},
+                            SimpleNamespace(adapter_id=adapter_id),
+                        )
+                    )
+        load.assert_not_called()
 
 
 class _ClockView:

@@ -7712,9 +7712,9 @@ class F3RuntimeIntegration:
                 and record is not None
                 and record.terminal
                 and record.dispatch_intent is not None
-                and self._terminal_parent_readback_family(declaration, record)
                 and runtime["reconciliation_result"]
                 == TERMINAL_PARENT_CLEANUP_PENDING
+                and self._terminal_parent_readback_family(declaration, record)
             )
             # Preserve existing orphan cleanup when it still has work. All
             # other known terminal faults use exact projection reconciliation,
@@ -7978,10 +7978,26 @@ class F3RuntimeIntegration:
         capabilities = families[adapter_id]
         if capabilities is not None and capability_id not in capabilities:
             return False
-        if plan is None:
-            return True
         if capabilities is not None:
-            return plan.operation is capabilities[capability_id]
+            return plan is None or plan.operation is capabilities[capability_id]
+        # A governed rollback (inverse) plan keeps HAMCP-135's recovery: its
+        # post-intent children stay conflict-held for manual review. Without
+        # a given plan, the exact durable plan decides; unreadable is never
+        # eligible.
+        if plan is None:
+            try:
+                plan = self.service._load_for_projection(
+                    declaration["plan_id"]
+                )
+                if plan.plan_id != declaration["plan_id"]:
+                    return False
+            except Exception:
+                return False
+        try:
+            if any(inverse_eligibility.markers(op) for op in plan.operations):
+                return False
+        except Exception:
+            return False
         return plan.operation in _CONFIGURATION_PLAN_OPERATIONS
 
     def _terminal_parent_cleanup_marked(self, child_id: str) -> bool:
