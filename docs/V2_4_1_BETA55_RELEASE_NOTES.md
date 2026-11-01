@@ -8,9 +8,11 @@ snapshot fingerprint or governance-bound evidence.
 
 **Version sequencing.** 2.4.1-beta.54 is held by HAMCP-263, which has
 materialized it on its own branch but has not merged. This branch is based
-on 2.4.1-beta.53 (`main` 2be1d72b), so `scripts/release_transition.py`
-refuses beta.53 → beta.55 until beta.54 merges and this branch merges
-`main` after it. That refusal is expected. If HAMCP-263 changes its
+on 2.4.1-beta.53 (`main` 2be1d72b) and stages beta.55 in
+`.release/next-version`. The release transition check refuses beta.53 →
+beta.55 until beta.54 merges; that refusal is expected. This branch then
+merges `main` and materializes beta.55 with
+`scripts/promote_next_release.py --apply`. If HAMCP-263 changes its
 version, this branch restages to the next free beta.
 
 Acceptance: [`V2_4_1_BETA55_ACCEPTANCE.md`](V2_4_1_BETA55_ACCEPTANCE.md).

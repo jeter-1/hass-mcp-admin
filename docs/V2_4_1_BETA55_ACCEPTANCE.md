@@ -11,18 +11,25 @@ See also:
 - Coverage contract:
   [`ENTITY_DEPENDENCY_ANALYSIS.md`](ENTITY_DEPENDENCY_ANALYSIS.md).
 
-**Release target.** `2.4.1-beta.55` is materialized in the three version
-authorities on the HAMCP-227 branch:
+**Release target.** `2.4.1-beta.55` is staged in `.release/next-version`
+on the HAMCP-227 branch, with exact staged document resolution from
+`scripts/codex-context.py`. It is not yet materialized:
+2.4.1-beta.54 is held by HAMCP-263 and has not merged, and
+`scripts/promote_next_release.py` refuses beta.53 → beta.55. Until beta.54
+merges, CI's `validate_prerequisites` job refuses that transition in
+"Validate deployment metadata"; that refusal is expected and blocks Ready.
+It also skips the jobs that need `validate_prerequisites`
+(`validate_source`, `validate_packaging`, `dashboard-disposable`).
+
+Before Ready, this branch merges `main` after beta.54, runs
+`python scripts/promote_next_release.py --apply` (beta.54 → beta.55), and
+commits the three version authorities:
 - `hass_mcp_engineering_beta/config.yaml`;
 - `ha_mcp_engineering/version.py` `SERVER_VERSION`;
 - `scripts/validate_addon_metadata.py` `BETA_VERSION`.
 
-`.release/` holds no staged declaration. 2.4.1-beta.54 is held by HAMCP-263
-and has not merged. Until it merges and this branch merges `main` after it,
-`scripts/release_transition.py` refuses beta.53 → beta.55; that refusal is
-expected and blocks Ready. The transition it must accept is beta.54 →
-beta.55. If HAMCP-263 changes its version, this branch restages to the next
-free beta.
+If HAMCP-263 changes its version, this branch restages to the next free
+beta.
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -35,10 +42,12 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- `2.4.1-beta.55` in all three version authorities, with exact acceptance
-  and release-note resolution from `scripts/codex-context.py`;
+- `2.4.1-beta.55` in all three version authorities after materialization,
+  with exact acceptance and release-note resolution from
+  `scripts/codex-context.py`;
 - the PR head SHA;
-- the passing PR `validate` run for that exact head, apart from the
+- the passing PR `validate` run for that exact head; until
+  materialization, every job that runs passes and the only failure is the
   expected release-transition refusal described above;
 - the Evidence tier log named in the PR.
 
