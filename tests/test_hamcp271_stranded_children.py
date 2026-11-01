@@ -1022,6 +1022,25 @@ class FamilyEligibilityTests(_StrandedFamilyHarness):
                     self._eligible(capability, adapter_id, durable=inverse)
                 )
 
+    def test_unreadable_rollback_markers_are_never_eligible(self):
+        unreadable = SimpleNamespace(
+            plan_id="plan-271",
+            operation=ChangeOperation.CONFIGURATION_PLAN,
+            operations=(SimpleNamespace(),),
+        )
+        capability = "update_script_configuration"
+        adapter_id = "configuration_operation"
+        self.assertFalse(
+            self.runtime._terminal_parent_readback_family(
+                {"capability_id": capability},
+                SimpleNamespace(adapter_id=adapter_id),
+                unreadable,
+            )
+        )
+        self.assertFalse(
+            self._eligible(capability, adapter_id, durable=unreadable)
+        )
+
     def test_configuration_without_a_readable_durable_plan_is_never_eligible(self):
         capability = "update_script_configuration"
         adapter_id = "configuration_operation"
