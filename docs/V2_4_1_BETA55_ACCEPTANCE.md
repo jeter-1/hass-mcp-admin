@@ -42,6 +42,8 @@ Bind:
   - lease durations;
   - backup, reload and restart families;
   - fan and power;
+  - governed rollback (HAMCP-135 inverse plans), which keeps its
+    conflict-held manual review;
   - HAMCP-253 acknowledgment;
   - new capabilities;
 - `2.4.1-beta.55` materialized in all three version authorities before

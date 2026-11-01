@@ -114,6 +114,12 @@ verifies. An unreadable one stays in manual review and keeps its hold.
   They are never eligible for terminal-parent readback.
 - **Fan and power.** They use their own executor, with a 30 s lease and
   a final read, and are not in the F3 registry.
+- **Governed rollback (HAMCP-135 inverse plans).** A rollback plan's
+  post-intent children keep their existing recovery: past the deadline
+  they go to manual review without a read, and their bundle locks stay
+  conflict-held. Eligibility rejects any plan carrying inverse markers.
+  When a scan has no plan in hand, it decides from the exact durable
+  plan, and an unreadable plan is never eligible.
 
 ## Rollback
 
