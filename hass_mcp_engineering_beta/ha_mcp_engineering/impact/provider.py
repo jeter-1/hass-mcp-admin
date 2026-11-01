@@ -780,9 +780,10 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 ImpactSourceCoverage(
                     source_type,
                     (
+                        # A partition row names the provider that read it, or
+                        # "none" when nothing was read (templates, no reader).
                         item.provider
                         if selected and item is not None and source_type in GLOBAL_SOURCE_TYPES
-                        and item.provider != "none"
                         else "direct_ha_api" if selected else "none"
                     ),
                     (
@@ -792,7 +793,6 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                         if source_type == "blueprint"
                         else item.provider_capability
                         if item is not None and source_type in GLOBAL_SOURCE_TYPES
-                        and item.provider != "none"
                         else f"{source_type}_configuration"
                     ),
                     completeness,

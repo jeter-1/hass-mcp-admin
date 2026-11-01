@@ -58,7 +58,7 @@ from ha_mcp_engineering.dependency.script_sources import _GAPS as SCRIPT_GAPS  #
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
 from ha_mcp_engineering.impact.service import ChangeImpactAnalysisService  # noqa: E402
-from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from ha_mcp_engineering.request_context import begin_request, current_telemetry, end_request  # noqa: E402
 from tests.hamcp209_fixtures import read_blueprint, representative_automations  # noqa: E402
 from tests.hamcp212_fixtures import SyntheticScriptHome  # noqa: E402
 from tests.test_hamcp209_fast_dependency_index import _AnalysisRest  # noqa: E402
@@ -445,7 +445,8 @@ class DashboardWalkTests(unittest.TestCase):
             {"type": "tile", "entity": f"light.synthetic_{i}"} for i in range(dc.ITEMS + 10)]}]}
         result = collect(FakeReader({"lovelace": configuration}))
         self.assertEqual(result["coverage"].completeness, "partial")
-        self.assertEqual(errors(result).get("dashboard_projection_limit_exceeded"), 1)
+        self.assertEqual(errors(result), {"dashboard_projection_limit_exceeded": 1})
+        self.assertEqual(walk(configuration)["gaps"], {})
         self.assertIn(("lovelace", "dashboard_projection_limit_exceeded"),
                       [(t.source_id, t.reason_code) for t in result["terminals"]])
 
@@ -473,6 +474,13 @@ class DashboardWalkTests(unittest.TestCase):
         self.assertEqual({item.source_type for item in visible.findings}, {"scene"})
         self.assertEqual(visible.coverage_for("dashboard").completeness, "unavailable")
         self.assertNotEqual(visible.fingerprint, sources.fingerprint)
+
+    def test_retired_authority_after_the_list_stops_further_reads(self):
+        reader = FakeReader({"lovelace": DEFAULT_DASHBOARD}, current=False)
+        result = collect(reader)
+        self.assertEqual((reader.lists, reader.reads), (1, []))
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(errors(result), {"dashboard_not_read": 1})
 
     def test_untrusted_title_and_segments_are_bounded(self):
         findings = g.dashboard_findings("lovelace", "T" * 5000, [
@@ -524,18 +532,22 @@ class FakeUpstream:
         self.documents = documents
         self.listed = listed
         self.calls: list[tuple] = []
+        self.callers: list[str | None] = []
+        self.authority = "synthetic-upstream"
 
     def analysis_authority(self):
-        return "synthetic-upstream"
+        return self.authority
 
     async def list_dashboards(self, *, limit, response_limit):
         self.calls.append(("list", limit))
+        self.callers.append(current_telemetry().caller_id)
         paths = self.listed if self.listed is not None else [{"url_path": p, "title": p} for p in self.documents]
         return SimpleNamespace(data={"dashboards": paths, "truncated": False}, completeness="complete")
 
     async def get_analysis_configuration(self, *, url_path, authorize, budget):
         authorize()
         self.calls.append(("read", url_path))
+        self.callers.append(current_telemetry().caller_id)
         return ({"configuration": self.documents[url_path], "config_hash": "c" * 64,
                  "engineering_config_hash": "e" * 64}, {})
 
@@ -579,6 +591,7 @@ class DashboardDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(event["request_id"], parent.request_id)
             self.assertEqual((event["provider"], event["result_status"], event["fallback_occurred"]),
                              ("upstream_dashboard", "success", False))
+        self.assertEqual(self.upstream.callers, ["synthetic-caller"] * 3)
         self.assertTrue(self.reader.current())
         self.assertIn("no fallback", result["coverage"].policy)
 
@@ -586,6 +599,16 @@ class DashboardDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
         result = await g.collect_dashboard_sources(self.reader, secret=SECRET)
         self.assertEqual(result["coverage"].completeness, "unavailable")
         self.assertEqual(errors(result), {"dashboard_inventory_authority_unavailable": 1})
+        self.assertEqual((self.upstream.calls, self.core.calls, self.audit.events), ([], [], []))
+
+    async def test_parent_without_a_dispatch_authorizer_acquires_nothing(self):
+        telemetry, token = begin_request()
+        try:
+            self.assertIsNone(telemetry.core_dispatch_authorizer)
+            result = await g.collect_dashboard_sources(self.reader, secret=SECRET)
+        finally:
+            end_request(token)
+        self.assertEqual(result["coverage"].completeness, "unavailable")
         self.assertEqual((self.upstream.calls, self.core.calls, self.audit.events), ([], [], []))
 
     async def test_refused_parent_authorizer_dispatches_nothing(self):
@@ -621,6 +644,19 @@ class DashboardDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
             end_request(token)
         self.assertFalse(self.reader.current())
         self.assertEqual([call[0] for call in self.upstream.calls], ["list"])
+
+    async def test_upstream_authority_drift_refuses_the_read_before_dispatch(self):
+        telemetry, token = begin_request()
+        telemetry.core_dispatch_authorizer = lambda: True
+        try:
+            async with self.reader.session() as session:
+                await session.list(5)
+                self.upstream.authority = "synthetic-upstream-replaced"
+                self.assertEqual(await session.read("lovelace"), {"failure": "authority_drift"})
+        finally:
+            end_request(token)
+        self.assertEqual([call[0] for call in self.upstream.calls], ["list"])
+        self.assertEqual([event["event"] for event in self.audit.events], ["dependency_dashboard_list"])
 
     async def test_invalid_and_secret_shaped_paths_are_screened(self):
         self.upstream.listed = [{"url_path": "lovelace", "title": 5},
@@ -683,6 +719,25 @@ class DependencyBuildTests(unittest.IsolatedAsyncioTestCase):
             "template": ("none", "unavailable"), "dashboard": ("upstream_dashboard", "complete"),
         })
         self.assertIn("1 template-platform", rows["template"].warnings[1])
+
+    async def test_incomplete_build_registry_marks_scenes_and_groups_partial(self):
+        home = Home()
+        websocket = CountingWebSocket(home)
+        command = websocket.command
+
+        async def invalid_registry(payload):
+            if payload.get("type") == "config/entity_registry/list":
+                return {"synthetic": "not a list"}
+            return await command(payload)
+
+        websocket.command = invalid_registry
+        index = DependencyIndex(DirectHaDependencyProvider(_AnalysisRest(home), websocket, secret=SECRET))
+        with patch(BLUEPRINT_READER, side_effect=read_blueprint):
+            snapshot, _, _ = await index.get(refresh=True)
+        for source_type in ("scene", "group"):
+            row = snapshot.global_sources.coverage_for(source_type)
+            self.assertEqual(row.completeness, "partial", source_type)
+            self.assertTrue(row.failed_item_count, source_type)
 
     async def test_failing_dashboard_reader_factory_is_unavailable(self):
         home = Home()
@@ -817,6 +872,18 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(item["affected_object_type"] == "dashboard" for item in data["findings"]))
         self.assertNotEqual(data["final_assessment"], "no_known_impacts_with_complete_coverage")
 
+    async def test_impact_keeps_an_unavailable_dashboard_row_unavailable(self):
+        index, _, rest, websocket = await build(
+            Home(), FakeReader({}, list_error=dc.AnalysisError("authority_unavailable")))
+        provider = DirectHaImpactProvider(index, rest, websocket, secret=SECRET, ha_token=SECRET)
+        output = await ChangeImpactAnalysisService(provider).analyze(
+            entity_id="light.synthetic_unreferenced", operation="remove_entity",
+            detail_level="evidence", source_types=ALL_SOURCES)
+        rows = {item["source_type"]: item for item in output.data["source_coverage_matrix"]}
+        self.assertEqual((rows["dashboard"]["provider"], rows["dashboard"]["completeness"]),
+                         ("upstream_dashboard", "unavailable"))
+        self.assertNotEqual(output.data["final_assessment"], "no_known_impacts_with_complete_coverage")
+
     async def test_impact_reports_deferred_template_coverage(self):
         data = await self.impact("light.synthetic_unreferenced", source_types=ALL_SOURCES)
         self.assertNotEqual(data["final_assessment"], "no_known_impacts_with_complete_coverage")
@@ -825,6 +892,10 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(incomplete)
         self.assertIn("template", incomplete[0]["source_coverage"])
         self.assertNotIn("dashboard", incomplete[0]["source_coverage"])
+        template = next(item for item in data["source_coverage_matrix"] if item["source_type"] == "template")
+        # Nothing reads templates, so no provider is claimed for them.
+        self.assertEqual((template["provider"], template["completeness"]), ("none", "not_supported"))
+        self.assertTrue(any("HAMCP-264" in warning for warning in template["warnings"]))
 
 
 class PolicyNoDowngradeTests(unittest.IsolatedAsyncioTestCase):
