@@ -78,6 +78,7 @@ reruns or writes. `GH_TOKEN` is optional, and registry reads are anonymous.
 | 6 | Cancelled, timed-out or failed run after the claim | `mismatch` | The claim forbids a fresh build. If the claimed attempt completed `failure`, was triggered by Josh and its build job succeeded: `needs_digest` then `dispatch_digest`. Otherwise `roll_forward`. |
 | 7 | Tag creation partial or unknown | `mismatch` (version tag absent) or `unknown` | Helper: `reconcile`. Never delete the marker or blindly re-dispatch. |
 | 8 | Engineering drift: a later merge changed `hass_mcp_engineering_beta/` | `mismatch` until N+1 publishes | Helper: `roll_forward`. Merge release N+1. The publisher refuses drift. beta.32 needed this, as beta.33. |
+| 9 | Handoff refused `source_merge_not_final`, `source_job_mismatch` or `source_merge_unsuccessful` after a successful merge run | `mismatch` | GitHub can report the merge run complete before its job records settle (beta.50, HAMCP-258). The detector now re-reads the exact source attempt's jobs six times over 80 s and logs each read (`Source merge job read N/6`) and the final job set (`Source merge job refused ...`). If it still refuses, read those lines, then use the helper (`dispatch_fresh` when no claim exists). |
 
 Registry visibility (anonymous pull fails) surfaces as `unknown` and as a
 failed promote. Treat it as mode 7. Partial multi-architecture publication is

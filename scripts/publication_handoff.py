@@ -286,6 +286,12 @@ BOUND = 4_000_000
 RECEIPT_BOUND = 8192
 POLICY_PATHS = (PRODUCER, "scripts/publication_handoff.py",
                 "scripts/validate_ready_authorization.py", "scripts/validate_ci_provenance.py")
+# Seconds between re-reads of the source attempt's jobs (HAMCP-258): six reads
+# over 80 s. On 2026-10-30 a job record settled 34 s after its run completed.
+JOB_READ_DELAYS = (5, 10, 15, 20, 30)
+JOB_FIELD = re.compile(r"[a-z_]{1,32}")
+JOB_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+MERGE_JOB = "merge-authorized-head"
 
 
 def sha(value):
@@ -439,7 +445,95 @@ def check_receipt(value, run_id, attempt):
     require(value["source_event"] in {"pull_request_target", "issue_comment"}, "receipt_event")
 
 
-def verify(run_id, attempt, authority, api=read_api, run_git=git, *, version_of):
+def log_stderr(message):
+    print(message, file=sys.stderr)
+
+
+def observed(value):
+    """A loggable job field: a bounded lowercase token, never raw API text."""
+    if value is None:
+        return "none"
+    return value if isinstance(value, str) and JOB_FIELD.fullmatch(value) else "invalid"
+
+
+def observed_name(value):
+    return value if isinstance(value, str) and JOB_NAME.fullmatch(value) else "invalid"
+
+
+def observed_attempt(value):
+    return str(value) if type(value) is int and 0 < value < 1_000_000 else "invalid"
+
+
+def job_list(response):
+    """Shape-check one jobs read. Malformed or oversized evidence refuses at
+    once; a well-formed page whose count disagrees with its list may still be
+    settling, so it is returned for the caller to re-read."""
+    require(isinstance(response, dict), "malformed_collection")
+    jobs, count = response.get("jobs"), response.get("total_count")
+    require(type(count) is int and isinstance(jobs, list), "malformed_collection")
+    require(0 <= count <= 100 and len(jobs) <= 100, "incomplete_collection")
+    require(all(isinstance(job, dict) for job in jobs), "malformed_collection")
+    return jobs, count
+
+
+def source_merge_job(route, run_id, attempt, head_sha, api, sleep, log):
+    """Return the exact attempt's final merge job, re-reading a bounded number
+    of times (HAMCP-258).
+
+    The source run already reported ``completed``/``success``, so an absent,
+    duplicated, unfinished or unsuccessful merge job, or a job count that
+    disagrees with the listed jobs, contradicts it: GitHub can report a run
+    complete before its job records settle. Only a complete list with exactly
+    one merge job that is completed with ``success`` or ``skipped`` is
+    returned. Only this exact run, attempt and head is ever read; a merge job
+    bound to anything else, or malformed evidence, refuses at once.
+    """
+    reads = len(JOB_READ_DELAYS) + 1
+    for read in range(1, reads + 1):
+        prefix = f"Source merge job read {read}/{reads}: run {run_id} attempt {attempt}"
+        response = api(f"{route}/attempts/{attempt}/jobs?per_page=100")
+        try:
+            jobs, count = job_list(response)
+        except Refusal as refused:
+            log(f"{prefix}, job list refused: {refused}")
+            raise
+        matches = [job for job in jobs if job.get("name") == MERGE_JOB]
+        job = matches[0] if len(matches) == 1 else None
+        listing = "; ".join(
+            f"{observed_name(item.get('name'))} {observed(item.get('status'))}/"
+            f"{observed(item.get('conclusion'))} attempt {observed_attempt(item.get('run_attempt'))}"
+            for item in jobs) or "none"
+        state = (f"{len(matches)} matches" if matches else "absent") if job is None else (
+            f"status {observed(job.get('status'))}, conclusion {observed(job.get('conclusion'))}, "
+            f"attempt {observed_attempt(job.get('run_attempt'))}")
+        log(f"{prefix}, total_count {count}, {len(jobs)} job(s) listed [{listing}], "
+            f"{MERGE_JOB} {state}")
+        if not all(type(item.get("run_id")) is int and item["run_id"] == run_id
+                   and type(item.get("run_attempt")) is int and item["run_attempt"] == attempt
+                   and item.get("head_sha") == head_sha for item in matches):
+            log(f"Source merge job refused at read {read}/{reads}: source_job_mismatch, "
+                f"{MERGE_JOB} bound to another run, attempt or head")
+            raise Refusal("source_job_mismatch")
+        if (count == len(jobs) and job is not None and job.get("status") == "completed"
+                and job.get("conclusion") in {"success", "skipped"}):
+            require(collection(response, "jobs") == jobs, "incomplete_collection")
+            return job
+        if read < reads:
+            sleep(JOB_READ_DELAYS[read - 1])
+    if count != len(jobs) or job is None:
+        reason = "source_job_mismatch"
+    elif job.get("status") != "completed" or job.get("conclusion") is None:
+        reason = "source_merge_not_final"
+    else:
+        reason = "source_merge_unsuccessful"
+    names = ", ".join(sorted({observed_name(item.get("name")) for item in jobs})) or "none"
+    log(f"Source merge job refused after {reads} reads: {reason}; final set total_count {count}, "
+        f"{len(jobs)} job(s) listed, {len(matches)} {MERGE_JOB} match(es), names [{names}]")
+    raise Refusal(reason)
+
+
+def verify(run_id, attempt, authority, api=read_api, run_git=git, *, version_of,
+           sleep=None, log=None):
     """Verify the handoff; ``version_of(ref, run_git)`` supplies the locked
     YAML version reader from ``publication_handoff_verify.py``, so this module
     and every write job that imports it stay standard-library only."""
@@ -459,15 +553,10 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git, *, version_of)
                 for key in ("repository", "head_repository")), "foreign_source_run")
     require(all(run.get(key, {}).get("login") == OWNER for key in ("actor", "triggering_actor")),
             "source_owner_mismatch")
-    jobs = collection(api(f"{route}/attempts/{attempt}/jobs?per_page=100"), "jobs")
-    matches = [job for job in jobs if job.get("name") == "merge-authorized-head"]
-    require(len(matches) == 1 and matches[0].get("run_id") == run_id
-            and matches[0].get("run_attempt") == attempt
-            and matches[0].get("head_sha") == run.get("head_sha"), "source_job_mismatch")
-    if matches[0].get("conclusion") == "skipped":
+    job = source_merge_job(route, run_id, attempt, run.get("head_sha"), api,
+                           sleep or time.sleep, log or log_stderr)
+    if job.get("conclusion") == "skipped":
         return {"release_action": "none"}
-    require(matches[0].get("status") == "completed"
-            and matches[0].get("conclusion") == "success", "source_merge_unsuccessful")
     artifacts = collection(api(f"{route}/artifacts?per_page=100"), "artifacts")
     name = f"publication-handoff-{run_id}-{attempt}"
     artifacts = [item for item in artifacts if item.get("name") == name]
