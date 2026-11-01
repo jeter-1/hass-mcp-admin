@@ -544,6 +544,53 @@ class _StrandedFamilyMatrix:
         self.assertLessEqual(self._post_write_reads() - reads, 1)
         self.assertEqual(1, self._provider_writes())
 
+    # Isolated controls: each gate refuses on its own when the family check
+    # fails, even if a caller reaches it directly past the historical scan.
+
+    def _ineligible(self):
+        return patch.object(
+            F3RuntimeIntegration,
+            "_terminal_parent_readback_family",
+            lambda *_args, **_kwargs: False,
+        )
+
+    async def test_ineligible_family_is_never_read_by_direct_recovery(self):
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        held = self.runtime.locks.records()
+        reads = self._post_write_reads()
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        with self._ineligible():
+            self.assertFalse(
+                await self.runtime._recover_terminal_parent_child(
+                    declaration, now=self.clock[0]
+                )
+            )
+        self.assertFalse(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(held, self.runtime.locks.records())
+        self.assertEqual(0, self._post_write_reads() - reads)
+        self.assertEqual(1, self._provider_writes())
+        self.assertEqual(before, self._parent_bytes(task_id))
+
+    async def test_ineligible_family_cleanup_resume_releases_nothing(self):
+        stopped = await self._stop_during_cleanup(
+            lambda: patch.object(
+                type(self.runtime.locks), "release", side_effect=_Crash()
+            )
+        )
+        task_id, child_id = stopped[:2]
+        held = self.runtime.locks.records()
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        with self._ineligible():
+            self.assertFalse(
+                self.runtime._finish_terminal_parent_child_cleanup(
+                    declaration, now=self.clock[0]
+                )
+            )
+        self.assertEqual(held, self.runtime.locks.records())
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        await self._restart_and_assert_settled(*stopped[:4])
+
     # -- the ordinary recover path reads once at its deadline ---------------
 
     async def _active_until_terminal(self, task_id):
@@ -905,6 +952,25 @@ class FamilyEligibilityTests(_StrandedFamilyHarness):
         ):
             with self.subTest(capability=capability, adapter=adapter_id):
                 self.assertFalse(self._eligible(capability, adapter_id))
+
+    def test_registry_lookup_failure_is_never_eligible(self):
+        with patch.object(
+            type(self.runtime.registry), "entry", side_effect=KeyError("x")
+        ):
+            for capability, adapter_id in (
+                ("update_script_configuration", "configuration_operation"),
+                ("set_exact_input_boolean_state", "operational_administration"),
+                ("update_existing_dashboard", "dashboard_update"),
+            ):
+                with self.subTest(capability=capability):
+                    self.assertFalse(self._eligible(capability, adapter_id))
+                    self.assertFalse(
+                        self._eligible(
+                            capability,
+                            adapter_id,
+                            ChangeOperation.CONFIGURATION_PLAN,
+                        )
+                    )
 
 
 class _ClockView:
