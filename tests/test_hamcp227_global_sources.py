@@ -1211,6 +1211,15 @@ class ImpactPaginationBindingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await self.stale(first["pagination"]["next_cursor"]),
                              "diagnostic_evidence_changed")
 
+    async def test_failing_identity_is_not_read_as_an_absent_partition(self):
+        self.index.snapshot = replace(self.index.snapshot, global_sources=None)
+        first = await self.page()
+        self.assertEqual(self.service.provider.active_diagnostic_identity(), "")
+        with patch.object(type(self.service.provider), "active_diagnostic_identity",
+                          side_effect=RuntimeError("synthetic")):
+            self.assertEqual(await self.stale(first["pagination"]["next_cursor"]),
+                             "diagnostic_evidence_changed")
+
 
 class PolicyNoDowngradeTests(unittest.IsolatedAsyncioTestCase):
     SEVERITY = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
