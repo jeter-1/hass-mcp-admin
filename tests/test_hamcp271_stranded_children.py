@@ -41,6 +41,7 @@ from ha_mcp_engineering.governance import (  # noqa: E402
 from ha_mcp_engineering.governance.models import ChangeOperation  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
+    LockStorageError,
     TERMINAL_PARENT_CLEANUP_PENDING,
     TERMINAL_PARENT_READBACK_RESULT,
 )
@@ -635,8 +636,200 @@ class _StrandedFamilyMatrix:
         self.assertEqual(1, self._provider_writes())
 
 
+class _MarkerPreservation:
+    """HAMCP-271 R1-M1: a transient read never loses the cleanup marker.
+
+    Real stores: an unavailable readback plus a failed lock release leaves a
+    terminal child, its locks and the durable marker. A later sweep whose
+    durable plan reads fail (once, or twice) must keep the marker and every
+    lock, project nothing and retry; once reads recover, the same process or
+    a restart finishes the exact-owner release with no further read or
+    dispatch.
+    """
+
+    async def _marked_after_release_fault(self):
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        held = {(item.key, item.mode) for item in self.runtime.locks.records()}
+        self._reads_unavailable(100)
+        reads = self._post_write_reads()
+        with patch.object(
+            type(self.runtime.locks),
+            "release",
+            side_effect=LockStorageError("synthetic release failure"),
+        ):
+            await self.runtime.recover_once("periodic")
+        child = self.runtime.children.get(child_id)
+        self.assertTrue(child.terminal)
+        self.assertEqual("manual_review_required", child.normalized_outcome)
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        self.assertEqual(held, self._lock_keys())
+        self._reads_unavailable(0)
+        return task_id, child_id, before, reads, held
+
+    def _lock_keys(self):
+        return {(item.key, item.mode) for item in self.runtime.locks.records()}
+
+    def _plan_reads(self, failing):
+        """Patch durable plan reads; ``failing(calls, plan)`` may raise."""
+
+        original = self.service._load_for_projection
+        calls = [0]
+
+        def read(*args, **kwargs):
+            calls[0] += 1
+            return failing(calls[0], original(*args, **kwargs))
+
+        return patch.object(
+            self.service, "_load_for_projection", side_effect=read
+        ), calls
+
+    async def _unreadable_sweep(self, child_id, task_id, before, held, failing,
+                                *, minimum_calls):
+        self.clock[0] += timedelta(minutes=10)
+        retry = self.runtime.children.runtime(child_id)
+        reading, calls = self._plan_reads(failing)
+        with reading:
+            try:
+                await self.runtime.recover_once("periodic")
+            except GovernanceError:
+                # A storage outage may also fail the generic expired-lock
+                # sweep; the scheduler retries that pass (unchanged here).
+                pass
+        self.assertGreaterEqual(calls[0], minimum_calls)
+        runtime = self.runtime.children.runtime(child_id)
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, runtime[
+            "reconciliation_result"
+        ])
+        # HAMCP-263's generic sweep may release the expired non-target
+        # shared keys of a terminal owner; the exclusive target key, whose
+        # release needs the readback, stays held until cleanup finishes.
+        remaining = self._lock_keys()
+        self.assertLessEqual(remaining, held)
+        self.assertEqual(
+            {item for item in held if item[1] == "exclusive"},
+            {item for item in remaining if item[1] == "exclusive"},
+        )
+        self.assertTrue(any(item[1] == "exclusive" for item in remaining))
+        self.assertEqual(before, self._parent_bytes(task_id))
+        # Bounded retry bookkeeping, never a silent skip.
+        self.assertEqual(self.clock[0].isoformat(), runtime[
+            "last_reconciliation_at"
+        ])
+        self.assertGreater(runtime["backoff_seconds"], retry["backoff_seconds"])
+        self.assertIsNotNone(runtime["next_eligible_at"])
+        self.assertIn(await self._f3_status(), {"recovering", "unavailable"})
+
+    async def _assert_resumed(self, task_id, child_id, before, reads, *,
+                              restart):
+        self.clock[0] += timedelta(minutes=10)
+        if restart:
+            self._compose()
+            await self.runtime.recover_once("startup")
+        else:
+            await self.runtime.recover_once("periodic")
+        self._assert_settled(
+            task_id, child_id, before, reads, outcome="manual_review_required"
+        )
+        self.assertNotEqual("recovering", await self._f3_status())
+        settled = self.runtime.children.get(child_id)
+        settled_runtime = self.runtime.children.runtime(child_id)
+        for _ in range(2):
+            self.clock[0] += timedelta(minutes=10)
+            self._compose()
+            await self.runtime.recover_once("startup")
+            await self._pass()
+        self.assertEqual(settled, self.runtime.children.get(child_id))
+        self.assertEqual(settled_runtime, self.runtime.children.runtime(child_id))
+        self.assertEqual(1, self._post_write_reads() - reads)
+        applied, writes = await self._unrelated_apply()
+        self.assertEqual("succeeded_verified", applied["task_state"], applied)
+        self.assertEqual(1, writes)
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self._provider_writes())
+
+    async def _transient_plan_reads(self, failures, *, restart):
+        task_id, child_id, before, reads, held = (
+            await self._marked_after_release_fault()
+        )
+
+        def failing(call, plan):
+            if call <= failures:
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            return plan
+
+        await self._unreadable_sweep(
+            child_id, task_id, before, held, failing, minimum_calls=failures
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=restart
+        )
+
+    async def test_one_plan_read_failure_keeps_marker_same_process(self):
+        await self._transient_plan_reads(1, restart=False)
+
+    async def test_one_plan_read_failure_keeps_marker_restart(self):
+        await self._transient_plan_reads(1, restart=True)
+
+    async def test_two_plan_read_failures_keep_marker_same_process(self):
+        await self._transient_plan_reads(2, restart=False)
+
+    async def test_two_plan_read_failures_keep_marker_restart(self):
+        await self._transient_plan_reads(2, restart=True)
+
+    async def test_mismatched_plan_read_keeps_marker(self):
+        task_id, child_id, before, reads, held = (
+            await self._marked_after_release_fault()
+        )
+
+        def mismatched(call, plan):
+            return replace(plan, plan_id="other-plan") if call == 1 else plan
+
+        await self._unreadable_sweep(
+            child_id, task_id, before, held, mismatched, minimum_calls=1
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=False
+        )
+
+    async def test_missing_child_after_readback_keeps_marker(self):
+        # A child read that returns nothing after the readback is a storage
+        # fault, never "not terminal" (which would replace the marker).
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        self._reads_unavailable(100)
+        reads = self._post_write_reads()
+        executed = []
+        original_execute = F3RuntimeIntegration._execute_child
+        children = self.runtime.children
+        original_get = children.get
+
+        async def execute(runtime, *args, **kwargs):
+            result = await original_execute(runtime, *args, **kwargs)
+            executed.append(True)
+            return result
+
+        def get(identifier):
+            if executed == [True] and identifier == child_id:
+                executed.append(False)
+                return None
+            return original_get(identifier)
+
+        with patch.object(F3RuntimeIntegration, "_execute_child", execute), \
+                patch.object(children, "get", side_effect=get):
+            await self.runtime.recover_once("periodic")
+        self.assertEqual([True, False], executed)
+        self.assertTrue(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(TERMINAL_PARENT_CLEANUP_PENDING, self._marker(child_id))
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self._reads_unavailable(0)
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=True
+        )
+
+
 class ConfigurationScriptFamilyTests(
-    _StrandedFamilyMatrix, _StrandedFamilyHarness
+    _MarkerPreservation, _StrandedFamilyMatrix, _StrandedFamilyHarness
 ):
     UNAVAILABLE_REASON = "adapter_recovery_requires_manual_review"
     UNAVAILABLE_DIAGNOSTICS = (

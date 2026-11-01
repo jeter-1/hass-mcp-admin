@@ -7707,6 +7707,11 @@ class F3RuntimeIntegration:
             # HAMCP-263 R1: a terminal-parent child whose durable cleanup
             # marker survived a fault or restart only finishes releasing its
             # exact-owner locks. It never reads, dispatches or projects.
+            # HAMCP-271 R1-M1: the marker alone records the obligation. Family
+            # eligibility is proved later by the cleanup step, before any
+            # release; a transient read failure there keeps the marker, so it
+            # never falls through to terminal-fault projection or retry
+            # bookkeeping that would overwrite it.
             terminal_parent_cleanup = bool(
                 not pending
                 and record is not None
@@ -7714,7 +7719,6 @@ class F3RuntimeIntegration:
                 and record.dispatch_intent is not None
                 and runtime["reconciliation_result"]
                 == TERMINAL_PARENT_CLEANUP_PENDING
-                and self._terminal_parent_readback_family(declaration, record)
             )
             # Preserve existing orphan cleanup when it still has work. All
             # other known terminal faults use exact projection reconciliation,
@@ -7738,9 +7742,16 @@ class F3RuntimeIntegration:
                 not pending
                 and not terminal_fault
                 and record is not None
-                and (not record.terminal or terminal_parent_cleanup)
                 and record.dispatch_intent is not None
-                and self._terminal_parent_readback_family(declaration, record)
+                and (
+                    terminal_parent_cleanup
+                    or (
+                        not record.terminal
+                        and self._terminal_parent_readback_family(
+                            declaration, record
+                        )
+                    )
+                )
             ):
                 # Only nonterminal post-intent children, or terminal ones with
                 # a pending cleanup marker, reach this read; any other
@@ -7897,9 +7908,11 @@ class F3RuntimeIntegration:
                 terminal_parent_readback=True,
             )
             latest = self.children.get(child_id)
-            if latest is not None:
-                self._audit_record_events(current, latest)
-            terminal = latest is not None and latest.terminal
+            if latest is None:
+                # Never read as "not terminal": that would replace the marker.
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            self._audit_record_events(current, latest)
+            terminal = latest.terminal
             # The executor's own release may have been fenced or failed and
             # suppressed; release any remaining exact-owner lock here.
             settled = terminal and not self._release_terminal_parent_child_locks(
@@ -7956,13 +7969,22 @@ class F3RuntimeIntegration:
             return False
 
     def _terminal_parent_readback_family(
-        self, declaration: dict[str, Any], record: Any, plan: Any = None
+        self,
+        declaration: dict[str, Any],
+        record: Any,
+        plan: Any = None,
+        *,
+        strict: bool = False,
     ) -> bool:
         """HAMCP-271: the child is in a family settled by one readback.
 
         The durable child's adapter, the declaration's registered adapter and
         (when given) the plan operation must all agree with one listed
-        family; anything else keeps its existing recovery.
+        family; anything else keeps its existing recovery. Eligibility that
+        cannot be proved (a lookup or plan read fails, or the plan read is
+        not the declared plan) is never eligible. With ``strict`` it raises
+        instead of answering False, so a marked cleanup retries with its
+        marker rather than treating unknown as a proven other family.
         """
 
         families = _terminal_parent_readback_operations()
@@ -7974,6 +7996,8 @@ class F3RuntimeIntegration:
             if self.registry.entry(capability_id).adapter_id != adapter_id:
                 return False
         except Exception:
+            if strict:
+                raise
             return False
         capabilities = families[adapter_id]
         if capabilities is not None and capability_id not in capabilities:
@@ -7990,13 +8014,19 @@ class F3RuntimeIntegration:
                     declaration["plan_id"]
                 )
                 if plan.plan_id != declaration["plan_id"]:
-                    return False
+                    raise GovernanceError(
+                        ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                    )
             except Exception:
+                if strict:
+                    raise
                 return False
         try:
             if any(inverse_eligibility.markers(op) for op in plan.operations):
                 return False
         except Exception:
+            if strict:
+                raise
             return False
         return plan.operation in _CONFIGURATION_PLAN_OPERATIONS
 
@@ -8077,10 +8107,14 @@ class F3RuntimeIntegration:
             record = self.children.get(child_id)
             if (
                 record is None
-                or not self._terminal_parent_readback_family(
-                    declaration, record
-                )
                 or not self._terminal_parent_cleanup_marked(child_id)
+            ):
+                return False
+            # HAMCP-271 R1-M1: unknown eligibility raises and retries with
+            # the marker kept; only a proven other family returns here, and
+            # neither releases anything.
+            if not self._terminal_parent_readback_family(
+                declaration, record, strict=True
             ):
                 return False
             parent = self.service.task_repository.get(
