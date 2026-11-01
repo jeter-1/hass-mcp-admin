@@ -11928,6 +11928,12 @@ class ChangeGovernanceService:
                     completed += 1
                 elif task.state in TERMINAL_TASK_STATES:
                     failed += 1
+                elif self._f3_owns_post_dispatch_reconciliation(task):
+                    # HAMCP-263: the F3 recovery pass is this task's readback
+                    # reconciler and projects its child's truthful terminal
+                    # outcome. It stays pending, bounded by the maximum
+                    # post-dispatch deadline checked above.
+                    pending += 1
                 else:
                     self._manual_review_task(
                         task,
@@ -11953,6 +11959,25 @@ class ChangeGovernanceService:
             recovery_candidates_examined=checked,
         )
         return result
+
+    def _f3_owns_post_dispatch_reconciliation(
+        self, task: ExecutionTask
+    ) -> bool:
+        """HAMCP-263: whether F3 recovery reconciles this dispatched task."""
+
+        runtime = self.f3_runtime
+        if (
+            runtime is None
+            or task.legacy_projection.get("execution_authority")
+            != F3_EXECUTION_AUTHORITY
+        ):
+            return False
+        try:
+            return runtime.owns_post_intent_reconciliation(task.task_id) is True
+        except Exception:
+            # Unreadable child state is surfaced by F3 health; the task stays
+            # pending only until the maximum post-dispatch deadline.
+            return True
 
     async def reconcile_operational_plans(
         self,
