@@ -89,7 +89,8 @@ The change generalizes the HAMCP-263 mechanism. It does not fork it.
     after the last exact-owner lock is released.
   - A transient failure while proving eligibility keeps the marker
     intact. This covers a failed or mismatched plan read, a failed
-    registry lookup and a missing child record after the readback. The
+    registry lookup, a failed governed-rollback marker check and a
+    missing child record after the readback. The
     marker is never overwritten, cleared or downgraded. Only the bounded
     retry bookkeeping advances. The next sweep, including one after a
     restart, retries and releases the locks with no second read.

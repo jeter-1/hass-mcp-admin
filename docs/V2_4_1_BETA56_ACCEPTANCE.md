@@ -107,8 +107,9 @@ The families covered are configuration script update, operational
 - **Cleanup-marker durability (review R1-M1).** Both review fault
   probes are reproduced: one plan-read failure and two consecutive
   plan-read failures, in the same process and across a restart. Also
-  covered are a mismatched plan read and a missing child record after
-  the readback. Each test asserts the following:
+  covered are a mismatched plan read, a failed registry lookup, a failed
+  governed-rollback marker check and a missing child record after the
+  readback. Each test asserts the following:
   - During the failure, the marker stays
     `terminal_parent_child_cleanup_pending`, the exclusive target locks
     stay held, the parent bytes are unchanged and the bounded retry
