@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.1-beta.54 - Dashboard readback recovery settles dispatched updates; stranded post-intent locks released (HAMCP-263)
+
+Builds on 2.4.1-beta.52 (2.4.1-beta.53 is staged in #333). No tool, input
+schema, route, provider, persisted format or Home Assistant write change.
+Nothing is ever redispatched.
+
+- Dashboard readback recovery now resolves its exact persisted provider
+  binding (`provider_operation` is a class constant; the prepared hash is
+  unchanged) and performs one final read at its expired evidence
+  deadline.
+- The governance sweep leaves an F3 task pending while a child holds a
+  dispatch intent, bounded by `maximum_post_dispatch_deadline`, instead of
+  marking it `dispatched_task_has_no_readback_reconciler`.
+- A nonterminal post-intent dashboard child of an already-terminal F3
+  parent gets exactly one read-only readback, reaches a truthful terminal
+  state and has its locks released. The parent is never changed.
+- Expired locks owned by a terminal post-intent child are released. An
+  unresolved manual-review owner keeps its declared target hold keys.
+- Other families keep a "lease equals evidence window" gap; it is reported
+  in the release notes and not fixed here.
+
 ## 2.4.1-beta.52 - Governance health stops re-projecting unchanged history; startup historical validation (HAMCP-097)
 
 Builds on 2.4.1-beta.51 (#331). No tool, input schema, route, provider,

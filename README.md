@@ -1,6 +1,17 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
+Not yet released: Engineering **2.4.1-beta.54** (HAMCP-263) lets a
+dispatched governed dashboard update reach a truthful terminal outcome
+through one read-only readback, never a redispatch. It settles a
+dashboard child stranded under an already-terminal parent without
+changing that parent, and releases the expired locks such a child kept,
+which blocked later governed configuration applies. No tool, input
+schema, persisted format or Home Assistant write changes. Rollback is
+reinstalling beta.52. Read the
+[2.4.1-beta.54 release notes](docs/V2_4_1_BETA54_RELEASE_NOTES.md) and the
+[2.4.1-beta.54 acceptance contract](docs/V2_4_1_BETA54_ACCEPTANCE.md).
+
+Engineering **2.4.1-beta.52** (HAMCP-097) stops
 `get_server_health(check_ha=false)` from re-decoding and re-projecting
 unchanged history. Terminal records and their projections are reused only
 for byte-identical input, and the historical validation now runs in the
