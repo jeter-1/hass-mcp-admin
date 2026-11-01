@@ -1,6 +1,17 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.54** (HAMCP-263) lets a
+Not yet released: Engineering **2.4.1-beta.55** (HAMCP-271) settles a
+stranded post-intent child under an already-terminal parent through one
+read-only readback in every configuration family and in
+`set_input_boolean_state` and `set_input_select_option`, as beta.54 does
+for dashboards. It releases the expired locks that blocked later
+governed applies. The parent is never changed and nothing is
+redispatched. No tool, input schema, persisted format or Home Assistant
+write changes. Rollback is reinstalling beta.54. Read the
+[2.4.1-beta.55 release notes](docs/V2_4_1_BETA55_RELEASE_NOTES.md) and the
+[2.4.1-beta.55 acceptance contract](docs/V2_4_1_BETA55_ACCEPTANCE.md).
+
+Engineering **2.4.1-beta.54** (HAMCP-263) lets a
 dispatched governed dashboard update reach a truthful terminal outcome
 through one read-only readback, never a redispatch. It settles a
 dashboard child stranded under an already-terminal parent without

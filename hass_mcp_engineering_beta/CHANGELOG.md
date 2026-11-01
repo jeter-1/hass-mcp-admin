@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.1-beta.55 - Stranded post-intent children settled in every 120 s family (HAMCP-271)
+
+Builds on 2.4.1-beta.54 (#339). No tool, input schema, route, provider,
+persisted format or Home Assistant write change. Nothing is ever
+redispatched.
+
+- The HAMCP-263 terminal-parent readback, cleanup marker and exact-owner
+  lock release now cover every configuration family and the operational
+  `set_input_boolean_state` and `set_input_select_option`, through one
+  closed family table and predicate that replace the dashboard-only
+  gates.
+- Readback recovery in those families performs one final read at the
+  expired evidence deadline.
+- The configuration adapter's `recover` now reads once past the deadline:
+  - a complete observation is decided by exact verification;
+  - an incomplete one is manual review with the read's diagnostics plus
+    `post_dispatch_evidence_deadline_expired`.
+- Backup, reload and restarts (long windows) and fan and power (separate
+  executor) are unchanged.
+
 ## 2.4.1-beta.54 - Dashboard readback recovery settles dispatched updates; stranded post-intent locks released (HAMCP-263)
 
 Builds on 2.4.1-beta.53 (#333). No tool, input schema, route, provider,
