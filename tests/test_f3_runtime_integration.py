@@ -1845,13 +1845,17 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.fixture.gateway.configs[('automation', declaration['target_id'])] = expected
         runtime = self.runtime.children.runtime(child_id)
         self._advance_child_retry(declaration)
-        await self.runtime.reconcile_child(
-            child_id=child_id, action='rerun_observation',
-            record_generation=runtime['record_generation'],
-            prepared_hash=declaration['prepared_operation_hash'],
-            hold_generation_binding=','.join(f"{item['key']}:{item['generation']}" for item in runtime['selective_hold_tokens']),
-            authorized_principal='home_assistant_admin_ingress:synthetic_reviewer',
-        )
+        # HAMCP-271: past the deadline the rerun performs one final read; an
+        # unreadable target keeps it in manual review with the hold.
+        from ha_mcp_engineering.errors import HomeAssistantApiError
+        with patch.object(self.fixture.gateway, 'read', side_effect=HomeAssistantApiError()):
+            await self.runtime.reconcile_child(
+                child_id=child_id, action='rerun_observation',
+                record_generation=runtime['record_generation'],
+                prepared_hash=declaration['prepared_operation_hash'],
+                hold_generation_binding=','.join(f"{item['key']}:{item['generation']}" for item in runtime['selective_hold_tokens']),
+                authorized_principal='home_assistant_admin_ingress:synthetic_reviewer',
+            )
         self.assertFalse(self.runtime.readiness_state()['execution_ready'])
         self.assertEqual(self.service._load_task(task.task_id).state.value, 'manual_review_required')
         holds = copy.deepcopy(self.runtime.children.runtime(child_id)['selective_hold_tokens'])
