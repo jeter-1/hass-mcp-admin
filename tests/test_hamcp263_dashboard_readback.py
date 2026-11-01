@@ -23,6 +23,7 @@ every path:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
@@ -581,6 +582,58 @@ class DashboardReadbackRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("succeeded_verified", applied["task_state"])
         self.assertEqual(1, self.dashboard.write_count)
         del task_id
+
+    async def test_terminal_post_intent_release_requires_exact_lock_owner(
+        self,
+    ):
+        # A terminal owner releases only the locks its own durable tokens
+        # name. An expired record with any other owner stays retained.
+        _result, child = await self._terminal_child_with_unreleased_locks(
+            mismatch=False
+        )
+        self.assertEqual("succeeded_verified", child.normalized_outcome)
+        self.clock[0] += timedelta(seconds=180)
+        store = self.runtime.locks
+        expired = store.expired_records
+
+        def foreign_dashboard_owner(*, now=None):
+            return tuple(
+                replace(item, owner_id="foreign-owner")
+                if item.key == "dashboard:main-operations"
+                else item
+                for item in expired(now=now)
+            )
+
+        with patch.object(
+            store, "expired_records", side_effect=foreign_dashboard_owner
+        ):
+            await self.runtime.recover_once("periodic")
+        self.assertEqual(
+            ["dashboard:main-operations"],
+            [item.key for item in store.records()],
+        )
+        self.assertEqual(1, self.dashboard.write_count)
+
+    async def test_terminal_parent_readback_refuses_an_active_parent(self):
+        # Collection already requires a terminal parent; the recovery step
+        # re-checks it, so an active parent's child is never read here.
+        task_id, child_id = await self._dispatch_observing(failed_reads=100)
+        self.clock[0] += timedelta(seconds=180)
+        self.dashboard.fail_reads_after_write = 0
+        parent = self.service.task_repository.get(task_id)
+        before = self.runtime.children.runtime(child_id)
+        reads = self.dashboard.post_write_reads
+        declaration = self.runtime.children.declarations_for_task(task_id)[0]
+        settled = await self.runtime._recover_terminal_parent_child(
+            declaration, now=self.clock[0]
+        )
+        self.assertFalse(settled)
+        self.assertEqual(0, self.dashboard.post_write_reads - reads)
+        self.assertEqual(before, self.runtime.children.runtime(child_id))
+        self.assertFalse(self.runtime.children.get(child_id).terminal)
+        self.assertEqual(3, len(self.runtime.locks.records()))
+        self.assertEqual(parent, self.service.task_repository.get(task_id))
+        self.assertEqual(1, self.dashboard.write_count)
 
     # -- Unit boundaries -----------------------------------------------------
 
