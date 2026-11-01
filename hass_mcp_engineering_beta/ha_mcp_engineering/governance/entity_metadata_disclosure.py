@@ -270,6 +270,17 @@ async def read_runtime_dependency_snapshot(*, fenced: bool) -> Any:
     return snapshot
 
 
+def read_cached_dependency_snapshot() -> Any | None:
+    """The current dependency snapshot already held; no build or refresh."""
+
+    from ..dependency import DEPENDENCY_ANALYSIS
+
+    try:
+        return DEPENDENCY_ANALYSIS.require().index.current_snapshot()
+    except Exception:
+        return None
+
+
 def snapshot_identity(snapshot: Any | None) -> dict[str, Any] | None:
     """Return provenance only; it is not part of the evidence fingerprint."""
 

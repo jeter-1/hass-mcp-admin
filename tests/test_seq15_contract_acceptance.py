@@ -188,8 +188,11 @@ class LaneDefinitionTests(unittest.TestCase):
         refs = seq15.predecessor_references()
         ids = {r["capability_id"] for r in refs}
         self.assertEqual(len(refs), 26)
-        self.assertFalse(ids & seq15.SEQ15_DORMANT)
-        self.assertEqual(ids | seq15.SEQ15_DORMANT, {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT))
+        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT,
+                         {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
+        # HAMCP-071: the scene profile is seq 16 and never a seq-15 lane capability.
+        self.assertEqual(seq15.SEQ16_DORMANT, {"core.scene_configuration_operation"})
         registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
         (signed,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == seq15.TARGET_CORE]
         self.assertEqual(sorted(c["capability_id"] for c in signed["capabilities"]), sorted(ids))

@@ -140,6 +140,9 @@ _P3_TARGET_TYPES = frozenset(
         # HAMCP-106: ``lovelace/dashboards/update`` is ``require_admin``
         # before its handler (Core 2026.10 helpers/collection.py).
         "dashboard_metadata",
+        # HAMCP-071: ``/api/config/scene/config/<id>`` is ``require_admin``
+        # before its handler (Core 2026.10 config/view.py).
+        "scene_configuration",
     }
 )
 # V9 applies to every code-owned entity registry write identity.
@@ -151,6 +154,8 @@ ALREADY_PRESENT_CAPABILITY_IDENTITIES = frozenset(
         "update_label_registry_entry_configuration",
         # HAMCP-106: a dashboard already showing the planned metadata.
         "update_dashboard_metadata_configuration",
+        # HAMCP-071: a scene already storing the planned configuration.
+        "update_scene_configuration_configuration",
     }
 )
 _VERIFIED_NO_DISPATCH_CLASS = "verified_no_dispatch"

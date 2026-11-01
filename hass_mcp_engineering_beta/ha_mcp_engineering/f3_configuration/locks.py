@@ -61,6 +61,9 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
     elif resource_type == "dashboard_metadata":
         # HAMCP-106: one exclusive identity per dashboard url_path.
         prefix = "dashboard_metadata"
+    elif resource_type == "scene_configuration":
+        # HAMCP-071: one exclusive identity per scene config id.
+        prefix = "scene_configuration"
     else:
         raise ValueError("configuration resource type has no lock identity")
     key = f"{prefix}:{target_id.lower()}"
@@ -221,6 +224,9 @@ def operation_lock_requests(
         "config_entry_helper_options": "reload:config_entry_helper_options",
         # HAMCP-106: a metadata update needs no reload; uniform lock graph.
         "dashboard_metadata": "reload:dashboard_metadata",
+        # HAMCP-071: Core's post-write hook reloads every homeassistant
+        # scene, so a scene edit shares the scene reload identity.
+        "scene_configuration": "reload:scene",
     }.get(operation.resource_type)
     if reload_key is None:
         raise ValueError("configuration resource type has no reload lock")

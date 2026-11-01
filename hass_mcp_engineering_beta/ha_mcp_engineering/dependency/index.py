@@ -254,6 +254,17 @@ class DependencyIndex:
             and age < self.soft_ttl_seconds
         )
 
+    def current_snapshot(self) -> DependencyIndexSnapshot | None:
+        """The current snapshot, or ``None``; never builds or refreshes.
+
+        HAMCP-071 R1-M1: a caller bounded to its declared reads uses only
+        evidence the index already holds, and discloses the gap otherwise.
+        """
+
+        if self._closed or not self._is_current(self._age()):
+            return None
+        return self.snapshot
+
     def _is_usable(self, age: float | None) -> bool:
         return bool(
             self.snapshot

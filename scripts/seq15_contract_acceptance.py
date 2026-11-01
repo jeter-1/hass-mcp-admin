@@ -53,7 +53,9 @@ INPUT_SELECT = "core.typed_input_select_option_operation"
 SCRIPT_TRACE = "core.script_trace_read"
 DASHBOARD_METADATA = "core.dashboard_metadata_operation"
 SEQ15_DORMANT = frozenset({HELPER_OPTIONS, INPUT_SELECT, SCRIPT_TRACE, DASHBOARD_METADATA})
-assert SEQ15_DORMANT == NOVEMBER_DORMANT
+# HAMCP-071: compiled and dormant, but signed with seq 16, never by a seq-15 lane.
+SEQ16_DORMANT = frozenset({"core.scene_configuration_operation"})
+assert not SEQ15_DORMANT & SEQ16_DORMANT and SEQ15_DORMANT | SEQ16_DORMANT == NOVEMBER_DORMANT
 # The seq-14 signed 2026.10.3 entry (upstream-trust/ha-core-release-registry.json).
 PREDECESSOR_COUNT = 26
 SIGNED_REGISTRY = ROOT / "upstream-trust" / "ha-core-release-registry.json"
@@ -177,13 +179,13 @@ def source_profiles(lane):
 
 
 def predecessor_references():
-    """The seq-14 2026.10.3 set: every compiled profile except the November batch.
+    """The seq-14 2026.10.3 set: every compiled profile except the November batch (seq 15 and 16).
 
     Compared, never trusted: it must equal the committed signed 2026.10.3 entry.
     """
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            if p.capability_id not in SEQ15_DORMANT]
+            if p.capability_id not in SEQ15_DORMANT | SEQ16_DORMANT]
     assert len(refs) == PREDECESSOR_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     registry = json.loads(SIGNED_REGISTRY.read_text())
     (signed,) = [entry for entry in registry["envelopes"][-1]["entries"] if entry["version"] == TARGET_CORE]

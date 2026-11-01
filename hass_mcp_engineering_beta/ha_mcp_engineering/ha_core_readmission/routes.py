@@ -159,6 +159,19 @@ _F3_DASHBOARD_METADATA_OPERATIONS = frozenset(
         ),
     }
 )
+# HAMCP-071: the scene configuration update binds only its own dormant
+# runtime profile; its readback is part of that profile.
+SCENE_CONFIGURATION_PROFILE = "core.scene_configuration_operation"
+SCENE_CONFIGURATION_TOOL = "create_scene_configuration_plan"
+SCENE_CONFIGURATION_RESOURCE_TYPE = "scene_configuration"
+_F3_SCENE_CONFIGURATION_OPERATIONS = frozenset(
+    {
+        (
+            "update_scene_configuration_configuration",
+            "update_scene_configuration_configuration",
+        ),
+    }
+)
 INPUT_SELECT_PROFILE = "core.typed_input_select_option_operation"
 INPUT_SELECT_TOOL = "create_input_select_option_plan"
 _F3_INPUT_SELECT_OPERATIONS = frozenset(
@@ -289,6 +302,8 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "core.dashboard_configuration_read",
         DASHBOARD_METADATA_PROFILE,
     ),
+    # HAMCP-071: runtime-only; planning reads only through this profile.
+    SCENE_CONFIGURATION_TOOL: (SCENE_CONFIGURATION_PROFILE,),
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
@@ -683,6 +698,10 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
             DASHBOARD_METADATA_RESOURCE_TYPE,
             DASHBOARD_METADATA_PROFILE,
         ),
+        SCENE_CONFIGURATION_TOOL: (
+            SCENE_CONFIGURATION_RESOURCE_TYPE,
+            SCENE_CONFIGURATION_PROFILE,
+        ),
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
     }
@@ -727,6 +746,8 @@ def static_tool_target(
         return input_select_target(arguments)
     if tool_name == DASHBOARD_METADATA_TOOL:
         return dashboard_metadata_target(arguments)
+    if tool_name == SCENE_CONFIGURATION_TOOL:
+        return scene_configuration_target(arguments)
     if tool_name != "create_entity_metadata_plan":
         return None
     entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
@@ -904,6 +925,27 @@ def dashboard_metadata_target(arguments: Any) -> dict[str, str]:
     }
 
 
+def scene_configuration_target(arguments: Any) -> dict[str, str]:
+    """Bind the 071 planner lease to its one exact scene config id."""
+
+    # Imported at call time: governance composes this package at load.
+    from ..governance.entity_metadata_planning import EntityMetadataRefusal
+    from ..governance.scene_configuration_planning import validate_request
+
+    try:
+        request = validate_request(arguments)
+    except EntityMetadataRefusal as refusal:
+        field = refusal.details.get("field")
+        raise StaticToolTargetRefused(
+            refusal.reason_code,
+            field if isinstance(field, str) else "config_id",
+        ) from None
+    return {
+        "target_type": SCENE_CONFIGURATION_RESOURCE_TYPE,
+        "target_id": request.lease_target_id,
+    }
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -941,6 +983,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add(HELPER_OPTIONS_PROFILE)
     elif identity in _F3_INPUT_SELECT_OPERATIONS:
         values.add(INPUT_SELECT_PROFILE)
+    elif identity in _F3_SCENE_CONFIGURATION_OPERATIONS:
+        # Never governed_configuration_operation: that signed evidence did not
+        # cover the scene configuration route.
+        values.add(SCENE_CONFIGURATION_PROFILE)
     elif identity in _F3_DASHBOARD_METADATA_OPERATIONS:
         # Never the signed dashboard write contract; the content fingerprint
         # readback uses the signed dashboard configuration read.
@@ -970,6 +1016,7 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         HELPER_OPTIONS_PROFILE,
         INPUT_SELECT_PROFILE,
         DASHBOARD_METADATA_PROFILE,
+        SCENE_CONFIGURATION_PROFILE,
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
@@ -1054,6 +1101,10 @@ __all__ = [
     "DASHBOARD_METADATA_RESOURCE_TYPE",
     "DASHBOARD_METADATA_TOOL",
     "dashboard_metadata_target",
+    "SCENE_CONFIGURATION_PROFILE",
+    "SCENE_CONFIGURATION_RESOURCE_TYPE",
+    "SCENE_CONFIGURATION_TOOL",
+    "scene_configuration_target",
     "PENDING_ADMISSION_TOOLS",
     "SCRIPT_TRACE_PROFILE",
     "SCRIPT_TRACE_RESOURCE_TYPE",

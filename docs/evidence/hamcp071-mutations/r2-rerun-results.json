@@ -1,0 +1,85 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 193.1,
+    "tests": [
+      "282"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": null,
+    "baseline_ok": true
+  },
+  {
+    "name": "A3_persist_recheck_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 204.7,
+    "tests": [
+      "282"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "G8_apply_core_status_entry_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 201.3,
+    "tests": [
+      "282"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_projection_needs_a_verified_task_and_one_dispatch"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H10_last_changed_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 203.8,
+    "tests": [
+      "282"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_member_attribute_rewrite_is_not_reload_evidence",
+      "test_a_registry_name_without_a_re_add_is_not_reload_evidence"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H13_poll_stops_before_reload",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 183.0,
+    "tests": [
+      "282"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_a_reload_between_one_polls_reads_verifies_at_the_next_poll"
+    ],
+    "killed": true
+  }
+]

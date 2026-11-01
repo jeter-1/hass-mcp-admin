@@ -412,6 +412,8 @@ class AvailabilityExposureDispatchAdmissionTests(AvailabilityExposureServiceTest
                 "dashboard_metadata",
                 "entity_assistant_exposure", "entity_registry_availability",
                 "label_registry_entry",
+                # HAMCP-071: gated on its own runtime-only profile.
+                "scene_configuration",
             ],
         )
 
