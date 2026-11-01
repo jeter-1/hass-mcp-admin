@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from ..errors import DashboardProviderError
 from ..f3.contracts import (
@@ -41,6 +41,7 @@ ADAPTER_ID = "dashboard_update"
 CAPABILITY_ID = "update_existing_dashboard"
 VERIFICATION_MODEL = "f3-dashboard-exact-reread-v1"
 PROVIDER_CONTRACT_MODEL = "ha-mcp-dashboard-full-result-update-v1"
+PROVIDER_OPERATION = "ha_config_set_dashboard"
 OPERATOR_POLICY = "bounded_dashboard_update_non_atomic_v1"
 EVIDENCE_DEADLINE_SECONDS = 120
 _PROVIDER_FAILURE_DIAGNOSTICS = {
@@ -164,6 +165,10 @@ class PreparedDashboardOperation(PreparedOperation):
     operator_policy: str
     evidence_deadline_seconds: int
     selective_hold_keys: tuple[str, ...]
+    # HAMCP-263: the one setter a durable dispatch intent may name. Readback
+    # recovery binds the persisted intent to it; it is not a prepared field,
+    # so the prepared-operation hash is unchanged.
+    provider_operation: ClassVar[str] = PROVIDER_OPERATION
 
 
 class DashboardUpdateAdapter:
@@ -438,7 +443,7 @@ class DashboardUpdateAdapter:
             confirmed_target=operation.target,
             observed_state_fingerprint=current.engineering_config_sha256,
             provider_contract=PROVIDER_CONTRACT_MODEL,
-            provider_operation="ha_config_set_dashboard",
+            provider_operation=PROVIDER_OPERATION,
             provider_arguments_hash=operation.provider_arguments_hash,
             evidence_hash=evidence,
             diagnostic_codes=(
