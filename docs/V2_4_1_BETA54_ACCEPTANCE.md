@@ -1,4 +1,4 @@
-# Engineering 2.4.1-beta.55 acceptance
+# Engineering 2.4.1-beta.54 acceptance
 
 This contract covers HAMCP-227 Part 2: scene, group and dashboard reference
 coverage in `entity_dependency_analysis` and `change_impact_analysis`. It is
@@ -7,28 +7,21 @@ fallback.
 
 See also:
 - Release notes:
-  [`V2_4_1_BETA55_RELEASE_NOTES.md`](V2_4_1_BETA55_RELEASE_NOTES.md).
+  [`V2_4_1_BETA54_RELEASE_NOTES.md`](V2_4_1_BETA54_RELEASE_NOTES.md).
 - Coverage contract:
   [`ENTITY_DEPENDENCY_ANALYSIS.md`](ENTITY_DEPENDENCY_ANALYSIS.md).
 
-**Release target.** `2.4.1-beta.55` is staged in `.release/next-version`
-on the HAMCP-227 branch, with exact staged document resolution from
-`scripts/codex-context.py`. It is not yet materialized:
-2.4.1-beta.54 is held by HAMCP-263 and has not merged, and
-`scripts/promote_next_release.py` refuses beta.53 → beta.55. Until beta.54
-merges, CI's `validate_prerequisites` job refuses that transition in
-"Validate deployment metadata"; that refusal is expected and blocks Ready.
-It also skips the jobs that need `validate_prerequisites`
-(`validate_source`, `validate_packaging`, `dashboard-disposable`).
-
-Before Ready, this branch merges `main` after beta.54, runs
-`python scripts/promote_next_release.py --apply` (beta.54 → beta.55), and
-commits the three version authorities:
+**Release target.** `2.4.1-beta.54`, the next free beta after `main`'s
+2.4.1-beta.53 (HAMCP-071). It is staged in `.release/next-version` and
+materialized on this branch by `python scripts/promote_next_release.py
+--apply` (beta.53 → beta.54) in a separate commit that updates the three
+version authorities:
 - `hass_mcp_engineering_beta/config.yaml`;
 - `ha_mcp_engineering/version.py` `SERVER_VERSION`;
 - `scripts/validate_addon_metadata.py` `BETA_VERSION`.
 
-If HAMCP-263 changes its version, this branch restages to the next free
+HAMCP-263 (PR #339) also targets beta.54. Whichever pull request merges
+first keeps beta.54; the other merges `main` and restages to the next free
 beta.
 
 The contract separates four stages:
@@ -42,13 +35,12 @@ It authorizes none of the later stages.
 ## 1. Source and offline acceptance
 
 Bind the following:
-- `2.4.1-beta.55` in all three version authorities after materialization,
+- `2.4.1-beta.54` in all three version authorities,
   with exact acceptance and release-note resolution from
   `scripts/codex-context.py`;
 - the PR head SHA;
-- the passing PR `validate` run for that exact head; until
-  materialization, every job that runs passes and the only failure is the
-  expected release-transition refusal described above;
+- the passing PR `validate` run for that exact head, including
+  `validate_source`, `validate_packaging` and `dashboard-disposable`;
 - the Evidence tier log named in the PR.
 
 The review needs a security section covering the following items:
@@ -193,8 +185,8 @@ re-trigger approval. A follow-up would need:
 
 ### Downgrade rule
 
-Rollback is reinstalling **2.4.1-beta.54**, or **2.4.1-beta.53** if
-beta.54 is not released. beta.55 writes no new persisted record. Never
+Rollback is reinstalling **2.4.1-beta.53**. beta.54 writes no new
+persisted record. Never
 clear F3 journals, task files or locks.
 
 ## 2. Release CI and publication

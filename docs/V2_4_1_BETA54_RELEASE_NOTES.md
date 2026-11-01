@@ -1,21 +1,18 @@
-# Engineering 2.4.1-beta.55 release notes
+# Engineering 2.4.1-beta.54 release notes
 
-Engineering 2.4.1-beta.55 adds scene, group and dashboard references to
+Engineering 2.4.1-beta.54 adds scene, group and dashboard references to
 `entity_dependency_analysis` and `change_impact_analysis` (HAMCP-227 Part
 2). It is read-only. It adds no tool, input schema, write path, route,
 fallback or plan family. It changes no signed registry, signed profile,
 snapshot fingerprint or governance-bound evidence.
 
-**Version sequencing.** 2.4.1-beta.54 is held by HAMCP-263, which has
-materialized it on its own branch but has not merged. This branch is based
-on 2.4.1-beta.53 (`main` 2be1d72b) and stages beta.55 in
-`.release/next-version`. The release transition check refuses beta.53 →
-beta.55 until beta.54 merges; that refusal is expected. This branch then
-merges `main` and materializes beta.55 with
-`scripts/promote_next_release.py --apply`. If HAMCP-263 changes its
-version, this branch restages to the next free beta.
+**Version sequencing.** This builds on 2.4.1-beta.53 (HAMCP-071) and
+materializes beta.54, the next free beta, with
+`scripts/promote_next_release.py --apply`. HAMCP-263 (PR #339) also targets
+beta.54; whichever pull request merges first keeps it, and the other
+restages to the next free beta.
 
-Acceptance: [`V2_4_1_BETA55_ACCEPTANCE.md`](V2_4_1_BETA55_ACCEPTANCE.md).
+Acceptance: [`V2_4_1_BETA54_ACCEPTANCE.md`](V2_4_1_BETA54_ACCEPTANCE.md).
 Coverage contract:
 [`ENTITY_DEPENDENCY_ANALYSIS.md`](ENTITY_DEPENDENCY_ANALYSIS.md).
 
@@ -107,5 +104,4 @@ acceptance contract, section 1.3.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.54, or 2.4.1-beta.53 if beta.54 is not released.
-beta.55 writes no new persisted record; the partition is process memory.
+Reinstall 2.4.1-beta.53. beta.54 writes no new persisted record; the partition is process memory.

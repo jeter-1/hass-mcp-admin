@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Staged, not yet released: Engineering **2.4.1-beta.55** (HAMCP-227) adds
+Staged, not yet released: Engineering **2.4.1-beta.54** (HAMCP-227) adds
 scene, group and dashboard references to `entity_dependency_analysis` and
 `change_impact_analysis`. Scenes and groups come from the loaded membership
 in states the build already reads; dashboards come from the reviewed list
@@ -8,10 +8,9 @@ and read path and the existing dashboard walker. The evidence is a
 diagnostic partition outside the governance-bound index, each source is
 `complete` only when everything was read and parsed, and templates are
 reported as deferred (HAMCP-264). Read-only; no tool, schema or write
-changes. Rollback is reinstalling beta.54 (or beta.53 if beta.54 is not
-released). Read the
-[2.4.1-beta.55 release notes](docs/V2_4_1_BETA55_RELEASE_NOTES.md) and the
-[2.4.1-beta.55 acceptance contract](docs/V2_4_1_BETA55_ACCEPTANCE.md).
+changes. Rollback is reinstalling beta.53. Read the
+[2.4.1-beta.54 release notes](docs/V2_4_1_BETA54_RELEASE_NOTES.md) and the
+[2.4.1-beta.54 acceptance contract](docs/V2_4_1_BETA54_ACCEPTANCE.md).
 
 Staged, not yet released: Engineering **2.4.1-beta.53** (HAMCP-071) builds
 a governed edit of one existing UI-managed scene, inactive. The new tool
