@@ -158,7 +158,7 @@ RAW_ROUTE = re.compile(
     r"|options/flow|options/flow/[0-9a-f]{32})"
     r"|/config/script/config/seq15_[0-9a-f]{8}"
     r"|/config/scene/config/(?:seq15_[0-9a-f]{8}|[0-9a-f]{32})"
-    r"|/states/(?:input_select|script|scene)\.seq15_[0-9a-z_]{1,64}")
+    r"|/states/(?:input_select|binary_sensor|script|scene)\.seq15_[0-9a-z_]{1,64}")
 _FLOW_ID = re.compile(r"/[0-9a-f]{32}\Z")
 
 

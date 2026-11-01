@@ -50,7 +50,7 @@ def checks(name, value):
 
 async def run(c):
     import yaml
-    from seq15_contract_acceptance import REGISTRY_LIST
+    from seq15_contract_acceptance import REGISTRY_LIST, _entity_of
     stage, raw, owned, runtime = c["stage"], c["raw"], c["owned"], c["runtime"]
     stage[0] = "scene_fixture_setup"
     config_id = "seq15_" + secrets.token_hex(4)
@@ -60,9 +60,15 @@ async def run(c):
     owned["input_select"] = created["id"]
     member = "input_select." + created["id"]
     owned["scenes"] = [config_id]
+    # A passive template member makes the unchanged planner exercise its
+    # device-class registry read. The mode helper alone does not need it.
+    entry = await raw.create_config_entry("template", {"next_step_id": "binary_sensor"}, {
+        "name": "Seq15 Scene Binary " + secrets.token_hex(4), "state": "{{ false }}", "device_class": "door"})
+    owned["config_entries"] = [entry]
+    binary = await _entity_of(raw, entry)
 
     async def member_state():
-        return (await raw.rest("GET", "/states/" + member))["state"]
+        return {entity: (await raw.rest("GET", "/states/" + entity))["state"] for entity in (member, binary)}
 
     async def stored():
         return await raw.rest("GET", route)
@@ -82,11 +88,11 @@ async def run(c):
     (seed,) = [row for row in before_seed if row.get("name") == "Seq15 Id Assignment"]
     assert "id" not in seed
     body = {"name": "Seq15 Scene " + secrets.token_hex(4), "icon": "mdi:home",
-            "entities": {member: {"state": "Away"}}, "metadata": {member: {"entity_only": True}}}
+            "entities": {member: {"state": "Away"}, binary: {"state": "on"}}, "metadata": {member: {"entity_only": True}}}
     await raw.rest("POST", route, body)
     initial_identity = await identity()
     initial_member = await member_state()
-    assert initial_member == "Home"
+    assert initial_member == {member: "Home", binary: "off"}
     after_seed = yaml.safe_load(path.read_text())
     (assigned,) = [row for row in after_seed if row.get("name") == "Seq15 Id Assignment"]
     assigned_id = assigned.get("id")

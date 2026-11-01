@@ -65,6 +65,11 @@ fixture harness alone creates/deletes scenes. Engineering sends no activation,
 explicit reload, DELETE or other scene service. Core's save still schedules a
 global scene reload: the accepted design limitation remains.
 
+A passive template binary-sensor member exercises the unchanged planner's
+device-class registry read; its off state and the mode helper's Home state
+remain unchanged through every edit. The full-entry checks preserve the
+unrequested binary-sensor snapshot as well as metadata.
+
 The seeded no-id entry exists only in the disposable configuration before
 startup. The raw unknown-dashboard controls test `url_path` and `mode`.
 WebSocket `id` is the transport request identifier, not an editable dashboard
