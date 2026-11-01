@@ -54,8 +54,10 @@ def config_version(ref, run_git):
     return version
 
 
-def verify(run_id, attempt, authority, api=handoff.read_api, run_git=handoff.git):
-    return handoff.verify(run_id, attempt, authority, api, run_git, version_of=config_version)
+def verify(run_id, attempt, authority, api=handoff.read_api, run_git=handoff.git,
+           sleep=None, log=None):
+    return handoff.verify(run_id, attempt, authority, api, run_git, version_of=config_version,
+                          sleep=sleep, log=log)
 
 
 def main():
