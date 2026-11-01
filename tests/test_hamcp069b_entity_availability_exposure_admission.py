@@ -213,13 +213,13 @@ class DormantProfileTests(unittest.TestCase):
             },
         )
 
-    def test_signed_sequences_13_and_14_reference_them_exactly(self):
+    def test_signed_sequences_13_through_15_reference_them_exactly(self):
         # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
-        # 2026.10.3; no earlier envelope and no other entry carries them.
+        # 2026.10.3; sequence 15 retains both references unchanged.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 14)
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 15)
         profiles = {
             profile.capability_id: profile.to_mapping()
             for profile in CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
@@ -240,6 +240,7 @@ class DormantProfileTests(unittest.TestCase):
                 (sequence, version, capability)
                 for sequence, version in (
                     (13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3"),
+                    (15, "2026.10.1"), (15, "2026.10.3"),
                 )
                 for capability in (AVAILABILITY, EXPOSURE)
             },

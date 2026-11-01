@@ -44,7 +44,8 @@ from ha_mcp_engineering.script_traces import NEVER_SENT_COMMANDS  # noqa: E402
 
 ENABLE_FLAG = "REAL_HA_SEQ15_LANES"
 ENABLED = "enabled"
-# Josh's 2026-11-01 direction supersedes OD-13: extend both October releases.
+# Both October releases retain disposable evidence; Josh selected only .3 for
+# production sequence 15. The lane transition always starts from sequence 14.
 TARGET_CORE = "2026.10.3"  # Default for historical offline receipt fixtures only.
 TARGET_CORES = frozenset({"2026.10.1", "2026.10.3"})
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
@@ -182,7 +183,7 @@ def source_profiles(lane):
 def predecessor_references(core_version=TARGET_CORE):
     """The exact ordered seq-14 release set, excluding the five additions.
 
-    Compared, never trusted: it must equal the committed signed exact-release entry.
+    Compared, never trusted: it must equal the retained signed sequence-14 entry.
     """
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
@@ -190,7 +191,8 @@ def predecessor_references(core_version=TARGET_CORE):
     assert len(refs) == PREDECESSOR_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     registry = json.loads(SIGNED_REGISTRY.read_text())
     assert core_version in TARGET_CORES
-    (signed,) = [entry for entry in registry["envelopes"][-1]["entries"] if entry["version"] == core_version]
+    (predecessor,) = [e for e in registry["envelopes"] if e["sequence"] == 14]
+    (signed,) = [entry for entry in predecessor["entries"] if entry["version"] == core_version]
 
     def key(reference):
         return reference["capability_id"]
