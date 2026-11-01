@@ -657,8 +657,13 @@ class ReceiptTests(unittest.TestCase):
         for core in sorted(seq15.TARGET_CORES):
             binding = alarmo.slot_binding(core)
             registry = json.loads(seq15.SIGNED_REGISTRY.read_text())
-            (entry,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == core]
+            (predecessor,) = [e for e in registry["envelopes"] if e["sequence"] == 14]
+            (entry,) = [e for e in predecessor["entries"] if e["version"] == core]
             self.assertEqual(seq15.predecessor_references(core), entry["capabilities"])
+            self.assertEqual(len(seq15.predecessor_references(core)), 26)
+            (current,) = [e for e in registry["envelopes"][-1]["entries"] if e["version"] == core]
+            self.assertEqual(current["capabilities"][:26], entry["capabilities"])
+            self.assertEqual(len(current["capabilities"]), 31 if core == "2026.10.3" else 26)
             for lane in seq15.LANES:
                 value = complete_receipt(lane, core)
                 with self.subTest(core=core, lane=lane):

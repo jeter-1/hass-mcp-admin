@@ -285,13 +285,12 @@ EXPECTED_AFFECTED_TOOLS = {
 
 
 def signed_sequence_14_entry(version: str = LIVE_CORE) -> dict:
-    """The committed owner-signed entry, unchanged apart from re-signing."""
+    """The retained owner-signed sequence-14 entry for historical scenarios."""
 
     registry = json.loads(
         (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
     )
-    envelope = registry["envelopes"][-1]
-    assert envelope["sequence"] == 14, envelope["sequence"]
+    (envelope,) = [item for item in registry["envelopes"] if item["sequence"] == 14]
     (entry,) = [item for item in envelope["entries"] if item["version"] == version]
     return deepcopy(entry)
 
