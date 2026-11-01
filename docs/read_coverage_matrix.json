@@ -8,11 +8,13 @@
  "notes": [
   "Deployed Home Assistant Core and ha-mcp versions cannot be determined from source. Every admission statement here is conditional on the observed versions (ADR-021).",
   "The signed Core registry is disabled by default (ha_core_release_registry_enabled: false in hass_mcp_engineering_beta/config.yaml). Runtime-only Core profiles admit nothing until it is enabled and a signed envelope covers the observed Core release; the deployed option value is unknown from source.",
-  "Signed registry sequence 15 covers Core 2026.10.0 (22 profiles), 2026.10.1 (26) and 2026.10.3 (all 31). Profiles added after 2026.10.0, such as script traces, scene configuration, entity-registry operations, labels and helper options, are therefore admitted on 2026.10.3 only. Core 2026.11 needs sequence 16 carrying every profile forward (see the readiness map signing batch). Per-source version-coverage gaps are not repeated.",
+  "Signed registry sequence 15 (the journal tip in upstream-trust/ha-core-release-registry.json) carries three exact Core releases. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry; Core 2026.11 needs sequence 16 to carry the 31 existing profiles forward (readiness map, Signing). Per-source version-coverage gaps are not repeated.",
   "core.scene_configuration_operation is already in sequence 15 for Core 2026.10.3. Text that says it awaits sequence 16 (for example the comment in governance/scene_configuration.py) is stale.",
   "Backup creation, add-on restart, Home Assistant restart and reload are admitted for ha-mcp 7.14.1 to 8.1.1 only and held at 8.2.0 to 8.6.0; ha-mcp 8.6.0 itself is on HOLD (HAMCP-156).",
   "ha-mcp tools classified mixed_or_requires_wrapper without an adapter (ha_get_logs, ha_manage_backup, ha_manage_energy_prefs, ha_manage_updates) are unreachable and appear only in gaps.",
-  "Redaction and sanitization of each path are recorded as implemented; this matrix did not re-verify the generic gateway sanitizer."
+  "Redaction and sanitization of each path are recorded as implemented; this matrix did not re-verify the generic gateway sanitizer.",
+  "A pending_signed_registry_admission refusal does not by itself prove that a profile is unsigned: the same reason is also reported while Core authority is transiently retired for re-verification (HAMCP-275, architect report on beta.54). HAMCP-276 (options apply refused at dispatch_authority) and HAMCP-274 (input_select option planning refused) are separate apply and planning failures.",
+  "Governed configuration writes (automation, script, helper, entity metadata, label and scene-edit families) and the operational helper writes share a known recovery limit: a dispatched F3 child under an already-terminal parent can stay non-terminal and keep its locks (HAMCP-271). Its correction is in a separate pull request (#340) and is not part of this source."
  ],
  "sources": [
   {
@@ -52,8 +54,8 @@
      "provider": "direct_ha_api",
      "purpose_binding": "exact_automation_config_read (DIRECT_HA_READ_POLICIES)",
      "admission": "native (DIRECT_HA_TOOL_EXCEPTIONS); core.automation_configuration_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
-     "completeness": "complete",
-     "detail": "GET /config/automation/config/{id} for one validated id: full stored UI-managed automation config. YAML-defined automations (no storage id) have no such config route. UNCERTAIN: the compatibility function returns via dump_json without visible redaction; check the response sanitizer before claiming secrets are screened.",
+     "completeness": "partial",
+     "detail": "GET /config/automation/config/{id} for one validated id: full stored UI-managed automation config. YAML-defined automations (no storage id) have no such config route. UNCERTAIN: the compatibility function returns via dump_json without visible redaction; check the response sanitizer before claiming secrets are screened. Delivery is truncated at MAX_CHARS (60,000) characters with a marker and no continuation argument, so the read is complete only below that bound.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -69,6 +71,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
        "line": 257,
        "anchor": "\"get_automation_config\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+       "line": 87,
+       "anchor": "def dump(data: Any) -> str:"
       }
      ]
     },
@@ -247,7 +254,7 @@
       "delete"
      ],
      "policy": "OPERATIONAL_ADMINISTRATION; 1-8 automation/script targets; pre-image captured, consumers disclosed, rollback recreates",
-     "admission": "signed:core.configuration_delete_operation (state: compiled; signed in registry seq 15 for Core 2026.10.1 and 2026.10.3 only; dormant on 2026.10.0 and until the deployed registry is seq>=15 - repo data only, deployment unknown)",
+     "admission": "signed:core.configuration_delete_operation (state: compiled; signed for Core 2026.10.1 since registry sequence 13 and for 2026.10.3 since sequence 14, both carried by sequence 15; not signed for 2026.10.0 - repo data only, deployment unknown)",
      "detail": "Only automation and script resource types can be deleted (CORE_CONFIGURATION_DELETE_PROFILES resource_types). Scenes, groups, templates, helpers, blueprint files are not deletable.",
      "refs": [
       {
@@ -315,8 +322,8 @@
     {
      "id": "RCG-001",
      "missing": "YAML-defined automations (automations.yaml without ids / packages) stored config",
-     "requirement_type": "new_reader_purpose",
-     "requirement": "A reader purpose for automation YAML outside configuration.yaml dotted paths (automations.yaml entries without ids, packages, !include files). HAMCP-264 covers packages; automation YAML without ids is not named in any register row.",
+     "requirement_type": "new_reader_contract",
+     "requirement": "The YAML adapter fixes the file to configuration.yaml, its L2 deny floor includes packages, and it returns !include as text without following it; a reader purpose only selects dotted paths inside that adapter, so a purpose alone reaches none of these files. Closure needs an explicitly reviewed extension or a new bounded file-reader contract (fixed allowlist, size bounds, !secret never resolved) with any adapter and admission work, then an audited purpose. No Core profile is implied. HAMCP-264 covers packages; automation YAML without ids is not named in any register row.",
      "register": [
       "HAMCP-264"
      ],
@@ -324,7 +331,12 @@
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
        "line": 63,
-       "anchor": "ALLOWED_FILE"
+       "anchor": "ALLOWED_FILE = \"configuration.yaml\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 3861,
+       "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
     }
@@ -480,7 +492,7 @@
       "delete"
      ],
      "policy": "OPERATIONAL_ADMINISTRATION; 1-8 automation/script targets; pre-image captured, consumers disclosed, rollback recreates",
-     "admission": "signed:core.configuration_delete_operation (state: compiled; signed in registry seq 15 for Core 2026.10.1 and 2026.10.3 only; dormant on 2026.10.0 and until the deployed registry is seq>=15 - repo data only, deployment unknown)",
+     "admission": "signed:core.configuration_delete_operation (state: compiled; signed for Core 2026.10.1 since registry sequence 13 and for 2026.10.3 since sequence 14, both carried by sequence 15; not signed for 2026.10.0 - repo data only, deployment unknown)",
      "detail": "Only automation and script resource types can be deleted (CORE_CONFIGURATION_DELETE_PROFILES resource_types). Scenes, groups, templates, helpers, blueprint files are not deletable.",
      "refs": [
       {
@@ -522,10 +534,8 @@
      "id": "RCG-003",
      "missing": "Script blueprint bodies not resolved in dependency analysis",
      "requirement_type": "feature_work",
-     "requirement": "Resolve use_blueprint in scripts like automations",
-     "register": [
-      "HAMCP-264"
-     ],
+     "requirement": "Resolve use_blueprint in scripts like automations. Unassigned candidate: HAMCP-264's scope names YAML, template, package and stored-script reads, not blueprint-body expansion.",
+     "register": [],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_calls.py",
@@ -914,16 +924,21 @@
     {
      "id": "RCG-009",
      "missing": "Group YAML in packages/ or !include files",
-     "requirement_type": "new_reader_purpose",
-     "requirement": "Admit packages/include reading",
+     "requirement_type": "new_reader_contract",
+     "requirement": "As RCG-016: The YAML adapter fixes the file to configuration.yaml, its L2 deny floor includes packages, and it returns !include as text without following it; a reader purpose only selects dotted paths inside that adapter, so a purpose alone reaches none of these files. Closure needs an explicitly reviewed extension or a new bounded file-reader contract (fixed allowlist, size bounds, !secret never resolved) with any adapter and admission work, then an audited purpose. No Core profile is implied.",
      "register": [
       "HAMCP-264"
      ],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/contracts.py",
-       "line": 101,
-       "anchor": "INCLUDE_DISCLOSURE"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
+       "line": 63,
+       "anchor": "ALLOWED_FILE = \"configuration.yaml\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 3861,
+       "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
     },
@@ -955,8 +970,8 @@
      "provider": "engineering (mounted read-only config dir)",
      "purpose_binding": "bounded_blueprint_source_read (DIRECT_HA_READ_POLICIES)",
      "admission": "native; CORE_INDEPENDENT_STATIC_TOOLS basis mounted_read_only_source (no Core API call)",
-     "completeness": "complete",
-     "detail": "Raw YAML of one blueprint from mounted /homeassistant/blueprints or /config/blueprints; realpath-confined, .yaml/.yml only, truncated at 60,000 chars. UNCERTAIN: no secret redaction visible in this function.",
+     "completeness": "partial",
+     "detail": "Raw YAML of one blueprint from mounted /homeassistant/blueprints or /config/blueprints; realpath-confined, .yaml/.yml only. UNCERTAIN: no secret redaction visible in this function. Delivery is truncated at MAX_CHARS (60,000) characters with a marker and no continuation argument, so the read is complete only below that bound.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -972,6 +987,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
        "line": 341,
        "anchor": "mounted_read_only_source"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+       "line": 708,
+       "anchor": "text = text[:MAX_CHARS] + \"\\n... [truncated]\""
       }
      ]
     },
@@ -980,8 +1000,8 @@
      "provider": "direct_ha_api",
      "purpose_binding": "bounded_blueprint_inventory_read (DIRECT_HA_READ_POLICIES)",
      "admission": "native (TRANSITIONAL_DIRECT); core.basic_websocket_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
-     "completeness": "complete",
-     "detail": "WebSocket blueprint/list for domain automation or script (inventory metadata, no source).",
+     "completeness": "partial",
+     "detail": "WebSocket blueprint/list for domain automation or script (inventory metadata, no source). Delivery is truncated at MAX_CHARS (60,000) characters with a marker and no continuation argument, so the read is complete only below that bound.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -997,6 +1017,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
        "line": 265,
        "anchor": "\"list_blueprints\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+       "line": 87,
+       "anchor": "def dump(data: Any) -> str:"
       }
      ]
     },
@@ -1077,10 +1102,8 @@
      "id": "RCG-011",
      "missing": "Script blueprint body resolution in dependency analysis",
      "requirement_type": "feature_work",
-     "requirement": "Extend blueprint resolution to scripts",
-     "register": [
-      "HAMCP-264"
-     ],
+     "requirement": "Extend blueprint resolution to scripts. Unassigned candidate: HAMCP-264's scope names YAML, template, package and stored-script reads, not blueprint-body expansion.",
+     "register": [],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_calls.py",
@@ -1225,7 +1248,7 @@
      "id": "RCG-013",
      "missing": "Template reference extraction (which entities template sensors reference) in the dependency index",
      "requirement_type": "new_reader_purpose",
-     "requirement": "Audited read purpose for YAML templates feeding the index (documented reason: none exists)",
+     "requirement": "Template references in configuration.yaml: an audited reader purpose that reuses the existing adapter for fixed configuration.yaml paths (own audit event, bounded paths and sizes, !secret never resolved). Templates in packages and !include files need the reader contract in RCG-014 and RCG-016.",
      "register": [
       "HAMCP-264"
      ],
@@ -1240,16 +1263,21 @@
     {
      "id": "RCG-014",
      "missing": "template: in packages/ and !include files",
-     "requirement_type": "new_reader_purpose",
-     "requirement": "Packages/include reader purpose; ha_config_get_yaml refuses packages/",
+     "requirement_type": "new_reader_contract",
+     "requirement": "As RCG-016: The YAML adapter fixes the file to configuration.yaml, its L2 deny floor includes packages, and it returns !include as text without following it; a reader purpose only selects dotted paths inside that adapter, so a purpose alone reaches none of these files. Closure needs an explicitly reviewed extension or a new bounded file-reader contract (fixed allowlist, size bounds, !secret never resolved) with any adapter and admission work, then an audited purpose. No Core profile is implied.",
      "register": [
       "HAMCP-264"
      ],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
-       "anchor": "_L2_SEGMENTS ="
+       "line": 63,
+       "anchor": "ALLOWED_FILE = \"configuration.yaml\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 3861,
+       "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
     },
@@ -1357,21 +1385,21 @@
     {
      "id": "RCG-016",
      "missing": "packages/ directory contents and !include targets",
-     "requirement_type": "new_reader_purpose",
-     "requirement": "New reader purpose with a fixed allowlist; the L2 deny floor currently includes packages and the reader returns !include as text only",
+     "requirement_type": "new_reader_contract",
+     "requirement": "The YAML adapter fixes the file to configuration.yaml, its L2 deny floor includes packages, and it returns !include as text without following it; a reader purpose only selects dotted paths inside that adapter, so a purpose alone reaches none of these files. Closure needs an explicitly reviewed extension or a new bounded file-reader contract (fixed allowlist, size bounds, !secret never resolved) with any adapter and admission work, then an audited purpose. No Core profile is implied.",
      "register": [
       "HAMCP-264"
      ],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
-       "anchor": "_L2_SEGMENTS ="
+       "line": 63,
+       "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/contracts.py",
-       "line": 101,
-       "anchor": "INCLUDE_DISCLOSURE"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 3861,
+       "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
     },
@@ -2197,7 +2225,7 @@
    "name": "template, filter and statistics helpers (UI)",
    "group": "UI helpers",
    "completeness": "partial",
-   "completeness_reason": "YAML definitions readable from configuration.yaml only; UI config-entry options have no client-visible read (the options-flow baseline exists only inside create_helper_options_plan); options update is governed for the catalogued steps.",
+   "completeness_reason": "Three distinct reads. Native: get_configuration_definitions reads YAML definitions from configuration.yaml and only Core entry metadata for UI helpers. Delegated: ha_config_list_helpers can return ConfigEntry.options where the reviewed ha-mcp version and its component path support it (filter verified; template and statistics unverified). Governed planning: the options-flow baseline inside create_helper_options_plan, restricted to planning by HAMCP-232 OD-1. Options update is governed for the catalogued steps.",
    "read_paths": [
     {
      "tool": "get_configuration_definitions",
@@ -2255,7 +2283,7 @@
      "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (argument_restrictions, schema fingerprint 853fbabc); earlier policies 8a743a0f / c25b0b38",
      "admission": "upstream:ha_config_list_helpers automatic_read (7.14.x-8.6.0 policy JSONs); Core gating core.basic_websocket_read",
      "completeness": "partial",
-     "detail": "helper_type=template (flow type) lists config-entry helpers. Requires the ha_mcp_tools custom component (>=1.1.0); otherwise COMPONENT_NOT_INSTALLED mapped to capability_unavailable. Whether options are returned is NOT verified. Install state of ha_mcp_tools is unknown; Engineering's owner decision (2026-10-21) excludes component commands from its own readers. (Researched for: template, filter, statistics.)",
+     "detail": "helper_type=<flow type> lists UI config-entry helpers through ha-mcp's component helper-list path. Requires the ha_mcp_tools custom component (>=1.1.0); otherwise COMPONENT_NOT_INSTALLED maps to capability_unavailable, and its install state is unknown from source. At the reviewed ha-mcp 8.5.0 source (311d6dc273fb4e9a5b8cde0de15f69472a64fe44, src/ha_mcp/tools/tools_config_helpers.py:3705-3728, records obtained through the component helper-list path from :4072), each flow-helper record preserves ConfigEntry.options; the 8.5.0 policy classifies the tool automatic_read without argument restrictions. ConfigEntry.options is not ConfigEntry.data and is not proof of a complete definition for every type. Engineering's own readers do not use component commands (owner decision 2026-10-21); this delegated read is a separate, conditional path. Options content: filter verified; template and statistics unverified; unverified means not yet evidenced, not impossible. Verified for filter: HA Admin observation recorded in HAMCP-230 (audit HAAC-E008, 2026-10-26), a UI-created filter helper returned its full options. (Researched for: template, filter, statistics.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_8_6.py",
@@ -2300,7 +2328,7 @@
      "purpose_binding": "DIRECT_HA_READ_POLICIES exact entity state",
      "admission": "native",
      "completeness": "partial",
-     "detail": "Current state and attributes of an exact template.* entity (runtime state, not the stored definition; attribute set is what the integration exposes). (Researched for: template, filter, statistics.)",
+     "detail": "Current state and attributes of the helper's own exact entity (for these helpers a sensor.* or binary_sensor.* entity, not a template.* domain); runtime state, not the stored definition. (Researched for: template, filter, statistics.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -2315,7 +2343,7 @@
      "purpose_binding": "BROAD_ENTITY_SEARCH bounded state search",
      "admission": "native",
      "completeness": "partial",
-     "detail": "Bounded search of states by domain/name to enumerate template.* entities; state only. (Researched for: template, filter, statistics.)",
+     "detail": "Bounded state search by domain or name (sensor, binary_sensor and the other output domains); state alone does not identify the creating helper integration. (Researched for: template, filter, statistics.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -2366,13 +2394,12 @@
    "gaps": [
     {
      "id": "RCG-034",
-     "missing": "UI template, filter and statistics options have no standalone read; get_configuration_definitions reports definition_not_readable_without_flow.",
-     "requirement_type": "new_signed_profile",
-     "requirement": "First an owner decision: HAMCP-232 OD-1 says the options baseline is never a general read. If reversed, a new signed read-only profile that opens the options flow, reads suggested values and aborts, with no submit reachable, bounded redaction, its own audit event and negative tests. The existing write-capable options profile must not be reused as a read path.",
+     "missing": "No native or Engineering-native read of UI template, filter and statistics options: get_configuration_definitions reports definition_not_readable_without_flow (Core metadata only). The delegated ha_config_list_helpers list can return ConfigEntry.options where the reviewed ha-mcp version and component path support it: verified for filter (HAMCP-230), unverified for template and statistics.",
+     "requirement_type": "feature_work",
+     "requirement": "First, per-type source or fixture evidence of what the admitted delegated list returns and what stays absent, without opening or submitting an options flow. Only if a needed field is absent: an owner decision on HAMCP-232 OD-1 (the options baseline is never a general read) and, if reversed, a new signed read-only options profile (open, read suggested values, abort; no submit reachable; bounded redaction; own audit event; negative tests). The existing write-capable options profile must not be reused as a read path. This authorizes no new component or route.",
      "register": [
       "HAMCP-230",
-      "HAMCP-232",
-      "HAMCP-264"
+      "HAMCP-232"
      ],
      "refs": [
       {
@@ -2471,11 +2498,12 @@
     },
     {
      "id": "RCG-039",
-     "missing": "ha_config_list_helpers flow types need the ha_mcp_tools custom component; availability and whether it returns ConfigEntry.options are unverified.",
+     "missing": "ha_config_list_helpers flow types need the ha_mcp_tools custom component; its availability is unverified, and options content is evidenced for filter only.",
      "requirement_type": "owner_decision",
-     "requirement": "Decide whether the component is a supported dependency (custom-component use was ruled out by an owner decision on 2026-10-21) and record per-version evidence.",
+     "requirement": "Record per-type, per-version evidence of what the delegated list returns (filter evidence exists in HAMCP-230). Whether the component becomes a supported dependency of Engineering's own readers is an owner decision (ruled out on 2026-10-21); nothing here changes that.",
      "register": [
-      "HAMCP-132"
+      "HAMCP-132",
+      "HAMCP-230"
      ],
      "refs": [
       {
@@ -2497,7 +2525,7 @@
    "name": "Other config-entry helpers (UI)",
    "group": "UI helpers",
    "completeness": "partial",
-   "completeness_reason": "YAML definitions readable from configuration.yaml for the allowlisted platforms; UI config-entry helpers expose entry metadata only; no write path.",
+   "completeness_reason": "Native: YAML definitions from configuration.yaml for the allowlisted platforms, and only Core entry metadata for UI helpers. Delegated: ha_config_list_helpers can return ConfigEntry.options where the reviewed ha-mcp version and its component path support it (unverified for these types). No options-flow baseline and no write path.",
    "read_paths": [
     {
      "tool": "get_configuration_definitions",
@@ -2550,7 +2578,7 @@
      "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (argument_restrictions, schema fingerprint 853fbabc); earlier policies 8a743a0f / c25b0b38",
      "admission": "upstream:ha_config_list_helpers automatic_read (7.14.x-8.6.0 policy JSONs); Core gating core.basic_websocket_read",
      "completeness": "partial",
-     "detail": "helper_type=derivative (flow type) lists UI config-entry helpers. Requires ha_mcp_tools >=1.1.0; otherwise COMPONENT_NOT_INSTALLED -> capability_unavailable. Whether options are returned is NOT verified. Install state unknown. (Researched for: derivative, integration, min_max, history_stats, threshold, trend, utility_meter, sql, group.)",
+     "detail": "helper_type=<flow type> lists UI config-entry helpers through ha-mcp's component helper-list path. Requires the ha_mcp_tools custom component (>=1.1.0); otherwise COMPONENT_NOT_INSTALLED maps to capability_unavailable, and its install state is unknown from source. At the reviewed ha-mcp 8.5.0 source (311d6dc273fb4e9a5b8cde0de15f69472a64fe44, src/ha_mcp/tools/tools_config_helpers.py:3705-3728, records obtained through the component helper-list path from :4072), each flow-helper record preserves ConfigEntry.options; the 8.5.0 policy classifies the tool automatic_read without argument restrictions. ConfigEntry.options is not ConfigEntry.data and is not proof of a complete definition for every type. Engineering's own readers do not use component commands (owner decision 2026-10-21); this delegated read is a separate, conditional path. Options content: unverified for each of these types; unverified means not yet evidenced, not impossible. (Researched for: derivative, integration, min_max, history_stats, threshold, trend, utility_meter, sql, group.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_8_6.py",
@@ -2569,9 +2597,9 @@
    "gaps": [
     {
      "id": "RCG-040",
-     "missing": "UI options of derivative, integration, min_max, history_stats, threshold, trend, utility_meter, sql and group helpers are neither readable nor updatable.",
+     "missing": "UI options of derivative, integration, min_max, history_stats, threshold, trend, utility_meter, sql and group helpers are not updatable. Native reads return entry metadata only; whether the delegated helper list returns their options is unverified.",
      "requirement_type": "new_signed_profile",
-     "requirement": "Owner scope decision, then step-catalog entries with Core flow evidence and a new version of the helper-options profile (update) or a read-only options profile (read, see the template row).",
+     "requirement": "Read: per-type evidence of the delegated list first. Update: owner scope decision, then step-catalog entries with Core flow evidence and a new version of the helper-options profile. A read-only options profile only if delegated reads prove insufficient and OD-1 is reversed (see RCG-034).",
      "register": [
       "HAMCP-230",
       "HAMCP-232"
@@ -2645,8 +2673,8 @@
    "id": "helpers_not_modelled",
    "name": "Helper types Engineering does not model",
    "group": "UI helpers",
-   "completeness": "unavailable",
-   "completeness_reason": "switch_as_x, tod, random, generic_thermostat, generic_hygrostat and mold_indicator are outside Engineering's closed helper integration set; only the delegated helper list can name them.",
+   "completeness": "partial",
+   "completeness_reason": "switch_as_x, tod, random, generic_thermostat, generic_hygrostat and mold_indicator are outside Engineering's closed helper integration set, so no native read sees them. Only the delegated helper list names them, and it can return ConfigEntry.options where the reviewed ha-mcp version and its component path support it (unverified for these types). No write path.",
    "read_paths": [
     {
      "tool": "ha_config_list_helpers",
@@ -2654,7 +2682,7 @@
      "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (argument_restrictions, schema fingerprint 853fbabc); earlier policies 8a743a0f / c25b0b38",
      "admission": "upstream:ha_config_list_helpers automatic_read (7.14.x-8.6.0 policy JSONs); Core gating core.basic_websocket_read",
      "completeness": "partial",
-     "detail": "helper_type=switch_as_x (flow type) lists UI config-entry helpers. Requires ha_mcp_tools >=1.1.0; otherwise COMPONENT_NOT_INSTALLED -> capability_unavailable. Whether options are returned is NOT verified. Install state unknown. (Researched for: switch_as_x, tod, random, generic_thermostat, generic_hygrostat, mold_indicator.)",
+     "detail": "helper_type=<flow type> lists UI config-entry helpers through ha-mcp's component helper-list path. Requires the ha_mcp_tools custom component (>=1.1.0); otherwise COMPONENT_NOT_INSTALLED maps to capability_unavailable, and its install state is unknown from source. At the reviewed ha-mcp 8.5.0 source (311d6dc273fb4e9a5b8cde0de15f69472a64fe44, src/ha_mcp/tools/tools_config_helpers.py:3705-3728, records obtained through the component helper-list path from :4072), each flow-helper record preserves ConfigEntry.options; the 8.5.0 policy classifies the tool automatic_read without argument restrictions. ConfigEntry.options is not ConfigEntry.data and is not proof of a complete definition for every type. Engineering's own readers do not use component commands (owner decision 2026-10-21); this delegated read is a separate, conditional path. Options content: unverified for each of these types; unverified means not yet evidenced, not impossible. (Researched for: switch_as_x, tod, random, generic_thermostat, generic_hygrostat, mold_indicator.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_8_6.py",
@@ -2689,9 +2717,9 @@
     },
     {
      "id": "RCG-044",
-     "missing": "UI options of these helpers are neither readable nor updatable.",
+     "missing": "UI options of these helpers are not updatable; whether the delegated helper list returns them is unverified.",
      "requirement_type": "new_signed_profile",
-     "requirement": "As for the other config-entry helpers: owner scope, step catalog, signed profile version.",
+     "requirement": "As for the other config-entry helpers: per-type evidence of the delegated list first; for update, owner scope, step catalog and a signed profile version.",
      "register": [
       "HAMCP-230",
       "HAMCP-232"
@@ -2716,7 +2744,7 @@
    "name": "Dashboard content (storage-mode Lovelace configuration)",
    "group": "Dashboards",
    "completeness": "partial",
-   "completeness_reason": "Metadata inventory is complete-or-truncated and small dashboards read exactly, but get_dashboard_config returns nothing above ~44 KB sanitized; only integrity analysis (findings only) can see larger dashboards. The same limit blocks governed update planning, readback and metadata planning fingerprints.",
+   "completeness_reason": "Metadata inventory is complete-or-truncated and small dashboards read exactly, but get_dashboard_config returns nothing above ~44 KB sanitized; only integrity analysis (findings only) can see larger dashboards. The same limit blocks governed update planning, readback and metadata planning fingerprints. The dependency index's own dashboard scan is bounded to 6 s and read 0 of 6 dashboards at live scale on beta.55 (RCG-093, HAMCP-277), so dashboard-only references were not established at that scale.",
    "read_paths": [
     {
      "tool": "list_dashboards",
@@ -2825,6 +2853,41 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/mcp.py",
        "line": 22,
        "anchor": "REQUIRED_DASHBOARD_TOOL = \"ha_config_get_dashboard\""
+      }
+     ]
+    },
+    {
+     "tool": "internal:dependency_dashboard_scan",
+     "provider": "dependency_provider dashboard reader (one session, one list, then per-dashboard reads)",
+     "purpose_binding": "HAMCP-227 diagnostic reference store (dependency index build); not client-selectable",
+     "admission": "same upstream dashboard read admission as get_dashboard_config; started concurrently with the other dependency sources at scan start",
+     "completeness": "partial",
+     "detail": "collect_dashboard_sources reads each listed dashboard once inside one DASHBOARD_SCAN_SECONDS = 6.0 budget covering session, list and reads; no read starts after the deadline, and unread dashboards are counted (dashboard_not_read, dashboard_scan_budget_exhausted). This bound is distinct from get_dashboard_config's response-size bound (RCG-045). Architect-reported live result (HAMCP-277, beta.55, 2026-11-01): 0 of 6 dashboards read, dashboard_not_read 6, dashboard_scan_budget_exhausted 1. The cause is not established from source (the collector starts its own deadline).",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/global_sources.py",
+       "line": 42,
+       "anchor": "DASHBOARD_SCAN_SECONDS = 6.0"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/global_sources.py",
+       "line": 368,
+       "anchor": "async def collect_dashboard_sources("
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/global_sources.py",
+       "line": 379,
+       "anchor": "deadline = started + DASHBOARD_SCAN_SECONDS"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/global_sources.py",
+       "line": 502,
+       "anchor": "errors[\"dashboard_scan_budget_exhausted\"] += 1"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+       "line": 750,
+       "anchor": "asyncio.create_task(collect_dashboard_sources(reader, secret=self.secret))"
       }
      ]
     }
@@ -2945,6 +3008,22 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
        "line": 777,
        "anchor": "\"lovelace/dashboards/create\""
+      }
+     ]
+    },
+    {
+     "id": "RCG-093",
+     "missing": "Dashboard references in the dependency index at live scale. Architect-reported HAMCP-227 acceptance on beta.55 (2026-11-01): 0 of 6 dashboards read (dashboard_not_read 6, dashboard_scan_budget_exhausted 1, bound DASHBOARD_SCAN_SECONDS 6). Dashboard-only references were not established at that scale; the cause is not established.",
+     "requirement_type": "feature_work",
+     "requirement": "Establish the cause, then make the bounded scan read as many dashboards as truthfully fit and report the rest, without unbounding the scan or weakening counted partial reporting (HAMCP-277). Distinct from RCG-045 (large-body readback, HAMCP-273).",
+     "register": [
+      "HAMCP-277"
+     ],
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/global_sources.py",
+       "line": 42,
+       "anchor": "DASHBOARD_SCAN_SECONDS = 6.0"
       }
      ]
     }
@@ -3484,16 +3563,16 @@
    "id": "area_registry",
    "name": "Area registry",
    "group": "Registries",
-   "completeness": "complete",
-   "completeness_reason": "Readable completely; no writes.",
+   "completeness": "partial",
+   "completeness_reason": "The whole registry is acquired, but list_areas delivery truncates above 60,000 characters with no continuation; complete below that bound. No writes.",
    "read_paths": [
     {
      "tool": "list_areas",
      "provider": "direct_ha_api (config/area_registry/list WebSocket)",
      "purpose_binding": "DIRECT_HA_READ_POLICIES complete_area_registry_read",
      "admission": "transitional_direct exception; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
-     "completeness": "complete",
-     "detail": "Whole area registry dump (no filter/limit; matrix completeness complete). Provider output passes the response-size limit machinery.",
+     "completeness": "partial",
+     "detail": "Whole area registry dump (no filter/limit). Provider output passes the response-size limit machinery. Delivery is truncated at MAX_CHARS (60,000) characters with a marker and no continuation argument, so the read is complete only below that bound.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -3514,6 +3593,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
        "line": 264,
        "anchor": "\"list_areas\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
+       "line": 87,
+       "anchor": "def dump(data: Any) -> str:"
       }
      ]
     },
@@ -5885,7 +5969,7 @@
    "helper_type": "template",
    "source": "helpers_options_supported",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. Options-flow baseline: governed planning only (OD-1).",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5905,7 +5989,7 @@
    "helper_type": "filter",
    "source": "helpers_options_supported",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options returned (verified, HAMCP-230). Options-flow baseline: governed planning only (OD-1).",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5925,7 +6009,7 @@
    "helper_type": "statistics",
    "source": "helpers_options_supported",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. Options-flow baseline: governed planning only (OD-1).",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5945,7 +6029,7 @@
    "helper_type": "derivative",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5962,7 +6046,7 @@
    "helper_type": "integration",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5979,7 +6063,7 @@
    "helper_type": "min_max",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -5996,7 +6080,7 @@
    "helper_type": "history_stats",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6013,7 +6097,7 @@
    "helper_type": "threshold",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6030,7 +6114,7 @@
    "helper_type": "trend",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6047,7 +6131,7 @@
    "helper_type": "utility_meter",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6064,7 +6148,7 @@
    "helper_type": "sql",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6081,7 +6165,7 @@
    "helper_type": "group",
    "source": "helpers_options_other",
    "definition_store": "config entry or YAML",
-   "ui_definition_read": "metadata only (options need a flow)",
+   "ui_definition_read": "Native reads: entry metadata only. Delegated list: options unverified. ",
    "yaml_definition_read": "configuration.yaml (allowlisted keys)",
    "definition_completeness": "partial",
    "governed_create": "none",
@@ -6098,9 +6182,9 @@
    "helper_type": "switch_as_x",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",
@@ -6114,9 +6198,9 @@
    "helper_type": "tod",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",
@@ -6130,9 +6214,9 @@
    "helper_type": "random",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",
@@ -6146,9 +6230,9 @@
    "helper_type": "generic_thermostat",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",
@@ -6162,9 +6246,9 @@
    "helper_type": "generic_hygrostat",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",
@@ -6178,9 +6262,9 @@
    "helper_type": "mold_indicator",
    "source": "helpers_not_modelled",
    "definition_store": "config entry",
-   "ui_definition_read": "delegated list only (needs ha_mcp_tools)",
+   "ui_definition_read": "Delegated list only (needs ha_mcp_tools); options unverified.",
    "yaml_definition_read": "none",
-   "definition_completeness": "unavailable",
+   "definition_completeness": "partial",
    "governed_create": "none",
    "governed_update": "none",
    "governed_delete": "none",

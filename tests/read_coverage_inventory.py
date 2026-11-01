@@ -54,6 +54,7 @@ GENERATED_END = "<!-- END GENERATED -->"
 COMPLETENESS = ("complete", "partial", "unavailable")
 REQUIREMENT_TYPES = (
     "new_reader_purpose",
+    "new_reader_contract",
     "new_signed_profile",
     "upstream_admission",
     "impossible_via_ha_api",
