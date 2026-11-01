@@ -12,6 +12,17 @@ changes. Rollback is reinstalling beta.54. Read the
 [2.4.1-beta.55 release notes](docs/V2_4_1_BETA55_RELEASE_NOTES.md) and the
 [2.4.1-beta.55 acceptance contract](docs/V2_4_1_BETA55_ACCEPTANCE.md).
 
+Not yet released: Engineering **2.4.1-beta.54** (HAMCP-263) lets a
+dispatched governed dashboard update reach a truthful terminal outcome
+through one read-only readback, never a redispatch. It settles a
+dashboard child stranded under an already-terminal parent without
+changing that parent, and releases the expired locks such a child kept,
+which blocked later governed configuration applies. No tool, input
+schema, persisted format or Home Assistant write changes. It builds on
+beta.53. Rollback is reinstalling beta.53. Read the
+[2.4.1-beta.54 release notes](docs/V2_4_1_BETA54_RELEASE_NOTES.md) and the
+[2.4.1-beta.54 acceptance contract](docs/V2_4_1_BETA54_ACCEPTANCE.md).
+
 Staged, not yet released: Engineering **2.4.1-beta.53** (HAMCP-071) builds
 a governed edit of one existing UI-managed scene, inactive. The new tool
 `create_scene_configuration_plan` proposes `name`, `icon` and member-state
