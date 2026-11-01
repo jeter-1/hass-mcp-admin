@@ -14,7 +14,8 @@ from typing import Any
 from ..clients.paths import rest_path
 from ..clients.rest import ExpectedHttpStatus
 from ..dependency.models import SOURCE_TYPES
-from ..dependency.service import select_dependency_findings
+from ..dependency.global_sources import GLOBAL_SOURCE_TYPES
+from ..dependency.service import merged_coverage, select_dependency_findings
 from ..errors import EntityNotFoundError, ErrorCode, GovernanceError
 from ..providers import (
     EngineeringEvidenceProvider,
@@ -74,6 +75,12 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         """Expose only the committed dependency-index identity for cursor checks."""
 
         return self.index.active_identity()
+
+    def active_diagnostic_identity(self) -> str:
+        """The committed diagnostic partition as visible now (authority rechecked)."""
+
+        global_sources = getattr(getattr(self.index, "snapshot", None), "global_sources", None)
+        return global_sources.visible().fingerprint if global_sources is not None else ""
 
     async def fetch(self, request: EvidenceRequest) -> ProviderResult:
         started = time.perf_counter()
@@ -342,8 +349,14 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 evidence[reference.reference_id] = reference
             del replacement_state
 
+        # HAMCP-227: the scene, group and dashboard diagnostic partition adds
+        # references (and its real coverage) without entering the snapshot
+        # fingerprint that pagination and governance bind to.
+        global_sources = getattr(snapshot, "global_sources", None)
+        global_sources = global_sources.visible() if global_sources is not None else None
         direct, selected = select_dependency_findings(
-            snapshot.findings,
+            tuple(snapshot.findings)
+            + (tuple(global_sources.findings) if global_sources is not None else ()),
             entity_id,
             requested,
             include_indirect=bool(query["include_indirect"]),
@@ -455,7 +468,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             evidence[reference.reference_id] = reference
 
         static_coverage = self._static_coverage(
-            snapshot.coverage,
+            merged_coverage(snapshot.coverage, None, global_sources),
             requested,
             dependencies,
             rebuilt=rebuilt,
@@ -524,6 +537,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         direct_dependencies = [item for item in dependencies if item["direct"]]
         indirect_dependencies = [item for item in dependencies if not item["direct"]]
         return ImpactEvidenceBundle(
+            diagnostic_fingerprint=(
+                global_sources.fingerprint if global_sources is not None else ""
+            ),
             entity_id=entity_id,
             operation=operation,
             replacement_entity_id=replacement,
@@ -738,10 +754,12 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 duration = 0.0
             else:
                 completeness = item.completeness
-                if completeness in {"unavailable", "unsupported"} and source_type not in {
-                    "automation",
-                    "blueprint",
-                }:
+                partition = source_type in GLOBAL_SOURCE_TYPES and item.provider != "none"
+                if (
+                    completeness in {"unavailable", "unsupported"}
+                    and source_type not in {"automation", "blueprint"}
+                    and not partition
+                ):
                     completeness = "not_supported"
                 warnings = list(item.warnings)
                 failed = item.failed_item_count
@@ -770,12 +788,20 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             output.append(
                 ImpactSourceCoverage(
                     source_type,
-                    "direct_ha_api" if selected else "none",
+                    (
+                        # A partition row names the provider that read it, or
+                        # "none" when nothing was read (templates, no reader).
+                        item.provider
+                        if selected and item is not None and source_type in GLOBAL_SOURCE_TYPES
+                        else "direct_ha_api" if selected else "none"
+                    ),
                     (
                         ProviderCapability.AUTOMATION_CONFIG.value
                         if source_type == "automation"
                         else ProviderCapability.BLUEPRINT_SOURCE.value
                         if source_type == "blueprint"
+                        else item.provider_capability
+                        if item is not None and source_type in GLOBAL_SOURCE_TYPES
                         else f"{source_type}_configuration"
                     ),
                     completeness,

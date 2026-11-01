@@ -641,8 +641,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         }
     )
 
-    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0, script_reader_factory=None):
+    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0, script_reader_factory=None, dashboard_reader_factory=None):
         self.script_reader_factory = script_reader_factory
+        # HAMCP-227: the reviewed dashboard reader; None reports dashboards unavailable.
+        self.dashboard_reader_factory = dashboard_reader_factory
         self.rest_client = rest_client
         self.websocket_client = websocket_client
         self.secret = secret
@@ -739,6 +741,23 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
 
     async def scan(self) -> DependencyScanResult:
+        """Read every source; dashboards are read concurrently and never outlive the scan."""
+        from .global_sources import collect_dashboard_sources
+        from .script_sources import create_script_reader
+
+        reader = create_script_reader(self.dashboard_reader_factory)
+        dashboard_task = (
+            asyncio.create_task(collect_dashboard_sources(reader, secret=self.secret))
+            if reader is not None else None
+        )
+        try:
+            return await self._scan_sources(dashboard_task)
+        finally:
+            if dashboard_task is not None and not dashboard_task.done():
+                dashboard_task.cancel()
+                await asyncio.gather(dashboard_task, return_exceptions=True)
+
+    async def _scan_sources(self, dashboard_task) -> DependencyScanResult:
         # Import after the dependency package is initialized; governance uses
         # this shared index at runtime and a module-level import would create a
         # package initialization cycle.
@@ -1854,6 +1873,27 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             request_counts["delegated_script_configuration"] += script_diagnostics.profile["read_attempts"]
             request_time_ms["delegated_script_configuration"] += script_diagnostics.profile["read_time_ms"]
             maximum_concurrency = max(maximum_concurrency, script_diagnostics.profile["maximum_concurrent_reads"])
+        # HAMCP-227: scenes, groups and templates reuse the inventories read
+        # above (no request); dashboards come from the concurrent reviewed reads.
+        from .global_sources import collect_global_sources
+        dashboards = None
+        if dashboard_task is not None:
+            try:
+                dashboards = await dashboard_task
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                dashboards = None
+        global_sources = await collect_global_sources(
+            states, registry, registry_complete=entity_registry_complete,
+            secret=self.secret, dashboards=dashboards,
+        )
+        dashboard_profile = global_sources.profile["dashboard"]
+        if dashboard_profile["list_requests"]:
+            request_counts["dashboard_list"] += dashboard_profile["list_requests"]
+        if dashboard_profile["read_attempts"]:
+            request_counts["dashboard_configuration"] += dashboard_profile["read_attempts"]
+            request_time_ms["dashboard_configuration"] += dashboard_profile["read_time_ms"]
         return DependencyScanResult(
             findings,
             dynamic,
@@ -1895,6 +1935,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     "not_loaded": pending_not_loaded,
                 },
                 "script_diagnostics": script_diagnostics.profile if script_diagnostics is not None else {},
+                "global_sources": global_sources.profile,
                 "dependency_obligation_count": len(obligations),
                 "dependency_coverage_failure_count": sum(
                     item.outcome == "coverage_failure"
@@ -1925,6 +1966,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             home_assistant_version_status=home_assistant_version_status,
             semantic_evidence=semantic_evidence,
             script_diagnostics=script_diagnostics,
+            global_sources=global_sources,
             state_trigger_values=state_trigger_values,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,

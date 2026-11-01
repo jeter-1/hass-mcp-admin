@@ -180,8 +180,11 @@ remain enforced. Cancellation and deadlines do not guarantee remote abort.
 Dependency diagnostics add bounded script evidence through the admitted internal
 reader, retaining canonical renamed/disabled identity and explicit partial
 inventory. This separate index partition does not expand the helper execution
-ledger. Scene, group, template and dashboard configuration coverage remains
-unavailable; dynamic references and script blueprint bodies remain opaque. See
+ledger. Since 2.4.1-beta.55 (HAMCP-227), a second diagnostic partition adds
+scene and group loaded membership and reviewed dashboard reads to dependency
+and impact analysis, outside the governance-bound index. Template coverage
+remains unavailable (HAMCP-264); dynamic references and script blueprint
+bodies remain opaque. See
 [dependency coverage](../docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
 Beta.3 cannot read beta.4's new Core-bound fan/power records. Preserve current

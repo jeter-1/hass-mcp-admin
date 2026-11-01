@@ -188,6 +188,9 @@ class ImpactEvidenceBundle:
     confirmed_target_related_dynamic_count: int = 0
     unresolved_in_requested_scope_count: int = 0
     dynamic_outside_requested_scope_count: int = 0
+    # HAMCP-227: the visible diagnostic partition the findings were taken from;
+    # pagination binds to it, outside the governance-bound index fingerprint.
+    diagnostic_fingerprint: str = ""
 
     @property
     def required_coverage_complete(self) -> bool:

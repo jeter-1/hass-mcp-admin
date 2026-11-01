@@ -74,7 +74,9 @@ EMPTY = BoundedSources((), 0, 0, 0)
 def bound_table() -> dict[str, tuple[str, int]]:
     """``reason_code`` to ``(constant name, value)`` for every fixed bound."""
 
+    from ..dashboard_analysis import contracts as d
     from . import extraction as e
+    from . import global_sources as g
     from . import index as i
     from . import obligation_ledger as o
     from . import provider as p
@@ -120,6 +122,18 @@ def bound_table() -> dict[str, tuple[str, int]]:
         "blueprint_input_resolution_limit_exceeded": bound(p, "MAX_BLUEPRINT_RESOLUTION_NODES"),
         "blueprint_source_limit_exceeded": bound(p, "MAX_BLUEPRINT_SOURCE_BYTES"),
         "dependency_obligation_index_overflow": bound(i, "MAX_DEPENDENCY_OBLIGATIONS"),
+        # HAMCP-227: scene, group and dashboard diagnostic partition.
+        "scene_member_limit_exceeded": bound(g, "MAX_MEMBERS_PER_SOURCE"),
+        "group_member_limit_exceeded": bound(g, "MAX_MEMBERS_PER_SOURCE"),
+        "scene_finding_limit_exceeded": bound(g, "MAX_MEMBERSHIP_FINDINGS"),
+        "group_finding_limit_exceeded": bound(g, "MAX_MEMBERSHIP_FINDINGS"),
+        "scene_inventory_limit_exceeded": bound(g, "MAX_SCENE_SOURCES"),
+        "group_inventory_limit_exceeded": bound(g, "MAX_GROUP_SOURCES"),
+        "dashboard_inventory_limit_exceeded": bound(g, "MAX_DEPENDENCY_DASHBOARDS"),
+        "dashboard_finding_limit_exceeded": bound(g, "MAX_DASHBOARD_FINDINGS"),
+        "dashboard_projection_limit_exceeded": bound(d, "ITEMS"),
+        "dashboard_document_limit_exceeded": bound(d, "DASHBOARD_BYTES"),
+        "dashboard_scan_budget_exhausted": bound(g, "DASHBOARD_SCAN_SECONDS"),
     }
 
 
