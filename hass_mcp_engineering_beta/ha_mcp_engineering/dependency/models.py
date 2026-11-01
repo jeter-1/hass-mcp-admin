@@ -10,6 +10,7 @@ import json
 from typing import Any, Iterator, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .global_sources import GlobalSourceDiagnostics
     from .script_sources import ScriptDiagnostics
 
 from ..request_context import current_telemetry
@@ -547,6 +548,9 @@ class DependencyScanResult:
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
     # Diagnostic-only partition; never consumed by helper execution binding.
     script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
+    # HAMCP-227: scene, group, template and dashboard diagnostic partition;
+    # outside the obligation ledger and the fingerprint like scripts.
+    global_sources: GlobalSourceDiagnostics | None = field(default=None, repr=False, compare=False)
     # HAMCP-145: literal input_select state-trigger values for per-option
     # disclosure only.  Never fingerprinted; never dependency authority.
     state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)
@@ -597,6 +601,9 @@ class DependencyIndexSnapshot:
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
     # Diagnostic-only partition; never consumed by helper execution binding.
     script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
+    # HAMCP-227: scene, group, template and dashboard diagnostic partition;
+    # outside the obligation ledger and the fingerprint like scripts.
+    global_sources: GlobalSourceDiagnostics | None = field(default=None, repr=False, compare=False)
     # HAMCP-145: literal input_select state-trigger values for per-option
     # disclosure only.  Never fingerprinted; never dependency authority.
     state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)

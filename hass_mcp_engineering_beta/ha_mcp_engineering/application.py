@@ -381,6 +381,10 @@ def create_application(
     DEPENDENCY_ANALYSIS.require().index.provider.script_reader_factory = (
         lambda: UPSTREAM_READ_GATEWAY.script_dependency_reader(audit=audit)
     )
+    # HAMCP-227: reviewed dashboard list and analysis reads, diagnostic only.
+    DEPENDENCY_ANALYSIS.require().index.provider.dashboard_reader_factory = (
+        lambda: DASHBOARD_ANALYSIS.dependency_reader(audit=audit)
+    )
     FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     POWER_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     CORE_READMISSION.register_reconciliation_listener(

@@ -14,6 +14,7 @@ from ..observability import METRICS
 from ..untrusted_text import screen_tree
 from .bounded_sources import EMPTY as EMPTY_BOUNDED, bounded_source_entries, screening_warnings, target_availability
 from .extraction import valid_entity_id
+from .global_sources import GLOBAL_SOURCE_TYPES
 from .index import DependencyIndex
 from .models import DependencyFinding, SOURCE_TYPES, SourceCoverageItem
 from .script_calls import traverse_script_calls, MAX_GRAPH_RESULTS, MAX_GRAPH_STEPS
@@ -77,11 +78,19 @@ class EntityDependencyAnalysisService:
                 and ("script" in requested or "automation" in requested) else None
             )
 
-        def query_identity(diagnostic):
-            parts = (target, detail_level, include_indirect, max_depth, requested)
-            return _query_fingerprint(*parts, diagnostic.fingerprint) if diagnostic else _query_fingerprint(*parts)
+        def visible_globals(snapshot):
+            # HAMCP-227: scene, group, template and dashboard diagnostic partition.
+            sources = getattr(snapshot, "global_sources", None) if snapshot is not None else None
+            return sources.visible() if sources is not None else None
 
-        query_fingerprint = query_identity(visible_scripts(self.index.snapshot))
+        def query_identity(diagnostic, global_sources=None):
+            parts = (target, detail_level, include_indirect, max_depth, requested)
+            extra = tuple(item.fingerprint for item in (diagnostic, global_sources) if item is not None)
+            return _query_fingerprint(*parts, *extra) if extra else _query_fingerprint(*parts)
+
+        query_fingerprint = query_identity(
+            visible_scripts(self.index.snapshot), visible_globals(self.index.snapshot)
+        )
         offset = 0
         if cursor:
             try:
@@ -109,10 +118,15 @@ class EntityDependencyAnalysisService:
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE) from exc
 
         diagnostic = visible_scripts(snapshot)
-        if cursor and query_fingerprint != query_identity(diagnostic):
+        global_sources = visible_globals(snapshot)
+        if cursor and query_fingerprint != query_identity(diagnostic, global_sources):
             raise GovernanceError(ErrorCode.STALE_CURSOR)
-        query_fingerprint = query_identity(diagnostic)
-        analysis_findings = snapshot.findings + (diagnostic.findings if diagnostic else ())
+        query_fingerprint = query_identity(diagnostic, global_sources)
+        analysis_findings = (
+            snapshot.findings
+            + (diagnostic.findings if diagnostic else ())
+            + (global_sources.findings if global_sources else ())
+        )
         call_findings = diagnostic.call_findings if diagnostic else ()
         # Prefer the invocation classification to a duplicate structured target
         # at the same path; leave the shared snapshot untouched.
@@ -120,10 +134,7 @@ class EntityDependencyAnalysisService:
         analysis_findings = tuple(x for x in analysis_findings
             if (x.source_type, x.source_id, x.config_path, x.target_entity_id) not in call_keys) + call_findings
         analysis_dynamic = snapshot.dynamic_references + (diagnostic.dynamic_references if diagnostic else ())
-        analysis_coverage = tuple(
-            diagnostic.coverage if diagnostic and item.source_type == "script" else item
-            for item in snapshot.coverage
-        )
+        analysis_coverage = merged_coverage(snapshot.coverage, diagnostic, global_sources)
         direct, findings = select_dependency_findings(
             analysis_findings,
             target,
@@ -184,7 +195,11 @@ class EntityDependencyAnalysisService:
         # HAMCP-226: every requested-scope source that hit a bound is named,
         # whatever the target: any of them could reference it (HAAC-E002a).
         bounded = bounded_source_entries(
-            (*snapshot.obligations, *(diagnostic.bounded_obligations if diagnostic else ())),
+            (
+                *snapshot.obligations,
+                *(diagnostic.bounded_obligations if diagnostic else ()),
+                *(global_sources.bounded_obligations if global_sources else ()),
+            ),
             known_secrets=self.known_secrets(),
             source_types=requested,
         )
@@ -211,7 +226,11 @@ class EntityDependencyAnalysisService:
              # HAMCP-212: a script's evidence names the source it was read from.
              "provider": (
                  (diagnostic.provider_for(item.source_id) if diagnostic else "upstream_read_gateway")
-                 if item.source_type == "script" else "direct_ha_api"
+                 if item.source_type == "script"
+                 # HAMCP-227: scene, group and dashboard evidence names its own source.
+                 else global_sources.provider_for(item.source_type)
+                 if global_sources and item.source_type in GLOBAL_SOURCE_TYPES
+                 else "direct_ha_api"
              )}
             for item in analysis_findings if item.evidence_id in path_ids
         ]
@@ -264,7 +283,7 @@ class EntityDependencyAnalysisService:
                 "fallback_occurred": False,
             },
             "index": {
-                "fingerprint": (_query_fingerprint(snapshot.fingerprint, diagnostic.fingerprint) if diagnostic else snapshot.fingerprint)[:16],
+                "fingerprint": index_fingerprint(snapshot, diagnostic, global_sources)[:16],
                 "generation": snapshot.generation,
                 "built_at": snapshot.built_at,
                 "cache_hit": not rebuilt,
@@ -288,6 +307,29 @@ class EntityDependencyAnalysisService:
         if partial:
             METRICS.record_dependency_analysis_partial()
         return AnalysisOutput(data, list(dict.fromkeys(warnings))[:20], {"detail_level": detail_level, "partial": partial}, partial)
+
+
+def merged_coverage(coverage, scripts=None, global_sources=None) -> tuple[SourceCoverageItem, ...]:
+    """Snapshot rows with the diagnostic partitions' rows in their place.
+
+    The governance-bound snapshot keeps its own rows (and fingerprint); only
+    analysis output shows the diagnostic partitions' real completeness.
+    """
+    output = []
+    for item in coverage:
+        if scripts is not None and item.source_type == "script":
+            output.append(scripts.coverage)
+        elif global_sources is not None and item.source_type in GLOBAL_SOURCE_TYPES:
+            output.append(global_sources.coverage_for(item.source_type) or item)
+        else:
+            output.append(item)
+    return tuple(output)
+
+
+def index_fingerprint(snapshot, scripts=None, global_sources=None) -> str:
+    """The snapshot fingerprint, extended by any diagnostic partition shown."""
+    extra = tuple(item.fingerprint for item in (scripts, global_sources) if item is not None)
+    return _query_fingerprint(snapshot.fingerprint, *extra) if extra else snapshot.fingerprint
 
 
 def source_selected(item: DependencyFinding, requested: list[str]) -> bool:

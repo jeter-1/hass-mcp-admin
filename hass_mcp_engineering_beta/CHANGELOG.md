@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.4.1-beta.55 - Scene, group and dashboard reference coverage in dependency and impact analysis (HAMCP-227) (staged)
+
+Builds on 2.4.1-beta.54 (HAMCP-263, #339). Read-only. No tool,
+input schema, write path, route, fallback, persisted format, signed profile
+or snapshot fingerprint change.
+
+- `entity_dependency_analysis` and `change_impact_analysis` merge a new
+  diagnostic partition (`GlobalSourceDiagnostics`) kept outside the helper
+  obligation ledger and the snapshot fingerprint, so governance cannot be
+  downgraded and dashboard edits do not re-trigger approvals.
+- Scenes and groups: loaded membership from the `entity_id` attribute of
+  the states already read (`$.attributes.entity_id[n]`), no extra request,
+  provider `direct_ha_api`, labeled as loaded membership.
+- Dashboards: the reviewed `list_dashboards` and analysis read path plus the
+  existing walker, provider `upstream_dashboard`; one list plus one read per
+  dashboard, 4 concurrent, 6 s budget, each leased and audited.
+- `complete` only when every item was enumerated, read and parsed; a missing
+  member list, a stateless group helper, a custom card, a strategy, a
+  missing `lovelace`, truncation and a budget overrun are partial with
+  counted reasons.
+- One 6 s deadline covers the dashboard list and every read; no read starts
+  after it and in-flight work is cancelled with its lease released
+  (`dashboard_scan_budget_exhausted`, `dashboard_not_read`). An oversize
+  document is partial (`dashboard_document_limit_exceeded`).
+- `change_impact_analysis` cursors are bound to the visible diagnostic
+  partition; a continuation after dashboard authority retires or the
+  partition changes is `stale_cursor` (`diagnostic_evidence_changed`).
+- Templates and complete script enumeration are deferred (HAMCP-264) and
+  reported as unavailable with the reason and the template count.
+- Index truncation marks every source with dropped evidence partial, not
+  only automations.
+- The impact matrix reports provider `none` for a partition row nothing
+  read, instead of `direct_ha_api`.
+- Governed plans do not yet disclose these references (acceptance section
+  1.3).
+
 ## 2.4.1-beta.54 - Dashboard readback recovery settles dispatched updates; stranded post-intent locks released (HAMCP-263)
 
 Builds on 2.4.1-beta.53 (#333). No tool, input schema, route, provider,
