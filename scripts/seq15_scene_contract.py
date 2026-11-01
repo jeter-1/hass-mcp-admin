@@ -41,7 +41,8 @@ def checks(name, value):
         assert value["task_state"] == "failed_post_dispatch"
         assert value["dispatch_counts"] == [1] and value["ha_writes"] == 1
         assert value["write_types"] == [SCENE_POST]
-        assert "verification_mismatch" in value["diagnostic_codes"]
+        assert "exact_readback_not_verified" in value["diagnostic_codes"]
+        assert "exact_readback_verified" not in value["diagnostic_codes"]
         assert value["mismatch_retained"] is True and value["member_state_unchanged"] is True
     if name == "id_assignment":
         assert value == {"result": "PASS", "assigned_id_valid": True, "unrequested_keys_preserved": True}

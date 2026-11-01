@@ -2211,7 +2211,7 @@ SEQ13_UPLOAD_IF = "always() && " + SEQ13_STAGE_IF
 SEQ13_STAGE = "Stage seq-13 contract evidence paths"
 SEQ13_UPLOAD = "Upload bounded seq-13 label and availability/exposure contract evidence"
 SEQ13_DELETE_UPLOAD = "Upload bounded seq-13 configuration delete contract evidence"
-# HAMCP-232/145: seq 15 extends the candidate slot's Core only (OD-13).
+# HAMCP-269: exact-release gates apply to both reviewed October releases.
 SEQ15_STAGE_IF = "matrix.alarmo && contains(fromJSON('[\"2026.10.1\",\"2026.10.3\"]'), matrix.ha_version) && env.REAL_HA_SEQ15_LANES == 'enabled'"
 SEQ15_UPLOAD_IF = "always() && " + SEQ15_STAGE_IF
 SEQ15_STAGE = "Stage seq-15 contract evidence paths"
@@ -2244,7 +2244,7 @@ class WorkflowBindingTests(unittest.TestCase):
             SEQ13_STAGE: SEQ13_STAGE_IF,
             SEQ13_UPLOAD: SEQ13_UPLOAD_IF,
             SEQ13_DELETE_UPLOAD: SEQ13_UPLOAD_IF,
-            # HAMCP-232/145: the dormant seq-15 lanes add one stage and one upload.
+            # The five-profile batch adds an isolated seed, stage and upload.
             "Seed seq-15 disposable scene configuration": SEQ15_STAGE_IF,
             SEQ15_STAGE: SEQ15_STAGE_IF,
             SEQ15_UPLOAD: SEQ15_UPLOAD_IF,
@@ -2308,8 +2308,7 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertEqual(delete_upload["with"]["retention-days"], 14)
 
     def test_seq15_lanes_cover_all_five_profiles_on_exact_releases(self):
-        # HAMCP-232/145 (OD-14): the committed workflow keeps the seq-15 lanes off and
-        # changes no existing step; only the candidate slot would stage or upload them.
+        # All five receipts are required for both exact-release jobs.
         workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
         job = workflow["jobs"]["real-ha-contract-tests"]
         self.assertEqual(job["env"]["REAL_HA_SEQ15_LANES"], "enabled")
@@ -2322,8 +2321,7 @@ class WorkflowBindingTests(unittest.TestCase):
                           "REAL_HA_SCRIPT_TRACES_RESULT", "REAL_HA_DASHBOARD_METADATA_RESULT",
                           "REAL_HA_SCENE_CONFIGURATION_RESULT"])
         import seq15_contract_acceptance as seq15
-        # HAMCP-106: the dashboard-metadata lane's workflow entries are deferred to the
-        # November seq-15 batch; pinned exactly so wiring it forces this list to shrink.
+        # Every defined lane is wired into the evidence batch.
         self.assertEqual(seq15.WORKFLOW_PENDING_LANES, frozenset())
         self.assertTrue(seq15.WORKFLOW_PENDING_LANES <= set(seq15.LANES))
         wired = [lane for key, lane in seq15.LANES.items() if key not in seq15.WORKFLOW_PENDING_LANES]
@@ -2343,7 +2341,7 @@ class WorkflowBindingTests(unittest.TestCase):
             "${{ runner.temp }}/seq15-scene-configuration-${{ matrix.lane }}.json"])
         self.assertEqual(upload["with"]["if-no-files-found"], "error")
         self.assertEqual(upload["with"]["retention-days"], 14)
-        # The target Core is the window's candidate slot today; rotation fails the upload closed.
+        # Rotation cannot silently broaden the two exact releases.
         self.assertEqual({SLOT_VERSIONS["candidate"], SLOT_VERSIONS["current"]}, seq15.TARGET_CORES)
 
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):

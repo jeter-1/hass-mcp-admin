@@ -139,7 +139,7 @@ def scene_scenarios():
         rows[name] = refused("scene_configuration_" + reason)
     rows["stale_state"] = stale()
     rows["stored_mismatch"] = {"result": "PASS", "task_state": "failed_post_dispatch", "dispatch_counts": [1],
-                               "ha_writes": 1, "write_types": [seq15.SCENE_POST], "diagnostic_codes": ["verification_mismatch"],
+                               "ha_writes": 1, "write_types": [seq15.SCENE_POST], "diagnostic_codes": ["exact_readback_not_verified"],
                                "mismatch_retained": True, "member_state_unchanged": True}
     rows["id_assignment"] = {"result": "PASS", "assigned_id_valid": True, "unrequested_keys_preserved": True}
     return rows
@@ -172,6 +172,57 @@ def complete_receipt(lane_key, core_version=CORE):
         "engineering_command_types": sorted(lane["required_commands"]),
         "scenarios": SCENARIOS[lane_key](), "fixture_cleanup": True,
         "fixture_absence": dict.fromkeys(seq15.FIXTURE_ABSENCE, True)}
+
+
+class InputSelectDriftFixtureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_lane_drift_supplies_cores_required_name_and_preserves_state(self):
+        current = {"state": "Home", "attributes": {"options": ["Home", "Away", "Night"]}}
+        fixture, updates = {}, []
+
+        async def ok(payload):
+            if payload["type"] == "input_select/create":
+                fixture.update(id="seq15_test", name=payload["name"], options=payload["options"])
+                return dict(fixture)
+            self.assertEqual(payload["type"], "input_select/update")
+            # Exact Core STORAGE_FIELDS requires name AND options on update.
+            self.assertEqual(payload["name"], fixture["name"])
+            self.assertEqual(payload["input_select_id"], fixture["id"])
+            self.assertEqual(set(payload), {"type", "input_select_id", "name", "options"})
+            updates.append(payload)
+            current["attributes"]["options"] = payload["options"]
+
+        async def status(*_args):
+            return 200, copy.deepcopy(current)
+
+        async def plan(*_args):
+            return {"status": "no_change", "outcome": "already_desired", "plan_created": False}
+
+        async def refused_plan(*_args):
+            return refused("option_not_available")
+
+        async def apply_created(_created):
+            current["state"] = "Home"
+            return governed(seq15.SELECT_OPTION, expected="Home")
+
+        async def rollback(_plan_id):
+            return {"status": "rollback_plan_created"}, {"plan_id": "reverse"}
+
+        async def apply(_runtime, arguments, *, observed=None, between=None):
+            if between:
+                await between()
+                return stale()
+            observed["plan"] = {"plan_id": "forward"}
+            current["state"] = arguments["option"]
+            return governed(seq15.SELECT_OPTION, expected=arguments["option"])
+
+        result = await seq15._input_select_scenarios({
+            "stage": ["test"], "owned": {}, "raw": SimpleNamespace(ok=ok, status=status),
+            "runtime": None, "log": SimpleNamespace(writes=[]), "plan": plan,
+            "refused_plan": refused_plan, "governed": apply, "rollback": rollback,
+            "apply_created": apply_created})
+        self.assertEqual(len(updates), 1)
+        for name, value in result.items():
+            seq15.CHECKS["input_select_option"](name, value)
 
 
 class LaneDefinitionTests(unittest.TestCase):
@@ -590,6 +641,8 @@ class ReceiptTests(unittest.TestCase):
             "missing_preserved_key": lambda s: s["icon_clear"]["readback"].pop("id"),
             "stale_wrote": lambda s: s["stale_state"].update(ha_writes=1),
             "mismatch_passed": lambda s: s["stored_mismatch"].update(task_state="succeeded_verified"),
+            "mismatch_verified": lambda s: s["stored_mismatch"].update(diagnostic_codes=["exact_readback_verified"]),
+            "mismatch_unexplained": lambda s: s["stored_mismatch"].update(diagnostic_codes=[]),
             "mismatch_retried": lambda s: s["stored_mismatch"].update(dispatch_counts=[2]),
             "mismatch_overwritten": lambda s: s["stored_mismatch"].update(mismatch_retained=False),
             "mismatch_wrong_write": lambda s: s["stored_mismatch"].update(write_types=[seq15.SELECT_OPTION]),
@@ -913,7 +966,7 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
             (local, binding["image"].split("@")[0], CORE, binding["lane"]),
             (SimpleNamespace(ha_url="http://homeassistant.local:8123"), binding["image"], CORE, binding["lane"]),
         ]
-        # OD-13: an exactly bound 2026.10.1 or 2026.10.0 slot is still refused.
+        # Releases outside the two exact targets remain refused.
         for other in OTHER_CORES:
             own = alarmo.slot_binding(other)
             cases.append((local, own["image"], other, own["lane"]))

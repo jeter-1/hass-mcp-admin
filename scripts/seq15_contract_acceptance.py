@@ -1070,7 +1070,8 @@ async def _helper_options_scenarios(c):
 async def _input_select_scenarios(c):
     stage, owned, raw, runtime = c["stage"], c["owned"], c["raw"], c["runtime"]
     stage[0] = "fixture_setup"
-    created = await raw.ok({"type": "input_select/create", "name": "Seq15 Select " + secrets.token_hex(4),
+    fixture_name = "Seq15 Select " + secrets.token_hex(4)
+    created = await raw.ok({"type": "input_select/create", "name": fixture_name,
                             "options": ["Home", "Away", "Night"]})
     owned["input_select"] = created["id"]
     entity_id = "input_select." + owned["input_select"]
@@ -1113,7 +1114,7 @@ async def _input_select_scenarios(c):
     async def raw_drift():
         # The reviewed reorder drift (tests/test_hamcp145_input_select_option.py).
         await raw.ok({"type": "input_select/update", "input_select_id": owned["input_select"],
-                      "options": ["Away", "Home", "Night"]})
+                      "name": fixture_name, "options": ["Away", "Home", "Night"]})
     value = await c["governed"](runtime, {"entity_id": entity_id, "option": "Night", "reason": "Seq-15 stale"},
                                 between=raw_drift)
     after = await state()
