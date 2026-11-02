@@ -128,8 +128,9 @@ class Item:
     final: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
-    # HAMCP-270: information only; never in the disclosure that classification,
-    # statements or any fingerprint read.
+    # HAMCP-270: this child's entry of the informational plan disclosure;
+    # never in the disclosure that classification, statements or any
+    # fingerprint read.
     global_references: dict[str, Any] = field(default_factory=dict)
 
 
@@ -138,6 +139,8 @@ class Preparation:
     request: Request
     items: list[Item]
     plan_disclosure: dict[str, Any] = field(default_factory=dict)
+    # HAMCP-270: the one informational ``global_source_consumers`` block.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
     def item(self, operation_id: str) -> Item:
         for candidate in self.items:
@@ -681,6 +684,7 @@ async def prepare(
     items: list[Item] = []
     expose_new: dict[str, Any] = {}
     global_limit = global_reference_disclosure.per_child_limit(len(entries))
+    global_context = global_reference_disclosure.read(global_reader)
     if request.assistant is not None:
         try:
             expose_new[request.assistant] = await gateway.expose_new(request.assistant)
@@ -785,8 +789,8 @@ async def prepare(
                 final=final,
                 disclosure=disclosure,
                 classification=classify(request.operation, disclosure),
-                global_references=global_reference_disclosure.disclose(
-                    global_reader, (entity_id,), limit=global_limit
+                global_references=global_reference_disclosure.child(
+                    global_context, (entity_id,), limit=global_limit,
                 ),
             )
         )
@@ -803,6 +807,10 @@ async def prepare(
             "provider": PROVIDERS[request.resource_type],
             "fallback": "none",
         },
+        global_references=global_reference_disclosure.plan_block(
+            global_context, [item.global_references for item in items],
+            limit=global_limit,
+        ),
     )
 
 
@@ -811,7 +819,6 @@ def projection(prepared: Preparation, item: Item, *, plan_id: str | None = None)
 
     return {
         **item.disclosure,
-        global_reference_disclosure.KEY: item.global_references,
         "final": {
             "disabled_by": item.final.get("disabled_by"),
             "exposure": {

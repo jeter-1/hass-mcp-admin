@@ -5,11 +5,13 @@ plans disclose the HAMCP-227 global-source findings for their targets before
 approval.  The disclosure is information only:
 
 * it is built from ``global_sources.visible()`` of the dependency snapshot the
-  index already holds (never a build or refresh, so no new Home Assistant
-  read is sent);
-* it is projected as the ``global_source_consumers`` sibling of the bound
-  consumer evidence and is never part of a consumer fingerprint, plan hash,
-  policy subject or decision hash, semantic projection or approval binding;
+  index already holds, read once per plan (never a build or refresh, so no
+  new Home Assistant read is sent);
+* it is projected once per plan response as
+  ``dry_run_results.global_source_consumers``: the shared coverage context,
+  then one entry per child naming that child's targets.  It is never part of
+  a consumer fingerprint, plan hash, policy subject or decision hash,
+  semantic projection or approval binding;
 * it never raises or lowers risk or policy;
 * an absent or unreadable store is disclosed as ``unavailable``; it is never
   a refusal and never "no references".
@@ -17,6 +19,7 @@ approval.  The disclosure is information only:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
 KEY = "global_source_consumers"
@@ -25,30 +28,24 @@ MODEL = "global_source_consumers_v1"
 SOURCE_TYPES = ("scene", "group", "dashboard", "template")
 REFERENCE_SOURCE_TYPES = ("scene", "group", "dashboard")
 COMPLETENESS = ("complete", "partial", "unavailable")
-SOURCE_LABELS = {
-    "scene": "scenes",
-    "group": "groups",
-    "dashboard": "dashboards",
-    "template": "templates",
-}
-# Every child carries its own copy (twice in a plan response), so one plan
-# shares a small item budget and each copy has a fixed upper size.
+# One plan shares a small item budget; display fields have fixed caps.
 MAX_REFERENCES = 8
 MAX_PLAN_REFERENCES = 8
 MAX_REASON = 120
-MAX_NAME = 64
-MAX_ID = 96
-MAX_LOCATION = 96
+MAX_NAME = 24
+MAX_ID = 32
+MAX_RELATION = 20
+MAX_LOCATION = 32
 MAX_STATEMENT = 200
 INFORMATIONAL_STATEMENT = (
-    "Information only: these references are not approval-bound and never "
-    "change risk, policy or approval."
+    "Information only: not approval-bound; never changes risk, policy or approval."
 )
 MEMBERSHIP_STATEMENT = (
-    "Scene and group references reflect loaded membership, not stored configuration."
+    "Scene/group references are loaded membership, not stored configuration."
 )
 BOUND_COVERAGE_STATEMENT = (
-    "Coverage notes in the bound consumer evidence describe that evidence only."
+    "Bound note dashboards_scripts_and_templates_not_scanned describes the "
+    "risk evidence, not these references."
 )
 UNAVAILABLE_REASONS = (
     "dependency_snapshot_not_held",
@@ -57,6 +54,40 @@ UNAVAILABLE_REASONS = (
 )
 
 SnapshotReader = Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class Reference:
+    """One screened finding, keyed by its full original identity."""
+
+    source_type: str
+    source_id: str | None
+    target: str
+    location: str | None
+    relation: str | None
+    name: str | None
+    conditional: bool | None
+
+    @property
+    def identity(self) -> tuple[str, ...]:
+        return (self.source_type, str(self.source_id), self.target,
+                str(self.location), str(self.relation))
+
+    @property
+    def order(self) -> tuple[Any, ...]:
+        return (SOURCE_TYPES.index(self.source_type), self.source_id or "",
+                self.target, self.location or "", self.relation or "")
+
+
+@dataclass(frozen=True)
+class Context:
+    """The one held-snapshot read a plan's disclosure is built from."""
+
+    status: str
+    reason: str | None
+    sources: tuple[dict[str, Any], ...]
+    references: tuple[Reference, ...] = ()
+    provenance: dict[str, Any] | None = None
 
 
 def per_child_limit(children: int) -> int:
@@ -94,7 +125,7 @@ def _visible(snapshot: Any | None) -> tuple[Any | None, str | None]:
         return None, "global_source_diagnostics_unreadable"
 
 
-def _source_rows(visible: Any | None) -> list[dict[str, Any]]:
+def _source_rows(visible: Any | None) -> tuple[dict[str, Any], ...]:
     rows = []
     for source_type in SOURCE_TYPES:
         coverage = None
@@ -117,127 +148,169 @@ def _source_rows(visible: Any | None) -> list[dict[str, Any]]:
             if warnings:
                 value["reason"] = warnings[0]
         rows.append(value)
-    return rows
+    return tuple(rows)
 
 
-def _references(visible: Any | None, targets: tuple[str, ...]) -> list[dict[str, Any]]:
-    if visible is None:
-        return []
-    wanted = set(targets)
-    seen: dict[tuple[str, ...], dict[str, Any]] = {}
+def _references(visible: Any) -> tuple[Reference, ...]:
+    """Deduplicate and order on the full original identity, before display."""
+
+    seen: dict[tuple[str, ...], Reference] = {}
     for finding in getattr(visible, "findings", ()) or ():
         source_type = getattr(finding, "source_type", None)
         target = getattr(finding, "target_entity_id", None)
-        if source_type not in REFERENCE_SOURCE_TYPES or target not in wanted:
+        if source_type not in REFERENCE_SOURCE_TYPES or not isinstance(target, str):
             continue
-        reference = {
-            "target_entity_id": target,
-            "source_type": source_type,
-            "source_id": _text(getattr(finding, "source_id", None), MAX_ID),
-            "source_name": _text(getattr(finding, "source_name", None), MAX_NAME),
-            "relation": _text(getattr(finding, "relation", None), MAX_ID),
-            "location": _text(getattr(finding, "config_path", None), MAX_LOCATION),
-        }
+        conditional = None
         if source_type == "dashboard":
             summary = getattr(finding, "evidence_summary", "") or ""
-            reference["conditional"] = "under a condition" in summary
-        key = tuple(str(reference.get(name)) for name in (
-            "target_entity_id", "source_type", "source_id", "relation", "location",
-        ))
-        seen.setdefault(key, reference)
-    order = {name: index for index, name in enumerate(SOURCE_TYPES)}
-    return sorted(seen.values(), key=lambda item: (
-        order[item["source_type"]], item["source_id"] or "", item["target_entity_id"],
-        item["location"] or "", item["relation"] or "",
-    ))
-
-
-def _statements(
-    status: str,
-    reason: str | None,
-    sources: list[dict[str, Any]],
-    count: int,
-    shown: int,
-) -> list[str]:
-    statements = [INFORMATIONAL_STATEMENT, MEMBERSHIP_STATEMENT]
-    if status == "unavailable":
-        statements.append(
-            f"References are unavailable ({reason}); this is not proof that "
-            "nothing references the target. Planning continues."
+            conditional = "under a condition" in str(summary)
+        reference = Reference(
+            source_type=source_type,
+            source_id=_original(getattr(finding, "source_id", None)),
+            target=target,
+            location=_original(getattr(finding, "config_path", None)),
+            relation=_original(getattr(finding, "relation", None)),
+            name=_original(getattr(finding, "source_name", None)),
+            conditional=conditional,
         )
-    else:
-        scanned = [
-            f"{SOURCE_LABELS[row['source_type']]} ({row['completeness']})"
-            for row in sources if row["completeness"] != "unavailable"
-        ]
-        not_scanned = [
-            SOURCE_LABELS[row["source_type"]]
-            for row in sources if row["completeness"] == "unavailable"
-        ]
-        statements.append(
-            "Scanned: " + (", ".join(scanned) or "none") + "; not scanned: "
-            + (", ".join(not_scanned) or "none") + "."
-        )
-        incomplete = [
-            f"{SOURCE_LABELS[row['source_type']]} {row['completeness']}"
-            for row in sources if row["completeness"] != "complete"
-        ]
-        if incomplete:
-            statements.append("Results may be partial: " + ", ".join(incomplete) + ".")
-        if not count:
-            statements.append(
-                "No reference found"
-                + ("; not proof of none while sources are incomplete." if incomplete else ".")
-            )
-        elif shown < count:
-            statements.append(f"Showing {shown} of {count} references.")
-    statements.append(BOUND_COVERAGE_STATEMENT)
-    return [_text(item, MAX_STATEMENT) or "" for item in statements]
+        seen.setdefault(reference.identity, reference)
+    return tuple(sorted(seen.values(), key=lambda item: item.order))
 
 
-def build(
-    snapshot: Any | None,
+def _original(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def read(reader: SnapshotReader | None) -> Context:
+    """Read the held snapshot once for a plan; never raises."""
+
+    try:
+        snapshot = read_snapshot(reader)
+        visible, reason = _visible(snapshot)
+        if visible is None:
+            return Context("unavailable", reason, _source_rows(None))
+        sources = _source_rows(visible)
+        references = _references(visible)
+        fingerprint = getattr(visible, "fingerprint", None)
+        provenance = {
+            "fingerprint": fingerprint[:16] if isinstance(fingerprint, str) else None,
+            "generation": getattr(snapshot, "generation", None),
+        }
+        return Context("read", None, sources, references, provenance)
+    except Exception:
+        # A malformed held snapshot is unavailable evidence, never a refusal.
+        return Context("unavailable", "global_source_diagnostics_unreadable", _source_rows(None))
+
+
+def _display(reference: Reference, *, with_target: bool) -> dict[str, Any]:
+    item: dict[str, Any] = {"type": reference.source_type}
+    if with_target:
+        item["target"] = reference.target
+    # A loaded membership's relation and list position are implied by the
+    # source type; only other references show where they occur.
+    membership = reference.relation == f"{reference.source_type}_member"
+    relation = reference.relation
+    if isinstance(relation, str) and relation.startswith(f"{reference.source_type}_"):
+        relation = relation[len(reference.source_type) + 1:]
+    for name, value, limit in (
+        ("id", reference.source_id, MAX_ID),
+        ("name", reference.name, MAX_NAME),
+        ("location", None if membership else reference.location, MAX_LOCATION),
+        ("relation", None if membership else relation, MAX_RELATION),
+    ):
+        text = _text(value, limit)
+        if text is not None:
+            item[name] = text
+    # Shown only when true: a dashboard card displayed under a condition.
+    if reference.conditional:
+        item["conditional"] = True
+    return item
+
+
+def child(
+    context: Context,
     entity_ids: Iterable[str],
     *,
     limit: int = MAX_REFERENCES,
 ) -> dict[str, Any]:
-    """Return the bounded informational disclosure for ``entity_ids``."""
+    """One child's target(s) and their bounded references; never raises.
+
+    Children are listed in operation order; a single target is ``target``.
+    """
 
     targets = tuple(dict.fromkeys(item for item in entity_ids if isinstance(item, str)))
-    visible, reason = _visible(snapshot)
-    status = "read" if visible is not None else "unavailable"
-    sources = _source_rows(visible)
-    references = _references(visible, targets)
-    shown = references[: max(0, limit)]
-    counts = {
-        source_type: sum(1 for item in references if item["source_type"] == source_type)
-        for source_type in REFERENCE_SOURCE_TYPES
-    }
-    disclosure: dict[str, Any] = {
+    value: dict[str, Any] = (
+        {"target": targets[0]} if len(targets) == 1 else {"targets": list(targets)}
+    )
+    if context.status != "read":
+        # Unknown, not zero: no count is claimed.
+        return value
+    wanted = set(targets)
+    references = [item for item in context.references if item.target in wanted]
+    shown = [
+        _display(item, with_target=len(targets) > 1)
+        for item in references[: max(0, limit)]
+    ]
+    # Distinct originals whose bounded display forms collide stay distinct,
+    # with an unbound display suffix.
+    collisions: dict[tuple[Any, ...], int] = {}
+    for item in shown:
+        key = tuple(sorted((name, str(text)) for name, text in item.items()))
+        collisions[key] = collisions.get(key, 0) + 1
+        if collisions[key] > 1:
+            item["id"] = f"{item.get('id', '')}~{collisions[key]}"
+    value.update({
+        "count": len(references),
+        # Nonzero totals per source; absent means 0.
+        "by_source": {
+            source_type: total for source_type in REFERENCE_SOURCE_TYPES
+            if (total := sum(1 for item in references if item.source_type == source_type))
+        },
+        "truncated": len(references) > len(shown),
+        "items": shown,
+    })
+    return value
+
+
+def _statements(context: Context, children: list[dict[str, Any]], limit: int) -> list[str]:
+    statements = [INFORMATIONAL_STATEMENT, MEMBERSHIP_STATEMENT]
+    if context.status != "read":
+        statements.append(
+            f"References unavailable ({context.reason}): not proof that nothing "
+            "references the targets. Planning continues."
+        )
+    else:
+        if any(row["completeness"] != "complete" for row in context.sources):
+            statements.append("A count of 0 is not proof of none while a source is incomplete.")
+        if any(item.get("truncated") for item in children):
+            statements.append(f"Each child lists at most {limit}; counts are totals.")
+    statements.append(BOUND_COVERAGE_STATEMENT)
+    return [_text(item, MAX_STATEMENT) or "" for item in statements]
+
+
+def plan_block(
+    context: Context,
+    children: Iterable[dict[str, Any]],
+    *,
+    limit: int = MAX_REFERENCES,
+) -> dict[str, Any]:
+    """The one per-plan disclosure: shared context, then each child."""
+
+    children = list(children)
+    block: dict[str, Any] = {
         "model": MODEL,
         "informational": True,
-        "binding": "none",
-        "affects_risk": False,
-        "status": status,
-        "targets": list(targets),
-        "completeness": {row["source_type"]: row["completeness"] for row in sources},
-        "reasons": {row["source_type"]: row["reason"] for row in sources if "reason" in row},
-        "items": shown,
-        "count": len(references),
-        "counts_by_source": counts,
-        "limit": limit,
-        "truncated": len(references) > len(shown),
-        "statements": _statements(status, reason, sources, len(references), len(shown)),
+        "status": context.status,
+        "completeness": {row["source_type"]: row["completeness"] for row in context.sources},
+        "reasons": {row["source_type"]: row["reason"] for row in context.sources if "reason" in row},
+        "statements": _statements(context, children, limit),
     }
-    if reason is not None:
-        disclosure["unavailable_reason"] = reason
+    if context.status != "read":
+        block["unavailable_reason"] = context.reason
     else:
-        fingerprint = getattr(visible, "fingerprint", None)
-        disclosure["provenance"] = {
-            "global_sources_fingerprint": fingerprint[:16] if isinstance(fingerprint, str) else None,
-            "dependency_index_generation": getattr(snapshot, "generation", None),
-        }
-    return disclosure
+        block["provenance"] = context.provenance
+    block["children"] = children
+    return block
 
 
 def disclose(
@@ -246,34 +319,20 @@ def disclose(
     *,
     limit: int = MAX_REFERENCES,
 ) -> dict[str, Any]:
-    """Read the held snapshot and build the disclosure; never raises."""
+    """A single-child plan block read from ``reader``; never raises."""
 
-    targets = tuple(entity_ids)
-    try:
-        return build(read_snapshot(reader), targets, limit=limit)
-    except Exception:
-        # A malformed held snapshot is unavailable evidence, never a refusal.
-        return build(_Unreadable(), targets, limit=limit)
-
-
-class _Unreadable:
-    """A snapshot whose global-source partition cannot be read."""
-
-    @property
-    def global_sources(self) -> Any:
-        return _UnreadableSources()
-
-
-class _UnreadableSources:
-    def visible(self) -> Any:
-        raise RuntimeError("global_source_diagnostics_unreadable")
+    context = read(reader)
+    return plan_block(context, [child(context, entity_ids, limit=limit)], limit=limit)
 
 
 __all__ = [
     "KEY",
     "MODEL",
-    "build",
+    "Context",
+    "child",
     "disclose",
     "per_child_limit",
+    "plan_block",
+    "read",
     "read_snapshot",
 ]

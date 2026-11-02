@@ -218,6 +218,7 @@ from . import dashboard_metadata as dashboard_metadata_contract
 from . import dashboard_metadata_planning
 from . import scene_configuration as scene_configuration_contract
 from . import scene_configuration_planning
+from . import global_reference_disclosure
 from .entity_metadata_disclosure import (
     read_cached_dependency_snapshot,
     read_runtime_dependency_snapshot,
@@ -7724,6 +7725,25 @@ class ChangeGovernanceService:
         if _scene_configuration_context is not None:
             plan.dry_run_results["scene_configuration"] = deepcopy(
                 _scene_configuration_context.plan_disclosure
+            )
+        # HAMCP-270: the informational scene, group and dashboard references,
+        # once per plan.  Dry-run results are never hashed or policy input.
+        global_references = next(
+            (
+                context.global_references
+                for context in (
+                    _entity_metadata_context,
+                    _availability_exposure_context,
+                    _configuration_delete_context,
+                    _helper_options_context,
+                )
+                if context is not None and context.global_references
+            ),
+            None,
+        )
+        if global_references is not None:
+            plan.dry_run_results[global_reference_disclosure.KEY] = deepcopy(
+                global_references
             )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)

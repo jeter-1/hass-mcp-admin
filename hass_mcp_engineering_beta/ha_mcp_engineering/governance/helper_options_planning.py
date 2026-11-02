@@ -191,7 +191,8 @@ class Item:
     intent: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
-    # HAMCP-270: information only; never in the intent or the disclosure.
+    # HAMCP-270: this child's entry of the informational plan disclosure;
+    # never in the intent or the disclosure.
     global_references: dict[str, Any] = field(default_factory=dict)
 
 
@@ -200,6 +201,8 @@ class Preparation:
     request: Request
     items: list[Item]
     plan_disclosure: dict[str, Any] = field(default_factory=dict)
+    # HAMCP-270: the one informational ``global_source_consumers`` block.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
     def item(self, operation_id: str) -> Item:
         for candidate in self.items:
@@ -393,6 +396,8 @@ async def prepare(
     seen_entries: set[str] = set()
     plan_domain: str | None = None
     orphan_flows = 0
+    global_limit = global_reference_disclosure.per_child_limit(len(request.changes))
+    global_context = global_reference_disclosure.read(global_reader)
     for index, change in enumerate(request.changes):
         target = {"entity_id": change.entity_id}
         registry = await _read(
@@ -604,9 +609,8 @@ async def prepare(
                 intent=intent,
                 disclosure=disclosure,
                 classification=classify(basis, statements, disclosure["warnings"]),
-                global_references=global_reference_disclosure.disclose(
-                    global_reader, entity_ids,
-                    limit=global_reference_disclosure.per_child_limit(len(request.changes)),
+                global_references=global_reference_disclosure.child(
+                    global_context, entity_ids, limit=global_limit,
                 ),
             )
         )
@@ -626,6 +630,10 @@ async def prepare(
             "residual_concurrency_window": CONCURRENCY_DISCLOSURE,
             "orphan_flows": orphan_flows,
         },
+        global_references=global_reference_disclosure.plan_block(
+            global_context, [item.global_references for item in items],
+            limit=global_limit,
+        ),
     )
 
 
@@ -634,7 +642,6 @@ def projection(item: Item) -> dict[str, Any]:
 
     return {
         **item.disclosure,
-        global_reference_disclosure.KEY: item.global_references,
         "policy_basis": {
             "policy": item.classification["policy"],
             "physical_consequence": item.classification["physical_consequence"],

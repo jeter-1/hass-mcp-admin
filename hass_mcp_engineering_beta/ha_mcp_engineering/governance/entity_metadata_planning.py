@@ -107,8 +107,9 @@ class EntityMetadataPreparation:
     classification: dict[str, Any]
     snapshot: dict[str, Any] | None = None
     no_change: dict[str, Any] | None = field(default=None)
-    # HAMCP-270: information only; never part of ``disclosure``, whose
-    # fingerprint the approval binds and preflight rechecks.
+    # HAMCP-270: the informational ``global_source_consumers`` plan block;
+    # never part of ``disclosure``, whose fingerprint the approval binds and
+    # preflight rechecks, and never in ``projection``.
     global_references: dict[str, Any] = field(default_factory=dict)
 
 
@@ -378,7 +379,7 @@ def _field_projection(current: dict[str, Any], final: dict[str, Any], touched: t
 def projection(prepared: EntityMetadataPreparation, *, plan_id: str | None = None) -> dict[str, Any]:
     """Return the bounded ``entity_metadata`` plan projection (§1.3)."""
 
-    value = {
+    return {
         "entity_id": prepared.request.entity_id,
         "registry_id": prepared.current.get("id"),
         "fields": _field_projection(prepared.current, prepared.final, prepared.touched),
@@ -393,10 +394,6 @@ def projection(prepared: EntityMetadataPreparation, *, plan_id: str | None = Non
         "provider": ENTITY_METADATA_PROVIDER,
         "fallback": "none",
     }
-    if prepared.global_references:
-        # HAMCP-270: the informational sibling of ``consumer_disclosure``.
-        value[global_reference_disclosure.KEY] = prepared.global_references
-    return value
 
 
 def _no_change(
@@ -537,9 +534,7 @@ async def prepare(
         disclosure=disclosure,
         classification=classify(current, touched, disclosure),
         snapshot=snapshot_identity(snapshot),
-        global_references=(
-            global_reference_disclosure.disclose(global_reader, (entity_id,))
-            if global_reader is not None
-            else {}
-        ),
+        global_references=global_reference_disclosure.disclose(
+            global_reader, (entity_id,)
+        ) if global_reader is not None else {},
     )
