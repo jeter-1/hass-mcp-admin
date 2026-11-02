@@ -361,6 +361,12 @@ class HandoffTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify()
 
+    def test_head_ref_deleted_after_merge_preserves_publication_handoff(self):
+        expected = self.verify()
+        self.events.append({"id": 13, "event": "head_ref_deleted"})
+        self.assertEqual(self.verify(), expected)
+        self.assertEqual(expected["release_action"], "inspect")
+
     def test_ready_after_reopen_does_not_reauthorize_old_merge(self):
         self.events.append({"event": "reopened"})
         with self.assertRaises(ValueError):
