@@ -1,0 +1,504 @@
+name: Core registry one-tap signing and publication
+
+# HAMCP-278. Josh approves the protected signing environment from the job's
+# approval summary; nothing signs without that approval. Signing holds the
+# environment secret and no write token. Publication holds contents:write and
+# no secret, and pushes one non-force commit to the `registry` branch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_version:
+        description: Exact stable Home Assistant Core version (for example 2026.10.4)
+        required: true
+        type: string
+      candidate_ref:
+        description: Reviewed candidate branch under registry-candidates/
+        required: true
+        type: string
+      candidate_sha256:
+        description: Reviewed SHA-256 of core-candidate.json
+        required: true
+        type: string
+      evidence_sha256:
+        description: Reviewed SHA-256 of core-review-evidence.json
+        required: true
+        type: string
+      dry_run:
+        description: Sign with an ephemeral test key and push nothing
+        required: true
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      core_version:
+        required: true
+        type: string
+      candidate_ref:
+        required: true
+        type: string
+      candidate_sha256:
+        required: true
+        type: string
+      evidence_sha256:
+        required: true
+        type: string
+      dry_run:
+        required: true
+        type: boolean
+
+concurrency:
+  group: core-release-registry-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Verification runs without an environment, a secret or a write token. It
+  # fetches the reviewed candidate and the current registry journal, runs the
+  # utility's non-signing checks and writes the approval summary.
+  verify:
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      inputs_manifest_sha256: ${{ steps.stage.outputs.inputs_manifest_sha256 }}
+      predecessor_sha256: ${{ steps.fetch.outputs.predecessor_sha256 }}
+      new_sequence: ${{ steps.check.outputs.new_sequence }}
+    env:
+      CORE_VERSION: ${{ inputs.core_version }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
+      CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+      EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+      REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Validate protected-main request
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$CORE_VERSION" =~ ^20[0-9]{2}\.(1[0-2]|[1-9])\.(0|[1-9][0-9]*)$ ]] || { echo "::error::core_version is not an exact stable release"; exit 1; }
+          [[ "$CANDIDATE_REF" =~ ^registry-candidates/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ && "$CANDIDATE_REF" != *..* ]] || { echo "::error::candidate_ref must be a branch under registry-candidates/"; exit 1; }
+          [[ "$CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::candidate_sha256 is malformed"; exit 1; }
+          [[ "$EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::evidence_sha256 is malformed"; exit 1; }
+
+      - name: Fetch reviewed candidate and current registry journal
+        id: fetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          mkdir -- "$inputs"
+          git fetch --quiet --no-tags --depth=1 "$REPOSITORY_URL" "+refs/heads/${CANDIDATE_REF}:refs/one-tap/candidate" \
+            || { echo "::error::candidate branch is absent"; exit 1; }
+          for name in core-candidate.json core-review-evidence.json; do
+            kind="$(git ls-tree refs/one-tap/candidate -- "$name" | cut -f 1 | cut -d ' ' -f 1,2)"
+            test "$kind" = "100644 blob" || { echo "::error::candidate branch must hold a regular $name"; exit 1; }
+            size="$(git cat-file -s "refs/one-tap/candidate:$name")"
+            (( size >= 1 && size <= 4194304 )) || { echo "::error::$name exceeds bounds"; exit 1; }
+            git cat-file blob "refs/one-tap/candidate:$name" > "$inputs/$name"
+          done
+          test "$(sha256sum -- "$inputs/core-candidate.json" | cut -d ' ' -f 1)" = "$CANDIDATE_SHA256" \
+            || { echo "::error::candidate SHA-256 does not match the reviewed value"; exit 1; }
+          test "$(sha256sum -- "$inputs/core-review-evidence.json" | cut -d ' ' -f 1)" = "$EVIDENCE_SHA256" \
+            || { echo "::error::evidence SHA-256 does not match the reviewed value"; exit 1; }
+          status=0
+          git ls-remote --exit-code --heads "$REPOSITORY_URL" refs/heads/registry >/dev/null || status=$?
+          if [[ "$status" -eq 2 ]]; then
+            echo "::error::pre-cutover: the registry branch does not exist yet; nothing was signed."
+            exit 1
+          fi
+          test "$status" -eq 0
+          git fetch --quiet --no-tags --depth=1 "$REPOSITORY_URL" "+refs/heads/registry:refs/one-tap/registry"
+          git cat-file blob refs/one-tap/registry:upstream-trust/ha-core-release-registry.json > "$inputs/predecessor.json"
+          echo "predecessor_sha256=$(sha256sum -- "$inputs/predecessor.json" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify candidate and write the approval summary
+        id: check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          dry=()
+          if [[ "$DRY_RUN" == "true" ]]; then dry=(--dry-run); fi
+          python scripts/core_registry_one_tap.py verify-candidate \
+            --candidate "$inputs/core-candidate.json" \
+            --evidence "$inputs/core-review-evidence.json" \
+            --predecessor "$inputs/predecessor.json" \
+            --public-key docs/evidence/hamcp222/core-public-key.txt \
+            --core-version "$CORE_VERSION" \
+            --candidate-sha256 "$CANDIDATE_SHA256" \
+            --evidence-sha256 "$EVIDENCE_SHA256" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --outputs "$GITHUB_OUTPUT" "${dry[@]}"
+
+      - name: Stage verified signing inputs
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          (cd "$inputs" && sha256sum -- core-candidate.json core-review-evidence.json predecessor.json) > "$RUNNER_TEMP/SHA256SUMS"
+          mv -- "$RUNNER_TEMP/SHA256SUMS" "$inputs/SHA256SUMS"
+          echo "inputs_manifest_sha256=$(sha256sum -- "$inputs/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "Signing-input manifest SHA-256: \`$(sha256sum -- "$inputs/SHA256SUMS" | cut -d ' ' -f 1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain verified signing inputs
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: core-registry-inputs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inputs/
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job with the protected environment and the signing secret. Josh is
+  # its required reviewer and it may deploy from main only. No write token.
+  sign:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: core-release-registry-signing
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.stage.outputs.manifest_sha256 }}
+    env:
+      CORE_VERSION: ${{ inputs.core_version }}
+      CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+      EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download verified signing inputs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: ${{ runner.temp }}/inputs
+
+      - name: Verify signing-input digests
+        env:
+          INPUTS_MANIFEST_SHA256: ${{ needs.verify.outputs.inputs_manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          [[ "$INPUTS_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(cd "$inputs" && find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort)" = "$(printf '%s\n' SHA256SUMS core-candidate.json core-review-evidence.json predecessor.json)"
+          test -z "$(cd "$inputs" && find . -mindepth 1 ! -type f)"
+          test "$(sha256sum -- "$inputs/SHA256SUMS" | cut -d ' ' -f 1)" = "$INPUTS_MANIFEST_SHA256"
+          (cd "$inputs" && sha256sum --strict --check --quiet SHA256SUMS)
+          test "$(sha256sum -- "$inputs/core-candidate.json" | cut -d ' ' -f 1)" = "$CANDIDATE_SHA256"
+          test "$(sha256sum -- "$inputs/core-review-evidence.json" | cut -d ' ' -f 1)" = "$EVIDENCE_SHA256"
+
+      # The secret exists in this one step only. Actions masks it in logs;
+      # nothing here echoes, traces, caches or uploads it.
+      - name: Sign the exact reviewed candidate
+        env:
+          HA_CORE_RELEASE_REGISTRY_SIGNING_KEY: ${{ secrets.HA_CORE_RELEASE_REGISTRY_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "$HA_CORE_RELEASE_REGISTRY_SIGNING_KEY" || { echo "::error::the signing secret is not configured"; exit 1; }
+          inputs="$RUNNER_TEMP/inputs"
+          mkdir -- "$RUNNER_TEMP/signing"
+          python scripts/prepare_core_release_registry.py sign \
+            --candidate "$inputs/core-candidate.json" \
+            --expected-candidate-sha256 "$CANDIDATE_SHA256" \
+            --previous "$inputs/predecessor.json" \
+            --output "$RUNNER_TEMP/signing/ha-core-release-registry.json"
+
+      - name: Verify with the committed public key through the runtime verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          python scripts/core_registry_one_tap.py verify-signed \
+            --journal "$RUNNER_TEMP/signing/ha-core-release-registry.json" \
+            --predecessor "$inputs/predecessor.json" \
+            --candidate "$inputs/core-candidate.json" \
+            --public-key docs/evidence/hamcp222/core-public-key.txt
+
+      - name: Stage the signed journal and evidence
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="$RUNNER_TEMP/signed"
+          journal="upstream-trust/ha-core-release-registry.json"
+          evidence="upstream-trust/evidence/ha-core-${CORE_VERSION}-${EVIDENCE_SHA256}.json"
+          install -D -m 0644 -- "$RUNNER_TEMP/signing/ha-core-release-registry.json" "$staging/files/$journal"
+          install -D -m 0644 -- "$RUNNER_TEMP/inputs/core-review-evidence.json" "$staging/files/$evidence"
+          (cd "$staging/files" && sha256sum -- "$evidence" "$journal") > "$staging/SHA256SUMS"
+          echo "manifest_sha256=$(sha256sum -- "$staging/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Retain the signed journal and evidence
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: core-registry-signed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/signed/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Independent re-verification without the environment, the secret or a write
+  # token, against the committed public key and the runtime verifier.
+  reverify:
+    needs: [verify, sign]
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      reverified_manifest_sha256: ${{ steps.reverify.outputs.reverified_manifest_sha256 }}
+    env:
+      CORE_VERSION: ${{ inputs.core_version }}
+      EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download verified signing inputs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: ${{ runner.temp }}/inputs
+
+      - name: Download the signed journal and evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/signed
+
+      - name: Re-verify against the committed public key
+        id: reverify
+        env:
+          INPUTS_MANIFEST_SHA256: ${{ needs.verify.outputs.inputs_manifest_sha256 }}
+          MANIFEST_SHA256: ${{ needs.sign.outputs.manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          signed="$RUNNER_TEMP/signed"
+          test "$(sha256sum -- "$inputs/SHA256SUMS" | cut -d ' ' -f 1)" = "$INPUTS_MANIFEST_SHA256"
+          (cd "$inputs" && sha256sum --strict --check --quiet SHA256SUMS)
+          test "$(sha256sum -- "$signed/SHA256SUMS" | cut -d ' ' -f 1)" = "$MANIFEST_SHA256"
+          (cd "$signed/files" && sha256sum --strict --check --quiet ../SHA256SUMS)
+          python scripts/core_registry_one_tap.py verify-signed \
+            --journal "$signed/files/upstream-trust/ha-core-release-registry.json" \
+            --predecessor "$inputs/predecessor.json" \
+            --candidate "$inputs/core-candidate.json" \
+            --public-key docs/evidence/hamcp222/core-public-key.txt
+          cmp -- "$inputs/core-review-evidence.json" "$signed/files/upstream-trust/evidence/ha-core-${CORE_VERSION}-${EVIDENCE_SHA256}.json"
+          echo "reverified_manifest_sha256=$(sha256sum -- "$signed/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+  # Publication holds contents:write but no environment or secret, and runs no
+  # Python. It pushes one non-force commit to the registry branch only.
+  publish:
+    needs: [verify, sign, reverify]
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Download the signed journal and evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/signed
+
+      - name: Publish one commit to the registry branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNED_DIR: ${{ runner.temp }}/signed
+          WORK_DIR: ${{ runner.temp }}/registry
+          MANIFEST_SHA256: ${{ needs.sign.outputs.manifest_sha256 }}
+          REVERIFIED_MANIFEST_SHA256: ${{ needs.reverify.outputs.reverified_manifest_sha256 }}
+          PREDECESSOR_SHA256: ${{ needs.verify.outputs.predecessor_sha256 }}
+          CORE_VERSION: ${{ inputs.core_version }}
+          EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+          REMOTE_URL: https://github.com/${{ github.repository }}.git
+        shell: bash
+        run: bash scripts/core_registry_publish.sh publish
+
+  # Dry run: no environment and no secret. An ephemeral key generated in this
+  # job signs a re-keyed copy of the candidate through the real signer.
+  dry-run-sign:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.stage.outputs.manifest_sha256 }}
+    env:
+      CORE_VERSION: ${{ inputs.core_version }}
+      EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download verified signing inputs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: ${{ runner.temp }}/inputs
+
+      - name: Sign a re-keyed copy with an ephemeral key
+        id: stage
+        env:
+          INPUTS_MANIFEST_SHA256: ${{ needs.verify.outputs.inputs_manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/inputs"
+          test "$(sha256sum -- "$inputs/SHA256SUMS" | cut -d ' ' -f 1)" = "$INPUTS_MANIFEST_SHA256"
+          (cd "$inputs" && sha256sum --strict --check --quiet SHA256SUMS)
+          python scripts/core_registry_one_tap.py dry-run-sign \
+            --candidate "$inputs/core-candidate.json" \
+            --predecessor "$inputs/predecessor.json" \
+            --public-key docs/evidence/hamcp222/core-public-key.txt \
+            --output-dir "$RUNNER_TEMP/ephemeral"
+          staging="$RUNNER_TEMP/signed"
+          journal="upstream-trust/ha-core-release-registry.json"
+          evidence="upstream-trust/evidence/ha-core-${CORE_VERSION}-${EVIDENCE_SHA256}.json"
+          install -D -m 0644 -- "$RUNNER_TEMP/ephemeral/ha-core-release-registry.json" "$staging/files/$journal"
+          install -D -m 0644 -- "$inputs/core-review-evidence.json" "$staging/files/$evidence"
+          (cd "$staging/files" && sha256sum -- "$evidence" "$journal") > "$staging/SHA256SUMS"
+          install -D -m 0644 -- "$RUNNER_TEMP/ephemeral/ephemeral-predecessor.json" "$staging/ephemeral/predecessor.json"
+          install -D -m 0644 -- "$RUNNER_TEMP/ephemeral/ephemeral-public-key.txt" "$staging/ephemeral/public-key.txt"
+          echo "manifest_sha256=$(sha256sum -- "$staging/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Retain the dry-run journal and evidence
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: core-registry-dry-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/signed/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Dry-run publication verifies against the ephemeral public key, assembles
+  # the one-commit change, and pushes nothing. It has no write token.
+  dry-run-publish:
+    needs: [verify, dry-run-sign]
+    if: github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' && github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install hash-locked runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+
+      - name: Download verified signing inputs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: ${{ runner.temp }}/inputs
+
+      - name: Download the dry-run journal and evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.dry-run-sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/dry-run
+
+      - name: Verify against the ephemeral public key
+        id: reverify
+        env:
+          MANIFEST_SHA256: ${{ needs.dry-run-sign.outputs.manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dry="$RUNNER_TEMP/dry-run"
+          test "$(sha256sum -- "$dry/SHA256SUMS" | cut -d ' ' -f 1)" = "$MANIFEST_SHA256"
+          python scripts/core_registry_one_tap.py verify-signed --ephemeral \
+            --journal "$dry/files/upstream-trust/ha-core-release-registry.json" \
+            --predecessor "$dry/ephemeral/predecessor.json" \
+            --candidate "$RUNNER_TEMP/inputs/core-candidate.json" \
+            --public-key "$dry/ephemeral/public-key.txt"
+          mkdir -- "$RUNNER_TEMP/signed"
+          cp -R -- "$dry/files" "$dry/SHA256SUMS" "$RUNNER_TEMP/signed/"
+          echo "reverified_manifest_sha256=$(sha256sum -- "$RUNNER_TEMP/signed/SHA256SUMS" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the one-commit change without pushing
+        env:
+          SIGNED_DIR: ${{ runner.temp }}/signed
+          WORK_DIR: ${{ runner.temp }}/registry
+          MANIFEST_SHA256: ${{ needs.dry-run-sign.outputs.manifest_sha256 }}
+          REVERIFIED_MANIFEST_SHA256: ${{ steps.reverify.outputs.reverified_manifest_sha256 }}
+          PREDECESSOR_SHA256: ${{ needs.verify.outputs.predecessor_sha256 }}
+          CORE_VERSION: ${{ inputs.core_version }}
+          EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+          REMOTE_URL: https://github.com/${{ github.repository }}.git
+        shell: bash
+        run: bash scripts/core_registry_publish.sh assemble

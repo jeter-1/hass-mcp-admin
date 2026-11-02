@@ -319,27 +319,36 @@ These apply to every row and are not repeated:
 - **Effort:** S.
 - **Verdict:** **ready** (if selected).
 
-### HAMCP-278: zero-touch Core release onboarding
+### HAMCP-278: Core registry one-tap signing and registry-branch publication
 
-- **Data it must read:** no Home Assistant data. It reads the exact Core
-  release image and the existing signed journal, and reuses the sequence-15
-  disposable-Core evidence lanes (HAMCP-269, PR #336).
-- **Write commands:** no Home Assistant write. It runs every signed
-  capability's evidence lane against the exact release image, prepares the
-  unsigned "same capabilities, new release" candidate and, after Josh
-  approves one signing job in a protected GitHub environment, publishes the
-  signed journal to a dedicated registry channel that Engineering already
-  fetches and verifies (signature, predecessor binding, monotonic
-  sequence). New capabilities still need build, review and first signing;
-  Josh's signature stays the trust boundary.
-- **Readback:** Engineering's existing signed-journal verification.
-- **Blockers:** depends on 265 and 266 (this map) and 269 (completed).
-  Josh approved it as High on 2026-11-01. It is a workflow, signing and
-  release-authority change, so it needs a security section and explicit
-  authorization for its workflow and environment surfaces. CI-held keys
-  signing without Josh are out of scope (register notes).
+Josh split the original zero-touch row on 2026-11-02. HAMCP-278 (278a) is the
+signing and publication half; automated evidence moved to HAMCP-279.
+
+- **Data it must read:** no Home Assistant data. It reads a reviewed candidate
+  and evidence file from a `registry-candidates/<version>` branch and the
+  current journal on the `registry` branch.
+- **Write commands:** no Home Assistant write. After Josh approves one signing
+  job in the protected `core-release-registry-signing` environment, a separate
+  publish job pushes one non-force commit, touching only the journal and the
+  new evidence file, to the `registry` branch. Engineering's code-owned
+  journal URL now names `registry` instead of `main`; nothing else in the
+  runtime changes. Josh's signature stays the trust boundary.
+- **Readback:** Engineering's existing signed-journal verification, plus the
+  read-only `scripts/check_core_registry_branch.sh` checks
+  ([`CORE_REGISTRY_ONE_TAP_RUNBOOK.md`](CORE_REGISTRY_ONE_TAP_RUNBOOK.md)).
+- **Blockers:** live use needs Josh's cutover (branch, ruleset, environment,
+  secret and deployment), which agents do not perform. Each new Core release
+  still needs its binding PR on `main` until HAMCP-279.
 - **Effort:** L.
-- **Verdict:** **ready** to design and implement. It needs no Core profile.
+- **Verdict:** **ready**; the implementation is in draft review.
+
+### HAMCP-279: automated Core release evidence
+
+- **Scope:** O3 binding inheritance, release-parameterized evidence lanes,
+  lane-group withholding and the dormant sequence-13 lanes, split from HAMCP-278
+  by Josh on 2026-11-02. It produces the evidence and candidate that HAMCP-278
+  takes as inputs, and removes the per-release binding PR on `main`.
+- **Verdict:** **blocked** (waits on HAMCP-278).
 
 ### Candidate (no register row): governed helper CREATE beyond input_boolean and input_number
 
@@ -410,8 +419,9 @@ accepts only existing compiled contracts with exact fingerprints
 and each entry needs exact disposable-Core evidence against the unchanged
 Engineering source, tree and image under test (same document, the evidence
 list before `prepare_core_release_registry.py add`). HAMCP-278 (High,
-Josh-approved) automates these routine renewals; sequence 16 is likely the
-last manual one.
+Josh-approved) makes signing and publication of these routine renewals one
+approval; HAMCP-279 automates their evidence. Sequence 16 is likely the last
+fully manual one.
 
 ### Sequence 16: carry forward the 31 existing profiles to Core 2026.11
 
@@ -455,9 +465,10 @@ Rows that need no Core signing: 253, 264, 267, 270, 278, 149, 104, 109
 This is a recommendation for the architect and Josh, not a decision.
 
 1. **HAMCP-265 and HAMCP-266** (this matrix and map).
-2. **HAMCP-278** (L, ready, High, Josh-approved). It removes the manual
-   signing and data PR from every routine Core release, so sequence 16
-   should be the last manual carry-forward. Its workflow and signing
+2. **HAMCP-278** (L, ready, in draft review, High, Josh-approved), then **HAMCP-279**.
+   278 replaces the manual signing and data PR with one approval and a
+   `registry`-branch push; 279 automates the evidence. Sequence 16 should
+   be the last fully manual carry-forward. Their workflow and signing
    surfaces need a security section.
 3. **Sequence 16: carry the 31 existing profiles to Core 2026.11**, on
    compatibility evidence. This does not wait for any feature row below.

@@ -1,5 +1,17 @@
 # HA MCP Engineering Server
 
+Not yet released: Engineering **2.4.1-beta.56** (HAMCP-278) reads the
+signed Core release registry from the `registry` branch instead of `main`;
+only the URL's branch segment changes, with the same key, verifier and cache
+and no override. It adds an owner-gated one-tap signing workflow whose
+separate publish job pushes one commit to `registry`. Josh must create the
+`registry` branch before deploying (see the
+[owner runbook](docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md)). No tool, input
+schema, persisted format or Home Assistant write changes. Rollback is
+reinstalling beta.55. Read the
+[2.4.1-beta.56 release notes](docs/V2_4_1_BETA56_RELEASE_NOTES.md) and the
+[2.4.1-beta.56 acceptance contract](docs/V2_4_1_BETA56_ACCEPTANCE.md).
+
 Staged, not yet released: Engineering **2.4.1-beta.55** (HAMCP-227) adds
 scene, group and dashboard references to `entity_dependency_analysis` and
 `change_impact_analysis`. Scenes and groups come from the loaded membership
