@@ -392,8 +392,11 @@ These are not feature rows. They change the readiness of the rows above:
 - **HAMCP-276** (Ready, Small, High): options apply is refused at
   `dispatch_authority` (RCG-035). Until it lands, the existing helper-options
   profile is admitted but cannot dispatch.
-- **HAMCP-274** (Ready, Medium): input_select option plans are prohibited
-  even for unreferenced helpers (RCG-026).
+- **HAMCP-274** (Active, Medium, staged as 2.4.1-beta.59): input_select
+  option plans were prohibited even for unreferenced helpers (RCG-026).
+  Relevance is now decided per target from evidence; an unreferenced helper
+  is standard, and consumers are named and elevated. Helper options and
+  `set_input_boolean_state` keep the shipped helper-wide classification.
 - **HAMCP-273** (Backlog, Small, depends on 263): large-dashboard readback
   (RCG-045, RCG-048). It limits the completeness of 267 and 270.
 - **HAMCP-277** (Ready, Small, Medium): the dependency index's 6 s dashboard

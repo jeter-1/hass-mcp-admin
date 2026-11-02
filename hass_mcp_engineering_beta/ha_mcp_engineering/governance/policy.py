@@ -16,6 +16,7 @@ from .models import (
     RiskDelta,
     RiskLevel,
 )
+from .helper_dependency import helper_consumers_disclosed
 from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
@@ -1695,6 +1696,25 @@ def _single_plan_policy(
             )
         )
         consequence = dependency.get("physical_consequence")
+        if (
+            eligible
+            and consequence == "none"
+            and helper_consumers_disclosed(dependency)
+        ):
+            # HAMCP-274: a bounded relevant consumer is named and elevated
+            # even when no physical consequence was found.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.ELEVATED_ADMIN,
+                    RiskDelta.MODERATE,
+                    PhysicalConsequence.NONE,
+                    (
+                        "relevant_helper_consumer_disclosed",
+                        f"{prefix}_elevated_policy",
+                        evidence_reason,
+                    ),
+                ),
+            )
         if eligible and consequence == "none":
             return (
                 OperationPolicyClassification(

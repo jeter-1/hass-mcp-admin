@@ -9,16 +9,35 @@ two input_select corrections, and adds per-option trigger disclosure:
   terminal is re-projected as target-capable opaque evidence with
   conservative locks.  Opacity elevates risk; it never refuses on
   consequence alone (OD-4).
-* The model is ``helper-dependency-risk-input-select-v1``.  Its evidence
-  fingerprint binds the v13 material for the re-projected snapshot plus the
-  literal state-trigger records for the exact target, so a trigger edit
-  stales an approval.  The ``input_boolean`` v13 binding is unchanged.
+* The model is ``helper-dependency-risk-input-select-v2``.  Its evidence
+  fingerprint binds the target-scoped material for the re-projected snapshot
+  plus the literal state-trigger records for the exact target, so a trigger
+  edit stales an approval.  The ``input_boolean`` v13 binding is unchanged.
+
+HAMCP-274 (v2) decides relevance by evidence about this target:
+
+* A ``call_service`` filter proven disjoint for ``input_boolean`` stays a
+  proven exclusion when neither ``input_select`` nor ``select_option`` is
+  among its literal values: whichever complete selector proved the
+  ``input_boolean`` exclusion then proves this one too.
+* A literal ``label_entities`` selector left incomplete only by malformed
+  registry records naming other entities is decided from the target's own
+  record.
+* An attributable coverage gap makes only its own automation relevant, a
+  consumer set beyond the disclosure bound takes the coarse
+  ``reload:automation`` fence instead of refusing, and missing evidence
+  never carries a positive consequence label (``helper_dependency``).
+
+v1 remains a compatible, readable model: a pending v1 plan is replanned
+rather than applied, and recovery may still reconstruct its lock graph.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
+
+from ..dependency.models import DependencyObligation
 
 from ..dependency.state_trigger_values import (
     DISABLED_EFFECT,
@@ -31,36 +50,162 @@ from .helper_dependency import (
     _failed_binding,
     _safe_automation_identity,
     build_helper_dependency_risk_binding,
+    target_scoped_label_disposition,
 )
 from .normalize import stable_hash
 
-INPUT_SELECT_DEPENDENCY_MODEL = "helper-dependency-risk-input-select-v1"
+INPUT_SELECT_DEPENDENCY_MODEL_V1 = "helper-dependency-risk-input-select-v1"
+INPUT_SELECT_DEPENDENCY_MODEL = "helper-dependency-risk-input-select-v2"
 INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS = frozenset({INPUT_SELECT_DEPENDENCY_MODEL})
+# Readable and recoverable, never fresh execution authority.
+INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS = frozenset(
+    {INPUT_SELECT_DEPENDENCY_MODEL_V1, INPUT_SELECT_DEPENDENCY_MODEL}
+)
 REPROJECTED_REASON = "call_service_filter_unproven_for_input_select"
+LABEL_TARGET_INCLUDED_REASON = "label_membership_target_included"
+LABEL_TARGET_EXCLUDED_REASON = "label_membership_target_excluded"
 MAX_OPTION_TRIGGER_RECORDS = 64
+_INPUT_SELECT_EVENT_SELECTORS = frozenset(
+    {"domain:input_select", "service:select_option"}
+)
 
 
-def _reproject(snapshot: Any) -> tuple[Any, int]:
+def _call_service_exclusion_holds(item: DependencyObligation) -> bool:
+    """Return whether an input_boolean exclusion also excludes input_select.
+
+    The extractor proved the filter disjoint from ``input_boolean`` either by
+    a complete domain set without ``input_boolean`` or by a complete service
+    set without ``turn_on``/``turn_off``.  Literal selectors are retained in
+    full or the obligation is reclassified as a coverage failure, so when
+    neither ``input_select`` nor ``select_option`` is a literal value, the
+    complete set that proved the first exclusion proves this one.
+    """
+
+    return bool(
+        not item.coverage_failure_authority
+        and not item.evidence_bounded
+        and not set(item.literal_selectors) & _INPUT_SELECT_EVENT_SELECTORS
+    )
+
+
+def _label_target_projection(
+    item: DependencyObligation, snapshot: Any, entity_id: str
+) -> tuple[DependencyObligation | None, list[list[str]]]:
+    """Decide an opaque literal ``label_entities`` terminal for one target."""
+
+    if item.coverage_failure_authority or item.outcome != "bounded_semantic_opaque":
+        return None, []
+    context = set(item.context_provenance)
+    producers = {
+        value.removeprefix("entity_set_producer:")
+        for value in context
+        if value.startswith("entity_set_producer:")
+    }
+    transforms = {
+        value
+        for value in context
+        if value.startswith("entity_selector_transform:")
+    }
+    selectors = tuple(sorted(set(item.literal_selectors)))
+    if (
+        producers != {"label_entities"}
+        # expand() could reach the target through a labelled group.
+        or transforms
+        or "entity_selector_provenance:complete" not in context
+        or "entity_selector_provenance:incomplete" in context
+        or "entity_non_selector_evidence:complete" not in context
+        or "entity_non_selector_evidence:incomplete" in context
+        or not selectors
+    ):
+        return None, []
+    authority = getattr(snapshot, "label_selector_authority", {}) or {}
+    dispositions = []
+    for selector in selectors:
+        evidence = authority.get(selector)
+        if evidence is None:
+            return None, []
+        dispositions.append(
+            [
+                evidence.selector_fingerprint,
+                target_scoped_label_disposition(
+                    snapshot, selector, evidence, entity_id=entity_id
+                ),
+            ]
+        )
+    outcomes = {disposition for _, disposition in dispositions}
+    if "unresolved" in outcomes:
+        return None, dispositions
+    if "included" in outcomes or entity_id in item.exact_entity_ids:
+        return (
+            replace(
+                item,
+                outcome="exact_dependency",
+                reason_code=LABEL_TARGET_INCLUDED_REASON,
+                exact_entity_ids=tuple(
+                    sorted(
+                        {*item.exact_entity_ids, entity_id},
+                        key=lambda value: value.encode("utf-8"),
+                    )
+                ),
+                lock_projection="exact",
+            ),
+            dispositions,
+        )
+    return (
+        replace(
+            item,
+            outcome="proven_target_exclusion",
+            reason_code=LABEL_TARGET_EXCLUDED_REASON,
+            target_selector_scope="closed_finite_candidates",
+            lock_projection="none",
+        ),
+        dispositions,
+    )
+
+
+def _reproject(
+    snapshot: Any, entity_id: str | None = None
+) -> tuple[Any, int, dict[str, Any]]:
     obligations = tuple(getattr(snapshot, "obligations", ()) or ())
     changed = 0
+    retained = 0
+    label_dispositions: dict[str, str] = {}
+    label_changed = 0
     projected = []
     for item in obligations:
         if (
             item.obligation_kind == "call_service_event_trigger"
             and item.outcome == "proven_target_exclusion"
         ):
-            changed += 1
-            item = replace(
-                item,
-                outcome="bounded_semantic_opaque",
-                target_selector_scope="target_capable",
-                lock_projection="conservative",
-                reason_code=REPROJECTED_REASON,
-            )
+            if entity_id is not None and _call_service_exclusion_holds(item):
+                retained += 1
+            else:
+                changed += 1
+                item = replace(
+                    item,
+                    outcome="bounded_semantic_opaque",
+                    target_selector_scope="target_capable",
+                    lock_projection="conservative",
+                    reason_code=REPROJECTED_REASON,
+                )
+        elif entity_id is not None and item.source_type in {"automation", "blueprint"}:
+            decided, dispositions = _label_target_projection(item, snapshot, entity_id)
+            for fingerprint, disposition in dispositions:
+                label_dispositions[fingerprint] = disposition
+            if decided is not None:
+                label_changed += 1
+                item = decided
         projected.append(item)
-    if not changed:
-        return snapshot, 0
-    return replace(snapshot, obligations=tuple(projected)), changed
+    summary = {
+        "call_service_exclusions_retained": retained,
+        "label_obligations_target_decided": label_changed,
+        "label_target_dispositions": [
+            [key, label_dispositions[key]] for key in sorted(label_dispositions)
+        ],
+    }
+    if not changed and not label_changed:
+        return snapshot, 0, summary
+    return replace(snapshot, obligations=tuple(projected)), changed, summary
 
 
 def _trigger_records(snapshot: Any, entity_id: str) -> tuple[list[dict[str, Any]], bool]:
@@ -85,7 +230,12 @@ def _trigger_records(snapshot: Any, entity_id: str) -> tuple[list[dict[str, Any]
 
 
 def _wrap(base: dict[str, Any], *, records: list[dict[str, Any]], truncated: bool,
-          reprojected: int) -> dict[str, Any]:
+          reprojected: int, summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    summary = dict(summary or {
+        "call_service_exclusions_retained": 0,
+        "label_obligations_target_decided": 0,
+        "label_target_dispositions": [],
+    })
     material = {
         "model": INPUT_SELECT_DEPENDENCY_MODEL,
         "base_model": base.get("model"),
@@ -93,6 +243,7 @@ def _wrap(base: dict[str, Any], *, records: list[dict[str, Any]], truncated: boo
         "option_trigger_records": records,
         "option_trigger_records_truncated": truncated,
         "reprojected_call_service_obligations": reprojected,
+        **summary,
     }
     binding = {
         **base,
@@ -102,6 +253,7 @@ def _wrap(base: dict[str, Any], *, records: list[dict[str, Any]], truncated: boo
         "option_trigger_records": records,
         "option_trigger_records_truncated": truncated,
         "reprojected_call_service_obligations": reprojected,
+        **summary,
     }
     if reprojected:
         codes = list(binding.get("consequence_uncertainty_reason_codes") or [])
@@ -116,12 +268,18 @@ def build_input_select_dependency_binding(
 ) -> dict[str, Any]:
     if not isinstance(entity_id, str) or not entity_id.startswith("input_select."):
         raise ValueError("input_select dependency target is invalid")
-    reprojected_snapshot, reprojected = _reproject(snapshot)
+    reprojected_snapshot, reprojected, summary = _reproject(snapshot, entity_id)
     base = build_helper_dependency_risk_binding(
-        reprojected_snapshot, entity_id=entity_id, index_metadata=index_metadata
+        reprojected_snapshot,
+        entity_id=entity_id,
+        index_metadata=index_metadata,
+        target_scoped=True,
     )
     records, truncated = _trigger_records(snapshot, entity_id)
-    return _wrap(base, records=records, truncated=truncated, reprojected=reprojected)
+    return _wrap(
+        base, records=records, truncated=truncated, reprojected=reprojected,
+        summary=summary,
+    )
 
 
 def failed_input_select_binding(entity_id: str) -> dict[str, Any]:
@@ -204,8 +362,12 @@ def option_trigger_disclosure(
 
 
 __all__ = [
+    "INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS",
     "INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS",
     "INPUT_SELECT_DEPENDENCY_MODEL",
+    "INPUT_SELECT_DEPENDENCY_MODEL_V1",
+    "LABEL_TARGET_EXCLUDED_REASON",
+    "LABEL_TARGET_INCLUDED_REASON",
     "REPROJECTED_REASON",
     "build_input_select_dependency_binding",
     "failed_input_select_binding",

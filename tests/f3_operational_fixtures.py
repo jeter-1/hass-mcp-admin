@@ -305,6 +305,12 @@ def baseline_for(
                 "automation_resource_ids": list(dependency_automation_ids),
                 "custom_template_reload": False,
             }
+            if material["model"] == INPUT_SELECT_DEPENDENCY_MODEL:
+                # HAMCP-274: a v2 projection always states its fence.
+                material["dependency_lock_projection"].update(
+                    coarse_automation_fence=False,
+                    coarse_automation_fence_reason_codes=[],
+                )
         if operation == SET_INPUT_SELECT_OPTION:
             return {
                 "entity_id": target_id,
