@@ -195,3 +195,36 @@ The publish job's log and summary end with one outcome:
 
 Only after PUBLISHED and the new `sequence` in health may Core be upgraded to
 that release (step 0).
+
+## Automated unsigned input (HAMCP-279)
+
+The separate **Automated Core release evidence** workflow detects stable releases
+on main and produces the unsigned inputs for this unchanged signing workflow.
+See [the automated path and measured O3 hit-rate](CORE_RELEASE_REGISTRY.md#automated-release-evidence-hamcp-279).
+Josh's 2026-11-02 strict full-file O3 decision is the only inheritance rule:
+changed/missing contract-read bytes require a binding PR. The manifest is
+`ci/core-contract-read-files.json`; update it alongside contract and judgment
+changes, with architect review before any narrowing. The measured current-list
+hit-rate is 2/11 across August–October patch pairs; the proposed narrower list is
+not adopted. Passing lanes yield only the predecessor's passing profile subset;
+review every WITHHELD group (the 19 general profiles are one group).
+
+Before registry cutover, and for a manual run with **dry_run=true**, download the
+candidate/evidence artifacts only. No candidate branch or signing dispatch occurs.
+PR acceptance also cannot dispatch. The fixture acceptance is explicitly synthetic;
+only its separate existing-binding .3 lane establishes real-release coverage.
+
+After cutover, production preparation pushes a new
+`registry-candidates/<core_version>` branch and dispatches this workflow on main
+with `core_version`, `candidate_ref`, computed `candidate_sha256`, computed
+`evidence_sha256`, and `dry_run=false`. It has no signing environment or signing
+secret and cannot update `registry`. The existing protected-environment approval
+remains Josh's tap; do not approve unless the exact artifact hashes, source
+comparison, withholding, predecessor and run evidence are acceptable.
+
+If the branch already exists with different contents, preparation refuses.
+Inspect the original candidate/run rather than force-pushing or deleting it.
+The signing workflow rechecks the current registry predecessor; a changed
+predecessor invalidates the prepared candidate. Disable **Automated Core release
+evidence** in Actions to stop new detection; inspect/cancel any already-dispatched
+signing run separately. This mechanism never authorizes deployment or a Core upgrade.
