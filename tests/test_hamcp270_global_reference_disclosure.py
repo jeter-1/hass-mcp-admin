@@ -46,6 +46,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 
 from tests.hamcp069b_fixtures import automation_profile, finding  # noqa: E402
 from tests.hamcp232_helper_options_fixtures import (  # noqa: E402
+    FILTER_LOWPASS,
     HelperOptionsServiceTestCase,
 )
 
@@ -407,6 +408,28 @@ class DisclosureModuleTests(FieldAssertions, unittest.TestCase):
             block, _ = self.disclose(reader)
             self.assertEqual(self.field(block, "unavailable_reason"), reason)
 
+    def test_one_unreadable_source_coverage_keeps_the_other_references(self):
+        sources = diagnostics(references_for(LIGHT))
+
+        class DashboardCoverageRaises:
+            findings = sources.findings
+            fingerprint = sources.fingerprint
+
+            def coverage_for(self, source_type):
+                if source_type == "dashboard":
+                    raise RuntimeError("synthetic coverage failure")
+                return sources.coverage_for(source_type)
+
+        class Store:
+            def visible(self):
+                return DashboardCoverageRaises()
+
+        block, child = self.disclose(lambda: held(Store()))
+        self.assertEqual(self.field(block, "status"), "read")
+        self.assertEqual(row(block, "dashboard"), {"completeness": "unavailable"})
+        self.assertEqual(row(block, "scene"), {"completeness": "complete"})
+        self.assertEqual(self.field(child, "count"), 3)
+
     def test_malformed_findings_never_raise(self):
         class Malformed:
             fingerprint = 17
@@ -686,6 +709,18 @@ class FourDisclosureTests(PlanDisclosureTestCase):
                             and child["truncated"] for child in children))
         self.assertIn(f"Each child lists at most {limit}; counts are totals.",
                       self.field(self.block(created), "statements"))
+
+    async def test_an_options_child_names_every_entity_of_its_entry(self):
+        sibling = "sensor.filtered_power_peak"
+        self.options_rest.add_entry("filterentry01", "filter", "lowpass", FILTER_LOWPASS,
+                                    (FILTERED, sibling))
+        self.set_global([member(sibling, "scene", "peak_watch")])
+        created, _ = await self.plan_options()
+        (child,) = self.children(created)
+        self.assertEqual(self.field(child, "targets"), [FILTERED, sibling])
+        self.assertEqual(self.field(child, "count"), 1)
+        self.assertEqual([(item["target"], item["id"]) for item in self.field(child, "items")],
+                         [(sibling, "scene.peak_watch")])
 
     async def test_dashboards_unavailable_are_truthful_in_every_disclosure(self):
         self.set_global([], dashboard="unavailable")
