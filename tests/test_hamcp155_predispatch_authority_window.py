@@ -288,9 +288,9 @@ class SignedCoreWindowTests(ConfigurationDeleteServiceTestCase):
 
     async def signed_core(self):
         authority = admission.SignedTestRegistryAdmissionTests()
+        authority.addCleanup = self.addCleanup
         await authority.asyncSetUp()
         self.addAsyncCleanup(authority.asyncTearDown)
-        self.addCleanup(authority.doCleanups)
         await authority.publish(authority.with_reference())
         self.clock[0] = datetime.now(timezone.utc)
         return authority.core

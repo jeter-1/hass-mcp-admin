@@ -34,8 +34,8 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Reuse the real signed-registry fixture without inheriting its tests.
         self.registry_case = core_fixtures.CoreContinuityTests()
+        self.registry_case.addCleanup = self.addCleanup
         await self.registry_case.asyncSetUp()
-        self.addCleanup(self.registry_case.doCleanups)
         await helper_fixtures.ExactHelperStateRuntimeTests.asyncSetUp(self)
         self.addAsyncCleanup(helper_fixtures.ExactHelperStateRuntimeTests.asyncTearDown, self)
         self.network = _Network()

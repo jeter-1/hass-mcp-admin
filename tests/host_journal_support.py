@@ -34,14 +34,18 @@ def journal_root(variant: str = "uncompressed", *, persistent: bool = True, runt
     """A disposable container root holding the fixture journals; the caller removes it."""
 
     root = Path(tempfile.mkdtemp(prefix="hamcp224-root-"))
-    for kind, relative, wanted in (("persistent", "var/log/journal", persistent),
-                                   ("runtime", "run/log/journal", runtime)):
-        directory = root / relative / MACHINE_ID
-        directory.mkdir(parents=True)
-        if wanted:
-            with gzip.open(FIXTURES / f"{kind}-{variant}.journal.gz") as source, \
-                    open(directory / f"{kind}.journal", "wb") as target:
-                shutil.copyfileobj(source, target)
+    try:
+        for kind, relative, wanted in (("persistent", "var/log/journal", persistent),
+                                       ("runtime", "run/log/journal", runtime)):
+            directory = root / relative / MACHINE_ID
+            directory.mkdir(parents=True)
+            if wanted:
+                with gzip.open(FIXTURES / f"{kind}-{variant}.journal.gz") as source, \
+                        open(directory / f"{kind}.journal", "wb") as target:
+                    shutil.copyfileobj(source, target)
+    except BaseException:
+        shutil.rmtree(root)
+        raise
     return str(root)
 
 
