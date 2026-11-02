@@ -59,6 +59,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp252_sun_condition_verification.py",
     # HAMCP-145: input_select option lock-mode coverage.
     "tests/test_hamcp145_input_select_option.py",
+    # HAMCP-274: input_select relevance lock modes and the coarse fence.
+    "tests/test_hamcp274_input_select_relevance.py",
     # HAMCP-271: configuration final-read outcomes (NormalizedOperationOutcome).
     "tests/test_hamcp271_stranded_children.py",
     # HAMCP-276: Core dispatch authority refusals across every F3 identity.
