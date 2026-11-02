@@ -180,6 +180,11 @@ def source_profiles(lane):
     return references
 
 
+def target_core(core_version):
+    from core_release_evidence import context
+    return context(core_version) is not None or core_version in TARGET_CORES
+
+
 def predecessor_references(core_version=TARGET_CORE):
     """The exact ordered seq-14 release set, excluding the five additions.
 
@@ -190,7 +195,12 @@ def predecessor_references(core_version=TARGET_CORE):
             if p.capability_id not in SEQ15_DORMANT | SEQ16_DORMANT]
     assert len(refs) == PREDECESSOR_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     registry = json.loads(SIGNED_REGISTRY.read_text())
-    assert core_version in TARGET_CORES
+    assert target_core(core_version)
+    from core_release_evidence import context
+    # Synthetic 26→27 regression authority remains historical; never the candidate
+    # allowlist, which is independently intersected with its signed predecessor.
+    if context(core_version) is not None:
+        core_version = TARGET_CORE
     (predecessor,) = [e for e in registry["envelopes"] if e["sequence"] == 14]
     (signed,) = [entry for entry in predecessor["entries"] if entry["version"] == core_version]
 
@@ -341,7 +351,7 @@ def verify_result(lane_key, result, *, core_version, support_slot):
     """
     from alarmo_inspection_contract_acceptance import slot_binding
     lane = LANES[lane_key]
-    assert type(core_version) is str and type(support_slot) is str and core_version in TARGET_CORES
+    assert type(core_version) is str and type(support_slot) is str and target_core(core_version)
     binding = slot_binding(core_version)
     assert binding["slot"] == support_slot
     assert result["result"] == "PASS" and result["lane"] == lane_key and result["core"] == core_version
@@ -648,7 +658,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
 
     binding = slot_binding(core_version)
     entry = lane_entry(core_version)
-    if (core_version not in TARGET_CORES
+    if (not target_core(core_version)
             or urlsplit(configured.ha_url).hostname not in {"127.0.0.1", "localhost", "::1"}
             or os.environ.get("HA_CONTRACT_LANE") != binding["lane"]
             or expected_image != binding["image"]
