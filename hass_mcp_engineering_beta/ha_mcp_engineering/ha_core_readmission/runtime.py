@@ -29,7 +29,14 @@ from .observation import (
     CoreSnapshotSource,
 )
 from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority
-from .routes import delegated_provider_compatibility, f3_requirements
+from .routes import (
+    CORE_LEASE_REFUSED,
+    CORE_LEASE_REQUIREMENTS_UNAVAILABLE,
+    CORE_LEASE_STALE_PLAN,
+    CoreLeaseDecision,
+    delegated_provider_compatibility,
+    f3_requirements,
+)
 from .registry import CoreReleaseRegistry
 from .probe_profiles import compiled_probe_profile
 from .models import CORE_IDENTITY
@@ -1585,17 +1592,68 @@ class CoreRuntime:
         delegated_tool: str | None = None,
         delegated_adapter_version: str | None = None,
     ) -> CoreRouteAuthority | None:
+        return self.acquire_decision(
+            capability_ids,
+            target=target,
+            expected_core_version=expected_core_version,
+            plan_created_at=plan_created_at,
+            delegated_tool=delegated_tool,
+            delegated_adapter_version=delegated_adapter_version,
+        ).authority
+
+    def acquire_decision(
+        self,
+        capability_ids: tuple[str, ...],
+        *,
+        target: Any | None = None,
+        expected_core_version: str | None = None,
+        plan_created_at: str | None = None,
+        delegated_tool: str | None = None,
+        delegated_adapter_version: str | None = None,
+    ) -> CoreLeaseDecision:
+        """``acquire`` with its refusal classified under the same lock.
+
+        HAMCP-276 R1-M1: the classification, cutoff and admission state come
+        from the one snapshot that decided the lease; the decision itself and
+        its precedence are exactly ``acquire``'s.
+        """
+
         self._sync_registry_authority()
         with self._lock:
             self._counters["lease_attempts"] += 1
             observation = self._observation
             generation = self._coordinator.current_generation
+            cutoff = self._last_material_change_at
+            plan_current = self._plan_is_current_locked(plan_created_at)
+            admitted = (
+                isinstance(capability_ids, tuple)
+                and bool(capability_ids)
+                and generation is not None
+                and all(
+                    decision is not None and decision.disposition.admitted
+                    for decision in map(generation.decision_for, capability_ids)
+                )
+            )
+
+            def refused(stale: bool = False) -> CoreLeaseDecision:
+                self._counters["lease_failures"] += 1
+                return CoreLeaseDecision(
+                    authority=None,
+                    refusal=(
+                        CORE_LEASE_STALE_PLAN if stale and admitted
+                        else CORE_LEASE_REFUSED if admitted
+                        else CORE_LEASE_REQUIREMENTS_UNAVAILABLE
+                    ),
+                    plan_current=plan_current,
+                    requirements_admitted=admitted,
+                    cutoff=cutoff.isoformat() if cutoff is not None else None,
+                    generation=generation.generation if generation else None,
+                )
+
             if observation is None or generation is None:
-                self._counters["lease_failures"] += 1
-                return None
+                return refused()
             if expected_core_version is not None and observation.version != expected_core_version:
-                self._counters["lease_failures"] += 1
-                return None
+                return refused()
             provider_compatible, _provider_reason = delegated_provider_compatibility(
                 tool_name=delegated_tool or "",
                 core_version=observation.version,
@@ -1603,12 +1661,10 @@ class CoreRuntime:
                 probe_profile=self._probe_profile_for(observation.version),
             )
             if not provider_compatible:
-                self._counters["lease_failures"] += 1
-                return None
-            if not self._plan_is_current_locked(plan_created_at):
+                return refused()
+            if not plan_current:
                 self._counters["stale_plan_rejections"] += 1
-                self._counters["lease_failures"] += 1
-                return None
+                return refused(stale=True)
             target_fingerprint = (
                 self.target_fingerprint(target) if target is not None else None
             )
@@ -1618,15 +1674,21 @@ class CoreRuntime:
                 target_fingerprint=target_fingerprint,
             )
             if leases is None:
-                self._counters["lease_failures"] += 1
-                return None
-            return CoreRouteAuthority(
-                capability_ids=tuple(sorted(capability_ids)),
-                leases=leases,
+                return refused()
+            return CoreLeaseDecision(
+                authority=CoreRouteAuthority(
+                    capability_ids=tuple(sorted(capability_ids)),
+                    leases=leases,
+                    generation=generation.generation,
+                    observation_fingerprint=observation.fingerprint,
+                    target_fingerprint=target_fingerprint,
+                    core_version=observation.version,
+                ),
+                refusal=None,
+                plan_current=plan_current,
+                requirements_admitted=admitted,
+                cutoff=cutoff.isoformat() if cutoff is not None else None,
                 generation=generation.generation,
-                observation_fingerprint=observation.fingerprint,
-                target_fingerprint=target_fingerprint,
-                core_version=observation.version,
             )
 
     def acquire_f3(
@@ -1635,7 +1697,17 @@ class CoreRuntime:
         *,
         plan_created_at: str | None = None,
     ) -> CoreRouteAuthority | None:
-        return self.acquire(
+        return self.acquire_f3_decision(
+            prepared, plan_created_at=plan_created_at
+        ).authority
+
+    def acquire_f3_decision(
+        self,
+        prepared: Any,
+        *,
+        plan_created_at: str | None = None,
+    ) -> CoreLeaseDecision:
+        return self.acquire_decision(
             f3_requirements(prepared),
             target=getattr(prepared, "target", None),
             plan_created_at=plan_created_at,

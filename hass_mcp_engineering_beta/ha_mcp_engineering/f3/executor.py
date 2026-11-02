@@ -94,6 +94,8 @@ _DISPATCH_AUTHORITY_REFUSAL_CODES = frozenset(
         # HAMCP-165 review1 H1: a dormant-profile plan without admission.
         "core_authority_unavailable",
         "pending_signed_registry_admission",
+        # HAMCP-276: the plan predates the current Core authority generation.
+        "core_authority_changed_since_plan",
     }
 )
 

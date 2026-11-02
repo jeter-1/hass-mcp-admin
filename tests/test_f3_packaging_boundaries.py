@@ -61,6 +61,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp145_input_select_option.py",
     # HAMCP-271: configuration final-read outcomes (NormalizedOperationOutcome).
     "tests/test_hamcp271_stranded_children.py",
+    # HAMCP-276: Core dispatch authority refusals across every F3 identity.
+    "tests/test_hamcp276_dispatch_authority.py",
     "tests/test_f3_tokenless_lock_recovery.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
