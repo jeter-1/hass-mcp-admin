@@ -31,6 +31,7 @@ is reported on its own line with those test IDs.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from collections import Counter
 import json
 import os
@@ -38,6 +39,7 @@ from pathlib import Path
 import re
 import secrets
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -52,6 +54,7 @@ SUMMARY_SCHEMA_VERSION = 1
 RUN_ATTEMPT = "1"
 POLL_SECONDS = 0.2
 MAX_LISTED_IDS = 20
+CORRUPT_LOCK_MAX_AGE = 3600  # One hour; valid live PIDs never expire.
 RAN_LINE = re.compile(r"^Ran (\d+) tests? in [0-9.]+s$")
 STATUS_LINE = re.compile(r"^(OK|FAILED|NO TESTS RAN)(?: \((.*)\))?$")
 
@@ -220,6 +223,7 @@ def prepare_layout(output_dir):
     layout = {"root": output_dir, "manifests": output_dir / "manifests", "logs": output_dir / "logs"}
     layout["manifests"].mkdir(parents=True)
     layout["logs"].mkdir()
+    (output_dir / ".hamcp-unit-run").write_text("HAMCP-272\n")
     return layout
 
 
@@ -365,6 +369,127 @@ def run(root, workers, output_dir, *, python=sys.executable, timeout=DEFAULT_SHA
     return summary
 
 
+def pid_alive(pid):
+    """Unknown liveness is treated as alive; never signal a Windows process."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+        if not handle:
+            return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER: no PID
+        try:
+            return kernel.WaitForSingleObject(handle, 0) != 0
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def lock_descriptor(descriptor):
+    """Serialize inspection/reclamation on the same inode, without a second lock."""
+    if os.name == "nt":
+        import msvcrt
+        os.lseek(descriptor, 4096, os.SEEK_SET)  # Keep mandatory lock off metadata.
+        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+    else:
+        import fcntl
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+@contextmanager
+def latest_output(root, output_dir):
+    """Replace only our fixed-name diagnostic receipt; never sweep old evidence.
+
+    PID and epoch start time identify the owner. Dead PIDs can be reclaimed;
+    corrupt/unreadable metadata must be older than one hour. A valid live PID
+    never expires. The OS lock serializes recovery and protects initialization.
+    The marker still prevents removal of an unrelated receipt directory.
+    """
+    root = Path(root).resolve()
+    expected = root / ".artifacts" / "unit-test-shards" / "latest"
+    output = Path(output_dir).absolute()
+    if output != expected or any(p.is_symlink() for p in (output, *output.parents) if p != root):
+        raise unit_test_shards.Refusal("replacement_requires_fixed_latest_directory")
+    expected.parent.mkdir(parents=True, exist_ok=True)
+    lock = expected.parent / "latest.lock"
+    refusal = ("latest_output_in_use; remove .artifacts/unit-test-shards/latest.lock "
+               "only if no Evidence run is active in this worktree")
+    created = False
+    try:
+        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        created = True
+    except FileExistsError:
+        if lock.is_symlink():
+            raise unit_test_shards.Refusal(refusal)
+        try:
+            descriptor = os.open(lock, os.O_RDWR)
+        except OSError as exc:
+            raise unit_test_shards.Refusal(refusal) from exc
+    acquired = False
+    owned = False
+    try:
+        try:
+            lock_descriptor(descriptor)
+            # Another owner may have removed/replaced the path before we locked.
+            if not os.path.samestat(os.fstat(descriptor), lock.stat()):
+                raise OSError("lock changed")
+        except OSError as exc:
+            raise unit_test_shards.Refusal(refusal) from exc
+        if not created:
+            try:
+                owner = json.loads(os.read(descriptor, 4096))
+                pid, started = owner["pid"], owner["started_at"]
+                if type(pid) is not int or pid <= 0 or type(started) not in (int, float) or not started > 0:
+                    raise ValueError("invalid owner")
+            except (OSError, ValueError, TypeError, KeyError):
+                if time.time() - os.fstat(descriptor).st_mtime <= CORRUPT_LOCK_MAX_AGE:
+                    raise unit_test_shards.Refusal(refusal)
+                stale_owner = "unknown (corrupt/unreadable metadata older than one hour)"
+            else:
+                if pid_alive(pid):
+                    raise unit_test_shards.Refusal(refusal + f"; owner PID {pid}, started_at {started}")
+                stale_owner = f"PID {pid}, started_at {started}"
+            print(f"Warning: reclaiming stale latest.lock owner {stale_owner}", file=sys.stderr, flush=True)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, json.dumps({"pid": os.getpid(), "started_at": time.time()}).encode())
+        os.fsync(descriptor)
+        acquired = True
+        if expected.exists():
+            marker = expected / ".hamcp-unit-run"
+            if marker.is_symlink() or not marker.is_file() or marker.read_text() != "HAMCP-272\n":
+                raise unit_test_shards.Refusal("latest_output_not_owned")
+            shutil.rmtree(expected)
+        owned = True
+        yield
+    finally:
+        try:
+            if owned and expected.is_dir() and not expected.is_symlink():
+                (expected / ".hamcp-unit-run").write_text("HAMCP-272\n")
+        finally:
+            # POSIX permits unlink while locked, so competing reclaimers cannot
+            # accidentally unlink a new owner's file. Windows denies unlink of
+            # an open file; the still-live PID protects the close/unlink window.
+            try:
+                if acquired and os.name != "nt":
+                    lock.unlink()
+            finally:
+                os.close(descriptor)
+            if acquired and os.name == "nt":
+                lock.unlink()
+
+
 def worker(root, shard, output, run_id):
     manifest = unit_test_shards.run_shard(root, shard, run_identity_env(run_id), output)
     print(f"Shard {shard}: {len(manifest['executed'])} of {manifest['discovered_count']} tests executed.", flush=True)
@@ -377,6 +502,8 @@ def main():
     run_parser = commands.add_parser("run", help="run every shard and prove completeness")
     run_parser.add_argument("--workers", type=int, required=True)
     run_parser.add_argument("--output-dir", type=Path, required=True)
+    run_parser.add_argument("--replace-output", action="store_true",
+                            help="overwrite only the owned .artifacts/unit-test-shards/latest receipt")
     run_parser.add_argument("--shard-timeout", type=int, default=DEFAULT_SHARD_TIMEOUT)
     check = commands.add_parser("verify", help="re-apply CI's completeness proof to a retained run")
     check.add_argument("--manifests", type=Path, required=True)
@@ -398,7 +525,11 @@ def main():
             sys.exit(1 if problems else 0)
         if args.shard_timeout < 1:
             raise unit_test_shards.Refusal("invalid_shard_timeout")
-        summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
+        if args.replace_output:
+            with latest_output(args.repo_root, args.output_dir):
+                summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
+        else:
+            summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
         sys.exit(0 if summary["result"] == "passed" else 1)
     except unit_test_shards.Refusal as exc:
         parser.exit(1, "Local sharded unittest run refused: " + str(exc) + "\n")

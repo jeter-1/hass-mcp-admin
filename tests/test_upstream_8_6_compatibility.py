@@ -1039,8 +1039,8 @@ class OctoberPairTests(unittest.IsolatedAsyncioTestCase):
         from test_core_2026_10_device_registry import OctoberSignedSelectionTests
         from ha_mcp_engineering.ha_core_readmission.routes import DEVICE_DEPENDENT_DELEGATED_TOOLS
         case = OctoberSignedSelectionTests()
+        case.addCleanup = self.addCleanup
         await case.asyncSetUp()
-        self.addCleanup(case.doCleanups)
         self.assertEqual((await case.publish())['compatible_count'], 22)
         for captured in (capture(), component_capture()):
             transport = Transport(captured['tools'])
@@ -1059,8 +1059,8 @@ class OctoberPairTests(unittest.IsolatedAsyncioTestCase):
     async def test_october_expiry_withdraws_delegated_search_without_dispatch(self):
         from test_core_2026_10_device_registry import OctoberSignedSelectionTests, NOW
         case = OctoberSignedSelectionTests()
+        case.addCleanup = self.addCleanup
         await case.asyncSetUp()
-        self.addCleanup(case.doCleanups)
         await case.publish()
         transport = Transport(component_capture()['tools'])
         gateway = UpstreamReadGateway()

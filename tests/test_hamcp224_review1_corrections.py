@@ -132,10 +132,9 @@ class NativeFieldOverlay:
 class Harness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.helper = author.JournalServiceTests()
+        # The helper has no runner; the active case owns cleanup, even if setup fails.
+        self.helper.addCleanup = self.addCleanup
         await self.helper.asyncSetUp()
-        # The helper never runs, so its own cleanups would need an event loop
-        # it does not have; remove its fixture root here.
-        self.addCleanup(author.shutil.rmtree, self.helper.journal, True)
 
     def service(self, journal_reader) -> IncidentLogService:
         service = self.helper.make_service(journal_reader)

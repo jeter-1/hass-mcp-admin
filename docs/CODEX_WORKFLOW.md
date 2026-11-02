@@ -509,8 +509,22 @@ Evidence keeps schema v2 and the same step names. It adds `unit_test_execution`:
   totals. They record the proof's `source_sha`, which must equal the Evidence
   head.
 
-Shard logs, manifests and `summary.json` stay under the ignored
-`.artifacts/unit-test-shards/` directory.
+Shard logs, manifests and `summary.json` use the fixed ignored
+`.artifacts/unit-test-shards/latest/` directory, replaced on each Full/Evidence
+run. `.hamcp-unit-run` identifies runner-owned output and is written before
+workers start, so an interrupted run remains recoverable. Unmarked directories
+are never removed automatically.
+
+`latest.lock` records the owner PID and run start time (Unix epoch seconds).
+An OS lock serializes recovery. A dead PID is reclaimed with a warning naming
+its PID and start time; a valid live PID never expires. Corrupt or unreadable
+metadata can be reclaimed only when the lock's modification time is more than
+one hour old; its warning names the owner as unknown. If the file cannot even
+be opened/locked safely, recovery refuses. PID reuse conservatively refuses.
+Normal completion and failure remove the lock. If automatic recovery refuses,
+remove `.artifacts/unit-test-shards/latest.lock` only if no Evidence run is active
+in this worktree; inspect any unmarked receipt separately before moving it.
+Do not remove a live owner's lock.
 
 Prefer the default serial run when:
 

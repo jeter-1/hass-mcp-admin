@@ -1170,7 +1170,9 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_audit_write_failure_does_not_erase_persisted_outcome_or_redispatch(self):
         created = await self.create()
         plan = await self.grant(created)
-        self.service.audit.path = self.temp.name
+        invalid_audit = Path(self.temp.name) / "directory-not-a-file"
+        invalid_audit.mkdir()
+        self.service.audit.path = str(invalid_audit)
         result = await self.service.apply(
             plan["plan_id"], plan["plan_hash"]
         )

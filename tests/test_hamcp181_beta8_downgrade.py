@@ -171,6 +171,7 @@ def setUpModule() -> None:
     RUN["provenance"] = verified_provenance()
 
     temp = Path(tempfile.mkdtemp(prefix="hamcp181-beta8-downgrade-"))
+    unittest.addModuleCleanup(shutil.rmtree, temp)
     RUN["temp"] = temp
     archive = _git("archive", "--format=tar", BETA8_COMMIT, binary=True)
     if archive is None:
@@ -199,12 +200,6 @@ def setUpModule() -> None:
     RUN["fixture_copy_changed"] = sorted(
         relative for relative, digest in RUN["provenance"]["files"].items()
         if _sha256(fixture_copy / relative) != digest)
-
-
-def tearDownModule() -> None:
-    temp = RUN.get("temp")
-    if temp is not None:
-        shutil.rmtree(temp, ignore_errors=True)
 
 
 def _calls(names: list[str]) -> list[str]:
