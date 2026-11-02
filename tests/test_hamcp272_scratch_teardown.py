@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -183,6 +184,112 @@ class BoundedEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(self.local.unit_test_shards.Refusal, "latest_output_in_use"):
                 with self.local.latest_output(self.root, self.output):
                     self.fail("second writer admitted")
+
+    def write_lock(self, contents):
+        self.output.parent.mkdir(parents=True, exist_ok=True)
+        lock = self.output.parent / "latest.lock"
+        lock.write_text(contents)
+        return lock
+
+    def test_lock_records_owner_and_start_time(self):
+        before = time.time()
+        with self.local.latest_output(self.root, self.output):
+            owner = json.loads((self.output.parent / "latest.lock").read_text())
+            self.assertEqual(owner["pid"], os.getpid())
+            self.assertGreaterEqual(owner["started_at"], before)
+            self.assertLessEqual(owner["started_at"], time.time())
+        self.assertFalse((self.output.parent / "latest.lock").exists())
+
+    def test_live_pid_refuses_even_without_advisory_lock_and_when_old(self):
+        lock = self.write_lock(json.dumps({"pid": os.getpid(), "started_at": 1}))
+        os.utime(lock, (1, 1))
+        with self.assertRaisesRegex(self.local.unit_test_shards.Refusal,
+                                    r"latest_output_in_use; remove \.artifacts/unit-test-shards/latest.lock only if no Evidence run is active"):
+            with self.local.latest_output(self.root, self.output):
+                self.fail("live owner reclaimed")
+        self.assertEqual(json.loads(lock.read_text())["pid"], os.getpid())
+
+    def dead_pid(self):
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait(timeout=10)
+        self.assertFalse(self.local.pid_alive(child.pid))
+        return child.pid
+
+    def test_dead_owner_reclaimed_with_warning(self):
+        pid = self.dead_pid()
+        lock = self.write_lock(json.dumps({"pid": pid, "started_at": 1}))
+        warning = io.StringIO()
+        try:
+            with patch.object(sys, "stderr", warning), self.local.latest_output(self.root, self.output):
+                self.assertEqual(json.loads(lock.read_text())["pid"], os.getpid())
+        except self.local.unit_test_shards.Refusal as exc:
+            self.fail(f"dead owner must be reclaimed: {exc}")
+        self.assertIn(f"reclaiming stale latest.lock owner PID {pid}, started_at 1", warning.getvalue())
+        self.assertFalse(lock.exists())
+
+    def test_corrupt_metadata_refuses_until_one_hour_old(self):
+        for contents in ("", "not json", "[]", '{"pid": 0, "started_at": 1}'):
+            with self.subTest(contents=contents):
+                lock = self.write_lock(contents)
+                with self.assertRaisesRegex(self.local.unit_test_shards.Refusal, "latest_output_in_use"):
+                    with self.local.latest_output(self.root, self.output):
+                        self.fail("recent corrupt lock reclaimed")
+                self.assertEqual(lock.read_text(), contents)
+                old = time.time() - self.local.CORRUPT_LOCK_MAX_AGE - 1
+                os.utime(lock, (old, old))
+                warning = io.StringIO()
+                with patch.object(sys, "stderr", warning), self.local.latest_output(self.root, self.output):
+                    self.assertEqual(json.loads(lock.read_text())["pid"], os.getpid())
+                self.assertIn("unknown (corrupt/unreadable metadata older than one hour)", warning.getvalue())
+                self.assertFalse(lock.exists())
+
+    def test_unreadable_metadata_uses_same_age_bound(self):
+        for age, reclaims in ((0, False), (self.local.CORRUPT_LOCK_MAX_AGE + 1, True)):
+            lock = self.write_lock("unreadable synthetic owner")
+            os.utime(lock, (time.time() - age, time.time() - age))
+            with patch.object(self.local.os, "read", side_effect=OSError("synthetic read failure")), \
+                    patch.object(sys, "stderr", io.StringIO()) as warning:
+                if reclaims:
+                    with self.local.latest_output(self.root, self.output):
+                        pass
+                    self.assertIn("unknown", warning.getvalue())
+                    self.assertFalse(lock.exists())
+                else:
+                    with self.assertRaisesRegex(self.local.unit_test_shards.Refusal, "latest_output_in_use"):
+                        with self.local.latest_output(self.root, self.output):
+                            self.fail("recent unreadable lock reclaimed")
+
+    def test_stale_owner_does_not_authorize_removing_foreign_directory(self):
+        lock = self.write_lock(json.dumps({"pid": self.dead_pid(), "started_at": 1}))
+        self.output.mkdir()
+        (self.output / "keep").write_text("foreign")
+        with patch.object(sys, "stderr", io.StringIO()), \
+                self.assertRaisesRegex(self.local.unit_test_shards.Refusal, "latest_output_not_owned"):
+            with self.local.latest_output(self.root, self.output):
+                self.fail("foreign directory reclaimed")
+        self.assertEqual((self.output / "keep").read_text(), "foreign")
+        self.assertFalse(lock.exists())
+
+    def test_killed_writer_receipt_can_be_replaced(self):
+        program = """
+import os, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+import local_unit_test_shards as local
+root = pathlib.Path(sys.argv[2])
+output = root / '.artifacts/unit-test-shards/latest'
+with local.latest_output(root, output):
+    local.prepare_layout(output)
+    os._exit(7)
+"""
+        child = subprocess.run([sys.executable, "-c", program, str(ROOT / "scripts"), str(self.root)],
+                               capture_output=True, text=True, timeout=10)
+        self.assertEqual(child.returncode, 7, child.stderr)
+        self.assertTrue((self.output / ".hamcp-unit-run").is_file())
+        with patch.object(sys, "stderr", io.StringIO()) as warning, \
+                self.local.latest_output(self.root, self.output):
+            self.assertFalse(self.output.exists())
+        self.assertIn("reclaiming stale latest.lock owner PID", warning.getvalue())
+        self.assertFalse((self.output.parent / "latest.lock").exists())
 
     def test_foreign_path_or_unowned_directory_preserved(self):
         foreign = self.root / "other"
