@@ -33,8 +33,9 @@ class NativeFieldOverlay:
 class ReviewTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.helper=author.JournalServiceTests()
+        # Register resources on the running case, before helper setup can fail.
+        self.helper.addCleanup = self.addCleanup
         await self.helper.asyncSetUp()
-        self.addCleanup(self.helper.doCleanups)
     async def read(self,value,field='MESSAGE',source='supervisor',**kwargs):
         lib=NativeFieldOverlay(field,value)
         service=self.helper.make_service(author.reader(self.helper.journal,library=lambda:lib))

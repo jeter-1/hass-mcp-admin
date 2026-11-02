@@ -614,7 +614,9 @@ class RedactionAndAuditTests(unittest.TestCase):
 
     def test_audit_output_failure_does_not_crash_read_only_tool(self):
         with tempfile.TemporaryDirectory() as directory:
-            audit = AuditLogger(directory, SECRET)
+            invalid_audit = Path(directory) / "directory-not-a-file"
+            invalid_audit.mkdir()
+            audit = AuditLogger(str(invalid_audit), SECRET)
             self.assertFalse(audit.write({"event": "tool_call"}))
             payload = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
             self.assertTrue(payload["success"])

@@ -158,9 +158,9 @@ class ReviewerReproductions(AvailabilityExposureServiceTestCase):
 
     async def signed_core(self, *capability_ids: str):
         authority = admission.SignedTestRegistryAdmissionTests()
+        authority.addCleanup = self.addCleanup
         await authority.asyncSetUp()
         self.addAsyncCleanup(authority.asyncTearDown)
-        self.addCleanup(authority.doCleanups)
         await authority.publish(
             authority.with_references(*capability_ids) if capability_ids else None
         )
@@ -718,9 +718,9 @@ class ServiceAdmissionGateTests(AvailabilityExposureServiceTestCase):
 
     async def test_nested_under_a_gateway_lease_on_the_real_core(self):
         authority = admission.SignedTestRegistryAdmissionTests()
+        authority.addCleanup = self.addCleanup
         await authority.asyncSetUp()
         self.addAsyncCleanup(authority.asyncTearDown)
-        self.addCleanup(authority.doCleanups)
         await authority.publish(authority.with_references(AVAILABILITY, EXPOSURE))
         self.clock[0] = datetime.now(timezone.utc)
         self.runtime.core_runtime = authority.core
