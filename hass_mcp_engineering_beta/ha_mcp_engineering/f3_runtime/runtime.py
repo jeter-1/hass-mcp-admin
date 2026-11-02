@@ -7948,16 +7948,23 @@ class F3RuntimeIntegration:
         except Exception:
             self._readiness_fault(fault_key)
             self._sweep_failures += 1
-            runtime = self.children.runtime(child_id)
+            try:
+                runtime = self.children.runtime(child_id)
+            except Exception:
+                # HAMCP-271 R2-M1: unreadable runtime storage cannot show the
+                # marker absent; leave it untouched for the next retry.
+                return False
             backoff = min(max(5, int(runtime["backoff_seconds"]) * 2), 300)
             self.children.update_runtime(
                 child_id,
                 changes={
                     "last_reconciliation_at": now.isoformat(),
-                    # A terminal child keeps its cleanup marker for resume.
+                    # HAMCP-271 R2-M1: the durable marker alone keeps the
+                    # cleanup obligation; no further child read decides it.
                     "reconciliation_result": (
                         TERMINAL_PARENT_CLEANUP_PENDING
-                        if self._terminal_parent_cleanup_marked(child_id)
+                        if runtime["reconciliation_result"]
+                        == TERMINAL_PARENT_CLEANUP_PENDING
                         else "bounded_retry"
                     ),
                     "backoff_seconds": backoff,

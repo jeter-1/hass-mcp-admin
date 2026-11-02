@@ -745,13 +745,17 @@ class _MarkerPreservation:
         self.assertIn(await self._f3_status(), {"recovering", "unavailable"})
 
     async def _assert_resumed(self, task_id, child_id, before, reads, *,
-                              restart):
+                              restart, sweep=False):
         self.clock[0] += timedelta(minutes=10)
         if restart:
-            self._compose()
-            await self.runtime.recover_once("startup")
+            # ``restart`` may also count consecutive restarts.
+            for _ in range(int(restart)):
+                self._compose()
+                await self.runtime.recover_once("startup")
         else:
             await self.runtime.recover_once("periodic")
+        if sweep:
+            await self._pass()
         self._assert_settled(
             task_id, child_id, before, reads, outcome="manual_review_required"
         )
@@ -876,6 +880,123 @@ class _MarkerPreservation:
         self._reads_unavailable(0)
         await self._assert_resumed(
             task_id, child_id, before, reads, restart=True
+        )
+
+    async def _missing_child_reads_with_release_fault(self, misses, *,
+                                                      runtime_fault=False):
+        """HAMCP-271 R2-M1: readback unavailable, every lock release fails,
+        and the next ``misses`` child reads after the readback return
+        nothing; with ``runtime_fault`` the retry's runtime read fails too.
+        """
+
+        task_id, child_id, _parent = await self._live_shape()
+        before = self._parent_bytes(task_id)
+        held = self._lock_keys()
+        self._reads_unavailable(100)
+        reads = self._post_write_reads()
+        failures = self.runtime._sweep_failures
+        armed = []
+        missed = [0]
+        runtime_failed = [0]
+        original_execute = F3RuntimeIntegration._execute_child
+        children = self.runtime.children
+        original_get = children.get
+        original_runtime = children.runtime
+
+        async def execute(runtime, *args, **kwargs):
+            result = await original_execute(runtime, *args, **kwargs)
+            armed.append(True)
+            return result
+
+        def get(identifier):
+            if armed and identifier == child_id and missed[0] < misses:
+                missed[0] += 1
+                return None
+            return original_get(identifier)
+
+        def read_runtime(identifier):
+            if (
+                runtime_fault
+                and missed[0]
+                and identifier == child_id
+                and not runtime_failed[0]
+            ):
+                runtime_failed[0] += 1
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            return original_runtime(identifier)
+
+        marked = original_runtime(child_id)
+        with patch.object(F3RuntimeIntegration, "_execute_child", execute), \
+                patch.object(children, "get", side_effect=get), \
+                patch.object(children, "runtime", side_effect=read_runtime), \
+                patch.object(
+                    type(self.runtime.locks),
+                    "release",
+                    side_effect=LockStorageError("synthetic release failure"),
+                ):
+            await self.runtime.recover_once("periodic")
+        self.assertEqual([True], armed)
+        runtime = self.runtime.children.runtime(child_id)
+        self.assertEqual(
+            TERMINAL_PARENT_CLEANUP_PENDING, runtime["reconciliation_result"]
+        )
+        # The retry decides from the durable marker, never from another
+        # child read: any further armed miss stays unconsumed.
+        self.assertEqual(1, missed[0])
+        self.assertEqual(int(runtime_fault), runtime_failed[0])
+        child = self.runtime.children.get(child_id)
+        self.assertTrue(child.terminal)
+        self.assertEqual("manual_review_required", child.normalized_outcome)
+        self.assertEqual(held, self._lock_keys())
+        self.assertIn(
+            ("script:set_hvac_comfort", "exclusive"), self._lock_keys()
+        )
+        self.assertEqual(before, self._parent_bytes(task_id))
+        self.assertEqual(1, self._post_write_reads() - reads)
+        self.assertEqual(1, self._provider_writes())
+        # Bounded retry: a counted sweep failure and readiness fault, never
+        # a silent skip.
+        self.assertEqual(failures + 1, self.runtime._sweep_failures)
+        self.assertIn(await self._f3_status(), {"recovering", "unavailable"})
+        if runtime_fault:
+            # Unreadable runtime storage: the marker write is not repeated,
+            # so no retry bookkeeping overwrote the durable record.
+            self.assertEqual(marked["backoff_seconds"], runtime["backoff_seconds"])
+            self.assertEqual(
+                marked["next_eligible_at"], runtime["next_eligible_at"]
+            )
+        else:
+            self.assertGreater(
+                runtime["backoff_seconds"], marked["backoff_seconds"]
+            )
+            self.assertIsNotNone(runtime["next_eligible_at"])
+        self._reads_unavailable(0)
+        return task_id, child_id, before, reads
+
+    async def test_two_missing_child_reads_keep_marker_same_process(self):
+        task_id, child_id, before, reads = (
+            await self._missing_child_reads_with_release_fault(2)
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=False
+        )
+
+    async def test_two_missing_child_reads_keep_marker_restart(self):
+        task_id, child_id, before, reads = (
+            await self._missing_child_reads_with_release_fault(2)
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=2, sweep=True
+        )
+
+    async def test_unreadable_runtime_after_missing_child_keeps_marker(self):
+        task_id, child_id, before, reads = (
+            await self._missing_child_reads_with_release_fault(
+                1, runtime_fault=True
+            )
+        )
+        await self._assert_resumed(
+            task_id, child_id, before, reads, restart=False
         )
 
 
