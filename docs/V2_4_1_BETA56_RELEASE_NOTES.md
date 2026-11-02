@@ -97,6 +97,13 @@ The change generalizes the HAMCP-263 mechanism. It does not fork it.
   - Before this correction, such a failure dropped the child into
     terminal-fault projection, which overwrote the marker and left the
     locks held until manual repair.
+  - The readback's failure handler keeps the marker whenever the
+    runtime record it already read carries it, without reading the
+    child again (review R2-M1). Previously a second missing child read
+    in that handler downgraded the marker to `bounded_retry`, and the
+    target lock stayed held across restarts. If the runtime record
+    itself is unreadable, the handler writes nothing and the sweep
+    retries.
 - **Unchanged from beta.55 (introduced in beta.54):**
   - the durable cleanup marker `terminal_parent_child_cleanup_pending`;
   - the readback result `terminal_parent_child_readback_settled`;

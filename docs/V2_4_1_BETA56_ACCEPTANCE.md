@@ -119,6 +119,18 @@ The families covered are configuration script update, operational
     parent bytes are unchanged and an unrelated apply succeeds.
 
   Check-removal mutants of the marker-preservation path must be killed.
+- **Repeated missing child reads (review R2-M1).** The readback is
+  unavailable, every lock release fails and the next two child reads
+  after the readback return nothing. The marker stays
+  `terminal_parent_child_cleanup_pending` and every lock, including
+  `script:set_hvac_comfort`, stays held. Once reads and releases
+  recover, the same process, and separately two restarts plus a sweep,
+  release every lock with one read and one dispatch in total, unchanged
+  parent bytes, idempotent later sweeps and a successful unrelated
+  apply. When the runtime record itself is unreadable during the retry,
+  the marker is not overwritten and the sweep counts a bounded-retry
+  failure. A mutant that decides preservation from another child read
+  must be killed.
 - **Real stores per family (review R1-M2),
   `tests/test_hamcp271_real_store_recovery.py`.** Each driver uses the
   real F3 lock and execution stores, the real governance service, the
@@ -181,26 +193,34 @@ writes and needs Josh's explicit approval before it starts.
 
 The architect checks with read-only tools.
 
-1. **Health.** F3 status is not `recovering`.
-2. **No stranded children.** Check each terminal F3 parent of a
-   covered forward family: dashboard update, every configuration family
-   and `set_input_boolean_state` / `set_input_select_option`. None has a
-   nonterminal child holding a dispatch intent. This check excludes:
+1. **Health.** F3 status is not `recovering`. This is the desired
+   installed observation. It does not prove that recovery exists for the
+   excluded families below.
+2. **Covered forward families settle.** Check each terminal F3 parent of
+   a covered forward family: dashboard update, every configuration
+   family and `set_input_boolean_state` / `set_input_select_option`.
+   None has a nonterminal child holding a dispatch intent. No child
+   runtime shows `terminal_parent_child_cleanup_pending`. A child settled
+   by this release shows `terminal_parent_child_readback_settled`, and
+   its audit shows exactly one readback and no dispatch. Do not infer a
+   verified outcome from the terminal state alone.
+3. **Excluded families, enumerated.** This release does not settle every
+   family, and acceptance makes no claim of "no stranded children in any
+   family". List each of the following children by child ID, family and
+   parent, with every lock it still holds (key and mode):
    - governed rollback (HAMCP-135 inverse plan) children, which keep
      their conflict-held manual review by design;
-   - backup, reload, add-on restart and Core restart children, which
-     have their own long evidence windows.
+   - long-window operational children (backup, reload, add-on restart
+     and Core restart), which have their own evidence windows.
 
-   Record any such child in HAMCP-271 as observed, not as a failure. No child runtime shows
-   `terminal_parent_child_cleanup_pending`. A child settled by this
-   release shows `terminal_parent_child_readback_settled`, and its audit
-   shows exactly one readback and no dispatch. Do not infer a verified
-   outcome from the terminal state alone.
-3. **Locks.** No lock is held by a terminal post-intent child, except the
-   declared target keys of an unresolved manual-review child.
-4. **Parents unchanged.** Terminal parents keep their recorded outcome
+   Record them in HAMCP-271 as observed, not as a failure.
+4. **Locks.** No lock is held by a terminal post-intent child of a
+   covered forward family, except the declared target keys of an
+   unresolved manual-review child. Locks of the excluded children are
+   the ones listed in step 3.
+5. **Parents unchanged.** Terminal parents keep their recorded outcome
    and reason. HAMCP-253 owns their acknowledgment.
-5. **Smoke and regression.** The read-only smoke and regression checks
+6. **Smoke and regression.** The read-only smoke and regression checks
    pass.
 
 ### Phase (b): writes, only with Josh's approval
