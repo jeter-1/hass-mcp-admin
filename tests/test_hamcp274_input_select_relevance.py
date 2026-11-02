@@ -48,6 +48,9 @@ from ha_mcp_engineering.f3.operational_locks import (  # noqa: E402
 from ha_mcp_engineering.governance import (  # noqa: E402
     input_select_option as contract,
 )
+from ha_mcp_engineering.governance import (  # noqa: E402
+    helper_dependency as helper_module,
+)
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HelperDependencyRiskService,
     helper_consumers_disclosed,
@@ -917,6 +920,34 @@ class EndToEndTests(InstallationTestCase):
         await self.apply_verified(plan, "Away")
         modes = self.lock_modes(plan)
         self.assertEqual(modes["automation:dynamic"], LockMode.SHARED)
+
+
+class CoverageAttributionTests(unittest.TestCase):
+    """A gap named only by a synthetic provider source is never attributed."""
+
+    def attribution(self, source_id: str) -> Any:
+        obligation = SimpleNamespace(source_type="automation", source_id=source_id)
+        return helper_module._attributable_coverage_sources(
+            SimpleNamespace(automation_read_failures=()),
+            projected_pairs=[({"target_outcome": "coverage_failure"}, obligation)],
+            automation_coverage=object(),
+            automation_completeness="partial",
+            automation_failures=1,
+            blueprint_coverage=object(),
+            blueprint_completeness="complete",
+            blueprint_failures=0,
+        )
+
+    def test_a_named_automation_gap_is_attributed(self):
+        self.assertEqual(self.attribution("kitchen_0"), {"kitchen_0"})
+
+    def test_synthetic_provider_sources_are_unattributable(self):
+        # Even when the counts reconcile, these sources stand for an
+        # inventory overflow or an unknown pending write, not one automation.
+        for source_id in ("dependency_provider",
+                          "dependency_provider_pending_writes"):
+            with self.subTest(source_id=source_id):
+                self.assertIsNone(self.attribution(source_id))
 
 
 class ConsumerDisclosureScopeTests(unittest.TestCase):
