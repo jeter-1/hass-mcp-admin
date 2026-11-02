@@ -1,5 +1,16 @@
 # HA MCP Engineering Server
 
+Not yet released: Engineering **2.4.1-beta.57** (HAMCP-276) reports an F3
+apply refused because its plan predates a Home Assistant Core authority
+retirement or change as `core_authority_changed_since_plan`, with the
+remedy "create and approve a fresh plan", instead of the generic
+`dispatch_authority_unavailable`. Authority decisions, approval binding
+and the stale-plan cutoff are unchanged. No tool, input schema, signed
+profile, persisted format or Home Assistant write changes. Rollback is
+reinstalling beta.56. Read the
+[2.4.1-beta.57 release notes](docs/V2_4_1_BETA57_RELEASE_NOTES.md) and the
+[2.4.1-beta.57 acceptance contract](docs/V2_4_1_BETA57_ACCEPTANCE.md).
+
 Not yet released: Engineering **2.4.1-beta.56** (HAMCP-271) settles a
 stranded post-intent child under an already-terminal parent through one
 read-only readback in every configuration family and in

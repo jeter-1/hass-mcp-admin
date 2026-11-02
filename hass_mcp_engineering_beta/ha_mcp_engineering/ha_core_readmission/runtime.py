@@ -1780,6 +1780,16 @@ class CoreRuntime:
         if record is not None:
             self._emit([record])
 
+    def plan_is_current(self, created_at: str | None) -> bool:
+        """Whether a plan created at ``created_at`` postdates the cutoff.
+
+        Reporting only (HAMCP-276): ``acquire`` applies the same check and
+        remains the only authority decision.
+        """
+
+        with self._lock:
+            return self._plan_is_current_locked(created_at)
+
     def _plan_is_current_locked(self, created_at: str | None) -> bool:
         cutoff = self._last_material_change_at
         if cutoff is None or created_at is None:

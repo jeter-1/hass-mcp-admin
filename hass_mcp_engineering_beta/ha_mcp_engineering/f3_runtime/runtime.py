@@ -25,6 +25,7 @@ from ..f3.executor import (
     SharedOperationExecutor,
 )
 from ..ha_core_readmission.routes import (
+    CORE_AUTHORITY_CHANGED_SINCE_PLAN,
     CORE_REQUIREMENT_UNMAPPED,
     INPUT_SELECT_PROFILE,
     f3_entry_admission_profiles,
@@ -378,6 +379,29 @@ def _refuse_unmapped_f3_operation(prepared: object) -> None:
         raise DispatchAuthorityRefused(CORE_REQUIREMENT_UNMAPPED)
 
 
+def _refused_lease(
+    runtime: Any, prepared: object, plan_created_at: str | None
+) -> DispatchAuthorityRefused:
+    """HAMCP-276: name the refusal of a lease Core already refused.
+
+    Reporting only.  When the operation's requirements are admitted now but
+    the plan predates the current Core authority generation, staleness is the
+    reason and a fresh plan is the remedy.  Withdrawn or unavailable authority
+    keeps the generic code.
+    """
+
+    route_status = getattr(runtime, "route_status", None)
+    plan_is_current = getattr(runtime, "plan_is_current", None)
+    if (
+        callable(route_status)
+        and callable(plan_is_current)
+        and route_status(f3_requirements(prepared)).get("available") is True
+        and plan_is_current(plan_created_at) is False
+    ):
+        return DispatchAuthorityRefused(CORE_AUTHORITY_CHANGED_SINCE_PLAN)
+    return DispatchAuthorityRefused("dispatch_authority_unavailable")
+
+
 class _CoreDispatchAuthorityGuard:
     """Bind one F3 dispatch to the exact current Core authority generation."""
 
@@ -402,6 +426,8 @@ class _CoreDispatchAuthorityGuard:
             prepared,
             plan_created_at=self.plan_created_at,
         )
+        if self.authority is None:
+            raise _refused_lease(self.runtime, prepared, self.plan_created_at)
         return self.authority
 
     def consume(self, authority: object) -> object | None:
@@ -1282,7 +1308,9 @@ class _CoreVerificationAdapter:
             plan_created_at=self._dispatch_guard.plan_created_at,
         )
         if authority is None:
-            raise DispatchAuthorityRefused("dispatch_authority_unavailable")
+            raise _refused_lease(
+                self._core_runtime, prepared, self._dispatch_guard.plan_created_at
+            )
         commits = self._core_runtime.consume(authority)
         if commits is None:
             self._core_runtime.release(authority)

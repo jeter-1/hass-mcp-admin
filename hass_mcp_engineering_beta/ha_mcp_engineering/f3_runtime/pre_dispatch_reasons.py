@@ -117,6 +117,12 @@ _CHECK_DETAILS: dict[str, str] = {
         "Core dispatch authority was unavailable or refused this operation. "
         "Check Core admission state before retrying."
     ),
+    # HAMCP-276: admitted again, but under a later authority generation.
+    "core_authority_freshness": (
+        "Home Assistant Core authority was retired, restored or changed after "
+        "this plan was created, so its approval cannot bind current authority. "
+        "Nothing was sent. Create and approve a fresh plan."
+    ),
     "preflight_exception": (
         "Preflight stopped on an internal error before dispatch. Check the "
         "add-on log for this child, then retry."
@@ -174,6 +180,7 @@ _REASONS: tuple[tuple[str, str], ...] = (
     ("retry_bundle_state_mismatch", "retry_bundle"),
     ("retry_bundle_read_unavailable", "retry_bundle"),
     ("core_requirement_unmapped", "dispatch_authority"),
+    ("core_authority_changed_since_plan", "core_authority_freshness"),
     ("core_authority_unavailable", "dispatch_authority"),
     ("pending_signed_registry_admission", "dispatch_authority"),
     ("dispatch_authority_unavailable", "dispatch_authority"),

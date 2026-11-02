@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.1-beta.57 - Truthful refusal for an F3 plan that predates a Core authority change (HAMCP-276)
+
+Builds on 2.4.1-beta.56 (HAMCP-271, #340). No tool, input schema, route,
+provider, signed profile, fingerprint, persisted format, Home Assistant
+write or authority decision change.
+
+- A refused Core lease for a plan created before the current Core
+  authority generation, with every requirement admitted now, is reported
+  as `core_authority_changed_since_plan` (pre-dispatch check
+  `core_authority_freshness`) instead of `dispatch_authority_unavailable`.
+  This covers all 25 activated F3 identities.
+- `CoreRuntime.plan_is_current` reports the cutoff check `acquire` applies;
+  `acquire` remains the only decision.
+- A withdrawn or unadmitted profile keeps the generic code, also when the
+  plan is stale.
+
 ## 2.4.1-beta.56 - Stranded post-intent children settled in every 120 s family (HAMCP-271)
 
 Builds on 2.4.1-beta.55 (HAMCP-227, #337), which includes 2.4.1-beta.54

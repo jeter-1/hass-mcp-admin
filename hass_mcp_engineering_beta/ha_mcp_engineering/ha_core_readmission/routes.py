@@ -492,6 +492,9 @@ CORE_ROUTE_INDEPENDENT = "core_independent"
 CORE_ROUTE_DELEGATED = "delegated"
 CORE_ROUTE_UNMAPPED = "unmapped"
 CORE_REQUIREMENT_UNMAPPED = "core_requirement_unmapped"
+# HAMCP-276: an F3 plan created before the current Core authority generation
+# cannot bind it, although its requirements are admitted again.
+CORE_AUTHORITY_CHANGED_SINCE_PLAN = "core_authority_changed_since_plan"
 
 
 def _validate_static_core_routes() -> None:
@@ -1061,6 +1064,7 @@ __all__ = [
     "CORE_2026_9_RELEASES",
     "CORE_INDEPENDENCE_BASES",
     "CORE_INDEPENDENT_STATIC_TOOLS",
+    "CORE_AUTHORITY_CHANGED_SINCE_PLAN",
     "CORE_REQUIREMENT_UNMAPPED",
     "CORE_ROUTE_DELEGATED",
     "CORE_ROUTE_INDEPENDENT",
