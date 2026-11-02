@@ -15,6 +15,7 @@ any matrix is generated. Never imported by the Engineering runtime.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 CHILD_DEVICES = "child_devices"
 CHILD_DEVICE_NAME_PARTS = "child_device_name_parts"
@@ -64,6 +65,9 @@ def reviewed_core_binding(version):
 
     if not isinstance(version, str):
         return None
+    if os.environ.get("CORE_EVIDENCE_CONTEXT"):
+        from core_release_evidence import context
+        return CoreBinding(**context(version)["binding"])
     binding = REVIEWED_CORE_BINDINGS.get(version)
     if binding is None:
         return None

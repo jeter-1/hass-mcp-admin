@@ -1,0 +1,184 @@
+{
+  "definition": "Includes .0 to .1 as the first patch pair; no cross-minor comparisons",
+  "file_count": 337,
+  "pairs": [
+    {
+      "predecessor": "2026.8.0",
+      "release": "2026.8.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/api/__init__.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.8.1",
+      "release": "2026.8.2",
+      "inherited": false,
+      "changed": [],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.8.2",
+      "release": "2026.8.3",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/conversation/default_agent.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.0",
+      "release": "2026.9.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/helpers/device_registry.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.1",
+      "release": "2026.9.2",
+      "inherited": false,
+      "changed": [],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.2",
+      "release": "2026.9.3",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/conversation/manifest.json"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.3",
+      "release": "2026.9.4",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/http/security_filter.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.10.0",
+      "release": "2026.10.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/auth/indieauth.py",
+        "homeassistant/components/auth/login_flow.py",
+        "homeassistant/components/automation/trace.py",
+        "homeassistant/components/trace/models.py",
+        "homeassistant/helpers/template/extensions/devices.py"
+      ],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.1",
+      "release": "2026.10.2",
+      "inherited": false,
+      "changed": [
+        "homeassistant/auth/__init__.py",
+        "homeassistant/components/cloud/alexa_config.py",
+        "homeassistant/components/config/auth_provider_homeassistant.py",
+        "homeassistant/helpers/config_validation.py"
+      ],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.2",
+      "release": "2026.10.3",
+      "inherited": true,
+      "changed": [],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.3",
+      "release": "2026.10.4",
+      "inherited": true,
+      "changed": [],
+      "missing": []
+    }
+  ],
+  "inherited": 2,
+  "total": 11,
+  "october_1_to_3": {
+    "predecessor": "2026.10.1",
+    "release": "2026.10.3",
+    "inherited": false,
+    "changed": [
+      "homeassistant/auth/__init__.py",
+      "homeassistant/components/cloud/alexa_config.py",
+      "homeassistant/components/config/auth_provider_homeassistant.py",
+      "homeassistant/helpers/config_validation.py"
+    ],
+    "missing": []
+  }
+}
