@@ -87,7 +87,10 @@ treat consequence as decision support.
 
   Approval binding, at-most-once dispatch and exact readback are unchanged.
 - **Superseded plans.** An input_select plan created under the v1 binding
-  is `replan_required`. It cannot be approved or applied. Its recovery
+  is `replan_required`. It cannot be approved or applied. Applying one that
+  beta.58 already approved returns `OPERATIONAL_VALIDATION_FAILED` /
+  `helper_dependency_evidence_superseded_replan_required` before any task,
+  lock or provider call, and the approval is not consumed. Its recovery
   readback still reconstructs the shipped v1 lock graph.
 
 ## Not changed
@@ -97,8 +100,8 @@ treat consequence as decision support.
   evidence showed it can still label a sensor with no consumers
   `safety_critical`. That rule does not use this reader, and its fix is
   reported as a follow-up.
-- Signed profiles and contract fingerprints: all 62 contracts are identical
-  to beta.58.
+- Signed profiles and contract fingerprints: 62 comparisons across 31
+  distinct runtime profiles, all unchanged from beta.58.
 
 ## Rollback
 

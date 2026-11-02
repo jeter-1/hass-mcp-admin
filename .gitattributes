@@ -18,3 +18,6 @@ docs/evidence/hamcp222/artifacts-2026.10.3/diff/flagged-diffs.patch -text -white
 # SHA-256 pinned in provenance.json; journal files are gzip binaries.
 tests/fixtures/hamcp224_journal/*.export -text -whitespace
 tests/fixtures/hamcp224_journal/*.gz binary
+# HAMCP-274: exact beta.58 plan records and audit chains; sha256-pinned in
+# tests/fixtures/hamcp274_beta58_input_select_v1_provenance.json.
+tests/fixtures/hamcp274_beta58_input_select_v1/** -text -whitespace

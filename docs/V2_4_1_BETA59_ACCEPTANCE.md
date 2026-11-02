@@ -48,14 +48,20 @@ The review needs a security section covering:
   - a dependency index failure;
   - dependency drift between approval and apply;
   - a no-op.
-- **Locks.** A bounded consumer set takes per-automation locks. An opaque or
-  over-budget set takes `reload:automation` exclusively. An input_select v2
+- **Locks.** A bounded set of named consumers, opaque ones included, takes
+  precise per-automation locks plus the existing shared stability fences.
+  The coarse `reload:automation` exclusive fence applies only when the
+  consumer set is over the 50-lock budget, a consumer's lock identity is
+  unavailable, or a coverage gap is unattributable. An input_select v2
   projection that does not state its fence is invalid, and nothing is
   dispatched.
 - **Approval binding.** The plan hash and the evidence fingerprint bind
   every relevant consumer, including those beyond the disclosure bound,
   through `relevant_consumer_fingerprint`. A v1 plan is `replan_required`
-  and cannot be approved or applied.
+  and cannot be approved or applied. Applying a v1 plan that beta.58
+  already approved returns `OPERATIONAL_VALIDATION_FAILED` /
+  `helper_dependency_evidence_superseded_replan_required` before any task,
+  lock or provider call; the approval is not consumed.
 
 Required offline evidence, `tests/test_hamcp274_input_select_relevance.py`:
 - **Reproduction.** An installation-shaped fixture has 65 automations with

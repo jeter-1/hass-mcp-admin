@@ -392,7 +392,7 @@ These are not feature rows. They change the readiness of the rows above:
 - **HAMCP-276** (Ready, Small, High): options apply is refused at
   `dispatch_authority` (RCG-035). Until it lands, the existing helper-options
   profile is admitted but cannot dispatch.
-- **HAMCP-274** (Active, Medium, staged as 2.4.1-beta.59): input_select
+- **HAMCP-274** (Active, Medium, materialized as 2.4.1-beta.59): input_select
   option plans were prohibited even for unreferenced helpers (RCG-026).
   Relevance is now decided per target from evidence; an unreferenced helper
   is standard, and consumers are named and elevated. Helper options and

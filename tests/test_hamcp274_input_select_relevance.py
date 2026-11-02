@@ -20,8 +20,10 @@ commit, where it fails with the live prohibited classification.
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
+import shutil
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -58,6 +60,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.input_select_dependency import (  # noqa: E402
     INPUT_SELECT_DEPENDENCY_MODEL,
+    INPUT_SELECT_DEPENDENCY_MODEL_V1,
     build_input_select_dependency_binding,
 )
 
@@ -851,9 +854,11 @@ class SupersededModelTests(InstallationTestCase):
             INPUT_SELECT_DEPENDENCY_MODEL_V1,
         )
 
+        # Synthetic relabel of current evidence; the exact beta.58 records are
+        # exercised by HistoricalBeta58RecordTests below.
         reader = await self.install()
 
-        async def shipped_v1(entity_id: str, **kwargs: Any) -> dict[str, Any]:
+        async def relabelled_v1(entity_id: str, **kwargs: Any) -> dict[str, Any]:
             evidence = await RealInputSelectReader.__call__(reader, entity_id, **kwargs)
             binding = evidence["binding"]
             binding["model"] = INPUT_SELECT_DEPENDENCY_MODEL_V1
@@ -862,7 +867,7 @@ class SupersededModelTests(InstallationTestCase):
                 binding["dependency_lock_projection"].pop(key)
             return evidence
 
-        self.service.input_select_dependency_risk_reader = shipped_v1
+        self.service.input_select_dependency_risk_reader = relabelled_v1
         plan = (await self.create_select("Away"))["plan"]
         stored = self.service._load(plan["plan_id"])
         self.assertTrue(self.service._helper_dependency_replan_required(stored))
@@ -878,6 +883,143 @@ class SupersededModelTests(InstallationTestCase):
         with self.assertRaises(GovernanceError):
             await self.apply(plan)
         self.assertEqual(self.sent(), [])
+
+
+# --------------------------------------------------------------------------
+# Exact beta.58 v1 records (provenance-backed, hash-bearing bytes untouched)
+# --------------------------------------------------------------------------
+
+
+BETA58_FIXTURES = ROOT / "tests" / "fixtures" / "hamcp274_beta58_input_select_v1"
+BETA58_PROVENANCE = (
+    ROOT / "tests" / "fixtures" / "hamcp274_beta58_input_select_v1_provenance.json"
+)
+BETA58_GENERATOR = (
+    ROOT / "scripts" / "generate_hamcp274_beta58_input_select_v1_fixture.py"
+)
+BETA58_COMMIT = "d09fc8a6196593880832de2d77cc5ce143562891"
+SUPERSEDED_REPLAN = {
+    "reason": "helper_dependency_evidence_superseded_replan_required",
+    "replan_required": True,
+}
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _tree_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): _sha256(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+class HistoricalBeta58RecordTests(InputSelectServiceTestCase):
+    """Records written by exact v2.4.1-beta.58 code (R1-M1)."""
+
+    @staticmethod
+    def provenance() -> dict[str, Any]:
+        return json.loads(BETA58_PROVENANCE.read_text(encoding="utf-8"))
+
+    def restore(self, kind: str) -> dict[str, Any]:
+        record = self.provenance()["records"][kind]
+        for relative, digest in record["files"].items():
+            source = BETA58_FIXTURES / kind / relative
+            self.assertEqual(_sha256(source), digest, relative)
+            destination = self.root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+        return record
+
+    def operation(self, plan_id: str) -> SimpleNamespace:
+        stored = self.service._load(plan_id)
+        return SimpleNamespace(
+            validate=lambda: None,
+            operation="set_input_select_option",
+            target=SimpleNamespace(target_id=ENTITY),
+            authoritative_provider_slug=contract.PROVIDER,
+            baseline=deepcopy(stored.operational.baseline),
+        )
+
+    def test_provenance_binds_the_exact_beta58_writer(self):
+        provenance = self.provenance()
+        self.assertEqual(provenance["source"]["commit"], BETA58_COMMIT)
+        self.assertEqual(provenance["source"]["tag"], "v2.4.1-beta.58")
+        self.assertEqual(provenance["generator_sha256"], _sha256(BETA58_GENERATOR))
+        self.assertEqual(set(provenance["records"]), {"pending", "approved"})
+        for kind, record in provenance["records"].items():
+            with self.subTest(kind=kind):
+                self.assertEqual(_tree_hashes(BETA58_FIXTURES / kind),
+                                 record["files"])
+                self.assertEqual(record["dependency_model"],
+                                 INPUT_SELECT_DEPENDENCY_MODEL_V1)
+                self.assertEqual(record["provider_write_count"], 0)
+        self.assertEqual(provenance["records"]["pending"]["approval_state"],
+                         "required")
+        self.assertEqual(provenance["records"]["approved"]["approval_state"],
+                         "approved")
+
+    async def test_the_pending_record_is_readable_and_requires_a_replan(self):
+        record = self.restore("pending")
+        public = self.service.get_plan_observability(record["plan_id"])
+        self.assertTrue(public["helper_dependency_replan_required"])
+        self.assertFalse(public["approval_actionable"])
+        self.assertEqual(public["next_required_operation"], "create_change_plan")
+        with self.assertRaises(GovernanceError) as raised:
+            await self.approve(public)
+        self.assertEqual(raised.exception.code,
+                         ErrorCode.OPERATIONAL_VALIDATION_FAILED)
+        self.assertEqual(raised.exception.details,
+                         {"resource_id": record["plan_id"], **SUPERSEDED_REPLAN})
+        self.assertEqual(self.sent(), [])
+
+    async def test_the_approved_record_apply_returns_the_structured_replan(self):
+        record = self.restore("approved")
+        plan_id = record["plan_id"]
+        public = self.service.get_plan_observability(plan_id)
+        self.assertEqual(public["status"], "approved")
+        self.assertTrue(public["helper_dependency_replan_required"])
+        before = _tree_hashes(self.root)
+        try:
+            await self.service.apply(plan_id, record["plan_hash"])
+        except Exception as exc:  # noqa: BLE001
+            raised = exc
+        else:
+            raised = None
+        # Any other outcome, an unhandled error included, fails here.
+        self.assertIsInstance(raised, GovernanceError, repr(raised))
+        self.assertEqual(raised.code, ErrorCode.OPERATIONAL_VALIDATION_FAILED)
+        self.assertEqual(raised.details,
+                         {"resource_id": plan_id, **SUPERSEDED_REPLAN})
+        self.assertEqual(self.sent(), [], "zero provider calls")
+        self.assertEqual(_tree_hashes(self.root), before,
+                         "persisted files byte-unchanged")
+        self.assertIsNone(self.service.task_repository.get_for_plan(plan_id))
+        stored = self.service._load(plan_id)
+        self.assertEqual(stored.approval.state.value, "approved",
+                         "approval not consumed")
+        self.assertEqual(self.runtime.readiness_state()["faults"], [])
+
+    def test_the_recovery_lock_graph_equals_the_shipped_v1_graph(self):
+        for kind in ("pending", "approved"):
+            with self.subTest(kind=kind):
+                record = self.restore(kind)
+                operation = self.operation(record["plan_id"])
+                calculator = OperationalLockSetCalculator()
+                try:
+                    graph = [
+                        [item.key, item.mode.value]
+                        for item in calculator.calculate_for_readback(operation)
+                    ]
+                except Exception as exc:  # noqa: BLE001
+                    self.fail(f"shipped v1 recovery graph not reconstructed: {exc!r}")
+                self.assertEqual(graph, record["shipped_execution_lock_graph"])
+                # Recovery reconstructs the shipped graph; fresh execution
+                # stays closed to v1 evidence.
+                with self.assertRaises(ValueError):
+                    calculator.calculate(operation)
 
 
 # --------------------------------------------------------------------------
