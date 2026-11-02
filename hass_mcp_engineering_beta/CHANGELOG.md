@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.4.1-beta.59 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
+
+Builds on 2.4.1-beta.58 (HAMCP-278, #342). No tool, input schema, route,
+provider, signed profile, fingerprint, plan or approval binding, persisted
+format, add-on option or Home Assistant write change.
+
+- Entity availability/exposure, delete, entity metadata and helper options
+  disclosures carry an informational `global_source_consumers` sibling,
+  built from the held HAMCP-227 global-source snapshot. It lists scene and
+  group loaded membership and dashboard view or card locations, with
+  per-source completeness and statements naming partial sources. Dashboards
+  are partial or unavailable until HAMCP-277.
+- The sibling is never part of a fingerprint, plan hash, policy hash,
+  semantic projection or approval binding, and never changes risk or
+  policy. An unavailable store is disclosed as `unavailable`, never a
+  refusal.
+- Bounded: counts plus a top-N item list with truncation flags. Plans of up
+  to five children with large reference sets stay within the response bound.
+
 ## 2.4.1-beta.58 - Core release registry read from the `registry` branch, with one-tap owner signing (HAMCP-278)
 
 Builds on 2.4.1-beta.57 (HAMCP-276, #343), which includes 2.4.1-beta.56
