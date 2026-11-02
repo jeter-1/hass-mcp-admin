@@ -22,6 +22,9 @@ $script:HadFailure = $false
 $script:NormalizedAuthorizedProtectedPaths = @()
 $script:ResolvedBaseSha = $null
 $script:ResolvedHeadSha = $null
+$script:GitIdentitySnapshot = $null
+$script:GitIdentityPaths = $null
+$previousGitCeilings = $env:GIT_CEILING_DIRECTORIES
 $script:UnitTestExecution = if ($Parallel) {
     [ordered]@{ mode = "sharded"; sharded = $true; workers = $Parallel; executed = $false }
 }
@@ -263,6 +266,73 @@ function Invoke-GitRead {
         throw "Git state command failed: git $($Arguments -join ' ')"
     }
     return @($output | Where-Object { $_ })
+}
+
+function Read-GitIdentityState {
+    param([string[]]$Arguments, [switch]$AllowMissing)
+    # Never echo native stderr or identity values, even for malformed config.
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& git -C $RepoRoot @Arguments 2>$null)
+        $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorPreference }
+    if ($code -ne 0 -and -not ($AllowMissing -and $code -eq 1)) {
+        throw "repository git identity could not be verified during Evidence"
+    }
+    return ($output -join "`n")
+}
+
+function Get-GitIdentitySnapshot {
+    # Bind to this checkout, not an inherited GIT_DIR or command-scope config.
+    # This is process-only environment isolation, never a config mutation.
+    $saved = @{}
+    foreach ($entry in @(Get-ChildItem Env: | Where-Object { $_.Name -like "GIT_*" })) {
+        $saved[$entry.Name] = $entry.Value
+        Remove-Item -LiteralPath "Env:$($entry.Name)"
+    }
+    try {
+        if ($null -eq $script:GitIdentityPaths) {
+            $common = Read-GitIdentityState -Arguments @("rev-parse", "--path-format=absolute", "--git-common-dir")
+            $current = Read-GitIdentityState -Arguments @("rev-parse", "--absolute-git-dir")
+            $script:GitIdentityPaths = @{
+                local = Join-Path $common "config"
+                worktree = Join-Path $current "config.worktree"
+            }
+        }
+        $snapshot = @{}
+        foreach ($scope in @("local", "worktree")) {
+            $snapshot[$scope] = Read-GitIdentityState -AllowMissing -Arguments @(
+                "config", "--null", "--show-origin", "--includes", "--file", $script:GitIdentityPaths[$scope],
+                "--get-regexp", '^user\.(name|email)$'
+            )
+        }
+        return $snapshot
+    }
+    finally {
+        foreach ($name in $saved.Keys) { Set-Item -LiteralPath "Env:$name" -Value $saved[$name] }
+    }
+}
+
+function Test-GitIdentitySnapshot {
+    $current = Get-GitIdentitySnapshot
+    $changed = @($script:GitIdentitySnapshot.Keys | Sort-Object | Where-Object {
+        $current[$_] -cne $script:GitIdentitySnapshot[$_]
+    })
+    if ($changed.Count -gt 0) {
+        throw "repository git identity changed during Evidence (scopes: $($changed -join ', ')); config NOT restored."
+    }
+}
+
+function Set-ScratchGitCeilings {
+    # Shared calculation with CI's scratch_session, also covering serial/Fast
+    # unittest and Evidence scripts outside unittest. Restore caller env below.
+    $value = @(& $PythonExecutable "scripts/unit_test_shards.py" ceilings --repo-root $RepoRoot 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $value.Count -ne 1 -or -not $value[0]) {
+        throw "Could not establish scratch Git discovery boundaries."
+    }
+    $env:GIT_CEILING_DIRECTORIES = [string]$value[0]
 }
 
 function Get-ChangedPaths {
@@ -688,6 +758,11 @@ function Write-Evidence {
 
 Push-Location $RepoRoot
 try {
+    if ($Tier -eq "Evidence") {
+        Invoke-LocalStep -Label "Snapshot repository Git identity" -CommandText "capture local/worktree identity without printing values" -Action {
+            $script:GitIdentitySnapshot = Get-GitIdentitySnapshot
+        }
+    }
     Invoke-LocalStep -Label "Verify base reference" -CommandText "git rev-parse --verify $BaseRef^{commit}" -Action { Test-BaseReference }
     if (-not $script:HadFailure -and $Tier -eq "Evidence") {
         Invoke-LocalStep -Label "Bind clean Evidence snapshot" -CommandText "resolve HEAD and require a clean working tree" -Action { Test-EvidenceSnapshot }
@@ -696,12 +771,12 @@ try {
         Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths and explicit declarations against $BaseRef" -Action { Test-ScopeBoundaries }
     }
     if ($script:HadFailure) {
-        if ($Tier -eq "Evidence") {
-            Write-Evidence
-        }
         Write-Host "`nValidation stopped during safe preflight. No repository code was executed." -ForegroundColor Red
         exit 1
     }
+
+    Invoke-LocalStep -Label "Bound scratch Git discovery" -CommandText "set child-process Git ceilings for scratch" -Action { Set-ScratchGitCeilings }
+    if ($script:HadFailure) { throw "Scratch Git boundary setup failed; validation not started." }
 
     if ($Tier -eq "Fast") {
         $fastChangedPaths = @(Get-ChangedPaths)
@@ -768,11 +843,26 @@ try {
 
     if ($Tier -eq "Evidence") {
         Invoke-LocalStep -Label "Recheck Evidence snapshot" -CommandText "verify base, HEAD, and working-tree identity" -Action { Test-EvidenceSnapshotConsistency }
-        Write-Evidence
     }
 }
+catch {
+    $script:HadFailure = $true
+    throw
+}
 finally {
-    Pop-Location
+    try {
+        if ($Tier -eq "Evidence") {
+            if ($null -ne $script:GitIdentitySnapshot) {
+                Invoke-LocalStep -Label "Recheck repository Git identity" -CommandText "compare local/worktree identity without restoring config" -Action { Test-GitIdentitySnapshot }
+            }
+            Write-Evidence
+        }
+    }
+    finally {
+        if ($null -eq $previousGitCeilings) { Remove-Item Env:GIT_CEILING_DIRECTORIES -ErrorAction SilentlyContinue }
+        else { $env:GIT_CEILING_DIRECTORIES = $previousGitCeilings }
+        Pop-Location
+    }
 }
 
 if ($script:HadFailure) {
