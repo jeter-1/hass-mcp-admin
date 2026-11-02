@@ -148,10 +148,12 @@ class RefusalLifecycle(unittest.TestCase):
                 self.assertEqual(values['refused'],'true');self.assertEqual(values['run'],'false')
                 self.assertEqual(values['release'],'2026.10.4');self.assertFalse((d/'release.json').exists())
                 proof=e.read_json(d/'comparison.json')
-                result=subprocess.run([sys.executable,str(ROOT/'scripts/core_evidence_workflow.py'),'refuse','--directory',tmp],capture_output=True,text=True,timeout=10)
+                result=subprocess.run([sys.executable,str(ROOT/'scripts/core_evidence_workflow.py'),'refuse','--directory',tmp],capture_output=True,text=True,timeout=10,
+                                      env={**os.environ,'GITHUB_STEP_SUMMARY':str(d/'final-summary')})
                 self.assertEqual(result.returncode,1)
                 for expected in ('binding PR required: '+path,proof['predecessor_commit'],proof['release_commit']):
                     self.assertIn(expected,result.stdout);self.assertIn(expected,(d/'summary').read_text())
+                    self.assertIn(expected,(d/'final-summary').read_text())
 
     def test_schedule_skips_but_explicit_dispatch_may_refuse_again(self):
         for event,requested,retries in [('schedule',None,False),('workflow_dispatch',None,False),('workflow_dispatch','2026.10.4',True)]:
