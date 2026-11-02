@@ -1,0 +1,2506 @@
+{
+  "status": "PROPOSAL ONLY; not adopted",
+  "removed": {
+    "homeassistant/components/config/auth_provider_homeassistant.py": "HAMCP-222 assessment explicitly identifies this as an uncalled user-credential-management endpoint matched only by broad components/config/ scope; not an F3 readback endpoint."
+  },
+  "kept": {
+    "homeassistant/auth/__init__.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/auth_store.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/const.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/jwt_wrapper.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/mfa_modules/__init__.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/mfa_modules/insecure_example.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/mfa_modules/notify.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/mfa_modules/totp.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/models.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/__init__.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/const.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/entities.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/events.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/merge.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/models.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/system_policies.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/types.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/permissions/util.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/providers/__init__.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/providers/command_line.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/providers/homeassistant.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/providers/insecure_example.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/auth/providers/trusted_networks.py": {
+      "groups": [
+        "core.basic_websocket_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/api/__init__.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.state_service_discovery",
+        "core.direct_entity_state_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.configuration_delete_operation",
+        "core.config_entry_helper_options_operation",
+        "core.typed_input_select_option_operation",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/api/manifest.json": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.state_service_discovery",
+        "core.direct_entity_state_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.configuration_delete_operation",
+        "core.config_entry_helper_options_operation",
+        "core.typed_input_select_option_operation",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/api/services.yaml": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.state_service_discovery",
+        "core.direct_entity_state_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.configuration_delete_operation",
+        "core.config_entry_helper_options_operation",
+        "core.typed_input_select_option_operation",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/__init__.py": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/indieauth.py": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/login_flow.py": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/manifest.json": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/mfa_setup_flow.py": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/auth/strings.json": {
+      "groups": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/__init__.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/blueprints/motion_light.yaml": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/blueprints/notify_leaving_zone.yaml": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/config.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.governed_configuration_operation",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/const.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/helpers.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/icons.json": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/logbook.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/manifest.json": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/reproduce_state.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/services.yaml": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/strings.json": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/automation/trace.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.automation_baseline_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/cloud/alexa_config.py": {
+      "groups": [
+        "core.entity_registry_availability_operation",
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/cloud/google_config.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/__init__.py": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/area_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/auth.py": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/automation.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.dependency_helper_planning",
+        "core.f3_mutation_verification",
+        "core.governed_configuration_operation",
+        "core.automation_baseline_metadata_read",
+        "core.configuration_delete_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/category_registry.py": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/config_entries.py": {
+      "groups": [
+        "core.f3_mutation_verification",
+        "core.integration_inspection_metadata_read",
+        "core.config_entry_helper_options_operation",
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/const.py": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/core.py": {
+      "groups": [
+        "core.configuration_validation",
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/device_registry.py": {
+      "groups": [
+        "core.direct_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.f3_mutation_verification",
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/entity_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.f3_mutation_verification",
+        "core.entity_registry_metadata_operation",
+        "core.entity_registry_availability_operation",
+        "core.configuration_delete_operation",
+        "core.config_entry_helper_options_operation",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/floor_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/label_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.f3_mutation_verification",
+        "core.label_registry_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/manifest.json": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/scene.py": {
+      "groups": [
+        "core.f3_mutation_verification",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/script.py": {
+      "groups": [
+        "core.dependency_helper_planning",
+        "core.f3_mutation_verification",
+        "core.governed_configuration_operation",
+        "core.configuration_delete_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/services.yaml": {
+      "groups": [
+        "core.f3_mutation_verification"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/config/view.py": {
+      "groups": [
+        "core.automation_configuration_read",
+        "core.f3_mutation_verification",
+        "core.governed_configuration_operation",
+        "core.configuration_delete_operation",
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/__init__.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/agent_manager.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/chat_log.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/const.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/default_agent.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/entity.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/gazetteer.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/http.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/icons.json": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/manifest.json": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/models.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/services.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/services.yaml": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/strings.json": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/trace.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/trigger.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/conversation/util.py": {
+      "groups": [
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/__init__.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/condition.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/conditions.yaml": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/const.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/device_action.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/device_condition.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/device_trigger.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/icons.json": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/intent.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/llm.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/manifest.json": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/reproduce_state.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/services.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/services.yaml": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/significant_change.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/strings.json": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/trigger.py": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/fan/triggers.yaml": {
+      "groups": [
+        "core.typed_fan_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/__init__.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/config_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/const.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/icons.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/manifest.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/sensor.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/services.yaml": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/filter/strings.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/homeassistant/exposed_entities.py": {
+      "groups": [
+        "core.entity_registry_availability_operation",
+        "core.entity_assistant_exposure_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/homeassistant/scene.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/__init__.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/auth.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/auth_util.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/ban.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/config.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/const.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/cors.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/data_validator.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/decorators.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/forwarded.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/headers.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/manifest.json": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/request_context.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/security_filter.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/server.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/static.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/strings.json": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/view.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/web_runner.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/http/websocket_api.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/__init__.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/const.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/icons.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/manifest.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/reproduce_state.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/services.yaml": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_boolean/strings.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/__init__.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/const.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/icons.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/manifest.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/reproduce_state.py": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/services.yaml": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_number/strings.json": {
+      "groups": [
+        "core.typed_helper_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/__init__.py": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/const.py": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/icons.json": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/manifest.json": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/reproduce_state.py": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/services.yaml": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/input_select/strings.json": {
+      "groups": [
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/__init__.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/condition.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/conditions.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/const.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/device_action.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/device_condition.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/device_trigger.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/helper.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/icons.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/intent.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/light_profiles.csv": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/llm.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/manifest.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/reproduce_state.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/services.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/services.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/significant_change.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/strings.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/trigger.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/light/triggers.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/__init__.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/cast.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/const.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/dashboard.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/icons.json": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/manifest.json": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/resources.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/services.yaml": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/strings.json": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/system_health.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/lovelace/websocket.py": {
+      "groups": [
+        "core.dashboard_configuration_read",
+        "core.f3_mutation_verification",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/__init__.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/const.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/icons.json": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/manifest.json": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/services.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/services.yaml": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/strings.json": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/trigger.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/scene/triggers.yaml": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/__init__.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/blueprints/confirmable_notification.yaml": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/config.py": {
+      "groups": [
+        "core.governed_configuration_operation",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/const.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/helpers.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/icons.json": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/llm.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/logbook.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/manifest.json": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/services.yaml": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/strings.json": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/script/trace.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/search/__init__.py": {
+      "groups": [
+        "core.delegated_device_effective_area",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/search/manifest.json": {
+      "groups": [
+        "core.delegated_device_effective_area",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/__init__.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/config_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/icons.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/manifest.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/sensor.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/services.yaml": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/statistics/strings.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/__init__.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/condition.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/conditions.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/const.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/device_action.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/device_condition.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/device_trigger.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/icons.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/light.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/manifest.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/reproduce_state.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/services.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/services.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/significant_change.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/strings.json": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/trigger.py": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/switch/triggers.yaml": {
+      "groups": [
+        "core.typed_power_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/__init__.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/alarm_control_panel.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/binary_sensor.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/blueprints/inverted_binary_sensor.yaml": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/button.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/climate.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/config.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/config_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/const.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/coordinator.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/cover.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/device_tracker.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/entity.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/event.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/fan.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/helpers.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/icons.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/image.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/light.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/lock.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/manifest.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/number.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/repairs.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/schemas.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/select.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/sensor.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/services.yaml": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/strings.json": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/switch.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/template_entity.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/trigger.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/trigger_entity.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/update.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/vacuum.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/validators.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/template/weather.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/__init__.py": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/const.py": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/manifest.json": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/models.py": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/util.py": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/trace/websocket_api.py": {
+      "groups": [
+        "core.automation_trace_read",
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/__init__.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/auth.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/automation.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/commands.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation",
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/connection.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/const.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/decorators.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/error.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/http.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/manifest.json": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/messages.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/sensor.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/services.yaml": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/strings.json": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/components/websocket_api/util.py": {
+      "groups": [
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.f3_mutation_verification",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/config.py": {
+      "groups": [
+        "core.configuration_validation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/config_entries.py": {
+      "groups": [
+        "core.integration_inspection_metadata_read",
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/core.py": {
+      "groups": [
+        "core.basic_rest_read",
+        "core.state_service_discovery",
+        "core.direct_entity_state_read",
+        "core.typed_helper_operation",
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/data_entry_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/area_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/check_config.py": {
+      "groups": [
+        "core.configuration_validation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/collection.py": {
+      "groups": [
+        "core.typed_helper_operation",
+        "core.typed_input_select_option_operation",
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/condition.py": {
+      "groups": [
+        "core.governed_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/config_validation.py": {
+      "groups": [
+        "core.configuration_validation",
+        "core.governed_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/data_entry_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/device_registry.py": {
+      "groups": [
+        "core.direct_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.dependency_helper_planning",
+        "core.automation_baseline_metadata_read",
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/entity_platform.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/entity_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.dependency_helper_planning",
+        "core.automation_baseline_metadata_read",
+        "core.entity_registry_metadata_operation",
+        "core.entity_registry_availability_operation",
+        "core.configuration_delete_operation",
+        "core.config_entry_helper_options_operation",
+        "core.scene_configuration_operation",
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/floor_registry.py": {
+      "groups": [
+        "core.non_device_registry_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/json.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/label_registry.py": {
+      "groups": [
+        "core.non_device_registry_read",
+        "core.label_registry_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/registry.py": {
+      "groups": [
+        "binding_judgments"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/schema_config_entry_flow.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/script.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/selector.py": {
+      "groups": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/service.py": {
+      "groups": [
+        "core.state_service_discovery",
+        "core.typed_helper_operation",
+        "core.typed_fan_operation",
+        "core.typed_power_operation",
+        "core.typed_input_select_option_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/state.py": {
+      "groups": [
+        "core.scene_configuration_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/storage.py": {
+      "groups": [
+        "core.dashboard_metadata_operation"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/__init__.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/context.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/__init__.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/areas.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/base.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/base64.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/collection.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/config_entries.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/crypto.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/datetime.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/devices.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/entities.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/floors.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/functional.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/issues.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/labels.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/math.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/regex.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/serialization.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/state.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/string.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/type_cast.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/extensions/version.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/helpers.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/render_info.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/template/states.py": {
+      "groups": [
+        "core.template_semantics",
+        "core.dependency_helper_planning"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/helpers/trace.py": {
+      "groups": [
+        "core.script_trace_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    },
+    "homeassistant/loader.py": {
+      "groups": [
+        "core.integration_inspection_metadata_read"
+      ],
+      "reason": "Retained full-file dependency in the cited historical profile scope or seq15 exact-source review; no reviewed basis to omit its bytes."
+    }
+  },
+  "pairs": [
+    {
+      "predecessor": "2026.8.0",
+      "release": "2026.8.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/api/__init__.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.8.1",
+      "release": "2026.8.2",
+      "inherited": false,
+      "changed": [],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.8.2",
+      "release": "2026.8.3",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/conversation/default_agent.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/gazetteer.py",
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.0",
+      "release": "2026.9.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/helpers/device_registry.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.1",
+      "release": "2026.9.2",
+      "inherited": false,
+      "changed": [],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.2",
+      "release": "2026.9.3",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/conversation/manifest.json"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.9.3",
+      "release": "2026.9.4",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/http/security_filter.py"
+      ],
+      "missing": [
+        "homeassistant/components/conversation/services.py",
+        "homeassistant/components/fan/services.py",
+        "homeassistant/components/light/helper.py",
+        "homeassistant/components/light/services.py",
+        "homeassistant/components/scene/const.py",
+        "homeassistant/components/scene/services.py",
+        "homeassistant/components/switch/services.py",
+        "homeassistant/components/template/climate.py"
+      ]
+    },
+    {
+      "predecessor": "2026.10.0",
+      "release": "2026.10.1",
+      "inherited": false,
+      "changed": [
+        "homeassistant/components/auth/indieauth.py",
+        "homeassistant/components/auth/login_flow.py",
+        "homeassistant/components/automation/trace.py",
+        "homeassistant/components/trace/models.py",
+        "homeassistant/helpers/template/extensions/devices.py"
+      ],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.1",
+      "release": "2026.10.2",
+      "inherited": false,
+      "changed": [
+        "homeassistant/auth/__init__.py",
+        "homeassistant/components/cloud/alexa_config.py",
+        "homeassistant/helpers/config_validation.py"
+      ],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.2",
+      "release": "2026.10.3",
+      "inherited": true,
+      "changed": [],
+      "missing": []
+    },
+    {
+      "predecessor": "2026.10.3",
+      "release": "2026.10.4",
+      "inherited": true,
+      "changed": [],
+      "missing": []
+    }
+  ],
+  "inherited": 2,
+  "total": 11,
+  "file_count": 336
+}

@@ -1,0 +1,204 @@
+{
+  "core.basic_rest_read": [
+    "homeassistant/components/api/",
+    "homeassistant/components/http/",
+    "homeassistant/core.py"
+  ],
+  "core.basic_websocket_read": [
+    "homeassistant/components/websocket_api/",
+    "homeassistant/components/http/",
+    "homeassistant/auth/"
+  ],
+  "core.state_service_discovery": [
+    "homeassistant/components/api/",
+    "homeassistant/components/websocket_api/",
+    "homeassistant/helpers/service.py",
+    "homeassistant/core.py"
+  ],
+  "core.non_device_registry_read": [
+    "homeassistant/components/config/area_registry.py",
+    "homeassistant/components/config/floor_registry.py",
+    "homeassistant/components/config/label_registry.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/area_registry.py",
+    "homeassistant/helpers/floor_registry.py",
+    "homeassistant/helpers/label_registry.py",
+    "homeassistant/helpers/entity_registry.py"
+  ],
+  "core.direct_device_registry_read": [
+    "homeassistant/components/config/device_registry.py",
+    "homeassistant/helpers/device_registry.py"
+  ],
+  "core.delegated_device_effective_area": [
+    "homeassistant/components/config/device_registry.py",
+    "homeassistant/helpers/device_registry.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/search/"
+  ],
+  "core.direct_entity_state_read": [
+    "homeassistant/components/api/",
+    "homeassistant/core.py"
+  ],
+  "core.automation_configuration_read": [
+    "homeassistant/components/config/automation.py",
+    "homeassistant/components/config/view.py",
+    "homeassistant/components/automation/"
+  ],
+  "core.automation_trace_read": [
+    "homeassistant/components/trace/",
+    "homeassistant/components/automation/",
+    "homeassistant/components/websocket_api/"
+  ],
+  "core.dashboard_configuration_read": [
+    "homeassistant/components/lovelace/",
+    "homeassistant/components/websocket_api/"
+  ],
+  "core.template_semantics": [
+    "homeassistant/helpers/template/",
+    "homeassistant/components/api/",
+    "homeassistant/components/websocket_api/"
+  ],
+  "core.configuration_validation": [
+    "homeassistant/components/config/core.py",
+    "homeassistant/helpers/check_config.py",
+    "homeassistant/helpers/config_validation.py",
+    "homeassistant/config.py"
+  ],
+  "core.dependency_helper_planning": [
+    "homeassistant/helpers/device_registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/helpers/area_registry.py",
+    "homeassistant/helpers/template/",
+    "homeassistant/components/config/automation.py",
+    "homeassistant/components/config/script.py",
+    "homeassistant/components/search/"
+  ],
+  "core.typed_helper_operation": [
+    "homeassistant/components/input_boolean/",
+    "homeassistant/components/input_number/",
+    "homeassistant/helpers/collection.py",
+    "homeassistant/helpers/service.py",
+    "homeassistant/core.py"
+  ],
+  "core.f3_mutation_verification": [
+    "homeassistant/components/config/",
+    "homeassistant/components/api/",
+    "homeassistant/components/websocket_api/",
+    "homeassistant/components/lovelace/"
+  ],
+  "core.governed_configuration_operation": [
+    "homeassistant/components/config/automation.py",
+    "homeassistant/components/config/script.py",
+    "homeassistant/components/config/view.py",
+    "homeassistant/components/automation/config.py",
+    "homeassistant/components/script/config.py",
+    "homeassistant/helpers/config_validation.py",
+    "homeassistant/helpers/condition.py"
+  ],
+  "core.governance_observability": [],
+  "core.typed_fan_operation": [
+    "homeassistant/components/fan/",
+    "homeassistant/helpers/service.py"
+  ],
+  "core.typed_power_operation": [
+    "homeassistant/components/switch/",
+    "homeassistant/components/light/",
+    "homeassistant/helpers/service.py"
+  ],
+  "core.integration_inspection_metadata_read": [
+    "homeassistant/components/config/config_entries.py",
+    "homeassistant/config_entries.py",
+    "homeassistant/loader.py"
+  ],
+  "core.automation_baseline_metadata_read": [
+    "homeassistant/components/automation/",
+    "homeassistant/components/config/automation.py",
+    "homeassistant/components/auth/",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/helpers/device_registry.py"
+  ],
+  "core.entity_registry_metadata_operation": [
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/entity_registry.py"
+  ],
+  "core.entity_registry_availability_operation": [
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/homeassistant/exposed_entities.py",
+    "homeassistant/components/cloud/alexa_config.py"
+  ],
+  "core.entity_assistant_exposure_operation": [
+    "homeassistant/components/homeassistant/exposed_entities.py",
+    "homeassistant/components/cloud/google_config.py",
+    "homeassistant/components/cloud/alexa_config.py",
+    "homeassistant/components/conversation/"
+  ],
+  "core.label_registry_operation": [
+    "homeassistant/components/config/label_registry.py",
+    "homeassistant/helpers/label_registry.py"
+  ],
+  "core.configuration_delete_operation": [
+    "homeassistant/components/config/automation.py",
+    "homeassistant/components/config/script.py",
+    "homeassistant/components/config/view.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/api/"
+  ],
+  "core.config_entry_helper_options_operation": [
+    "homeassistant/components/config/config_entries.py",
+    "homeassistant/components/http/",
+    "homeassistant/components/filter/",
+    "homeassistant/components/statistics/",
+    "homeassistant/components/template/",
+    "homeassistant/config_entries.py",
+    "homeassistant/data_entry_flow.py",
+    "homeassistant/helpers/data_entry_flow.py",
+    "homeassistant/helpers/schema_config_entry_flow.py",
+    "homeassistant/helpers/selector.py",
+    "homeassistant/helpers/json.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/api/"
+  ],
+  "core.typed_input_select_option_operation": [
+    "homeassistant/components/input_select/",
+    "homeassistant/components/websocket_api/",
+    "homeassistant/components/api/",
+    "homeassistant/helpers/service.py",
+    "homeassistant/helpers/collection.py",
+    "homeassistant/core.py"
+  ],
+  "core.script_trace_read": [
+    "homeassistant/components/trace/",
+    "homeassistant/components/script/",
+    "homeassistant/helpers/trace.py",
+    "homeassistant/helpers/script.py"
+  ],
+  "core.dashboard_metadata_operation": [
+    "homeassistant/components/lovelace/",
+    "homeassistant/components/websocket_api/",
+    "homeassistant/helpers/collection.py",
+    "homeassistant/helpers/storage.py"
+  ],
+  "core.scene_configuration_operation": [
+    "homeassistant/components/config/scene.py",
+    "homeassistant/components/config/view.py",
+    "homeassistant/components/homeassistant/scene.py",
+    "homeassistant/components/scene/",
+    "homeassistant/helpers/entity_platform.py",
+    "homeassistant/helpers/state.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/components/api/"
+  ],
+  "binding_judgments": [
+    "homeassistant/helpers/device_registry.py",
+    "homeassistant/helpers/registry.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/components/config/device_registry.py",
+    "homeassistant/components/websocket_api/commands.py",
+    "homeassistant/components/config/config_entries.py"
+  ]
+}

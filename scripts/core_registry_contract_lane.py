@@ -47,7 +47,11 @@ def probe_profile_for(core_version):
 def lane_entry(version):
     """Closed disposable fixtures, never runtime admission or caller image input."""
     binding = _lane_binding(version)
-    entry = json.loads((ROOT / "tests/fixtures" / provenance_name(version)).read_text())
+    from core_release_evidence import context
+    import copy
+    supplied = context(version)
+    entry = (copy.deepcopy(supplied["provenance"]) if supplied is not None else
+             json.loads((ROOT / "tests/fixtures" / provenance_name(version)).read_text()))
     if entry["version"] != version:
         raise ValueError("disposable Core fixture version mismatch")
     if entry.get("image_index_digest") != binding.image_index_digest:

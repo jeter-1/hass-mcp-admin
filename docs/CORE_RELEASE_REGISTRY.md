@@ -560,3 +560,116 @@ That local evidence establishes the named 21 contracts within its disclosed
 synthetic bounds; installed custom-integration compatibility, production signing,
 release publication and upgrade permission remain separate. An older
 September-only disposable receipt cannot be relabeled as October acceptance.
+
+## Automated release evidence (HAMCP-279)
+
+Josh's 2026-11-02 **O3** decision permits binding inheritance only when **every
+contract-read Core source file is byte-identical** at the predecessor and new
+stable tag commits. Semantic compatibility is insufficient. A changed or missing
+file, moved tag, unreviewed predecessor binding or unknown profile produces no
+candidate and reports **binding PR required**. Main bindings remain deliberate
+review decisions. The existing preparation utility and journal format are unchanged.
+
+`core-release-evidence.yml` detects a single new stable release on protected main
+(daily or manual). It excludes prereleases, already published releases and prior
+pending/successful attempts; a retained candidate branch prevents redispatch after
+artifact expiry. Production runs serialize and each lane job also has a release
+concurrency group. Failed or ambiguous publication requires inspection of the
+original run; automatic force pushes and blind dispatch retries are absent.
+
+The source gate compares full SHA-256 hashes from commit-pinned Core archives,
+checks archive/tag identity, and records every path, both hashes and commit SHAs
+in `core-review-evidence.json`. OCI index, amd64/arm64 manifests, configurations,
+attestation subjects, source revision, builder and base-image bindings follow the
+existing HAMCP-222 provenance method. The disposable execution remains amd64;
+arm64 provenance verification does not claim arm64 execution.
+
+The exact list lives in `ci/core-contract-read-files.json`; profiles map to lane
+groups in `ci/core-evidence-groups.json`. Its 337 files expand the historical
+HAMCP-222 relied-on scopes and the later helper/options, input-select, trace,
+dashboard and scene source reviews. Maintain this list whenever a contract,
+source read, or binding judgment changes. The literal-path AST guard detects
+constant `homeassistant/.../*.py` paths in contract scripts and the device-fixture
+generator. It cannot establish computed paths, transitive semantic dependencies,
+source locations embedded in generated code, or completeness of human judgments.
+Review must close those gaps; the guard is not authority to narrow the list.
+
+Measured on 2026-11-02, 14 immutable stable tags form 11 adjacent patch pairs
+(including .0→.1): August **0/3**, September **0/4**, October **2/4**, total
+**2/11 (18.2%)**. Passing pairs: 2026.10.2→10.3 and 10.3→10.4. The current fixed
+list contains nine files absent in August and eight absent in September; missing
+files refuse even when absent at both tags. Period-available scopes would yield
+4/11, a sensitivity measurement only. Excluding .0→.1 yields 2/8. Full hashes and
+results are retained in `docs/evidence/hamcp279/`. A proposed removal of the
+uncalled `config/auth_provider_homeassistant.py` endpoint yields the same 2/11;
+**the narrower 336-file proposal is not adopted** and requires architect review.
+
+2026.10.1→10.3 is a real negative: `auth/__init__.py`,
+`components/cloud/alexa_config.py`, `components/config/auth_provider_homeassistant.py`
+and `helpers/config_validation.py` differ. The historical review accepted these
+semantically; strict O3 refuses. In particular, configuration validation accepts
+additional multi-state `for` conditions. The signed .1 set is 26 profiles; the
+signed .3 set is 31. Inheritance never turns 26 into 31.
+
+Disposable lanes accept either exact main bindings or a same-run, same-attempt,
+same-revision O3 proof. A derived binding preserves device-registry semantics,
+typed-operation judgment and paired ha-mcp version. Its release, image digests
+and source provenance alone change. An inherited predecessor not on main must
+supply the exact prior review-evidence bytes authenticated by its signed entry.
+Unknown or missing evidence refuses; no provider or runtime admission is added.
+
+Withholding is per group: the 19 general-contract profiles stand or fall together;
+availability and exposure share one group; the other ten profiles each have one
+group. The previously dormant seq-13 groups are enabled only in this workflow.
+Historical disposable jobs took 8m29s/.1 and 7m47s/.3 within the 50-minute bound;
+these timings do not prove a new run passed. All fixtures are synthetic, owned
+and cleaned up. Delete acceptance retains the elevated-path-only limitation.
+The candidate contains exactly the passing subset of the signed predecessor's
+references, preserving fingerprints and order; passing lanes cannot add profiles.
+
+PR acceptance is artifact-only: real .1→.3 refusal, identical-source **fixture**
+inheritance plus disposable lanes, and a separate real .3 run using main's binding.
+The fixture substitutes only its predecessor source observation; it makes no
+claim that a real .2 tag has those bytes. Both positive runs must reproduce all
+31 actual signed .3 references through the unchanged `add` utility (a renewal
+for this already-listed release). Synthetic CI keys inside existing lanes test
+signature verification; no production key, signing environment or publication is
+used by acceptance.
+
+After cutover, a separate job with only `contents: write` and `actions: write`
+creates `registry-candidates/<version>` by a normal non-force push, containing
+only `core-candidate.json` and `core-review-evidence.json`. An existing branch
+with different content refuses. It dispatches only
+`core-release-registry-publish.yml` on `main`, with this run's computed candidate
+and evidence hashes and `dry_run=false`. That existing workflow still requires
+Josh's protected-environment approval before signing. HAMCP-279 does not change
+it. Before `registry` exists, or for manual dry-run/PR acceptance, artifacts are
+the only output: no candidate branch and no dispatch. The signed entry's evidence
+hash binds the O3 proof and withholding summary Josh reviews.
+
+Disable **Automated Core release evidence** in Actions to stop detection. Manual
+binding PRs and the existing signing runbook remain available. Disabling this
+workflow does not cancel an already-dispatched signing request; inspect and
+cancel that separate run before any owner approval if necessary. Never delete
+`registry-candidates/*` branches, including in cleanup sweeps; compare retained
+bytes and the original run for recovery. No deployment or Core upgrade is authorized by candidate preparation.
+
+Selected-release job names retain idempotency evidence after attempt artifacts expire;
+a pending or successful retained run suppresses another attempt. An O3 refusal
+emits a separate durable `core-release-refused-<version>` failed job. That run
+fails once with "binding PR required", listing every differing or missing file
+and both source commits. Subsequent schedules skip that terminal refusal without
+another failure. A newer release remains eligible; an explicit workflow_dispatch
+with that exact `core_version` may retry the refusal. API, tag SHA and provenance
+errors are ordinary failures and remain retryable. PR negative acceptance checks
+the refusal without scheduling this production notification job.
+
+`registry-candidates/*` branches are permanent provenance records. Never delete
+them, including after publication or in cleanup sweeps, and never force-push them.
+`bound_entry` recovers an inherited predecessor's binding from that branch's
+`core-review-evidence.json`, authenticated by the signed entry's `evidence_sha256`.
+Deleting a branch removes this load-bearing evidence and forces the next release
+to a binding PR. Signed registry publication does not copy or replace these bytes.
+Retain the GitHub attempt/refusal run records too: deleted history cannot be
+reconstructed. Josh must configure the owner-setup ruleset in the runbook to block
+candidate-branch deletion and force-push while allowing workflow branch creation.
