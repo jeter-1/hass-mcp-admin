@@ -137,10 +137,10 @@ function Invoke-ShardedUnitTestStep {
     # proof; this step passes only when the helper exits 0 and its summary
     # reports a proven, passing run for this exact head and worker count.
     $label = "Run complete unittest suite"
-    $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ", [Globalization.CultureInfo]::InvariantCulture)
-    $relativeRunDirectory = ".artifacts/unit-test-shards/$stamp-$PID"
+    # One owned receipt, overwritten under the helper's exclusive writer lock.
+    $relativeRunDirectory = ".artifacts/unit-test-shards/latest"
     $arguments = @(
-        "scripts/local_unit_test_shards.py", "run", "--workers", "$Parallel", "--output-dir", $relativeRunDirectory
+        "scripts/local_unit_test_shards.py", "run", "--workers", "$Parallel", "--output-dir", $relativeRunDirectory, "--replace-output"
     )
     Write-Step $label
     $commandText = Format-Command -Executable $PythonExecutable -Arguments $arguments

@@ -31,6 +31,7 @@ is reported on its own line with those test IDs.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from collections import Counter
 import json
 import os
@@ -38,6 +39,7 @@ from pathlib import Path
 import re
 import secrets
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -365,6 +367,43 @@ def run(root, workers, output_dir, *, python=sys.executable, timeout=DEFAULT_SHA
     return summary
 
 
+@contextmanager
+def latest_output(root, output_dir):
+    """Replace only our fixed-name diagnostic receipt; never sweep old evidence.
+
+    An exclusive lock refuses concurrent writers. A killed owner leaves the lock
+    for explicit inspection; ordinary failure releases it. The marker prevents
+    removal of an unrelated directory that happens to have the same name.
+    """
+    root = Path(root).resolve()
+    expected = root / ".artifacts" / "unit-test-shards" / "latest"
+    output = Path(output_dir).absolute()
+    if output != expected or any(p.is_symlink() for p in (output, *output.parents) if p != root):
+        raise unit_test_shards.Refusal("replacement_requires_fixed_latest_directory")
+    expected.parent.mkdir(parents=True, exist_ok=True)
+    lock = expected.parent / "latest.lock"
+    try:
+        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise unit_test_shards.Refusal("latest_output_in_use") from exc
+    owned = False
+    try:
+        os.close(descriptor)
+        if expected.exists():
+            marker = expected / ".hamcp-unit-run"
+            if marker.is_symlink() or not marker.is_file() or marker.read_text() != "HAMCP-272\n":
+                raise unit_test_shards.Refusal("latest_output_not_owned")
+            shutil.rmtree(expected)
+        owned = True
+        yield
+    finally:
+        try:
+            if owned and expected.is_dir() and not expected.is_symlink():
+                (expected / ".hamcp-unit-run").write_text("HAMCP-272\n")
+        finally:
+            lock.unlink()
+
+
 def worker(root, shard, output, run_id):
     manifest = unit_test_shards.run_shard(root, shard, run_identity_env(run_id), output)
     print(f"Shard {shard}: {len(manifest['executed'])} of {manifest['discovered_count']} tests executed.", flush=True)
@@ -377,6 +416,8 @@ def main():
     run_parser = commands.add_parser("run", help="run every shard and prove completeness")
     run_parser.add_argument("--workers", type=int, required=True)
     run_parser.add_argument("--output-dir", type=Path, required=True)
+    run_parser.add_argument("--replace-output", action="store_true",
+                            help="overwrite only the owned .artifacts/unit-test-shards/latest receipt")
     run_parser.add_argument("--shard-timeout", type=int, default=DEFAULT_SHARD_TIMEOUT)
     check = commands.add_parser("verify", help="re-apply CI's completeness proof to a retained run")
     check.add_argument("--manifests", type=Path, required=True)
@@ -398,7 +439,11 @@ def main():
             sys.exit(1 if problems else 0)
         if args.shard_timeout < 1:
             raise unit_test_shards.Refusal("invalid_shard_timeout")
-        summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
+        if args.replace_output:
+            with latest_output(args.repo_root, args.output_dir):
+                summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
+        else:
+            summary = run(args.repo_root, args.workers, args.output_dir, timeout=args.shard_timeout)
         sys.exit(0 if summary["result"] == "passed" else 1)
     except unit_test_shards.Refusal as exc:
         parser.exit(1, "Local sharded unittest run refused: " + str(exc) + "\n")

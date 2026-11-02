@@ -75,6 +75,7 @@ def setUpModule() -> None:
     RUN["provenance"] = verified_provenance()
 
     temp = Path(tempfile.mkdtemp(prefix="hamcp181-beta36-downgrade-"))
+    unittest.addModuleCleanup(shutil.rmtree, temp)
     RUN["temp"] = temp
     archive = _git("archive", "--format=tar", BETA36_COMMIT, binary=True)
     if archive is None:
@@ -109,12 +110,6 @@ def _run_driver(label: str, interpreter: str, source: Path, fixtures: Path,
         raise AssertionError(
             f"{label} reader failed ({completed.returncode}):\n{completed.stderr[-4000:]}")
     return json.loads(completed.stdout)
-
-
-def tearDownModule() -> None:
-    temp = RUN.get("temp")
-    if temp is not None:
-        shutil.rmtree(temp, ignore_errors=True)
 
 
 def _committed_task(shape: str) -> tuple[str, dict[str, Any]]:
