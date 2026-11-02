@@ -1,0 +1,154 @@
+[
+  {
+    "id": 1,
+    "name": "never-add result injection",
+    "file": "scripts/core_release_evidence.py",
+    "test": "Withholding.test_never_add_from_larger_passed_set",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 2,
+    "name": "O3 false equality",
+    "file": "scripts/core_release_evidence.py",
+    "test": "O3.test_differing_names_file_and_refuses",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 3,
+    "name": "O3 missing ignored",
+    "file": "scripts/core_release_evidence.py",
+    "test": "O3.test_missing_file_refuses_even_both_missing",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 4,
+    "name": "tag identity bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "O3.test_tag_sha_mismatch",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 5,
+    "name": "proof admission bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "ProofAdmission.test_binding_without_proof_refuses",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 6,
+    "name": "proof byte equality bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "ProofAdmission.test_forged_equal_flag_refuses",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 7,
+    "name": "proof run bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "ProofAdmission.test_wrong_run_attempt_head_refuses",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 8,
+    "name": "withholding bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "Withholding.test_general_nineteen_stand_or_fall",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 9,
+    "name": "truthy success accepted",
+    "file": "scripts/core_release_evidence.py",
+    "test": "Withholding.test_no_missing_or_truthy_pass",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 10,
+    "name": "withholding membership bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "Withholding.test_each_group_independently_withheld",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 11,
+    "name": "candidate branch target",
+    "file": "scripts/core_release_evidence.py",
+    "test": "HandoffExecution.test_new_branch_exact_push_and_dispatch",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 12,
+    "name": "dispatch target",
+    "file": "scripts/core_evidence_handoff.py",
+    "test": "HandoffExecution.test_new_branch_exact_push_and_dispatch",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 13,
+    "name": "precutover bypass",
+    "file": "scripts/core_release_evidence.py",
+    "test": "Handoff.test_pre_cutover_and_dry_run_never_handoff",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 14,
+    "name": "existing content overwrite",
+    "file": "scripts/core_evidence_handoff.py",
+    "test": "HandoffExecution.test_existing_different_no_push_or_dispatch",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 15,
+    "name": "R1 refusal treated as success",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_refusal_prepare_and_final_job_fail_with_files_and_commits",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 16,
+    "name": "R1 refusal retryable",
+    "file": "scripts/core_release_evidence.py",
+    "test": "RefusalLifecycle.test_refusal_terminal_after_artifact_expiry",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 17,
+    "name": "R1 ordinary error terminal",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_ordinary_failure_retryable_not_terminal",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 18,
+    "name": "R1 refusal marker ignored",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_refusal_terminal_after_artifact_expiry",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 19,
+    "name": "R1 explicit retry disabled",
+    "file": "scripts/core_release_evidence.py",
+    "test": "RefusalLifecycle.test_explicit_dispatch_retries_refusal_only",
+    "classification": "assertion",
+    "exit_code": 1
+  }
+]

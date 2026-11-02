@@ -33,6 +33,10 @@ def slot_binding(core_version):
     import sys
     if str(ROOT / "scripts") not in sys.path:
         sys.path.insert(0, str(ROOT / "scripts"))
+    from core_release_evidence import context, slot
+    supplied = context(core_version)
+    if supplied is not None:
+        return slot(supplied)
     from support_window import Refusal, alarmo_slot
     if type(core_version) is not str:
         raise ValueError("Alarmo requires an exact support-window Core slot")

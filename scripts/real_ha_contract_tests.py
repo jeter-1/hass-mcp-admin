@@ -3499,6 +3499,9 @@ def _alarmo_slot_required(version: str) -> bool:
 
     if str(ROOT / "scripts") not in sys.path:
         sys.path.insert(0, str(ROOT / "scripts"))
+    from core_release_evidence import context
+    if context(version) is not None:
+        return True
     import support_window
 
     window = support_window.load()
@@ -3634,75 +3637,80 @@ async def _run_core_2026_9_child_contract(
         else:
             core_runtime.configure(configured)
             await core_runtime.reconcile_once("startup")
-        if _alarmo_slot_required(EXPECTED_HA_VERSION):
-            alarmo_receipt = _environment_path("REAL_HA_ALARMO_FIXTURE_RECEIPT")
-            if alarmo_receipt is None:
-                raise RuntimeError("Required Alarmo disposable fixture missing")
-            from alarmo_inspection_contract_acceptance import run_disposable
-            alarmo_result = await run_disposable(configured, core_runtime, fixture_receipt=alarmo_receipt,
-                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
-            if alarmo_result.get("result") != "PASS":
-                raise RuntimeError("Required Alarmo disposable scenario did not pass")
-            from automation_baseline_contract_acceptance import run_disposable as run_baseline
-            baseline_result = await run_baseline(configured,
-                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
-            if baseline_result.get("result") != "PASS":
-                raise RuntimeError("Required baseline disposable scenario did not pass")
-            # HAMCP-179: dormant entity-registry metadata contract on the same slot.
-            from entity_metadata_contract_acceptance import load_receipt, run_disposable as run_entity_metadata
-            entity_metadata_result = await run_entity_metadata(configured,
-                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
-            if entity_metadata_result.get("result") != "PASS":
-                raise RuntimeError("Required entity metadata disposable scenario did not pass")
-            # HAMCP-165/069B/155: the seq-13 lanes are defined here and run only when the
-            # batch evidence run sets REAL_HA_SEQ13_LANES=enabled; otherwise nothing runs.
-            seq13_results = {}
-            if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":
-                import seq13_contract_acceptance as seq13
-                for lane_key in seq13.LANES:
-                    seq13_results["seq13_" + lane_key] = await seq13.run_disposable(
-                        lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
-                        core_version=EXPECTED_HA_VERSION)
-                    if seq13_results["seq13_" + lane_key].get("result") != "PASS":
-                        raise RuntimeError("Required seq-13 disposable scenario did not pass")
-                import configuration_delete_contract_acceptance as configuration_delete
-                seq13_results["seq13_configuration_delete"] = await configuration_delete.run_disposable(
-                    configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
-                    core_version=EXPECTED_HA_VERSION)
-                if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
-                    raise RuntimeError("Required seq-13 disposable scenario did not pass")
-            # HAMCP-269: the seq-15 lanes cover both exact reviewed releases and run only
-            # when the batch evidence run sets REAL_HA_SEQ15_LANES=enabled.
-            seq15_results = {}
-            if os.environ.get("REAL_HA_SEQ15_LANES") == "enabled":
-                import seq15_contract_acceptance as seq15
-                # Only the target slot runs them; the CI upload then requires every receipt.
-                for lane_key in seq15.LANES if EXPECTED_HA_VERSION in seq15.TARGET_CORES else ():
-                    try:
-                        result = await seq15.run_disposable(
+        from core_release_evidence import context as evidence_context
+        if evidence_context(EXPECTED_HA_VERSION) is not None:
+            from core_evidence_lanes import run_specialized
+            await run_specialized(configured, core_runtime)
+        else:
+            if _alarmo_slot_required(EXPECTED_HA_VERSION):
+                alarmo_receipt = _environment_path("REAL_HA_ALARMO_FIXTURE_RECEIPT")
+                if alarmo_receipt is None:
+                    raise RuntimeError("Required Alarmo disposable fixture missing")
+                from alarmo_inspection_contract_acceptance import run_disposable
+                alarmo_result = await run_disposable(configured, core_runtime, fixture_receipt=alarmo_receipt,
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
+                if alarmo_result.get("result") != "PASS":
+                    raise RuntimeError("Required Alarmo disposable scenario did not pass")
+                from automation_baseline_contract_acceptance import run_disposable as run_baseline
+                baseline_result = await run_baseline(configured,
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
+                if baseline_result.get("result") != "PASS":
+                    raise RuntimeError("Required baseline disposable scenario did not pass")
+                # HAMCP-179: dormant entity-registry metadata contract on the same slot.
+                from entity_metadata_contract_acceptance import load_receipt, run_disposable as run_entity_metadata
+                entity_metadata_result = await run_entity_metadata(configured,
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
+                if entity_metadata_result.get("result") != "PASS":
+                    raise RuntimeError("Required entity metadata disposable scenario did not pass")
+                # HAMCP-165/069B/155: the seq-13 lanes are defined here and run only when the
+                # batch evidence run sets REAL_HA_SEQ13_LANES=enabled; otherwise nothing runs.
+                seq13_results = {}
+                if os.environ.get("REAL_HA_SEQ13_LANES") == "enabled":
+                    import seq13_contract_acceptance as seq13
+                    for lane_key in seq13.LANES:
+                        seq13_results["seq13_" + lane_key] = await seq13.run_disposable(
                             lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
                             core_version=EXPECTED_HA_VERSION)
-                    except Exception as exc:
-                        # Continue independent lanes, retaining only closed/sanitized diagnostics.
-                        output = Path(os.environ[seq15.LANES[lane_key]["output_env"]])
-                        retained_failure = seq15.load_receipt(output.read_bytes()) if output.exists() else {}
-                        result = {**retained_failure, "result": "FAIL", "lane": lane_key,
-                                  "diagnostic": getattr(exc, "contract_diagnostic", {})}
-                        output.write_bytes(seq15.receipt_bytes(result))
-                        print("Seq-15 lane failed: " + json.dumps(
-                            {key: result[key] for key in ("result", "lane", "diagnostic")}, sort_keys=True))
-                    seq15_results["seq15_" + lane_key] = result
-            # The existing required artifact carries every clearly named proof.
-            receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
-            # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.
-            retained = load_receipt(receipt.read_bytes())
-            retained["automation_baseline"] = baseline_result
-            retained["entity_metadata"] = entity_metadata_result
-            retained.update(seq13_results)
-            retained.update(seq15_results)
-            receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
-            if any(value.get("result") != "PASS" for value in seq15_results.values()):
-                raise RuntimeError("Required seq-15 disposable scenarios failed; inspect retained receipts")
+                        if seq13_results["seq13_" + lane_key].get("result") != "PASS":
+                            raise RuntimeError("Required seq-13 disposable scenario did not pass")
+                    import configuration_delete_contract_acceptance as configuration_delete
+                    seq13_results["seq13_configuration_delete"] = await configuration_delete.run_disposable(
+                        configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                        core_version=EXPECTED_HA_VERSION)
+                    if seq13_results["seq13_configuration_delete"].get("result") != "PASS":
+                        raise RuntimeError("Required seq-13 disposable scenario did not pass")
+                # HAMCP-269: the seq-15 lanes cover both exact reviewed releases and run only
+                # when the batch evidence run sets REAL_HA_SEQ15_LANES=enabled.
+                seq15_results = {}
+                if os.environ.get("REAL_HA_SEQ15_LANES") == "enabled":
+                    import seq15_contract_acceptance as seq15
+                    # Only the target slot runs them; the CI upload then requires every receipt.
+                    for lane_key in seq15.LANES if EXPECTED_HA_VERSION in seq15.TARGET_CORES else ():
+                        try:
+                            result = await seq15.run_disposable(
+                                lane_key, configured, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                                core_version=EXPECTED_HA_VERSION)
+                        except Exception as exc:
+                            # Continue independent lanes, retaining only closed/sanitized diagnostics.
+                            output = Path(os.environ[seq15.LANES[lane_key]["output_env"]])
+                            retained_failure = seq15.load_receipt(output.read_bytes()) if output.exists() else {}
+                            result = {**retained_failure, "result": "FAIL", "lane": lane_key,
+                                      "diagnostic": getattr(exc, "contract_diagnostic", {})}
+                            output.write_bytes(seq15.receipt_bytes(result))
+                            print("Seq-15 lane failed: " + json.dumps(
+                                {key: result[key] for key in ("result", "lane", "diagnostic")}, sort_keys=True))
+                        seq15_results["seq15_" + lane_key] = result
+                # The existing required artifact carries every clearly named proof.
+                receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
+                # HAMCP-180: the shared strict loader refuses a repeated key before the rewrite.
+                retained = load_receipt(receipt.read_bytes())
+                retained["automation_baseline"] = baseline_result
+                retained["entity_metadata"] = entity_metadata_result
+                retained.update(seq13_results)
+                retained.update(seq15_results)
+                receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
+                if any(value.get("result") != "PASS" for value in seq15_results.values()):
+                    raise RuntimeError("Required seq-15 disposable scenarios failed; inspect retained receipts")
         # Native interval observations must finish before the independent
         # upstream client starts its background traffic. Unexpected commands
         # still fail the observer; they are not silently attributed away.

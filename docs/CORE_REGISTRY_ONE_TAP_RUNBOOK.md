@@ -195,3 +195,64 @@ The publish job's log and summary end with one outcome:
 
 Only after PUBLISHED and the new `sequence` in health may Core be upgraded to
 that release (step 0).
+
+## Automated unsigned input (HAMCP-279)
+
+The separate **Automated Core release evidence** workflow detects stable releases
+on main and produces the unsigned inputs for this unchanged signing workflow.
+See [the automated path and measured O3 hit-rate](CORE_RELEASE_REGISTRY.md#automated-release-evidence-hamcp-279).
+Josh's 2026-11-02 strict full-file O3 decision is the only inheritance rule:
+changed/missing contract-read bytes require a binding PR. The manifest is
+`ci/core-contract-read-files.json`; update it alongside contract and judgment
+changes, with architect review before any narrowing. The measured current-list
+hit-rate is 2/11 across August–October patch pairs; the proposed narrower list is
+not adopted. Passing lanes yield only the predecessor's passing profile subset;
+review every WITHHELD group (the 19 general profiles are one group).
+
+Before registry cutover, and for a manual run with **dry_run=true**, download the
+candidate/evidence artifacts only. No candidate branch or signing dispatch occurs.
+PR acceptance also cannot dispatch. The fixture acceptance is explicitly synthetic;
+only its separate existing-binding .3 lane establishes real-release coverage.
+
+After cutover, production preparation pushes a new
+`registry-candidates/<core_version>` branch and dispatches this workflow on main
+with `core_version`, `candidate_ref`, computed `candidate_sha256`, computed
+`evidence_sha256`, and `dry_run=false`. It has no signing environment or signing
+secret and cannot update `registry`. The existing protected-environment approval
+remains Josh's tap; do not approve unless the exact artifact hashes, source
+comparison, withholding, predecessor and run evidence are acceptable.
+
+If the branch already exists with different contents, preparation refuses.
+Inspect the original candidate/run rather than force-pushing or deleting it.
+The signing workflow rechecks the current registry predecessor; a changed
+predecessor invalidates the prepared candidate. Disable **Automated Core release
+evidence** in Actions to stop new detection; inspect/cancel any already-dispatched
+signing run separately. This mechanism never authorizes deployment or a Core upgrade.
+
+
+### OWNER SETUP — permanent candidate provenance (Josh performs this)
+
+`registry-candidates/*` branches are permanent provenance records. Never delete
+them, including after publication or in cleanup sweeps, and never force-push them.
+Later inheritance reads `core-review-evidence.json` from the predecessor's branch
+and authenticates it against the signed entry's `evidence_sha256`. Removing that
+branch forces the next release to a binding PR; publication does not replace it.
+
+Josh must create a repository branch ruleset targeting `registry-candidates/*`
+that blocks deletion and force-push, while still allowing the workflow to create
+new candidate branches. Do not prohibit creation or require a PR for these new
+branches. Check that the workflow has no bypass of the deletion/force-push rules.
+This is an owner setup action: Codex does not change repository settings. Cleanup
+sweeps (including HAMCP-284) must exclude `registry-candidates/*` permanently.
+
+### O3 refusal notification and recovery
+
+A differing or missing contract-read file produces no candidate. The preparation
+summary and final failed job list those files and both source commits with
+"binding PR required". The durable `core-release-refused-<version>` job records
+this terminal refusal. The first run fails for GitHub's failed-run notification;
+later schedules skip the release without a daily failure loop. A newer release
+can be selected. To deliberately re-evaluate a refused version, use an explicit
+workflow_dispatch with that exact `core_version` (keep dry_run=true for inspection).
+It may refuse and notify again. Ordinary API, tag SHA or provenance errors remain
+retryable; a success still suppresses another attempt. Preserve refusal run history.
