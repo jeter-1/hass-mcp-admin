@@ -17,6 +17,7 @@ from typing import Any
 
 from ..errors import AuthorizationError, HomeAssistantApiError
 from . import configuration_delete as delete_contract
+from . import global_reference_disclosure
 from .entity_availability_exposure_planning import (
     INCOMPLETE_IMPACT_TEXT,
     MAX_DISCLOSED_CONSUMERS,
@@ -109,6 +110,8 @@ class Item:
     intent: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
+    # HAMCP-270: information only; never in the intent or the disclosure.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -358,13 +361,19 @@ async def prepare(
     request: Request,
     *,
     known_secrets: tuple[str, ...] = (),
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
 ) -> Preparation:
-    """Read, refuse, bind and classify every child.  Nothing is dispatched."""
+    """Read, refuse, bind and classify every child.  Nothing is dispatched.
+
+    ``global_reader`` returns the dependency snapshot already held (HAMCP-270);
+    its references are disclosed only and bind nothing.
+    """
 
     from .resources import normalize_resource_config, resource_fingerprint
     from .resources import resource_identity_matches
 
     items: list[Item] = []
+    global_limit = global_reference_disclosure.per_child_limit(len(request.deletions))
     for index, (resource_type, target_id) in enumerate(request.deletions):
         target = {"resource_type": resource_type, "target_id": target_id}
         current = await _read(
@@ -507,6 +516,9 @@ async def prepare(
                 intent=intent,
                 disclosure=disclosure,
                 classification=classify(basis, statements, disclosure["warnings"]),
+                global_references=global_reference_disclosure.disclose(
+                    global_reader, (entity_id,), limit=global_limit
+                ),
             )
         )
     return Preparation(
@@ -536,6 +548,7 @@ def projection(item: Item) -> dict[str, Any]:
 
     return {
         **item.disclosure,
+        global_reference_disclosure.KEY: item.global_references,
         "policy_basis": {
             "policy": item.classification["policy"],
             "physical_consequence": item.classification["physical_consequence"],

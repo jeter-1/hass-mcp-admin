@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from ..errors import AuthorizationError
+from . import global_reference_disclosure
 from .entity_metadata import (
     ENTITY_METADATA_BINDINGS_KEY,
     ENTITY_METADATA_PROVIDER,
@@ -106,6 +107,9 @@ class EntityMetadataPreparation:
     classification: dict[str, Any]
     snapshot: dict[str, Any] | None = None
     no_change: dict[str, Any] | None = field(default=None)
+    # HAMCP-270: information only; never part of ``disclosure``, whose
+    # fingerprint the approval binds and preflight rechecks.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 def _text(value: Any, field_name: str, *, pattern=None) -> str | None:
@@ -374,7 +378,7 @@ def _field_projection(current: dict[str, Any], final: dict[str, Any], touched: t
 def projection(prepared: EntityMetadataPreparation, *, plan_id: str | None = None) -> dict[str, Any]:
     """Return the bounded ``entity_metadata`` plan projection (§1.3)."""
 
-    return {
+    value = {
         "entity_id": prepared.request.entity_id,
         "registry_id": prepared.current.get("id"),
         "fields": _field_projection(prepared.current, prepared.final, prepared.touched),
@@ -389,6 +393,10 @@ def projection(prepared: EntityMetadataPreparation, *, plan_id: str | None = Non
         "provider": ENTITY_METADATA_PROVIDER,
         "fallback": "none",
     }
+    if prepared.global_references:
+        # HAMCP-270: the informational sibling of ``consumer_disclosure``.
+        value[global_reference_disclosure.KEY] = prepared.global_references
+    return value
 
 
 def _no_change(
@@ -431,8 +439,14 @@ async def prepare(
     *,
     current_override: dict[str, Any] | None = None,
     final_override: dict[str, Any] | None = None,
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
 ) -> EntityMetadataPreparation:
-    """Read, derive and classify one update.  Rollback supplies overrides."""
+    """Read, derive and classify one update.  Rollback supplies overrides.
+
+    ``global_reader`` returns the dependency snapshot already held (HAMCP-270);
+    its references are disclosed only and bind nothing.  Callers that do not
+    wire it (label plans) project no global references at all.
+    """
 
     entity_id = request.entity_id
     try:
@@ -523,4 +537,9 @@ async def prepare(
         disclosure=disclosure,
         classification=classify(current, touched, disclosure),
         snapshot=snapshot_identity(snapshot),
+        global_references=(
+            global_reference_disclosure.disclose(global_reader, (entity_id,))
+            if global_reader is not None
+            else {}
+        ),
     )

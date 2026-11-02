@@ -218,7 +218,10 @@ from . import dashboard_metadata as dashboard_metadata_contract
 from . import dashboard_metadata_planning
 from . import scene_configuration as scene_configuration_contract
 from . import scene_configuration_planning
-from .entity_metadata_disclosure import read_runtime_dependency_snapshot
+from .entity_metadata_disclosure import (
+    read_cached_dependency_snapshot,
+    read_runtime_dependency_snapshot,
+)
 from . import input_select_option as input_select_contract
 from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
 from . import input_select_option_planning
@@ -723,6 +726,7 @@ class ChangeGovernanceService:
             ..., Awaitable[Any]
         ]
         | None = None,
+        global_reference_snapshot_reader: Callable[[], Any] | None = None,
         label_registry_gateway: Any | None = None,
         configuration_delete_gateway: Any | None = None,
         input_select_gateway: Any | None = None,
@@ -756,6 +760,11 @@ class ChangeGovernanceService:
         self.entity_availability_exposure_snapshot_reader = (
             entity_availability_exposure_snapshot_reader
             or read_runtime_dependency_snapshot
+        )
+        # HAMCP-270: the held snapshot only (never a build); its scene, group
+        # and dashboard references are disclosed and never bound.
+        self.global_reference_snapshot_reader = (
+            global_reference_snapshot_reader or read_cached_dependency_snapshot
         )
         # HAMCP-165: closed-vocabulary label registry reads and writes.
         self.label_registry_gateway = label_registry_gateway
@@ -5830,6 +5839,7 @@ class ChangeGovernanceService:
                 self.entity_metadata_gateway,
                 self.entity_metadata_snapshot_reader,
                 request,
+                global_reader=self.global_reference_snapshot_reader,
             )
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self._entity_metadata_refusal_error(exc, arguments) from None
@@ -5890,6 +5900,7 @@ class ChangeGovernanceService:
                     self.entity_availability_exposure_gateway,
                     self.entity_availability_exposure_snapshot_reader,
                     request,
+                    global_reader=self.global_reference_snapshot_reader,
                 )
             except entity_metadata_planning.EntityMetadataRefusal as exc:
                 raise self._entity_metadata_refusal_error(exc, {}) from None
@@ -6225,7 +6236,9 @@ class ChangeGovernanceService:
                         kind="unavailable",
                     )
                 prepared = await helper_options_planning.prepare(
-                    self.helper_options_gateway, request
+                    self.helper_options_gateway,
+                    request,
+                    global_reader=self.global_reference_snapshot_reader,
                 )
             except entity_metadata_planning.EntityMetadataRefusal as exc:
                 raise self._entity_metadata_refusal_error(exc, {}) from None
@@ -6627,6 +6640,7 @@ class ChangeGovernanceService:
                     self.configuration_delete_gateway,
                     request,
                     known_secrets=self.sensitive_values,
+                    global_reader=self.global_reference_snapshot_reader,
                 )
             except entity_metadata_planning.EntityMetadataRefusal as exc:
                 raise self._entity_metadata_refusal_error(exc, {}) from None

@@ -16,6 +16,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
+from . import global_reference_disclosure
 from . import helper_options as contract
 from .entity_availability_exposure_planning import (
     INCOMPLETE_IMPACT_TEXT,
@@ -190,6 +191,8 @@ class Item:
     intent: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
+    # HAMCP-270: information only; never in the intent or the disclosure.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -374,7 +377,12 @@ def _statements(
     return [item[:300] for item in statements[:MAX_STATEMENTS]]
 
 
-async def prepare(gateway: Any, request: Request) -> Preparation:
+async def prepare(
+    gateway: Any,
+    request: Request,
+    *,
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
+) -> Preparation:
     """Read, refuse, bind and classify every child.  Nothing is dispatched.
 
     The only flow this opens is aborted before return; a failed abort is
@@ -596,6 +604,10 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
                 intent=intent,
                 disclosure=disclosure,
                 classification=classify(basis, statements, disclosure["warnings"]),
+                global_references=global_reference_disclosure.disclose(
+                    global_reader, entity_ids,
+                    limit=global_reference_disclosure.per_child_limit(len(request.changes)),
+                ),
             )
         )
     return Preparation(
@@ -622,6 +634,7 @@ def projection(item: Item) -> dict[str, Any]:
 
     return {
         **item.disclosure,
+        global_reference_disclosure.KEY: item.global_references,
         "policy_basis": {
             "policy": item.classification["policy"],
             "physical_consequence": item.classification["physical_consequence"],

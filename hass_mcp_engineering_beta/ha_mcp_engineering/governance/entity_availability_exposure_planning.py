@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from ..errors import AuthorizationError
+from . import global_reference_disclosure
 from .entity_availability_exposure import (
     AVAILABILITY_RESOURCE_TYPE,
     BINDINGS_KEY,
@@ -127,6 +128,9 @@ class Item:
     final: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
+    # HAMCP-270: information only; never in the disclosure that classification,
+    # statements or any fingerprint read.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -644,12 +648,15 @@ async def prepare(
     request: Request,
     *,
     rollback_fingerprints: dict[str, str] | None = None,
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
 ) -> Preparation:
     """Read, refuse, bind and classify every child.  Nothing is dispatched.
 
     ``rollback_fingerprints`` (F3 rollback only) maps each entity to the
     forward child's verified readback fingerprint; the live entry must still
     match it exactly (including any reported tolerated Alexa key).
+    ``global_reader`` returns the dependency snapshot already held (HAMCP-270);
+    its references are disclosed only and bind nothing.
     """
 
     entries: list[dict[str, Any]] = []
@@ -673,6 +680,7 @@ async def prepare(
     entries.sort(key=lambda entry: (entry.get("config_entry_id") or "", entry["entity_id"]))
     items: list[Item] = []
     expose_new: dict[str, Any] = {}
+    global_limit = global_reference_disclosure.per_child_limit(len(entries))
     if request.assistant is not None:
         try:
             expose_new[request.assistant] = await gateway.expose_new(request.assistant)
@@ -777,6 +785,9 @@ async def prepare(
                 final=final,
                 disclosure=disclosure,
                 classification=classify(request.operation, disclosure),
+                global_references=global_reference_disclosure.disclose(
+                    global_reader, (entity_id,), limit=global_limit
+                ),
             )
         )
     return Preparation(
@@ -800,6 +811,7 @@ def projection(prepared: Preparation, item: Item, *, plan_id: str | None = None)
 
     return {
         **item.disclosure,
+        global_reference_disclosure.KEY: item.global_references,
         "final": {
             "disabled_by": item.final.get("disabled_by"),
             "exposure": {
