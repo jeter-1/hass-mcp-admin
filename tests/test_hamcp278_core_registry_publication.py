@@ -58,7 +58,7 @@ PRE_278_MAIN_URL = (
 JOURNAL_PATH = "upstream-trust/ha-core-release-registry.json"
 REGISTRY_DOC = ROOT / "docs" / "CORE_RELEASE_REGISTRY.md"
 RUNBOOK_DOC = ROOT / "docs" / "CORE_REGISTRY_ONE_TAP_RUNBOOK.md"
-ACCEPTANCE_DOC = ROOT / "docs" / "V2_4_1_BETA57_ACCEPTANCE.md"
+ACCEPTANCE_DOC = ROOT / "docs" / "V2_4_1_BETA58_ACCEPTANCE.md"
 REAL_GIT = shutil.which("git")
 # Stands in for git on PATH: logs every push and can model a lost push
 # acknowledgment, a push that claims success without landing, an unavailable
