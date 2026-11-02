@@ -694,13 +694,18 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
         requirements = f3_requirements(f3_identity(entry))
         held = []
-        while True:
+        # Bounded, so a lease call that never refuses fails here instead of
+        # exhausting memory.
+        for _ in range(1024):
             lease = self.core.acquire(
                 (VERIFICATION,), target={"target_type": "automation", "target_id": "held"}
             )
             if lease is None:
                 break
+            self.assertIsInstance(lease, CoreRouteAuthority)
             held.append(lease)
+        else:
+            self.fail("Core never refused for issued-lease capacity")
         self.assertTrue(held)
         created_at = self.now()
         self.assertTrue(self.core.route_status(requirements)["available"])
