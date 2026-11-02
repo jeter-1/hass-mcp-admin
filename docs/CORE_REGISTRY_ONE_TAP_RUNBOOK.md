@@ -14,6 +14,31 @@ Rules:
   `gh secret set`. Run it in your own local terminal, never through an agent.
 - Steps 2 and 5 run from a checkout of `main` at the merged HAMCP-278 commit.
 
+## 0. STOP: no Home Assistant Core upgrade before the gate
+
+> [!CAUTION]
+> **Do not upgrade Home Assistant Core** until all four of these are done, in
+> this order:
+>
+> 1. sequence 16 is live on `main` (step 1);
+> 2. `registry` is created byte-identical from `main`, and the `cutover` hash
+>    check passes (step 2);
+> 3. this beta is deployed (step 6);
+> 4. Core health shows the **same** `sequence`, now fetched from `registry`
+>    by the deployed build (step 6).
+>
+> **Every later Core upgrade:** before upgrading, the exact target release,
+> its sequence and its reviewed profiles must already be published on
+> `registry`: its publication passed the `last-publish` check for
+> `ha-core-<target version>-<sha256>.json` (step 10) and Core health reports
+> that publication's `sequence`. A release present only on `main` does **not**
+> count; neither does a candidate, a dry run or an UNCERTAIN publication.
+>
+> Why: when Engineering observes a new Core version it retires the prior
+> authority, and the verified cache does not authorize a new version. Upgrading
+> first leaves Core-backed capabilities unavailable until `registry` carries
+> the release.
+
 ## 1. Prerequisites
 
 - The HAMCP-278 pull request is merged to `main`.
@@ -157,3 +182,16 @@ bash scripts/check_core_registry_branch.sh last-publish
 Then read Core health. After the next six-hour refresh, or after an add-on
 restart you authorize, `release_registry` must report the new `sequence` with
 `refresh_status: accepted`.
+
+The publish job's log and summary end with one outcome:
+
+- **PUBLISHED**: done. If it carries a warning that the push client reported a
+  failure, the remote read still showed the new commit; do not publish again.
+- **UNCHANGED**: `registry` was not changed. Fix the cause and dispatch again.
+- **UNCERTAIN**: the push was sent and its result is not confirmed. Run the
+  `last-publish` check above and compare the tip with the attempted commit in
+  the summary before any further publication. Never dispatch again before you
+  know which commit `registry` holds.
+
+Only after PUBLISHED and the new `sequence` in health may Core be upgraded to
+that release (step 0).

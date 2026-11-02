@@ -96,6 +96,14 @@ perform none. In order:
 5. First real publication: `last-publish` check OK, and after the six-hour
    refresh or an authorized restart, health reports the new sequence. This is
    the first observation that only `registry` could supply.
+6. Core-upgrade gate (runbook step 0; applies from item 1 onward). PASS only
+   if Home Assistant Core was not upgraded before item 3 showed the same
+   sequence fetched from `registry`,
+   and, for every later Core upgrade, the exact target release, its sequence
+   and its reviewed profiles were published on `registry` (`last-publish` OK
+   for that release, health reporting that sequence) before the upgrade.
+   **FAIL if the target release exists only on `main`**, or only as a
+   candidate, a dry run or an UNCERTAIN publication.
 
 If a step fails, keep the run, its summary and the branch state, and record
 them in HAMCP-278. Whether to roll back is Josh's decision.

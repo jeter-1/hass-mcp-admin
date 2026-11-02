@@ -56,6 +56,25 @@ PRE_278_MAIN_URL = (
     "main/upstream-trust/ha-core-release-registry.json"
 )
 JOURNAL_PATH = "upstream-trust/ha-core-release-registry.json"
+REGISTRY_DOC = ROOT / "docs" / "CORE_RELEASE_REGISTRY.md"
+RUNBOOK_DOC = ROOT / "docs" / "CORE_REGISTRY_ONE_TAP_RUNBOOK.md"
+ACCEPTANCE_DOC = ROOT / "docs" / "V2_4_1_BETA57_ACCEPTANCE.md"
+REAL_GIT = shutil.which("git")
+# Stands in for git on PATH: logs every push and can model a lost push
+# acknowledgment, an unavailable remote read, or a concurrent registry update.
+FAKE_GIT = """#!/usr/bin/env bash
+sub=""
+for argument in "$@"; do
+  case "$argument" in push|ls-remote) sub="$argument"; break ;; esac
+done
+if [[ "$sub" == push ]]; then printf '%s\\n' "$*" >> "$FAKE_GIT_LOG"; fi
+case "$sub:$FAKE_GIT_MODE" in
+  push:accept-then-fail|push:accept-then-fail-unreadable) "$REAL_GIT" "$@" >/dev/null 2>&1; exit 1 ;;
+  push:move-first) "$REAL_GIT" -C "$FAKE_MOVER" push --quiet origin HEAD:refs/heads/registry >/dev/null 2>&1 || exit 97 ;;
+  ls-remote:accept-then-fail-unreadable) exit 128 ;;
+esac
+exec "$REAL_GIT" "$@"
+"""
 HAVE_SHELL_TOOLS = all(shutil.which(tool) for tool in ("bash", "git", "sha256sum"))
 
 
@@ -530,9 +549,8 @@ class SeedSecretTests(unittest.TestCase):
         self.assertNotIn(b"PRIVATE KEY", result.stderr)
 
 
-@unittest.skipUnless(HAVE_SHELL_TOOLS, "bash, git and sha256sum are required")
-class RegistryBranchTests(unittest.TestCase):
-    """The publish and check scripts against a disposable local bare repository."""
+class RegistryRepository:
+    """A disposable local bare repository with main and the publish helpers."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(dir=os.environ.get("TMPDIR")))
@@ -613,6 +631,50 @@ class RegistryBranchTests(unittest.TestCase):
         return subprocess.run(["bash", str(CHECK_SCRIPT), mode, str(self.remote)], env=self.env,
                               capture_output=True, text=True, timeout=120)
 
+    def fake_git(self, mode="passthrough", mover=None):
+        """PATH overrides that route the publish script's git through FAKE_GIT."""
+        directory = self.tmp / "fake-bin"
+        directory.mkdir(exist_ok=True)
+        wrapper = directory / "git"
+        wrapper.write_text(FAKE_GIT, encoding="utf-8")
+        wrapper.chmod(0o755)
+        self.push_log = self.tmp / "pushes.log"
+        self.push_log.write_text("", encoding="utf-8")
+        self.summary = self.tmp / "summary.md"
+        return {"PATH": f"{directory}{os.pathsep}{self.env['PATH']}", "REAL_GIT": REAL_GIT,
+                "FAKE_GIT_MODE": mode, "FAKE_GIT_LOG": str(self.push_log),
+                "FAKE_MOVER": str(mover or self.tmp), "GITHUB_STEP_SUMMARY": str(self.summary)}
+
+    def assert_pushes(self, count):
+        """At most one push, ever: non-force, the exact commit, to registry only."""
+        pushes = self.push_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(pushes), count, pushes)
+        for line in pushes:
+            arguments = line.split()
+            self.assertRegex(arguments[-1], r"^[0-9a-f]{40}:refs/heads/registry$")
+            self.assertFalse({"--force", "-f", "--force-with-lease", "--mirror", "--all", "--tags"}
+                             & set(arguments), line)
+            self.assertFalse(any(argument.startswith(("+", "--force")) for argument in arguments), line)
+
+    def mover(self):
+        """A clone holding a concurrent registry update, not yet pushed."""
+        mover = self.tmp / "mover"
+        self.git("clone", "--quiet", "--branch", "registry", str(self.remote), str(mover))
+        self.write(mover / JOURNAL_PATH, self.data.j1 + b" ")
+        self.git("-C", str(mover), "commit", "--quiet", "-am", "synthetic concurrent change")
+        return mover
+
+    def attempted(self, result):
+        match = re.search(r"Attempted commit ([0-9a-f]{40})", result.stderr)
+        self.assertIsNotNone(match, result.stderr)
+        return match.group(1)
+
+
+
+@unittest.skipUnless(HAVE_SHELL_TOOLS, "bash, git and sha256sum are required")
+class RegistryBranchTests(RegistryRepository, unittest.TestCase):
+    """The publish and check scripts against a disposable local bare repository."""
+
     def test_end_to_end_ephemeral_sign_verify_and_one_path_publish(self):
         base = self.create_registry()
         self.assertEqual(self.check("cutover").returncode, 0)
@@ -641,6 +703,77 @@ class RegistryBranchTests(unittest.TestCase):
         self.assertEqual(last.returncode, 0, last.stderr)
         # A second identical run refuses: the registry moved past the verified predecessor.
         self.assert_refused(self.publish("publish"), "registry journal changed since verification", tip)
+
+    def test_refusal_before_push_reports_unchanged_and_pushes_nothing(self):
+        self.create_registry()
+        mover = self.mover()
+        self.git("-C", str(mover), "push", "--quiet", "origin", "registry")
+        moved = self.ref("registry")
+        result = self.publish("publish", **self.fake_git())
+        self.assertEqual(result.returncode, 1)
+        self.assert_refused(result, "registry journal changed since verification", moved)
+        self.assertIn("Outcome: **UNCHANGED** (refused before any push", self.summary.read_text())
+        self.assert_pushes(0)
+
+    def test_accepted_push_with_client_failure_reports_published(self):
+        base = self.create_registry()
+        result = self.publish("publish", **self.fake_git("accept-then-fail"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tip = self.ref("registry")
+        self.assertNotEqual(tip, base)
+        self.assertEqual(self.git("-C", str(self.remote), "rev-parse", f"{tip}^"), base)
+        self.assertIn(f"Published {tip} to registry.", result.stdout)
+        self.assertIn("push client reported failure (status 1)", result.stderr)
+        self.assertNotIn("unchanged", (result.stdout + result.stderr).lower())
+        self.assertIn("Outcome: **PUBLISHED** (confirmed by a remote read; the push client reported failure)",
+                      self.summary.read_text())
+        self.assert_pushes(1)
+        self.assertEqual(self.ref("main"), self.main_tip)
+
+    def test_accepted_push_with_unavailable_readback_reports_uncertain(self):
+        base = self.create_registry()
+        result = self.publish("publish", **self.fake_git("accept-then-fail-unreadable"))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        attempted = self.attempted(result)
+        self.assertEqual(self.ref("registry"), attempted)  # it did land; the script cannot know
+        self.assertNotEqual(attempted, base)
+        self.assertIn("UNCERTAIN", result.stderr)
+        self.assertIn("observed registry tip unavailable", result.stderr)
+        self.assertIn("Inspect the registry branch before any further publication.", result.stderr)
+        self.assertNotIn("unchanged", (result.stdout + result.stderr).lower())
+        summary = self.summary.read_text()
+        self.assertIn("Outcome: **UNCERTAIN**", summary)
+        self.assertIn(attempted, summary)
+        self.assertNotIn("UNCHANGED", summary)
+        self.assert_pushes(1)
+
+    def test_rejected_push_with_predecessor_tip_reports_confirmed_unchanged(self):
+        base = self.create_registry()
+        hook = self.remote / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\necho synthetic rejection >&2\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        result = self.publish("publish", **self.fake_git())
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(self.ref("registry"), base)
+        self.assertIn("UNCHANGED (confirmed)", result.stderr)
+        self.assertNotEqual(self.attempted(result), base)
+        self.assertNotIn("refused before", result.stderr)
+        self.assertIn("Outcome: **UNCHANGED** (confirmed by a remote read after the failed push)",
+                      self.summary.read_text())
+        self.assert_pushes(1)
+
+    def test_push_lost_to_a_concurrent_update_reports_uncertain_and_keeps_it(self):
+        self.create_registry()
+        mover = self.mover()
+        moved = self.git("-C", str(mover), "rev-parse", "HEAD")
+        result = self.publish("publish", **self.fake_git("move-first", mover=mover))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.ref("registry"), moved)  # the concurrent update is not overwritten
+        self.assertIn(f"observed registry tip {moved}", result.stderr)
+        self.assertNotEqual(self.attempted(result), moved)
+        self.assertNotIn("unchanged", (result.stdout + result.stderr).lower())
+        self.assertIn("Outcome: **UNCERTAIN**", self.summary.read_text())
+        self.assert_pushes(1)
 
     def test_registry_absent_refused_as_pre_cutover(self):
         result = self.publish("publish")
@@ -709,9 +842,14 @@ class RegistryBranchTests(unittest.TestCase):
         base = self.create_registry()
         source = PUBLISH_SCRIPT.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r'^readonly TARGET_REF="refs/heads/registry"$', source, re.M)), 1)
-        pushes = [line.strip() for line in source.splitlines() if re.match(r"\s*(git\b.*\s)?push\s", line)]
-        self.assertEqual(pushes, ['push --quiet --no-verify -- "$REMOTE_URL" "$refspec" '
-                                  '|| refuse "non-force push to the registry branch failed"'])
+        pushes = [line.strip() for line in source.splitlines() if re.search(r"\bpush\s+--", line)]
+        self.assertEqual(pushes, ['git -C "$WORK_DIR" "${credentials[@]}" push --quiet --no-verify -- '
+                                  '"$REMOTE_URL" "$refspec" || push_status=$?'])
+        lines = source.splitlines()
+        push_line = next(i for i, line in enumerate(lines) if line.strip() == pushes[0])
+        self.assertEqual(lines[push_line - 2].strip(), "dispatched=1")
+        self.assertNotIn("refuse", "\n".join(lines[push_line:]))
+        self.assertEqual(source.count('timeout "$READBACK_SECONDS"'), 1)
         self.assertNotRegex(source, r"\b(python|pip)[0-9.]*\b(?! or package)")
         injected = self.tmp / "injected-publish.sh"
         injected.write_text(source.replace('TARGET_REF="refs/heads/registry"', 'TARGET_REF="refs/heads/main"'),
@@ -745,6 +883,137 @@ class RegistryBranchTests(unittest.TestCase):
         result = self.check("last-publish")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("single-parent", result.stderr)
+
+
+def fallback_steps() -> dict[int, str]:
+    """The local fallback recipe's fenced bash steps, keyed by step number."""
+    text = REGISTRY_DOC.read_text(encoding="utf-8")
+    return {int(number): body for body, number in
+            re.findall(r"```bash\n(# fallback step (\d): .*?)```", text, re.S)}
+
+
+@unittest.skipUnless(HAVE_SHELL_TOOLS, "bash, git and sha256sum are required")
+class LocalFallbackRecipeTests(RegistryRepository, unittest.TestCase):
+    """R1-L2: the documented local fallback, run verbatim against a bare remote.
+
+    Step 2 signs with the owner key and verifies against the committed public
+    key, which tests cannot hold; it is replaced by the same runtime verifier
+    with an ephemeral key. Steps 1 and 3 run exactly as written.
+    """
+
+    def run_step(self, number, fb):
+        env = {**self.env, "V": "2026.9.3", "CANDIDATE": str(self.tmp / "core-candidate.json"),
+               "EVIDENCE": str(self.tmp / "core-review-evidence.json"), "REMOTE": str(self.remote),
+               "FB": str(fb)}
+        return subprocess.run(["bash", "-euo", "pipefail", "-c", fallback_steps()[number]], env=env,
+                              cwd=ROOT, capture_output=True, text=True, timeout=120)
+
+    def prepare(self):
+        base = self.create_registry()
+        (self.tmp / "core-candidate.json").write_bytes(self.data.c2)
+        (self.tmp / "core-review-evidence.json").write_bytes(self.data.ev2)
+        fb = self.tmp / "fallback"
+        fb.mkdir()
+        step1 = self.run_step(1, fb)
+        self.assertEqual(step1.returncode, 0, step1.stderr)
+        self.assertEqual((fb / "predecessor.json").read_bytes(), self.data.j1)
+        # Step 2 stand-in: the runtime verifier accepts the signed successor.
+        tap.runtime_successor(journal=self.j2, predecessor=(fb / "predecessor.json").read_bytes(),
+                              candidate=tap.parse_candidate(self.data.c2),
+                              public_key=self.data.public_key, now=NOW)
+        (fb / "signed-core-journal.json").write_bytes(self.j2)
+        return base, fb
+
+    def test_recipe_is_bounded_and_reuses_the_guarded_script(self):
+        steps = fallback_steps()
+        self.assertEqual(sorted(steps), [0, 1, 2, 3])
+        self.assertIn("REMOTE=https://github.com/jeter-1/hass-mcp-admin.git\n", steps[0])
+        recipe = "".join(steps[number] for number in (1, 2, 3))
+        self.assertNotIn("https://", recipe)
+        self.assertNotRegex(recipe, r"\bmain\b|--force|\bgit\b[^\n]*\bpush\b|\bcommit\b")
+        self.assertIn("core_registry_one_tap.py verify-signed", steps[2])
+        self.assertIn("--public-key docs/evidence/hamcp222/core-public-key.txt", steps[2])
+        self.assertTrue(steps[3].rstrip().endswith("bash scripts/core_registry_publish.sh publish"))
+
+    def test_recipe_publishes_one_child_commit_to_registry(self):
+        base, fb = self.prepare()
+        result = self.run_step(3, fb)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tip = self.ref("registry")
+        self.assertIn(f"Published {tip} to registry.", result.stdout)
+        remote = str(self.remote)
+        self.assertEqual(self.git("-C", remote, "rev-list", "--parents", "-n", "1", tip), f"{tip} {base}")
+        self.assertEqual(self.git("-C", remote, "diff-tree", "--no-commit-id", "--name-status", "-r", base, tip),
+                         f"A\t{evidence_path('2026.9.3', self.data.ev2)}\nM\t{JOURNAL_PATH}")
+        self.assertEqual(self.ref("main"), self.main_tip)
+        self.assertEqual(self.check("last-publish").returncode, 0)
+
+    def test_recipe_refuses_a_concurrent_predecessor_change_without_overwriting_it(self):
+        _, fb = self.prepare()
+        mover = self.mover()
+        self.git("-C", str(mover), "push", "--quiet", "origin", "registry")
+        moved = self.ref("registry")
+        result = self.run_step(3, fb)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("registry journal changed since verification", result.stderr)
+        self.assertIn("registry is unchanged", result.stderr)
+        self.assertEqual(self.ref("registry"), moved)
+        self.assertEqual(self.ref("main"), self.main_tip)
+
+
+def gate_text(path: Path, start: str, end: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    first = text.index(start)
+    section = text[first:text.index(end, first)]
+    return " ".join(section.replace("> ", " ").split())
+
+
+class CoreUpgradeGateDocumentTests(unittest.TestCase):
+    """R1-M1: the no-Core-upgrade gate precedes deployment and fails main-only releases."""
+
+    def test_runbook_gate_precedes_every_deployment_step_in_order(self):
+        text = RUNBOOK_DOC.read_text(encoding="utf-8")
+        gate = text.index("## 0. STOP: no Home Assistant Core upgrade before the gate")
+        self.assertLess(gate, text.index("## 1. Prerequisites"))
+        self.assertLess(gate, text.index("## 6. Deploy and confirm the runtime reads `registry`"))
+        section = gate_text(RUNBOOK_DOC, "## 0. STOP", "## 1. Prerequisites")
+        self.assertIn("**Do not upgrade Home Assistant Core** until all four of these are done, in this order:",
+                      section)
+        ordered = ["1. sequence 16 is live on `main`",
+                   "2. `registry` is created byte-identical from `main`, and the `cutover` hash check passes",
+                   "3. this beta is deployed",
+                   "4. Core health shows the **same** `sequence`, now fetched from `registry`"]
+        positions = [section.index(item) for item in ordered]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("**Every later Core upgrade:** before upgrading, the exact target release, its sequence "
+                      "and its reviewed profiles must already be published on `registry`", section)
+        self.assertIn("A release present only on `main` does **not** count", section)
+        self.assertIn("retires the prior authority, and the verified cache does not authorize a new version",
+                      section)
+
+    def test_acceptance_checklist_fails_a_release_only_on_main(self):
+        section = gate_text(ACCEPTANCE_DOC, "## 4. Owner cutover", "If a step fails")
+        item = section[section.index("6. Core-upgrade gate (runbook step 0"):]
+        self.assertIn("the exact target release, its sequence and its reviewed profiles were published on "
+                      "`registry`", item)
+        self.assertIn("**FAIL if the target release exists only on `main`**", item)
+
+    def test_registry_cutover_section_mirrors_the_gate(self):
+        section = gate_text(REGISTRY_DOC, "### Canonical source, frozen `main` copy and rollback",
+                            "### Manual flow for each publication")
+        self.assertIn("**No Home Assistant Core upgrade until the cutover is complete**", section)
+        self.assertIn("a release present only on `main` does not count", section)
+        self.assertIn("Observing a new Core version retires the prior authority, and the verified cache "
+                      "does not authorize a new version", section)
+
+    def test_publication_outcomes_are_qualified_in_the_docs(self):
+        registry = " ".join(REGISTRY_DOC.read_text(encoding="utf-8").split())
+        self.assertNotIn("Every refusal leaves `registry` unchanged", registry)
+        self.assertNotIn("publish the same two files to `registry` by hand", registry)
+        self.assertIn("Only this outcome leaves `registry` unchanged.", registry)
+        for document in (registry, " ".join(RUNBOOK_DOC.read_text(encoding="utf-8").split())):
+            for outcome in ("**PUBLISHED**", "**UNCHANGED**", "**UNCERTAIN**"):
+                self.assertIn(outcome, document)
 
 
 MAIN_GUARD = ("github.ref == 'refs/heads/main' && github.repository == 'jeter-1/hass-mcp-admin' "

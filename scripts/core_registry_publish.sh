@@ -13,6 +13,17 @@
 # REVERIFIED_MANIFEST_SHA256 (reverify job's manifest), PREDECESSOR_SHA256
 # (journal the candidate was verified against), CORE_VERSION, EVIDENCE_SHA256,
 # REMOTE_URL, WORK_DIR (must not exist). The target ref is fixed below.
+#
+# Outcome (stderr/stdout and the job summary) and exit status:
+#   0  PUBLISHED  the registry tip is the new commit. A push whose client
+#                 reported failure but whose remote read shows the new commit
+#                 is also PUBLISHED, with a warning.
+#   1  UNCHANGED  refused before the push, or the push failed and one remote
+#                 read shows the verified predecessor tip. Fix the cause and
+#                 dispatch again.
+#   3  UNCERTAIN  the push was dispatched and its result is not confirmed.
+#                 Inspect the registry branch before any further publication.
+# There is at most one push and never a retry.
 set -euo pipefail
 set +x
 
@@ -21,10 +32,25 @@ readonly JOURNAL_PATH="upstream-trust/ha-core-release-registry.json"
 readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly VERSION_PATTERN='^20[0-9]{2}\.(1[0-2]|[1-9])\.(0|[1-9][0-9]*)$'
 
+readonly READBACK_SECONDS=60
+summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+dispatched=0
+
 refuse() {
-  # Fixed reasons only; never echo supplied file contents.
+  # Fixed reasons only; never echo supplied file contents. A refusal is
+  # possible only before the push; afterwards nothing may claim "unchanged".
+  if (( dispatched )); then
+    uncertain "$1" ""
+  fi
   echo "::error::Core registry publication refused: $1; ${TARGET_REF#refs/heads/} is unchanged." >&2
+  echo "- Outcome: **UNCHANGED** (refused before any push: $1)" >> "$summary"
   exit 1
+}
+
+uncertain() {
+  echo "::error::Core registry publication UNCERTAIN: $1. Attempted commit ${commit:-unknown}; observed registry tip ${2:-unavailable}. Inspect the registry branch before any further publication." >&2
+  echo "- Outcome: **UNCERTAIN** ($1). Attempted commit \`${commit:-unknown}\`; observed registry tip \`${2:-unavailable}\`. Inspect the registry branch before any further publication." >> "$summary"
+  exit 3
 }
 
 mode="${1:-}"
@@ -96,7 +122,6 @@ for relative in $expected; do
     || refuse "committed bytes differ from the signed artifact"
 done
 
-summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 {
   echo "### Core registry publication (${mode})"
   echo "- Registry tip verified: \`${base}\`"
@@ -113,11 +138,35 @@ fi
 # remote that moved since the fetch rejects the non-fast-forward update.
 refspec="${commit}:${TARGET_REF}"
 [[ "$refspec" =~ ^[0-9a-f]{40}:refs/heads/registry$ ]] || refuse "push target is not the registry branch"
-git -C "$WORK_DIR" -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
-  push --quiet --no-verify -- "$REMOTE_URL" "$refspec" || refuse "non-force push to the registry branch failed"
-published="$(git -C "$WORK_DIR" ls-remote -- "$REMOTE_URL" "$TARGET_REF" | cut -f 1)"
-if [[ "$published" != "$commit" ]]; then
-  echo "::error::The push was accepted but the registry branch does not show ${commit}; inspect it before any rerun." >&2
+credentials=(-c credential.helper= -c 'credential.helper=!gh auth git-credential')
+dispatched=1
+push_status=0
+git -C "$WORK_DIR" "${credentials[@]}" push --quiet --no-verify -- "$REMOTE_URL" "$refspec" || push_status=$?
+
+# 5. One bounded read of the remote tip decides what to report. No retry.
+read_status=0
+listing="$(timeout "$READBACK_SECONDS" git -C "$WORK_DIR" "${credentials[@]}" \
+  ls-remote -- "$REMOTE_URL" "$TARGET_REF" 2>/dev/null)" || read_status=$?
+tip=""
+if (( read_status == 0 )) && [[ "$listing" =~ ^([0-9a-f]{40})$'\t'refs/heads/registry$ ]]; then
+  tip="${BASH_REMATCH[1]}"
+fi
+if [[ "$tip" == "$commit" ]]; then
+  if (( push_status != 0 )); then
+    echo "::warning::The push client reported failure (status ${push_status}), but a remote read shows ${commit} on the registry branch: PUBLISHED." >&2
+    echo "- Outcome: **PUBLISHED** (confirmed by a remote read; the push client reported failure)" >> "$summary"
+  else
+    echo "- Outcome: **PUBLISHED**" >> "$summary"
+  fi
+  echo "Published ${commit} to ${TARGET_REF#refs/heads/}."
+  exit 0
+fi
+if (( push_status != 0 )) && [[ -n "$tip" && "$tip" == "$base" ]]; then
+  echo "::error::Core registry publication failed: the push was not accepted (status ${push_status}) and a remote read shows the verified predecessor ${base}: UNCHANGED (confirmed). Attempted commit ${commit}." >&2
+  echo "- Outcome: **UNCHANGED** (confirmed by a remote read after the failed push). Attempted commit \`${commit}\`." >> "$summary"
   exit 1
 fi
-echo "Published ${commit} to ${TARGET_REF#refs/heads/}."
+if (( read_status != 0 )) || [[ -z "$tip" ]]; then
+  uncertain "push status ${push_status}; the remote read of the registry branch failed" ""
+fi
+uncertain "push status ${push_status}; the registry branch shows neither the new commit nor the verified predecessor" "$tip"

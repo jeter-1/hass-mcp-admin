@@ -240,8 +240,9 @@ lifecycle decision. It never overwrites prior evidence or publishes automaticall
 Before the `registry` cutover, a separate authorized data-only PR placed the
 signed output at `upstream-trust/ha-core-release-registry.json` on `main` with
 safe review evidence. After the cutover the signed output is published to the
-`registry` branch instead, through the one-tap workflow below; Josh may still
-sign locally and publish the same two files to `registry` by hand. Either way,
+`registry` branch instead, through the one-tap workflow below, or through the
+[local fallback](#local-fallback-publication) that reuses the same guarded
+publication script. Either way,
 review the exact signature/chain/content against the installed public key. No
 Engineering version bump, new image or runtime code change is needed for a
 compatible profile selection.
@@ -362,6 +363,12 @@ A rollback to an Engineering version older than HAMCP-278 reads the frozen
 learns no sequence published after the cutover, including revocations. Treat
 such a rollback as temporary, and roll forward before cached entries expire.
 
+**No Home Assistant Core upgrade until the cutover is complete**, and after it,
+none until the exact target release is on `registry`: a release present only on
+`main` does not count. Observing a new Core version retires the prior authority,
+and the verified cache does not authorize a new version. The ordered gate is in
+the [runbook](CORE_REGISTRY_ONE_TAP_RUNBOOK.md#0-stop-no-home-assistant-core-upgrade-before-the-gate).
+
 ### Manual flow for each publication
 
 1. Prepare and review the candidate with `add` (or `extend-capabilities` or
@@ -394,9 +401,81 @@ A dry run replaces `sign` with an ephemeral test key. It never references the
 real secret, never asks for approval and pushes nothing. Its publish job builds
 and checks the same commit and stops.
 
-Every refusal leaves `registry` unchanged. Fix the cause and dispatch a new
-run. If `registry` moved after `verify`, the publish job refuses; prepare a new
-candidate against the new tip.
+The publish job reports one of three outcomes, in its log and job summary:
+
+- **PUBLISHED** (exit 0): a remote read shows the new commit on `registry`. If
+  the push client reported a failure but the read shows the new commit, it is
+  still PUBLISHED, with a warning. Do not publish it again.
+- **UNCHANGED** (exit 1): a refusal before the push (predecessor drift, path
+  set, digest or verification), or a failed push where one remote read shows
+  the verified predecessor. Only this outcome leaves `registry` unchanged. Fix
+  the cause and dispatch a new run. If `registry` moved after `verify`, the
+  publish job refuses; prepare a new candidate against the new tip.
+- **UNCERTAIN** (exit 3): the push was dispatched and its result is not
+  confirmed, because the remote read failed or showed another commit. The
+  summary names the attempted commit and any observed tip. Inspect `registry`
+  (`scripts/check_core_registry_branch.sh last-publish`) before any further
+  publication; do not dispatch again until you know which commit it holds.
+
+The script pushes at most once and never retries.
+
+### Local fallback publication
+
+If the workflow cannot run, Josh may sign locally and publish with the same
+guarded script. `main` stays frozen and untouched. Run the steps in one
+terminal, from a checkout of `main`, with the repository's locked Python
+environment:
+
+```bash
+# fallback step 0: set these first
+V=<Core version>                                   # e.g. 2026.10.4
+CANDIDATE=<path>/core-candidate.json               # the reviewed bytes
+EVIDENCE=<path>/core-review-evidence.json
+REVIEWED_SHA256=<reviewed candidate SHA-256>
+PY=<locked-env>/bin/python
+REMOTE=https://github.com/jeter-1/hass-mcp-admin.git
+FB="$(mktemp -d)"
+```
+
+```bash
+# fallback step 1: fresh predecessor from the current registry tip
+git init --quiet --bare -- "$FB/fetch"
+git -C "$FB/fetch" fetch --quiet --no-tags --depth=1 -- "$REMOTE" +refs/heads/registry:refs/heads/registry
+git -C "$FB/fetch" cat-file blob refs/heads/registry:upstream-trust/ha-core-release-registry.json > "$FB/predecessor.json"
+```
+
+```bash
+# fallback step 2: sign that exact successor, then verify with the runtime verifier
+# (HA_CORE_RELEASE_REGISTRY_SIGNING_KEY supplied by its existing secret facility)
+"$PY" scripts/prepare_core_release_registry.py sign \
+  --candidate "$CANDIDATE" --expected-candidate-sha256 "$REVIEWED_SHA256" \
+  --previous "$FB/predecessor.json" --output "$FB/signed-core-journal.json"
+"$PY" scripts/core_registry_one_tap.py verify-signed \
+  --journal "$FB/signed-core-journal.json" --predecessor "$FB/predecessor.json" \
+  --candidate "$CANDIDATE" --public-key docs/evidence/hamcp222/core-public-key.txt
+```
+
+```bash
+# fallback step 3: stage exactly the journal and evidence, then the guarded publication
+EV_SHA="$(sha256sum -- "$EVIDENCE" | cut -d ' ' -f 1)"
+J=upstream-trust/ha-core-release-registry.json
+E="upstream-trust/evidence/ha-core-${V}-${EV_SHA}.json"
+install -D -m 0644 -- "$FB/signed-core-journal.json" "$FB/signed/files/$J"
+install -D -m 0644 -- "$EVIDENCE" "$FB/signed/files/$E"
+(cd "$FB/signed/files" && sha256sum -- "$E" "$J") > "$FB/signed/SHA256SUMS"
+M="$(sha256sum -- "$FB/signed/SHA256SUMS" | cut -d ' ' -f 1)"
+SIGNED_DIR="$FB/signed" MANIFEST_SHA256="$M" REVERIFIED_MANIFEST_SHA256="$M" \
+  PREDECESSOR_SHA256="$(sha256sum -- "$FB/predecessor.json" | cut -d ' ' -f 1)" \
+  CORE_VERSION="$V" EVIDENCE_SHA256="$EV_SHA" REMOTE_URL="$REMOTE" WORK_DIR="$FB/publish" \
+  bash scripts/core_registry_publish.sh publish
+```
+
+Step 3 fetches the `registry` tip again and refuses unless it still holds the
+exact predecessor of step 1, so a concurrent publication is never overwritten.
+It makes one child commit changing only the journal and adding the evidence
+file, pushes it once without force to `registry`, and reports PUBLISHED,
+UNCHANGED or UNCERTAIN as above. On a refusal or UNCHANGED, start again from
+step 1; on UNCERTAIN, inspect `registry` first. Then run step 10 of the runbook.
 
 Until HAMCP-279, each new Core release still needs its binding PR on `main`
 before its candidate can be prepared. HAMCP-278 does not change the HAMCP-182
