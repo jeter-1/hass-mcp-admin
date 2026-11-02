@@ -1,14 +1,13 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.56** (HAMCP-278) reads the
-signed Core release registry from the `registry` branch instead of `main`;
-only the URL's branch segment changes, with the same key, verifier and cache
-and no override. It adds an owner-gated one-tap signing workflow whose
-separate publish job pushes one commit to `registry`. Josh must create the
-`registry` branch before deploying (see the
-[owner runbook](docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md)). No tool, input
-schema, persisted format or Home Assistant write changes. Rollback is
-reinstalling beta.55. Read the
+Not yet released: Engineering **2.4.1-beta.56** (HAMCP-271) settles a
+stranded post-intent child under an already-terminal parent through one
+read-only readback in every configuration family and in
+`set_input_boolean_state` and `set_input_select_option`, as beta.54 does
+for dashboards. It releases the expired locks that blocked later
+governed applies. The parent is never changed and nothing is
+redispatched. No tool, input schema, persisted format or Home Assistant
+write changes. Rollback is reinstalling beta.55. Read the
 [2.4.1-beta.56 release notes](docs/V2_4_1_BETA56_RELEASE_NOTES.md) and the
 [2.4.1-beta.56 acceptance contract](docs/V2_4_1_BETA56_ACCEPTANCE.md).
 
