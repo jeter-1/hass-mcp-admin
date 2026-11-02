@@ -59,6 +59,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp252_sun_condition_verification.py",
     # HAMCP-145: input_select option lock-mode coverage.
     "tests/test_hamcp145_input_select_option.py",
+    # HAMCP-271: configuration final-read outcomes (NormalizedOperationOutcome).
+    "tests/test_hamcp271_stranded_children.py",
     "tests/test_f3_tokenless_lock_recovery.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
