@@ -114,7 +114,11 @@ checkpoint, replay/rollback refusal, expiry and retained-revocation lifecycle.
 It has a distinct identity (`ha-core-reviewed-releases`), key ID
 (`ha-core-release-registry-v1`), entry schema and cache. The code-owned URL is:
 
-`https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/main/upstream-trust/ha-core-release-registry.json`
+`https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/registry/upstream-trust/ha-core-release-registry.json`
+
+HAMCP-278 changed only the branch segment, from `main` to `registry`. The
+path, verifier, key and cache are unchanged, and there is still no URL option
+or override. See [One-tap signing and registry-branch publication](#one-tap-signing-and-registry-branch-publication-hamcp-278).
 
 The cache is `/data/ha-core-release-registry-cache.json`; its companion lifecycle
 files are owned by the existing registry implementation. Do not edit/delete them
@@ -233,13 +237,24 @@ It compacts to 32 positive-chain envelopes while retaining signed denial sources
 within existing bounds. Bound exhaustion refuses and requires an explicit owner
 lifecycle decision. It never overwrites prior evidence or publishes automatically.
 
-A separate authorized data-only PR can place the signed output at
-`upstream-trust/ha-core-release-registry.json` with safe review evidence. Review
-the exact signature/chain/content against the installed public key before
-merging that data. No Engineering version bump, new image or runtime code change
-is needed for a compatible profile selection. No new signing workflow or GitHub
-permission is introduced here. The signing owner remains a required independent
-trust boundary; automation must not turn probe success into self-approval.
+Before the `registry` cutover, a separate authorized data-only PR placed the
+signed output at `upstream-trust/ha-core-release-registry.json` on `main` with
+safe review evidence. After the cutover the signed output is published to the
+`registry` branch instead, through the one-tap workflow below, or through the
+[local fallback](#local-fallback-publication) that reuses the same guarded
+publication script. Either way,
+review the exact signature/chain/content against the installed public key. No
+Engineering version bump, new image or runtime code change is needed for a
+compatible profile selection.
+
+HAMCP-278 adds one signing workflow,
+`.github/workflows/core-release-registry-publish.yml`, and one GitHub permission
+use: its publish job holds the built-in Actions token with `contents: write`
+and pushes to `registry` only. The signing job holds Josh's Core key through a
+protected environment secret and has only `contents: read`. The signing owner
+remains a required independent trust boundary: nothing signs until Josh
+approves that environment, and automation must not turn probe success into
+self-approval.
 
 ### Explicit capability extension
 
@@ -285,6 +300,187 @@ Withdrawal does not require the writer to understand a newer positive profile.
 The denial-only path may remove positives and retain exact unchanged siblings;
 it cannot add or alter a positive entry. This allows an older writer to withdraw
 newer-profile authority without an Engineering code change.
+
+## One-tap signing and registry-branch publication (HAMCP-278)
+
+### Josh's decisions (2026-11-02)
+
+Josh, as product owner, decided the following on 2026-11-02:
+
+- **Split.** HAMCP-278 (278a) covers the runtime URL change to the `registry`
+  branch, gated one-tap signing, a separate publish job, these docs and the
+  owner cutover runbook. Review evidence and the candidate remain inputs.
+  Automated evidence (O3 binding inheritance, release-parameterized lanes,
+  lane-group withholding, dormant seq-13 lanes) moves to HAMCP-279.
+- **Push credential.** The publish job uses the built-in Actions token with
+  `contents: write`, in a job separate from signing. There is no deploy key and
+  no new credential.
+- **Branch ruleset.** The `registry` ruleset, which Josh configures, blocks
+  force-push and deletion only.
+- **Unchanged.** Key custody stays option A: an environment secret with Josh as
+  the required reviewer. Publication stays P2: the `registry` branch at the same
+  path, with only the URL branch segment changed. CI signing without Josh's
+  approval stays rejected.
+
+### What changed in the trust boundary
+
+Before HAMCP-278, Josh's Core key never left his machine, and every journal
+reached the runtime through a reviewed pull request merged to `main`. Now:
+
+- **The key lives in GitHub.** The base64 raw seed is stored as the
+  `HA_CORE_RELEASE_REGISTRY_SIGNING_KEY` secret of the
+  `core-release-registry-signing` environment. Only the `sign` job of the
+  workflow can use it, and only after Josh approves that run. Anyone who can
+  change that workflow on `main`, and get Josh to approve a run, can have it
+  sign. That is why the environment allows `main` only, and why workflow
+  changes stay protected-path changes reviewed on `main`.
+- **Publication no longer goes through a pull request.** The publish job pushes
+  one commit straight to `registry` with the Actions token. Review moves to
+  before dispatch: the candidate and evidence SHA-256 values Josh compares in
+  the approval summary. The runtime still trusts only signatures from the
+  committed Core key, so a push to `registry` without that signature cannot
+  create authority.
+- **The `registry` branch is now canonical.** The ruleset blocks force-push and
+  deletion, so the published history only moves forward.
+
+Signing and publishing stay in separate jobs. The signing job holds the secret
+and no write token. The publish job holds the write token and no secret, and
+runs no Python or package installer: besides the pinned checkout and
+artifact-download actions it uses only `bash`, `git`, `sha256sum` and `gh` as
+the git credential helper. A read-only `reverify` job sits between
+them: it checks the signed journal against the committed public key with the
+runtime verifier before anything is pushed.
+
+### Canonical source, frozen `main` copy and rollback
+
+After cutover, `registry` is the only canonical Core journal. The copy at
+`upstream-trust/ha-core-release-registry.json` on `main` is **frozen** at the
+cutover sequence: do not update it and do not delete it. It exists so that
+`registry` can be created byte-identical to it, and for history.
+
+A rollback to an Engineering version older than HAMCP-278 reads the frozen
+`main` copy. It keeps its cached authority until that authority expires, but it
+learns no sequence published after the cutover, including revocations. Treat
+such a rollback as temporary, and roll forward before cached entries expire.
+
+**No Home Assistant Core upgrade until the cutover is complete**, and after it,
+none until the exact target release is on `registry`: a release present only on
+`main` does not count. Observing a new Core version retires the prior authority,
+and the verified cache does not authorize a new version. The ordered gate is in
+the [runbook](CORE_REGISTRY_ONE_TAP_RUNBOOK.md#0-stop-no-home-assistant-core-upgrade-before-the-gate).
+
+### Manual flow for each publication
+
+1. Prepare and review the candidate with `add` (or `extend-capabilities` or
+   `revoke`) against the current `registry` journal, as described above.
+2. Push `core-candidate.json` and `core-review-evidence.json` (regular files,
+   at the branch root) to a new branch `registry-candidates/<version>`.
+3. Review those exact bytes and record both SHA-256 values.
+4. Dispatch **Core registry one-tap signing and publication** from `main` with
+   `core_version`, `candidate_ref`, `candidate_sha256` and `evidence_sha256`.
+   Run once with `dry_run: true` first.
+5. The `verify` job (no environment, no secret, read-only) checks both digests,
+   refuses before cutover when `registry` does not exist, runs the utility's
+   non-signing checks and writes the **approval summary**. The summary shows the
+   predecessor and new sequence, both SHA-256 values, expiry, the profiles
+   carried and added, and a prominent **WITHHELD** block for any profile in the
+   predecessor's entry that the candidate drops. It ends with:
+   *Approving signs this exact candidate with Josh's Core registry key; a
+   separate job then pushes it to the registry branch.*
+6. Josh compares the summary's candidate and evidence SHA-256 values with the
+   reviewed values. Only if they match does he approve the
+   `core-release-registry-signing` environment.
+7. `sign` re-checks the digests, signs with `--expected-candidate-sha256`, and
+   checks the result against the committed public key with the runtime
+   verifier. `reverify` repeats that check in a job without the secret.
+   `publish` checks that `registry` still holds the exact predecessor `verify`
+   saw, makes one commit touching only the journal and the new evidence file,
+   and pushes it to `registry` without force.
+
+A dry run replaces `sign` with an ephemeral test key. It never references the
+real secret, never asks for approval and pushes nothing. Its publish job builds
+and checks the same commit and stops.
+
+The publish job reports one of three outcomes, in its log and job summary:
+
+- **PUBLISHED** (exit 0): a remote read shows the new commit on `registry`. If
+  the push client reported a failure but the read shows the new commit, it is
+  still PUBLISHED, with a warning. Do not publish it again.
+- **UNCHANGED** (exit 1): a refusal before the push (predecessor drift, path
+  set, digest or verification), or a failed push where one remote read shows
+  the verified predecessor. Only this outcome leaves `registry` unchanged. Fix
+  the cause and dispatch a new run. If `registry` moved after `verify`, the
+  publish job refuses; prepare a new candidate against the new tip.
+- **UNCERTAIN** (exit 3): the push was dispatched and its result is not
+  confirmed, because the remote read failed or showed another commit. The
+  summary names the attempted commit and any observed tip. Inspect `registry`
+  (`scripts/check_core_registry_branch.sh last-publish`) before any further
+  publication; do not dispatch again until you know which commit it holds.
+
+The script pushes at most once and never retries.
+
+### Local fallback publication
+
+If the workflow cannot run, Josh may sign locally and publish with the same
+guarded script. `main` stays frozen and untouched. Run the steps in one
+terminal, from a checkout of `main`, with the repository's locked Python
+environment:
+
+```bash
+# fallback step 0: set these first
+V=<Core version>                                   # e.g. 2026.10.4
+CANDIDATE=<path>/core-candidate.json               # the reviewed bytes
+EVIDENCE=<path>/core-review-evidence.json
+REVIEWED_SHA256=<reviewed candidate SHA-256>
+PY=<locked-env>/bin/python
+REMOTE=https://github.com/jeter-1/hass-mcp-admin.git
+FB="$(mktemp -d)"
+```
+
+```bash
+# fallback step 1: fresh predecessor from the current registry tip
+git init --quiet --bare -- "$FB/fetch"
+git -C "$FB/fetch" fetch --quiet --no-tags --depth=1 -- "$REMOTE" +refs/heads/registry:refs/heads/registry
+git -C "$FB/fetch" cat-file blob refs/heads/registry:upstream-trust/ha-core-release-registry.json > "$FB/predecessor.json"
+```
+
+```bash
+# fallback step 2: sign that exact successor, then verify with the runtime verifier
+# (HA_CORE_RELEASE_REGISTRY_SIGNING_KEY supplied by its existing secret facility)
+"$PY" scripts/prepare_core_release_registry.py sign \
+  --candidate "$CANDIDATE" --expected-candidate-sha256 "$REVIEWED_SHA256" \
+  --previous "$FB/predecessor.json" --output "$FB/signed-core-journal.json"
+"$PY" scripts/core_registry_one_tap.py verify-signed \
+  --journal "$FB/signed-core-journal.json" --predecessor "$FB/predecessor.json" \
+  --candidate "$CANDIDATE" --public-key docs/evidence/hamcp222/core-public-key.txt
+```
+
+```bash
+# fallback step 3: stage exactly the journal and evidence, then the guarded publication
+EV_SHA="$(sha256sum -- "$EVIDENCE" | cut -d ' ' -f 1)"
+J=upstream-trust/ha-core-release-registry.json
+E="upstream-trust/evidence/ha-core-${V}-${EV_SHA}.json"
+install -D -m 0644 -- "$FB/signed-core-journal.json" "$FB/signed/files/$J"
+install -D -m 0644 -- "$EVIDENCE" "$FB/signed/files/$E"
+(cd "$FB/signed/files" && sha256sum -- "$E" "$J") > "$FB/signed/SHA256SUMS"
+M="$(sha256sum -- "$FB/signed/SHA256SUMS" | cut -d ' ' -f 1)"
+SIGNED_DIR="$FB/signed" MANIFEST_SHA256="$M" REVERIFIED_MANIFEST_SHA256="$M" \
+  PREDECESSOR_SHA256="$(sha256sum -- "$FB/predecessor.json" | cut -d ' ' -f 1)" \
+  CORE_VERSION="$V" EVIDENCE_SHA256="$EV_SHA" REMOTE_URL="$REMOTE" WORK_DIR="$FB/publish" \
+  bash scripts/core_registry_publish.sh publish
+```
+
+Step 3 fetches the `registry` tip again and refuses unless it still holds the
+exact predecessor of step 1, so a concurrent publication is never overwritten.
+It makes one child commit changing only the journal and adding the evidence
+file, pushes it once without force to `registry`, and reports PUBLISHED,
+UNCHANGED or UNCERTAIN as above. On a refusal or UNCHANGED, start again from
+step 1; on UNCERTAIN, inspect `registry` first. Then run step 10 of the runbook.
+
+Until HAMCP-279, each new Core release still needs its binding PR on `main`
+before its candidate can be prepared. HAMCP-278 does not change the HAMCP-182
+signing tools, sequence 16 or its manual flow. The owner setup and cutover steps
+are in [`CORE_REGISTRY_ONE_TAP_RUNBOOK.md`](CORE_REGISTRY_ONE_TAP_RUNBOOK.md).
 
 ## Validation and release completion
 

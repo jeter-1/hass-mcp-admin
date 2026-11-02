@@ -13,7 +13,7 @@ from .registry_models import CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreRegistr
 
 CORE_REGISTRY_URL = (
     "https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/"
-    "main/upstream-trust/ha-core-release-registry.json"
+    "registry/upstream-trust/ha-core-release-registry.json"
 )
 CORE_REGISTRY_CACHE_PATH = Path("/data/ha-core-release-registry-cache.json")
 CORE_REGISTRY_BINDING = RegistryBinding(

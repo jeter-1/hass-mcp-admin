@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.1-beta.58 - Core release registry read from the `registry` branch, with one-tap owner signing (HAMCP-278)
+
+Builds on 2.4.1-beta.57 (HAMCP-276, #343), which includes 2.4.1-beta.56
+(HAMCP-271, #340). No tool, input schema, route, provider, add-on option,
+persisted format or Home Assistant write change.
+
+- `CORE_REGISTRY_URL` names the `registry` branch instead of `main`. The
+  path, Core key, verifier, cache and refresh cadence are unchanged, and
+  there is still no override.
+- Repository tooling, not in the image: the
+  `core-release-registry-publish` workflow (verify, owner-approved sign,
+  reverify, separate non-force publish to `registry`; dry run with an
+  ephemeral key), the pipe-only seed converter and read-only branch checks.
+- Josh creates `registry` from `main` before deployment
+  (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md`). Rollback to beta.57 reads the
+  frozen `main` copy and learns no later sequence.
+
 ## 2.4.1-beta.57 - Truthful refusal for an F3 plan that predates a Core authority change (HAMCP-276)
 
 Builds on 2.4.1-beta.56 (HAMCP-271, #340). No tool, input schema, route,
