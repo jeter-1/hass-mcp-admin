@@ -722,6 +722,36 @@ merge and recomputed tree. The exact merge must remain on main's first-parent
 history; Engineering source and staged state must agree with current authority.
 The receipt is data, not executable code or a substitute for these checks.
 
+After binding the receipt and retaining its artifact, the auto-merge workflow's
+last step deletes the merged PR head branch through the REST API (HAMCP-284).
+The repository's `delete_branch_on_merge` setting was true, but the heads of
+#343 and #342 survived Actions-token merges. The inference is that the setting
+does not cover this workflow merge path; GitHub documentation has not confirmed
+that cause. Explicit cleanup avoids relying on the setting.
+
+Cleanup freshly reads the merged PR and requires matching head/base repositories,
+the authorized merged head SHA, a strictly validated branch name, an explicitly
+unprotected branch, and an exact ref still pointing at that SHA. It excludes
+`main`, `registry` and `registry-candidates/*`. API head names and SHAs pass
+through environment variables, including for owner-comment retries. Skips and
+failures warn in the job summary and exit successfully; cleanup never retries
+DELETE or changes the merge, receipt or publication decision. Existing
+`contents: write` suffices; no permission is added.
+
+A post-merge `head_ref_deleted` timeline event remains accepted by publication
+handoff verification. Cleanup adds one event per PR; the existing fewer-than-100
+events cap is unchanged, so a PR reaching that cap still requires reconciliation.
+Recovery and the advertised-image watchdog use retained commits/main history and
+publication evidence, not the deleted head branch. The REST delete endpoint has
+no expected-SHA parameter: the last ref read detects an already-moved ref but
+cannot atomically exclude a push between that read and DELETE. Do not reuse a
+merged branch while its merge workflow is completing. Revert this workflow
+change to disable future cleanup; restoring a deleted ref is a separate owner
+action using the retained merged head SHA.
+
+API contracts: [delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference)
+and [get a branch](https://docs.github.com/en/rest/branches/branches#get-a-branch).
+
 GitHub can report the merge run complete before its job records settle
 (beta.50, HAMCP-258). The verifier therefore re-reads only the triggering run
 attempt's jobs, six times over at most 80 s. It stops only at a complete job
