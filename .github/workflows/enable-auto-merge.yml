@@ -244,3 +244,88 @@ jobs:
           path: ${{ runner.temp }}/publication-handoff.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Delete merged head branch after receipt binding
+        continue-on-error: true
+        shell: bash
+        env:
+          AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # Best effort only: the merge and retained receipt are already complete.
+          warn() {
+            echo "::warning::Head branch cleanup: $1"
+            echo "Warning: head branch cleanup: $1" >> "$GITHUB_STEP_SUMMARY"
+          }
+          if ! PR_JSON="$(timeout 30s gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" 2>/dev/null)"; then
+            warn "PR API read failed; deletion skipped."
+            exit 0
+          fi
+          export PR_JSON
+          if ! HEAD_REF="$(jq -er '.head.ref | strings' <<< "$PR_JSON")" ||
+             ! MERGED_HEAD_SHA="$(jq -er '.head.sha | strings' <<< "$PR_JSON")"; then
+            warn "PR head identity missing; deletion skipped."
+            exit 0
+          fi
+          # API values are data passed through env, never script interpolation.
+          export HEAD_REF MERGED_HEAD_SHA
+          if ! python3 -I -S <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from urllib.parse import quote
+
+          def report(reason, warning=True):
+              message = "Head branch cleanup: " + reason
+              print(("::warning::" if warning else "") + message)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write(("Warning: " if warning else "") + message + "\n")
+
+          def api(route, method="GET"):
+              result = subprocess.run(
+                  ["gh", "api", "--method", method, route], check=True,
+                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+              )
+              return json.loads(result.stdout) if method == "GET" else None
+
+          def cleanup():
+              pr = json.loads(os.environ["PR_JSON"])
+              repository = os.environ["REPOSITORY"]
+              head_ref = os.environ["HEAD_REF"]
+              head_sha = os.environ["MERGED_HEAD_SHA"]
+              if pr.get("merged") is not True:
+                  return report("PR is not merged; deletion skipped.")
+              if not (pr["head"]["repo"]["full_name"] == pr["base"]["repo"]["full_name"] == repository):
+                  return report("fork or repository mismatch; deletion skipped.")
+              if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*", head_ref) or len(head_ref) > 255:
+                  return report("invalid head ref; deletion skipped.")
+              if ".." in head_ref or any(part.endswith((".", ".lock")) for part in head_ref.split("/")):
+                  return report("invalid head ref; deletion skipped.")
+              if head_ref in {"main", "registry"} or head_ref.startswith("registry-candidates/"):
+                  return report("excluded head ref; deletion skipped.")
+              if not re.fullmatch(r"[0-9a-f]{40}", head_sha) or head_sha != os.environ["AUTHORIZED_HEAD_SHA"]:
+                  return report("merged head SHA does not match authorization; deletion skipped.")
+              encoded = quote(head_ref, safe="")
+              branch = api(f"repos/{repository}/branches/{encoded}")
+              if branch.get("name") != head_ref or branch.get("protected") is not False:
+                  return report("protected branch or unknown protection; deletion skipped.")
+              # Read the exact ref immediately before DELETE; never retry a write.
+              ref = api(f"repos/{repository}/git/ref/heads/{encoded}")
+              if ref.get("ref") != "refs/heads/" + head_ref or ref.get("object", {}).get("type") != "commit" or ref["object"].get("sha") != head_sha:
+                  return report("head ref moved or mismatched; deletion skipped.")
+              api(f"repos/{repository}/git/refs/heads/{encoded}", "DELETE")
+              report("merged head branch deleted.", warning=False)
+
+          try:
+              cleanup()
+          except Exception:
+              # Fixed text: API errors must not expose response bodies or tokens.
+              report("API or evidence failure; deletion skipped or unconfirmed; no retry.")
+          PY
+          then
+            warn "cleanup script failed; deletion skipped or unconfirmed."
+          fi
+          exit 0
