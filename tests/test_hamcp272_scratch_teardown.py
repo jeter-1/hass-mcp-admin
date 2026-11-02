@@ -114,6 +114,23 @@ class JournalOwnershipTests(unittest.TestCase):
                 journal.journal_root()
             self.assertEqual(list(Path(directory).iterdir()), [])
 
+    def test_reused_core_and_executor_fixtures_clean_when_owner_fails(self):
+        import test_typed_fan
+        import test_typed_power
+        import test_hamcp189_authority_cancel
+        async def fail_after_setup(case):
+            case.assertTrue(list(Path(directory).iterdir()))
+            case.fail("synthetic owner failure")
+        for base in (test_typed_fan.CoreAuthorityTests, test_typed_power.PowerSignedAuthorityTests,
+                     test_hamcp189_authority_cancel.UnmappedOperationRefusalTests):
+            with self.subTest(fixture=base.__module__), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(tempfile, "tempdir", directory):
+                probe = type("CleanupProbe", (base,), {"test_cleanup_probe": fail_after_setup})
+                result = unittest.TextTestRunner(stream=io.StringIO()).run(probe("test_cleanup_probe"))
+                self.assertEqual(len(result.failures), 1)
+                self.assertEqual(result.errors, [])
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_downgrade_setup_failure_runs_module_cleanup(self):
         program = """
 import importlib, pathlib, tempfile, unittest

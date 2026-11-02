@@ -327,8 +327,8 @@ class UnmappedOperationRefusalTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.harness = adapter_core.SharedExecutorTests()
+        self.harness.addCleanup = self.addCleanup
         self.harness.setUp()
-        self.addCleanup(self.harness.doCleanups)
         _, self.context = begin_request("hamcp189-r6")
         self.addCleanup(end_request, self.context)
 
