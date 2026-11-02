@@ -440,6 +440,32 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         self.assertFalse(self.core.plan_is_current(before))
         self.assertEqual(await self.attempt(entry, before), (GENERIC, 0))
 
+    async def test_current_plan_refused_for_capacity_keeps_the_generic_reason(self):
+        # Core refuses a current, admitted plan when its issued-lease capacity
+        # is exhausted. Staleness is not the reason, so it is not named.
+        entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
+        requirements = f3_requirements(f3_identity(entry))
+        held = []
+        while True:
+            lease = self.core.acquire(
+                (VERIFICATION,), target={"target_type": "automation", "target_id": "held"}
+            )
+            if lease is None:
+                break
+            held.append(lease)
+        self.assertTrue(held)
+        created_at = self.now()
+        self.assertTrue(self.core.route_status(requirements)["available"])
+        self.assertTrue(self.core.plan_is_current(created_at))
+        stale_before = self.core.health_snapshot()["counters"]["stale_plan_rejections"]
+        self.assertEqual(await self.attempt(entry, created_at), (GENERIC, 0))
+        self.assertEqual(
+            self.core.health_snapshot()["counters"]["stale_plan_rejections"], stale_before
+        )
+        for lease in held:
+            self.core.release(lease)
+        self.assertEqual(await self.attempt(entry, self.now()), ("authorized", 1))
+
     async def test_unmapped_identity_names_the_unmapped_requirement(self):
         entry = SimpleNamespace(
             capability_id="unreviewed_configuration", plan_operation="unreviewed",
@@ -459,9 +485,21 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
 
         entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
         guard = _CoreDispatchAuthorityGuard(Refusing(), self.now())
+        inner = CountingAdapter()
+        wrapped = _CoreVerificationAdapter(inner, Refusing(), guard)
         with self.assertRaises(DispatchAuthorityRefused) as refused:
-            await guard.acquire(f3_identity(entry), "preflight")
+            await wrapped.preflight(f3_identity(entry), acquired_locks=())
         self.assertEqual(refused.exception.diagnostic_code, GENERIC)
+        self.assertEqual(inner.preflights, 0)
+        # The guard keeps its pre-HAMCP-276 contract: a refused lease that is
+        # not stale stays None, which the executor reports generically.
+        self.assertIsNone(await guard.acquire(f3_identity(entry), "preflight"))
+
+    async def test_guard_returns_none_for_a_refusal_that_is_not_stale(self):
+        entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
+        await self.authority.admit(*operation_profiles(f3_identity(entry)))
+        guard = _CoreDispatchAuthorityGuard(self.core, self.now())
+        self.assertIsNone(await guard.acquire(f3_identity(entry), "preflight"))
 
 
 class ReasonVocabularyTests(unittest.TestCase):

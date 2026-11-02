@@ -379,25 +379,31 @@ def _refuse_unmapped_f3_operation(prepared: object) -> None:
         raise DispatchAuthorityRefused(CORE_REQUIREMENT_UNMAPPED)
 
 
-def _refused_lease(
+def _plan_predates_authority(
     runtime: Any, prepared: object, plan_created_at: str | None
-) -> DispatchAuthorityRefused:
-    """HAMCP-276: name the refusal of a lease Core already refused.
+) -> bool:
+    """HAMCP-276: whether a lease Core already refused was refused as stale.
 
-    Reporting only.  When the operation's requirements are admitted now but
-    the plan predates the current Core authority generation, staleness is the
-    reason and a fresh plan is the remedy.  Withdrawn or unavailable authority
-    keeps the generic code.
+    Reporting only.  True when the operation's requirements are admitted now
+    but the plan predates the current Core authority generation: staleness is
+    the reason and a fresh plan is the remedy.  Withdrawn or unavailable
+    authority is not.
     """
 
     route_status = getattr(runtime, "route_status", None)
     plan_is_current = getattr(runtime, "plan_is_current", None)
-    if (
+    return (
         callable(route_status)
         and callable(plan_is_current)
         and route_status(f3_requirements(prepared)).get("available") is True
         and plan_is_current(plan_created_at) is False
-    ):
+    )
+
+
+def _refused_lease(
+    runtime: Any, prepared: object, plan_created_at: str | None
+) -> DispatchAuthorityRefused:
+    if _plan_predates_authority(runtime, prepared, plan_created_at):
         return DispatchAuthorityRefused(CORE_AUTHORITY_CHANGED_SINCE_PLAN)
     return DispatchAuthorityRefused("dispatch_authority_unavailable")
 
@@ -426,8 +432,12 @@ class _CoreDispatchAuthorityGuard:
             prepared,
             plan_created_at=self.plan_created_at,
         )
-        if self.authority is None:
-            raise _refused_lease(self.runtime, prepared, self.plan_created_at)
+        # A refused lease stays None for the executor's generic refusal; only
+        # a stale plan is named (HAMCP-276).
+        if self.authority is None and _plan_predates_authority(
+            self.runtime, prepared, self.plan_created_at
+        ):
+            raise DispatchAuthorityRefused(CORE_AUTHORITY_CHANGED_SINCE_PLAN)
         return self.authority
 
     def consume(self, authority: object) -> object | None:
