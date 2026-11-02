@@ -26,7 +26,10 @@ from ..f3.executor import (
 )
 from ..ha_core_readmission.routes import (
     CORE_AUTHORITY_CHANGED_SINCE_PLAN,
+    CORE_LEASE_REFUSED,
+    CORE_LEASE_STALE_PLAN,
     CORE_REQUIREMENT_UNMAPPED,
+    CoreLeaseDecision,
     INPUT_SELECT_PROFILE,
     f3_entry_admission_profiles,
     f3_requirements,
@@ -379,31 +382,32 @@ def _refuse_unmapped_f3_operation(prepared: object) -> None:
         raise DispatchAuthorityRefused(CORE_REQUIREMENT_UNMAPPED)
 
 
-def _plan_predates_authority(
+def _acquire_f3_lease(
     runtime: Any, prepared: object, plan_created_at: str | None
-) -> bool:
-    """HAMCP-276: whether a lease Core already refused was refused as stale.
+) -> CoreLeaseDecision:
+    """One Core lease decision, classified by Core under the same lock.
 
-    Reporting only.  True when the operation's requirements are admitted now
-    but the plan predates the current Core authority generation: staleness is
-    the reason and a fresh plan is the remedy.  Withdrawn or unavailable
-    authority is not.
+    HAMCP-276 R1-M1: the wrappers report from this decision and never
+    re-read Core authority to infer why it refused.  A runtime without
+    ``acquire_f3_decision`` keeps the plain lease and the generic reason; an
+    unrecognized decision is a refusal.
     """
 
-    route_status = getattr(runtime, "route_status", None)
-    plan_is_current = getattr(runtime, "plan_is_current", None)
-    return (
-        callable(route_status)
-        and callable(plan_is_current)
-        and route_status(f3_requirements(prepared)).get("available") is True
-        and plan_is_current(plan_created_at) is False
-    )
+    decide = getattr(runtime, "acquire_f3_decision", None)
+    if not callable(decide):
+        authority = runtime.acquire_f3(prepared, plan_created_at=plan_created_at)
+        return CoreLeaseDecision(
+            authority=authority,
+            refusal=None if authority is not None else CORE_LEASE_REFUSED,
+        )
+    decision = decide(prepared, plan_created_at=plan_created_at)
+    if not isinstance(decision, CoreLeaseDecision):
+        return CoreLeaseDecision(authority=None, refusal=CORE_LEASE_REFUSED)
+    return decision
 
 
-def _refused_lease(
-    runtime: Any, prepared: object, plan_created_at: str | None
-) -> DispatchAuthorityRefused:
-    if _plan_predates_authority(runtime, prepared, plan_created_at):
+def _refused_lease(decision: CoreLeaseDecision) -> DispatchAuthorityRefused:
+    if decision.refusal == CORE_LEASE_STALE_PLAN:
         return DispatchAuthorityRefused(CORE_AUTHORITY_CHANGED_SINCE_PLAN)
     return DispatchAuthorityRefused("dispatch_authority_unavailable")
 
@@ -428,15 +432,14 @@ class _CoreDispatchAuthorityGuard:
         # bounded two-observation contract after final adapter preflight and
         # before approval consumption; any Core drift retires the old lease.
         await self.runtime.reconcile_once("mutation_pre_dispatch")
-        self.authority = self.runtime.acquire_f3(
-            prepared,
-            plan_created_at=self.plan_created_at,
-        )
-        # A refused lease stays None for the executor's generic refusal; only
-        # a stale plan is named (HAMCP-276).
-        if self.authority is None and _plan_predates_authority(
+        decision = _acquire_f3_lease(
             self.runtime, prepared, self.plan_created_at
-        ):
+        )
+        self.authority = decision.authority
+        # A granted lease is always returned; a refused lease stays None for
+        # the executor's generic refusal, and only a lease Core refused as
+        # stale is named (HAMCP-276).
+        if self.authority is None and decision.refusal == CORE_LEASE_STALE_PLAN:
             raise DispatchAuthorityRefused(CORE_AUTHORITY_CHANGED_SINCE_PLAN)
         return self.authority
 
@@ -1313,14 +1316,12 @@ class _CoreVerificationAdapter:
             raise DispatchAuthorityRefused("dispatch_authority_unavailable")
         _refuse_unmapped_f3_operation(prepared)
         await self._core_runtime.reconcile_once("mutation_pre_dispatch")
-        authority = self._core_runtime.acquire_f3(
-            prepared,
-            plan_created_at=self._dispatch_guard.plan_created_at,
+        decision = _acquire_f3_lease(
+            self._core_runtime, prepared, self._dispatch_guard.plan_created_at
         )
+        authority = decision.authority
         if authority is None:
-            raise _refused_lease(
-                self._core_runtime, prepared, self._dispatch_guard.plan_created_at
-            )
+            raise _refused_lease(decision)
         commits = self._core_runtime.consume(authority)
         if commits is None:
             self._core_runtime.release(authority)

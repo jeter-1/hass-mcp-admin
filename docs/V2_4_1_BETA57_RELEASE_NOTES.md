@@ -24,8 +24,11 @@ A reproduction with real wiring finds the cause. It uses the real
 adapter registry, Core wrappers and lease code, and a synthetic Home
 Assistant transport.
 
-1. The plan was approved at 14:37:10Z. Core authority had retired at
-   14:37:05Z and was restored at 14:37:26Z (cause tracked in HAMCP-275).
+1. The plan's approval was requested at 14:36:04Z. Core authority
+   retired at 14:37:05Z (cause tracked in HAMCP-275). The approval was
+   granted at 14:37:10Z, with the elevated acknowledgement at 14:37:15Z.
+   Core authority was restored at 14:37:26Z, and the apply ran at
+   14:40:46Z. The architect confirmed this sequence.
 2. Retirement and a changed restoration advance the Core
    material-change cutoff (`ha_core_readmission/runtime.py`: connection
    retirement, changed reconcile publication).
@@ -55,24 +58,30 @@ generation must not bind a later one.
   detail is: "Home Assistant Core authority changed after this plan was
   created, so its approval cannot bind it. Nothing was sent. Create and
   approve a fresh plan." It fits the HAMCP-249 160-character detail bound.
-- `CoreRuntime.plan_is_current(created_at)` reports the same cutoff check
-  `acquire` applies, under the runtime lock. It decides nothing.
-- When Core has already refused the lease, the wrappers name the stale
-  code only when every requirement of the operation is available now and
-  the plan is not current. Otherwise the generic code is kept:
+- `CoreRuntime.acquire_decision` (and `acquire_f3_decision`) is `acquire`
+  with the same precedence and outcome, plus the reason for a refusal,
+  decided under the same lock and authority snapshot: the plan was stale
+  with every requirement admitted, the requirements were unavailable, or
+  another refusal. It also returns the cutoff, admission state and
+  generation it used. `acquire` and `acquire_f3` return its lease
+  unchanged.
+- Both F3 wrappers report from that decision and never re-read Core
+  authority, so an expiry, retirement or capacity change after the
+  decision cannot reclassify it. The stale code is named only for a
+  stale refusal. Otherwise the generic code is kept:
   - a withdrawn or unadmitted profile, also when the plan is stale,
     because a fresh plan would not help;
   - a current, admitted plan that Core refuses for another reason, such
     as exhausted issued-lease capacity;
-  - a Core runtime without the reporting methods.
+  - a Core runtime without `acquire_f3_decision`, or an unrecognized
+    decision, which is a refusal.
 - The executor's dispatch guard raises only the stale code. For any other
   refused lease it still returns no authority, which the executor reports
   as `dispatch_authority_unavailable` exactly as before.
 - `core_requirement_unmapped` is unchanged.
 
-`acquire` remains the only authority decision. The order is unchanged:
-Core refuses first; the reason is classified afterwards, and only for a
-refusal.
+The authority decision is unchanged: Core decides and classifies in one
+step, and a granted lease is always returned.
 
 ## Activated identities and compatible profiles
 
@@ -109,7 +118,9 @@ must be classified before the suite passes.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.56. No persisted format changed. A task recorded with
-`core_authority_changed_since_plan` reads under beta.56 without its
-pre-dispatch reason summary, because the HAMCP-249 projection drops
-reason codes it does not know. The task outcome is unchanged.
+Reinstall 2.4.1-beta.56. No persisted format changed. Under beta.56, the
+HAMCP-249 vocabulary rejects the stored pre-dispatch summary of a task
+recorded with `core_authority_changed_since_plan`, and the parent
+projection shows the child's reason as `unclassified_pre_dispatch_refusal`.
+The task outcome stays `failed_pre_dispatch`, the approval stays
+unconsumed and nothing was dispatched.

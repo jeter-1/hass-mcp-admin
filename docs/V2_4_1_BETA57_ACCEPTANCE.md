@@ -44,14 +44,20 @@ The review needs a security section covering:
   route, provider, fallback or upstream dispatch is added. The change runs
   only after Core has refused a lease, and only selects which closed
   refusal code is reported.
-- **Authority unchanged.** `CoreRuntime.acquire` remains the only
-  decision. `plan_is_current` and `route_status` are read under the
-  runtime lock and decide nothing. The stale-plan cutoff, lease
-  semantics, approval binding and the entry check are unchanged.
-- **Truthful classification.** The stale code is reported only when every
-  requirement is available now and the plan predates the cutoff. A
-  withdrawn profile keeps the generic code even when the plan is also
-  stale, because a fresh plan is not the remedy.
+- **Authority unchanged.** `CoreRuntime.acquire_decision` is `acquire`
+  with the same precedence and outcome; it also returns, from the same
+  lock and authority snapshot, why it refused, the cutoff, the
+  requirements' admission state and the generation it used. `acquire`
+  and `acquire_f3` return its lease exactly as before. The stale-plan
+  cutoff, lease semantics, approval binding and the entry check are
+  unchanged.
+- **Truthful classification.** Core names a refusal stale only when it
+  refused the plan for predating the cutoff while every requirement was
+  admitted in that snapshot. Both wrappers report from that decision and
+  never re-read Core authority, so a later expiry, retirement or capacity
+  change cannot reclassify it. A withdrawn profile keeps the generic code
+  even when the plan is also stale, because a fresh plan is not the
+  remedy. A granted lease is always returned.
 - **Persisted compatibility.** No persisted format changes. The new code
   is a value of the existing closed child diagnostic and reason fields. An
   older reader drops unknown reason codes.
@@ -66,7 +72,26 @@ code, and synthetic Home Assistant transports.
   reason check `core_authority_freshness`, `stale_plan_rejections` 1 and
   no Home Assistant call. The same change planned afterwards reaches
   `succeeded_verified` with one submit. The real lease refuses the restored
-  plan and admits a current one.
+  plan as stale with its requirements admitted, and admits a current one.
+- **The decision names the refusal (R1-M1)**, through the real service
+  apply, for each of the two wrappers (preflight, then the executor's
+  guard), with real Core operations interleaved deterministically:
+  - refused as stale with admitted requirements, then the signed authority
+    expires before the wrapper reports: `core_authority_changed_since_plan`;
+  - requirements unavailable at the decision (a retirement just before
+    it): `dispatch_authority_unavailable`;
+  - a current plan refused for exhausted lease capacity:
+    `dispatch_authority_unavailable`, no stale rejection;
+  - every refusal: `failed_pre_dispatch`, no submit, approval unconsumed;
+  - a fresh plan: every decision granted, one submit, approval consumed.
+- **A granted lease is returned (R1-L1).** A real lease is granted, then
+  Core authority is retired before the guard reads the decision: the guard
+  returns that lease. A decision carrying both a lease and a refusal still
+  returns the lease; an unrecognized decision is a refusal.
+- **Older reader.** Under the beta.56 vocabulary, the stored summary of a
+  stale refusal is rejected and the parent projection reads the child's
+  reason as `unclassified_pre_dispatch_refusal`; the task stays
+  `failed_pre_dispatch`, the approval unconsumed, nothing dispatched.
 - **Helper options end to end.** Change → `succeeded_verified` with
   `exact_readback_verified` and one submit → rollback plan → approve →
   apply → the options entry equals the original exactly → a no-op plan is
@@ -99,8 +124,9 @@ code, and synthetic Home Assistant transports.
 - **Unchanged suites.** The F3, Core readmission, HAMCP-249, helper
   options, configuration delete, availability, dashboard metadata and
   input select suites pass.
-- **Mutation testing** on the changed code in a copied tree, with
-  survivors reported.
+- **Mutation testing** on the changed code in a copied tree, with each
+  kill classified as an assertion or an invalid (import, syntax, parser,
+  network or timeout) kill and survivors reported.
 - **The complete repository suite** in the Evidence tier.
 
 ## 2. Release CI
@@ -127,14 +153,21 @@ The architect checks with read-only tools.
    `fallback_count` 0. F3 reports `activated_capability_count` 25 and
    `registered_adapter_count` 20; the difference from 31 is the pinned
    non-F3 set in the release notes.
-2. **Live cause, confirmed or not.** Read plan
-   `244fb63094434f06af6a855691d714f0` and its execution task. Record the
-   plan's `created_at` against the Core retirement (14:37:05Z) and
-   restoration (14:37:26Z) events, and the Core counters
-   `stale_plan_rejections` and `lease_failures`. The beta.56 task keeps its
-   recorded `dispatch_authority_unavailable`; this release does not rewrite
-   it. If the plan postdates the restoration, the diagnosis does not
-   explain the live refusal: stop and record it in HAMCP-276.
+2. **Live cause: confirmed by the architect.** For plan
+   `244fb63094434f06af6a855691d714f0` (2026-11-01, UTC):
+   - plan approval requested: 14:36:04Z;
+   - Core authority retired: 14:37:05Z;
+   - plan approval granted: 14:37:10Z;
+   - elevated acknowledgement: 14:37:15Z;
+   - Core authority restored: 14:37:26Z;
+   - apply: 14:40:46Z.
+
+   The plan predates the retirement and restoration, so the real lease
+   refuses it as stale. The approval request and its grant are distinct
+   events; the grant does not make the plan current. The beta.56 task
+   keeps its recorded `dispatch_authority_unavailable`; this release does
+   not rewrite it. Record the Core counters `stale_plan_rejections` and
+   `lease_failures`.
 3. **Dashboard metadata and scene.** Record the `created_at` of the plans
    that applied live and confirm they postdate the restoration.
 4. **Smoke and regression.** The read-only smoke and regression checks
@@ -142,12 +175,18 @@ The architect checks with read-only tools.
 
 ### Phase (b): writes, only with Josh's approval
 
-1. **Helper options.** Plan a fresh helper options change on a template
-   helper Josh names, approve it and apply it. It reaches
-   `succeeded_verified` with exact readback and one dispatch.
-2. **Restore.** Roll it back through the governed rollback plan and verify
-   the original options exactly.
-3. **No-op.** Planning the original options again is refused.
+The fixed fresh-plan test targets the template helper
+`sensor.local_outdoor_temperature_delta_vs_forecast` and sets
+`additional_options.availability` to `"{{ true }}"`.
+
+1. **Fresh plan.** Create a fresh helper options plan for that change,
+   after any Core authority change.
+2. **Approval.** Grant the plan approval and the elevated acknowledgement.
+3. **Apply.** It reaches `succeeded_verified` with exact readback and one
+   dispatch.
+4. **Rollback.** The governed rollback plan restores the captured
+   original options exactly.
+5. **No-op.** A plan at the original value is refused.
 
 Do not force a Core retirement on the live system to observe the new
 code; the offline reproduction covers it. If a retirement happens on its

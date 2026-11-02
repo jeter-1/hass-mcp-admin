@@ -7,6 +7,11 @@ was created before a Core authority retirement and restoration, so the real
 the F3 wrappers reported the generic code.  Existing helper-options tests used
 an admitting Core double that never applies the stale-plan cutoff.
 
+R1-M1: Core classifies its own refusal under the lock and snapshot that made
+it (``CoreRuntime.acquire_f3_decision``); both wrappers report from that
+decision and never re-read authority, so a later expiry, retirement or
+capacity change cannot reclassify it.
+
 Everything here runs the real ``CoreRuntime`` under a TEST-signed registry,
 the real F3 runtime, registry, wrappers and lease code, and synthetic Home
 Assistant transports.  Nothing reaches a live system.
@@ -16,9 +21,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import inspect
 import json
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from tests.hamcp232_helper_options_fixtures import (
     FILTER_LOWPASS,
@@ -32,6 +39,7 @@ from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.f3.executor import DispatchAuthorityRefused
 from ha_mcp_engineering.f3_runtime import pre_dispatch_reasons as reasons
+from ha_mcp_engineering.f3_runtime import runtime as f3_runtime_module
 from ha_mcp_engineering.f3_runtime.runtime import (
     _CoreDispatchAuthorityGuard,
     _CoreVerificationAdapter,
@@ -43,9 +51,14 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (
 from ha_mcp_engineering.ha_core_readmission.registry_models import CoreRegistryEnvelope
 from ha_mcp_engineering.ha_core_readmission.routes import (
     CORE_AUTHORITY_CHANGED_SINCE_PLAN,
+    CORE_LEASE_REFUSED,
+    CORE_LEASE_REQUIREMENTS_UNAVAILABLE,
+    CORE_LEASE_STALE_PLAN,
+    CoreLeaseDecision,
     F3_ENTRY_ADMISSION_PROFILES,
     f3_requirements,
 )
+from ha_mcp_engineering.ha_core_readmission.runtime import CoreRouteAuthority
 
 
 KEYS = ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")
@@ -103,6 +116,86 @@ def operation_profiles(prepared) -> frozenset[str]:
     """The identity's own operation profiles (all but shared verification)."""
 
     return frozenset(f3_requirements(prepared)) - {VERIFICATION}
+
+
+# The wrappers in the order an apply reaches them: the verification adapter's
+# preflight acquisition, then the executor's dispatch-authority guard.
+BOUNDARIES = ("preflight", "guard")
+OPTIONS_PREPARED = SimpleNamespace(
+    capability_id=contract.CAPABILITY_IDENTITY,
+    operation=contract.CAPABILITY_IDENTITY,
+    target={"target_type": contract.RESOURCE_TYPE, "target_id": "templateentry01"},
+)
+
+
+def interleave(case, core, boundary: str, *, before=None, after=None) -> list:
+    """Run real Core operations at one wrapper's acquisition; deterministic.
+
+    ``before`` (async) runs ahead of that wrapper's ``mutation_pre_dispatch``
+    reconciliation; ``after`` runs right after Core returns its decision and
+    before the wrapper reads it.  Returns every decision Core made.
+    """
+
+    index = BOUNDARIES.index(boundary)
+    reconcile, decide = core.reconcile_once, core.acquire_f3_decision
+    decisions: list[CoreLeaseDecision] = []
+    ran: list[str] = []
+
+    async def reconciling(trigger: str = "periodic"):
+        if (
+            before is not None and not ran and trigger == "mutation_pre_dispatch"
+            and len(decisions) == index
+        ):
+            ran.append(boundary)
+            await before()
+        return await reconcile(trigger)
+
+    def deciding(prepared, *, plan_created_at=None):
+        decision = decide(prepared, plan_created_at=plan_created_at)
+        decisions.append(decision)
+        if after is not None and len(decisions) == index + 1:
+            after(decision)
+        return decision
+
+    for name, effect in (("reconcile_once", reconciling), ("acquire_f3_decision", deciding)):
+        patcher = patch.object(core, name, side_effect=effect)
+        patcher.start()
+        case.addCleanup(patcher.stop)
+    return decisions
+
+
+def beta56_reasons() -> SimpleNamespace:
+    """The HAMCP-249 vocabulary without this release's stale-plan reason.
+
+    beta.56 differs from this module only by the reason row and the check
+    detail HAMCP-276 adds; executing the source without the row yields the
+    tables a beta.56 reader has.
+    """
+
+    source = inspect.getsource(reasons)
+    row = '    ("core_authority_changed_since_plan", "core_authority_freshness"),\n'
+    assert source.count(row) == 1
+    namespace: dict = {"__name__": "beta56_pre_dispatch_reasons"}
+    exec(compile(source.replace(row, ""), "beta56_pre_dispatch_reasons", "exec"), namespace)
+    return SimpleNamespace(**namespace)
+
+
+def expire(authority: "SignedCore"):
+    """Advance the registry clock past the signed authority's validity."""
+
+    def advance(decision) -> None:
+        authority.now += timedelta(days=366)
+
+    return advance
+
+
+async def guard_lease(case, guard, prepared):
+    """The guard's result where it must not refuse; a raise fails the test."""
+
+    try:
+        return await guard.acquire(prepared, "preflight")
+    except DispatchAuthorityRefused as refused:
+        case.fail(f"the guard refused with {refused.diagnostic_code}")
 
 
 class SignedCore(unittest.IsolatedAsyncioTestCase):
@@ -187,6 +280,17 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         counters = authority.core.health_snapshot()["counters"]
         self.assertEqual(counters["stale_plan_rejections"], 1)
 
+    def assert_refused_unconsumed(self, created: dict, result: dict, code: str) -> None:
+        """A pre-dispatch refusal: its code, nothing dispatched, approval kept."""
+
+        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertIs(result.get("approval_consumed", False), False)
+        self.assertIsNone(self.repository.get(created["plan_id"]).approval.consumed_at)
+        self.assertEqual(self.child_codes(result["task_id"]), {code})
+        self.assertEqual(self.options_rest.submits(), [])
+        self.assertEqual(self.options_rest.visible("templateentry01"), TEMPLATE_SENSOR)
+
     async def retire_and_restore(self, authority: SignedCore) -> dict:
         restored = await authority.retire_and_restore()
         # The service clock is frozen; later plans postdate the restoration.
@@ -224,6 +328,30 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         self.assertEqual(len(self.options_rest.submits()), 1)
         self.assertEqual(self.options_rest.visible("templateentry01")["unit_of_measurement"], "kW")
 
+    async def test_beta56_reader_reports_the_stale_child_as_unclassified(self):
+        # Rollback to beta.56: its vocabulary rejects the stored summary, so
+        # the parent projection reads the child's stored codes, which beta.56
+        # does not know.  The outcome, approval and dispatch are unchanged.
+        authority = await self.use_signed_core()
+        self.add_template_sensor()
+        created = await self.approved_options(KILOWATT)
+        await self.retire_and_restore(authority)
+        result = await self.apply(created)
+        self.assert_stale_refusal(authority, result)
+        task = self.service.task_repository.get(result["task_id"])
+        self.assertEqual(self.runtime.pre_dispatch_refusal(task)["error_code"], STALE)
+        older = beta56_reasons()
+        self.assertNotIn(STALE, older.REASON_CODES)
+        stored = task.verification_summary[reasons.SUMMARY_KEY]
+        self.assertEqual(stored["error_code"], STALE)
+        self.assertIsNone(older.recorded(stored))
+        with patch.object(f3_runtime_module, "pre_dispatch_reasons", older):
+            projected = self.runtime.pre_dispatch_refusal(task)
+        self.assertEqual(projected["error_code"], reasons.UNCLASSIFIED)
+        self.assertEqual(task.state.value, "failed_pre_dispatch")
+        self.assertIsNone(self.repository.get(created["plan_id"]).approval.consumed_at)
+        self.assertEqual(self.options_rest.submits(), [])
+
     async def test_real_lease_refuses_the_restored_plan_for_staleness_alone(self):
         # Pins the mechanism: the real lease is refused for staleness alone.
         authority = await self.use_signed_core()
@@ -231,16 +359,132 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         created = await self.approved_options(KILOWATT)
         await self.retire_and_restore(authority)
         plan = self.service.get_plan(created["plan_id"])
-        self.assertFalse(authority.core.plan_is_current(plan["created_at"]))
-        prepared = SimpleNamespace(
-            capability_id=contract.CAPABILITY_IDENTITY,
-            operation=contract.CAPABILITY_IDENTITY,
-            target={"target_type": contract.RESOURCE_TYPE, "target_id": "templateentry01"},
+        prepared = OPTIONS_PREPARED
+        decision = authority.core.acquire_f3_decision(
+            prepared, plan_created_at=plan["created_at"]
         )
+        self.assertIsNone(decision.authority)
+        self.assertEqual(decision.refusal, CORE_LEASE_STALE_PLAN)
+        self.assertIs(decision.plan_current, False)
+        self.assertIs(decision.requirements_admitted, True)
+        self.assertIsInstance(decision.cutoff, str)
+        self.assertGreater(decision.cutoff, plan["created_at"])
+        # The plain lease APIs return the decision's lease, never the decision.
         self.assertIsNone(
             authority.core.acquire_f3(prepared, plan_created_at=plan["created_at"])
         )
-        self.assertIsNotNone(authority.core.acquire_f3(prepared))
+        self.assertIsNone(authority.core.acquire(
+            f3_requirements(prepared), target=prepared.target,
+            plan_created_at=plan["created_at"],
+        ))
+        for acquire in (
+            lambda: authority.core.acquire_f3(prepared),
+            lambda: authority.core.acquire(
+                f3_requirements(prepared), target=prepared.target
+            ),
+        ):
+            lease = acquire()
+            self.assertIsInstance(lease, CoreRouteAuthority)
+            authority.core.release(lease)
+
+    # -- R1-M1: the decision, not a later re-read, names the refusal ---------
+
+    async def test_stale_refusal_survives_expiry_after_the_decision(self):
+        # Core refuses the plan as stale, then the signed authority expires
+        # before the wrapper reports.  Re-reading would find the requirements
+        # unavailable and report the generic code.
+        self.add_template_sensor()
+        for boundary in BOUNDARIES:
+            with self.subTest(boundary=boundary):
+                authority = await self.use_signed_core()
+                created = await self.approved_options(KILOWATT)
+                restore = (lambda: self.retire_and_restore(authority))
+                if boundary == "preflight":
+                    await restore()
+                decisions = interleave(
+                    self, authority.core, boundary,
+                    before=None if boundary == "preflight" else restore,
+                    after=expire(authority),
+                )
+                result = await self.apply(created)
+                decision = decisions[-1]
+                self.assertEqual(len(decisions), BOUNDARIES.index(boundary) + 1)
+                self.assertEqual(decision.refusal, CORE_LEASE_STALE_PLAN)
+                self.assertIs(decision.requirements_admitted, True)
+                self.assertIs(decision.plan_current, False)
+                self.assertFalse(
+                    authority.core.route_status((contract.PROFILE,))["available"],
+                    "authority expired after the decision",
+                )
+                self.assert_refused_unconsumed(created, result, STALE)
+                self.assertEqual(
+                    authority.core.health_snapshot()["counters"]["stale_plan_rejections"], 1
+                )
+
+    async def test_requirements_unavailable_at_the_decision_keep_the_generic_reason(self):
+        # A retirement just before either acquisition: the plan is also stale,
+        # but its requirements are not admitted, so a fresh plan is not the
+        # remedy.  On-demand reconciliation never re-admits.
+        self.add_template_sensor()
+        for boundary in BOUNDARIES:
+            with self.subTest(boundary=boundary):
+                authority = await self.use_signed_core()
+                created = await self.approved_options(KILOWATT)
+
+                async def retire():
+                    authority.core.request_reconciliation(connection_changed=True)
+
+                decisions = interleave(self, authority.core, boundary, before=retire)
+                result = await self.apply(created)
+                decision = decisions[-1]
+                self.assertEqual(len(decisions), BOUNDARIES.index(boundary) + 1)
+                self.assertEqual(decision.refusal, CORE_LEASE_REQUIREMENTS_UNAVAILABLE)
+                self.assertIs(decision.requirements_admitted, False)
+                self.assert_refused_unconsumed(created, result, GENERIC)
+
+    async def test_capacity_exhaustion_on_a_current_plan_keeps_the_generic_reason(self):
+        self.add_template_sensor()
+        for boundary in BOUNDARIES:
+            with self.subTest(boundary=boundary):
+                authority = await self.use_signed_core()
+                created = await self.approved_options(KILOWATT)
+                held = []
+
+                async def exhaust():
+                    while (lease := authority.core.acquire(
+                        (VERIFICATION,), target={"target_type": "automation", "target_id": "held"}
+                    )) is not None:
+                        held.append(lease)
+
+                decisions = interleave(self, authority.core, boundary, before=exhaust)
+                result = await self.apply(created)
+                for lease in held:
+                    authority.core.release(lease)
+                self.assertTrue(held)
+                decision = decisions[-1]
+                self.assertEqual(len(decisions), BOUNDARIES.index(boundary) + 1)
+                self.assertEqual(decision.refusal, CORE_LEASE_REFUSED)
+                self.assertIs(decision.plan_current, True)
+                self.assertIs(decision.requirements_admitted, True)
+                self.assertEqual(
+                    authority.core.health_snapshot()["counters"]["stale_plan_rejections"], 0
+                )
+                self.assert_refused_unconsumed(created, result, GENERIC)
+
+    async def test_fresh_plan_applies_once_with_one_decision_per_wrapper(self):
+        authority = await self.use_signed_core()
+        self.add_template_sensor()
+        created = await self.approved_options(KILOWATT)
+        decisions = interleave(self, authority.core, "guard")
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        # Preflight, guard, then the post-dispatch verification acquisitions:
+        # every one granted on a current plan.
+        self.assertGreaterEqual(len(decisions), 2)
+        self.assertEqual({d.refusal for d in decisions}, {None})
+        self.assertTrue(all(d.authority is not None and d.plan_current for d in decisions))
+        self.assertEqual(len(self.options_rest.submits()), 1)
+        self.assertIsNotNone(self.repository.get(created["plan_id"]).approval.consumed_at)
 
     # -- helper options end to end ------------------------------------------
 
@@ -437,8 +681,12 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         before = self.now()
         entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
         await self.authority.admit(contract.PROFILE)
-        self.assertFalse(self.core.plan_is_current(before))
+        decisions = interleave(self, self.core, "preflight")
         self.assertEqual(await self.attempt(entry, before), (GENERIC, 0))
+        (decision,) = decisions
+        self.assertEqual(decision.refusal, CORE_LEASE_REQUIREMENTS_UNAVAILABLE)
+        self.assertIs(decision.plan_current, False)
+        self.assertIs(decision.requirements_admitted, False)
 
     async def test_current_plan_refused_for_capacity_keeps_the_generic_reason(self):
         # Core refuses a current, admitted plan when its issued-lease capacity
@@ -456,9 +704,13 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         self.assertTrue(held)
         created_at = self.now()
         self.assertTrue(self.core.route_status(requirements)["available"])
-        self.assertTrue(self.core.plan_is_current(created_at))
         stale_before = self.core.health_snapshot()["counters"]["stale_plan_rejections"]
+        decisions = interleave(self, self.core, "preflight")
         self.assertEqual(await self.attempt(entry, created_at), (GENERIC, 0))
+        (decision,) = decisions
+        self.assertEqual(decision.refusal, CORE_LEASE_REFUSED)
+        self.assertIs(decision.plan_current, True)
+        self.assertIs(decision.requirements_admitted, True)
         self.assertEqual(
             self.core.health_snapshot()["counters"]["stale_plan_rejections"], stale_before
         )
@@ -475,7 +727,7 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
             await self.attempt(entry, self.now()), ("core_requirement_unmapped", 0)
         )
 
-    async def test_runtime_without_reporting_methods_keeps_the_generic_reason(self):
+    async def test_runtime_without_a_lease_decision_keeps_the_generic_reason(self):
         class Refusing:
             async def reconcile_once(self, reason):
                 return None
@@ -493,14 +745,93 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         self.assertEqual(inner.preflights, 0)
         # The guard keeps its pre-HAMCP-276 contract: a refused lease that is
         # not stale stays None, which the executor reports generically.
-        self.assertIsNone(await guard.acquire(f3_identity(entry), "preflight"))
+        self.assertIsNone(await guard_lease(self, guard, f3_identity(entry)))
 
     async def test_guard_returns_none_for_a_refusal_that_is_not_stale(self):
         entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
         await self.authority.admit(*operation_profiles(f3_identity(entry)))
         guard = _CoreDispatchAuthorityGuard(self.core, self.now())
-        self.assertIsNone(await guard.acquire(f3_identity(entry), "preflight"))
+        self.assertIsNone(await guard_lease(self, guard, f3_identity(entry)))
 
+    # -- R1-L1: a granted lease is always returned ----------------------------
+
+    async def test_guard_returns_its_granted_lease_across_a_later_retirement(self):
+        # The real lease is granted, then Core authority is retired before
+        # the guard reads the decision.  Nothing re-reads authority, so the
+        # granted lease is returned rather than reclassified.
+        entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
+        prepared = f3_identity(entry)
+        retired = []
+
+        def retire(decision) -> None:
+            self.assertIsNotNone(decision.authority)
+            self.core.request_reconciliation(connection_changed=True)
+            retired.append(True)
+
+        decisions = interleave(self, self.core, "preflight", after=retire)
+        guard = _CoreDispatchAuthorityGuard(self.core, self.now())
+        lease = await guard_lease(self, guard, prepared)
+        self.assertEqual(retired, [True])
+        (decision,) = decisions
+        self.assertIsNotNone(lease)
+        self.assertIs(lease, decision.authority)
+        self.assertIs(guard.authority, lease)
+        self.assertFalse(self.core.route_status(f3_requirements(prepared))["available"])
+        self.core.release(lease)
+
+    async def test_guard_never_discards_a_granted_lease(self):
+        # Defence in depth: whatever a decision's refusal field says, a
+        # granted lease is returned to the executor (which consumes and
+        # revalidates it) and never replaced by a refusal.
+        entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
+        lease = object()
+
+        class Inconsistent:
+            async def reconcile_once(self, reason):
+                return None
+
+            def acquire_f3_decision(self, prepared, *, plan_created_at=None):
+                return CoreLeaseDecision(authority=lease, refusal=CORE_LEASE_STALE_PLAN)
+
+        guard = _CoreDispatchAuthorityGuard(Inconsistent(), self.now())
+        self.assertIs(await guard_lease(self, guard, f3_identity(entry)), lease)
+        self.assertIs(guard.authority, lease)
+
+    async def test_unrecognized_decision_is_a_refusal(self):
+        entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
+
+        class Unrecognized:
+            async def reconcile_once(self, reason):
+                return None
+
+            def acquire_f3_decision(self, prepared, *, plan_created_at=None):
+                return object()
+
+        guard = _CoreDispatchAuthorityGuard(Unrecognized(), self.now())
+        inner = CountingAdapter()
+        wrapped = _CoreVerificationAdapter(inner, Unrecognized(), guard)
+        try:
+            await wrapped.preflight(f3_identity(entry), acquired_locks=())
+        except DispatchAuthorityRefused as refused:
+            self.assertEqual(refused.diagnostic_code, GENERIC)
+        except Exception as exc:  # an unrecognized decision must refuse, not crash
+            self.fail(f"the wrapper did not refuse: {type(exc).__name__}")
+        else:
+            self.fail("the wrapper accepted an unrecognized decision")
+        self.assertEqual(inner.preflights, 0)
+        self.assertIsNone(await guard_lease(self, guard, f3_identity(entry)))
+
+
+    async def test_malformed_requirements_are_refused_not_raised(self):
+        # ``acquire`` refuses a requirement set that is not a tuple, as
+        # before; classifying the refusal must not raise instead.
+        for requirements in (5, ["core.f3_mutation_verification"], ()):
+            with self.subTest(requirements=requirements):
+                decision = self.core.acquire_decision(requirements)
+                self.assertIsNone(decision.authority)
+                self.assertEqual(decision.refusal, CORE_LEASE_REQUIREMENTS_UNAVAILABLE)
+                self.assertIs(decision.requirements_admitted, False)
+                self.assertIsNone(self.core.acquire(requirements))
 
 class ReasonVocabularyTests(unittest.TestCase):
     def test_stale_code_is_reported_verbatim_with_its_own_check(self):

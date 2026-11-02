@@ -495,6 +495,32 @@ CORE_REQUIREMENT_UNMAPPED = "core_requirement_unmapped"
 # HAMCP-276: an F3 plan created before the current Core authority generation
 # cannot bind it, although its requirements are admitted again.
 CORE_AUTHORITY_CHANGED_SINCE_PLAN = "core_authority_changed_since_plan"
+# HAMCP-276 R1-M1: why ``CoreRuntime`` refused a lease, decided under the
+# same lock and snapshot as the refusal itself.
+CORE_LEASE_STALE_PLAN = "stale_plan"
+CORE_LEASE_REQUIREMENTS_UNAVAILABLE = "requirements_unavailable"
+CORE_LEASE_REFUSED = "lease_refused"
+
+
+@dataclass(frozen=True)
+class CoreLeaseDecision:
+    """One Core lease decision and the authority snapshot that made it.
+
+    ``authority`` is the granted lease or ``None``.  ``refusal`` is ``None``
+    for a granted lease, else ``CORE_LEASE_STALE_PLAN`` (the plan predates
+    the cutoff and its requirements are admitted),
+    ``CORE_LEASE_REQUIREMENTS_UNAVAILABLE`` or ``CORE_LEASE_REFUSED``.  The
+    cutoff, admission state and generation are those the decision used;
+    ``None`` where a runtime does not classify its refusals.  Reporting
+    reads these fields and never re-reads Core authority.
+    """
+
+    authority: Any
+    refusal: str | None
+    plan_current: bool | None = None
+    requirements_admitted: bool | None = None
+    cutoff: str | None = None
+    generation: int | None = None
 
 
 def _validate_static_core_routes() -> None:
@@ -1065,12 +1091,16 @@ __all__ = [
     "CORE_INDEPENDENCE_BASES",
     "CORE_INDEPENDENT_STATIC_TOOLS",
     "CORE_AUTHORITY_CHANGED_SINCE_PLAN",
+    "CORE_LEASE_REFUSED",
+    "CORE_LEASE_REQUIREMENTS_UNAVAILABLE",
+    "CORE_LEASE_STALE_PLAN",
     "CORE_REQUIREMENT_UNMAPPED",
     "CORE_ROUTE_DELEGATED",
     "CORE_ROUTE_INDEPENDENT",
     "CORE_ROUTE_MAPPED",
     "CORE_ROUTE_UNMAPPED",
     "CoreIndependence",
+    "CoreLeaseDecision",
     "DELEGATED_CORE_REQUIREMENTS",
     "DEVICE_DEPENDENT_DELEGATED_TOOLS",
     "STATIC_TOOL_CORE_REQUIREMENTS",

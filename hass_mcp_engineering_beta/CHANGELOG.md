@@ -11,8 +11,9 @@ write or authority decision change.
   as `core_authority_changed_since_plan` (pre-dispatch check
   `core_authority_freshness`) instead of `dispatch_authority_unavailable`.
   This covers all 25 activated F3 identities.
-- `CoreRuntime.plan_is_current` reports the cutoff check `acquire` applies;
-  `acquire` remains the only decision.
+- `CoreRuntime.acquire_decision` classifies a refusal under the same lock
+  and authority snapshot as the decision; both F3 wrappers report from it
+  and never re-read authority. `acquire` returns its lease unchanged.
 - A withdrawn or unadmitted profile keeps the generic code, also when the
   plan is stale.
 
