@@ -32,6 +32,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+from ha_mcp_engineering.dependency import provider as dependency_provider  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
@@ -208,12 +209,13 @@ class InstallationTestCase(InputSelectServiceTestCase):
     """The HAMCP-145 service harness with the real dependency reader."""
 
     async def install(self, *, extra=None, registry=None, labels=None,
-                      extra_states=()) -> RealInputSelectReader:
+                      extra_states=(), base_registry=True) -> RealInputSelectReader:
         configs = installation_configs()
         configs.update(extra or {})
         reader = RealInputSelectReader(
             configs,
-            installation_registry() + list(registry or []),
+            (installation_registry() if base_registry else [])
+            + list(registry or []),
             [{"label_id": "kitchen", "name": "Kitchen"}, *(labels or [])],
             extra_states,
         )
@@ -384,11 +386,37 @@ class ClassificationMatrixTests(InstallationTestCase):
         self.assert_elevated_not_prohibited(plan, risk="medium")
         decision = plan["policy_decision"]
         self.assertEqual(decision["physical_consequence"], "none")
+        self.assertEqual(decision["risk_delta"], "moderate")
         self.assertIn("relevant_helper_consumer_disclosed",
                       decision["reason_codes"])
         self.assertIn("automation.mode_label",
                       self.binding(plan)["relevant_downstream_object_ids"])
         self.assertIn("automation.mode_label", self.consumers(plan))
+
+    async def test_complete_label_membership_including_the_helper_is_relevant(self):
+        # With no malformed record anywhere the label evidence is complete,
+        # and its membership alone decides relevance.
+        plan = (await self.planned(
+            "Away",
+            extra={"mode_label": consumer(
+                "Mode label",
+                conditions=template("{{ label_entities('modes') | count > 0 }}"),
+            )},
+            registry=[{"entity_id": ENTITY, "labels": ["modes"]}],
+            labels=[{"label_id": "modes", "name": "Modes"}],
+            base_registry=False,
+        ))["plan"]
+        self.assert_elevated_not_prohibited(plan, risk="medium")
+        binding = self.stored_binding(plan)
+        self.assertIn("automation.mode_label",
+                      binding["relevant_downstream_object_ids"])
+        self.assertNotIn("automation.kitchen_0",
+                         binding["relevant_downstream_object_ids"])
+        diagnostics = binding["selector_authority_diagnostics"]
+        self.assertTrue(diagnostics)
+        for item in diagnostics:
+            self.assertTrue(item["complete"])
+            self.assertEqual(item["target_disposition"], "included")
 
     async def test_group_and_expand_membership_is_elevated_and_named(self):
         plan = (await self.planned(
@@ -492,6 +520,49 @@ class ClassificationMatrixTests(InstallationTestCase):
             [f"automation.kitchen_{n}" for n in range(LABEL_AUTOMATIONS)],
         )
         self.assertEqual(plan["policy_decision"]["physical_consequence"], "unknown")
+
+    async def test_a_malformed_record_naming_no_entity_leaves_labels_unresolved(self):
+        # A record with no valid entity_id could be the target's own record,
+        # so the kitchen label stays unresolved for this target.
+        plan = (await self.planned(
+            "Away", registry=[{"entity_id": "not valid", "labels": "kitchen"}],
+        ))["plan"]
+        self.assert_elevated_not_prohibited(plan)
+        binding = self.stored_binding(plan)
+        self.assertEqual(
+            sorted(binding["relevant_downstream_object_ids"]),
+            [f"automation.kitchen_{n}" for n in range(LABEL_AUTOMATIONS)],
+        )
+        self.assertTrue(any(
+            item["malformed_unattributable_record_count"] > 0
+            for item in binding["selector_authority_diagnostics"]
+        ))
+        self.assertEqual(plan["policy_decision"]["physical_consequence"], "unknown")
+
+    async def test_a_non_canonical_target_record_is_reported_by_entity_id(self):
+        # A well-formed label list whose record cannot be canonicalized is
+        # still a malformed record naming the target.
+        plan = (await self.planned(
+            "Away",
+            extra={"mode_label": consumer(
+                "Mode label",
+                conditions=template("{{ label_entities('modes') | count > 0 }}"),
+            )},
+            registry=[{"entity_id": ENTITY, "labels": ["modes"],
+                       "name": float("nan")}],
+            labels=[{"label_id": "modes", "name": "Modes"}],
+        ))["plan"]
+        self.assert_elevated_not_prohibited(plan)
+        binding = self.stored_binding(plan)
+        reported = [
+            item for item in binding["selector_authority_diagnostics"]
+            if item["malformed_target_record"]
+        ]
+        self.assertTrue(reported)
+        for item in reported:
+            self.assertEqual(item["malformed_record_entity_ids"], [ENTITY])
+        self.assertIn("automation.mode_label",
+                      binding["relevant_downstream_object_ids"])
 
 
 # --------------------------------------------------------------------------
@@ -655,6 +726,40 @@ class LockTests(InstallationTestCase):
         self.assertTrue(binding["relevant_consumers_truncated"])
         modes = self.lock_modes(plan)
         self.assertEqual(modes["reload:automation"], LockMode.EXCLUSIVE)
+
+    async def test_a_consumer_without_lock_identity_takes_the_fence(self):
+        # An automation id outside the lock-key grammar cannot be locked
+        # precisely, so the plan takes the coarse fence instead of refusing.
+        plan = (await self.planned("Away", extra={"Uses_Mode": consumer(
+            "Upper",
+            triggers=[{"trigger": "state", "entity_id": ENTITY}],
+            actions=[{"action": "notify.notify", "data": {"message": "x"}}],
+        )}))["plan"]
+        self.assert_elevated_not_prohibited(plan)
+        projection = self.stored_binding(plan)["dependency_lock_projection"]
+        self.assertTrue(projection["coarse_automation_fence"])
+        self.assertEqual(projection["coarse_automation_fence_reason_codes"],
+                         ["automation_lock_identity_unavailable"])
+        self.assertEqual(self.lock_modes(plan)["reload:automation"],
+                         LockMode.EXCLUSIVE)
+
+    async def test_an_unattributable_coverage_gap_scopes_all_under_the_fence(self):
+        # An automation inventory overflow names no automation: every
+        # inventoried automation is in scope and the plan takes the fence.
+        with mock.patch.object(dependency_provider, "MAX_AUTOMATION_SOURCES", 10):
+            plan = (await self.planned("Away"))["plan"]
+        self.assert_elevated_not_prohibited(plan)
+        binding = self.stored_binding(plan)
+        self.assertEqual(binding["coverage_failure_attribution"],
+                         "conservative_all")
+        self.assertEqual(len(binding["relevant_downstream_object_ids"]), 10)
+        projection = binding["dependency_lock_projection"]
+        self.assertTrue(projection["coarse_automation_fence"])
+        self.assertEqual(projection["coarse_automation_fence_reason_codes"],
+                         ["unattributable_coverage_failure"])
+        self.assertEqual(self.lock_modes(plan)["reload:automation"],
+                         LockMode.EXCLUSIVE)
+        self.assertEqual(plan["policy_decision"]["physical_consequence"], "unknown")
 
     async def test_an_over_budget_graph_executes_under_the_fence(self):
         await self.install(extra=over_budget_consumers())
