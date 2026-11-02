@@ -144,11 +144,20 @@ push_status=0
 git -C "$WORK_DIR" "${credentials[@]}" push --quiet --no-verify -- "$REMOTE_URL" "$refspec" || push_status=$?
 
 # 5. One bounded read of the remote tip decides what to report. No retry.
+# The listing is kept byte-exact in a file (command substitution would drop
+# NUL bytes and trailing newlines). It must be exactly one record: 40
+# lowercase hex, a tab and the exact ref, with at most one terminating
+# newline. Anything else leaves the tip unknown.
+readback="$WORK_DIR/.git/registry-readback"
 read_status=0
-listing="$(timeout "$READBACK_SECONDS" git -C "$WORK_DIR" "${credentials[@]}" \
-  ls-remote -- "$REMOTE_URL" "$TARGET_REF" 2>/dev/null)" || read_status=$?
+timeout "$READBACK_SECONDS" git -C "$WORK_DIR" "${credentials[@]}" \
+  ls-remote -- "$REMOTE_URL" "$TARGET_REF" > "$readback" 2>/dev/null || read_status=$?
 tip=""
-if (( read_status == 0 )) && [[ "$listing" =~ ^([0-9a-f]{40})$'\t'refs/heads/registry$ ]]; then
+records=()
+if (( read_status == 0 )) && (( $(tr -cd '\000' < "$readback" | wc -c) == 0 )); then
+  mapfile -t records < "$readback"
+fi
+if (( ${#records[@]} == 1 )) && [[ "${records[0]}" =~ ^([0-9a-f]{40})$'\t'refs/heads/registry$ ]]; then
   tip="${BASH_REMATCH[1]}"
 fi
 if [[ "$tip" == "$commit" ]]; then
@@ -167,6 +176,9 @@ if (( push_status != 0 )) && [[ -n "$tip" && "$tip" == "$base" ]]; then
   exit 1
 fi
 if (( read_status != 0 )) || [[ -z "$tip" ]]; then
-  uncertain "push status ${push_status}; the remote read of the registry branch failed" ""
+  uncertain "push status ${push_status}; the remote read of the registry branch failed or was not exactly one well-formed record" ""
+fi
+if [[ "$tip" == "$base" ]]; then
+  uncertain "push status ${push_status}; the push reported success but the registry branch still shows the verified predecessor" "$tip"
 fi
 uncertain "push status ${push_status}; the registry branch shows neither the new commit nor the verified predecessor" "$tip"

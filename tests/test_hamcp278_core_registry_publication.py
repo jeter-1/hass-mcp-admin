@@ -61,7 +61,8 @@ RUNBOOK_DOC = ROOT / "docs" / "CORE_REGISTRY_ONE_TAP_RUNBOOK.md"
 ACCEPTANCE_DOC = ROOT / "docs" / "V2_4_1_BETA57_ACCEPTANCE.md"
 REAL_GIT = shutil.which("git")
 # Stands in for git on PATH: logs every push and can model a lost push
-# acknowledgment, an unavailable remote read, or a concurrent registry update.
+# acknowledgment, a push that claims success without landing, an unavailable
+# or malformed remote read, or a concurrent registry update.
 FAKE_GIT = """#!/usr/bin/env bash
 sub=""
 for argument in "$@"; do
@@ -71,7 +72,12 @@ if [[ "$sub" == push ]]; then printf '%s\\n' "$*" >> "$FAKE_GIT_LOG"; fi
 case "$sub:$FAKE_GIT_MODE" in
   push:accept-then-fail|push:accept-then-fail-unreadable) "$REAL_GIT" "$@" >/dev/null 2>&1; exit 1 ;;
   push:move-first) "$REAL_GIT" -C "$FAKE_MOVER" push --quiet origin HEAD:refs/heads/registry >/dev/null 2>&1 || exit 97 ;;
+  push:claim-success) exit 0 ;;
   ls-remote:accept-then-fail-unreadable) exit 128 ;;
+  ls-remote:extra-blank-line) "$REAL_GIT" "$@" || exit; printf '\\n'; exit 0 ;;
+  ls-remote:nul-in-sha) record="$("$REAL_GIT" "$@")" || exit; printf '%s\\0%s\\n' "${record:0:20}" "${record:20}"; exit 0 ;;
+  ls-remote:nul-after-ref) record="$("$REAL_GIT" "$@")" || exit; printf '%s\\0\\n' "$record"; exit 0 ;;
+  ls-remote:record-then-fail) "$REAL_GIT" "$@"; exit 124 ;;
 esac
 exec "$REAL_GIT" "$@"
 """
@@ -774,6 +780,81 @@ class RegistryBranchTests(RegistryRepository, unittest.TestCase):
         self.assertNotIn("unchanged", (result.stdout + result.stderr).lower())
         self.assertIn("Outcome: **UNCERTAIN**", self.summary.read_text())
         self.assert_pushes(1)
+
+    MALFORMED = "the remote read of the registry branch failed or was not exactly one well-formed record"
+
+    def assert_uncertain(self, result, reason, observed):
+        """UNCERTAIN/3 with the same fixed reason and SHAs in the log and the summary."""
+        self.assertEqual(result.returncode, 3, result.stderr)
+        attempted = self.attempted(result)
+        summary = self.summary.read_text()
+        self.assertIn(f"UNCERTAIN: push status 0; {reason}. Attempted commit {attempted}; "
+                      f"observed registry tip {observed or 'unavailable'}.", result.stderr)
+        self.assertIn(f"- Outcome: **UNCERTAIN** (push status 0; {reason}). Attempted commit `{attempted}`; "
+                      f"observed registry tip `{observed or 'unavailable'}`.", summary)
+        for text in (result.stdout + result.stderr, summary):
+            self.assertNotIn("PUBLISHED", text)
+            self.assertNotIn("Published", text)
+            self.assertNotIn("unchanged", text.lower())
+            self.assertNotIn("neither the new commit nor the verified predecessor", text)
+        self.assert_pushes(1)
+        return attempted
+
+    def test_valid_record_followed_by_a_blank_line_reports_uncertain(self):
+        base = self.create_registry()
+        attempted = self.assert_uncertain(self.publish("publish", **self.fake_git("extra-blank-line")),
+                                          self.MALFORMED, "")
+        self.assertEqual(self.ref("registry"), attempted)  # it landed; the malformed read cannot confirm it
+        self.assertNotEqual(attempted, base)
+
+    def test_nul_byte_inside_the_attempted_sha_reports_uncertain(self):
+        base = self.create_registry()
+        attempted = self.assert_uncertain(self.publish("publish", **self.fake_git("nul-in-sha")),
+                                          self.MALFORMED, "")
+        self.assertEqual(self.ref("registry"), attempted)
+        self.assertNotEqual(attempted, base)
+
+    def test_nul_byte_after_the_ref_reports_uncertain(self):
+        base = self.create_registry()
+        attempted = self.assert_uncertain(self.publish("publish", **self.fake_git("nul-after-ref")),
+                                          self.MALFORMED, "")
+        self.assertEqual(self.ref("registry"), attempted)
+        self.assertNotEqual(attempted, base)
+
+    def test_failed_read_after_a_valid_record_reports_uncertain(self):
+        base = self.create_registry()
+        attempted = self.assert_uncertain(self.publish("publish", **self.fake_git("record-then-fail")),
+                                          self.MALFORMED, "")
+        self.assertEqual(self.ref("registry"), attempted)  # a failed or timed-out read confirms nothing
+        self.assertNotEqual(attempted, base)
+
+    def test_rejected_push_with_predecessor_and_blank_line_reports_uncertain(self):
+        base = self.create_registry()
+        hook = self.remote / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        result = self.publish("publish", **self.fake_git("extra-blank-line"))
+        self.assertEqual(self.ref("registry"), base)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        summary = self.summary.read_text()
+        self.assertIn(f"UNCERTAIN: push status 1; {self.MALFORMED}.", result.stderr)
+        self.assertIn("observed registry tip unavailable.", result.stderr)
+        self.assertIn(f"- Outcome: **UNCERTAIN** (push status 1; {self.MALFORMED}).", summary)
+        self.assertIn("observed registry tip `unavailable`.", summary)
+        for text in (result.stdout + result.stderr, summary):
+            self.assertNotIn("UNCHANGED", text)
+            self.assertNotIn("PUBLISHED", text)
+        self.assertNotEqual(self.attempted(result), base)
+        self.assert_pushes(1)
+
+    def test_push_reporting_success_with_predecessor_tip_reports_uncertain_truthfully(self):
+        base = self.create_registry()
+        attempted = self.assert_uncertain(
+            self.publish("publish", **self.fake_git("claim-success")),
+            "the push reported success but the registry branch still shows the verified predecessor", base)
+        self.assertEqual(self.ref("registry"), base)
+        self.assertNotEqual(attempted, base)
+        self.assertEqual(self.ref("main"), self.main_tip)
 
     def test_registry_absent_refused_as_pre_cutover(self):
         result = self.publish("publish")
