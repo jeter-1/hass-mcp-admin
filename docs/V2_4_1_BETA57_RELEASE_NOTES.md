@@ -52,9 +52,9 @@ generation must not bind a later one.
   (`ha_core_readmission/routes.py`), accepted by the executor as a
   dispatch-authority refusal and mapped by the HAMCP-249 pre-dispatch
   vocabulary to the new check `core_authority_freshness`. Its fixed
-  detail is: "Home Assistant Core authority was retired, restored or
-  changed after this plan was created, so its approval cannot bind current
-  authority. Nothing was sent. Create and approve a fresh plan."
+  detail is: "Home Assistant Core authority changed after this plan was
+  created, so its approval cannot bind it. Nothing was sent. Create and
+  approve a fresh plan." It fits the HAMCP-249 160-character detail bound.
 - `CoreRuntime.plan_is_current(created_at)` reports the same cutoff check
   `acquire` applies, under the runtime lock. It decides nothing.
 - When Core has already refused the lease, the wrappers name the stale

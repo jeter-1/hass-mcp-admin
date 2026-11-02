@@ -119,9 +119,9 @@ _CHECK_DETAILS: dict[str, str] = {
     ),
     # HAMCP-276: admitted again, but under a later authority generation.
     "core_authority_freshness": (
-        "Home Assistant Core authority was retired, restored or changed after "
-        "this plan was created, so its approval cannot bind current authority. "
-        "Nothing was sent. Create and approve a fresh plan."
+        "Home Assistant Core authority changed after this plan was created, "
+        "so its approval cannot bind it. Nothing was sent. Create and approve "
+        "a fresh plan."
     ),
     "preflight_exception": (
         "Preflight stopped on an internal error before dispatch. Check the "
