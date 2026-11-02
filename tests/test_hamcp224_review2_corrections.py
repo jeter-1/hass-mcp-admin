@@ -44,8 +44,10 @@ _method = getattr(residuals.DeltaResidualTests, SUPERSEDED)
 if not getattr(_method, "__unittest_expecting_failure__", False):
     setattr(residuals.DeltaResidualTests, SUPERSEDED, unittest.expectedFailure(_method))
 
+# HAMCP-272 changes only the review fixture cleanup owner; test bodies remain intact.
+# Keep the exact-file integrity check, pinned to those corrected fixture bytes.
 REVIEWER_SUITES = {
-    "test_pr313_independent_review.py": "30884b4c495d6b680e5bff3b80e7fbc70e2641bea51006a30391c193fb8987d8",
+    "test_pr313_independent_review.py": "2ba2d9fabe9c74ca2c2d84c319b04f6f36e4af787625d74d5ab93919ee23e1a0",
     "test_pr313_delta_residuals.py": "9b3d8d37299a60a36e3d7e7098882d000149b6c556be657cfbf95d0a7848e202",
 }
 
