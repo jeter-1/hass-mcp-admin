@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "tests") not in sys.path:
@@ -112,9 +113,22 @@ class GitIdentityTests(unittest.TestCase):
     def test_source_only_copy_has_no_config_to_guard(self):
         copy = self.base / "source-only"
         copy.mkdir()
-        guard = self.guard(copy)
+        # TMPDIR itself may be nested inside the developer checkout. Model
+        # an entirely repository-free ancestry for this absence-only case.
+        with mock.patch.object(Path, "exists", return_value=False):
+            guard = self.guard(copy)
         self.assertEqual(guard.baseline, {})
         self.assertIsNone(guard.check("clean_copy"))
+
+    def test_nested_source_copy_guards_the_containing_repository(self):
+        copy = self.worktree / "nested" / "source-copy"
+        copy.mkdir(parents=True)
+        guard = self.guard(copy)
+        self.assertEqual(set(guard.baseline), {"local", "worktree"})
+        self.git("config", "--local", "user.name", "nested-writer", root=copy)
+        message = guard.check("nested_source_writer")
+        self.assertIsInstance(message, str)
+        self.assertIn("scopes: local", message)
 
     def run_suite(self, scope=None, fixture="test"):
         support = self.worktree / "tests" / "support"

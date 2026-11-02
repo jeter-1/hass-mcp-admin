@@ -74,7 +74,8 @@ class GitIdentityGuard:
     environment cannot redirect the check to its disposable repository. Read
     only identity keys, including their origins and duplicate values. Inspect
     config.worktree even when disabled: a dormant write must not escape notice.
-    Source-only copies without a .git entry have no repository config to guard.
+    Source-only copies outside any repository have no config to guard; nested
+    copies still protect the containing repository that Git would discover.
     """
 
     def __init__(self, root):
@@ -96,7 +97,7 @@ class GitIdentityGuard:
 
     def capture(self):
         if self.paths is None:
-            if not (self.root / ".git").exists():
+            if not any((path / ".git").exists() for path in (self.root, *self.root.parents)):
                 self.paths = {}
             else:
                 common = Path(os.fsdecode(self._read("rev-parse", "--git-common-dir")).strip())
