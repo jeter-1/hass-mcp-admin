@@ -85,7 +85,12 @@ code, and synthetic Home Assistant transports.
   - plan predating a retirement and restoration:
     `core_authority_changed_since_plan`, no provider call; a current plan:
     authorized;
-  - an unmapped identity: `core_requirement_unmapped`.
+  - an unmapped identity: `core_requirement_unmapped`;
+  - a current, admitted plan refused because Core's issued-lease capacity
+    is exhausted: `dispatch_authority_unavailable`, no provider call and
+    no stale rejection; after release: authorized;
+  - the executor's guard returns no authority for a refusal that is not
+    stale, the contract `test_core_update_continuity` pins.
 - **Activated set.** 25 identities, 20 adapters. Every identity's
   requirements are compiled. The 18 compiled profiles no identity
   requires each have a pinned justification.

@@ -62,7 +62,12 @@ generation must not bind a later one.
   the plan is not current. Otherwise the generic code is kept:
   - a withdrawn or unadmitted profile, also when the plan is stale,
     because a fresh plan would not help;
+  - a current, admitted plan that Core refuses for another reason, such
+    as exhausted issued-lease capacity;
   - a Core runtime without the reporting methods.
+- The executor's dispatch guard raises only the stale code. For any other
+  refused lease it still returns no authority, which the executor reports
+  as `dispatch_authority_unavailable` exactly as before.
 - `core_requirement_unmapped` is unchanged.
 
 `acquire` remains the only authority decision. The order is unchanged:
