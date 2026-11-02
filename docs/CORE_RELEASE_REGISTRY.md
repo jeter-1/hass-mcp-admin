@@ -650,11 +650,26 @@ hash binds the O3 proof and withholding summary Josh reviews.
 Disable **Automated Core release evidence** in Actions to stop detection. Manual
 binding PRs and the existing signing runbook remain available. Disabling this
 workflow does not cancel an already-dispatched signing request; inspect and
-cancel that separate run before any owner approval if necessary. Do not delete
-candidate branches as routine recovery; compare retained bytes and original run
-first. No deployment or Core upgrade is authorized by candidate preparation.
+cancel that separate run before any owner approval if necessary. Never delete
+`registry-candidates/*` branches, including in cleanup sweeps; compare retained
+bytes and the original run for recovery. No deployment or Core upgrade is authorized by candidate preparation.
 
 Selected-release job names retain idempotency evidence after attempt artifacts expire;
-a pending or successful retained run suppresses another attempt. Candidate branches
-also retain successful assembly identity. Deleted GitHub run history cannot be
-reconstructed; preserve these records until the release is present in `registry`.
+a pending or successful retained run suppresses another attempt. An O3 refusal
+emits a separate durable `core-release-refused-<version>` failed job. That run
+fails once with "binding PR required", listing every differing or missing file
+and both source commits. Subsequent schedules skip that terminal refusal without
+another failure. A newer release remains eligible; an explicit workflow_dispatch
+with that exact `core_version` may retry the refusal. API, tag SHA and provenance
+errors are ordinary failures and remain retryable. PR negative acceptance checks
+the refusal without scheduling this production notification job.
+
+`registry-candidates/*` branches are permanent provenance records. Never delete
+them, including after publication or in cleanup sweeps, and never force-push them.
+`bound_entry` recovers an inherited predecessor's binding from that branch's
+`core-review-evidence.json`, authenticated by the signed entry's `evidence_sha256`.
+Deleting a branch removes this load-bearing evidence and forces the next release
+to a binding PR. Signed registry publication does not copy or replace these bytes.
+Retain the GitHub attempt/refusal run records too: deleted history cannot be
+reconstructed. Josh must configure the owner-setup ruleset in the runbook to block
+candidate-branch deletion and force-push while allowing workflow branch creation.

@@ -75,8 +75,8 @@ def version_key(value):
     return tuple(map(int, value.split(".")))
 
 
-def select_release(releases, published, runs, requested=None):
-    """One stable release; terminal failure may retry, pending/success may not."""
+def select_release(releases, published, runs, requested=None, *, retry_refused=False):
+    """Pending/success suppress; O3 refusal is terminal except explicit retry."""
     eligible = {r["tag_name"] for r in releases if not r.get("draft") and not r.get("prerelease")
                 and stable_version(r.get("tag_name"))}
     if requested and requested not in eligible:
@@ -87,6 +87,7 @@ def select_release(releases, published, runs, requested=None):
         if version in published or (published and version_key(version) <= max(map(version_key, published))):
             continue
         if any(r.get("release") == version and (r.get("status") != "completed"
+               or (r.get("outcome") == "refused" and not (retry_refused and requested == version))
                or r.get("conclusion") == "success") for r in runs):
             continue
         return version

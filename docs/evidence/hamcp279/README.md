@@ -37,10 +37,17 @@ Run from repository root using the task's Python test environment:
 `python docs/evidence/hamcp279/run_mutations.py`.
 The harness copies only Git-listed and nonignored new repository files into
 `.artifacts/mutation/copy`, changes that copy only, clears copied bytecode and
-runs focused assertions. `mutation-results.json`: 14 assertion kills, zero invalid
+runs focused assertions. `mutation-results.json`: 19 assertion kills, zero invalid
 kills, zero survivors. A nonzero exit without an assertion failure is classified
 invalid, never a successful assertion kill. Logs are retained in the ignored
 `.artifacts/mutation/` directory. This is implementer testing, not independent review.
 
 Real disposable CI receipts and head/run identity belong in the PR and task
 handoff; local mocks and historical timings do not substitute for new CI acceptance.
+
+Architect correction R1 adds five assertion-killed mutations: refusal returning
+success, terminal refusal becoming retryable, ordinary errors becoming terminal,
+refusal marker classification ignored, and explicit retry disabled. The original
+14 boundary mutations also still die by assertion. HAMCP-284 deletion code was
+not on main at correction time; its candidate-branch exclusion must be checked
+when that implementation lands. Both registry docs now state permanent retention.

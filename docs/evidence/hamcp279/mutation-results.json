@@ -110,5 +110,45 @@
     "test": "HandoffExecution.test_existing_different_no_push_or_dispatch",
     "classification": "assertion",
     "exit_code": 1
+  },
+  {
+    "id": 15,
+    "name": "R1 refusal treated as success",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_refusal_prepare_and_final_job_fail_with_files_and_commits",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 16,
+    "name": "R1 refusal retryable",
+    "file": "scripts/core_release_evidence.py",
+    "test": "RefusalLifecycle.test_refusal_terminal_after_artifact_expiry",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 17,
+    "name": "R1 ordinary error terminal",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_ordinary_failure_retryable_not_terminal",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 18,
+    "name": "R1 refusal marker ignored",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "RefusalLifecycle.test_refusal_terminal_after_artifact_expiry",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 19,
+    "name": "R1 explicit retry disabled",
+    "file": "scripts/core_release_evidence.py",
+    "test": "RefusalLifecycle.test_explicit_dispatch_retries_refusal_only",
+    "classification": "assertion",
+    "exit_code": 1
   }
 ]

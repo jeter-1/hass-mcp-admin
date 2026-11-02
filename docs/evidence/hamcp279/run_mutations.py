@@ -23,6 +23,11 @@ mutants=[
  ('dispatch target','scripts/core_evidence_handoff.py','WORKFLOW = "core-release-registry-publish.yml"','WORKFLOW = "publish-rc-image.yml"','HandoffExecution.test_new_branch_exact_push_and_dispatch'),
  ('precutover bypass','scripts/core_release_evidence.py','if dry_run or not registry_exists:','if dry_run:','Handoff.test_pre_cutover_and_dry_run_never_handoff'),
  ('existing content overwrite','scripts/core_evidence_handoff.py','if run(["git", "show", "FETCH_HEAD:" + name], temp) != raw:','if False:','HandoffExecution.test_existing_different_no_push_or_dispatch'),
+ ('R1 refusal treated as success','scripts/core_evidence_workflow.py','raise SystemExit(message)','return None','RefusalLifecycle.test_refusal_prepare_and_final_job_fail_with_files_and_commits'),
+ ('R1 refusal retryable','scripts/core_release_evidence.py','r.get("outcome") == "refused" and not (retry_refused and requested == version)','False','RefusalLifecycle.test_refusal_terminal_after_artifact_expiry'),
+ ('R1 ordinary error terminal','scripts/core_evidence_workflow.py','"outcome": "refused" if release in refused else "attempt"','"outcome": "refused"','RefusalLifecycle.test_ordinary_failure_retryable_not_terminal'),
+ ('R1 refusal marker ignored','scripts/core_evidence_workflow.py','"outcome": "refused" if release in refused else "attempt"','"outcome": "attempt"','RefusalLifecycle.test_refusal_terminal_after_artifact_expiry'),
+ ('R1 explicit retry disabled','scripts/core_release_evidence.py','retry_refused and requested == version','False','RefusalLifecycle.test_explicit_dispatch_retries_refusal_only'),
 ]
 results=[]
 for i,(name,file,before,after,test) in enumerate(mutants,1):

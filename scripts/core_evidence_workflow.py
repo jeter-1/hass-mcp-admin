@@ -118,6 +118,32 @@ def attempt_releases(artifacts, jobs):
             if item["name"].startswith(prefix) and stable_version(item["name"][len(prefix):])}
 
 
+def observed_attempts(run, artifacts, jobs):
+    # Only the deliberately failing refusal job is terminal. An ordinary failed
+    # attempt (API, identity, provenance, setup, lanes) remains retryable.
+    prefix = "core-release-refused-"
+    refused = {job["name"][len(prefix):] for job in jobs
+               if job["name"].startswith(prefix) and job.get("conclusion") == "failure"
+               and stable_version(job["name"][len(prefix):])}
+    return [{"release": release, "status": run["status"], "conclusion": run["conclusion"],
+             "outcome": "refused" if release in refused else "attempt"}
+            for release in sorted(attempt_releases(artifacts, jobs) | refused)]
+
+
+def refusal_message(proof):
+    if proof["inherited"] is not False or not proof["differing_files"]:
+        raise ValueError("not an O3 refusal")
+    return ("binding PR required: " + ", ".join(proof["differing_files"]) +
+            "\nPredecessor commit: " + proof["predecessor_commit"] +
+            "\nRelease commit: " + proof["release_commit"])
+
+
+def fail_refusal(directory):
+    message = refusal_message(read_json(directory / "comparison.json"))
+    summary(message)
+    raise SystemExit(message)
+
+
 def prepare(directory, acceptance, requested):
     directory.mkdir(parents=True, exist_ok=True)
     if acceptance:
@@ -151,7 +177,7 @@ def prepare(directory, acceptance, requested):
         write(directory / "baseline.json", target)
         write(directory / "state.json", {"registry_exists": False, "acceptance": True})
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
-        output(run=True, release="2026.10.3", matrix=json.dumps({"include": rows}), registry_exists=False)
+        output(refused=False, run=True, release="2026.10.3", matrix=json.dumps({"include": rows}), registry_exists=False)
         return
     releases = []
     for page in range(1, 11):
@@ -163,13 +189,13 @@ def prepare(directory, acceptance, requested):
     newest = select_release(releases, {e["version"] for e in entries}, [], requested)
     if newest is None:
         summary("No newer eligible stable Core release.")
-        output(run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
+        output(refused=False, run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
         return
     release_metadata = next(r for r in releases if r["tag_name"] == newest)
     # Candidate branches are a durable successful-assembly marker after artifact expiry.
     if github(f"repos/{REPOSITORY}/git/ref/heads/registry-candidates/{newest}", optional=True) is not None:
         summary("Candidate branch already exists; no repeated dispatch. Inspect its original run for recovery.")
-        output(run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
+        output(refused=False, run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
         return
     runs = []
     for page in range(1, 11):
@@ -182,17 +208,25 @@ def prepare(directory, acceptance, requested):
             artifacts = github(f"repos/{REPOSITORY}/actions/runs/{r['id']}/artifacts?per_page=100")["artifacts"]
             # Job names survive artifact expiration. Keep a durable selected-release
             # receipt in GitHub's retained run record, including O3 refusals.
-            jobs = github(f"repos/{REPOSITORY}/actions/runs/{r['id']}/jobs?per_page=100")["jobs"]
-            for release in attempt_releases(artifacts, jobs):
-                runs.append({"release": release, "status": r["status"], "conclusion": r["conclusion"]})
+            jobs = []
+            for job_page in range(1, 11):
+                page_jobs = github(f"repos/{REPOSITORY}/actions/runs/{r['id']}/jobs?filter=all&per_page=100&page={job_page}")["jobs"]
+                jobs.extend(page_jobs)
+                if len(page_jobs) < 100:
+                    break
+            else:
+                raise ValueError("job history exceeds pagination bound")
+            runs.extend(observed_attempts(r, artifacts, jobs))
         if len(batch) < 100:
             break
     else:
         raise ValueError("run discovery exceeds pagination bound")
-    version = select_release(releases, {e["version"] for e in entries}, runs, newest)
+    version = select_release(releases, {e["version"] for e in entries}, runs, newest,
+                             retry_refused=(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+                                            and requested == newest))
     if version is None:
-        summary("No eligible stable release (already published, pending or succeeded).")
-        output(run=False, release="none", matrix='{"include":[]} ', registry_exists=exists)
+        summary("No eligible stable release (already published, pending, succeeded or terminally refused).")
+        output(refused=False, run=False, release="none", matrix='{"include":[]} ', registry_exists=exists)
         return
     candidates = [e for e in entries if version_key(e["version"]) < version_key(version)]
     if not candidates:
@@ -205,8 +239,8 @@ def prepare(directory, acceptance, requested):
     proof = compare_sources(before, after)
     write(directory / "comparison.json", proof)
     if not proof["inherited"]:
-        summary("binding PR required — " + ", ".join(proof["differing_files"]))
-        output(run=False, release=version, matrix='{"include":[]}', registry_exists=exists)
+        summary(refusal_message(proof))
+        output(refused=True, run=False, release=version, matrix='{"include":[]}', registry_exists=exists)
         return
     index, platforms, receipts = image_provenance(version, after["commit"])
     provenance = {"entry_id": "core-" + version + "-" + index[7:15], "server_name": "home-assistant-core",
@@ -219,7 +253,7 @@ def prepare(directory, acceptance, requested):
     write(directory / "baseline.json", predecessor)
     write(directory / "state.json", {"registry_exists": exists, "acceptance": False})
     summary("O3 inherits " + predecessor["version"] + " → " + version + ("; pre-cutover: artifact only" if not exists else ""))
-    output(run=True, release=version, matrix=json.dumps({"include": [matrix_row(ctx, "release")]}), registry_exists=exists)
+    output(refused=False, run=True, release=version, matrix=json.dumps({"include": [matrix_row(ctx, "release")]}), registry_exists=exists)
 
 
 def assemble(directory, receipts, case):
@@ -272,7 +306,7 @@ def assemble(directory, receipts, case):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("prepare", "assemble"))
+    parser.add_argument("command", choices=("prepare", "assemble", "refuse"))
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--acceptance", action="store_true")
     parser.add_argument("--release", default="")
@@ -281,5 +315,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.directory, args.acceptance, args.release or None)
+    elif args.command == "refuse":
+        fail_refusal(args.directory)
     else:
         assemble(args.directory, args.receipts, args.case)

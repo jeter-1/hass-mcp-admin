@@ -42,6 +42,7 @@ jobs:
       actions: read
     outputs:
       run: ${{ steps.prepare.outputs.run }}
+      refused: ${{ steps.prepare.outputs.refused }}
       release: ${{ steps.prepare.outputs.release }}
       matrix: ${{ steps.prepare.outputs.matrix }}
       registry_exists: ${{ steps.prepare.outputs.registry_exists }}
@@ -76,7 +77,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Retain selected-release attempt marker
-        if: github.event_name != 'pull_request' && steps.prepare.outputs.release != '' && steps.prepare.outputs.release != 'none'
+        if: github.event_name != 'pull_request' && steps.prepare.outputs.refused != 'true' && steps.prepare.outputs.release != '' && steps.prepare.outputs.release != 'none'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: core-release-attempt-${{ steps.prepare.outputs.release }}
@@ -86,12 +87,31 @@ jobs:
   attempt:
     name: core-release-attempt-${{ needs.prepare.outputs.release }}
     needs: prepare
-    if: github.event_name != 'pull_request' && needs.prepare.outputs.release != '' && needs.prepare.outputs.release != 'none'
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.refused != 'true' && needs.prepare.outputs.release != '' && needs.prepare.outputs.release != 'none'
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     permissions: {}
     steps:
       - run: echo 'Selected-release receipt retained in this job name.'
+  refusal:
+    # A distinct retained failed job makes refusal terminal and notifies the owner.
+    name: core-release-refused-${{ needs.prepare.outputs.release }}
+    needs: prepare
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.refused == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: core-evidence-preparation
+          path: ${{ runner.temp }}/core-evidence-input
+      - name: Fail once with the binding PR requirement
+        run: python3 scripts/core_evidence_workflow.py refuse --directory "$RUNNER_TEMP/core-evidence-input"
   lanes:
     name: Core evidence ${{ matrix.case }} ${{ matrix.ha_version }}
     needs: prepare

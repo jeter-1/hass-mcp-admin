@@ -228,3 +228,31 @@ The signing workflow rechecks the current registry predecessor; a changed
 predecessor invalidates the prepared candidate. Disable **Automated Core release
 evidence** in Actions to stop new detection; inspect/cancel any already-dispatched
 signing run separately. This mechanism never authorizes deployment or a Core upgrade.
+
+
+### OWNER SETUP — permanent candidate provenance (Josh performs this)
+
+`registry-candidates/*` branches are permanent provenance records. Never delete
+them, including after publication or in cleanup sweeps, and never force-push them.
+Later inheritance reads `core-review-evidence.json` from the predecessor's branch
+and authenticates it against the signed entry's `evidence_sha256`. Removing that
+branch forces the next release to a binding PR; publication does not replace it.
+
+Josh must create a repository branch ruleset targeting `registry-candidates/*`
+that blocks deletion and force-push, while still allowing the workflow to create
+new candidate branches. Do not prohibit creation or require a PR for these new
+branches. Check that the workflow has no bypass of the deletion/force-push rules.
+This is an owner setup action: Codex does not change repository settings. Cleanup
+sweeps (including HAMCP-284) must exclude `registry-candidates/*` permanently.
+
+### O3 refusal notification and recovery
+
+A differing or missing contract-read file produces no candidate. The preparation
+summary and final failed job list those files and both source commits with
+"binding PR required". The durable `core-release-refused-<version>` job records
+this terminal refusal. The first run fails for GitHub's failed-run notification;
+later schedules skip the release without a daily failure loop. A newer release
+can be selected. To deliberately re-evaluate a refused version, use an explicit
+workflow_dispatch with that exact `core_version` (keep dry_run=true for inspection).
+It may refuse and notify again. Ordinary API, tag SHA or provenance errors remain
+retryable; a success still suppresses another attempt. Preserve refusal run history.

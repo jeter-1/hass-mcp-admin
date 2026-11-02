@@ -71,6 +71,128 @@ class Detection(unittest.TestCase):
         with self.assertRaises(ValueError): e.select_release([],[],[],'2026.10.4')
 
 
+class RefusalLifecycle(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        (ROOT / '.artifacts').mkdir(exist_ok=True)
+
+    def history(self, *, refusal=True, conclusion='failure', job_conclusion='failure'):
+        from core_evidence_workflow import observed_attempts
+        jobs = [{'name': 'core-release-attempt-2026.10.4', 'conclusion': 'success'}]
+        if refusal:
+            jobs.append({'name': 'core-release-refused-2026.10.4', 'conclusion': job_conclusion})
+        return observed_attempts({'status':'completed', 'conclusion':conclusion}, [], jobs)
+
+    def test_refusal_terminal_after_artifact_expiry(self):
+        runs = self.history()
+        self.assertEqual(runs[0]['outcome'], 'refused')
+        self.assertIsNone(e.select_release([{'tag_name':'2026.10.4'}], [], runs))
+        self.assertEqual(e.select_release([{'tag_name':'2026.10.4'}, {'tag_name':'2026.10.5'}], [], runs), '2026.10.5')
+
+    def test_explicit_dispatch_retries_refusal_only(self):
+        releases = [{'tag_name':'2026.10.4'}]
+        self.assertEqual(e.select_release(releases, [], self.history(), '2026.10.4', retry_refused=True), '2026.10.4')
+        self.assertIsNone(e.select_release(releases, [], self.history(), retry_refused=True))
+        self.assertIsNone(e.select_release(releases, [], self.history(), '2026.10.4'))
+        self.assertIsNone(e.select_release(releases, [], self.history(refusal=False, conclusion='success'), '2026.10.4', retry_refused=True))
+        pending=self.history();pending[0]['status']='in_progress'
+        self.assertIsNone(e.select_release(releases, [], pending, '2026.10.4', retry_refused=True))
+
+    def test_ordinary_failure_retryable_not_terminal(self):
+        for job_conclusion in ('skipped', None, 'success'):
+            runs = self.history(job_conclusion=job_conclusion)
+            self.assertEqual(runs[0]['outcome'], 'attempt')
+            self.assertEqual(e.select_release([{'tag_name':'2026.10.4'}], [], runs), '2026.10.4')
+        runs = self.history(refusal=False)
+        self.assertEqual(runs[0]['outcome'], 'attempt')
+        self.assertEqual(e.select_release([{'tag_name':'2026.10.4'}], [], runs), '2026.10.4')
+
+    def prepare_case(self, directory, *, missing=False, error=None, prior=None, event='schedule', requested=None):
+        import core_evidence_workflow as w
+        before=e.read_json(ROOT/'docs/evidence/hamcp279/2026.10.3.json')
+        before['tag_commit']=before['commit']
+        after=copy.deepcopy(before);after.update(version='2026.10.4',commit='f'*40,tag_commit='f'*40)
+        path=next(iter(after['hashes']))
+        if error != 'provenance':
+            if missing:del after['hashes'][path]
+            else:after['hashes'][path]='d'*64
+        if error == 'tag':after['tag_commit']='a'*40
+        history=[] if prior is None else [{'id':278,'created_at':'2026-11-02','status':'completed','conclusion':'failure'}]
+        def api(endpoint, **kwargs):
+            if error == 'api':raise ValueError('API unavailable')
+            if '/releases?' in endpoint:return [{'tag_name':'2026.10.4','published_at':'2026-11-01'}]
+            if '/git/ref/heads/' in endpoint:return None
+            if '/workflows/' in endpoint:return {'workflow_runs':history}
+            if '/artifacts?' in endpoint:return {'artifacts':[]}
+            if '/jobs?' in endpoint:
+                self.assertIn('filter=all',endpoint)
+                return {'jobs':[{'name':'core-release-refused-2026.10.4','conclusion':prior}]}
+            raise AssertionError(endpoint)
+        env={**RUN,'GITHUB_REF':'refs/heads/main','GITHUB_REPOSITORY':w.REPOSITORY,
+             'GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':str(directory/'outputs'),
+             'GITHUB_STEP_SUMMARY':str(directory/'summary')}
+        with patch.dict(os.environ,env,clear=True), patch.object(w,'registry_input',return_value=((ROOT/'upstream-trust/ha-core-release-registry.json').read_bytes(),False)), patch.object(w,'github',side_effect=api), patch.object(w,'source',side_effect=[before,after]) as source, patch.object(w,'image_provenance',side_effect=ValueError('provenance failure')) as image:
+            if error:
+                with self.assertRaises(ValueError):w.prepare(directory,False,requested)
+                self.assertFalse((directory/'outputs').exists())
+            else:
+                w.prepare(directory,False,requested)
+                image.assert_not_called()
+            return path, source.call_count
+
+    def test_refusal_prepare_and_final_job_fail_with_files_and_commits(self):
+        for missing in (False,True):
+            with self.subTest(missing=missing),tempfile.TemporaryDirectory(dir=ROOT/'.artifacts') as tmp:
+                d=Path(tmp);path,_=self.prepare_case(d,missing=missing)
+                values=dict(line.split('=',1) for line in (d/'outputs').read_text().splitlines())
+                self.assertEqual(values['refused'],'true');self.assertEqual(values['run'],'false')
+                self.assertEqual(values['release'],'2026.10.4');self.assertFalse((d/'release.json').exists())
+                proof=e.read_json(d/'comparison.json')
+                result=subprocess.run([sys.executable,str(ROOT/'scripts/core_evidence_workflow.py'),'refuse','--directory',tmp],capture_output=True,text=True,timeout=10)
+                self.assertEqual(result.returncode,1)
+                for expected in ('binding PR required: '+path,proof['predecessor_commit'],proof['release_commit']):
+                    self.assertIn(expected,result.stdout);self.assertIn(expected,(d/'summary').read_text())
+
+    def test_schedule_skips_but_explicit_dispatch_may_refuse_again(self):
+        for event,requested,retries in [('schedule',None,False),('workflow_dispatch',None,False),('workflow_dispatch','2026.10.4',True)]:
+            with self.subTest(event=event,requested=requested),tempfile.TemporaryDirectory(dir=ROOT/'.artifacts') as tmp:
+                d=Path(tmp);_,calls=self.prepare_case(d,prior='failure',event=event,requested=requested)
+                values=dict(line.split('=',1) for line in (d/'outputs').read_text().splitlines())
+                self.assertEqual(values['refused'],str(retries).lower())
+                self.assertEqual(calls,2 if retries else 0)
+                self.assertEqual(values['release'],'2026.10.4' if retries else 'none')
+
+    def test_api_tag_and_provenance_errors_do_not_record_refusal(self):
+        for error in ('api','tag','provenance'):
+            with self.subTest(error=error),tempfile.TemporaryDirectory(dir=ROOT/'.artifacts') as tmp:
+                self.prepare_case(Path(tmp),error=error)
+
+    def test_notification_job_fails_only_for_refusal(self):
+        import yaml
+        jobs=yaml.safe_load((ROOT/'.github/workflows/core-release-evidence.yml').read_text())['jobs']
+        job=jobs['refusal']
+        self.assertEqual(job['name'],'core-release-refused-${{ needs.prepare.outputs.release }}')
+        self.assertEqual(job['needs'],'prepare')
+        self.assertIn("needs.prepare.outputs.refused == 'true'",job['if'])
+        self.assertIn("github.event_name != 'pull_request'",job['if'])
+        self.assertNotIn('continue-on-error',job)
+        commands=[s for s in job['steps'] if 'run' in s]
+        self.assertEqual(len(commands),1);self.assertNotIn('continue-on-error',commands[0])
+        self.assertEqual(commands[0]['run'],'python3 scripts/core_evidence_workflow.py refuse --directory "$RUNNER_TEMP/core-evidence-input"')
+        self.assertEqual(job['permissions'],{'contents':'read'})
+        self.assertIn("needs.prepare.outputs.refused != 'true'",jobs['attempt']['if'])
+
+    def test_permanent_provenance_docs_and_owner_setup(self):
+        for name in ('CORE_RELEASE_REGISTRY.md','CORE_REGISTRY_ONE_TAP_RUNBOOK.md'):
+            doc=(ROOT/'docs'/name).read_text()
+            self.assertIn('`registry-candidates/*` branches are permanent provenance records.',doc)
+            self.assertRegex(doc,r'Never delete\s+them, including after publication or in cleanup sweeps')
+            self.assertNotIn('preserve these records until the release is present',doc)
+        doc=(ROOT/'docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md').read_text()
+        for text in ('OWNER SETUP','Josh must create','blocks deletion and force-push','allowing the workflow to create','HAMCP-284','Codex does not change repository settings'):
+            self.assertIn(text,doc)
+
+
 class O3(unittest.TestCase):
     def test_identical_inherits_complete_proof(self):
         a,b=sources(); proof=e.compare_sources(a,b)
