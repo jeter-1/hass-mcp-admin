@@ -273,6 +273,17 @@ class DisclosureModuleTests(unittest.TestCase):
         self.assertEqual(row(grd.build(held(sources), (LIGHT,)), "scene")["completeness"],
                          "unavailable")
 
+    def test_complete_sources_carry_no_reason_even_with_a_warning(self):
+        sources = diagnostics(references_for(LIGHT))
+        sources = replace(sources, coverage=(
+            replace(sources.coverage[0], warnings=["Scene registry was read twice."]),
+            *sources.coverage[1:],
+        ))
+        disclosure = grd.build(held(sources), (LIGHT,))
+        self.assertEqual(disclosure["completeness"]["scene"], "complete")
+        self.assertNotIn("scene", disclosure["reasons"])
+        self.assertEqual(set(disclosure["reasons"]), {"dashboard", "template"})
+
     def test_truncation_keeps_the_count_and_says_so(self):
         findings = [member(LIGHT, "scene", f"scene_{index:02d}") for index in range(10)]
         disclosure = grd.build(held(diagnostics(findings)), (LIGHT,), limit=2)
