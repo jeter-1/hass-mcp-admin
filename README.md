@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.57** (HAMCP-278) reads the
+Not yet released: Engineering **2.4.1-beta.58** (HAMCP-278) reads the
 signed Core release registry from the `registry` branch instead of `main`;
 only the URL's branch segment changes, with the same key, verifier and cache
 and no override. It adds an owner-gated one-tap signing workflow whose
@@ -8,6 +8,17 @@ separate publish job pushes one commit to `registry`. Josh must create the
 `registry` branch before deploying (see the
 [owner runbook](docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md)). No tool, input
 schema, persisted format or Home Assistant write changes. Rollback is
+reinstalling beta.57. Read the
+[2.4.1-beta.58 release notes](docs/V2_4_1_BETA58_RELEASE_NOTES.md) and the
+[2.4.1-beta.58 acceptance contract](docs/V2_4_1_BETA58_ACCEPTANCE.md).
+
+Not yet released: Engineering **2.4.1-beta.57** (HAMCP-276) reports an F3
+apply refused because its plan predates a Home Assistant Core authority
+retirement or change as `core_authority_changed_since_plan`, with the
+remedy "create and approve a fresh plan", instead of the generic
+`dispatch_authority_unavailable`. Authority decisions, approval binding
+and the stale-plan cutoff are unchanged. No tool, input schema, signed
+profile, persisted format or Home Assistant write changes. Rollback is
 reinstalling beta.56. Read the
 [2.4.1-beta.57 release notes](docs/V2_4_1_BETA57_RELEASE_NOTES.md) and the
 [2.4.1-beta.57 acceptance contract](docs/V2_4_1_BETA57_ACCEPTANCE.md).
