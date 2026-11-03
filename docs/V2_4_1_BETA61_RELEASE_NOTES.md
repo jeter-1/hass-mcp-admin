@@ -1,81 +1,172 @@
 # Engineering 2.4.1-beta.61 release notes
 
-Engineering 2.4.1-beta.61 (HAMCP-253) lets an administrator see why one exact
-stuck governance record is stuck and acknowledge it. Health then warns only on
-unacknowledged records. Records are never deleted or rewritten, and nothing in
-Home Assistant changes. It builds on 2.4.1-beta.60. 2.4.1-beta.61 is held by
-draft #353 (HAMCP-285). Whichever of the two merges first keeps a contested
-number, and the other restages.
+Engineering 2.4.1-beta.61 (HAMCP-285) applies evidence-based classification
+to three more planners: helper options, entity availability and exposure, and
+input_boolean state. It builds on 2.4.1-beta.60 (#344, HAMCP-270) and the
+beta.59 relevance model (#346, HAMCP-274). No tool,
+input schema, route, provider, signed profile, contract fingerprint,
+persisted format, add-on option or Home Assistant write changes.
 
 Acceptance: [`V2_4_1_BETA61_ACCEPTANCE.md`](V2_4_1_BETA61_ACCEPTANCE.md).
-Design: [`HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md`](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md).
+
+## Why
+
+- **Helper options.** On beta.57, a helper options plan for the template
+  sensor `sensor.local_outdoor_temperature_delta_vs_forecast` was labelled
+  `safety_critical`, risk `high`, `elevated_admin`. It had no consumers. The
+  only evidence was incomplete: the config-entry helper chain cannot be
+  covered. Elevated approval with disclosure was right. The
+  `safety_critical` label was not, because nothing positively showed a
+  protected consequence.
+- **Availability and exposure.** The planner used the same rule: any
+  elevated basis was labelled `safety_critical`.
+- **input_boolean.** `set_input_boolean_state` still used the helper-wide
+  reader that beta.59 replaced for input_select. Any opaque template
+  anywhere, and any coverage gap, made every automation relevant to every
+  input_boolean. In addition, applying an input_boolean plan approved under
+  a superseded binding failed with an unstructured lock-calculator error
+  instead of a structured replan result.
+
+Josh's direction is to fail closed only for execution uncertainty and to
+treat consequence as decision support.
 
 ## The change
 
-- **Inspect (new read-only MCP tool).** `inspect_governance_record(record_kind,
-  record_id)` returns bounded metadata for one exact change plan or execution
-  task, including plans that `get_change_plan` refuses because they fail
-  projection verification. The metadata is:
-  - kind, ID, plan or task type, status and timestamps;
-  - policy class, approval state and bundle state;
-  - failure reason code and category;
-  - the ordered approval events and every event row, bounded to 64 with
-    truncation reported;
-  - the acknowledgement state and a record fingerprint.
+- **input_boolean relevance by evidence.** The input_boolean reader (binding
+  model `helper-dependency-risk-v14`) uses the beta.59 target-scoped rules:
+  an automation is relevant only when it references this target literally,
+  through `expand()`, an area, a label, a device, or domain-wide iteration
+  such as `states.input_boolean`, or when an obligation stays genuinely
+  opaque for this target. A plain group reference (a state trigger, state
+  condition or `is_state` on a `group.*` entity) is not attributed to the
+  group's members; see **Group members are held elevated** below.
+  Classification, consumer naming and locks follow the beta.59 input_select
+  table:
 
-  It never returns payloads, proposed configuration, targets, notes,
-  principals, secrets or approver tokens. It reports explicitly whatever
-  cannot be read (`readable: false`, `unreadable_fields`).
-- **Acknowledge (Ingress only).** On the approval panel, the new **Stuck
-  records** page lists the records. From a record's page, an administrator
-  records one decision:
-  - acknowledge as `historical_record` or `current_defect`, with a reason of
-    at most 500 characters; or
-  - revoke an earlier acknowledgement.
+  | Relevant consumers | Result |
+  |---|---|
+  | none | `standard_admin`, risk `low`, physical `none` |
+  | bounded, none consequential | `elevated_admin`, risk `medium`, physical `none` |
+  | bounded, consequential | `elevated_admin`, risk `high`, physical `direct` or `safety_critical` |
+  | opaque | `elevated_admin`, risk `high`, physical `unknown`, with disclosure |
 
-  The decision binds the fingerprint the administrator reviewed. It is
-  appended to Engineering's own acknowledgement ledger and takes effect
-  only once its audit event is durably written; with the audit log disabled
-  or failing, it is refused. An identical repeat is a no-op, a
-  reclassification keeps history, and a revoke is a superseding entry that
-  brings the warning back. The Engineering MCP connector exposes no
-  acknowledgement tool; an authenticated administrator browser session on
-  Ingress can acknowledge. Inspection and the ledger make no Home Assistant
-  call and no provider dispatch; the Ingress gate's read-only
-  `config/auth/list` role lookup is unchanged.
-- **Health.** `governance.record_acknowledgement` reports, for
-  projection-failed plans and manual-review tasks separately:
-  - `unacknowledged`, `acknowledged_historical`,
-    `acknowledged_current_defect` and `stale` counts;
-  - ID lists of at most 8 each.
+  A bounded consumer set takes per-automation locks. An opaque or
+  over-budget set takes `reload:automation` in exclusive mode instead of
+  being refused, so the plan may over-lock but never under-locks.
+- **Group members are held elevated.** For input_boolean and input_select,
+  a helper that is a member of any group, directly or nested up to 8
+  levels, is never reported as unconsumed. Membership is read from the same
+  bounded group evidence the index uses for `expand()`. The plan is
+  `elevated_admin`, risk `high`, with incomplete consequence evidence and
+  the coarse `reload:automation` exclusive fence. The hold turns a physical
+  consequence of `none` into `unknown` and keeps a positive label (for
+  example, a literal consumer's `safety_critical` stays `safety_critical`).
+  The binding's `group_membership_hold` names up to 16 groups (direct,
+  nested or possible) with a fingerprint over all of them. When membership
+  cannot be decided (incomplete group listing, a `group.*` entity of unknown
+  source, an incomplete state inventory such as more than 10,000 states or
+  an invalid or duplicate state record, missing evidence, or depth over 8)
+  the helper is treated as a member, `membership_resolved` is `false`, and
+  each cause is listed in `unresolved_reason_codes`. The reason is
+  `group_membership_unresolved` only when no definite (direct or nested)
+  membership was found. Otherwise, including a known group plus an
+  unresolved cause such as depth over 8, it is
+  `group_membership_consumers_unattributed`. The disclosure
+  says the helper's group consumers are not attributed yet. Literal,
+  `expand()`, area, label and domain consumers keep their attribution and
+  classification. Precise group-consumer attribution is HAMCP-287. A helper
+  in no group gets exactly the reader output it had before this hold.
+- **Positive evidence for `safety_critical`.** Helper options plans, and
+  elevated availability plans, now carry
+  `consequence_model: positive_evidence_v1` in their risk evidence. A
+  standard availability plan carries no marker: its label is `none` under
+  both rules, and leaving the marker out keeps its response within the
+  beta.60 size envelope. `safety_critical` requires positive evidence:
+  - helper options: a dependency reason naming a protected object, a
+    proposed protected object, or a protected automation the helper feeds;
+  - availability and exposure: a protected object basis, or a dependency
+    reason naming a protected automation the entity feeds.
 
-  `projection_failure_warning` and the new `manual_review_warning` appear
-  only while unacknowledged records exist. Acknowledged current defects stay
-  visible as information. Raw counts are unchanged.
+  Otherwise an elevated plan is labelled `unknown` and its gaps are stated.
+  A plan with no elevated basis is `none`. Positive reasons are kept first
+  when the dependency-reason list is bounded.
+- **Floors unchanged.** Helper options plans stay elevated: the config-entry
+  helper chain gap is always present. Availability keeps its protected-object
+  floors; a standard availability plan is risk `low`.
+- **What the options and availability planners attribute.** Over the real
+  dependency index, a literal reference, `expand()` of a group and a label
+  target attribute the consumer, and a consumer that unlocks a lock makes
+  the plan `safety_critical`. Area and domain-wide iteration and opaque
+  templates are not attributed: they are disclosed as
+  `unresolved_dynamic_consumer` and labelled `unknown`. A plain group
+  reference is not attributed and adds nothing: an availability disable of a
+  group member stays `standard_admin` / `none`, and a helper options plan
+  keeps only its floor. The group-member hold does not apply to these
+  planners; precise group attribution is HAMCP-287.
+- **Persisted plans.** Helper options and availability plans created before
+  beta.61 carry no `consequence_model`. They keep the shipped rule and
+  re-classify identically. Any other `consequence_model` value is incomplete
+  evidence and is refused.
+- **Superseded input_boolean plans.** An input_boolean plan created under the
+  v13 binding is `replan_required`. It cannot be approved. Applying one that
+  beta.59 or beta.60 already approved returns `OPERATIONAL_VALIDATION_FAILED` /
+  `helper_dependency_evidence_superseded_replan_required` before any task,
+  lock or provider call, and the approval is not consumed. Its recovery
+  readback still reconstructs the shipped v13 lock graph.
+- **Existing tasks under a superseded binding.** A task that an earlier beta
+  already created for a superseded input_boolean or input_select binding no
+  longer fails with an unstructured `ValueError` while its locks are
+  rebuilt. Its shipped lock graph is rebuilt for readback. A task that had
+  not reached intent is refused with the same structured replan result and
+  can still be cancelled; a task past intent continues through recovery.
+  This also fixes the same latent defect for input_select tasks created on
+  beta.58 and recovered on beta.59 or beta.60. It follows the existing
+  historical-policy precedent for pre-intent recovery.
+- **Bounded, non-consequential consumers now apply.** Since beta.59 the
+  planner labels a helper value change with a bounded relevant consumer and
+  no physical consequence `elevated_admin`, risk `medium`. The F3 apply check
+  did not list that family, so an approved plan was always refused at apply
+  with `policy_snapshot_mismatch` and nothing was dispatched. This affected
+  input_select on beta.59 and beta.60 and would have affected input_boolean
+  here. F3 now
+  accepts exactly that family for helper value operations. Every other
+  operation keeps its fixed family.
+- **Response size.** The input_boolean create response is bounded the same
+  way as input_select: oversized paged evidence lists are left out and named
+  in `response_paging`. The plan hash binds the complete persisted inputs.
+- **Global references stay informational.** The beta.60 scene, group and
+  dashboard references in helper options and availability plans do not feed
+  any HAMCP-285 classification, label, statement, marker or fingerprint.
+- **Real HA contract harness.** The live-contract harness builds the
+  input_boolean reader with the v14 binding, as the runtime does, and checks
+  the plan's dependency model.
+- **Execution uncertainty unchanged.** Stale state, an ambiguous target, an
+  unadmitted provider, a dependency index failure, drift between approval
+  and apply, and a no-op still refuse with their existing codes, with one
+  exception. An input_boolean plan approved for an automation without a
+  bounded lock identity used to fail before dispatch with
+  `dependency_coverage_failure`; it now fails before dispatch with
+  `dependency_risk_drift`. Fresh v14 evidence is execution-contract complete
+  and eligible under the coarse fence, with incomplete evidence and a
+  changed fingerprint, so apply reports drift. Approval binding,
+  at-most-once dispatch and exact readback are unchanged.
 
-## Unchanged by design
+## Not changed
 
-- Integrity and projection verification, startup validation, and the
-  approve, apply and recovery paths. An acknowledged failed plan is refused
-  exactly as before.
-- Persisted plan and task formats. The acknowledgement ledger is a new,
-  separate file.
-- Existing tool schemas, providers, signed profiles, fingerprints and add-on
-  options.
-
-Static tools go from 79 to 80. The advertised catalog is 108, or 109 with
-the optional YAML reader.
-
-## Known limitations
-
-- An acknowledgement binds the exact metadata reviewed. If the record changes
-  later, the acknowledgement becomes `stale` and the record warns again.
-- Prohibited contract-v3 operational plans with a family-specific creation
-  event fail projection as `approval_sequence_inconsistent`. Live plan
-  `4cf748d1…` is one example. That is a projection-verification defect,
-  reported as a follow-up and not fixed here.
+- input_select: beta.59 binding bytes are unchanged for a helper in no
+  group. A group member's binding gains `group_membership_hold` and is held
+  elevated (above); the binding model is unchanged.
+- input_number and other helper types.
+- Availability `disable` with bounded consumers is not newly elevated. That
+  would change the consumer-evidence fingerprint bound into already-approved
+  plans; it is left for Josh to decide.
+- Configuration delete planning keeps its shipped consequence rule.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.60. The ledger file is left in place and ignored, and
-health warns on every stuck record again. No plan or task record changes.
+Reinstall 2.4.1-beta.60. From source (not exercised against an
+installation): beta.60 executes only v13 input_boolean bindings, so it
+refuses beta.61 input_boolean plans before dispatch; and beta.60 policy
+treats an elevated helper options or availability plan whose label is not
+`safety_critical` as incomplete, so it refuses those plans too. A fresh plan
+is needed. No persisted format changed.

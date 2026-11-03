@@ -20,6 +20,7 @@ from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService
+from ha_mcp_engineering.governance.input_boolean_dependency import build_input_boolean_dependency_binding
 from ha_mcp_engineering.governance.helper_dependency import home_assistant_version_admission
 from ha_mcp_engineering.ha_core_readmission.runtime import CORE_RECOVERY_FLAP_CONFIRMATIONS
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError
@@ -62,7 +63,9 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
                                           core_runtime=self.core)
         self.addAsyncCleanup(self.dependency_runtime.shutdown)
         self.index = self.dependency_runtime.require().index
-        self.risk = HelperDependencyRiskService(self.index)
+        # HAMCP-285: the runtime input_boolean reader is the v14 builder.
+        self.risk = HelperDependencyRiskService(
+            self.index, binding_builder=build_input_boolean_dependency_binding)
         self.service.helper_dependency_risk_reader = self.risk.assess
         self.runtime = helper_fixtures.F3RuntimeIntegration(
             service=self.service, storage_root=str(self.service.repository.root),
@@ -83,12 +86,12 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         await self.configure()
         await self.assert_plans_and_executes_once()
 
-    async def assert_plans_and_executes_once(self):
+    async def assert_plans_and_executes_once(self, *, level="low", policy_class="standard_admin"):
         self.registry_case.assert_admitted(self.core)
         created = await self.service.create_helper_state_plan(
             entity_id=self.helper.entity_id, desired_state="on")
-        self.assertEqual(created["plan"]["risk"]["level"], "low", created["plan"])
-        self.assertEqual(created["plan"]["policy_decision"]["policy_class"], "standard_admin")
+        self.assertEqual(created["plan"]["risk"]["level"], level, created["plan"])
+        self.assertEqual(created["plan"]["policy_decision"]["policy_class"], policy_class)
         plan = await self.grant(created)
         result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
         self.assertEqual(result["task_state"], "succeeded_verified", result)
@@ -125,7 +128,10 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
         evidence = await self.risk.assess(self.helper.entity_id)
         self.assertTrue(evidence["binding"]["execution_eligible"], evidence["binding"])
         self.assertIn("automation.synthetic", evidence["binding"]["relevant_downstream_object_ids"])
-        await self.assert_plans_and_executes_once()
+        # HAMCP-285: a bounded relevant consumer with no consequential effect
+        # is named and elevated (risk medium, physical none) under v14.
+        self.assertEqual(evidence["binding"]["physical_consequence"], "none")
+        await self.assert_plans_and_executes_once(level="medium", policy_class="elevated_admin")
 
     async def test_exact_signed_contract_with_disclosed_unknown_consequence_executes(self):
         await self.configure()
@@ -274,13 +280,17 @@ class CoreSemanticContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retirement_between_metadata_and_helper_admission_refuses(self):
         await self.configure()
-        from ha_mcp_engineering.governance import helper_dependency
-        build = helper_dependency.build_helper_dependency_risk_binding
+        # HAMCP-285: the v14 builder wraps the shared v13 builder through its
+        # own module binding, so retire at that exact call.
+        from ha_mcp_engineering.governance import input_boolean_dependency
+        build = input_boolean_dependency.build_helper_dependency_risk_binding
         def retire(*args, **kwargs):
             self.core.request_reconciliation(connection_changed=True)
             return build(*args, **kwargs)
-        with patch.object(helper_dependency, "build_helper_dependency_risk_binding", side_effect=retire):
+        with patch.object(input_boolean_dependency, "build_helper_dependency_risk_binding",
+                          side_effect=retire) as retired:
             await self.assert_planning_refused()
+        self.assertGreaterEqual(retired.call_count, 1)
 
     async def test_identical_post_lock_refresh_preserves_stable_approval_fingerprint(self):
         await self.configure()

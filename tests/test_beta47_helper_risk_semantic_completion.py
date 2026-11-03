@@ -28,6 +28,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
 )
@@ -836,13 +837,22 @@ class Beta47ActionEffectReproductions(unittest.TestCase):
 
 
 class Beta47RiskModelCompatibilityTests(unittest.TestCase):
-    def test_v13_is_current_and_v3_through_v12_are_read_only(self):
+    def test_v14_is_current_and_v3_through_v13_are_read_only(self):
+        # HAMCP-285: the target-scoped input_boolean reader (v14) is the only
+        # execution model; v13 (still the shared base-builder model) joins
+        # the read-only compatible set.
         self.assertEqual(
             "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v13"}),
+            "helper-dependency-risk-v14", INPUT_BOOLEAN_DEPENDENCY_MODEL
+        )
+        self.assertEqual(
+            frozenset({"helper-dependency-risk-v14"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
+        )
+        self.assertIn(
+            "helper-dependency-risk-v14", HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
         )
         for model in (
             "helper-dependency-risk-v3",
@@ -855,6 +865,7 @@ class Beta47RiskModelCompatibilityTests(unittest.TestCase):
             "helper-dependency-risk-v10",
             "helper-dependency-risk-v11",
             "helper-dependency-risk-v12",
+            "helper-dependency-risk-v13",
         ):
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

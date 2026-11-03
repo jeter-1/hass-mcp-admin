@@ -1,8 +1,9 @@
 # Changelog
 
-## 2.4.1-beta.61 - Inspect and acknowledge stuck governance records (HAMCP-253)
+## 2.4.1-beta.62 - Inspect and acknowledge stuck governance records (HAMCP-253)
 
-Builds on 2.4.1-beta.60 (HAMCP-270, #344). No existing tool or input schema,
+Builds on 2.4.1-beta.61 (HAMCP-285, #353), which includes 2.4.1-beta.60
+(HAMCP-270, #344). No existing tool or input schema,
 provider, signed profile, fingerprint, plan or task persisted format,
 approval binding, add-on option or Home Assistant write changes.
 
@@ -33,6 +34,56 @@ approval binding, add-on option or Home Assistant write changes.
 - The ledger is never read by approve, apply, recovery, startup validation
   or projection verification. An acknowledged record stays exactly as
   ineligible as before.
+
+## 2.4.1-beta.61 - evidence-based labels for helper options, availability and input_boolean (HAMCP-285)
+
+Builds on 2.4.1-beta.60 (HAMCP-270, #344), which includes 2.4.1-beta.59
+(HAMCP-274, #346). No tool, input schema, route, provider, signed profile,
+contract fingerprint, add-on option, persisted format or Home Assistant
+write change.
+
+- `set_input_boolean_state` decides relevance per target with the beta.59
+  rules (binding model `helper-dependency-risk-v14`). An unreferenced
+  input_boolean is `standard_admin`. Bounded consumers are named and
+  elevated with precise locks. Opaque or over-budget consumer sets are
+  elevated with disclosure and take the coarse `reload:automation` fence
+  instead of being refused.
+- An input_boolean or input_select helper in any group (direct or nested,
+  depth at most 8) is held `elevated_admin`, risk `high`, with the coarse
+  fence and `group_membership_hold` naming the groups. The hold turns
+  physical `none` into `unknown` and keeps positive labels (`safety_critical`
+  stays `safety_critical`). Undecidable membership is treated as membership
+  (`membership_resolved: false`, causes listed); the reason is
+  `group_membership_unresolved` only when no definite membership was found.
+  Plain group references are not attributed to members yet (HAMCP-287); a
+  helper in no group keeps its prior reader output byte for byte. The
+  options and availability planners do not attribute plain group
+  references either.
+- Helper options and availability/exposure plans label `safety_critical`
+  only with positive evidence (a protected object or a protected automation
+  the target feeds). Incomplete evidence is `unknown` with its gaps stated,
+  and the planner floors are unchanged. Helper options plans and elevated
+  availability plans carry `consequence_model: positive_evidence_v1` in
+  their risk evidence; plans persisted without it keep the shipped rule.
+  The beta.60 global references do not feed these labels.
+- A v13 input_boolean plan is `replan_required`; applying one that beta.59
+  or beta.60 already approved returns the structured
+  `helper_dependency_evidence_superseded_replan_required` refusal without
+  consuming the approval, instead of an unstructured lock error. An
+  existing task under a superseded input_boolean or input_select binding
+  rebuilds its shipped lock graph for readback, and a pre-intent one is
+  refused with the same structured replan result instead of a `ValueError`.
+- An approved helper value plan with a bounded, non-consequential consumer
+  (`elevated_admin`, risk `medium`) now applies. F3 refused it at apply with
+  `policy_snapshot_mismatch` on beta.59 and beta.60 (input_select).
+- The input_boolean create response is bounded like input_select. Execution
+  refusals are unchanged (stale state, ambiguous target, unadmitted
+  provider, index failure, drift and no-op) with one exception: an
+  input_boolean plan approved for an automation without a bounded lock
+  identity now fails before dispatch with `dependency_risk_drift` instead of
+  `dependency_coverage_failure`.
+- The Real HA contract harness builds the input_boolean reader with the
+  v14 binding, as the runtime does.
 
 ## 2.4.1-beta.60 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
 

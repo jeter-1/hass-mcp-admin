@@ -1968,6 +1968,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             script_diagnostics=script_diagnostics,
             global_sources=global_sources,
             state_trigger_values=state_trigger_values,
+            expand_snapshot_evidence=expand_snapshot_evidence,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
             label_memberships=label_memberships,

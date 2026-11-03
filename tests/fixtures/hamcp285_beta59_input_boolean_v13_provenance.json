@@ -1,0 +1,95 @@
+{
+  "boundary": "Hash-bearing bytes are copied verbatim from the exact beta.59 writer and must not be edited.  Current code may read them and reconstruct the shipped v13 recovery lock graph, but must refuse fresh execution with a structured replan result.",
+  "compatibility_model": "hamcp285-beta59-input-boolean-v13-replan-v1",
+  "generated_at": "2026-11-02T23:30:00Z",
+  "generator": "scripts/generate_hamcp285_beta59_input_boolean_v13_fixture.py",
+  "generator_command": "python scripts/generate_hamcp285_beta59_input_boolean_v13_fixture.py --source-root <exact-beta59-clone> --output-dir tests/fixtures --generated-at 2026-11-02T23:30:00Z",
+  "generator_sha256": "f5aa760d9e4960ba37f6aa965670811fe1940f5a3e3215dbcb9eedea5ab51cb5",
+  "records": {
+    "approved": {
+      "approval_state": "approved",
+      "dependency_model": "helper-dependency-risk-v13",
+      "files": {
+        "audit.jsonl": "59593064b4bc61ff9d82f10d442cb0e77867e79c215ea115727ed48f29bb4eb9",
+        "plans/operational-administration-v3/2f3f2ae4f401406785a5847d0bd7806a.json": "31409ddaef6bae6e420c304a6b8adea15ea95068ba08500b17870b62bd4cc3ba"
+      },
+      "plan_hash": "c2a412b1224614d1030633a90c4465b2cfb08dca68bb627b3a4354049c043865",
+      "plan_id": "2f3f2ae4f401406785a5847d0bd7806a",
+      "provider_write_count": 0,
+      "shipped_execution_lock_graph": [
+        [
+          "helper:input_boolean.beta37_exact_action",
+          "exclusive"
+        ],
+        [
+          "helper_dependency:input_boolean.beta37_exact_action",
+          "shared"
+        ],
+        [
+          "helper_dependency:input_boolean_dynamic",
+          "shared"
+        ],
+        [
+          "home_assistant:core",
+          "shared"
+        ],
+        [
+          "reload:automation",
+          "shared"
+        ],
+        [
+          "reload:input_boolean",
+          "shared"
+        ]
+      ],
+      "status": "approved"
+    },
+    "pending": {
+      "approval_state": "required",
+      "dependency_model": "helper-dependency-risk-v13",
+      "files": {
+        "audit.jsonl": "1758003247dc03b196bb8424b3f91925dbd18d4cf948b6c0225b422624209d4d",
+        "plans/operational-administration-v3/ec5d66523004499cad43104419dafb2b.json": "2ae60f02bb35f008d3b16aa4c56871850743b0d2cf000dd3847ca05ec15ce5cb"
+      },
+      "plan_hash": "b39131d57a9882bb430bd7270411642800bb7820ec10cc9496c14c16ae15f372",
+      "plan_id": "ec5d66523004499cad43104419dafb2b",
+      "provider_write_count": 0,
+      "shipped_execution_lock_graph": [
+        [
+          "helper:input_boolean.beta37_exact_action",
+          "exclusive"
+        ],
+        [
+          "helper_dependency:input_boolean.beta37_exact_action",
+          "shared"
+        ],
+        [
+          "helper_dependency:input_boolean_dynamic",
+          "shared"
+        ],
+        [
+          "home_assistant:core",
+          "shared"
+        ],
+        [
+          "reload:automation",
+          "shared"
+        ],
+        [
+          "reload:input_boolean",
+          "shared"
+        ]
+      ],
+      "status": "awaiting_approval"
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "8615ad146a2cf239410708a3bd6254e46c9c8ed0",
+    "helper_dependency_source_sha256": "fe3b566bef9f63207cce8c2536967c58e4b1256cbd4ee2fab19def0897595996",
+    "operational_locks_source_sha256": "b991c12504360f8e76120c23ec72f0bec9d0cd88fa5d78dbc0c04661130a958b",
+    "service_source_sha256": "ef5abb9c89c99030495c17664195f36173616a6daec9dd95c62d2bf03229b0b9",
+    "tag": "v2.4.1-beta.59",
+    "writer": "tests.test_beta37_exact_helper_state.ExactHelperStateRuntimeTests create_helper_state_plan(desired_state='on') [+ grant] on the exact source revision"
+  }
+}

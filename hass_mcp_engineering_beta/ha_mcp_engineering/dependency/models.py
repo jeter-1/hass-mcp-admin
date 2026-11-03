@@ -10,6 +10,7 @@ import json
 from typing import Any, Iterator, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .extraction import ExpandSnapshotEvidence
     from .global_sources import GlobalSourceDiagnostics
     from .script_sources import ScriptDiagnostics
 
@@ -560,6 +561,12 @@ class DependencyScanResult:
     # HAMCP-145: literal input_select state-trigger values for per-option
     # disclosure only.  Never fingerprinted; never dependency authority.
     state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)
+    # HAMCP-285 R1-H1: the bounded group/zone ``expand`` authority this scan
+    # read.  Group-member helpers are held elevated from it; it is never
+    # fingerprinted, and absence means membership is unresolved.
+    expand_snapshot_evidence: ExpandSnapshotEvidence | None = field(
+        default=None, repr=False, compare=False
+    )
 
 
 @dataclass
@@ -613,6 +620,12 @@ class DependencyIndexSnapshot:
     # HAMCP-145: literal input_select state-trigger values for per-option
     # disclosure only.  Never fingerprinted; never dependency authority.
     state_trigger_values: tuple[Any, ...] = field(default=(), repr=False, compare=False)
+    # HAMCP-285 R1-H1: the bounded group/zone ``expand`` authority this scan
+    # read.  Group-member helpers are held elevated from it; it is never
+    # fingerprinted, and absence means membership is unresolved.
+    expand_snapshot_evidence: ExpandSnapshotEvidence | None = field(
+        default=None, repr=False, compare=False
+    )
     # HAMCP-191 D4: the identity record of the strings this build bounded;
     # analysis re-scans of the snapshot pass it. Never fingerprinted.
     sanitizer_registry: ReferenceMarkerRegistry | None = field(

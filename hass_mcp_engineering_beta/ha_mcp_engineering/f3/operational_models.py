@@ -193,6 +193,9 @@ def operational_policy_expectation_is_valid(
         )
     return (policy, risk_level) in {
         (("standard_admin", "low", "none"), "low"),
+        # HAMCP-285: the HAMCP-274 bounded, non-consequential consumer family
+        # that policy issues; without it an approved plan could never apply.
+        (("elevated_admin", "moderate", "none"), "medium"),
         (("elevated_admin", "high", "indirect"), "high"),
         (("elevated_admin", "high", "unknown"), "high"),
         (("elevated_admin", "high", "direct"), "high"),

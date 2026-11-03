@@ -56,7 +56,11 @@ from ha_mcp_engineering.governance.helper_dependency import (
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
     HelperDependencyRiskService,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
     helper_dependency_risk_assessment,
+)
+from ha_mcp_engineering.governance.input_boolean_dependency import (
+    build_input_boolean_dependency_binding,
 )
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.storage import ChangePlanRepository
@@ -1202,6 +1206,14 @@ class CapturedBeta50ReplayWebSocket:
         raise AssertionError(payload)
 
 
+def _executable_risk_service(index) -> HelperDependencyRiskService:
+    """HAMCP-285: the runtime input_boolean reader is the v14 builder."""
+
+    return HelperDependencyRiskService(
+        index, binding_builder=build_input_boolean_dependency_binding
+    )
+
+
 class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.rest = SyntheticBeta50Rest()
@@ -1313,7 +1325,7 @@ class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
                 SyntheticBeta50WebSocket(),
             )
         )
-        arbitrary = (await HelperDependencyRiskService(
+        arbitrary = (await _executable_risk_service(
             arbitrary_index
         ).assess(STANDARD_TARGET, refresh=True))["binding"]
         self.assertGreater(arbitrary["opaque_obligation_count"], 0)
@@ -1846,7 +1858,7 @@ class Beta50CapturedProductionReplayTests(
                 now=Clock(),
                 helper_state_gateway=helper,
                 helper_dependency_risk_reader=(
-                    HelperDependencyRiskService(index).assess
+                    _executable_risk_service(index).assess
                 ),
                 plan_observability_cursor_key=b"scalar-reuse-key" * 2,
             )
@@ -1889,7 +1901,7 @@ class Beta50CapturedProductionReplayTests(
         with tempfile.TemporaryDirectory() as temporary:
             helper = FakeHelperStateGateway()
             helper.entity_id = self.target
-            risk = HelperDependencyRiskService(self.index)
+            risk = _executable_risk_service(self.index)
             governance = ChangeGovernanceService(
                 ChangePlanRepository(Path(temporary) / "plans"),
                 UnusedLegacyGateway(),
@@ -1951,7 +1963,7 @@ class Beta50CapturedProductionReplayTests(
         with tempfile.TemporaryDirectory() as temporary:
             helper = FakeHelperStateGateway()
             helper.entity_id = self.target
-            risk = HelperDependencyRiskService(self.index)
+            risk = _executable_risk_service(self.index)
             governance = ChangeGovernanceService(
                 ChangePlanRepository(Path(temporary) / "plans"),
                 UnusedLegacyGateway(),
@@ -2024,7 +2036,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.temp = tempfile.TemporaryDirectory()
         self.helper = FakeHelperStateGateway()
-        self.risk = HelperDependencyRiskService(self.index)
+        self.risk = _executable_risk_service(self.index)
         self.governance = ChangeGovernanceService(
             ChangePlanRepository(Path(self.temp.name) / "plans"),
             UnusedLegacyGateway(),
@@ -2082,7 +2094,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
                 SyntheticBeta50WebSocket(),
             )
         )
-        risk = HelperDependencyRiskService(index)
+        risk = _executable_risk_service(index)
         governance = ChangeGovernanceService(
             ChangePlanRepository(Path(self.temp.name) / "filter-plans"),
             UnusedLegacyGateway(),
@@ -2134,7 +2146,10 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            "helper-dependency-risk-v13", standard_binding["model"]
+            "helper-dependency-risk-v14", standard_binding["model"]
+        )
+        self.assertEqual(
+            "helper-dependency-risk-v13", standard_binding["base_model"]
         )
         self.assertTrue(standard["approval_actionable"])
         self.assertEqual("low", standard["risk"]["level"])
@@ -2366,15 +2381,16 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
-    def test_v3_through_v12_are_readable_but_non_authoritative(self):
+    def test_v3_through_v13_are_readable_but_non_authoritative(self):
+        # HAMCP-285: only the target-scoped input_boolean v14 executes.
         self.assertEqual(
             "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v13"}),
+            frozenset({INPUT_BOOLEAN_DEPENDENCY_MODEL}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 13):
+        for version in range(3, 14):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

@@ -1,13 +1,31 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.61** (HAMCP-253) adds the
+Not yet released: Engineering **2.4.1-beta.62** (HAMCP-253) adds the
 read-only `inspect_governance_record` tool. It shows why one exact stuck
 plan or task is stuck, including plans the plan tools refuse, and never
 returns payloads or secrets. An administrator can acknowledge or revoke a
 record on the Ingress **Stuck records** page, and health then warns only on
 unacknowledged records. Records are never rewritten. Approve, apply,
 recovery, verification and persisted formats are unchanged, and nothing in
-Home Assistant changes. Rollback is reinstalling beta.60. Read the
+Home Assistant changes. Rollback is reinstalling beta.61. Read the
+[2.4.1-beta.62 release notes](docs/V2_4_1_BETA62_RELEASE_NOTES.md) and the
+[2.4.1-beta.62 acceptance contract](docs/V2_4_1_BETA62_ACCEPTANCE.md).
+
+Not yet released: Engineering **2.4.1-beta.61** (HAMCP-285) applies
+evidence-based classification to helper options, entity availability and
+exposure, and `set_input_boolean_state`. `safety_critical` now requires
+positive evidence; incomplete evidence is `unknown` with its gaps stated.
+An unreferenced input_boolean plans as `standard_admin`. An input_boolean plan
+approved on beta.59 or beta.60 returns a structured replan refusal. The
+beta.60 global references stay informational and do not affect these labels.
+An input_boolean or input_select helper in any group is held elevated with
+the groups named, because group consumers are not attributed to members yet
+(HAMCP-287). Execution refusals, approval binding and readback are unchanged,
+except that an input_boolean plan approved for an automation without a
+bounded lock identity now refuses as `dependency_risk_drift` instead of
+`dependency_coverage_failure`. No tool,
+input schema, signed profile, persisted format or Home Assistant write
+changes. Rollback is reinstalling beta.60. Read the
 [2.4.1-beta.61 release notes](docs/V2_4_1_BETA61_RELEASE_NOTES.md) and the
 [2.4.1-beta.61 acceptance contract](docs/V2_4_1_BETA61_ACCEPTANCE.md).
 
