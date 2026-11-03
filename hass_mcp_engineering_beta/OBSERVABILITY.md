@@ -940,7 +940,14 @@ the upstream operation, `result_status` and `fallback_occurred: false`.
 the index itself.
 A dashboard budget overrun appears in the dashboard coverage row
 (`dashboard_scan_budget_exhausted`, `dashboard_not_read`) and in
-`bounded_sources`. An impact continuation refused because the diagnostic
+`bounded_sources`. Since 2.4.1-beta.63 (HAMCP-277) the dashboard phase runs
+after the other sources, a read stopped by its 3 s per-read bound or by the
+phase deadline counts `dashboard_read_timeout`, the row's first warning is
+`Dashboards read: N of M listed`, and the build profile's
+`global_sources.dashboard.outcome_counts` counts each per-dashboard outcome
+(`read`, `too_large`, `timed_out`, `failed`, `not_attempted_budget`,
+`not_attempted_authority`, `not_attempted_failure`). The profile carries
+counts only; dashboard paths appear only in the screened coverage warnings. An impact continuation refused because the diagnostic
 partition changed increments `stale_cursor_events` like any stale cursor.
 
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational

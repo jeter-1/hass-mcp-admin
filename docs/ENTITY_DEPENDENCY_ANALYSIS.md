@@ -138,8 +138,12 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   (1,000 scenes, 1,000 groups, 256 members each, 10,000 findings) are
   partial with counted reasons.
 - **Dashboards.** One reviewed `list_dashboards` request, then one reviewed
-  analysis read per dashboard (at most 50, 4 concurrent, 6 s budget,
-  concurrent with the rest of the build). The dashboard walker extracts
+  analysis read per dashboard (at most 50, 4 concurrent, in sorted
+  `url_path` order, 6 s budget). Since 2.4.1-beta.63 (HAMCP-277) the
+  dashboard phase starts after the build's other sources finish, so their
+  requests cannot spend its budget, and each read is bounded by 3 s
+  (`DASHBOARD_READ_SECONDS`, capped by what remains of the phase), so one
+  slow or oversized dashboard cannot hold a worker for the whole phase. The dashboard walker extracts
   entity references through conditional, stack and grid cards and reports
   the exact path, for example `$.views[0].cards[1].cards[0].entity`. A
   custom card, an unsupported component, a dashboard or view strategy, a
@@ -152,8 +156,20 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   no read starts after it, and work still in flight when it expires is
   cancelled and its lease released. An overrun counts
   `dashboard_scan_budget_exhausted` (named in `bounded_sources`) and one
-  `dashboard_not_read` per unread dashboard; it is unavailable if the list
-  never returned, otherwise partial. A document over the reviewed 2 MiB cap
+  `dashboard_not_read` per dashboard never started; it is unavailable if the
+  list never returned, otherwise partial. A read stopped by its own timeout,
+  or in flight when the phase deadline cancels it, counts
+  `dashboard_read_timeout`; a per-read timeout capped by the phase deadline
+  also counts the budget overrun. Every listed dashboard gets exactly one
+  outcome: `read`, `too_large`, `timed_out`, `failed`,
+  `not_attempted_budget`, `not_attempted_authority` (dashboard authority
+  retired mid-phase) or `not_attempted_failure`. The coverage row's first
+  warning is `Dashboards read: N of M listed`, which is the reason the
+  HAMCP-270 plan disclosure shows; each other outcome present follows as
+  `Dashboards <outcome>: <paths>` (screened, at most 10 shown, then a count
+  of the rest). The coverage row is complete only when every listed
+  dashboard was read with no counted gap. The build profile's
+  `global_sources.dashboard.outcome_counts` holds counts only. A document over the reviewed 2 MiB cap
   is refused (`dashboard_read_response_limit`, terminal
   `dashboard_document_limit_exceeded`) and its dashboard is partial.
   `change_impact_analysis` cursors are bound to the visible diagnostic

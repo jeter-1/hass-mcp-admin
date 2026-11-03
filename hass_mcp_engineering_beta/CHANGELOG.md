@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.1-beta.63 - the dependency index reads the household's dashboards within its budget (HAMCP-277)
+
+Builds on 2.4.1-beta.61 (HAMCP-285, #353). No tool, input schema, route,
+provider, upstream tool, admission rule, signed profile, contract
+fingerprint, add-on option, persisted format or Home Assistant write change.
+
+- Cause of the beta.55 live "0 of 6 dashboards read": the dashboard phase's
+  6 s clock ran from the start of the build, concurrently with the other
+  dependency sources on the same transport, which spent it before any read.
+  The dashboard phase now runs after the other sources, so its budget starts
+  when it does. The 300 s build deadline is unchanged.
+- Each dashboard read is bounded by 3 s (`DASHBOARD_READ_SECONDS`), capped
+  by what remains of the phase; dashboards are read in sorted `url_path`
+  order. `DASHBOARD_SCAN_SECONDS` stays 6 s (measured fixture phase: about
+  2.0 s for 6 dashboards).
+- Every listed dashboard gets one outcome: `read`, `too_large`, `timed_out`,
+  `failed`, `not_attempted_budget`, `not_attempted_authority` or
+  `not_attempted_failure`. The dashboard coverage row's first warning is
+  `Dashboards read: N of M listed` (the HAMCP-270 disclosure reason), the
+  others are named by outcome (screened, at most 10 shown), and the row is
+  complete only when every dashboard was read. A read in flight at the phase
+  deadline counts `dashboard_read_timeout` instead of `dashboard_not_read`.
+  The build profile adds `global_sources.dashboard.outcome_counts`.
+- The dashboard store stays diagnostic: no fingerprint, obligation-ledger,
+  risk or policy change for any plan.
+
 ## 2.4.1-beta.61 - evidence-based labels for helper options, availability and input_boolean (HAMCP-285)
 
 Builds on 2.4.1-beta.60 (HAMCP-270, #344), which includes 2.4.1-beta.59
