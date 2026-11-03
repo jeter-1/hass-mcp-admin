@@ -22,7 +22,8 @@ approval binding, add-on option or Home Assistant write changes.
   characters, or revoke an acknowledgement. The action binds the reviewed
   fingerprint and uses a one-shot CSRF token. It is appended to a separate
   hash-chained ledger and takes effect only once its audit event is durably
-  written; a disabled or failing audit log refuses it, and a decision
+  written; a missing, disabled or unusable audit destination refuses it
+  before the ledger changes, a failing audit write abandons it, and a decision
   interrupted between the steps is reconciled at start or by the next
   writer. No-ops and refusals get a best-effort audit event, and
   `audit_recorded` reports whether it was written. The Engineering MCP

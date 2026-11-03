@@ -12,8 +12,10 @@ import hashlib
 import hmac
 import logging
 import json
+import os
 import re
 import secrets
+import stat
 import time
 from typing import Any, Awaitable, Callable
 import uuid
@@ -15952,6 +15954,33 @@ class ChangeGovernanceService:
             and bool(getattr(self.audit, "path", None))
         )
 
+    def _acknowledgement_audit_usable(self) -> bool:
+        """Whether the audit destination can take this decision's event.
+
+        HAMCP-253 R2-M2: checked before the acknowledgement ledger is opened,
+        so a destination known to be unusable changes no ledger state. The
+        log and its lock are opened as the audit logger opens them, without
+        writing; an existing target must be a regular file, so a directory
+        or a pipe is refused without opening it. A later transient failure
+        is still handled by the decision, audit and completion steps.
+        """
+
+        if not self._acknowledgement_audit_enabled():
+            return False
+        path = str(self.audit.path)
+        for target, mode in ((path, "ab"), (path + ".lock", "a+b")):
+            try:
+                try:
+                    if not stat.S_ISREG(os.stat(target).st_mode):
+                        return False
+                except FileNotFoundError:
+                    pass
+                with open(target, mode):
+                    pass
+            except (OSError, ValueError):
+                return False
+        return True
+
     def _acknowledgement_decision_status(
         self, events: list[dict[str, Any]], body: dict[str, Any]
     ) -> tuple[str, str | None]:
@@ -16116,8 +16145,9 @@ class ChangeGovernanceService:
                 view["record_fingerprint"], record_fingerprint
             ):
                 refusal = "record_fingerprint_stale"
-        if refusal is None and not self._acknowledgement_audit_enabled():
-            # R1-M3: no ledger change without an audit destination.
+        if refusal is None and not self._acknowledgement_audit_usable():
+            # R1-M3/R2-M2: no ledger change without a usable audit
+            # destination.
             refusal = "audit_unavailable"
         if refusal is not None:
             return self._acknowledgement_outcome(

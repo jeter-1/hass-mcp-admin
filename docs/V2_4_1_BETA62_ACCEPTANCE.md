@@ -82,6 +82,12 @@ Required offline evidence is in `tests/test_hamcp253_*.py`:
   plan ID or task ID never appears in inspection, Ingress, health or audit;
   disabled, failing and interrupted audit paths refuse, abandon or
   reconcile, and `audit_recorded` is true only when audit bytes changed;
+- round-2 corrections (`tests/test_hamcp253_round2_corrections.py`): a
+  configured value stored as a plan identifier never reaches health,
+  inspection, Ingress, MCP or audit, while counts, order and bounds hold;
+  a directory, missing-parent, non-writable, disabled or missing audit
+  destination is refused before the acknowledgement namespace or ledger
+  changes;
 - redaction: a secret-like value never appears in inspection,
   acknowledgement, health, audit or the ledger;
 - regression: approve and apply of an acknowledged failed plan are still

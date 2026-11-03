@@ -215,8 +215,14 @@ written.
 10. `record_unreadable`
 11. `record_not_acknowledgeable`
 12. `record_fingerprint_stale` (the record changed since inspection)
-13. `audit_unavailable`: the audit log is disabled or has no destination.
-    Checked before the ledger is opened, so nothing is appended.
+13. `audit_unavailable`: the audit log is missing, disabled or has no
+    destination, or its destination is known to be unusable: the log or its
+    `.lock` file exists but is not a regular file (a directory, for
+    example), or cannot be opened for append (a missing parent directory,
+    no write permission). Checked before the acknowledgement ledger is
+    opened (round-2 correction R2-M2), so the acknowledgement namespace and
+    ledger stay byte-unchanged; the check opens the two files as the audit
+    logger does and writes nothing to them.
 14. `record_not_acknowledged`: revoke when nothing was acknowledged
 15. Ledger refusals: `acknowledgement_in_progress`,
     `acknowledgement_persistence_failed`,
@@ -253,6 +259,11 @@ Every outcome reports `record_written: false`, `home_assistant_calls: 0`,
 - If the audit write returns anything but one written event or raises, the
   completion is `abandoned` and the request is refused with
   `audit_write_failed`. An abandoned decision never acknowledges or revokes.
+  This covers a destination that passed the `audit_unavailable` check and
+  failed afterwards (a transient failure). The journal then keeps exactly
+  two new entries for the request: the decision and its `audit_completion`
+  with outcome `abandoned`. The audit log holds no event for the decision
+  and, if the destination recovered, one uncorrelated refusal event.
 - A decision with no completion (a crash between the steps) is pending. At
   service start and inside every acknowledgement transaction it is
   reconciled: its audit event is written (or found already written) and the

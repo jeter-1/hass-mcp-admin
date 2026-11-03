@@ -633,7 +633,10 @@ Core call on the acknowledgement path.
     authenticated Home Assistant administrator browser session on Ingress
     can acknowledge, one record at a time.
   - An effective decision requires an enabled, writable audit destination.
-    The decision is appended, its audit event is written, and only then is
+    It is checked before the ledger is opened: a missing, disabled or
+    unusable destination (a directory, a missing parent, no write
+    permission) is refused with `audit_unavailable` and changes no ledger
+    state. The decision is appended, its audit event is written, and only then is
     it completed as `recorded`. An audit failure completes it as
     `abandoned` (no effect, `audit_write_failed`); a crash between the
     steps leaves it pending until reconciliation at start or by the next

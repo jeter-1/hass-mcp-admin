@@ -24,7 +24,8 @@ administrator browser session on the Ingress approval panel (`/records`) can
 acknowledge. Each request passes the per-request administrator check (a
 read-only `config/auth/list` role lookup in Core, the only Home Assistant
 call on that path) and a one-shot CSRF token. An effective decision requires
-an enabled, writable audit destination: it is appended to Engineering's own
+an enabled, writable audit destination, checked before the ledger is
+opened: it is appended to Engineering's own
 acknowledgement ledger and takes effect only once its audit event is
 durably written. Inspection and the ledger operations make no Home Assistant
 call and no provider dispatch, never change the record and never affect
