@@ -73,6 +73,14 @@ treat consequence as decision support.
   `helper_dependency_evidence_superseded_replan_required` before any task,
   lock or provider call, and the approval is not consumed. Its recovery
   readback still reconstructs the shipped v13 lock graph.
+- **Bounded, non-consequential consumers now apply.** Since beta.59 the
+  planner labels a helper value change with a bounded relevant consumer and
+  no physical consequence `elevated_admin`, risk `medium`. The F3 apply check
+  did not list that family, so an approved plan was always refused at apply
+  with `policy_snapshot_mismatch` and nothing was dispatched. This affected
+  input_select on beta.59 and would have affected input_boolean here. F3 now
+  accepts exactly that family for helper value operations. Every other
+  operation keeps its fixed family.
 - **Response size.** The input_boolean create response is bounded the same
   way as input_select: oversized paged evidence lists are left out and named
   in `response_paging`. The plan hash binds the complete persisted inputs.

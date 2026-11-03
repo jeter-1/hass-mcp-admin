@@ -77,6 +77,11 @@ Required offline evidence, `tests/test_hamcp285_evidence_labels.py`:
 - **End to end**, using real governance and F3: the unreferenced
   input_boolean and the template helper, with one provider call per
   applied path.
+- **Medium helper family applies**: an approved plan with a bounded,
+  non-consequential consumer (`elevated_admin`, risk `medium`) reaches
+  `succeeded_verified` with one provider call, for input_boolean and
+  input_select. On beta.59 it was refused at apply with
+  `policy_snapshot_mismatch`. No other operation's policy family changes.
 - input_select binding bytes unchanged; response size bound.
 - **Mutation testing** in a copied tree, with every kill classified.
 - The complete repository suite in the Evidence tier.

@@ -22,6 +22,9 @@ format or Home Assistant write change.
   already approved returns the structured
   `helper_dependency_evidence_superseded_replan_required` refusal without
   consuming the approval, instead of an unstructured lock error.
+- An approved helper value plan with a bounded, non-consequential consumer
+  (`elevated_admin`, risk `medium`) now applies. F3 refused it at apply with
+  `policy_snapshot_mismatch` on beta.59 (input_select).
 - The input_boolean create response is bounded like input_select. Execution
   refusals are unchanged: stale state, ambiguous target, unadmitted
   provider, index failure, drift and no-op.
