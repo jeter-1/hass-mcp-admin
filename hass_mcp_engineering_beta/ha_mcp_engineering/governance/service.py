@@ -9023,7 +9023,14 @@ class ChangeGovernanceService:
             indexed_failures[plan.plan_id] = error
         projected_failures = [
             {
-                "plan_id": plan_id,
+                # HAMCP-253 R2-M1 (Josh, 2026-11-03): the health rows' screen.
+                # Order, bound and count still use the stored identifier.
+                "plan_id": (
+                    record_inspection.screened_record_id(
+                        plan_id, self.sensitive_values
+                    )
+                    or record_inspection.UNRECOGNIZED
+                ),
                 "error_code": error_code.value,
             }
             for plan_id, error_code in sorted(indexed_failures.items())[

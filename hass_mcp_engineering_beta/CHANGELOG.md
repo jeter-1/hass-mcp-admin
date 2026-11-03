@@ -29,6 +29,10 @@ approval binding, add-on option or Home Assistant write changes.
   `audit_recorded` reports whether it was written. The Engineering MCP
   connector exposes no acknowledgement tool; an authenticated administrator
   browser session can acknowledge.
+- The projection-failure rows of health and of `list_change_plans` show a
+  stored plan identifier only when it is a record identifier that passes
+  the shared sanitizer with the configured sensitive values; otherwise
+  `unrecognized_value`. Counts, order and bounds are unchanged.
 - Health adds `governance.record_acknowledgement` counts and bounded ID
   lists. `projection_failure_warning` and the new `manual_review_warning`
   appear only while unacknowledged records exist. Raw counts are unchanged.

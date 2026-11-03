@@ -135,7 +135,10 @@ Stored metadata is untrusted (round-1 correction R1-M2):
   sanitizer, given the configured sensitive values, leaves it unchanged,
   the same screen as the acknowledgement ID lists. Anything else is
   `unrecognized_value`. Counts, order (by stored identifier), the bound of
-  eight rows, truncation and categories are unchanged.
+  eight rows, truncation and categories are unchanged. By Josh's decision
+  (2026-11-03) the `projection_failures` rows of `list_change_plans` use
+  the same screen and marker; their count, order, bound and error codes
+  are unchanged.
 
 Because only allowlisted fields are copied, the view never contains
 configuration, targets, notes, principals, approver tokens or free-form
@@ -393,6 +396,16 @@ cached build and its generation keys are unchanged.
   acknowledgements are refused.
 
 ## Follow-ups (not in this change)
+
+- Other outputs still echo a stored plan or task identifier unscreened
+  when the record is stored consistently under it (only a direct storage
+  edit can make that identifier a configured value). They are unchanged
+  here, by Josh's bounded decision (2026-11-03), and listed for a
+  follow-up: `list_change_plans` plan summaries (`_summary`),
+  `list_execution_tasks` and execution-task views (`task_id`, `plan_id`),
+  `get_change_plan` and other plan views, governance error
+  `details.resource_id` built from a stored plan (for example
+  `resolved_plans`), and audit records that carry a stored identifier.
 
 - A stored plan whose `plan_id` is not 32 hex characters makes the plan
   navigation rebuild raise `ValueError` (`storage.py`

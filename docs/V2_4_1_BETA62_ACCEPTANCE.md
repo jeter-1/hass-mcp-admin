@@ -84,7 +84,8 @@ Required offline evidence is in `tests/test_hamcp253_*.py`:
   reconcile, and `audit_recorded` is true only when audit bytes changed;
 - round-2 corrections (`tests/test_hamcp253_round2_corrections.py`): a
   configured value stored as a plan identifier never reaches health,
-  inspection, Ingress, MCP or audit, while counts, order and bounds hold;
+  `list_change_plans`, inspection, Ingress, MCP or audit, while counts,
+  order and bounds hold;
   a directory, missing-parent, non-writable, disabled or missing audit
   destination is refused before the acknowledgement namespace or ledger
   changes; a decision or completion write that fails after the ledger

@@ -203,6 +203,44 @@ class HealthIdentificationScreensConfiguredValuesTests(Hamcp253IngressCase):
             {HEX_SECRET: UNRECOGNIZED, normal: normal},
         )
 
+    async def test_list_change_plans_screens_the_stored_identifier(self):
+        # Josh's bounded inclusion (2026-11-03): list_change_plans uses the
+        # same screen for its projection-failure rows.
+        damaged, normal = await self.projection_failed_plans(count=2)
+        # The damage: as above, a record stored consistently under a
+        # configured value.
+        old_path = self.repository._path(damaged)
+        rewrite_json(old_path, lambda data: data.update(plan_id=HEX_SECRET))
+        old_path.rename(self.repository._path(HEX_SECRET))
+        self.restart()
+        list_tool = registered_tools(get_registered_server())["list_change_plans"]
+        with no_home_assistant(self), patch.object(
+            governance_tools.GOVERNANCE, "require", return_value=self.service
+        ):
+            listed = self.service.list_plans()
+            text = await list_tool.run({})
+        for where, output in (("service", json.dumps(listed)), ("mcp", text)):
+            with self.subTest(where=where):
+                for secret in HEX_SECRETS:
+                    self.assertNotIn(secret, output)
+                self.assertIn(normal, output)
+        self.assertEqual(listed["projection_failure_count"], 2)
+        self.assertIs(listed["projection_failures_truncated"], False)
+        self.assertEqual(
+            [row["plan_id"] for row in listed["projection_failures"]],
+            [UNRECOGNIZED if stored == HEX_SECRET else stored
+             for stored in sorted((HEX_SECRET, normal))],
+        )
+        self.assertEqual(
+            {row["error_code"] for row in listed["projection_failures"]},
+            {"policy_snapshot_mismatch"},
+        )
+        mcp = json.loads(text)
+        self.assertIs(mcp["success"], True)
+        self.assertEqual(
+            mcp["data"]["projection_failures"], listed["projection_failures"]
+        )
+
     async def test_the_marker_preserves_counts_order_and_bounds(self):
         ids = await self.projection_failed_plans(count=9)
         stored = dict(zip(ids, ids))

@@ -653,7 +653,9 @@ Core call on the acknowledgement path.
   fields show a member or `unrecognized_value`; other strings must be short
   tokens that the shared sanitizer, given the configured sensitive values,
   leaves unchanged, or they are `unrecognized_value`. Inspection never
-  quarantines a record or rebuilds a navigation index.
+  quarantines a record or rebuilds a navigation index. The
+  projection-failure rows of health and `list_change_plans` apply the same
+  identifier screen.
   The acknowledgement reason is at most 500 printable characters. It is
   refused when the shared sanitizer redacts it or fails closed. Audit
   records the reason's length, never its text.
