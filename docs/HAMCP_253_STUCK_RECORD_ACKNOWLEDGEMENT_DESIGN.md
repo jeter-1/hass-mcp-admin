@@ -224,8 +224,8 @@ written.
 12. `record_fingerprint_stale` (the record changed since inspection)
 13. `audit_unavailable`: the audit log is missing, disabled or has no
     destination, or its destination is known to be unusable: the log or its
-    `.lock` file exists but is not a regular file (a directory, for
-    example), or cannot be opened for append (a missing parent directory,
+    `.lock` file exists but is not a regular file (a directory or a
+    device such as `/dev/null`, which would discard the event), or cannot be opened for append (a missing parent directory,
     no write permission). Checked before the acknowledgement ledger is
     opened (round-2 correction R2-M2), so the acknowledgement namespace and
     ledger stay byte-unchanged; the check opens the two files as the audit

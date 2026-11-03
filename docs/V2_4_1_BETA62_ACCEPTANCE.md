@@ -86,7 +86,8 @@ Required offline evidence is in `tests/test_hamcp253_*.py`:
   configured value stored as a plan identifier never reaches health,
   `list_change_plans`, inspection, Ingress, MCP or audit, while counts,
   order and bounds hold;
-  a directory, missing-parent, non-writable, disabled or missing audit
+  a directory, character-device, missing-parent, non-writable, disabled
+  or missing audit
   destination is refused before the acknowledgement namespace or ledger
   changes; a decision or completion write that fails after the ledger
   replacement (fault hook, directory open, directory fsync) is reported as

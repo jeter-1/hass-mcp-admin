@@ -313,6 +313,9 @@ class AuditDestinationTests(Hamcp253Case):
         elif name == "lock directory":
             (base / "audit.jsonl").touch()
             (base / "audit.jsonl.lock").mkdir()
+        elif name == "character device":
+            # Opens and takes writes, but nothing written there is kept.
+            (base / "audit.jsonl").symlink_to(os.devnull)
         elif name == "missing parent":
             return AuditLogger(str(base / "absent" / "audit.jsonl"), AUDIT_SECRET)
         elif name == "non-writable file":
@@ -325,6 +328,7 @@ class AuditDestinationTests(Hamcp253Case):
     DESTINATIONS = (
         "directory",
         "lock directory",
+        "character device",
         "missing parent",
         *(("non-writable file", "non-writable parent") if NOT_ROOT else ()),
         "disabled logger",
