@@ -22,7 +22,9 @@ from ..governance.helper_dependency import (
     MAX_RELEVANT_AUTOMATIONS,
 )
 from ..governance.input_select_dependency import (
+    INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS,
     INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS,
+    INPUT_SELECT_DEPENDENCY_MODEL_V1,
 )
 from .models import validate_lock_key
 from .operational_models import (
@@ -111,6 +113,30 @@ def _requires_custom_template_reload_lock(
     if not isinstance(projection, dict):
         raise ValueError("helper dependency lock projection is invalid")
     return projection.get("custom_template_reload") is True
+
+
+def _requires_coarse_automation_fence(
+    operation: PreparedOperationalOperation,
+) -> bool:
+    """HAMCP-274: an input_select v2 projection must state its fence."""
+
+    binding = operation.baseline.get("dependency_risk")
+    projection = (
+        binding.get("dependency_lock_projection")
+        if isinstance(binding, dict)
+        else None
+    )
+    if not isinstance(projection, dict):
+        raise ValueError("helper dependency lock projection is invalid")
+    if binding.get("model") == INPUT_SELECT_DEPENDENCY_MODEL_V1:
+        # v1 never modelled the fence; recovery reconstructs its shipped graph.
+        if "coarse_automation_fence" in projection:
+            raise ValueError("input_select v1 lock evidence is invalid")
+        return False
+    fence = projection.get("coarse_automation_fence")
+    if not isinstance(fence, bool):
+        raise ValueError("helper dependency lock projection is invalid")
+    return fence
 
 
 def normalize_operational_lock_requests(
@@ -249,11 +275,16 @@ class OperationalLockSetCalculator:
                 )
         elif operation.operation in HELPER_VALUE_OPERATIONS:
             if operation.operation == SET_INPUT_SELECT_OPTION:
-                # HAMCP-145: only the input_select reader's model has lock
-                # authority for this operation, for execution and readback.
+                # HAMCP-145: only the input_select reader's models have lock
+                # authority for this operation.  HAMCP-274: v2 alone executes;
+                # recovery may reconstruct a shipped v1 graph.
                 domain = "input_select"
                 mutation_reason = "exact_input_select_option_mutation"
-                accepted_models = INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS
+                accepted_models = (
+                    INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS
+                    if accepted_models == HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+                    else INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS
+                )
             else:
                 domain = "input_boolean"
                 mutation_reason = "exact_input_boolean_state_mutation"
@@ -337,6 +368,24 @@ class OperationalLockSetCalculator:
                         mode=LockMode.SHARED,
                         reason_codes=(
                             "bound_external_template_dependency",
+                        ),
+                    )
+                )
+            if (
+                operation.operation == SET_INPUT_SELECT_OPTION
+                and _requires_coarse_automation_fence(operation)
+            ):
+                # Every automation configuration mutation and automation
+                # reload holds this key, so exclusive mode fences the whole
+                # automation domain when the exact consumer set is not
+                # lockable one by one.  Over-locking only.
+                requests.append(
+                    LockRequest(
+                        key="reload:automation",
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.EXCLUSIVE,
+                        reason_codes=(
+                            "coarse_automation_dependency_fence",
                         ),
                     )
                 )

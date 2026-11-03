@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
+
+Builds on 2.4.1-beta.58 (HAMCP-278, #342). No tool, input schema, route,
+provider, signed profile, contract fingerprint, add-on option, persisted
+format or Home Assistant write change.
+
+- `set_input_select_option` decides relevance per target. It counts literal
+  and indirect references (group, `expand()`, area, label, device,
+  domain-wide iteration) and genuinely opaque obligations, with binding
+  model `helper-dependency-risk-input-select-v2`. An unreferenced helper is
+  `standard_admin`. Bounded consumers are named and elevated. Opaque
+  consumers are elevated with disclosure, not prohibited.
+- Incomplete evidence contributes at most `unknown`, never
+  `safety_critical`. The opaque profile's consequence is disclosed as
+  `potential_physical_consequence`.
+- Bounded, named consumers, opaque ones included, take precise locks plus
+  the existing shared stability fences. The coarse `reload:automation`
+  exclusive fence replaces refusal only when the consumer set is over
+  budget, a consumer's lock identity is unavailable, or a coverage gap is
+  unattributable. A malformed registry record that
+  names another entity no longer affects this target.
+- A governed create response over 60,000 characters names its omitted
+  evidence lists with counts and paging through `get_change_plan`.
+- Execution refusals are unchanged: stale state, ambiguous target,
+  unadmitted provider, index failure, drift and no-op. A v1 plan is
+  `replan_required`; applying one that beta.58 already approved returns
+  the structured `helper_dependency_evidence_superseded_replan_required`
+  refusal without consuming the approval. `set_input_boolean_state` and
+  helper options keep
+  their shipped rule.
+
 ## 2.4.1-beta.58 - Core release registry read from the `registry` branch, with one-tap owner signing (HAMCP-278)
 
 Builds on 2.4.1-beta.57 (HAMCP-276, #343), which includes 2.4.1-beta.56

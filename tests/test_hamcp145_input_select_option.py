@@ -206,6 +206,14 @@ def automation_configs():
     }
 
 
+def input_select_service_configs():
+    configs = automation_configs()
+    configs["service_watch"]["trigger"][0]["event_data"] = {
+        "domain": "input_select", "service": "select_option",
+    }
+    return configs
+
+
 class SyntheticDependencyRest:
     def __init__(self, configs):
         self.configs = configs
@@ -256,7 +264,7 @@ class InputSelectDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
         return (await service.assess(entity_id, refresh=True))["binding"]
 
     async def test_call_service_filter_is_reprojected_for_input_select_only(self):
-        binding = await self.assess()
+        binding = await self.assess(input_select_service_configs())
         self.assertEqual(binding["model"], INPUT_SELECT_DEPENDENCY_MODEL)
         self.assertEqual(binding["base_model"], HELPER_DEPENDENCY_RISK_MODEL)
         self.assertEqual(binding["reprojected_call_service_obligations"], 1)
@@ -272,8 +280,20 @@ class InputSelectDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
                          boolean["consequence_uncertainty_reason_codes"])
         self.assertNotIn("option_trigger_records", boolean)
 
-    async def test_only_the_exact_target_trigger_records_are_bound(self):
+    async def test_an_other_domain_call_service_filter_stays_an_exclusion(self):
+        # HAMCP-274: a complete literal domain filter that cannot name
+        # input_select.select_option proves exclusion for input_select too.
         binding = await self.assess()
+        self.assertEqual(binding["reprojected_call_service_obligations"], 0)
+        self.assertEqual(binding["call_service_exclusions_retained"], 1)
+        self.assertNotIn(REPROJECTED_REASON,
+                         binding["consequence_uncertainty_reason_codes"])
+        self.assertNotIn("automation.service_watch",
+                         binding["relevant_downstream_object_ids"])
+        self.assertTrue(binding["execution_eligible"])
+
+    async def test_only_the_exact_target_trigger_records_are_bound(self):
+        binding = await self.assess(input_select_service_configs())
         self.assertEqual(
             [(r["automation_id"], r["complete"]) for r in binding["option_trigger_records"]],
             [("automation.mode_away", True), ("automation.mode_template", False)],
