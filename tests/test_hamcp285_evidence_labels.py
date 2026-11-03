@@ -1104,5 +1104,438 @@ class AvailabilityResponseSizeTests(AvailabilityExposureServiceTestCase):
         self.assertEqual(created["policy_decision"]["physical_consequence"], "unknown")
 
 
+
+# --------------------------------------------------------------------------
+# E. Mutation-pass regressions: v14 binding material, failure provenance,
+#    target validation, recovery locks, and label/disclosure decisions
+# --------------------------------------------------------------------------
+
+
+from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
+from ha_mcp_engineering.governance import (  # noqa: E402
+    input_boolean_dependency,
+)
+from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
+
+BLUEPRINT_READER = "ha_mcp_engineering.dependency.provider._read_blueprint_with_status"
+FLAGS_SELECTOR_TEMPLATE = (
+    "{{ label_entities('%s') | select('is_state', 'on') | list | count > 0 }}"
+)
+INVALID_TARGET = "input_boolean dependency target is invalid"
+FAILED_PROVENANCE = {
+    "provider": "dependency_index",
+    "completeness": "failed",
+    "fallback": "none",
+    "fallback_occurred": False,
+}
+
+
+def _label_consumer(alias: str, label: str) -> dict[str, Any]:
+    return consumer(alias, conditions=template(FLAGS_SELECTOR_TEMPLATE % label))
+
+
+def _flags_blueprint() -> dict[str, Any]:
+    """Parsed blueprint source whose condition selects by the ``flags`` label."""
+
+    return {
+        "blueprint": {"name": "Synthetic flags", "domain": "automation", "input": {}},
+        "trigger": [{"platform": "time_pattern", "minutes": "/5"}],
+        "condition": template(FLAGS_SELECTOR_TEMPLATE % "flags"),
+        "action": [{"service": "lock.unlock",
+                    "target": {"entity_id": "lock.front"}}],
+    }
+
+
+class _ExceptionWhoseClassNameIsLongerThanTheSixtyFourCharacterProvenanceBound(
+    RuntimeError
+):
+    pass
+
+
+class _FailingIndex:
+    """A dependency index whose snapshot read fails inside the service."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def get(self, **_: Any) -> Any:
+        self.calls += 1
+        raise RuntimeError("synthetic index failure")
+
+
+class V14BindingMaterialMixin:
+    def assert_v14_material(self, binding: dict[str, Any]) -> None:
+        self.assertEqual(binding.get("model"), V14)
+        self.assertEqual(binding.get("base_model"), V13)
+        base_fingerprint = binding.get("base_evidence_fingerprint")
+        self.assertIsInstance(base_fingerprint, str)
+        self.assertRegex(base_fingerprint, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(base_fingerprint, binding.get("evidence_fingerprint"))
+        self.assertIn("label_obligations_target_decided", binding)
+        self.assertIn("label_target_dispositions", binding)
+        # The v14 fingerprint binds exactly the v13 base and the label decisions.
+        self.assertEqual(
+            binding.get("evidence_fingerprint"),
+            stable_hash({
+                "model": V14,
+                "base_model": V13,
+                "base_evidence_fingerprint": base_fingerprint,
+                "label_obligations_target_decided":
+                    binding.get("label_obligations_target_decided"),
+                "label_target_dispositions":
+                    binding.get("label_target_dispositions"),
+            }),
+        )
+
+
+class InputBooleanV14BindingTests(V14BindingMaterialMixin, InputBooleanCase):
+    async def labelled_plan(self, labels_on_target: list[str],
+                            extra: dict[str, Any], labels: list[str]) -> dict[str, Any]:
+        # The unrelated malformed registry record leaves each literal label
+        # selector opaque, so the v14 reader decides it from the target record.
+        return (await self.planned(
+            "on", extra=extra, noise=False,
+            registry=[{"entity_id": ENTITY, "labels": labels_on_target}],
+            labels=[{"label_id": name, "name": name} for name in labels],
+        ))["plan"]
+
+    async def test_label_decisions_are_bound_into_the_v14_fingerprint(self):
+        plan = await self.labelled_plan(
+            ["flags"], {"flag_label": _label_consumer("Flag label", "flags")},
+            ["flags"],
+        )
+        binding = self.assert_elevated_and_named(plan, "flag_label")
+        self.assert_v14_material(binding)
+        self.assertGreaterEqual(binding["label_obligations_target_decided"], 1)
+        dispositions = binding["label_target_dispositions"]
+        self.assertEqual(len(dispositions), 1, dispositions)
+        self.assertRegex(dispositions[0][0], r"^[0-9a-f]{64}$")
+        self.assertEqual(dispositions[0][1], "included")
+        # Changing only a label decision changes the bound fingerprint.
+        relabelled = {**binding, "label_target_dispositions":
+                      [[dispositions[0][0], "excluded"]]}
+        self.assertNotEqual(
+            binding["evidence_fingerprint"],
+            stable_hash({
+                key: relabelled[key] for key in (
+                    "model", "base_model", "base_evidence_fingerprint",
+                    "label_obligations_target_decided",
+                    "label_target_dispositions",
+                )
+            }),
+        )
+
+    async def test_several_label_dispositions_are_sorted_by_selector_fingerprint(self):
+        names = ["aa", "bb", "cc", "dd"]
+        plan = await self.labelled_plan(
+            ["aa"],
+            {f"{name}_label": _label_consumer(name, name) for name in names},
+            names,
+        )
+        binding = self.stored_binding(plan)
+        self.assert_v14_material(binding)
+        dispositions = binding["label_target_dispositions"]
+        self.assertEqual(len(dispositions), len(names), dispositions)
+        self.assertEqual(dispositions, sorted(dispositions))
+        self.assertEqual(sorted(item[1] for item in dispositions),
+                         ["excluded", "excluded", "excluded", "included"])
+        self.assertEqual(binding["relevant_downstream_object_ids"],
+                         ["automation.aa_label"])
+
+    async def test_a_blueprint_label_selector_is_decided_for_the_target(self):
+        extra = {"bp_flags": {
+            "alias": "BP flags",
+            "use_blueprint": {"path": "synthetic/flags.yaml", "input": {}},
+        }}
+        with mock.patch(BLUEPRINT_READER, return_value=(_flags_blueprint(), None)):
+            unlabelled = await self.labelled_plan([], deepcopy(extra), ["flags"])
+        binding = self.assert_standard(unlabelled)
+        self.assertEqual([item[1] for item in binding["label_target_dispositions"]],
+                         ["excluded"])
+        with mock.patch(BLUEPRINT_READER, return_value=(_flags_blueprint(), None)):
+            labelled = await self.labelled_plan(["flags"], deepcopy(extra), ["flags"])
+        binding = self.assert_elevated_and_named(labelled, "bp_flags",
+                                                 "safety_critical")
+        self.assertEqual([item[1] for item in binding["label_target_dispositions"]],
+                         ["included"])
+
+    async def test_the_builder_accepts_only_input_boolean_targets(self):
+        self.install(extra={"flag_label": _label_consumer("Flag label", "flags")},
+                     registry=[{"entity_id": ENTITY, "labels": ["flags"]}],
+                     labels=[{"label_id": "flags", "name": "Flags"}])
+        snapshot, _rebuilt, _lookup_ms = await self.index.get(refresh=True)
+        metadata = self.index.evidence_metadata(snapshot)
+        build = input_boolean_dependency.build_input_boolean_dependency_binding
+        for entity_id in ("input_select.mode", "input_number.x", "light.k", 7):
+            with self.subTest(entity_id=entity_id):
+                try:
+                    build(snapshot, entity_id=entity_id, index_metadata=metadata)
+                except ValueError as exc:
+                    self.assertEqual(str(exc), INVALID_TARGET)
+                except Exception as exc:  # noqa: BLE001
+                    self.fail(f"{entity_id!r} raised {exc!r}, not the target refusal")
+                else:
+                    self.fail(f"{entity_id!r} was accepted as an input_boolean target")
+        for entity_id in ("input_boolean.x", ENTITY):
+            with self.subTest(entity_id=entity_id):
+                try:
+                    binding = build(snapshot, entity_id=entity_id,
+                                    index_metadata=metadata)
+                except Exception as exc:  # noqa: BLE001
+                    self.fail(f"{entity_id!r} was refused: {exc!r}")
+                self.assertEqual(binding["entity_id"], entity_id)
+                self.assert_v14_material(binding)
+        # The labelled target's label selectors are decided and named.
+        self.assertGreaterEqual(binding["label_obligations_target_decided"], 1)
+        self.assertIn("included",
+                      {item[1] for item in binding["label_target_dispositions"]})
+        self.assertIn("automation.flag_label",
+                      binding["relevant_downstream_object_ids"])
+
+    async def test_v14_recovery_reconstructs_the_execution_lock_graph(self):
+        plan = (await self.planned("on", extra={"uses_flag": consumer(
+            "Uses flag", triggers=[{"trigger": "state", "entity_id": ENTITY}],
+        )}))["plan"]
+        self.assertEqual(self.stored_binding(plan)["model"], V14)
+        execution = self.lock_modes(plan)
+        try:
+            recovery = self.lock_modes(plan, readback=True)
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"v14 recovery lock graph not reconstructed: {exc!r}")
+        self.assertEqual(recovery, execution)
+        self.assertTrue(any(key.startswith("automation:") for key in recovery))
+
+
+class InputBooleanFailedEvidenceTests(V14BindingMaterialMixin,
+                                      unittest.IsolatedAsyncioTestCase):
+    def assert_failed_v14(self, evidence: dict[str, Any], category: str) -> None:
+        binding = evidence["binding"]
+        self.assertEqual(binding.get("model"), V14)
+        self.assertEqual(binding.get("base_model"), V13)
+        self.assertEqual(binding.get("entity_id"), ENTITY)
+        self.assertEqual(binding.get("completeness"), "failed")
+        self.assertFalse(binding.get("execution_contract_complete"))
+        self.assertEqual(binding.get("label_obligations_target_decided"), 0)
+        self.assertEqual(binding.get("label_target_dispositions"), [])
+        self.assert_v14_material(binding)
+        self.assertEqual(evidence["provenance"],
+                         {**FAILED_PROVENANCE, "failure_category": category})
+
+    async def test_an_unavailable_index_yields_a_failed_v14_binding(self):
+        with mock.patch.object(DEPENDENCY_ANALYSIS, "require",
+                               side_effect=RuntimeError("synthetic")):
+            evidence = await helper_module.read_runtime_helper_dependency_risk(ENTITY)
+        self.assert_failed_v14(evidence, "RuntimeError")
+
+    async def test_the_failure_category_is_bounded_to_64_characters(self):
+        error = _ExceptionWhoseClassNameIsLongerThanTheSixtyFourCharacterProvenanceBound
+        self.assertGreater(len(error.__name__), 64)
+        with mock.patch.object(DEPENDENCY_ANALYSIS, "require", side_effect=error()):
+            evidence = await helper_module.read_runtime_helper_dependency_risk(ENTITY)
+        self.assert_failed_v14(evidence, error.__name__[:64])
+        self.assertEqual(len(evidence["provenance"]["failure_category"]), 64)
+
+    async def test_a_failed_index_read_is_rewrapped_as_v14(self):
+        index = _FailingIndex()
+        evidence = await input_boolean_dependency.assess_input_boolean_dependency_risk(
+            index, ENTITY
+        )
+        self.assertEqual(index.calls, 1)
+        self.assert_failed_v14(evidence, "RuntimeError")
+        self.assertEqual(evidence["binding"],
+                         input_boolean_dependency.failed_input_boolean_binding(ENTITY))
+
+
+class _UnavailableIndexCase(InputBooleanCase):
+    async def read_dependency(self, entity_id: str, *, refresh: bool = True,
+                              fenced: bool = False) -> dict[str, Any]:
+        self.reads.append(fenced)
+        with mock.patch.object(DEPENDENCY_ANALYSIS, "require",
+                               side_effect=RuntimeError("synthetic")):
+            return await helper_module.read_runtime_helper_dependency_risk(
+                entity_id, refresh=refresh, fenced=fenced
+            )
+
+
+class InputBooleanFailedEvidencePlanMixin:
+    async def assert_failed_closed(self, created: dict[str, Any]) -> None:
+        plan = created["plan"]
+        self.assertEqual(plan["policy_decision"]["policy_class"], "prohibited")
+        self.assertFalse(plan["approval_actionable"])
+        self.assertFalse(plan["risk"]["apply_allowed"])
+        stored = self.service.repository.get(plan["plan_id"])
+        binding = stored.operational.baseline["dependency_risk"]
+        self.assertEqual(binding["model"], V14)
+        self.assertEqual(binding["base_model"], V13)
+        self.assertEqual(binding["completeness"], "failed")
+        with self.assertRaises(GovernanceError):
+            self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+
+class InputBooleanUnavailableIndexPlanTests(InputBooleanFailedEvidencePlanMixin,
+                                           _UnavailableIndexCase):
+    async def test_an_unavailable_index_fails_plan_creation_closed(self):
+        self.install()
+        await self.assert_failed_closed(await self.create("on"))
+
+
+class InputBooleanFailedIndexReadPlanTests(InputBooleanFailedEvidencePlanMixin,
+                                          InputBooleanCase):
+    async def test_a_failed_index_read_fails_plan_creation_closed(self):
+        self.install()
+        self.index = _FailingIndex()
+        await self.assert_failed_closed(await self.create("on"))
+        self.assertGreaterEqual(self.index.calls, 1)
+
+
+class SupersededBindingLockTests(Beta59RecordCase):
+    def test_a_v13_binding_stating_a_fence_is_invalid_lock_evidence(self):
+        record = self.restore("approved")
+        plan = {"plan_id": record["plan_id"]}
+        baseline = deepcopy(self.service._load(plan["plan_id"]).operational.baseline)
+        self.assertEqual(baseline["dependency_risk"]["model"], V13)
+        projection = baseline["dependency_risk"]["dependency_lock_projection"]
+        self.assertNotIn("coarse_automation_fence", projection)
+        for fence in (False, True):
+            with self.subTest(coarse_automation_fence=fence):
+                projection["coarse_automation_fence"] = fence
+                with self.assertRaises(ValueError) as raised:
+                    self.lock_modes(plan, readback=True, baseline=baseline)
+                self.assertEqual(str(raised.exception),
+                                 "helper dependency lock evidence is invalid")
+
+
+class HelperOptionsClassificationUnitTests(unittest.TestCase):
+    def test_no_reasons_have_no_consequence(self):
+        self.assertEqual(options_planning.expected_consequence([]), "none")
+        self.assertEqual(options_planning.expected_basis([]), ())
+        classification = options_planning.classify((), [], [], [])
+        self.assertEqual(classification["policy"], "standard")
+        self.assertEqual(classification["physical_consequence"], "none")
+
+    def test_a_standard_options_child_is_moderate_with_no_consequence(self):
+        # In production every options plan carries the config-entry chain gap
+        # and is elevated; the standard branch is pinned here at unit level.
+        classification = options_planning.classify(
+            (), ["Synthetic statement."], ["Synthetic warning."],
+            ["protected_object:sensor.z:smoke"],
+        )
+        self.assertEqual(classification["policy"], "standard")
+        self.assertEqual(classification["physical_consequence"], "none")
+        risk = options_planning.risk_assessment("op-1", classification)
+        self.assertEqual(risk.level.value, "medium")
+        self.assertEqual(risk.reasons, ["Synthetic statement."])
+        marker = risk.evidence[0]
+        self.assertEqual(marker["policy"], "standard")
+        self.assertEqual(marker["physical_consequence"], "none")
+        self.assertEqual(marker["basis"], "")
+        self.assertEqual(marker["consequence_model"], POSITIVE_EVIDENCE_V1)
+
+    def test_the_elevated_reason_states_the_decided_label(self):
+        for reasons, label in (([HELPER_CHAIN_GAP], "unknown"),
+                               (["protected_object:sensor.z:smoke"],
+                                "safety_critical")):
+            with self.subTest(label=label):
+                basis = options_planning.expected_basis(reasons)
+                classification = options_planning.classify(basis, [], [], reasons)
+                self.assertEqual(classification["physical_consequence"], label)
+                risk = options_planning.risk_assessment("op-1", classification)
+                self.assertEqual(risk.level.value, "high")
+                self.assertIn(f"(consequence {label}; elevated approval required)",
+                              risk.reasons[0])
+
+
+class HelperOptionsDisclosureTests(HelperOptionsServiceTestCase):
+    async def test_incomplete_evidence_is_disclosed_as_unknown_consequence(self):
+        entity_id = self.add_template_sensor()
+        created = await self.create_options(
+            {"entity_id": entity_id, "set": {"state": "{{ 3 }}"}}
+        )
+        self.assertEqual(created["policy_decision"]["physical_consequence"], "unknown")
+        reasons = created["risk"]["reasons"]
+        elevated = [reason for reason in reasons if "Options edit with incomplete" in reason]
+        self.assertEqual(len(elevated), 1, reasons)
+        self.assertTrue(elevated[0].endswith(
+            "(consequence unknown; elevated approval required)"), elevated)
+        self.assertFalse(any("safety_critical" in reason for reason in reasons), reasons)
+        self.assertTrue(
+            any("consequence is unknown unless positive evidence names a "
+                "protected object" in reason for reason in reasons),
+            reasons,
+        )
+        self.assertEqual(self.options_rest.submits(), [])
+
+    async def test_positive_evidence_past_the_reason_bound_is_kept_end_to_end(self):
+        entity_id = self.add_template_binary_sensor()
+        self.ws.entries[entity_id]["original_device_class"] = "smoke"
+        # 63 feeds plus the protected object fill the bound exactly; the
+        # always-present chain gap sorts first, so a lexical cut drops the
+        # protected object.
+        feeds = [f"auto_{n:03d}" for n in range(options_contract.MAX_DEPENDENCY_REASONS - 1)]
+        self.snapshot = exposure_snapshot(
+            findings=tuple(finding(entity_id, name) for name in feeds),
+            profiles=tuple(automation_profile(name, "safety_critical")
+                           for name in feeds),
+        )
+        created = await self.create_options(
+            {"entity_id": entity_id, "set": {"state": "{{ false }}"}}
+        )
+        protected = f"protected_object:{entity_id}:safety_sensor_smoke"
+        stored = self.repository.get(created["plan_id"])
+        intent = stored.operations[0].proposed_config[options_contract.INTENT_KEY]
+        persisted = intent["dependency_reasons"]
+        self.assertGreater(
+            len(feeds) + 2, options_contract.MAX_DEPENDENCY_REASONS,
+            "the fixture must exceed the reason bound",
+        )
+        self.assertEqual(len(persisted), options_contract.MAX_DEPENDENCY_REASONS)
+        self.assertEqual(persisted, sorted(persisted))
+        self.assertIn(protected, persisted)
+        self.assertNotIn(HELPER_CHAIN_GAP, persisted)
+        self.assertTrue(all(options_planning.is_positive_safety_reason(item)
+                            for item in persisted))
+        self.assertIn(protected,
+                      self.options_disclosure(created)["protection"]["dependency_reasons"])
+        policy = created["policy_decision"]
+        self.assertEqual((policy["policy_class"], policy["physical_consequence"]),
+                         ("elevated_admin", "safety_critical"))
+        self.assertTrue(created["approval_actionable"])
+        self.assertEqual(self.options_rest.submits(), [])
+
+
+class AvailabilityDisclosureTests(AvailabilityExposureServiceTestCase):
+    def test_every_protected_object_basis_is_safety_critical(self):
+        expected = availability_planning.expected_consequence
+        for basis in ("expose_protected_object", "disable_protected_object",
+                      "enable_exposed_protected_object"):
+            with self.subTest(basis=basis):
+                self.assertEqual(expected([basis], []), "safety_critical")
+        self.assertEqual(expected(["disable_protected_dependency"], []), "unknown")
+
+    async def test_incomplete_evidence_is_disclosed_as_unknown_consequence(self):
+        self.add_entity("sensor.hall_motion")
+        self.snapshot = exposure_snapshot(
+            findings=(finding("sensor.hall_motion", "unknown_effect"),),
+            read_failures=(SimpleNamespace(source_id="broken_automation"),),
+        )
+        created = await self.create(operation="disable",
+                                    entity_ids=["sensor.hall_motion"])
+        self.assertEqual(created["policy_decision"]["physical_consequence"], "unknown")
+        reasons = created["risk"]["reasons"]
+        elevated = [reason for reason in reasons
+                    if "Protected object or dependency:" in reason]
+        self.assertEqual(len(elevated), 1, reasons)
+        self.assertTrue(elevated[0].endswith(
+            "(consequence unknown; elevated approval required)"), elevated)
+        self.assertFalse(any("safety_critical" in reason for reason in reasons), reasons)
+        self.assertTrue(
+            any("consequence is unknown unless positive evidence names a "
+                "protected object or automation" in reason for reason in reasons),
+            reasons,
+        )
+        self.assertEqual(self.ws.writes(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
