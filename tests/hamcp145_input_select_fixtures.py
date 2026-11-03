@@ -160,13 +160,24 @@ class InputSelectDependencyReader(FakeDependencyRiskReader):
         self.records: list[dict[str, Any]] = []
         self.reprojected = 0
         self.calls: list[bool] = []
+        # HAMCP-274: the v2 input_select lock projection always states
+        # whether the coarse automation fence is required.
+        self.coarse_fence = False
 
     async def __call__(self, entity_id: str, *, refresh: bool = True,
                        fenced: bool = False) -> dict[str, Any]:
         self.calls.append(fenced)
         evidence = await super().__call__(entity_id, refresh=refresh, fenced=fenced)
+        base = deepcopy(evidence["binding"])
+        projection = base.get("dependency_lock_projection")
+        if isinstance(projection, dict):
+            projection["coarse_automation_fence"] = self.coarse_fence
+            projection["coarse_automation_fence_reason_codes"] = (
+                ["relevant_automation_limit_exceeded"]
+                if self.coarse_fence else []
+            )
         evidence["binding"] = _wrap(
-            evidence["binding"],
+            base,
             records=deepcopy(self.records),
             truncated=False,
             reprojected=self.reprojected,

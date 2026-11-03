@@ -95,6 +95,45 @@ _EXECUTION_BLOCKING_COVERAGE_REASONS = frozenset(
         "home_assistant_version_unsupported",
     }
 )
+# HAMCP-274 target-scoped relevance (input_select reader only).  These
+# coverage reasons name the exact automations they concern, so when every
+# counted failure is attributable to a named source only that source becomes
+# relevant (opaque) instead of every automation in the installation.
+_TARGET_ATTRIBUTABLE_COVERAGE_REASONS = frozenset(
+    {
+        "automation_configuration_read_failure",
+        "automation_inventory_incomplete",
+        "blueprint_inventory_incomplete",
+        "obligation_coverage_failure",
+        # Every relevant obligation is still counted and attributed; only the
+        # retained evidence list is bounded.
+        "obligation_projection_limit_exceeded",
+    }
+)
+# Provider-level synthetic sources stand for automations the scan could not
+# enumerate.  They can never be attributed to a named automation.
+_UNATTRIBUTABLE_COVERAGE_SOURCES = frozenset(
+    {"dependency_provider", "dependency_provider_pending_writes"}
+)
+# Relationships that say a consumer is in scope only because evidence about
+# it is missing.  They are not a reference to the helper, so they can never
+# carry a positive physical-consequence label (OD-4, HAMCP-274 C).
+_OPAQUE_CONSUMER_RELATIONSHIPS = frozenset(
+    {
+        "bounded_semantic_opaque",
+        "coverage_failure_consequence_scope",
+        "unreadable_consequence_scope",
+    }
+)
+_CONSERVATIVE_SCOPE_RELATIONSHIPS = frozenset(
+    {"conservative_consequence_scope"}
+)
+_CONSUMER_CLASS_RANK = {"referenced": 0, "opaque": 1, "conservative_scope": 2}
+# Only a malformed record can be attributed per entity; every other selector
+# failure leaves the selector unresolved for every target.
+_TARGET_ATTRIBUTABLE_SELECTOR_FAILURES = frozenset(
+    {"entity_registry_malformed_relevant_record"}
+)
 
 
 def _bounded_reason_codes(*values: Any) -> list[str]:
@@ -382,18 +421,76 @@ def _causal_automation_sources(
     return sources
 
 
+def target_scoped_label_disposition(
+    snapshot: DependencyIndexSnapshot,
+    selector: str,
+    evidence: Any,
+    *,
+    entity_id: str,
+) -> str:
+    """Return whether one label selector includes one exact target.
+
+    A complete selector is decided by its membership.  An incomplete selector
+    is decided for this target only when its sole failure is malformed
+    registry records that each name another valid entity: the target's own
+    well-formed record (or its absence) then fixes its label membership.  A
+    malformed record naming the target, an unattributable record, or any other
+    failure leaves the selector unresolved for this target.
+    """
+
+    candidates = snapshot.label_memberships.get(selector)
+    if evidence.complete:
+        return (
+            "included"
+            if candidates is not None and entity_id in candidates
+            else "excluded"
+        )
+    if (
+        candidates is None
+        or selector in set(snapshot.label_membership_truncated)
+        or not evidence.failure_reason_codes
+        or not set(evidence.failure_reason_codes).issubset(
+            _TARGET_ATTRIBUTABLE_SELECTOR_FAILURES
+        )
+        or getattr(evidence, "malformed_unattributable_record_count", 1) != 0
+        or entity_id in getattr(evidence, "malformed_record_entity_ids", ())
+        or evidence.entity_inventory_available is not True
+        or evidence.label_inventory_available is not True
+        or evidence.label_inventory_complete is not True
+        or evidence.raw_bound_exceeded
+    ):
+        return "unresolved"
+    return "included" if entity_id in candidates else "excluded"
+
+
 def _selector_authority_diagnostics(
     snapshot: DependencyIndexSnapshot,
     *,
     entity_id: str,
+    target_scoped: bool = False,
 ) -> list[dict[str, Any]]:
-    """Project bounded, hash-safe selector diagnostics for persistence."""
+    """Project bounded, hash-safe selector diagnostics for persistence.
+
+    Target-scoped projection (HAMCP-274) retains only selectors that include
+    the target or remain unresolved for it; a selector proven not to contain
+    the target is unrelated evidence and is counted by the caller instead.
+    """
 
     projected: list[dict[str, Any]] = []
     ordered = sorted(
         getattr(snapshot, "label_selector_authority", {}).items(),
         key=lambda item: item[1].selector_fingerprint,
-    )[:MAX_SELECTOR_AUTHORITY_DIAGNOSTICS]
+    )
+    if target_scoped:
+        ordered = [
+            (selector, evidence)
+            for selector, evidence in ordered
+            if target_scoped_label_disposition(
+                snapshot, selector, evidence, entity_id=entity_id
+            )
+            != "excluded"
+        ]
+    ordered = ordered[:MAX_SELECTOR_AUTHORITY_DIAGNOSTICS]
     for selector, evidence in ordered:
         reason_codes = sorted(
             {
@@ -404,7 +501,11 @@ def _selector_authority_diagnostics(
         )[:MAX_SELECTOR_AUTHORITY_REASON_CODES]
         candidates = snapshot.label_memberships.get(selector, ())
         target_disposition = (
-            "included"
+            target_scoped_label_disposition(
+                snapshot, selector, evidence, entity_id=entity_id
+            )
+            if target_scoped
+            else "included"
             if evidence.complete and entity_id in candidates
             else "excluded"
             if evidence.complete
@@ -461,6 +562,23 @@ def _selector_authority_diagnostics(
             "snapshot_fingerprint": snapshot.fingerprint,
             "snapshot_source_epoch": snapshot.source_epoch,
         }
+        if target_scoped:
+            # Only a malformed record naming the target is reported by
+            # entity_id; records naming other entities have no effect here.
+            record["malformed_target_record"] = entity_id in getattr(
+                evidence, "malformed_record_entity_ids", ()
+            )
+            record["malformed_record_entity_ids"] = (
+                [entity_id] if record["malformed_target_record"] else []
+            )
+            record["malformed_unattributable_record_count"] = max(
+                0,
+                int(
+                    getattr(
+                        evidence, "malformed_unattributable_record_count", 0
+                    )
+                ),
+            )
         record["diagnostic_fingerprint"] = stable_hash(record)
         projected.append(record)
     return projected
@@ -784,16 +902,165 @@ def _project_downstream_profile(
     return projected, None
 
 
+def _attributable_coverage_sources(
+    snapshot: DependencyIndexSnapshot,
+    *,
+    projected_pairs: list[tuple[dict[str, Any], DependencyObligation]],
+    automation_coverage: Any,
+    automation_completeness: Any,
+    automation_failures: Any,
+    blueprint_coverage: Any,
+    blueprint_completeness: Any,
+    blueprint_failures: Any,
+) -> set[str] | None:
+    """Return the named sources behind every counted gap, or ``None``.
+
+    ``None`` means at least one counted failure cannot be tied to a named
+    automation (inventory overflow, an unreconciled write journal, missing or
+    unavailable coverage, or a count the named sources do not explain).
+    """
+
+    failed_by_type: dict[str, set[str]] = {"automation": set(), "blueprint": set()}
+    for source_item, obligation in projected_pairs:
+        if source_item["target_outcome"] == "coverage_failure":
+            failed_by_type.setdefault(obligation.source_type, set()).add(
+                obligation.source_id
+            )
+    read_failures = {item.source_id for item in snapshot.automation_read_failures}
+    failed_by_type["automation"].update(read_failures)
+    named = set().union(*failed_by_type.values())
+    if named & _UNATTRIBUTABLE_COVERAGE_SOURCES:
+        return None
+    for coverage, completeness, failures, source_type in (
+        (automation_coverage, automation_completeness, automation_failures, "automation"),
+        (blueprint_coverage, blueprint_completeness, blueprint_failures, "blueprint"),
+    ):
+        if coverage is None or completeness not in {"complete", "partial"}:
+            return None
+        if type(failures) is not int or failures < 0:
+            return None
+        if failures > len(failed_by_type[source_type]):
+            return None
+        if completeness == "partial" and not failures:
+            return None
+    return named
+
+
+def _consumer_class(relationships: set[str]) -> str:
+    if relationships - _OPAQUE_CONSUMER_RELATIONSHIPS - _CONSERVATIVE_SCOPE_RELATIONSHIPS:
+        return "referenced"
+    if relationships & _OPAQUE_CONSUMER_RELATIONSHIPS:
+        return "opaque"
+    return "conservative_scope"
+
+
+def _target_scoped_consumers(
+    relevant: dict[str, set[str]],
+    profiles_by_source: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str, set[str], dict[str, Any]]:
+    """Project every relevant consumer; disclose a bounded, ranked prefix.
+
+    The physical-consequence label is positive evidence only: a consumer that
+    references the helper contributes its profile's consequence, while a
+    consumer in scope only because evidence is missing contributes at most
+    ``unknown``.  The highest consequence among those is disclosed separately
+    as ``potential_physical_consequence`` so it is never hidden.
+    """
+
+    rows = []
+    failures: set[str] = set()
+    observed = "none"
+    potential = "none"
+    lock_identity_unavailable = False
+    for source_id in sorted(relevant):
+        relationships = relevant[source_id]
+        profile, failure = _project_downstream_profile(
+            source_id=source_id,
+            relationships=relationships,
+            profile=profiles_by_source.get(source_id),
+        )
+        if failure:
+            failures.add(failure)
+        if not isinstance(profile.get("automation_resource_id"), str):
+            lock_identity_unavailable = True
+        consumer_class = _consumer_class(relationships)
+        profile["evidence_class"] = consumer_class
+        raw = str(profile["physical_consequence"])
+        contribution = (
+            raw
+            if consumer_class == "referenced"
+            else "none"
+            if raw == "none"
+            else "unknown"
+        )
+        if _CONSEQUENCE_RANK.get(contribution, 1) > _CONSEQUENCE_RANK.get(observed, 0):
+            observed = contribution
+        if _CONSEQUENCE_RANK.get(raw, 1) > _CONSEQUENCE_RANK.get(potential, 0):
+            potential = raw
+        rows.append(profile)
+    # Referenced consumers first, then the strongest consequence, then id.
+    ranked = sorted(
+        rows,
+        key=lambda item: (
+            _CONSUMER_CLASS_RANK[item["evidence_class"]],
+            -_CONSEQUENCE_RANK.get(str(item["physical_consequence"]), 1),
+            str(item["automation_id"]),
+        ),
+    )
+    counts = {key: 0 for key in _CONSUMER_CLASS_RANK}
+    consequence_counts = {key: 0 for key in _CONSEQUENCE_RANK}
+    for item in rows:
+        counts[item["evidence_class"]] += 1
+        consequence_counts[
+            str(item["physical_consequence"])
+            if str(item["physical_consequence"]) in consequence_counts
+            else "unknown"
+        ] += 1
+    retained = ranked[:MAX_RELEVANT_AUTOMATIONS]
+    disclosure = {
+        "relevant_consumer_count": len(rows),
+        "relevant_consumer_counts_by_class": counts,
+        "relevant_consumer_counts_by_consequence": consequence_counts,
+        "relevant_consumers_disclosed": len(retained),
+        "relevant_consumers_truncated": len(rows) > len(retained),
+        # Binds every consumer, including the ones beyond the disclosure
+        # bound, so the approval hash covers the full relevant set.
+        "relevant_consumer_fingerprint": stable_hash(
+            [
+                [
+                    item["automation_id"],
+                    item["evidence_class"],
+                    item["relationships"],
+                    item["profile_fingerprint"],
+                ]
+                for item in rows
+            ]
+        ),
+        "potential_physical_consequence": potential,
+        "lock_identity_unavailable": lock_identity_unavailable,
+    }
+    return retained, observed, failures, disclosure
+
+
 def _build_obligation_binding(
     snapshot: DependencyIndexSnapshot,
     *,
     entity_id: str,
     index_metadata: dict[str, Any],
+    target_scoped: bool = False,
 ) -> dict[str, Any]:
-    """Build the target-specific governance contract from one shared ledger."""
+    """Build the target-specific governance contract from one shared ledger.
+
+    ``target_scoped`` (HAMCP-274, input_select reader only) decides relevance
+    by evidence about this target: an attributable coverage gap makes only its
+    own automation relevant, consumers beyond the disclosure bound are counted
+    and fenced by a coarse automation lock instead of refusing, and missing
+    evidence never carries a positive physical-consequence label.  The
+    default path is the reviewed v13 contract, byte for byte.
+    """
 
     selector_diagnostics = _selector_authority_diagnostics(
-        snapshot, entity_id=entity_id
+        snapshot, entity_id=entity_id, target_scoped=target_scoped
     )
 
     automation_obligations = sorted(
@@ -930,6 +1197,19 @@ def _build_obligation_binding(
     ):
         coverage_reasons.add("dependency_index_payload_truncated")
 
+    attributable_sources: set[str] | None = None
+    if target_scoped:
+        attributable_sources = _attributable_coverage_sources(
+            snapshot,
+            projected_pairs=projected_pairs,
+            automation_coverage=automation_coverage,
+            automation_completeness=authoritative_automation_completeness,
+            automation_failures=authoritative_automation_failures,
+            blueprint_coverage=blueprint_coverage,
+            blueprint_completeness=authoritative_blueprint_completeness,
+            blueprint_failures=authoritative_blueprint_failures,
+        )
+
     relevant: dict[str, set[str]] = _causal_automation_sources(
         snapshot, entity_id
     )
@@ -965,9 +1245,24 @@ def _build_obligation_binding(
         item.source_id: item
         for item in snapshot.automation_action_profiles
     }
-    conservative_all_automations = bool(
+    unattributed_reasons = (
         coverage_reasons & _CONSERVATIVE_ALL_AUTOMATION_LOCK_REASONS
     )
+    if attributable_sources is not None:
+        unattributed_reasons -= _TARGET_ATTRIBUTABLE_COVERAGE_REASONS
+    conservative_all_automations = bool(unattributed_reasons)
+    if attributable_sources is not None and not conservative_all_automations:
+        # Each counted gap belongs to a named automation: that automation is
+        # genuinely opaque for this target, and no other one is implicated.
+        for source_item, obligation in projected_pairs:
+            if source_item["target_outcome"] == "coverage_failure":
+                relevant.setdefault(obligation.source_id, set()).add(
+                    "coverage_failure_consequence_scope"
+                )
+        for failure in snapshot.automation_read_failures:
+            relevant.setdefault(failure.source_id, set()).add(
+                "unreadable_consequence_scope"
+            )
     if conservative_all_automations:
         for source_id in profiles_by_source:
             relevant.setdefault(source_id, set()).add(
@@ -982,7 +1277,18 @@ def _build_obligation_binding(
         coverage_reasons.add("relevant_automation_limit_exceeded")
     downstream_profiles: list[dict[str, Any]] = []
     observed_consequence = "none"
-    for source_id in sorted(relevant)[:MAX_RELEVANT_AUTOMATIONS]:
+    consumer_disclosure: dict[str, Any] = {}
+    if target_scoped:
+        (
+            downstream_profiles,
+            observed_consequence,
+            profile_failures,
+            consumer_disclosure,
+        ) = _target_scoped_consumers(relevant, profiles_by_source)
+        coverage_reasons.update(profile_failures)
+    for source_id in (
+        () if target_scoped else sorted(relevant)[:MAX_RELEVANT_AUTOMATIONS]
+    ):
         profile, failure = _project_downstream_profile(
             source_id=source_id,
             relationships=relevant[source_id],
@@ -1022,10 +1328,21 @@ def _build_obligation_binding(
     execution_block_reasons = set(
         coverage_reasons & _EXECUTION_BLOCKING_COVERAGE_REASONS
     )
+    coarse_fence_reasons: set[str] = set()
     if len(relevant) > MAX_RELEVANT_AUTOMATIONS:
-        execution_block_reasons.add("helper_lock_graph_resource_limit_exceeded")
-    if len(resource_ids) != len(downstream_profiles):
-        execution_block_reasons.add("automation_lock_identity_unavailable")
+        (coarse_fence_reasons if target_scoped else execution_block_reasons).add(
+            "helper_lock_graph_resource_limit_exceeded"
+        )
+    if len(resource_ids) != len(downstream_profiles) or (
+        target_scoped and consumer_disclosure.get("lock_identity_unavailable")
+    ):
+        (coarse_fence_reasons if target_scoped else execution_block_reasons).add(
+            "automation_lock_identity_unavailable"
+        )
+    if target_scoped and conservative_all_automations:
+        # Unattributable gaps can hide an automation the scan never named;
+        # per-automation locks cannot cover it, the domain fence can.
+        coarse_fence_reasons.add("unattributable_coverage_failure")
     execution_block_reason_codes = _bounded_reason_codes(
         execution_block_reasons
     )
@@ -1059,6 +1376,15 @@ def _build_obligation_binding(
             or not coverage_complete
         ),
     }
+    if target_scoped:
+        # HAMCP-274 D: when the exact consumer set cannot be held lock by
+        # lock, F3 holds ``reload:automation`` exclusively.  Every automation
+        # configuration mutation and reload takes that key, so the coarse
+        # fence over-locks and never under-locks.
+        lock_projection["coarse_automation_fence"] = bool(coarse_fence_reasons)
+        lock_projection["coarse_automation_fence_reason_codes"] = (
+            _bounded_reason_codes(coarse_fence_reasons)
+        )
     retained_obligations = [
         item
         for item, _ in relevant_pairs[:MAX_RELEVANT_OBLIGATIONS]
@@ -1143,6 +1469,28 @@ def _build_obligation_binding(
             overflow_count or len(relevant_pairs) > MAX_RELEVANT_OBLIGATIONS
         ),
     }
+    if target_scoped:
+        material.update(
+            {
+                "relevance_model": "target_scoped_evidence",
+                "coverage_failure_attribution": (
+                    "conservative_all"
+                    if conservative_all_automations
+                    else "target_scoped"
+                ),
+                "unattributed_coverage_reason_codes": _bounded_reason_codes(
+                    unattributed_reasons
+                ),
+                "relevant_obligation_count": len(relevant_pairs),
+                "unrelated_selector_count": max(
+                    0,
+                    len(getattr(snapshot, "label_selector_authority", {}))
+                    - len(selector_diagnostics),
+                ),
+                **consumer_disclosure,
+            }
+        )
+        material.pop("lock_identity_unavailable", None)
     return {
         **material,
         "selector_authority_diagnostics": selector_diagnostics,
@@ -1304,11 +1652,13 @@ def build_helper_dependency_risk_binding(
     *,
     entity_id: str,
     index_metadata: dict[str, Any],
+    target_scoped: bool = False,
 ) -> dict[str, Any]:
     """Build one normalized, bounded, target-specific approval binding."""
 
     if (
-        snapshot.obligation_ledger_model is not None
+        target_scoped
+        or snapshot.obligation_ledger_model is not None
         or snapshot.obligations
         or getattr(snapshot, "obligation_overflow_count", 0)
     ):
@@ -1316,6 +1666,7 @@ def build_helper_dependency_risk_binding(
             snapshot,
             entity_id=entity_id,
             index_metadata=index_metadata,
+            target_scoped=target_scoped,
         )
 
     selector_diagnostics = _selector_authority_diagnostics(
@@ -1866,6 +2217,21 @@ async def read_runtime_helper_dependency_risk(
     )
 
 
+def helper_consumers_disclosed(binding: dict[str, Any]) -> bool:
+    """Whether a target-scoped binding names a relevant consumer (HAMCP-274).
+
+    Only the input_select v2 binding states ``relevance_model``; every other
+    helper binding keeps its shipped classification.
+    """
+    count = binding.get("relevant_consumer_count")
+    return (
+        binding.get("relevance_model") == "target_scoped_evidence"
+        and isinstance(count, int)
+        and not isinstance(count, bool)
+        and count > 0
+    )
+
+
 def helper_dependency_risk_assessment(
     evidence: dict[str, Any],
 ) -> ChangeRiskAssessment:
@@ -1881,7 +2247,15 @@ def helper_dependency_risk_assessment(
     eligible = binding.get("execution_contract_complete") is True
     precision = str(binding.get("semantic_precision", "exact"))
     consequence = binding.get("physical_consequence")
-    if eligible and consequence == "none":
+    if eligible and consequence == "none" and helper_consumers_disclosed(binding):
+        level = RiskLevel.MEDIUM
+        reasons = [
+            "Bounded dependency evidence names relevant downstream consumers of this helper; none has a physical consequence."
+        ]
+        warnings = [
+            "Review the named consumers and how each references the helper before approval."
+        ]
+    elif eligible and consequence == "none":
         level = RiskLevel.LOW
         reasons = [
             (
