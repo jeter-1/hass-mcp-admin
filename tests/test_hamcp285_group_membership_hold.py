@@ -654,8 +654,9 @@ class HoldScopeTests(unittest.TestCase):
     def test_the_shared_non_target_scoped_binding_is_not_held(self):
         from tests import test_beta39_obligation_governance as ledger
 
+        base = ledger.snapshot(())
         member = ledger.replace(
-            ledger.snapshot(()),
+            base,
             expand_snapshot_evidence=ExpandSnapshotEvidence(
                 entities={"group.x": expand_entity(
                     "group.x", "group", (ledger.TARGET,))},
@@ -663,9 +664,11 @@ class HoldScopeTests(unittest.TestCase):
                 source_inventory_complete=True,
             ),
         )
-        self.assertNotIn("group_membership_hold", ledger.bind(member))
-        self.assertNotIn("group_membership_hold",
-                         ledger.bind(ledger.snapshot(())))
+        shared = ledger.bind(member)
+        self.assertNotIn("group_membership_hold", shared)
+        self.assertNotIn(UNATTRIBUTED, shared["consequence_uncertainty_reason_codes"])
+        # Membership evidence changes nothing on the shared path.
+        self.assertEqual(shared, ledger.bind(base))
         held = ledger.bind_executable(member)["group_membership_hold"]
         self.assertEqual(held["groups"][0]["group_entity_id"], "group.x")
 
