@@ -18,9 +18,11 @@ MAX_DOCUMENT_CHARS = 60_000
 VALIDATION_SCHEMA_VERSION = 2
 VALIDATION_TIER = "Evidence"
 PASSED_EVIDENCE_STEPS = (
+    "Snapshot repository Git identity",
     "Verify base reference",
     "Bind clean Evidence snapshot",
     "Verify protected-path scope",
+    "Bound scratch Git discovery",
     "Compile repository Python",
     "Run complete unittest suite",
     "Validate add-on metadata",
@@ -33,6 +35,7 @@ PASSED_EVIDENCE_STEPS = (
     "Check committed Git whitespace",
     "Check changed text whitespace",
     "Recheck Evidence snapshot",
+    "Recheck repository Git identity",
 )
 PASSED_EVIDENCE_COVERAGE = (
     ("full_local_gate", "executed_locally"),
