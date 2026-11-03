@@ -134,7 +134,8 @@ class GroupHoldAssertions:
         self.assertEqual(binding["execution_block_reason_codes"], [])
         self.assertFalse(binding["consequence_evidence_complete"])
         self.assertIn(reason, binding["consequence_uncertainty_reason_codes"])
-        hold = binding["group_membership_hold"]
+        hold = binding.get("group_membership_hold")
+        self.assertIsInstance(hold, dict, "binding must carry the hold")
         self.assertEqual(hold["reason_code"], reason)
         self.assertEqual(
             [(item["group_entity_id"], item["membership"], item["depth"])
@@ -158,6 +159,9 @@ class GroupHoldAssertions:
         for group_id, membership, _ in groups:
             if membership != "possible":
                 self.assertIn(group_id, notes[0])
+            else:  # a possible group is not stated as a membership
+                self.assertNotIn(group_id, notes[0])
+        self.assertEqual("and more groups" in notes[0], hold["groups_truncated"])
         for code in unresolved:
             self.assertIn(code, notes[0])
         return hold
@@ -244,6 +248,17 @@ class BooleanGroupHoldTests(BooleanGroupCase):
             reason=UNRESOLVED, unresolved=("group_membership_incomplete",),
         )
         self.assertFalse(hold["membership_resolved"])
+
+    async def test_membership_beyond_the_disclosure_bound_is_stated(self):
+        plan, binding = await self.plan_with(
+            {}, [group_state(f"group.m{n:02d}", [BOOLEAN_ENTITY]) for n in range(17)]
+        )
+        hold = self.assert_held(
+            plan, binding,
+            groups=[(f"group.m{n:02d}", "direct", 1) for n in range(16)],
+        )
+        self.assertEqual(hold["group_count"], 17)
+        self.assertTrue(hold["groups_truncated"])
 
     async def test_over_bound_membership_is_a_possible_membership(self):
         members = [f"light.bulk_{n:03d}" for n in range(129)]
@@ -507,11 +522,24 @@ def evidence(*entities: ExpandEntitySnapshotEvidence,
 
 
 TARGET = "input_boolean.unit_target"
+HOLD_KEYS = {
+    "reason_code", "membership_resolved", "unresolved_reason_codes", "groups",
+    "group_count", "groups_truncated", "groups_fingerprint", "maximum_depth",
+}
 
 
 class MembershipResolutionTests(unittest.TestCase):
     def hold(self, snapshot: Any) -> dict[str, Any] | None:
-        return helper_module._group_membership_hold(snapshot, TARGET)
+        try:
+            return helper_module._group_membership_hold(snapshot, TARGET)
+        except Exception as exc:  # a crash is a failed resolution, not a hold
+            self.fail(f"membership resolution raised {exc!r}")
+
+    def held(self, snapshot: Any) -> dict[str, Any]:
+        hold = self.hold(snapshot)
+        self.assertIsNotNone(hold, "expected a group-membership hold")
+        self.assertEqual(set(hold), HOLD_KEYS)
+        return hold
 
     def groups(self, hold: dict[str, Any]) -> list[tuple[str, str, int | None]]:
         return [(item["group_entity_id"], item["membership"], item["depth"])
@@ -528,7 +556,7 @@ class MembershipResolutionTests(unittest.TestCase):
         )))
 
     def test_absent_evidence_is_unresolved(self):
-        hold = self.hold(SimpleNamespace())
+        hold = self.held(SimpleNamespace())
         self.assertEqual(hold["reason_code"], UNRESOLVED)
         self.assertFalse(hold["membership_resolved"])
         self.assertEqual(hold["unresolved_reason_codes"],
@@ -537,20 +565,20 @@ class MembershipResolutionTests(unittest.TestCase):
         self.assertEqual(hold["group_count"], 0)
 
     def test_an_incomplete_state_inventory_is_unresolved(self):
-        hold = self.hold(evidence(state_complete=False))
+        hold = self.held(evidence(state_complete=False))
         self.assertEqual(hold["reason_code"], UNRESOLVED)
         self.assertEqual(hold["unresolved_reason_codes"],
                          ["group_membership_state_inventory_incomplete"])
 
     def test_a_group_of_unknown_source_is_a_possible_group(self):
-        hold = self.hold(evidence(expand_entity("group.x", "unknown")))
+        hold = self.held(evidence(expand_entity("group.x", "unknown")))
         self.assertEqual(hold["reason_code"], UNRESOLVED)
         self.assertEqual(self.groups(hold), [("group.x", "possible", None)])
         self.assertEqual(hold["unresolved_reason_codes"],
                          ["group_membership_source_unknown"])
 
     def test_an_incomplete_group_that_lists_the_target_is_direct(self):
-        hold = self.hold(evidence(
+        hold = self.held(evidence(
             expand_entity("group.x", "group", (TARGET,), complete=False)
         ))
         self.assertEqual(hold["reason_code"], UNATTRIBUTED)
@@ -558,14 +586,14 @@ class MembershipResolutionTests(unittest.TestCase):
         self.assertFalse(hold["membership_resolved"])
 
     def test_a_same_domain_group_source_counts(self):
-        hold = self.hold(evidence(
+        hold = self.held(evidence(
             expand_entity("input_boolean.grouped", "group", (TARGET,))
         ))
         self.assertEqual(self.groups(hold),
                          [("input_boolean.grouped", "direct", 1)])
 
     def test_cycles_terminate_and_never_list_the_target(self):
-        hold = self.hold(evidence(
+        hold = self.held(evidence(
             expand_entity("group.a", "group", (TARGET, "group.b")),
             expand_entity("group.b", "group", ("group.a",)),
             expand_entity(TARGET, "group", ("group.a",)),
@@ -578,32 +606,36 @@ class MembershipResolutionTests(unittest.TestCase):
         chain = [expand_entity("group.g00", "group", (TARGET,))]
         chain += [expand_entity(f"group.g{n:02d}", "group", (f"group.g{n - 1:02d}",))
                   for n in range(1, 10)]
-        hold = self.hold(evidence(*chain))
+        hold = self.held(evidence(*chain))
         self.assertEqual(hold["maximum_depth"], 8)
         self.assertEqual([item[2] for item in self.groups(hold)],
                          list(range(1, 9)))
         self.assertEqual(hold["unresolved_reason_codes"],
                          ["group_membership_depth_exceeded"])
         self.assertEqual(hold["reason_code"], UNATTRIBUTED)
-        exact = self.hold(evidence(*chain[:8]))
+        exact = self.held(evidence(*chain[:8]))
         self.assertTrue(exact["membership_resolved"])
         self.assertEqual(len(exact["groups"]), 8)
 
     def test_disclosure_is_bounded_and_fingerprinted(self):
         many = [expand_entity(f"group.m{n:02d}", "group", (TARGET,))
                 for n in range(20)]
-        hold = self.hold(evidence(*many))
+        hold = self.held(evidence(*many))
         self.assertEqual(hold["group_count"], 20)
         self.assertTrue(hold["groups_truncated"])
         self.assertEqual(len(hold["groups"]), 16)
         self.assertEqual(hold["groups"][0]["group_entity_id"], "group.m00")
-        fewer = self.hold(evidence(*many[:19]))
+        fewer = self.held(evidence(*many[:19]))
         self.assertNotEqual(hold["groups_fingerprint"], fewer["groups_fingerprint"])
         self.assertEqual(hold["groups_fingerprint"],
-                         self.hold(evidence(*reversed(many)))["groups_fingerprint"])
+                         self.held(evidence(*reversed(many)))["groups_fingerprint"])
+        exact = self.held(evidence(*many[:16]))
+        self.assertEqual(exact["group_count"], 16)
+        self.assertFalse(exact["groups_truncated"])
+        self.assertEqual(len(exact["groups"]), 16)
 
     def test_direct_sorts_before_nested_before_possible(self):
-        hold = self.hold(evidence(
+        hold = self.held(evidence(
             expand_entity("group.a_outer", "group", ("group.z_inner",)),
             expand_entity("group.z_inner", "group", (TARGET,)),
             expand_entity("group.b_unknown", "unknown"),
@@ -613,6 +645,29 @@ class MembershipResolutionTests(unittest.TestCase):
             ("group.a_outer", "nested", 2),
             ("group.b_unknown", "possible", None),
         ])
+        self.assertEqual(hold["group_count"], 3)
+
+
+class HoldScopeTests(unittest.TestCase):
+    """Only the target-scoped (input_boolean v14, input_select v2) path holds."""
+
+    def test_the_shared_non_target_scoped_binding_is_not_held(self):
+        from tests import test_beta39_obligation_governance as ledger
+
+        member = ledger.replace(
+            ledger.snapshot(()),
+            expand_snapshot_evidence=ExpandSnapshotEvidence(
+                entities={"group.x": expand_entity(
+                    "group.x", "group", (ledger.TARGET,))},
+                state_inventory_complete=True,
+                source_inventory_complete=True,
+            ),
+        )
+        self.assertNotIn("group_membership_hold", ledger.bind(member))
+        self.assertNotIn("group_membership_hold",
+                         ledger.bind(ledger.snapshot(())))
+        held = ledger.bind_executable(member)["group_membership_hold"]
+        self.assertEqual(held["groups"][0]["group_entity_id"], "group.x")
 
 
 # --------------------------------------------------------------------------
