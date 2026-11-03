@@ -129,9 +129,13 @@ Stored metadata is untrusted (round-1 correction R1-M2):
   configured sensitive values unchanged; otherwise it is reported as
   `unrecognized_value`.
 - Screening happens before the view is fingerprinted, rendered on Ingress
-  or counted in health. The same rule covers the HAMCP-097 health rows:
-  a stored projection-failure `plan_id` is shown only in the 32-hex record
-  format, and anything else is `unrecognized_value`.
+  or counted in health. The same rule covers the HAMCP-097 health rows
+  (round-2 correction R2-M1): a stored projection-failure `plan_id` is
+  shown only when it is in the 32-hex record format and the shared
+  sanitizer, given the configured sensitive values, leaves it unchanged,
+  the same screen as the acknowledgement ID lists. Anything else is
+  `unrecognized_value`. Counts, order (by stored identifier), the bound of
+  eight rows, truncation and categories are unchanged.
 
 Because only allowlisted fields are copied, the view never contains
 configuration, targets, notes, principals, approver tokens or free-form
