@@ -393,6 +393,22 @@ class ReadStartDeadlineTests(unittest.TestCase):
         self.assertEqual(result["outcomes"][sorted(self.DOCUMENTS)[3]], "not_attempted_budget")
         self.assertEqual(result["profile"]["read_attempts"], 3)
 
+    def test_the_last_queued_read_left_unstarted_still_reports_the_budget(self):
+        # Four dashboards, four workers: the fourth read is the last queued
+        # item, so no later worker check sees the expired deadline. The read
+        # itself must record that the budget, not a failure, stopped it.
+        documents = dict(sorted(self.DOCUMENTS.items())[:g.DASHBOARD_READ_CONCURRENCY])
+        clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+        reader = EnteringReader(documents, clock, read_cost=2.1)
+        result = t227.collect_budget(reader, clock, sleep)
+        last = sorted(documents)[-1]
+        self.assertEqual(len(reader.entered), 3)
+        self.assertEqual(result["outcomes"][last], "not_attempted_budget")
+        self.assertEqual(t227.errors(result), {"dashboard_not_read": 1,
+                                               "dashboard_scan_budget_exhausted": 1})
+        self.assertIn(("dependency_provider", "dashboard_scan_budget_exhausted"),
+                      [(t.source_id, t.reason_code) for t in result["terminals"]])
+
     def test_queued_reads_overtaken_by_other_work_are_left_unattempted(self):
         # The clock passes the deadline between the moment the reads are
         # queued and the moment they would run (another task's work), so no
