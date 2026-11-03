@@ -22,7 +22,10 @@ TREE = SCRATCH / "tree"
 LOGS = SCRATCH / "logs"
 PY = str(ROOT / ".artifacts" / "venv" / "bin" / "python")
 TESTS = ["tests.test_hamcp277_dashboard_scan_budget", "tests.test_hamcp227_global_sources"]
-TIMEOUT = 300
+# R07 (timer left running) makes every real-clock index build wait out each
+# read's 3 s timer: slow, not hung. The bound must let that run finish so its
+# assertion failures are counted; the unmutated controls take about 40 s.
+TIMEOUT = 1500
 ENG = "hass_mcp_engineering_beta/ha_mcp_engineering/"
 GS, PV = ENG + "dependency/global_sources.py", ENG + "dependency/provider.py"
 

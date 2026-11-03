@@ -409,6 +409,55 @@ class ReadStartDeadlineTests(unittest.TestCase):
         self.assertIn(("dependency_provider", "dashboard_scan_budget_exhausted"),
                       [(t.source_id, t.reason_code) for t in result["terminals"]])
 
+    def test_a_deadline_reached_together_with_retired_authority_is_reported_as_the_budget(self):
+        # One worker reads at 0, 2.1 and 4.2 s; the third read ends at 6.3 s,
+        # past the deadline, and the dashboard authority retires at that same
+        # moment. The worker's next check sees both: the deadline is checked
+        # first, so the rest are not_attempted_budget and the overrun counted.
+        class Retiring(EnteringReader):
+            async def read(self, path):
+                document = await super().read(path)
+                if self.clock.now >= g.DASHBOARD_SCAN_SECONDS:
+                    self.is_current = False
+                return document
+
+        clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+        reader = Retiring(self.DOCUMENTS, clock, read_cost=2.1)
+        with patch.object(g, "DASHBOARD_READ_CONCURRENCY", 1):
+            result = t227.collect_budget(reader, clock, sleep)
+        self.assertFalse(reader.is_current)
+        self.assertEqual([at for _, at in reader.entered], [0.0, 2.1, 4.2])
+        self.assertEqual(outcomes(result, "not_attempted_budget"), sorted(self.DOCUMENTS)[3:])
+        self.assertEqual(outcomes(result, "not_attempted_authority"), [])
+        self.assertEqual(t227.errors(result), {"dashboard_not_read": len(self.DOCUMENTS) - 3,
+                                               "dashboard_scan_budget_exhausted": 1})
+
+    def test_a_finished_read_cancels_its_timer(self):
+        # The per-read timer must not outlive a read that finished first:
+        # left running, it would hold the read slot for the full allowance.
+        async def scenario():
+            cancelled = []
+
+            async def sleep(seconds):
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.append(seconds)
+                    raise
+
+            async def start():
+                return {"items": []}
+
+            try:
+                result = await asyncio.wait_for(g._within(start, lambda: 2.5, sleep), 5)
+            except asyncio.TimeoutError:
+                result = None
+            return result, cancelled
+
+        result, cancelled = asyncio.run(scenario())
+        self.assertEqual(result, ("done", 2.5, {"items": []}))
+        self.assertEqual(cancelled, [2.5])
+
     def test_queued_reads_overtaken_by_other_work_are_left_unattempted(self):
         # The clock passes the deadline between the moment the reads are
         # queued and the moment they would run (another task's work), so no
@@ -442,7 +491,9 @@ class ReadStartDeadlineTests(unittest.TestCase):
             for _ in range(20):
                 await asyncio.sleep(0)
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            # Bounded in real time: a timer left running would hold the
+            # cancelled collection open, which the assertions below report.
+            await asyncio.wait((task,), timeout=5)
             for _ in range(5):
                 await asyncio.sleep(0)
             return reader, task, asyncio.all_tasks() - before - {asyncio.current_task()}
@@ -681,11 +732,16 @@ class DisclosureNonInteractionTests(t270.PlanDisclosureTestCase):
         ]}]} for path in PATHS}
         clock, sleep = t227.FakeClock(), t227.ControlledSleep()
         with patch.object(g, "DASHBOARD_READ_CONCURRENCY", 1):
-            budget = await g.collect_global_sources(
-                [], [], registry_complete=True, secret=SECRET,
-                dashboards=await g.collect_dashboard_sources(
+            try:
+                # Bounded in real time: the simulated sleep never fires, so a
+                # timer left running would otherwise hang the test.
+                dashboards = await asyncio.wait_for(g.collect_dashboard_sources(
                     t227.BudgetReader(documents, clock, read_cost=2.0, listed=sorted(PATHS)),
-                    secret=SECRET, clock=clock, sleep=sleep))
+                    secret=SECRET, clock=clock, sleep=sleep), 10)
+            except asyncio.TimeoutError:
+                self.fail("dashboard collection did not finish")
+            budget = await g.collect_global_sources(
+                [], [], registry_complete=True, secret=SECRET, dashboards=dashboards)
         variants = {
             "absent": None,
             "all_read": await self.collected(t227.FakeReader(
