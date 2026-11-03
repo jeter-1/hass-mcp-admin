@@ -273,7 +273,7 @@ class IngressDecisionTests(Hamcp253IngressCase):
         recorded = self.acknowledgement_audits()
         self.assertEqual(len(recorded), audits + 1)
         self.assertEqual(recorded[-1]["error_code"], INVALID)
-        self.assertEqual(len(self.ledger_events()), 1)
+        self.assertEqual(len(self.decisions()), 1)
 
     async def test_csrf_bound_to_another_administrator_is_refused(self):
         async with ingress_client(self.app) as client:
@@ -311,7 +311,7 @@ class IngressDecisionTests(Hamcp253IngressCase):
                     self.form(second_fields, classification="current_defect"),
                 )
             self.assertEqual(response.status_code, 200)
-        events = self.ledger_events()
+        events = self.decisions()
         self.assertEqual(
             [event["body"]["principal"] for event in events],
             [ADMIN_PRINCIPAL, "home_assistant_admin_ingress:" + other_user],
@@ -366,7 +366,7 @@ class IngressDecisionTests(Hamcp253IngressCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("<h1>Decision recorded</h1>", response.text)
         self.assertIn("acknowledged", response.text)
-        events = self.ledger_events()
+        events = self.decisions()
         self.assertEqual(len(events), 1)
         body = events[0]["body"]
         self.assertEqual(body["principal"], ADMIN_PRINCIPAL)
@@ -440,7 +440,7 @@ class IngressRecordsInboxTests(Hamcp253IngressCase):
         self.assertIn("Acknowledgement ledger: ok", html)
         self.assertIn("<h2>Execution tasks requiring manual review</h2><p>None.</p>", html)
         self.assertEqual(self.application._record_csrf, {})
-        self.assertEqual(len(self.ledger_events()), 2)
+        self.assertEqual(len(self.decisions()), 2)
 
 
 if __name__ == "__main__":

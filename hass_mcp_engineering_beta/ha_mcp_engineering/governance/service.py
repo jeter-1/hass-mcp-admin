@@ -923,6 +923,9 @@ class ChangeGovernanceService:
             tuple[dict[str, int], dict[str, int]] | None
         ) = None
         self.historical_validation_wait_seconds = HISTORICAL_VALIDATION_WAIT_SECONDS
+        # HAMCP-253 R1-M3: finish an acknowledgement whose audit write was
+        # interrupted, before the first health summary counts it.
+        self._reconcile_acknowledgement_audits_at_start()
         self._health_cache = self._build_health_summary(
             include_provider_health=False
         )
@@ -15914,18 +15917,121 @@ class ChangeGovernanceService:
 
         view = self._inspection_record(record_kind, record_id)
         try:
-            entry = acknowledgement_ledger.current_entries(
-                self.acknowledgements.read()
-            ).get((record_kind, record_id))
+            events = self.acknowledgements.read()
+            entry = acknowledgement_ledger.current_entries(events).get(
+                (record_kind, record_id)
+            )
+            # A decision whose audit event is not yet written is not in
+            # effect; it is shown, never applied (R1-M3).
+            audit_pending = any(
+                (decision["body"]["record_kind"], decision["body"]["record_id"])
+                == (record_kind, record_id)
+                for decision in acknowledgement_ledger.pending_decisions(events)
+            )
             ledger_status = "ok"
         except AcknowledgementStorageError:
-            entry, ledger_status = None, "unavailable"
+            entry, audit_pending, ledger_status = None, False, "unavailable"
         view["acknowledgement"] = {
             **self._acknowledgement_projection(entry, view["record_fingerprint"]),
+            "audit_pending": audit_pending,
             "ledger_status": ledger_status,
         }
         view["payload_included"] = False
         return view
+
+    def _acknowledgement_audit_enabled(self) -> bool:
+        # A disabled logger reports success without writing; it is not an
+        # audit destination (R1-M3).
+        return (
+            self.audit is not None
+            and getattr(self.audit, "enabled", False) is True
+            and bool(getattr(self.audit, "path", None))
+        )
+
+    def _acknowledgement_decision_status(
+        self, events: list[dict[str, Any]], body: dict[str, Any]
+    ) -> tuple[str, str | None]:
+        """What ``body`` would do on top of the effective ``events``."""
+
+        latest = acknowledgement_ledger.current_entries(events).get(
+            (body["record_kind"], body["record_id"])
+        )
+        if body["action"] == "revoke":
+            if latest is None:
+                return "refused", "record_not_acknowledged"
+            return ("no_op" if latest["action"] == "revoke" else "revoked"), None
+        effective = self._acknowledgement_projection(
+            latest, body["record_fingerprint"]
+        )["state"]
+        if (
+            effective == "acknowledged"
+            and latest["classification"] == body["classification"]
+            and latest["reason"] == body["reason"]
+        ):
+            return "no_op", None
+        return ("reclassified" if effective == "acknowledged" else "acknowledged"), None
+
+    def _write_acknowledgement_decision_audit(
+        self,
+        events: list[dict[str, Any]],
+        decision: dict[str, Any],
+        *,
+        reconciled: bool,
+    ) -> bool:
+        """Durably write the audit event of one decision entry, idempotently."""
+
+        body = decision["body"]
+        earlier = [
+            event for event in events if event["sequence"] < decision["sequence"]
+        ]
+        status, _ = self._acknowledgement_decision_status(earlier, body)
+        outcome = self._acknowledgement_outcome_body(
+            status, None, body["record_kind"], body["record_id"], body["action"],
+            body["classification"], body["record_fingerprint"],
+            sequence=decision["sequence"],
+        )
+        record = self._acknowledgement_audit_record(
+            outcome, None, body["principal"], body["reason"],
+            reconciled=reconciled,
+        )
+        record["audit_event_id"] = acknowledgement_ledger.audit_event_id(decision)
+        if not self._acknowledgement_audit_enabled():
+            return False
+        try:
+            return self.audit.write_batch((record,)) == 1
+        except Exception:
+            return False
+
+    def _reconcile_acknowledgement_audits(self, transaction: Any) -> None:
+        """Record or refuse: a pending decision is never left behind silently.
+
+        Runs inside the ledger transaction. Writing the same audit identifier
+        again is a no-op in the audit log, so a decision whose audit event was
+        written before a crash is completed without a duplicate.
+        """
+
+        for decision in acknowledgement_ledger.pending_decisions(transaction.events):
+            if not self._write_acknowledgement_decision_audit(
+                transaction.events, decision, reconciled=True
+            ):
+                raise AcknowledgementStorageError("acknowledgement_audit_pending")
+            transaction.complete(decision, "recorded", self._timestamp())
+
+    def _reconcile_acknowledgement_audits_at_start(self) -> None:
+        try:
+            if self.acknowledgements.token() is None or not (
+                acknowledgement_ledger.pending_decisions(self.acknowledgements.read())
+            ):
+                return
+            if not self._acknowledgement_audit_enabled():
+                return
+            with self.acknowledgements.transaction() as transaction:
+                self._reconcile_acknowledgement_audits(transaction)
+        except AcknowledgementStorageError:
+            # Health reports the pending decision; the next writer retries.
+            return
+        finally:
+            self._acknowledgement_health_memo = None
 
     def acknowledge_governance_record(
         self,
@@ -16006,12 +16112,16 @@ class ChangeGovernanceService:
                 view["record_fingerprint"], record_fingerprint
             ):
                 refusal = "record_fingerprint_stale"
+        if refusal is None and not self._acknowledgement_audit_enabled():
+            # R1-M3: no ledger change without an audit destination.
+            refusal = "audit_unavailable"
         if refusal is not None:
             return self._acknowledgement_outcome(
                 "refused", refusal, record_kind, record_id, action,
                 classification, record_fingerprint, principal, reason,
             )
         body = {
+            "entry_type": acknowledgement_ledger.DECISION,
             "record_kind": record_kind,
             "record_id": record_id,
             "action": action,
@@ -16021,41 +16131,55 @@ class ChangeGovernanceService:
             "principal": principal,
             "recorded_at": self._timestamp(),
         }
+        sequence: int | None = None
+        decision: dict[str, Any] | None = None
+        decision_audited: bool | None = None
+        completed = False
         try:
             with self.acknowledgements.transaction() as transaction:
-                latest = acknowledgement_ledger.current_entries(
-                    transaction.events
-                ).get((record_kind, record_id))
-                effective = self._acknowledgement_projection(
-                    latest, record_fingerprint
-                )["state"]
-                if action == "revoke":
-                    if latest is None:
-                        status, refusal = "refused", "record_not_acknowledged"
-                    elif latest["action"] == "revoke":
-                        status = "no_op"
-                    else:
-                        status = "revoked"
-                elif (
-                    effective == "acknowledged"
-                    and latest["classification"] == classification
-                    and latest["reason"] == reason
-                ):
-                    status = "no_op"
-                elif effective == "acknowledged":
-                    status = "reclassified"
-                else:
-                    status = "acknowledged"
-                sequence = None
+                self._reconcile_acknowledgement_audits(transaction)
+                status, refusal = self._acknowledgement_decision_status(
+                    transaction.events, body
+                )
                 if status in {"acknowledged", "reclassified", "revoked"}:
-                    sequence = transaction.append(body)["sequence"]
+                    # Decision, then its audit event, then the completion
+                    # that makes it effective (R1-M3).
+                    decision = transaction.append(body)
+                    decision_audited = self._write_acknowledgement_decision_audit(
+                        transaction.events, decision, reconciled=False
+                    )
+                    transaction.complete(
+                        decision,
+                        "recorded" if decision_audited else "abandoned",
+                        self._timestamp(),
+                    )
+                    completed = True
+                    if decision_audited:
+                        sequence = decision["sequence"]
+                    else:
+                        status, refusal = "refused", "audit_write_failed"
         except AcknowledgementStorageError as exc:
             status, refusal, sequence = "refused", str(exc), None
+            if decision is not None and not completed:
+                # The decision is stored but its completion is not. It is
+                # not effective now; the next writer or start completes it
+                # once its audit event is written, so it is reported as
+                # pending, never as refused.
+                status = "pending"
+                refusal = "acknowledgement_audit_reconciliation_pending"
+                sequence = decision["sequence"]
         finally:
             self._acknowledgement_health_memo = None
         return self._acknowledgement_outcome(
             status, refusal, record_kind, record_id, action, classification,
             record_fingerprint, principal, reason, sequence=sequence,
+            # A decision's own audit event is its outcome audit; a failed
+            # one is followed by a best-effort refusal audit.
+            decision_audited=(
+                decision_audited
+                if decision is not None and (decision_audited or not completed)
+                else None
+            ),
         )
 
     def refuse_governance_record_acknowledgement(
@@ -16068,8 +16192,8 @@ class ChangeGovernanceService:
             principal, None,
         )
 
-    def _acknowledgement_outcome(
-        self,
+    @staticmethod
+    def _acknowledgement_outcome_body(
         status: str,
         refusal: str | None,
         record_kind: Any,
@@ -16077,8 +16201,6 @@ class ChangeGovernanceService:
         action: Any,
         classification: Any,
         record_fingerprint: Any,
-        principal: Any,
-        reason: Any,
         *,
         sequence: int | None = None,
     ) -> dict[str, Any]:
@@ -16091,7 +16213,7 @@ class ChangeGovernanceService:
                 else None
             )
 
-        outcome = {
+        return {
             "status": status,
             "refusal_reason": refusal,
             "record_kind": known(record_kind, acknowledgement_ledger.RECORD_KINDS),
@@ -16106,48 +16228,91 @@ class ChangeGovernanceService:
             "home_assistant_calls": 0,
             "execution_eligibility_changed": False,
         }
-        audited = False
-        if self.audit is not None:
+
+    @staticmethod
+    def _acknowledgement_audit_record(
+        outcome: dict[str, Any],
+        refusal: str | None,
+        principal: Any,
+        reason: Any,
+        *,
+        reconciled: bool = False,
+    ) -> dict[str, Any]:
+        status = outcome["status"]
+        return AuditRecord(
+            request_id=uuid.uuid4().hex,
+            tool_name=None,
+            capability_classification="ingress_record_acknowledgement",
+            operation_category="governance_record_acknowledgement",
+            access=(
+                "refused" if status in {"refused", "pending"} else "governance_write"
+            ),
+            authenticated=refusal != "administrator_required",
+            caller_id=(
+                principal
+                if isinstance(principal, str)
+                and acknowledgement_ledger.ADMIN_PRINCIPAL.fullmatch(principal)
+                else None
+            ),
+            # The reason text stays in the ledger; audit records its length
+            # only.
+            parameters={
+                key: outcome[key]
+                for key in (
+                    "record_kind", "record_id", "action",
+                    "classification", "record_fingerprint",
+                    "ledger_sequence",
+                )
+            } | {
+                "reason_length": (
+                    len(reason) if isinstance(reason, str) else None
+                ),
+                # Written by reconciliation after an interrupted request.
+                "audit_reconciled": reconciled,
+            },
+            result_status=status,
+            error_code=refusal,
+            resource_ids=(
+                {"record_id": outcome["record_id"]}
+                if outcome["record_id"] else {}
+            ),
+            event="governance_record_acknowledgement",
+        ).as_dict()
+
+    def _acknowledgement_outcome(
+        self,
+        status: str,
+        refusal: str | None,
+        record_kind: Any,
+        record_id: Any,
+        action: Any,
+        classification: Any,
+        record_fingerprint: Any,
+        principal: Any,
+        reason: Any,
+        *,
+        sequence: int | None = None,
+        decision_audited: bool | None = None,
+    ) -> dict[str, Any]:
+        outcome = self._acknowledgement_outcome_body(
+            status, refusal, record_kind, record_id, action, classification,
+            record_fingerprint, sequence=sequence,
+        )
+        if decision_audited is not None:
+            audited = decision_audited
+        elif not self._acknowledgement_audit_enabled():
+            # A disabled logger reports success without writing.
+            audited = False
+        else:
             try:
                 audited = self.audit.write(
-                    AuditRecord(
-                        request_id=uuid.uuid4().hex,
-                        tool_name=None,
-                        capability_classification="ingress_record_acknowledgement",
-                        operation_category="governance_record_acknowledgement",
-                        access="refused" if status == "refused" else "governance_write",
-                        authenticated=refusal != "administrator_required",
-                        caller_id=(
-                            principal
-                            if isinstance(principal, str)
-                            and acknowledgement_ledger.ADMIN_PRINCIPAL.fullmatch(principal)
-                            else None
-                        ),
-                        # The reason text stays in the ledger; audit records
-                        # its length only.
-                        parameters={
-                            key: outcome[key]
-                            for key in (
-                                "record_kind", "record_id", "action",
-                                "classification", "record_fingerprint",
-                                "ledger_sequence",
-                            )
-                        } | {
-                            "reason_length": (
-                                len(reason) if isinstance(reason, str) else None
-                            ),
-                        },
-                        result_status=status,
-                        error_code=refusal,
-                        resource_ids=(
-                            {"record_id": outcome["record_id"]}
-                            if outcome["record_id"] else {}
-                        ),
-                        event="governance_record_acknowledgement",
+                    self._acknowledgement_audit_record(
+                        outcome, refusal, principal, reason
                     )
                 ) is True
             except Exception:
                 audited = False
+        # True only when an audit event for this request is durably written.
         outcome["audit_recorded"] = audited
         return outcome
 
@@ -16248,6 +16413,9 @@ class ChangeGovernanceService:
             "model": acknowledgement_ledger.MODEL,
             "ledger_status": ledger_status,
             "ledger_entry_count": len(events),
+            # Decisions whose audit event is not yet written, and decisions
+            # that never took effect because it could not be (R1-M3).
+            **acknowledgement_ledger.audit_counts(events),
             "manual_review_index_status": task_index_status,
             "projection_failed_plans": bucket("change_plan", plan_ids),
             "manual_review_tasks": bucket("execution_task", task_ids),

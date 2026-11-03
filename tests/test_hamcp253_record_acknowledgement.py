@@ -323,6 +323,21 @@ class Hamcp253Case(GovernanceTestCase):
             return []
         return json.loads(path.read_text(encoding="utf-8"))["events"]
 
+    def decisions(self):
+        """Decision entries; each is followed by its audit completion."""
+
+        return [
+            event for event in self.ledger_events()
+            if event["body"]["entry_type"] == ledger_module.DECISION
+        ]
+
+    def completions(self):
+        return {
+            event["body"]["decision_sequence"]: event["body"]["outcome"]
+            for event in self.ledger_events()
+            if event["body"]["entry_type"] == ledger_module.AUDIT_COMPLETION
+        }
+
     def audits(self):
         if not self.audit_path.exists():
             return []
@@ -357,7 +372,7 @@ class Hamcp253Case(GovernanceTestCase):
         self.assertEqual(outcome["home_assistant_calls"], 0)
         self.assertIs(outcome["execution_eligibility_changed"], False)
         self.assertTrue(outcome["audit_recorded"])
-        self.assertEqual(len(self.ledger_events()), ledger_before)
+        self.assertEqual(len(self.decisions()), ledger_before)
         audits = self.acknowledgement_audits()
         if audits_before is not None:
             self.assertEqual(len(audits), audits_before + 1)
@@ -405,6 +420,7 @@ class InspectionTests(Hamcp253Case):
                 "classification": None,
                 "recorded_at": None,
                 "history_count": 0,
+                "audit_pending": False,
                 "ledger_status": "ok",
             },
         )
@@ -657,7 +673,9 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
         self.assertEqual(self.bucket(health)["acknowledged_historical_ids"], plan_ids)
         self.assertIs(health["record_acknowledgement"]["acknowledgement_affects_execution"], False)
         self.assertEqual(health["record_acknowledgement"]["ledger_status"], "ok")
-        self.assertEqual(health["record_acknowledgement"]["ledger_entry_count"], 2)
+        # Two decisions, each with its audit completion.
+        self.assertEqual(health["record_acknowledgement"]["ledger_entry_count"], 4)
+        self.assertEqual(health["record_acknowledgement"]["audit_pending_count"], 0)
         # Raw diagnosis is unchanged; only the warning overlay moves.
         self.assertEqual(health["projection_failure_count"], 2)
         # The plans themselves were never rewritten.
@@ -670,30 +688,34 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
         self.assertEqual(view["acknowledgement"]["history_count"], 1)
 
         events = self.ledger_events()
-        self.assertEqual([event["sequence"] for event in events], [1, 2])
+        self.assertEqual([event["sequence"] for event in events], [1, 2, 3, 4])
         self.assertEqual(events[0]["previous"], "0" * 64)
-        self.assertEqual(events[1]["previous"], events[0]["hash"])
-        self.assertEqual(events[0]["body"]["principal"], ADMIN)
-        self.assertEqual(events[0]["body"]["reason"], REASON)
+        for earlier, later in zip(events, events[1:]):
+            self.assertEqual(later["previous"], earlier["hash"])
+        decisions = self.decisions()
+        self.assertEqual([event["sequence"] for event in decisions], [1, 3])
+        self.assertEqual(self.completions(), {1: "recorded", 3: "recorded"})
+        self.assertEqual(decisions[0]["body"]["principal"], ADMIN)
+        self.assertEqual(decisions[0]["body"]["reason"], REASON)
 
     async def test_reclassify_revoke_and_repeat(self):
         (plan_id,) = await self.projection_failed_plans()
         audits = len(self.acknowledgement_audits())
 
         self.assert_success(self.acknowledge("change_plan", plan_id), "acknowledged")
-        self.assertEqual(len(self.ledger_events()), 1)
+        self.assertEqual(len(self.decisions()), 1)
 
         repeat = self.acknowledge("change_plan", plan_id)
         self.assert_success(repeat, "no_op")
         self.assertIsNone(repeat["ledger_sequence"])
-        self.assertEqual(len(self.ledger_events()), 1)
+        self.assertEqual(len(self.decisions()), 1)
 
         reclassified = self.acknowledge(
             "change_plan", plan_id, classification="current_defect",
             reason="Reviewed again: still a current defect",
         )
         self.assert_success(reclassified, "reclassified")
-        self.assertEqual(reclassified["ledger_sequence"], 2)
+        self.assertEqual(reclassified["ledger_sequence"], 3)
         health = self.service.health_summary()
         self.assertIsNone(health["projection_failure_warning"])
         self.assertEqual(self.bucket(health)["acknowledged_current_defect_count"], 1)
@@ -709,7 +731,7 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
             reason="Withdrawn: needs another review",
         )
         self.assert_success(revoked, "revoked")
-        self.assertEqual(revoked["ledger_sequence"], 3)
+        self.assertEqual(revoked["ledger_sequence"], 5)
         health = self.service.health_summary()
         self.assertEqual(health["projection_failure_warning"], PROJECTION_WARNING)
         self.assertEqual(self.bucket(health)["unacknowledged_ids"], [plan_id])
@@ -723,7 +745,8 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
             reason="Withdrawn: needs another review",
         )
         self.assert_success(again, "no_op")
-        self.assertEqual(len(self.ledger_events()), 3)
+        self.assertEqual(len(self.decisions()), 3)
+        self.assertEqual(self.completions(), {1: "recorded", 3: "recorded", 5: "recorded"})
 
         recorded = self.acknowledgement_audits()[audits:]
         self.assertEqual(
@@ -751,7 +774,7 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
         health = restarted.health_summary()
         self.assertIsNone(health["projection_failure_warning"])
         self.assertEqual(self.bucket(health)["acknowledged_historical_ids"], [plan_id])
-        self.assertEqual(health["record_acknowledgement"]["ledger_entry_count"], 1)
+        self.assertEqual(health["record_acknowledgement"]["ledger_entry_count"], 2)
         self.assertEqual(self.ledger_path().read_bytes(), ledger)
 
     async def test_changed_record_makes_acknowledgement_stale_and_warns_again(self):
@@ -790,7 +813,7 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
             self.acknowledge("change_plan", plan_id, reason="\U0001f642" * 500), "reclassified"
         )
         events = self.ledger_events()
-        self.assertEqual(events[-1]["body"]["reason"], "\U0001f642" * 500)
+        self.assertEqual(self.decisions()[-1]["body"]["reason"], "\U0001f642" * 500)
         self.assertLessEqual(
             max(len(ledger_module.encoded(event)) for event in events),
             ledger_module.MAX_EVENT_BYTES,
@@ -894,7 +917,7 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
         created = await self.failed_plan()
         outcome = self.acknowledge("change_plan", created["plan_id"], reason="r" * 500)
         self.assert_success(outcome, "acknowledged")
-        self.assertEqual(len(self.ledger_events()[-1]["body"]["reason"]), 500)
+        self.assertEqual(len(self.decisions()[-1]["body"]["reason"]), 500)
 
     async def assert_eligibility_unchanged(self, created):
         plan_id, plan_hash = created["plan_id"], created["plan_hash"]
@@ -1077,7 +1100,7 @@ class AcknowledgementRefusalTests(Hamcp253Case):
                 leftovers = list((self.repository.root / ledger_module.MODEL).glob(".acknowledgement-*"))
                 self.assertEqual(leftovers, [])
         self.assert_success(self.acknowledge("change_plan", self.target), "acknowledged")
-        self.assertEqual(len(self.ledger_events()), 1)
+        self.assertEqual(len(self.decisions()), 1)
 
     async def test_refusal_after_an_entry_leaves_the_ledger_unchanged(self):
         self.assert_success(self.acknowledge("change_plan", self.target), "acknowledged")
@@ -1139,7 +1162,7 @@ class RedactionTests(Hamcp253Case):
         self.assertNotIn(CONFIG_SECRET, self.ledger_path().read_text(encoding="utf-8"))
 
 
-class ManualReviewTaskTests(unittest.IsolatedAsyncioTestCase):
+class ManualReviewTaskCase(unittest.IsolatedAsyncioTestCase):
     """A real MANUAL_REVIEW_REQUIRED execution task (beta11 restart flow)."""
 
     async def asyncSetUp(self):
@@ -1221,6 +1244,8 @@ class ManualReviewTaskTests(unittest.IsolatedAsyncioTestCase):
         return (gateway.dispatch_count, gateway.planning_count, gateway.verification_count,
                 len(gateway.home_assistant_verification_calls))
 
+
+class ManualReviewTaskTests(ManualReviewTaskCase):
     async def test_manual_review_task_is_inspected_and_acknowledged(self):
         counters = self.counters()
         task_path = self.recovered.task_repository._path(self.task_id)

@@ -1217,6 +1217,17 @@ class IngressApprovalApplication:
                       "<p>Nothing was recorded.</p>" + back, prefix=prefix),
                 409,
             )
+        if status == "pending":
+            # HAMCP-253 R1-M3: stored, not in effect until its audit event
+            # is confirmed by the next acknowledgement or a restart.
+            return self._response(
+                _page("Acknowledgement pending",
+                      f"<p>{escape(_text(result.get('refusal_reason'), 64))}</p>"
+                      "<p>The decision is stored but is not in effect. It takes "
+                      "effect only when its audit event is written.</p>" + back,
+                      prefix=prefix),
+                202,
+            )
         audit = "recorded" if result.get("audit_recorded") else "not recorded"
         return self._response(
             _page("Decision recorded",
@@ -1385,6 +1396,7 @@ def _render_record_view(view: dict[str, Any]) -> str:
         ("Unreadable fields", ", ".join(str(item) for item in view.get("unreadable_fields") or []) or "none"),
         ("Acknowledgement", acknowledgement.get("state")),
         ("Classification", acknowledgement.get("classification")),
+        ("Audit pending", acknowledgement.get("audit_pending")),
         ("Fingerprint", view.get("record_fingerprint")),
     )
     table = "".join(

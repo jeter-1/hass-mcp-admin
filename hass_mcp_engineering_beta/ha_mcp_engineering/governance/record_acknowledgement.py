@@ -4,6 +4,13 @@ An acknowledgement is supplementary evidence about one exact governance
 record state. It never rewrites, deletes or re-validates the plan or task it
 names, and nothing that approves, applies or recovers a record reads it. The
 ledger only decides whether health warns about a record that is already stuck.
+
+Audit coordination (R1-M3): a decision entry is written first and is not
+effective until a later completion entry records that its audit event was
+durably written. The audit event carries an identifier derived from the
+decision entry, so writing it again after a crash is idempotent. A decision
+without a completion is pending: it acknowledges nothing, health reports it,
+and the next writer reconciles it before appending anything else.
 """
 
 from __future__ import annotations
@@ -37,9 +44,19 @@ ACTIONS = ("acknowledge", "revoke")
 ADMIN_PRINCIPAL = re.compile(r"^home_assistant_admin_ingress:[A-Za-z0-9_-]{1,128}$")
 _RECORD_ID = re.compile(r"^[a-f0-9]{32}$")
 _HASH = re.compile(r"^[a-f0-9]{64}$")
+DECISION = "decision"
+AUDIT_COMPLETION = "audit_completion"
+# ``recorded``: the decision's audit event is durably written and the
+# decision is effective. ``abandoned``: the audit write failed while the
+# request was answered, so the decision never took effect.
+COMPLETION_OUTCOMES = ("recorded", "abandoned")
 _BODY_KEYS = frozenset({
-    "record_kind", "record_id", "action", "classification", "reason",
-    "record_fingerprint", "principal", "recorded_at",
+    "entry_type", "record_kind", "record_id", "action", "classification",
+    "reason", "record_fingerprint", "principal", "recorded_at",
+})
+_COMPLETION_KEYS = frozenset({
+    "entry_type", "decision_sequence", "audit_event_id", "outcome",
+    "recorded_at",
 })
 
 
@@ -71,9 +88,21 @@ def reason_shape_valid(reason) -> bool:
     )
 
 
+def audit_event_id(event) -> str:
+    """The audit identifier of one decision entry, stable across retries."""
+
+    return fingerprint({"model": MODEL, "audit_of": event["hash"]})
+
+
+def _timestamp_valid(value) -> None:
+    if datetime.fromisoformat(value).tzinfo is None:
+        raise ValueError
+
+
 def validate_body(body) -> None:
     try:
-        if not isinstance(body, dict) or set(body) != _BODY_KEYS:
+        if (not isinstance(body, dict) or set(body) != _BODY_KEYS
+                or body["entry_type"] != DECISION):
             raise ValueError
         if (body["record_kind"] not in RECORD_KINDS
                 or not isinstance(body["record_id"], str)
@@ -90,18 +119,69 @@ def validate_body(body) -> None:
                 raise ValueError
         elif body["classification"] is not None:
             raise ValueError
-        if datetime.fromisoformat(body["recorded_at"]).tzinfo is None:
-            raise ValueError
+        _timestamp_valid(body["recorded_at"])
     except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
         raise AcknowledgementStorageError("acknowledgement_body_invalid") from None
 
 
-def current_entries(events) -> dict[tuple[str, str], dict]:
-    """The latest entry per record; earlier entries stay as history."""
+def validate_completion(body) -> None:
+    try:
+        if (not isinstance(body, dict) or set(body) != _COMPLETION_KEYS
+                or body["entry_type"] != AUDIT_COMPLETION
+                or type(body["decision_sequence"]) is not int
+                or not isinstance(body["audit_event_id"], str)
+                or not _HASH.fullmatch(body["audit_event_id"])
+                or body["outcome"] not in COMPLETION_OUTCOMES):
+            raise ValueError
+        _timestamp_valid(body["recorded_at"])
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        raise AcknowledgementStorageError("acknowledgement_body_invalid") from None
 
+
+def completions(events) -> dict[int, str]:
+    """Completion outcome by decision sequence."""
+
+    return {
+        event["body"]["decision_sequence"]: event["body"]["outcome"]
+        for event in events
+        if event["body"]["entry_type"] == AUDIT_COMPLETION
+    }
+
+
+def pending_decisions(events) -> list[dict]:
+    """Decisions whose audit event is not yet known to be written."""
+
+    done = completions(events)
+    return [
+        event for event in events
+        if event["body"]["entry_type"] == DECISION
+        and event["sequence"] not in done
+    ]
+
+
+def audit_counts(events) -> dict[str, int]:
+    done = completions(events)
+    return {
+        "audit_pending_count": len(pending_decisions(events)),
+        "audit_abandoned_count": sum(
+            outcome == "abandoned" for outcome in done.values()
+        ),
+    }
+
+
+def current_entries(events) -> dict[tuple[str, str], dict]:
+    """The latest effective decision per record; earlier ones are history.
+
+    Only a decision whose audit event is recorded is effective. A pending or
+    abandoned decision never acknowledges or revokes anything.
+    """
+
+    done = completions(events)
     latest: dict[tuple[str, str], dict] = {}
     for event in events:
         body = event["body"]
+        if body["entry_type"] != DECISION or done.get(event["sequence"]) != "recorded":
+            continue
         key = (body["record_kind"], body["record_id"])
         history = latest.get(key, {}).get("history_count", 0) + 1
         latest[key] = {**body, "sequence": event["sequence"],
@@ -163,17 +243,33 @@ class AcknowledgementStore:
                     or len(value["events"]) > MAX_EVENTS):
                 raise AcknowledgementStorageError("acknowledgement_storage_invalid")
             previous = "0" * 64
+            completed: set[int] = set()
             for index, event in enumerate(value["events"], 1):
                 if (not isinstance(event, dict)
                         or set(event) != {"sequence", "body", "previous", "hash"}
                         or type(event["sequence"]) is not int or event["sequence"] != index
                         or event["previous"] != previous
+                        or not isinstance(event["body"], dict)
                         or len(encoded(event)) > MAX_EVENT_BYTES):
                     raise AcknowledgementStorageError("acknowledgement_storage_invalid")
-                validate_body(event["body"])
+                if event["body"].get("entry_type") == AUDIT_COMPLETION:
+                    validate_completion(event["body"])
+                else:
+                    validate_body(event["body"])
                 material = {k: event[k] for k in ("sequence", "body", "previous")}
                 if event["hash"] != fingerprint(material):
                     raise AcknowledgementStorageError("acknowledgement_integrity_failure")
+                body = event["body"]
+                if body["entry_type"] == AUDIT_COMPLETION:
+                    # A completion names one earlier decision, by its audit
+                    # identifier, and completes it at most once.
+                    target = body["decision_sequence"]
+                    if (not 1 <= target < index or target in completed
+                            or value["events"][target - 1]["body"]["entry_type"] != DECISION
+                            or body["audit_event_id"]
+                            != audit_event_id(value["events"][target - 1])):
+                        raise AcknowledgementStorageError("acknowledgement_storage_invalid")
+                    completed.add(target)
                 previous = event["hash"]
             with self._memo_lock:
                 self._memo = (token, deepcopy(value["events"]))
@@ -245,9 +341,34 @@ class AcknowledgementTransaction:
         self.store, self.events = store, events
 
     def append(self, body) -> dict:
-        if len(self.events) >= MAX_EVENTS:
+        """Append one decision; it is pending until ``complete`` records it."""
+
+        if pending_decisions(self.events):
+            # Reconcile first: never stack a decision on an unaudited one.
+            raise AcknowledgementStorageError("acknowledgement_audit_pending")
+        if len(self.events) + 2 > MAX_EVENTS:
+            # Room for the decision and its completion, or neither.
             raise AcknowledgementStorageError("acknowledgement_capacity_exceeded")
         validate_body(body)
+        return self._append(body)
+
+    def complete(self, decision, outcome, recorded_at) -> dict:
+        if (decision not in pending_decisions(self.events)
+                or outcome not in COMPLETION_OUTCOMES):
+            raise AcknowledgementStorageError("acknowledgement_body_invalid")
+        body = {
+            "entry_type": AUDIT_COMPLETION,
+            "decision_sequence": decision["sequence"],
+            "audit_event_id": audit_event_id(decision),
+            "outcome": outcome,
+            "recorded_at": recorded_at,
+        }
+        validate_completion(body)
+        return self._append(body)
+
+    def _append(self, body) -> dict:
+        if len(self.events) >= MAX_EVENTS:
+            raise AcknowledgementStorageError("acknowledgement_capacity_exceeded")
         event = {"sequence": len(self.events) + 1, "body": deepcopy(body),
                  "previous": self.events[-1]["hash"] if self.events else "0" * 64}
         event["hash"] = fingerprint(event)
