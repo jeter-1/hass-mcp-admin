@@ -31,6 +31,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -359,6 +360,13 @@ def scratch_session(root):
                 for path in paths]
             for row in state["leftovers"]:
                 print(f"Scratch leak: {row['path']} created by {row['creator']}", file=sys.stderr)
+            # The surrounding TemporaryDirectory owns the deep shard area.
+            # Also remove only explicit mkdtemp directories observed in this
+            # session, after recording leaks so cleanup cannot turn failure green.
+            # rmtree refuses a replaced directory symlink; never sweep /tmp.
+            for path in paths:
+                if path in created and Path(directory) not in path.parents:
+                    shutil.rmtree(path)
 
 
 def run_shard(root, shard, env, output):
