@@ -541,6 +541,10 @@ class InspectionTests(Hamcp253Case):
                 view = self.inspect_record("change_plan", created["plan_id"])
             self.assertIs(view["readable"], False)
             self.assertEqual(view["unreadable_reason"], ErrorCode.CHANGE_PLAN_STORAGE_ERROR.value)
+            # Checked after each read so a moved file fails as an assertion.
+            self.assertTrue(path.exists(), "inspection moved the record")
+            self.assertEqual(path.read_bytes(), b"{not json")
+            self.assertEqual(list(self.repository.quarantine.glob("*")), [])
         outcome = self.acknowledge("change_plan", created["plan_id"], fingerprint="0" * 64)
         self.assert_refused(outcome, "record_unreadable")
         self.assertEqual(path.read_bytes(), b"{not json")
@@ -565,6 +569,15 @@ class InspectionTests(Hamcp253Case):
         self.assertEqual(view["approval_event_sequence"][-1], "hamcp253_approval_late")
         self.assertEqual(view["approval_event_count"], len(view["approval_event_sequence"]))
         self.assertIs(view["approval_events_truncated"], False)
+
+    async def test_free_text_event_values_are_reported_as_unrecognized(self):
+        created = await self.update_plan()
+        free_text = "Operator note: " + CONFIG_SECRET
+        self.append_events(created["plan_id"], 1, name=free_text)
+        view = self.inspect_record("change_plan", created["plan_id"])
+        self.assertEqual(view["events"][-1]["event"], record_inspection.UNRECOGNIZED)
+        self.assertNotIn(CONFIG_SECRET, json.dumps(view))
+        self.assertNotIn("Operator note", json.dumps(view))
 
     async def test_approval_sequence_has_its_own_bound(self):
         created = await self.update_plan()
@@ -830,6 +843,53 @@ class AcknowledgementLifecycleTests(Hamcp253Case):
         self.assertEqual(health["record_acknowledgement"]["ledger_status"], "unavailable")
         self.assertEqual(health["projection_failure_warning"], PROJECTION_WARNING)
 
+    def rewrite_ledger(self, change):
+        # A new inode, so the read memo can never serve the old contents.
+        path = self.ledger_path()
+        value = json.loads(path.read_text(encoding="utf-8"))
+        change(value["events"])
+        replacement = path.with_suffix(".tamper")
+        replacement.write_text(json.dumps(value), encoding="utf-8")
+        os.replace(replacement, path)
+
+    async def assert_damaged_ledger_is_never_trusted(self, change, code):
+        (plan_id,) = await self.projection_failed_plans()
+        self.assert_success(self.acknowledge("change_plan", plan_id), "acknowledged")
+        self.assert_success(
+            self.acknowledge("change_plan", plan_id, classification="current_defect"),
+            "reclassified",
+        )
+        self.assertIsNone(self.service.health_summary()["projection_failure_warning"])
+        self.rewrite_ledger(change)
+        ledger = self.ledger_path().read_bytes()
+        health = self.service.health_summary()
+        self.assertEqual(health["record_acknowledgement"]["ledger_status"], "unavailable")
+        self.assertEqual(health["projection_failure_warning"], PROJECTION_WARNING)
+        view = self.inspect_record("change_plan", plan_id)
+        self.assertEqual(view["acknowledgement"]["state"], "unacknowledged")
+        outcome = self.acknowledge("change_plan", plan_id, fingerprint=view["record_fingerprint"])
+        self.assert_refused(outcome, code, ledger_before=2)
+        self.assertEqual(self.ledger_path().read_bytes(), ledger)
+
+    async def test_edited_ledger_entry_is_never_trusted(self):
+        def edited_body(events):
+            events[0]["body"]["reason"] = "Edited after the fact without a new hash."
+
+        await self.assert_damaged_ledger_is_never_trusted(
+            edited_body, "acknowledgement_integrity_failure"
+        )
+
+    async def test_broken_ledger_chain_is_never_trusted(self):
+        # Each entry's own hash is valid; only the link to the previous breaks.
+        def broken_link(events):
+            events[1]["previous"] = "f" * 64
+            material = {key: events[1][key] for key in ("sequence", "body", "previous")}
+            events[1]["hash"] = ledger_module.fingerprint(material)
+
+        await self.assert_damaged_ledger_is_never_trusted(
+            broken_link, "acknowledgement_storage_invalid"
+        )
+
     async def test_reason_of_exactly_500_characters_is_accepted(self):
         created = await self.failed_plan()
         outcome = self.acknowledge("change_plan", created["plan_id"], reason="r" * 500)
@@ -949,6 +1009,16 @@ class AcknowledgementRefusalTests(Hamcp253Case):
                             "0" * 64):
             with self.subTest(fingerprint=fingerprint):
                 self.refuse("record_fingerprint_stale", record_fingerprint=fingerprint)
+
+    async def test_malformed_fingerprint_is_refused_before_the_record_is_read(self):
+        # The shape check runs first: an unknown record with a malformed
+        # fingerprint is refused as stale, never looked up.
+        for fingerprint in ("not-a-fingerprint", "A" * 64, None, "é" * 64):
+            with self.subTest(fingerprint=fingerprint):
+                with patch.object(self.service.repository, "read_for_inspection",
+                                  side_effect=AssertionError("record read")):
+                    self.refuse("record_fingerprint_stale", record_id="0" * 32,
+                                record_fingerprint=fingerprint)
 
     async def test_reason_oversize(self):
         for reason in ("x" * 501, None, 42):
@@ -1210,6 +1280,33 @@ class ManualReviewTaskTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.counters(), counters)
 
+    async def test_task_outside_manual_review_is_not_acknowledgeable(self):
+        # Provenance: the same restart flow as asyncSetUp, stopped before
+        # reconciliation, so the task is still verification_pending.
+        created = await self.service.create_addon_restart_plan(addon_slug="local_other_addon")
+        plan = await self._grant(created)
+        result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(result["status"], "verification_pending")
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertNotEqual(task.state.value, "manual_review_required")
+        with no_home_assistant(self):
+            view = self.service.inspect_governance_record(
+                record_kind="execution_task", record_id=task.task_id
+            )
+            outcome = self.service.acknowledge_governance_record(
+                record_kind="execution_task",
+                record_id=task.task_id,
+                action="acknowledge",
+                classification="historical_record",
+                reason=REASON,
+                record_fingerprint=view["record_fingerprint"],
+                principal=ADMIN,
+            )
+        self.assertIs(view["acknowledgeable"], False)
+        self.assertIs(view["failure"]["manual_review_required"], False)
+        self.assertEqual(outcome["status"], "refused")
+        self.assertEqual(outcome["refusal_reason"], "record_not_acknowledgeable")
+
     async def test_inconsistent_task_totals_keep_the_manual_review_warning(self):
         with patch.object(self.recovered, "_acknowledgement_health",
                           return_value=empty_acknowledgement_block()):
@@ -1231,8 +1328,10 @@ class ManualReviewTaskTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 view["unreadable_reason"], ErrorCode.EXECUTION_TASK_STORAGE_ERROR.value
             )
-        self.assertEqual(path.read_bytes(), b"{not json")
-        self.assertEqual(list(repository.quarantine.glob(f"*{self.task_id}*")), [])
+            # Checked after each read so a moved file fails as an assertion.
+            self.assertTrue(path.exists(), "inspection moved the record")
+            self.assertEqual(path.read_bytes(), b"{not json")
+            self.assertEqual(list(repository.quarantine.glob(f"*{self.task_id}*")), [])
 
     async def test_task_identifier_as_plan_is_a_kind_mismatch(self):
         with no_home_assistant(self):

@@ -328,7 +328,10 @@ class IngressDecisionTests(Hamcp253IngressCase):
                 raise RuntimeError("SYNTHETIC governance unavailable")
 
             with patch.object(self.application.governance, "require", unavailable):
-                response = await self.decide(client, self.plan_id, self.form(fields))
+                try:
+                    response = await self.decide(client, self.plan_id, self.form(fields))
+                except RuntimeError as exc:  # the route must answer, not raise
+                    self.fail(f"route raised {type(exc).__name__}")
         self.assertEqual(response.status_code, 503)
         self.assertIn("Nothing was recorded", response.text)
         self.assertNotIn("SYNTHETIC", response.text)
