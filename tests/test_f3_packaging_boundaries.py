@@ -144,7 +144,10 @@ _IMPORT_CLOSURE_SCRIPT = textwrap.dedent(
     # The isolated image tree and the interpreter's own prefix may
     # sit inside the checkout when scratch lives in .artifacts/;
     # they are not repository source. The checkout root itself, or
-    # any ancestor of it, is never exempt.
+    # any ancestor of it, is never exempt. In-checkout exemptions must
+    # stay under .artifacts; an interpreter prefix overlapping BETA_DIR or
+    # other source must not hide repository imports (R318-01).
+    scratch_root = forbidden_root / ".artifacts"
     exempt = [
         root
         for root in {
@@ -153,6 +156,8 @@ _IMPORT_CLOSURE_SCRIPT = textwrap.dedent(
             Path(sys.exec_prefix).resolve(),
         }
         if root != forbidden_root and root not in forbidden_root.parents
+        and (forbidden_root not in root.parents
+             or root == scratch_root or scratch_root in root.parents)
     ]
     for entry in sys.path:
         resolved = Path(entry or Path.cwd()).resolve()

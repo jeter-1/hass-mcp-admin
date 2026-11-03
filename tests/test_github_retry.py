@@ -26,6 +26,7 @@ from unittest.mock import patch
 
 import yaml
 
+from tests.support.unix_socket import socket_path
 from tests.test_signing_workflow_supply_chain import (
     _isolated_run, _sibling_imports, _stdlib_violations,
 )
@@ -592,29 +593,25 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(made, [])
 
     def test_a_connected_socket_carries_the_deadline_to_the_handshake(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "s")
-            try:
-                listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                listener.bind(path)
-                listener.listen(1)
-            except OSError:
-                self.skipTest("unix sockets unavailable")
-            self.addCleanup(listener.close)
-            clock = Clock()
-            sock = retry.open_tcp(
-                ("codeload.github.com", 443), 50.0, clock=clock,
-                resolve=lambda *a, **k: [(socket.AF_UNIX, socket.SOCK_STREAM, 0, "", path)])
-            self.addCleanup(sock.close)
-            self.assertIsInstance(sock, retry.DeadlineSocket)
-            self.assertEqual((sock.deadline, sock.gettimeout()), (50.0, 50.0))
-            # A wrapping TLS socket inherits at most the time left.
-            clock.now = 45.0
-            self.assertEqual(sock.gettimeout(), 5.0)
-            clock.now = 60.0
-            self.assertEqual(sock.gettimeout(), 0.001)
-            with self.assertRaises(TimeoutError):
-                sock.sendall(b"x")
+        path = socket_path(self)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(listener.close)
+        listener.bind(path)
+        listener.listen(1)
+        clock = Clock()
+        sock = retry.open_tcp(
+            ("codeload.github.com", 443), 50.0, clock=clock,
+            resolve=lambda *a, **k: [(socket.AF_UNIX, socket.SOCK_STREAM, 0, "", path)])
+        self.addCleanup(sock.close)
+        self.assertIsInstance(sock, retry.DeadlineSocket)
+        self.assertEqual((sock.deadline, sock.gettimeout()), (50.0, 50.0))
+        # A wrapping TLS socket inherits at most the time left.
+        clock.now = 45.0
+        self.assertEqual(sock.gettimeout(), 5.0)
+        clock.now = 60.0
+        self.assertEqual(sock.gettimeout(), 0.001)
+        with self.assertRaises(TimeoutError):
+            sock.sendall(b"x")
 
     def test_the_default_connection_carries_one_deadline_to_its_socket(self):
         connection = retry.DeadlineHTTPSConnection(
