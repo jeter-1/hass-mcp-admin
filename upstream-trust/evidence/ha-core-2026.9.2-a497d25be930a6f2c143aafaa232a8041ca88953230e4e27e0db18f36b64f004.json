@@ -1,0 +1,384 @@
+{
+  "model": "core-release-applicability-review-evidence-v1",
+  "status": "UNSIGNED PREPARATION; independent review and owner signing pending",
+  "prepared_at": "2026-09-13T00:48:29.534335+00:00",
+  "target_version": "2026.9.2",
+  "engineering": {
+    "source": "e96cf9337fa7033dce3f1935c055a22a06184def",
+    "tree": "d22d0f19df60777babb292895f969cc824cec8aa",
+    "version": "2.2.0-rc.9",
+    "checkout_clean": true
+  },
+  "public_signing_identity": {
+    "key_id": "ha-core-release-registry-v1",
+    "public_key_base64": "+uYOo+DWf3XLPNGRkaOHa54qu2o4+hF4mVRLwUD5NTw=",
+    "decoded_public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+    "private_key_possession": "not established",
+    "signing_approval": "not granted"
+  },
+  "core_provenance": {
+    "version": "2026.9.2",
+    "source_commit": "33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+    "source_tree": "f692e5355d4bc3e0cdc5dea3eeb3e566b64ac053",
+    "source_commit_signature": "GitHub API verified=true reason=valid; not locally GPG-verified",
+    "source_archive": {
+      "url": "https://codeload.github.com/home-assistant/core/legacy.tar.gz/33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+      "bytes": 29298618,
+      "sha256": "2b3d0b9dd5199fcbf534f8c7331c85ae27ff480bbe58110aa36dad18344d0a27",
+      "elapsed": 4.24640274210833
+    },
+    "archive_members": 31473,
+    "image_index_digest": "sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe",
+    "platforms": {
+      "linux/amd64": {
+        "manifest": "sha256:542890f4a7ef9269b7a5ac23ada303b327537c62fa0f866e49daebc61cb44caa",
+        "configuration": "sha256:0fafae2139c2d143085e56a205d7c5603d20188f9ac2cfa4b8e1da1e57f28145",
+        "provenance_statement_sha256": "b43cebee0467dd97efa0732b6f7fb967d804c4ce9e9754d08d4537c9ec97535a",
+        "provenance_builder": {
+          "id": "https://github.com/home-assistant/core/actions/runs/34640117859/attempts/1"
+        },
+        "signature_verification": "NOT PERFORMED; digest-linked OCI statement observed"
+      },
+      "linux/arm64": {
+        "manifest": "sha256:624e1d662d7668e047a9405e1a5d25fa9b158b813e6fe5073348d82a563bc691",
+        "configuration": "sha256:ef2f64f959e81cdf0e5089c426b61fe93ae0961d7cd6c119a219fda98b1a565e",
+        "provenance_statement_sha256": "3671171e453111289634ea50c4f6032c4c9bbd1dcfaccd54f60aaeb8d31b4517",
+        "provenance_builder": {
+          "id": "https://github.com/home-assistant/core/actions/runs/34640117859/attempts/1"
+        },
+        "signature_verification": "NOT PERFORMED; digest-linked OCI statement observed"
+      }
+    },
+    "changed_files": 92,
+    "changed_critical_contract_paths": []
+  },
+  "upstream_sources": {
+    "commit": "https://github.com/home-assistant/core/commit/33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+    "comparison": "https://github.com/home-assistant/core/compare/2026.9.1...2026.9.2",
+    "archive": "https://codeload.github.com/home-assistant/core/legacy.tar.gz/33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+    "oci": "ghcr.io/home-assistant/home-assistant@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe"
+  },
+  "applicability": {
+    "recommended_probe_profile": "core-probes-child-devices-v1",
+    "probe_profile_sha256": "sha256:c2706d08f75ecef2a7d37265df6eddb03f95bc97d87a08d8632f861202594f46",
+    "capability_count": 17,
+    "capabilities": [
+      {
+        "capability_id": "core.basic_rest_read",
+        "compiled_reference": {
+          "capability_id": "core.basic_rest_read",
+          "profile_id": "core_basic_rest_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-rest-read-v1",
+          "contract_fingerprint": "sha256:3c76c2789952f16340ec51c83122e43cceb1de9581b4dfdf15821d9fc8282cc8"
+        },
+        "applicability_evidence": "run_contracts REST identity/states and real Core source observations",
+        "unchanged_upstream_contract_group": "http_rest",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.basic_websocket_read",
+        "compiled_reference": {
+          "capability_id": "core.basic_websocket_read",
+          "profile_id": "core_basic_websocket_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-websocket-read-v1",
+          "contract_fingerprint": "sha256:e1c15f0d838c44f40c2bcf7ae9df408c9cd186cea7874ab7976945be405294cc"
+        },
+        "applicability_evidence": "authenticated real Core observations and run_contracts get_states/registries/services",
+        "unchanged_upstream_contract_group": "websocket",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.state_service_discovery",
+        "compiled_reference": {
+          "capability_id": "core.state_service_discovery",
+          "profile_id": "core_state_service_discovery_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-state-service-discovery-v1",
+          "contract_fingerprint": "sha256:f6647dfe70a6b477b97c7866d7b2f91f4ba00452547c9d16a8b8298a147c7225"
+        },
+        "applicability_evidence": "run_contracts service inventory plus typed helper target services",
+        "unchanged_upstream_contract_group": "template_state_service",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.non_device_registry_read",
+        "compiled_reference": {
+          "capability_id": "core.non_device_registry_read",
+          "profile_id": "core_non_device_registry_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-non-device-registry-read-v1",
+          "contract_fingerprint": "sha256:4e29009423e7f2438a6b5e0a9cccfcc6add46de73fc05a1edd9fdde9be639615"
+        },
+        "applicability_evidence": "real Core source area/floor/label/entity probes and migration fixture",
+        "unchanged_upstream_contract_group": "registries",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.direct_device_registry_read",
+        "compiled_reference": {
+          "capability_id": "core.direct_device_registry_read",
+          "profile_id": "core_direct_device_registry_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-direct-device-registry-v1",
+          "contract_fingerprint": "sha256:df4afeeea54fa4c59dbe5f8f5b63e63fab516ae69808d7d6ba4d0821b6818ee9"
+        },
+        "applicability_evidence": "_run_core_2026_9_child_contract: complete parent/child device assessment",
+        "unchanged_upstream_contract_group": "registries",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.delegated_device_effective_area",
+        "compiled_reference": {
+          "capability_id": "core.delegated_device_effective_area",
+          "profile_id": "core_delegated_device_effective_area_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-delegated-device-effective-area-v1",
+          "contract_fingerprint": "sha256:b1c2352fe0e87b59a4f9451113d650ac474a56d9135f715d17d2ca31d25645ad"
+        },
+        "applicability_evidence": "_run_core_2026_9_child_contract: five device/effective-area ha-mcp 8.4.3 reads",
+        "unchanged_upstream_contract_group": "registries",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.direct_entity_state_read",
+        "compiled_reference": {
+          "capability_id": "core.direct_entity_state_read",
+          "profile_id": "core_direct_entity_state_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-direct-entity-state-read-v1",
+          "contract_fingerprint": "sha256:a42cec05d830e66ce830d07e413b8875dfcfd8d985ba2111b94419ef847cf9d1"
+        },
+        "applicability_evidence": "helper prestate/independent readback and exact missing-resource Core probe",
+        "unchanged_upstream_contract_group": "http_rest",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.automation_configuration_read",
+        "compiled_reference": {
+          "capability_id": "core.automation_configuration_read",
+          "profile_id": "core_automation_configuration_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-automation-configuration-read-v1",
+          "contract_fingerprint": "sha256:ec4344e7dc0a0f4b1a84a2dfbbeae1b412432cf787bcdf41d58ea21a6edb45ad"
+        },
+        "applicability_evidence": "governed configuration, legacy automation and exact missing-resource probe",
+        "unchanged_upstream_contract_group": "automation_trace",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.automation_trace_read",
+        "compiled_reference": {
+          "capability_id": "core.automation_trace_read",
+          "profile_id": "core_automation_trace_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-automation-trace-read-v1",
+          "contract_fingerprint": "sha256:7f45584511fb1069561ba4ef7a43c4cd6e9a5f41cb9b2f2aac5bdadcd6511c9c"
+        },
+        "applicability_evidence": "run_contracts retained trace list and full trace retrieval after disposable automation execution",
+        "unchanged_upstream_contract_group": "automation_trace",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.dashboard_configuration_read",
+        "compiled_reference": {
+          "capability_id": "core.dashboard_configuration_read",
+          "profile_id": "core_dashboard_configuration_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-dashboard-configuration-read-v1",
+          "contract_fingerprint": "sha256:134fa8fa48bdd085a491d2f311ee69c48f53c844a651c334974899e8b79f6424"
+        },
+        "applicability_evidence": "_run_core_2026_9_child_contract and real Core lovelace configuration probes",
+        "unchanged_upstream_contract_group": "dashboard_backend",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.template_semantics",
+        "compiled_reference": {
+          "capability_id": "core.template_semantics",
+          "profile_id": "core_template_semantics_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-template-semantics-v1",
+          "contract_fingerprint": "sha256:0f6d682f1b4d02be622173bc56699ef6de208b5c45b52454cd6fc7a5a083cbe7"
+        },
+        "applicability_evidence": "compiled semantic digest checks plus tests.test_core_semantic_continuity template consumer",
+        "unchanged_upstream_contract_group": "template_state_service",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.configuration_validation",
+        "compiled_reference": {
+          "capability_id": "core.configuration_validation",
+          "profile_id": "core_configuration_validation_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-configuration-validation-v1",
+          "contract_fingerprint": "sha256:f998f871e47ded521c5ff713fd738b48c813b0363385237b19c472a1ab540b9a"
+        },
+        "applicability_evidence": "_assert_strict_configuration_check and real check_config result taxonomy",
+        "unchanged_upstream_contract_group": "http_rest",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.dependency_helper_planning",
+        "compiled_reference": {
+          "capability_id": "core.dependency_helper_planning",
+          "profile_id": "core_dependency_helper_planning_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-dependency-helper-planning-v1",
+          "contract_fingerprint": "sha256:4e981b75c8bf81ef24c3fa123827786ca57762db0d2e09108e499a5e8312efe9"
+        },
+        "applicability_evidence": "production dependency runtime/helper risk planner in _run_governed_helper_state_contract",
+        "unchanged_upstream_contract_group": "template_state_service",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.typed_helper_operation",
+        "compiled_reference": {
+          "capability_id": "core.typed_helper_operation",
+          "profile_id": "core_typed_helper_operation_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-typed-helper-operation-v1",
+          "contract_fingerprint": "sha256:7ae55a050860e86089756ef8d9104977c630e7c6e593bee2dbd46c6bd2535936"
+        },
+        "applicability_evidence": "three approved exact operations, independent readback, duplicate no-redispatch control",
+        "unchanged_upstream_contract_group": "template_state_service",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.f3_mutation_verification",
+        "compiled_reference": {
+          "capability_id": "core.f3_mutation_verification",
+          "profile_id": "core_f3_mutation_verification_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-f3-mutation-verification-v1",
+          "contract_fingerprint": "sha256:274c9beef6b4f6137715b7ab60a25cfcb93fbd1d1b2737ad776004dd3e47c873"
+        },
+        "applicability_evidence": "real governed configuration/helper task verification, including lost provider response",
+        "unchanged_upstream_contract_group": "http_rest",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.governed_configuration_operation",
+        "compiled_reference": {
+          "capability_id": "core.governed_configuration_operation",
+          "profile_id": "core_governed_configuration_operation_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-governed-configuration-operation-v1",
+          "contract_fingerprint": "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441"
+        },
+        "applicability_evidence": "_run_governed_configuration_contract; later direct update and cleanup contracts",
+        "unchanged_upstream_contract_group": "http_rest",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      },
+      {
+        "capability_id": "core.governance_observability",
+        "compiled_reference": {
+          "capability_id": "core.governance_observability",
+          "profile_id": "core_governance_observability_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled-core-governance-observability-v1",
+          "contract_fingerprint": "sha256:b4fa34c413a21ea643de830de00477c7c4953efb43916a1d83fa1e3cbd9eb3e2"
+        },
+        "applicability_evidence": "local persisted task/plan assertions and exact RC9 full discovery; no new Core dispatch",
+        "unchanged_upstream_contract_group": "core_and_identity",
+        "scope": "Existing exact compiled contract only; runtime still requires fresh authenticated per-capability observations."
+      }
+    ],
+    "upstream_delta": "48 commits and 92 files; none in reviewed Core identity, REST, WebSocket, registry, template/helper, automation/trace, dashboard backend or Cloud backend contract paths."
+  },
+  "provider_pairing": {
+    "version": "8.4.3",
+    "image": "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+    "requirement": "Exact separately admitted provider; registry data grants no new route, fallback or write permission."
+  },
+  "executed_ci": {
+    "run_id": 34720072738,
+    "attempt": 1,
+    "job_id": 103624192061,
+    "tested_source": "e96cf9337fa7033dce3f1935c055a22a06184def",
+    "tested_tree": "d22d0f19df60777babb292895f969cc824cec8aa",
+    "job_conclusion": "success",
+    "started_at": "2026-09-12T21:28:53Z",
+    "completed_at": "2026-09-12T21:31:36Z",
+    "runtime_lane": "source under CI Python with pinned disposable Core and ha-mcp; not installed Engineering image",
+    "application_cleanup": "asserted by sequential successful driver; helper leases/commits/fallback zero",
+    "docker_removal": "step success; commands use || true, removal not independently proved",
+    "run_url": "https://github.com/jeter-1/hass-mcp-admin/actions/runs/34720072738",
+    "job_url": "https://github.com/jeter-1/hass-mcp-admin/actions/runs/34720072738/job/103624192061",
+    "helper_contract": {
+      "production_core_dependency_and_f3": true,
+      "fresh_plans": 3,
+      "authenticated_fixture_approvals": 3,
+      "apply_calls": 4,
+      "provider_dispatches": 3,
+      "duplicate_dispatches": 0,
+      "forward_and_reverse_verified": true,
+      "lost_response_reconciled_by_authoritative_readback": true,
+      "leases_commits_fallback_after_helper": 0,
+      "evidence_basis": "Assertions in sequential real_ha_contract_tests.py; final successful runtime verdict, not packaging count."
+    },
+    "full_suite_retained": {
+      "executions": 2,
+      "tests_each": 3484,
+      "passed_each": 3464,
+      "skipped_each": 20,
+      "newly_executed_here": false
+    }
+  },
+  "prior_independent_source_review": {
+    "reviewed_head": "77e1141a28a6f1df03a3b807d1d91063380ea2a4",
+    "reviewed_tree": "d22d0f19df60777babb292895f969cc824cec8aa",
+    "verdict": "No actionable findings in RC9 source and subsequent CI addendum.",
+    "scope_limit": "Earlier source review does not approve these new registry candidate bytes."
+  },
+  "local_targeted_validation": {
+    "command": "python -m unittest -v tests.test_core_registry_preparation tests.test_core_update_continuity tests.test_core_semantic_continuity",
+    "source": "e96cf9337fa7033dce3f1935c055a22a06184def",
+    "interpreter": "CPython 3.12.14, RC9-declared dependencies in isolated environment",
+    "run": 61,
+    "passed": 61,
+    "skipped": 0,
+    "result": "PASS",
+    "log_sha256": "c91d6077c44e30ca70675a68bc044354325680e5086a242aaa84477ebbc6b1ee",
+    "coverage": "Ephemeral signatures, admission/refusal, expiry/revocation, cache/chain/compaction, capability-local refusal, target binding, per-read authority, semantic publication/reuse, post-lock freshness, cancellation/shutdown, useful helper execution and zero fallback."
+  },
+  "source_hashes": {
+    "scripts/prepare_core_release_registry.py": "8332252eaf7922aeae1192941e999cbdcb060dfba6e30fcbf3c626ce36906d9b",
+    "scripts/real_ha_contract_tests.py": "1e2cdafcbf2452306d95c033e7774d874b84831eb64bb87a876601629258f0c8",
+    "scripts/core_registry_contract_lane.py": "e6be90da95c2cad063b3b563819725d404903209e63ba2b4aeffaceb6ea6db86",
+    "docs/CORE_RELEASE_REGISTRY.md": "ae5ad75aa443ffa63f9222f0eb76cb4c4a396a0b6ab858e371e0707ed5a71121",
+    "docs/V2_2_0_RC9_ACCEPTANCE.md": "cea8e913d92534a7ce17c349dfbf70b579ee077db94de25b9c6868a733d8963e",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py": "bd2c9ee100fce927d6493c056b2102e2f861ad296fa4c549bf907d04fc496cb0",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/device_registry.py": "d1e89c93cb8605395174cb418734406618fa8e4d0baecc1f52302c36685ac6a6",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/observation.py": "2b6bbf0a8890e3878a098c0372e8dcb6192d004cc1092be1c087e23ea43cde7a",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/__init__.py": "1b0aa86b5d7e93791d84180f25af4caf9873c4e6f70f3ab6c2053a1d40e82b04",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py": "5a3593a542fb38e25b78177831143fd881e94c7ad16e55177636659207fbda8d",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry_models.py": "0d976bf73c737f67fb60d437e90e4174adba083e3b1c5d0b39e5781bbc107865",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py": "d64f1c7559d742f0bb283c017111db5dbfe54620ddea41fc7ade8ea85523be84",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/models.py": "78f3e17c5afde2312f8686ff5e843d580aedf067d4d4ae10be224aa21fa735c9",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py": "621bed5f94a6b5b2fcd5240f5a39a00c3208074c7e59765c92ff0ee33990932d",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py": "007f1563080bb99cd900d4937a1ec0b070a0098a284aeeff40ddde0a3da68d4c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/coordinator.py": "78b38de5450232a45512dc2716a2bce8e2b1a0812ea15e53e2b5bd8845b636eb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry.py": "a2e53d1c9166603b8e36d1d51e01de4248f93c8eb04932da18b06e3baae73352"
+  },
+  "limitations": [
+    "OCI SLSA v1 statements were hash-verified through the index and inspected for source/manifest binding; independent cryptographic attestation verification was not performed.",
+    "GitHub reports the official Core commit signature valid; no local GPG trust decision was performed.",
+    "Source comparison and disposable fixtures cannot cover every integration-generated device registry shape. Integration and custom-component identifiers, optional text, parent relationships and collection/byte bounds remain runtime-validated. Earlier long-identifier and display-text fixes remain in RC9; no household registry was collected here.",
+    "Core patch changes integration implementations, dependencies and frontend/MCP client code outside these unchanged backend paths. This is bounded existing-contract applicability, not universal integration or UI compatibility.",
+    "CI runs Engineering source under its interpreter against a digest-pinned disposable Core image. Architecture metadata for amd64 and arm64 is bound; the integration lane is not a second arm64 runtime execution or installed Engineering image test.",
+    "Prior Engineering publication/installed-image evidence remains separate. It does not establish installed Core 2026.9.2 identity or household acceptance.",
+    "Core observation exposes authenticated version/contracts, not its running OCI digest; a later registry admission is not cryptographic installed-image proof.",
+    "No production key possession, signing, registry publication, trust activation, live transition, canary, update or household acceptance is established.",
+    "Docker cleanup step succeeded but tolerant removal commands do not independently establish container removal. Application cleanup/resource assertions passed.",
+    "Registry revocation is effective on verified refresh; local expiry is checked at use. Cooperative deadlines/cancellation do not prove remote abort."
+  ],
+  "later_gates": [
+    "Independent review of exact candidate/evidence bytes",
+    "Owner signing after fresh journal-history check",
+    "Separately authorized signed-data publication and verification",
+    "Separately authorized trust setup/activation",
+    "Exact installation, recovery and Core-update authorization followed by bounded live acceptance"
+  ]
+}

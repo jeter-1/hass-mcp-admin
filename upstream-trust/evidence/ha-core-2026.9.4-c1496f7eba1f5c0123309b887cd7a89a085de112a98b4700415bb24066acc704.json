@@ -1,0 +1,911 @@
+{
+  "capability_reference_policy": "Exact existing nineteen references copied from authenticated Core .3 entry and checked against unchanged compiled profiles; no adapter or route additions",
+  "ci": {
+    "artifact_verification": [
+      {
+        "artifact_id": 11018457532,
+        "members": 1,
+        "name": "ha-mcp-8.5.0-disposable-ha-2026-9-4",
+        "sha256": "f31f82a9f26e56804040d721f9b85b90d2ea1270fae739bcf78fafefb2c0ae66",
+        "size": 402,
+        "source_bound": true
+      },
+      {
+        "artifact_id": 11018284085,
+        "members": 71,
+        "name": "core-2026-9-4-typed-arm64-36536803659-1",
+        "sha256": "46c2c3f77030e3aba042ecee70356aa18e0beca65c3056e6df67168c160458f2",
+        "size": 734357,
+        "source_bound": true
+      },
+      {
+        "artifact_id": 11018204338,
+        "members": 71,
+        "name": "core-2026-9-4-typed-amd64-36536803659-1",
+        "sha256": "ac603870f5286b76bd5f245300e37b289003731cbf8f92f01bb4ee6ccff19bd1",
+        "size": 734373,
+        "source_bound": true
+      }
+    ],
+    "attempt": 1,
+    "checkout_bindings_verified": true,
+    "general_contract_result": "PASS; migration/configuration/helper/governed F3/trace/registry/dependency/script-call/typed-fan assertions",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "head_sha": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "id": 109302609343,
+        "name": "real-ha-contract-tests"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "id": 109302609536,
+        "name": "exact-addon-runtime-acceptance (arm64, ubuntu-24.04-arm)"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "id": 109302609544,
+        "name": "exact-addon-runtime-acceptance (amd64, ubuntu-latest)"
+      }
+    ],
+    "run_id": 36536803659,
+    "run_url": "https://github.com/jeter-1/hass-mcp-admin/actions/runs/36536803659",
+    "typed_variants": [
+      {
+        "architecture": "amd64",
+        "core_profiles": 19,
+        "dashboard_operations": 2,
+        "fan_operations": 3,
+        "power_operations": 4,
+        "provider_variant": "standalone",
+        "reads": 25,
+        "receipt_sha256": "e426e0d6c574bd2f52dffa024dfa6bd88b220ce6521338794c651a5083023cd6",
+        "restoration": true,
+        "settled": true,
+        "source": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "stale_dispatches": 0,
+        "uncertain_dispatches_per_fault": 1
+      },
+      {
+        "architecture": "amd64",
+        "core_profiles": 19,
+        "dashboard_operations": 2,
+        "fan_operations": 3,
+        "power_operations": 4,
+        "provider_variant": "addon",
+        "reads": 25,
+        "receipt_sha256": "c7ed23941905c53d05b2accf9b9ec1160fe0d552d434dd0d28985bbc0183ec3d",
+        "restoration": true,
+        "settled": true,
+        "source": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "stale_dispatches": 0,
+        "uncertain_dispatches_per_fault": 1
+      },
+      {
+        "architecture": "arm64",
+        "core_profiles": 19,
+        "dashboard_operations": 2,
+        "fan_operations": 3,
+        "power_operations": 4,
+        "provider_variant": "standalone",
+        "reads": 25,
+        "receipt_sha256": "ce9451dba3e1738fb80a3858958d18e60050aff07ded3211411d02ac1654ef80",
+        "restoration": true,
+        "settled": true,
+        "source": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "stale_dispatches": 0,
+        "uncertain_dispatches_per_fault": 1
+      },
+      {
+        "architecture": "arm64",
+        "core_profiles": 19,
+        "dashboard_operations": 2,
+        "fan_operations": 3,
+        "power_operations": 4,
+        "provider_variant": "addon",
+        "reads": 25,
+        "receipt_sha256": "20f5db688a6a5e27ccf63530865e6b141585e72aed65a784c39e8b0ff3364048",
+        "restoration": true,
+        "settled": true,
+        "source": "65453d30d90423134d3a8caca3b69f2ffc001563",
+        "stale_dispatches": 0,
+        "uncertain_dispatches_per_fault": 1
+      }
+    ]
+  },
+  "ci_receipt_manifest": [
+    {
+      "bytes": 85464,
+      "path": "ci-receipts/109302609343.log",
+      "sha256": "b0bec87a0e1236f6c358f880d2f2c16381fcb084fb55adb7396ed4f887a247bf"
+    },
+    {
+      "bytes": 47677,
+      "path": "ci-receipts/109302609536.log",
+      "sha256": "277afae8f41455a3a77df20a55904bb2c386f833d8dc5fbbc753d92cf26892f6"
+    },
+    {
+      "bytes": 47550,
+      "path": "ci-receipts/109302609544.log",
+      "sha256": "d287f608d5541147ecf75126e2c8b00b2afa5b0fdb9c6b9b230cf174931cc4e4"
+    },
+    {
+      "bytes": 1586,
+      "path": "ci-receipts/11018204338/addon-candidate-blueprint-get.json",
+      "sha256": "35db3ca74262b3e36210e7b3d6353258f45cf2f5e75b58d5e9d70db20090de8e"
+    },
+    {
+      "bytes": 1150,
+      "path": "ci-receipts/11018204338/addon-candidate-blueprint-list.json",
+      "sha256": "9d7faeaa42ea110f84183ae6bc8e5ab64c959400d50bdc525093e248e3f1d141"
+    },
+    {
+      "bytes": 19934,
+      "path": "ci-receipts/11018204338/addon-candidate-dashboard-1-apply.json",
+      "sha256": "78d5b0b56ff806541321f896374add1b3df483cf69830e441cf62dca0afe5641"
+    },
+    {
+      "bytes": 9715,
+      "path": "ci-receipts/11018204338/addon-candidate-dashboard-1-task.json",
+      "sha256": "10dcc02a7dad09a1f21fb98a1c5c87c364c35192965124a49723fdb4c6fe755d"
+    },
+    {
+      "bytes": 19934,
+      "path": "ci-receipts/11018204338/addon-candidate-dashboard-2-apply.json",
+      "sha256": "6042aec433ee9107c1d61a098d2b59a964b8597a3f33c9022d555831b0581574"
+    },
+    {
+      "bytes": 9715,
+      "path": "ci-receipts/11018204338/addon-candidate-dashboard-2-task.json",
+      "sha256": "ce849a7fd67328ba79a8db523c823937d9baf950bd02a68b70b817ba8016d762"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-1-initial.json",
+      "sha256": "c0c75edfbe78b77ef37511969c326a578c2d43fa23dcafb7e93ff45ce534124f"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-1-terminal.json",
+      "sha256": "c0c75edfbe78b77ef37511969c326a578c2d43fa23dcafb7e93ff45ce534124f"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-2-initial.json",
+      "sha256": "3278014070624254a76718ef9b808573ea9ad2bd33c662ba778c1d6a10905890"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-2-terminal.json",
+      "sha256": "3278014070624254a76718ef9b808573ea9ad2bd33c662ba778c1d6a10905890"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-3-initial.json",
+      "sha256": "54267bf08b866470b364d21305ecc01247f33d67b95bc04fd4fac2fe7a4a92c3"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018204338/addon-candidate-fan-3-terminal.json",
+      "sha256": "54267bf08b866470b364d21305ecc01247f33d67b95bc04fd4fac2fe7a4a92c3"
+    },
+    {
+      "bytes": 950,
+      "path": "ci-receipts/11018204338/addon-candidate-missing-automation.json",
+      "sha256": "4b6844484e44056d4cbce66b5b05265f94f56971e25e67f4c60807c7194dd8d7"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018204338/addon-candidate-power-1-initial.json",
+      "sha256": "9e9fc4b8299268aa16f004b23f7a5db6b7917cc2636a5f03eec4cdff54b9f168"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018204338/addon-candidate-power-1-terminal.json",
+      "sha256": "9e9fc4b8299268aa16f004b23f7a5db6b7917cc2636a5f03eec4cdff54b9f168"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018204338/addon-candidate-power-2-initial.json",
+      "sha256": "e273007f1f047d7ca3d4476a9238d01ae956f865febad9ba588eccf65f58da46"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018204338/addon-candidate-power-2-terminal.json",
+      "sha256": "e273007f1f047d7ca3d4476a9238d01ae956f865febad9ba588eccf65f58da46"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018204338/addon-candidate-power-3-initial.json",
+      "sha256": "dc400955001e24e25598308877739b980af9b717b5c96af829c11ea40c7b3a38"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018204338/addon-candidate-power-3-terminal.json",
+      "sha256": "dc400955001e24e25598308877739b980af9b717b5c96af829c11ea40c7b3a38"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/addon-candidate-power-4-initial.json",
+      "sha256": "e32ef052df1cad71f4d14b9d7dfc2cb513c32bc25c4286756e3d242d4b32aeae"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/addon-candidate-power-4-terminal.json",
+      "sha256": "e32ef052df1cad71f4d14b9d7dfc2cb513c32bc25c4286756e3d242d4b32aeae"
+    },
+    {
+      "bytes": 2581,
+      "path": "ci-receipts/11018204338/addon-candidate-result.json",
+      "sha256": "c7ed23941905c53d05b2accf9b9ec1160fe0d552d434dd0d28985bbc0183ec3d"
+    },
+    {
+      "bytes": 633910,
+      "path": "ci-receipts/11018204338/addon-catalog-1.json",
+      "sha256": "0801ebf46f8a2d1db53c17aed5ed23446236f8ef2f17f5c3db230a4edb408c02"
+    },
+    {
+      "bytes": 633910,
+      "path": "ci-receipts/11018204338/addon-catalog-2.json",
+      "sha256": "0801ebf46f8a2d1db53c17aed5ed23446236f8ef2f17f5c3db230a4edb408c02"
+    },
+    {
+      "bytes": 1368,
+      "path": "ci-receipts/11018204338/addon-fan-failure-contract.json",
+      "sha256": "697f54a7108c1bbc96b439f80abdc3835528921cca81d47e830817ade0a34ee2"
+    },
+    {
+      "bytes": 1073,
+      "path": "ci-receipts/11018204338/addon-fan-recovered.json",
+      "sha256": "533713152d033e53631fb4e99f0e4e16e9d831add7eeac5413f628c484e4e34a"
+    },
+    {
+      "bytes": 896,
+      "path": "ci-receipts/11018204338/addon-fan-stale-refusal.json",
+      "sha256": "6cf74e3d22beecac15ad073d433ec98157b04e87aae89cd32f964e24664a7c3f"
+    },
+    {
+      "bytes": 1127,
+      "path": "ci-receipts/11018204338/addon-fan-uncertain.json",
+      "sha256": "6c6ecbc17c5316e2c72f3f0c9cd66100f399b5d5cd93b6e22ed221e67555f8a9"
+    },
+    {
+      "bytes": 454,
+      "path": "ci-receipts/11018204338/addon-image.json",
+      "sha256": "f1c0c6f53a13153e63c18932af37cc183dabebb9b59231259660eca0fd262d6e"
+    },
+    {
+      "bytes": 2366,
+      "path": "ci-receipts/11018204338/addon-initialize.json",
+      "sha256": "410f0afeb87849d8d4f27b7643878d886189bfea60d4483978bfc068b366c0ea"
+    },
+    {
+      "bytes": 1532,
+      "path": "ci-receipts/11018204338/addon-power-failure-contract.json",
+      "sha256": "e5751bcf14cf331dad75f5d74e9153421427c7af92c3d3d928c173b2e80153b0"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/addon-power-recovered.json",
+      "sha256": "12263ef4d830aaa041d6c18e48a01764352f485af3591ca8ecae5d7cd0e05e95"
+    },
+    {
+      "bytes": 1062,
+      "path": "ci-receipts/11018204338/addon-power-stale-refusal.json",
+      "sha256": "7ca21157207933c77b8dcd73b963e776421ffc1a8cbb5d5e93a07465d31a3e16"
+    },
+    {
+      "bytes": 1299,
+      "path": "ci-receipts/11018204338/addon-power-uncertain.json",
+      "sha256": "0ed4af8778fb6c3029e52c6d55f50f9b240b32577f12cfa8734ade58bbf19c4e"
+    },
+    {
+      "bytes": 106,
+      "path": "ci-receipts/11018204338/core-authority.json",
+      "sha256": "1d314b019e969179fb19a1cecbbc005da1f247126d9cb0e00b686fda376e88d3"
+    },
+    {
+      "bytes": 1030,
+      "path": "ci-receipts/11018204338/receipt.json",
+      "sha256": "5288ff30bc7dccb9b140c95916fac501febb1cc25dcb1183d0135be7447c994a"
+    },
+    {
+      "bytes": 172,
+      "path": "ci-receipts/11018204338/relay-settlement.json",
+      "sha256": "9c6fb9802a840322a5059dde81fc875819fd33f4ecd6bd3fbb05cf407e78c430"
+    },
+    {
+      "bytes": 1363,
+      "path": "ci-receipts/11018204338/standalone-candidate-blueprint-get.json",
+      "sha256": "3aa7743ee18ebb9c7fe2855f71d7d64411ed6ad3280079a36489420d56b0ef76"
+    },
+    {
+      "bytes": 1155,
+      "path": "ci-receipts/11018204338/standalone-candidate-blueprint-list.json",
+      "sha256": "535afa7ae6eed24bcacd9caf1fd675d302de9db09754955fbf8a3c388065c743"
+    },
+    {
+      "bytes": 19989,
+      "path": "ci-receipts/11018204338/standalone-candidate-dashboard-1-apply.json",
+      "sha256": "3043fdbccca717c67f3aab924ef7c9e7586ca6a79c2034aa3b55584f5ffed674"
+    },
+    {
+      "bytes": 9760,
+      "path": "ci-receipts/11018204338/standalone-candidate-dashboard-1-task.json",
+      "sha256": "d817cd4352b9fbe4ec91f9f4b372322f0a0cb7d0958256eece5ff8ebc92efe74"
+    },
+    {
+      "bytes": 19989,
+      "path": "ci-receipts/11018204338/standalone-candidate-dashboard-2-apply.json",
+      "sha256": "4156e7029a261204a051b43b7a67c1bd05895987286e84c480d806ec658d94ee"
+    },
+    {
+      "bytes": 9760,
+      "path": "ci-receipts/11018204338/standalone-candidate-dashboard-2-task.json",
+      "sha256": "c6826ba9ee2690f8a6d89d753842fc0cb3db9465c6a43bce5d0c5beea90f3f58"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-1-initial.json",
+      "sha256": "036e78a26963ea1a92dad685a8a672919b4eea4d4894a6ca1356c7f2230d6ab5"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-1-terminal.json",
+      "sha256": "036e78a26963ea1a92dad685a8a672919b4eea4d4894a6ca1356c7f2230d6ab5"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-2-initial.json",
+      "sha256": "2ef585fafa83b932d1b1158f37fe669496fe6c3d252fc43a8cb2f3412a03d234"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-2-terminal.json",
+      "sha256": "2ef585fafa83b932d1b1158f37fe669496fe6c3d252fc43a8cb2f3412a03d234"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-3-initial.json",
+      "sha256": "12f9bfabbe286ea2613d9171865ce4a993efebfaf4c5fe352a670fc68a867c90"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018204338/standalone-candidate-fan-3-terminal.json",
+      "sha256": "12f9bfabbe286ea2613d9171865ce4a993efebfaf4c5fe352a670fc68a867c90"
+    },
+    {
+      "bytes": 956,
+      "path": "ci-receipts/11018204338/standalone-candidate-missing-automation.json",
+      "sha256": "7f228fc7160692a62fddfddaf82a12631879ff3d674d0e9cf652b681623159a4"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-1-initial.json",
+      "sha256": "785a5b1ab304b39644c141daa68e01a1fe161c92aa8c56ed13617313d867a7cf"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-1-terminal.json",
+      "sha256": "785a5b1ab304b39644c141daa68e01a1fe161c92aa8c56ed13617313d867a7cf"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-2-initial.json",
+      "sha256": "052eb28bbf14256d9e775fb7691ef031aa5e33df2c4e6cdbbd5350c535d5b5e0"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-2-terminal.json",
+      "sha256": "052eb28bbf14256d9e775fb7691ef031aa5e33df2c4e6cdbbd5350c535d5b5e0"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-3-initial.json",
+      "sha256": "625284df4073f11c5340214a7674e3acdc775021eae27a49fad052d601c4ebdd"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-3-terminal.json",
+      "sha256": "625284df4073f11c5340214a7674e3acdc775021eae27a49fad052d601c4ebdd"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-4-initial.json",
+      "sha256": "cf52cca173cbdf72e8d999cab9a3a4deda926da7c5cdfe00f031387f4943016d"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/standalone-candidate-power-4-terminal.json",
+      "sha256": "cf52cca173cbdf72e8d999cab9a3a4deda926da7c5cdfe00f031387f4943016d"
+    },
+    {
+      "bytes": 2581,
+      "path": "ci-receipts/11018204338/standalone-candidate-result.json",
+      "sha256": "e426e0d6c574bd2f52dffa024dfa6bd88b220ce6521338794c651a5083023cd6"
+    },
+    {
+      "bytes": 634988,
+      "path": "ci-receipts/11018204338/standalone-catalog-1.json",
+      "sha256": "cf58706b7317bf546a5eacfa6ed134bec6227071b40c3206183d755c72229e63"
+    },
+    {
+      "bytes": 634988,
+      "path": "ci-receipts/11018204338/standalone-catalog-2.json",
+      "sha256": "cf58706b7317bf546a5eacfa6ed134bec6227071b40c3206183d755c72229e63"
+    },
+    {
+      "bytes": 1368,
+      "path": "ci-receipts/11018204338/standalone-fan-failure-contract.json",
+      "sha256": "26b90711903e0f2143a66dc570916f8e5817693cd1fd7ccdc1f6c5d45bfa8cf9"
+    },
+    {
+      "bytes": 1073,
+      "path": "ci-receipts/11018204338/standalone-fan-recovered.json",
+      "sha256": "2ed912ef0cd674ddec2ec17a7ef703299898d1338c66346851616753a7877442"
+    },
+    {
+      "bytes": 896,
+      "path": "ci-receipts/11018204338/standalone-fan-stale-refusal.json",
+      "sha256": "f806e49566100d0ae2d929cac35a2e7d8af0f877c7241666e8f70337e8fa2087"
+    },
+    {
+      "bytes": 1127,
+      "path": "ci-receipts/11018204338/standalone-fan-uncertain.json",
+      "sha256": "713e98dca608600a2cabeea3a1b46e29444224aa912506337e1829e2b68968c8"
+    },
+    {
+      "bytes": 497,
+      "path": "ci-receipts/11018204338/standalone-image.json",
+      "sha256": "3b728ed9b9431cfde1291613ac786c71315ac441e1f36a143d5489c69660d271"
+    },
+    {
+      "bytes": 2366,
+      "path": "ci-receipts/11018204338/standalone-initialize.json",
+      "sha256": "410f0afeb87849d8d4f27b7643878d886189bfea60d4483978bfc068b366c0ea"
+    },
+    {
+      "bytes": 1532,
+      "path": "ci-receipts/11018204338/standalone-power-failure-contract.json",
+      "sha256": "ab277549e51d5d370609edab4cd8f39d6be851bbd83d86762ec8333a1a12bcd2"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018204338/standalone-power-recovered.json",
+      "sha256": "f7b2dc672ab855bb11358f82ab9a8e3f87c5e319cf5dbfecd1f6f053b8becf58"
+    },
+    {
+      "bytes": 1062,
+      "path": "ci-receipts/11018204338/standalone-power-stale-refusal.json",
+      "sha256": "d5c6d97d487acf8bf6f55321897a30f6a4a87259144f1a6a5fb34f94103da2b5"
+    },
+    {
+      "bytes": 1299,
+      "path": "ci-receipts/11018204338/standalone-power-uncertain.json",
+      "sha256": "3769fddc56d3b63b1d3fd807337f6b77d5747e0b91163bdd9edf824d9ee8c501"
+    },
+    {
+      "bytes": 734373,
+      "path": "ci-receipts/11018204338.zip",
+      "sha256": "ac603870f5286b76bd5f245300e37b289003731cbf8f92f01bb4ee6ccff19bd1"
+    },
+    {
+      "bytes": 1586,
+      "path": "ci-receipts/11018284085/addon-candidate-blueprint-get.json",
+      "sha256": "5e3ca601ca9105c7cf5528fcf6e006e3deec0f1273c5b28335351c30b0e26d07"
+    },
+    {
+      "bytes": 1150,
+      "path": "ci-receipts/11018284085/addon-candidate-blueprint-list.json",
+      "sha256": "50dd1e61836be19a19332aa7e2ac8283075ef3fe16f72cd4055d381e7edf5fa7"
+    },
+    {
+      "bytes": 19934,
+      "path": "ci-receipts/11018284085/addon-candidate-dashboard-1-apply.json",
+      "sha256": "68272f7bc54df9f3b98970837bf16b1bc21c1a058f19f0c9bc694acb54196bbb"
+    },
+    {
+      "bytes": 9715,
+      "path": "ci-receipts/11018284085/addon-candidate-dashboard-1-task.json",
+      "sha256": "9afeffe5d1503b6eab98c9c846304102df4cd6a484675bd1c0a1a91b70171ebf"
+    },
+    {
+      "bytes": 19934,
+      "path": "ci-receipts/11018284085/addon-candidate-dashboard-2-apply.json",
+      "sha256": "a2b8da0cc42c6eb685998a867510b266bad3292f4e874ef12f1a95270b0e35e9"
+    },
+    {
+      "bytes": 9715,
+      "path": "ci-receipts/11018284085/addon-candidate-dashboard-2-task.json",
+      "sha256": "81a89481cadfb43c602fd45515b5928116e85f3cb2a7d5a7cc9220c6eb12fe88"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-1-initial.json",
+      "sha256": "a05a2f27dae6427650239120b2731f4369208041eaea1a912033e63c932ef00c"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-1-terminal.json",
+      "sha256": "a05a2f27dae6427650239120b2731f4369208041eaea1a912033e63c932ef00c"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-2-initial.json",
+      "sha256": "359417523392a3df4f1d7a7146effe97bf10cc9e228a97aad07264a3bc5c126a"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-2-terminal.json",
+      "sha256": "359417523392a3df4f1d7a7146effe97bf10cc9e228a97aad07264a3bc5c126a"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-3-initial.json",
+      "sha256": "9d864d2af3139501dd9d095995a55597e70e05a470d0763c59355af6654a5d2d"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018284085/addon-candidate-fan-3-terminal.json",
+      "sha256": "9d864d2af3139501dd9d095995a55597e70e05a470d0763c59355af6654a5d2d"
+    },
+    {
+      "bytes": 953,
+      "path": "ci-receipts/11018284085/addon-candidate-missing-automation.json",
+      "sha256": "7940c28908b21fe050d384a510f436d7e0132cd5a4832b70444beddf7663a068"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018284085/addon-candidate-power-1-initial.json",
+      "sha256": "cd22228c7dc0934dc46a22ac779456a679b737373cd5e471027a21c17fd923ba"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018284085/addon-candidate-power-1-terminal.json",
+      "sha256": "cd22228c7dc0934dc46a22ac779456a679b737373cd5e471027a21c17fd923ba"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018284085/addon-candidate-power-2-initial.json",
+      "sha256": "445a586c1142de782cd885b066c4b8d7585aebdf4af496cf46919a79565352e7"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018284085/addon-candidate-power-2-terminal.json",
+      "sha256": "445a586c1142de782cd885b066c4b8d7585aebdf4af496cf46919a79565352e7"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018284085/addon-candidate-power-3-initial.json",
+      "sha256": "b669c7aa14fc37e6f2e0ae0f48e3564ffab687973aaa96c6788684fae81ceed3"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018284085/addon-candidate-power-3-terminal.json",
+      "sha256": "b669c7aa14fc37e6f2e0ae0f48e3564ffab687973aaa96c6788684fae81ceed3"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/addon-candidate-power-4-initial.json",
+      "sha256": "ac71351781a2799f23c8232bdd53d45d8885ddc8cc3846a5f6a3b3ae8873d3aa"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/addon-candidate-power-4-terminal.json",
+      "sha256": "ac71351781a2799f23c8232bdd53d45d8885ddc8cc3846a5f6a3b3ae8873d3aa"
+    },
+    {
+      "bytes": 2581,
+      "path": "ci-receipts/11018284085/addon-candidate-result.json",
+      "sha256": "20f5db688a6a5e27ccf63530865e6b141585e72aed65a784c39e8b0ff3364048"
+    },
+    {
+      "bytes": 633910,
+      "path": "ci-receipts/11018284085/addon-catalog-1.json",
+      "sha256": "0801ebf46f8a2d1db53c17aed5ed23446236f8ef2f17f5c3db230a4edb408c02"
+    },
+    {
+      "bytes": 633910,
+      "path": "ci-receipts/11018284085/addon-catalog-2.json",
+      "sha256": "0801ebf46f8a2d1db53c17aed5ed23446236f8ef2f17f5c3db230a4edb408c02"
+    },
+    {
+      "bytes": 1368,
+      "path": "ci-receipts/11018284085/addon-fan-failure-contract.json",
+      "sha256": "d2e6d51d0c26c5c6688229bf2e63abda3f0341f94c944a84796c948d4452a275"
+    },
+    {
+      "bytes": 1073,
+      "path": "ci-receipts/11018284085/addon-fan-recovered.json",
+      "sha256": "9eee94aaff8d824f8de77e6c9dae3b068ed80f4c37486c8ca6b863aa50e1ee1e"
+    },
+    {
+      "bytes": 896,
+      "path": "ci-receipts/11018284085/addon-fan-stale-refusal.json",
+      "sha256": "d6f48f7ded1dc2412965d2ef3867864028781d4cb6f1bdc3648f71fb4a79cbab"
+    },
+    {
+      "bytes": 1127,
+      "path": "ci-receipts/11018284085/addon-fan-uncertain.json",
+      "sha256": "3b1d43fbaad86bf9fb2eaa5c6294a6108efc69c8675846950c133d29519ea921"
+    },
+    {
+      "bytes": 456,
+      "path": "ci-receipts/11018284085/addon-image.json",
+      "sha256": "4718cede1c475aa208ab0ec90d74a5130a343ffa145677b11ecfb0719033f6c8"
+    },
+    {
+      "bytes": 2366,
+      "path": "ci-receipts/11018284085/addon-initialize.json",
+      "sha256": "410f0afeb87849d8d4f27b7643878d886189bfea60d4483978bfc068b366c0ea"
+    },
+    {
+      "bytes": 1532,
+      "path": "ci-receipts/11018284085/addon-power-failure-contract.json",
+      "sha256": "cfb83712947c5428f4d90df5c5cd8a20512409eb8b17cd6d8d77f7025cc2608b"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/addon-power-recovered.json",
+      "sha256": "90dbb7b070a7c029bc516a3d3f620443e7b2c900b46c61669d8579d20d839047"
+    },
+    {
+      "bytes": 1062,
+      "path": "ci-receipts/11018284085/addon-power-stale-refusal.json",
+      "sha256": "4e9421a6042f6b015f7644774e74a398d919a481eec7b831eecc16c07ba6d787"
+    },
+    {
+      "bytes": 1299,
+      "path": "ci-receipts/11018284085/addon-power-uncertain.json",
+      "sha256": "816d33d4a66292c56aabb0da6e677b863e60627d04bc139e5dd4db587ec60ad9"
+    },
+    {
+      "bytes": 106,
+      "path": "ci-receipts/11018284085/core-authority.json",
+      "sha256": "1d314b019e969179fb19a1cecbbc005da1f247126d9cb0e00b686fda376e88d3"
+    },
+    {
+      "bytes": 1030,
+      "path": "ci-receipts/11018284085/receipt.json",
+      "sha256": "b36dc9a37d445ec641e7903c91e347941f7dde71af85248a7ea92bf14c93ad61"
+    },
+    {
+      "bytes": 172,
+      "path": "ci-receipts/11018284085/relay-settlement.json",
+      "sha256": "9c6fb9802a840322a5059dde81fc875819fd33f4ecd6bd3fbb05cf407e78c430"
+    },
+    {
+      "bytes": 1364,
+      "path": "ci-receipts/11018284085/standalone-candidate-blueprint-get.json",
+      "sha256": "f34021b34cf23dc3c92e6dd13908ac24a0ffbe960425a30ccc8b4330f5878089"
+    },
+    {
+      "bytes": 1155,
+      "path": "ci-receipts/11018284085/standalone-candidate-blueprint-list.json",
+      "sha256": "79a8c5f40d338b0a8e3fe356e645aebca7be82a5a2ce712b61b4fead6dcd345e"
+    },
+    {
+      "bytes": 19989,
+      "path": "ci-receipts/11018284085/standalone-candidate-dashboard-1-apply.json",
+      "sha256": "17b9091d806d1f676aa9d4d908029040928a98309ac83b8d8f3e218d574dce81"
+    },
+    {
+      "bytes": 9760,
+      "path": "ci-receipts/11018284085/standalone-candidate-dashboard-1-task.json",
+      "sha256": "39e8ff1da2eb60f3a14eac2631577c913b332f2ef4a533eaeea42648469b7b5a"
+    },
+    {
+      "bytes": 19989,
+      "path": "ci-receipts/11018284085/standalone-candidate-dashboard-2-apply.json",
+      "sha256": "48e194491abaa08d39ceb676dcadb6c8a2098d7d9908306b9c7a9c11f4704dc1"
+    },
+    {
+      "bytes": 9760,
+      "path": "ci-receipts/11018284085/standalone-candidate-dashboard-2-task.json",
+      "sha256": "cf3f86cf36f240cee57d1ee22658474fa3603398901d3640a025e0ecbab7e542"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-1-initial.json",
+      "sha256": "a1a5d5695cb346be66db63b07a5c1446c2f9ef4d23c405597c66f2434b92fad6"
+    },
+    {
+      "bytes": 1072,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-1-terminal.json",
+      "sha256": "a1a5d5695cb346be66db63b07a5c1446c2f9ef4d23c405597c66f2434b92fad6"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-2-initial.json",
+      "sha256": "69cb00f9571d0a289d7e88ebb293282a2cfc1686ca518edea6e29e8913643e5f"
+    },
+    {
+      "bytes": 1079,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-2-terminal.json",
+      "sha256": "69cb00f9571d0a289d7e88ebb293282a2cfc1686ca518edea6e29e8913643e5f"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-3-initial.json",
+      "sha256": "cbfa559764e140f7cc1d595c1c6f8e2c31e537e39d1bc399b1ce92a036547820"
+    },
+    {
+      "bytes": 1075,
+      "path": "ci-receipts/11018284085/standalone-candidate-fan-3-terminal.json",
+      "sha256": "cbfa559764e140f7cc1d595c1c6f8e2c31e537e39d1bc399b1ce92a036547820"
+    },
+    {
+      "bytes": 957,
+      "path": "ci-receipts/11018284085/standalone-candidate-missing-automation.json",
+      "sha256": "89e4785627902db4a9e059cd74757f0764d46d90fa7cda4b3d9fe87cd6609354"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-1-initial.json",
+      "sha256": "b214b72f229211d992a05acbe381cc939c666bace74cddf43ac193fa9ae8340d"
+    },
+    {
+      "bytes": 1235,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-1-terminal.json",
+      "sha256": "b214b72f229211d992a05acbe381cc939c666bace74cddf43ac193fa9ae8340d"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-2-initial.json",
+      "sha256": "ab7f5429b79424d356d18f5ba68a844069c1044de6d78a2c89fdeb7bf7977dcc"
+    },
+    {
+      "bytes": 1236,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-2-terminal.json",
+      "sha256": "ab7f5429b79424d356d18f5ba68a844069c1044de6d78a2c89fdeb7bf7977dcc"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-3-initial.json",
+      "sha256": "0b722765178422d3212588d903e45f55b4ff39675dbbccf1b4cbed016746b962"
+    },
+    {
+      "bytes": 1238,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-3-terminal.json",
+      "sha256": "0b722765178422d3212588d903e45f55b4ff39675dbbccf1b4cbed016746b962"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-4-initial.json",
+      "sha256": "50512929420748e471ab9dd90562e192f8bdc268deb3caa0fbd833f19b31fcaf"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/standalone-candidate-power-4-terminal.json",
+      "sha256": "50512929420748e471ab9dd90562e192f8bdc268deb3caa0fbd833f19b31fcaf"
+    },
+    {
+      "bytes": 2581,
+      "path": "ci-receipts/11018284085/standalone-candidate-result.json",
+      "sha256": "ce9451dba3e1738fb80a3858958d18e60050aff07ded3211411d02ac1654ef80"
+    },
+    {
+      "bytes": 634988,
+      "path": "ci-receipts/11018284085/standalone-catalog-1.json",
+      "sha256": "cf58706b7317bf546a5eacfa6ed134bec6227071b40c3206183d755c72229e63"
+    },
+    {
+      "bytes": 634988,
+      "path": "ci-receipts/11018284085/standalone-catalog-2.json",
+      "sha256": "cf58706b7317bf546a5eacfa6ed134bec6227071b40c3206183d755c72229e63"
+    },
+    {
+      "bytes": 1368,
+      "path": "ci-receipts/11018284085/standalone-fan-failure-contract.json",
+      "sha256": "b91004b92b57bb568a1bb40fba23bf72f4d8a595731ac3bfff817a58c3921d2c"
+    },
+    {
+      "bytes": 1073,
+      "path": "ci-receipts/11018284085/standalone-fan-recovered.json",
+      "sha256": "598ba72eaf9b46eb6a3f9a31bb8f69b94f54f9ea2174db4c58f378fb7901f9f9"
+    },
+    {
+      "bytes": 896,
+      "path": "ci-receipts/11018284085/standalone-fan-stale-refusal.json",
+      "sha256": "da1f922d6b2383d88ebee7286c88f565dd92dcfe6c0f1b8192c46ca5be6a413d"
+    },
+    {
+      "bytes": 1127,
+      "path": "ci-receipts/11018284085/standalone-fan-uncertain.json",
+      "sha256": "2ed48b730a8b3dc766dcbfa64f1b219914006e15bd2aed6ef173d05ebc696096"
+    },
+    {
+      "bytes": 497,
+      "path": "ci-receipts/11018284085/standalone-image.json",
+      "sha256": "59b0fe496ff42b9d88bcd58a56876e0118ae89c850246042d294159a0480c192"
+    },
+    {
+      "bytes": 2366,
+      "path": "ci-receipts/11018284085/standalone-initialize.json",
+      "sha256": "410f0afeb87849d8d4f27b7643878d886189bfea60d4483978bfc068b366c0ea"
+    },
+    {
+      "bytes": 1532,
+      "path": "ci-receipts/11018284085/standalone-power-failure-contract.json",
+      "sha256": "84e271ec94d97a228c517bde6dbbb601f03c3dc9756d1f8f64604551bed39944"
+    },
+    {
+      "bytes": 1239,
+      "path": "ci-receipts/11018284085/standalone-power-recovered.json",
+      "sha256": "8fb7af83cff7ec8ce05fc52991bf5c414234c748a0660f7eaa26be56fae4101d"
+    },
+    {
+      "bytes": 1062,
+      "path": "ci-receipts/11018284085/standalone-power-stale-refusal.json",
+      "sha256": "6cc82fe68ef12e4b1f6916c05a7882e8faf09c9ed59b8232e5134c0dcaa2d7bd"
+    },
+    {
+      "bytes": 1299,
+      "path": "ci-receipts/11018284085/standalone-power-uncertain.json",
+      "sha256": "faf45a71c15d50308f323b1533a984504c846dfe9c3d77bd4b74fb1bfd8ec19e"
+    },
+    {
+      "bytes": 734357,
+      "path": "ci-receipts/11018284085.zip",
+      "sha256": "46c2c3f77030e3aba042ecee70356aa18e0beca65c3056e6df67168c160458f2"
+    },
+    {
+      "bytes": 383,
+      "path": "ci-receipts/11018457532/ha-mcp-8.5.0-disposable-ha-2026-9-4.json",
+      "sha256": "9cf26a181b7919259bace996919dfc1b8c1f76f5d3d1f1ba1f40ba944c066e41"
+    },
+    {
+      "bytes": 402,
+      "path": "ci-receipts/11018457532.zip",
+      "sha256": "f31f82a9f26e56804040d721f9b85b90d2ea1270fae739bcf78fafefb2c0ae66"
+    }
+  ],
+  "engineering_ci_head": "65453d30d90423134d3a8caca3b69f2ffc001563",
+  "engineering_runtime_base": "981fc82be5e8660dd97f58b1cea378d1e7e3d97f",
+  "limitations": [
+    "Disposable synthetic entities and approval principals; no household/physical-device acceptance",
+    "Fault injection and clock advance are not actual process-crash or Core-upgrade evidence",
+    "Core OCI artifact identities are reviewed release provenance, not installed Core image attestation",
+    "Digest-linked OCI provenance checked; attestation signature verification not performed",
+    "Standalone blueprint evidence remains partial; add-on component variant complete",
+    "Tuya off with retained nonzero percentage remains an exact-readback refusal",
+    "Core .4 production signing/publication and installed admission/stability are separate; old plans are not rescued"
+  ],
+  "model": "core-release-applicability-evidence-v1",
+  "production_boundaries_unchanged": [
+    "hass_mcp_engineering_beta/",
+    "hass_mcp_admin/",
+    "upstream-trust/",
+    ".release/",
+    "repository.yaml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish-rc-image.yml"
+  ],
+  "release": "2026.9.4",
+  "source_identity": {
+    "architecture_manifests": {
+      "linux/amd64": "sha256:e47c978e1b801466e7f62f612fd552bc3a228e077b31a3f1c22c05cf63d754da",
+      "linux/arm64": "sha256:35e6df56a9ce632c9b15df869ac73a17af6cdd2cfb99830527ffac9cc5218ba2"
+    },
+    "entry_id": "disposable-core-2026.9.4-3e6710a7",
+    "image_index_digest": "sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76",
+    "server_name": "home-assistant-core",
+    "source_archive_sha256": "c8d814b63c0b7043ad54980044f9824c9582450af9cac38ba376fadc37fa4056",
+    "source_commit": "9212531f40a0b7b23229a90d688dd79d9dfccff4",
+    "source_tree": "6c31a6d74d29920a223b779d395852f757f68853",
+    "version": "2026.9.4"
+  },
+  "source_review": {
+    "changed_boundary_file": "homeassistant/components/http/security_filter.py",
+    "changed_files": 32,
+    "directory_name": "core-2026-9-4-review-20260929",
+    "independent_result_sha256": "4eab8c3a827caa192eb9cfc784053bcc5beba6feca01b998aa3a8b06a3f7ef14",
+    "manifest_sha256": "5f05b143f9c5446da398c9e27c41f08f7c0297de07cf7a1fed38640b6aff7127",
+    "report_sha256": "393e782e0bb5b8d19016cf9bcc61ccb51e48972e0ee1d13e2f3005284c4a42c2",
+    "reviewed_boundary_unchanged_files": 419,
+    "runtime_correction_established": false
+  },
+  "upstream_version": "8.5.0"
+}
