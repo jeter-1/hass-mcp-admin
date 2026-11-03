@@ -20,9 +20,11 @@ fail the test if it is reached.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -365,6 +367,223 @@ class AuditDestinationTests(Hamcp253Case):
         view = self.inspect_record("change_plan", self.target)
         self.assertEqual(view["acknowledgement"]["state"], "unacknowledged")
         self.assertIs(view["acknowledgement"]["audit_pending"], False)
+
+
+
+# -- R2-M3 ------------------------------------------------------------------
+
+
+PENDING = "acknowledgement_audit_reconciliation_pending"
+# Each is reached only after os.replace has made the new ledger visible.
+AFTER_REPLACEMENT = ("after_replace", "directory_open", "directory_fsync")
+
+
+class PersistenceUncertaintyTests(Hamcp253Case):
+    """Failures after the ledger replacement, for each write of a request.
+
+    ``kept`` continues with the replaced ledger. ``lost`` puts back the
+    ledger bytes from before the failed write, as a crash could when the
+    directory entry was never made durable.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.targets = iter(await self.projection_failed_plans(count=7))
+
+    def audit_bytes(self):
+        return self.audit_path.read_bytes() if self.audit_path.exists() else b""
+
+    def decision_for(self, target):
+        found = [d for d in self.decisions() if d["body"]["record_id"] == target]
+        return found[-1] if found else None
+
+    def decision_audits(self, decision):
+        identifier = ledger_module.audit_event_id(decision)
+        return [entry for entry in self.acknowledgement_audits()
+                if entry.get("audit_event_id") == identifier]
+
+    def state_of(self, target):
+        view = self.inspect_record("change_plan", target)["acknowledgement"]
+        return view["state"], view["audit_pending"]
+
+    @contextmanager
+    def failing_write(self, write, stage):
+        """Fail ledger write number ``write`` of one request at ``stage``."""
+
+        store = self.service.acknowledgements
+        state = {"writes": 0, "before": None, "failed": 0}
+        real_open, real_fsync = os.open, os.fsync
+
+        def armed():
+            return state["writes"] == write
+
+        def fail(what):
+            state["failed"] += 1
+            raise OSError(f"synthetic failure: {what}")
+
+        def hook(name):
+            if name == "before_write":
+                state["writes"] += 1
+                if armed() and self.ledger_path().exists():
+                    state["before"] = self.ledger_path().read_bytes()
+            elif name == stage and armed():
+                fail(name)
+
+        def ledger_directory_open(path, flags, *args, **kwargs):
+            if (stage == "directory_open" and armed() and flags & os.O_DIRECTORY
+                    and Path(path) == store.root):
+                fail("directory open")
+            return real_open(path, flags, *args, **kwargs)
+
+        def ledger_directory_fsync(fd):
+            # Only a directory: the temporary file and the audit log still
+            # sync normally.
+            if (stage == "directory_fsync" and armed()
+                    and stat.S_ISDIR(os.fstat(fd).st_mode)):
+                fail("directory fsync")
+            return real_fsync(fd)
+
+        store.fault_hook = hook
+        try:
+            with patch.object(ledger_module.os, "open", ledger_directory_open), \
+                    patch.object(ledger_module.os, "fsync", ledger_directory_fsync):
+                yield state
+        finally:
+            store.fault_hook = None
+        self.assertEqual(state["failed"], 1, "the failure was not injected")
+
+    def lose_replacement(self, state):
+        if state["before"] is None:
+            self.ledger_path().unlink()
+        else:
+            self.ledger_path().write_bytes(state["before"])
+
+    def assert_converged(self):
+        """Nothing pending, no duplicate, nothing effective without audit."""
+
+        completions = self.completions()
+        for decision in self.decisions():
+            audits = self.decision_audits(decision)
+            self.assertLessEqual(len(audits), 1)
+            self.assertIn(decision["sequence"], completions)
+            if completions[decision["sequence"]] == "recorded":
+                self.assertEqual(len(audits), 1)
+        health = self.service.health_summary()
+        self.assertEqual(health["record_acknowledgement"]["audit_pending_count"], 0)
+
+    def restart_and_converge(self):
+        self.restart()
+        self.assert_converged()
+        ledger, audit = self.ledger_path().read_bytes(), self.audit_bytes()
+        # A second start finds nothing left to do.
+        self.restart()
+        self.assertEqual(self.ledger_path().read_bytes(), ledger)
+        self.assertEqual(self.audit_bytes(), audit)
+
+    def assert_pending(self, outcome, decision):
+        self.assertEqual(outcome["status"], "pending")
+        self.assertEqual(outcome["refusal_reason"], PENDING)
+        self.assertIsNotNone(decision)
+        self.assertEqual(outcome["ledger_sequence"], decision["sequence"])
+
+    async def test_decision_write_failing_after_replacement(self):
+        for stage in AFTER_REPLACEMENT:
+            for branch in ("kept", "lost"):
+                with self.subTest(stage=stage, branch=branch), no_home_assistant(self):
+                    target, before = next(self.targets), self.audit_bytes()
+                    with self.failing_write(1, stage) as state:
+                        outcome = self.acknowledge("change_plan", target)
+                    decision = self.decision_for(target)
+                    # Stored without a completion: pending, not refused.
+                    self.assert_pending(outcome, decision)
+                    self.assertNotIn(decision["sequence"], self.completions())
+                    self.assertEqual(self.decision_audits(decision), [])
+                    self.assertIs(outcome["audit_recorded"], self.audit_bytes() != before)
+                    self.assertEqual(self.state_of(target), ("unacknowledged", True))
+                    if branch == "lost":
+                        self.lose_replacement(state)
+                    self.restart_and_converge()
+                    if branch == "kept":
+                        decision = self.decision_for(target)
+                        self.assertEqual(self.completions()[decision["sequence"]], "recorded")
+                        self.assertEqual(len(self.decision_audits(decision)), 1)
+                        self.assertEqual(self.state_of(target), ("acknowledged", False))
+                    else:
+                        self.assertIsNone(self.decision_for(target))
+                        self.assertEqual(self.state_of(target), ("unacknowledged", False))
+
+    async def test_recorded_completion_failing_after_replacement(self):
+        for stage in AFTER_REPLACEMENT:
+            for branch in ("kept", "lost"):
+                with self.subTest(stage=stage, branch=branch), no_home_assistant(self):
+                    target = next(self.targets)
+                    with self.failing_write(2, stage) as state:
+                        outcome = self.acknowledge("change_plan", target)
+                    decision = self.decision_for(target)
+                    # The decision is audited: whichever completion survives,
+                    # it converges to effective, so it is never refused.
+                    self.assert_pending(outcome, decision)
+                    self.assertIs(outcome["audit_recorded"], True)
+                    self.assertEqual(len(self.decision_audits(decision)), 1)
+                    if branch == "lost":
+                        self.lose_replacement(state)
+                        self.assertNotIn(decision["sequence"], self.completions())
+                    self.restart_and_converge()
+                    self.assertEqual(self.completions()[decision["sequence"]], "recorded")
+                    self.assertEqual(len(self.decision_audits(decision)), 1)
+                    self.assertEqual(self.state_of(target), ("acknowledged", False))
+
+    async def test_abandoned_completion_failing_after_replacement(self):
+        for stage in AFTER_REPLACEMENT:
+            for branch in ("kept", "lost"):
+                with self.subTest(stage=stage, branch=branch), no_home_assistant(self):
+                    target, before = next(self.targets), self.audit_bytes()
+                    with self.failing_write(2, stage) as state, patch.object(
+                        self.service.audit, "write_batch", return_value=0
+                    ):
+                        outcome = self.acknowledge("change_plan", target)
+                    decision = self.decision_for(target)
+                    # An `abandoned` completion that may vanish cannot be
+                    # reported as a settled refusal: the decision could
+                    # still be reconciled and take effect.
+                    self.assert_pending(outcome, decision)
+                    self.assertIs(outcome["audit_recorded"], False)
+                    self.assertEqual(self.audit_bytes(), before)
+                    if branch == "lost":
+                        self.lose_replacement(state)
+                    self.restart_and_converge()
+                    if branch == "kept":
+                        self.assertEqual(self.completions()[decision["sequence"]], "abandoned")
+                        self.assertEqual(self.decision_audits(decision), [])
+                        self.assertEqual(self.state_of(target), ("unacknowledged", False))
+                    else:
+                        self.assertEqual(self.completions()[decision["sequence"]], "recorded")
+                        self.assertEqual(len(self.decision_audits(decision)), 1)
+                        self.assertEqual(self.state_of(target), ("acknowledged", False))
+
+    async def test_failures_before_replacement_are_settled(self):
+        # Controls: before os.replace nothing new is visible, so a failed
+        # decision is a settled refusal and a failed completion is pending.
+        with no_home_assistant(self):
+            target = next(self.targets)
+            with self.failing_write(1, "before_replace"):
+                outcome = self.acknowledge("change_plan", target)
+            self.assertEqual(outcome["status"], "refused")
+            self.assertEqual(outcome["refusal_reason"], "acknowledgement_persistence_failed")
+            self.assertIsNone(outcome["ledger_sequence"])
+            self.assertFalse(self.ledger_path().exists())
+            self.restart()
+            self.assertFalse(self.ledger_path().exists())
+            self.assertEqual(self.state_of(target), ("unacknowledged", False))
+
+            with self.failing_write(2, "before_replace"):
+                outcome = self.acknowledge("change_plan", target)
+            decision = self.decision_for(target)
+            self.assert_pending(outcome, decision)
+            self.assertEqual(self.completions(), {})
+            self.restart_and_converge()
+            self.assertEqual(self.completions(), {decision["sequence"]: "recorded"})
+            self.assertEqual(self.state_of(target), ("acknowledged", False))
 
 
 if __name__ == "__main__":

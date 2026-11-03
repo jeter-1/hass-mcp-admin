@@ -64,6 +64,16 @@ class AcknowledgementStorageError(RuntimeError):
     """Fixed diagnostic only; never storage contents."""
 
 
+class AcknowledgementPersistenceUncertain(AcknowledgementStorageError):
+    """The write failed after the ledger was replaced (HAMCP-253 R2-M3).
+
+    The new ledger is visible but not known to be durable, so the entry may
+    persist. ``candidate`` is that entry, set by the transaction.
+    """
+
+    candidate: dict | None = None
+
+
 def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=True, allow_nan=False).encode("utf-8")
@@ -313,6 +323,7 @@ class AcknowledgementStore:
         if len(raw) > MAX_STORE_BYTES:
             raise AcknowledgementStorageError("acknowledgement_capacity_exceeded")
         temporary = self.root / (".acknowledgement-" + uuid.uuid4().hex)
+        replaced = False
         try:
             self._inject("before_write")
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -322,12 +333,21 @@ class AcknowledgementStore:
                 os.fsync(stream.fileno())
             self._inject("before_replace")
             os.replace(temporary, self.path)
+            # rename(2) is atomic: a failure up to here leaves the ledger
+            # unchanged. From here the new ledger is visible but not yet
+            # durable, so a failure cannot exclude that the entry persists.
+            replaced = True
+            self._inject("after_replace")
             directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
                 os.fsync(directory)
             finally:
                 os.close(directory)
         except (OSError, ValueError, RecursionError):
+            if replaced:
+                raise AcknowledgementPersistenceUncertain(
+                    "acknowledgement_persistence_failed"
+                ) from None
             raise AcknowledgementStorageError("acknowledgement_persistence_failed") from None
         finally:
             try:
@@ -375,6 +395,11 @@ class AcknowledgementTransaction:
         if len(encoded(event)) > MAX_EVENT_BYTES:
             raise AcknowledgementStorageError("acknowledgement_capacity_exceeded")
         updated = [*self.events, event]
-        self.store._write(updated)
+        try:
+            self.store._write(updated)
+        except AcknowledgementPersistenceUncertain as exc:
+            # The entry may persist: its caller must not report it refused.
+            exc.candidate = deepcopy(event)
+            raise
         self.events = updated
         return deepcopy(event)

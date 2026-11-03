@@ -87,7 +87,11 @@ Required offline evidence is in `tests/test_hamcp253_*.py`:
   inspection, Ingress, MCP or audit, while counts, order and bounds hold;
   a directory, missing-parent, non-writable, disabled or missing audit
   destination is refused before the acknowledgement namespace or ledger
-  changes;
+  changes; a decision or completion write that fails after the ledger
+  replacement (fault hook, directory open, directory fsync) is reported as
+  pending, and on restart, whether the replacement was kept or lost, it
+  converges with no pending entry, no duplicate correlated audit event and
+  no effective decision without its audit event;
 - redaction: a secret-like value never appears in inspection,
   acknowledgement, health, audit or the ledger;
 - regression: approve and apply of an acknowledged failed plan are still

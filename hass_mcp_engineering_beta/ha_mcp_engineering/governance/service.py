@@ -128,6 +128,7 @@ from .projection_diagnostics import (
 )
 from . import record_acknowledgement as acknowledgement_ledger
 from .record_acknowledgement import (
+    AcknowledgementPersistenceUncertain,
     AcknowledgementStorageError,
     AcknowledgementStore,
 )
@@ -16178,7 +16179,13 @@ class ChangeGovernanceService:
                 if status in {"acknowledged", "reclassified", "revoked"}:
                     # Decision, then its audit event, then the completion
                     # that makes it effective (R1-M3).
-                    decision = transaction.append(body)
+                    try:
+                        decision = transaction.append(body)
+                    except AcknowledgementPersistenceUncertain as exc:
+                        # R2-M3: the decision may persist and be reconciled
+                        # later, so it is reported as pending, never refused.
+                        decision = exc.candidate
+                        raise
                     decision_audited = self._write_acknowledgement_decision_audit(
                         transaction.events, decision, reconciled=False
                     )
@@ -16195,10 +16202,12 @@ class ChangeGovernanceService:
         except AcknowledgementStorageError as exc:
             status, refusal, sequence = "refused", str(exc), None
             if decision is not None and not completed:
-                # The decision is stored but its completion is not. It is
-                # not effective now; the next writer or start completes it
-                # once its audit event is written, so it is reported as
-                # pending, never as refused.
+                # The decision is or may be stored, and its completion is
+                # not known to be durable. Whichever completion was lost,
+                # the next writer or start can still complete the decision
+                # as recorded once its audit event is written (an uncertain
+                # `abandoned` may vanish), so it is reported as pending,
+                # never as refused or settled (R1-M3, R2-M3).
                 status = "pending"
                 refusal = "acknowledgement_audit_reconciliation_pending"
                 sequence = decision["sequence"]

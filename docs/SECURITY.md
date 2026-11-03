@@ -640,7 +640,9 @@ Core call on the acknowledgement path.
     it completed as `recorded`. An audit failure completes it as
     `abandoned` (no effect, `audit_write_failed`); a crash between the
     steps leaves it pending until reconciliation at start or by the next
-    writer. `audit_recorded` is true only when audit bytes were written.
+    writer. A ledger write that fails after the file was replaced cannot
+    exclude that the entry persists, so the request is reported as pending,
+    never as refused. `audit_recorded` is true only when audit bytes were written.
 - **No execution authority.** Plans and tasks are never rewritten or
   deleted. Approve, apply, recovery, startup validation and projection
   verification never read the ledger. An acknowledged failed plan is

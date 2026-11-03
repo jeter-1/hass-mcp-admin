@@ -229,7 +229,8 @@ written.
     logger does and writes nothing to them.
 14. `record_not_acknowledged`: revoke when nothing was acknowledged
 15. Ledger refusals: `acknowledgement_in_progress`,
-    `acknowledgement_persistence_failed`,
+    `acknowledgement_persistence_failed` (only when the decision write failed
+    before the new ledger replaced the old one, so nothing was stored),
     `acknowledgement_capacity_exceeded`, `acknowledgement_audit_pending`
     (an earlier decision still has no audit event and cannot be completed
     now), and integrity or namespace codes.
@@ -248,7 +249,7 @@ A request rejected before its fields are trusted is audited as
 | `reclassified` | The classification or reason changed. History is kept. | One |
 | `revoked` | A superseding entry. The warning returns. | One |
 | `no_op` | An identical repeat, or a revoke after a revoke. | None |
-| `pending` | The process failed after the decision was stored and before its completion. Not effective. Reported as `acknowledgement_audit_reconciliation_pending`. | Decision only |
+| `pending` | The decision is or may be stored, and its completion is not known to be durable: the process failed between the steps, or a ledger write failed after the replacement (R2-M3). Not settled; it converges at start or with the next writer. Reported as `acknowledgement_audit_reconciliation_pending`. | Decision; its completion may also be present |
 
 Every outcome reports `record_written: false`, `home_assistant_calls: 0`,
 `execution_eligibility_changed: false` and `audit_recorded`.
@@ -274,6 +275,23 @@ Every outcome reports `record_written: false`, `home_assistant_calls: 0`,
   completion `recorded` is appended. Until then health reports
   `audit_pending_count`, inspection reports `audit_pending`, and new
   decisions are refused with `acknowledgement_audit_pending`.
+- **Persistence uncertainty (round-2 correction R2-M3).** A ledger write
+  is a temporary file, `fsync`, `os.replace` and a directory `fsync`.
+  `rename(2)` is atomic, so a failure before the replacement leaves the
+  ledger unchanged. A failure after it (opening or syncing the directory)
+  cannot exclude that the new entry persists: the new ledger is visible but
+  not known to be durable, and a crash may keep it or lose it. The request
+  is then never reported as refused or settled:
+
+  | Failed write | Before the replacement | After the replacement |
+  |---|---|---|
+  | Decision | Refused, `acknowledgement_persistence_failed`. The journal is unchanged. | `pending`, with the decision's sequence. The journal keeps the decision without a completion, or loses it in a crash. A kept decision is completed `recorded` at start or by the next writer once its audit event is written; a lost one never existed. |
+  | `recorded` completion | `pending`. The journal keeps the decision without a completion; it is completed `recorded` at reconciliation. | `pending`. The journal keeps the decision and its completion, or the decision only. Either way the decision's audit event is already written, so it converges to `recorded`; the completion may already be visible before it is durable. |
+  | `abandoned` completion | `pending`. The journal keeps the decision without a completion; reconciliation writes its audit event and completes it `recorded`. | `pending`. The journal keeps the decision and `abandoned` (never effective), or the decision only, which reconciliation completes `recorded` once its audit event is written. |
+
+  Reconciliation writes the decision's audit event under its derived
+  identifier, so no path writes a second correlated audit event, and no
+  decision is effective without one.
 - `audit_recorded` is `true` only when an audit event for the request was
   durably written. A disabled audit log reports success without writing, so
   it is treated as not written.
