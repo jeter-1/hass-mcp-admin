@@ -586,20 +586,22 @@ def risk_assessment(operation_id: str, classification: dict[str, Any]) -> Change
             "elevated approval required)",
             *reasons,
         ][:MAX_STATEMENTS]
+    marker = {
+        "field": operation_id,
+        "trigger": POLICY_TRIGGER,
+        "policy": classification["policy"],
+        "physical_consequence": classification["physical_consequence"],
+        "basis": ",".join(classification["basis"]),
+    }
+    if elevated:
+        # Both rules label a standard change ``none``, so a standard marker
+        # stays byte-identical to the shipped one.
+        marker["consequence_model"] = CONSEQUENCE_MODEL
     return ChangeRiskAssessment(
         level=RiskLevel.HIGH if elevated else RiskLevel.LOW,
         reasons=reasons or ["Entity enable/disable or exposure change"],
         apply_allowed=True,
-        evidence=[
-            {
-                "field": operation_id,
-                "trigger": POLICY_TRIGGER,
-                "policy": classification["policy"],
-                "physical_consequence": classification["physical_consequence"],
-                "basis": ",".join(classification["basis"]),
-                "consequence_model": CONSEQUENCE_MODEL,
-            }
-        ],
+        evidence=[marker],
         warnings=list(classification["warnings"]),
     )
 

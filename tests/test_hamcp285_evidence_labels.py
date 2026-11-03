@@ -702,6 +702,34 @@ class AvailabilityLabelTests(AvailabilityExposureServiceTestCase):
                 self.assertIn("entity_availability_exposure_execution_contract_incomplete",
                               decision.reason_codes)
 
+    async def test_a_standard_plan_keeps_the_shipped_marker_shape(self):
+        # Both rules label a standard change ``none``, so the marker is only
+        # written for elevated plans and standard plans keep shipped bytes.
+        self.add_entity("sensor.hall_motion")
+        self.snapshot = exposure_snapshot()
+        created = await self.disable("sensor.hall_motion")
+        policy = created["policy_decision"]
+        self.assertEqual(
+            (policy["policy_class"], policy["risk_delta"],
+             policy["physical_consequence"]),
+            ("standard_admin", "low", "none"),
+        )
+        marker = created["risk"]["evidence"][0]
+        self.assertNotIn("consequence_model", marker)
+        plan = self.repository.get(created["plan_id"])
+        self.assertEqual(evaluate_change_policy(plan).policy_class,
+                         ApprovalPolicyClass.STANDARD_ADMIN)
+
+    async def test_an_elevated_plan_carries_the_marker(self):
+        self.add_entity("sensor.hall_motion")
+        self.snapshot = exposure_snapshot(
+            findings=(finding("sensor.hall_motion", "unknown_effect"),),
+        )
+        created = await self.disable("sensor.hall_motion")
+        self.assertEqual(created["policy_decision"]["policy_class"], "elevated_admin")
+        self.assertEqual(created["risk"]["evidence"][0]["consequence_model"],
+                         POSITIVE_EVIDENCE_V1)
+
     def test_positive_evidence_decides_the_label(self):
         expected = availability_planning.expected_consequence
         gap = "dependency_evidence_incomplete:automation_read_failures"
