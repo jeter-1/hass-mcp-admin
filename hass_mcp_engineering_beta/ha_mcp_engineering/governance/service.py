@@ -16152,13 +16152,29 @@ class ChangeGovernanceService:
     def stuck_governance_records(self) -> dict[str, Any]:
         """Projection-failed plans and manual-review tasks with their state."""
 
-        return self._acknowledgement_health()
+        return self._acknowledgement_health(storage_read_only=True)
 
-    def _acknowledgement_health(self) -> dict[str, Any]:
-        # A navigation rebuild since the last projection pass leaves the
-        # index stale; refresh it the same way the read paths do.
-        self._ensure_projection_index_current(invalidate_health=False)
-        plan_ids = sorted(self._projection_failure_index)
+    def _acknowledgement_health(
+        self, *, storage_read_only: bool = False
+    ) -> dict[str, Any]:
+        if not storage_read_only:
+            # A navigation rebuild since the last projection pass leaves the
+            # index stale; refresh it the same way the read paths do.
+            self._ensure_projection_index_current(invalidate_health=False)
+            plan_ids = sorted(self._projection_failure_index)
+        elif (
+            self._observed_plan_index_rebuild_count
+            == self.repository.index_rebuild_count
+        ):
+            plan_ids = sorted(self._projection_failure_index)
+        else:
+            # The Ingress list never rebuilds an index: a rebuild quarantines
+            # corrupt records (R1-M1). Read the plans as stored instead.
+            plan_ids = sorted(
+                plan.plan_id
+                for plan in self.repository.read_all_for_inspection()
+                if self._projection_failure_for_plan(plan) is not None
+            )
         try:
             task_ids = sorted(self.task_repository.manual_review_task_ids())
             task_index_status = "ok"

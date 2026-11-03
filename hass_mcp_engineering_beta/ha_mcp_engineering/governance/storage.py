@@ -1047,7 +1047,8 @@ class ChangePlanRepository:
 
         Unlike ``get`` this never quarantines a corrupt record and never
         updates the navigation index, so a corrupt record stays in place and
-        reads as unreadable on every inspection.
+        reads as unreadable on every inspection. An identifier whose file is
+        already quarantined is reported as a storage error, not as missing.
         """
         paths = self._read_paths(plan_id)
         if paths is None:
@@ -1059,8 +1060,36 @@ class ChangePlanRepository:
                     "Ambiguous governance record identifier"
                 )
             if not existing:
+                if any(
+                    any(directory.glob(f"{plan_id}.*.corrupt"))
+                    for directory in (
+                        self.quarantine, self.operational_quarantine
+                    )
+                ):
+                    raise ChangePlanStorageError(
+                        "Governance record identifier is quarantined"
+                    )
                 return None
             return self._load(existing[0], quarantine_corrupt=False)
+
+    def read_all_for_inspection(self) -> list[ChangePlan]:
+        """HAMCP-253: every readable plan as stored, with no side effects.
+
+        For the acknowledgement view when the projection index is stale: a
+        navigation rebuild would quarantine corrupt records (R1-M1), so this
+        reads each record without quarantine and leaves an unreadable one in
+        place.
+        """
+        with self._lock:
+            plans: list[ChangePlan] = []
+            for path in self._record_paths():
+                try:
+                    plan = self._load(path, quarantine_corrupt=False)
+                except ChangePlanStorageError:
+                    continue
+                if plan is not None:
+                    plans.append(plan)
+            return plans
 
     def _load(
         self,
