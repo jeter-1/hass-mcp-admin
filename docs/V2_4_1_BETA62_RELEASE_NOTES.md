@@ -17,30 +17,43 @@ any read" (RCG-093). Dashboard-only references were therefore missing from
 `entity_dependency_analysis`, `change_impact_analysis` and the HAMCP-270
 plan disclosures.
 
-**Cause, from source.** The dashboard collector started its 6 s clock when
-it began, but the provider started it as a task at the start of the build,
-concurrently with every other dependency source. Those sources use the same
-Home Assistant transport. The dashboard session, list and reads waited
-behind them while the dashboard clock ran.
+**What the evidence shows.** Source analysis and synthetic experiments
+reproduce an overlap/contention mechanism, and the change addresses it. They
+do not establish that this mechanism alone caused the live "0 of 6": live
+contention was not measured.
 
-**Cause, from fixture experiments** (wall clock, synthetic household at
-live scale: 121 automations, 1,606 states, 6 dashboards; list 0.4 s, read
+**Mechanism, from source.** The dashboard collector started its 6 s clock
+when it began, but the provider started it as a task at the start of the
+build, concurrently with every other dependency source. The dashboard
+session, list and reads therefore overlapped the earlier sources, and the
+dashboard clock ran during that overlap. The other sources use native REST
+and WebSocket reads; the dashboard reads use delegated MCP sessions. The
+source does not show a shared serialized transport between them; any shared
+Home Assistant Core or host contention is modeled below, not measured.
+
+**Mechanism, from synthetic experiments** (wall clock, synthetic household
+at live scale: 121 automations, 1,606 states, 6 dashboards; list 0.4 s, read
 0.8 s, an oversized dashboard 1.5 s and refused as too large):
 - the dashboard phase alone reads 5 dashboards and reports the oversized
   one as too large in about 2.0 s;
-- the same phase inside a live-scale build with no contention gives the
-  same result;
-- with 4.0 s of build-phase contention on the shared transport, the same
-  result; with 5.8 s, 1 read and the rest counted `dashboard_not_read` with
-  the budget exhausted. At least about 5.6 s of contention reproduces the
-  live 0-of-6 signature (live: the dashboard phase took 6,328 ms of a
-  7,640 ms build, and the automation source 3,985 ms);
-- a slow or oversized dashboard alone, and serialized reads alone, read 2
-  to 5 of 6, never 0. HAMCP-273's oversized response alone occupies one of
-  the 4 read slots and does not explain the symptom.
+- the same phase inside a live-scale build with no modeled contention gives
+  the same result;
+- with 4.0 s of modeled shared Core contention during the build, the same
+  result; with 5.8 s, 1 read completed and the rest counted
+  `dashboard_not_read` with the budget exhausted. About 5.6 s or more of
+  modeled contention reproduces the live signature (live: the dashboard
+  phase took 6,328 ms of a 7,640 ms build, and the automation source
+  3,985 ms);
+- in the modeled cases, a slow or oversized dashboard alone, and serialized
+  reads alone, completed 2 to 5 of 6, never 0. HAMCP-273's oversized
+  response alone occupies one of the 4 read slots. These controls do not
+  exclude every live combination.
 
-The contention magnitude on the live installation is not measured; the
-experiments show the mechanism and the threshold, not the live value.
+**Started versus completed reads.** The live "0 of 6" is zero *completed*
+reads. Before this change a read cancelled in flight at the phase deadline
+was also counted `dashboard_not_read`, so the live record does not show how
+many reads started. This release counts a read cancelled in flight as
+`timed_out` (`dashboard_read_timeout`), separately from one never started.
 
 ## The change
 
@@ -53,16 +66,27 @@ experiments show the mechanism and the threshold, not the live value.
   slow dashboard cannot hold a read slot for the whole phase. A read that
   hits its own bound is `timed_out`; one capped by the phase deadline also
   counts the budget overrun.
+- **No read starts after the phase deadline.** The deadline is checked, and
+  the read's allowance computed, inside each scheduled read immediately
+  before the reader is invoked. A read that waited behind other work until
+  the deadline passed is not started and is `not_attempted_budget`.
 - **A fixed order.** Dashboards are read in sorted `url_path` order, so the
   same household is read the same way on every build.
 - **An exact outcome per dashboard.** Every listed dashboard gets one of
   `read`, `too_large`, `timed_out`, `failed`, `not_attempted_budget`,
-  `not_attempted_authority` (dashboard authority retired during the phase)
-  or `not_attempted_failure`. A read in flight when the phase deadline
-  cancels it is `timed_out` and counts `dashboard_read_timeout`.
+  `not_attempted_authority` (dashboard authority retired during the phase),
+  `not_attempted_failure` or `not_attempted_limit` (listed beyond the
+  50-read limit; counted as `dashboard_not_read_inventory_limit`). A read in
+  flight when the phase deadline cancels it is `timed_out` and counts
+  `dashboard_read_timeout`.
 - **Truthful partial reporting.** The dashboard coverage row's first
   warning is `Dashboards read: N of M listed`; this is the reason the
-  HAMCP-270 disclosure shows. Each other outcome follows as
+  HAMCP-270 disclosure shows. M counts every listed dashboard the build
+  accounted (up to 51, the list request size), not only the 50 queued for
+  reading; any beyond the limit are appended as
+  `; K not attempted (50-read limit)`. When the upstream inventory itself
+  was truncated, the line reads `Dashboards read: N of at least M
+  (inventory truncated)` and the row is never complete. Each other outcome follows as
   `Dashboards <outcome>: <paths>`, with paths screened and at most 10 shown
   before a count of the rest. The row is complete only when every listed
   dashboard was read with no counted gap. The build profile adds

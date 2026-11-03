@@ -55,12 +55,23 @@ updated `tests/test_hamcp227_global_sources.py`):
   rest are still read. When the budget truly runs out, as many as fit are
   read and the rest are named `not_attempted_budget`; the row is partial,
   never complete, and the budget overrun is counted.
-- **Phase clock.** A slow earlier phase holding the shared transport longer
+- **Phase clock.** A slow earlier phase holding a modeled shared Core longer
   than the whole dashboard budget does not spend it: all six dashboards are
   read after it releases.
+- **No late start.** Under deferred scheduling and clock advancement, every
+  read enters the reader strictly before the phase deadline; a read queued
+  before the deadline that would run at or after it is never started and is
+  `not_attempted_budget`, and a read's allowance is the remainder when it
+  runs. Cancellation while reads are queued or running leaves no task.
+- **Inventory accounting.** With 50 listed, all 50 are read; with 51, 50 are
+  read and the 51st is `not_attempted_limit`, and the first line is
+  `Dashboards read: 50 of 51 listed; 1 not attempted (50-read limit)`; an
+  upstream-truncated inventory reads `of at least M (inventory truncated)`
+  and is never complete. Read counts, outcomes, omitted counts and the
+  HAMCP-270 first-line reason reconcile.
 - **Exact outcomes.** Every listed dashboard has exactly one known outcome;
-  the first warning is `Dashboards read: N of M listed`; named paths are
-  screened and bounded.
+  the first warning is `Dashboards read: N of M listed` (or its bounded
+  form above); named paths are screened and bounded.
 - **Non-interaction with HAMCP-270.** For all five planners, plan bindings,
   bound disclosure, policy class, physical consequence, required
   acknowledgements and risk are identical with no dashboard reader, with all
@@ -83,7 +94,8 @@ head-bound workflow.
 ## 4. Installed acceptance (separately authorized)
 
 After the HAMCP-278 cutover, Josh deploys beta.62 and refreshes the
-connector. The architect then runs read-only checks only:
+connector. The architect then runs read-only checks only. None of them
+creates, approves or applies a plan.
 
 1. **Read-only.** Run `entity_dependency_analysis` on an entity that a
    dashboard references. PASS if the dashboard coverage row reports at
@@ -93,10 +105,19 @@ connector. The architect then runs read-only checks only:
    dashboard reference appears in the result.
 2. **Read-only.** Run `change_impact_analysis` for the same entity. PASS
    if the dashboard reference appears with the same coverage reason.
-3. **Read-only.** Create a plan covered by HAMCP-270 (for example an entity
-   metadata plan) on an entity a dashboard references, and never approve
-   it. PASS if its global-reference disclosure names the dashboard and its
-   reason is the `Dashboards read: N of M listed` line.
+3. **Read-only.** In the step 1 result, the dashboard coverage row's first
+   warning is the line the HAMCP-270 plan disclosure shows as its dashboard
+   reason; offline tests prove that mapping. PASS if that first warning is
+   exactly `Dashboards read: N of M listed`, its N and M agree with the
+   per-outcome lines that follow and with
+   `global_sources.dashboard.outcome_counts` from `get_server_health`, and M
+   is the number of dashboards `list_dashboards` reports.
+
+Seeing the disclosure on a real plan requires creating one:
+`create_entity_metadata_plan` and the other HAMCP-270 planners persist a
+governed plan even though they dispatch no Home Assistant change. That is a
+separate planning action, outside this read-only acceptance, and needs
+Josh's explicit authorization; if authorized, the plan is never approved.
 
 If a step fails, keep the responses, the build profile from
 `get_server_health` (including `global_sources.dashboard.outcome_counts`)

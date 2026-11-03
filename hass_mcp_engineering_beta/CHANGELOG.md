@@ -6,19 +6,30 @@ Builds on 2.4.1-beta.61 (HAMCP-285, #353). No tool, input schema, route,
 provider, upstream tool, admission rule, signed profile, contract
 fingerprint, add-on option, persisted format or Home Assistant write change.
 
-- Cause of the beta.55 live "0 of 6 dashboards read": the dashboard phase's
-  6 s clock ran from the start of the build, concurrently with the other
-  dependency sources on the same transport, which spent it before any read.
-  The dashboard phase now runs after the other sources, so its budget starts
+- Beta.55 live "0 of 6 dashboards read" (0 completed; how many started is
+  not recorded): source analysis and synthetic experiments reproduce an
+  overlap/contention mechanism, which this release addresses. The dashboard
+  phase's 6 s clock ran from the start of the build, concurrently with the
+  other dependency sources; with about 5.6 s or more of modeled shared Core
+  contention the phase completed no read. Live contention was not measured,
+  so the mechanism's share of the live symptom is not established. The
+  dashboard phase now runs after the other sources, so its budget starts
   when it does. The 300 s build deadline is unchanged.
 - Each dashboard read is bounded by 3 s (`DASHBOARD_READ_SECONDS`), capped
   by what remains of the phase; dashboards are read in sorted `url_path`
-  order. `DASHBOARD_SCAN_SECONDS` stays 6 s (measured fixture phase: about
-  2.0 s for 6 dashboards).
+  order. The deadline is checked inside each scheduled read immediately
+  before the reader runs, so no read starts after it.
+  `DASHBOARD_SCAN_SECONDS` stays 6 s (measured fixture phase: about 2.0 s
+  for 6 dashboards).
 - Every listed dashboard gets one outcome: `read`, `too_large`, `timed_out`,
-  `failed`, `not_attempted_budget`, `not_attempted_authority` or
-  `not_attempted_failure`. The dashboard coverage row's first warning is
-  `Dashboards read: N of M listed` (the HAMCP-270 disclosure reason), the
+  `failed`, `not_attempted_budget`, `not_attempted_authority`,
+  `not_attempted_failure` or `not_attempted_limit` (listed beyond the
+  50-read limit, `dashboard_not_read_inventory_limit`). The dashboard
+  coverage row's first warning is `Dashboards read: N of M listed` (the
+  HAMCP-270 disclosure reason), where M counts every listed dashboard
+  accounted, with `; K not attempted (50-read limit)` appended when any are
+  beyond the limit and `of at least M (inventory truncated)` when the
+  upstream inventory was truncated; the
   others are named by outcome (screened, at most 10 shown), and the row is
   complete only when every dashboard was read. A read in flight at the phase
   deadline counts `dashboard_read_timeout` instead of `dashboard_not_read`.

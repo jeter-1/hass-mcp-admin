@@ -152,8 +152,9 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   overrun are partial with counted reasons. A read failure stays with its
   dashboard. A list failure or a missing reader is unavailable with the
   reason. One 6 s deadline covers the dashboard session, the list and
-  every read:
-  no read starts after it, and work still in flight when it expires is
+  every read: it is checked inside each scheduled read immediately before
+  the reader runs, so no read starts after it, and work still in flight
+  when it expires is
   cancelled and its lease released. An overrun counts
   `dashboard_scan_budget_exhausted` (named in `bounded_sources`) and one
   `dashboard_not_read` per dashboard never started; it is unavailable if the
@@ -163,9 +164,14 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   also counts the budget overrun. Every listed dashboard gets exactly one
   outcome: `read`, `too_large`, `timed_out`, `failed`,
   `not_attempted_budget`, `not_attempted_authority` (dashboard authority
-  retired mid-phase) or `not_attempted_failure`. The coverage row's first
-  warning is `Dashboards read: N of M listed`, which is the reason the
-  HAMCP-270 plan disclosure shows; each other outcome present follows as
+  retired mid-phase), `not_attempted_failure` or `not_attempted_limit`
+  (listed beyond the 50-read limit; `dashboard_not_read_inventory_limit`).
+  The coverage row's first warning is `Dashboards read: N of M listed`,
+  which is the reason the HAMCP-270 plan disclosure shows. M counts every
+  listed dashboard accounted (at most 51, the list request size), not only
+  those queued; `; K not attempted (50-read limit)` is appended when any are
+  beyond the limit, and an upstream-truncated inventory reads
+  `of at least M (inventory truncated)`; each other outcome present follows as
   `Dashboards <outcome>: <paths>` (screened, at most 10 shown, then a count
   of the rest). The coverage row is complete only when every listed
   dashboard was read with no counted gap. The build profile's
