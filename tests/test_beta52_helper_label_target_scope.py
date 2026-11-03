@@ -43,6 +43,10 @@ from ha_mcp_engineering.governance.helper_dependency import (
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
 )
+from ha_mcp_engineering.governance.input_boolean_dependency import (
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
+    build_input_boolean_dependency_binding,
+)
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.storage import ChangePlanRepository
 
@@ -81,6 +85,14 @@ def _canonical(value: object) -> bytes:
         ensure_ascii=False,
     ).encode("utf-8")
 
+
+
+def _executable_risk_service(index) -> HelperDependencyRiskService:
+    """HAMCP-285: the runtime input_boolean reader is the v14 builder."""
+
+    return HelperDependencyRiskService(
+        index, binding_builder=build_input_boolean_dependency_binding
+    )
 
 class Beta51LabelScopeReplayWebSocket(CapturedBeta50ReplayWebSocket):
     """Replay the captured selector-local registry boundary."""
@@ -169,7 +181,8 @@ class Beta52LabelMembershipEvidenceTests(unittest.TestCase):
                 len(failure.exact_entity_ids), MAX_TEMPLATE_CANDIDATES
             )
 
-        binding = build_helper_dependency_risk_binding(
+        # HAMCP-285: fresh input_boolean lock authority is the v14 binding.
+        binding = build_input_boolean_dependency_binding(
             _snapshot(
                 resolved,
                 source_id="label_union_overflow",
@@ -745,7 +758,7 @@ class Beta52CapturedProductionReplayTests(
                 now=Clock(),
                 helper_state_gateway=helper,
                 helper_dependency_risk_reader=(
-                    HelperDependencyRiskService(self.index).assess
+                    _executable_risk_service(self.index).assess
                 ),
                 plan_observability_cursor_key=b"beta52-label-replay" * 2,
             )
@@ -757,7 +770,10 @@ class Beta52CapturedProductionReplayTests(
             plan = created["plan"]
             binding = plan["operational"]["baseline"]["dependency_risk"]
 
-            self.assertEqual("helper-dependency-risk-v13", binding["model"])
+            self.assertEqual("helper-dependency-risk-v14", binding["model"])
+            self.assertEqual(
+                "helper-dependency-risk-v13", binding["base_model"]
+            )
             self.assertEqual(0, binding["exact_dependency_obligation_count"])
             self.assertEqual(0, binding["opaque_obligation_count"])
             self.assertEqual([], binding["downstream_profiles"])
@@ -825,7 +841,7 @@ class Beta52CapturedProductionReplayTests(
             and member != self.target
         )
         binding = (
-            await HelperDependencyRiskService(self.index).assess(
+            await _executable_risk_service(self.index).assess(
                 different_helper, refresh=False
             )
         )["binding"]
@@ -854,10 +870,11 @@ class Beta52CapturedProductionReplayTests(
             )
         )
         binding = (
-            await HelperDependencyRiskService(index).assess(
+            await _executable_risk_service(index).assess(
                 self.target, refresh=True
             )
         )["binding"]
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, binding["model"])
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertFalse(binding["coverage_complete"])
         self.assertFalse(binding["evidence_complete"])

@@ -27,7 +27,7 @@ from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
     helper_state_provider_evidence,
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
-    HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
@@ -165,7 +165,8 @@ class FakeDependencyRiskReader:
         self.complete = True
         self.opaque = False
         self.effect_revision = "v1"
-        self.model = HELPER_DEPENDENCY_RISK_MODEL
+        # HAMCP-285: fresh input_boolean execution authority is v14.
+        self.model = INPUT_BOOLEAN_DEPENDENCY_MODEL
 
     async def __call__(
         self,
@@ -288,6 +289,13 @@ class FakeDependencyRiskReader:
             },
             "truncated": False,
         }
+        if self.model == INPUT_BOOLEAN_DEPENDENCY_MODEL:
+            # HAMCP-285: a v14 projection always states its fence; legacy
+            # input_boolean models must never carry it.
+            material["dependency_lock_projection"].update(
+                coarse_automation_fence=False,
+                coarse_automation_fence_reason_codes=[],
+            )
         binding = {
             **material,
             "evidence_fingerprint": stable_hash(material),
@@ -436,7 +444,7 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            HELPER_DEPENDENCY_RISK_MODEL,
+            INPUT_BOOLEAN_DEPENDENCY_MODEL,
             binding["model"],
         )
         self.assertTrue(plan["approval_actionable"])

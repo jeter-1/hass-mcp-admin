@@ -223,10 +223,12 @@ class EndToEndTests(ExecutionTestCase):
 class ElevatedPolicyTests(ExecutionTestCase):
     """OD-5: protected cases are elevated, never prohibited, and apply."""
 
-    async def elevated(self, basis: str, **arguments) -> dict:
+    async def elevated(
+        self, basis: str, *, consequence: str = "safety_critical", **arguments
+    ) -> dict:
         created = await self.create(**arguments)
         self.assertEqual(
-            policy(created), ("elevated_admin", "safety_critical", ELEVATED_ACKS)
+            policy(created), ("elevated_admin", consequence, ELEVATED_ACKS)
         )
         self.assertIn(basis, created["policy_decision"]["reason_codes"])
         for disclosure in child_disclosures(created):
@@ -295,10 +297,19 @@ class ElevatedPolicyTests(ExecutionTestCase):
         self.snapshot = exposure_snapshot(
             findings=(finding("sensor.hall_motion", "unknown_effect"),),
         )
-        await self.elevated(
+        # HAMCP-285: unresolved dependency evidence names no protected
+        # automation, so it stays elevated but is labelled unknown, not
+        # safety_critical (positive evidence required).
+        created = await self.elevated(
             "disable_protected_dependency",
+            consequence="unknown",
             operation="disable", entity_ids=["sensor.hall_motion"],
         )
+        (disclosure,) = child_disclosures(created)
+        self.assertFalse(any(
+            reason.startswith("feeds_protected_automation:")
+            for reason in disclosure["protection"]["dependency_reasons"]
+        ), disclosure["protection"])
 
     async def test_enable_exposed_protected_object(self):
         self.add_entity(

@@ -2726,6 +2726,7 @@ class F3RuntimeIntegration:
         provider_identity: dict[str, str] | None = None,
         *,
         readback_only: bool = False,
+        superseded_binding: bool = False,
     ):
         plan_hash = self.service.plan_hash(plan)
         if plan.contract_version == 2:
@@ -2824,7 +2825,17 @@ class F3RuntimeIntegration:
                 )
             else:
                 prepared = await self.operational_adapter.prepare(proposal)
-                requests = self.operational_adapter.lock_requests(prepared)
+                requests = (
+                    # HAMCP-285: an existing task bound to a superseded
+                    # helper model keeps its shipped lock graph so its
+                    # recorded sequence still validates.  Preflight still
+                    # requires the execution graph, so it never dispatches.
+                    self.operational_adapter.lock_requests_for_readback(
+                        prepared
+                    )
+                    if superseded_binding
+                    else self.operational_adapter.lock_requests(prepared)
+                )
             sequence_model = "f3-operational-sequence-v1"
         return (prepared,), requests, stable_hash(
             {
@@ -2865,14 +2876,19 @@ class F3RuntimeIntegration:
         ):
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
         if (
-            plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION
+            plan.operation in {
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+            }
             and self.service._helper_dependency_replan_required(plan)
         ):
             # HAMCP-274: an input_select plan approved under the superseded v1
-            # dependency model has no fresh execution lock authority.  Refuse
-            # before task creation, lock preparation or any persistence; the
-            # approval stays unconsumed.  Recovery of an existing durable
-            # child still reconstructs the shipped v1 graph for readback.
+            # dependency model has no fresh execution lock authority.
+            # HAMCP-285: likewise an input_boolean plan approved under a
+            # model before v14.  Refuse before task creation, lock
+            # preparation or any persistence; the approval stays unconsumed.
+            # Recovery of an existing durable child still reconstructs the
+            # shipped graph for readback.
             raise GovernanceError(
                 ErrorCode.OPERATIONAL_VALIDATION_FAILED,
                 details={
@@ -3031,12 +3047,41 @@ class F3RuntimeIntegration:
                         ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
                         details={"reason": "provider_lock_identity_changed"},
                     )
+        superseded_binding = (
+            not readback_only
+            and plan.operation in {
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+            }
+            and self.service._helper_dependency_replan_required(plan)
+        )
+        if (
+            superseded_binding
+            and not cancel_only
+            and task.state not in TERMINAL_TASK_STATES
+            and self._pre_intent_task(task)
+        ):
+            # HAMCP-285: no child holds a dispatch intent, so continuing
+            # would be a first dispatch under a superseded binding.  Refuse
+            # like a fresh apply, before preflight or any store change.  A
+            # terminal task, a durable intent and a cancel keep their paths.
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                details={
+                    "resource_id": plan.plan_id,
+                    "reason": (
+                        "helper_dependency_evidence_superseded_replan_required"
+                    ),
+                    "replan_required": True,
+                },
+            )
         prepared, requests, sequence_hash = await self._prepare(
             plan,
             task,
             approval_hash,
             provider_identity,
             readback_only=readback_only,
+            superseded_binding=superseded_binding,
         )
         if sequence_hash != task.legacy_projection.get("sequence_hash"):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)

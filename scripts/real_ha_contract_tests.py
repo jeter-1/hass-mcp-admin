@@ -69,7 +69,11 @@ from ha_mcp_engineering.governance.normalize import (  # noqa: E402
     normalize_automation,
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
     HelperDependencyRiskService,
+)
+from ha_mcp_engineering.governance.input_boolean_dependency import (  # noqa: E402
+    build_input_boolean_dependency_binding,
 )
 from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
     HELPER_STATE_PROVIDER,
@@ -1433,7 +1437,11 @@ async def _run_governed_helper_state_with_authority(
     exact_gateway = _ObservedHelperStateGateway(
         HelperStateGateway(rest, websocket)
     )
-    dependency_risk = HelperDependencyRiskService(dependency_index)
+    # HAMCP-285: the production input_boolean reader is the target-scoped
+    # v14 builder; a v13 binding is replan-only and never approvable.
+    dependency_risk = HelperDependencyRiskService(
+        dependency_index, binding_builder=build_input_boolean_dependency_binding
+    )
 
     async def forbidden_upstream_identity() -> dict[str, str]:
         raise AssertionError(
@@ -1572,6 +1580,8 @@ async def _run_governed_helper_state_with_authority(
                     "dependency_evidence_complete"
                 ]
                 is True,
+                "dependency_model": helper_dependency.get("model")
+                == INPUT_BOOLEAN_DEPENDENCY_MODEL,
                 "planning_dispatch_count": len(exact_gateway.dispatches)
                 == dispatch_baseline,
             }

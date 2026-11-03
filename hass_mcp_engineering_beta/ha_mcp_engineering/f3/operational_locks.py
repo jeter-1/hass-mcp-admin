@@ -19,6 +19,7 @@ from ..f3_configuration.locks import (
 from ..governance.helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
     MAX_RELEVANT_AUTOMATIONS,
 )
 from ..governance.input_select_dependency import (
@@ -40,6 +41,10 @@ from .operational_models import (
 
 
 _SHIPPED_HELPER_DEPENDENCY_RISK_V2 = "helper-dependency-risk-v2"
+# HAMCP-285: input_boolean models before the target-scoped v14 reader.
+_UNFENCED_INPUT_BOOLEAN_MODELS = HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS - {
+    INPUT_BOOLEAN_DEPENDENCY_MODEL
+}
 
 
 def _bound_downstream_automation_resources(
@@ -118,14 +123,25 @@ def _requires_custom_template_reload_lock(
 def _requires_coarse_automation_fence(
     operation: PreparedOperationalOperation,
 ) -> bool:
-    """HAMCP-274: an input_select v2 projection must state its fence."""
+    """A target-scoped projection must state its fence.
+
+    HAMCP-274 introduced the fence for input_select v2; HAMCP-285 extends it
+    to input_boolean v14.  Every earlier helper model never modelled it.
+    """
 
     binding = operation.baseline.get("dependency_risk")
-    projection = (
-        binding.get("dependency_lock_projection")
-        if isinstance(binding, dict)
-        else None
-    )
+    if not isinstance(binding, dict):
+        raise ValueError("helper dependency lock projection is invalid")
+    if binding.get("model") in _UNFENCED_INPUT_BOOLEAN_MODELS:
+        # Recovery reconstructs the shipped graph of a superseded binding;
+        # the v2 binding carries no projection at all.
+        projection = binding.get("dependency_lock_projection")
+        if isinstance(projection, dict) and (
+            "coarse_automation_fence" in projection
+        ):
+            raise ValueError("helper dependency lock evidence is invalid")
+        return False
+    projection = binding.get("dependency_lock_projection")
     if not isinstance(projection, dict):
         raise ValueError("helper dependency lock projection is invalid")
     if binding.get("model") == INPUT_SELECT_DEPENDENCY_MODEL_V1:
@@ -371,10 +387,7 @@ class OperationalLockSetCalculator:
                         ),
                     )
                 )
-            if (
-                operation.operation == SET_INPUT_SELECT_OPTION
-                and _requires_coarse_automation_fence(operation)
-            ):
+            if _requires_coarse_automation_fence(operation):
                 # Every automation configuration mutation and automation
                 # reload holds this key, so exclusive mode fences the whole
                 # automation domain when the exact consumer set is not

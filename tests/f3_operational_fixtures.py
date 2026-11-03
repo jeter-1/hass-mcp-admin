@@ -40,7 +40,7 @@ from ha_mcp_engineering.f3.operational_models import (
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
 from ha_mcp_engineering.governance.helper_dependency import (
-    HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
 )
 from ha_mcp_engineering.governance import (
     input_select_option as input_select_contract,
@@ -225,7 +225,7 @@ def baseline_for(
     """Build one prepared operational baseline.
 
     ``dependency_risk_model`` defaults to the current helper dependency risk
-    model.  Passing the superseded ``helper-dependency-risk-v2`` builds a
+    model (HAMCP-285: ``helper-dependency-risk-v14`` for input_boolean).  Passing the superseded ``helper-dependency-risk-v2`` builds a
     compatibility record on purpose, which negative tests use to prove that a
     readable-but-superseded binding carries no execution authority.
     """
@@ -264,7 +264,7 @@ def baseline_for(
                 if dependency_risk_model is not None
                 else INPUT_SELECT_DEPENDENCY_MODEL
                 if operation == SET_INPUT_SELECT_OPTION
-                else HELPER_DEPENDENCY_RISK_MODEL
+                else INPUT_BOOLEAN_DEPENDENCY_MODEL
             ),
             "entity_id": target_id,
             "completeness": "complete",
@@ -305,8 +305,13 @@ def baseline_for(
                 "automation_resource_ids": list(dependency_automation_ids),
                 "custom_template_reload": False,
             }
-            if material["model"] == INPUT_SELECT_DEPENDENCY_MODEL:
-                # HAMCP-274: a v2 projection always states its fence.
+            if material["model"] in {
+                INPUT_SELECT_DEPENDENCY_MODEL,
+                INPUT_BOOLEAN_DEPENDENCY_MODEL,
+            }:
+                # HAMCP-274: a v2 projection always states its fence; since
+                # HAMCP-285 so does the input_boolean v14 projection.  Legacy
+                # input_boolean models must never carry it.
                 material["dependency_lock_projection"].update(
                     coarse_automation_fence=False,
                     coarse_automation_fence_reason_codes=[],

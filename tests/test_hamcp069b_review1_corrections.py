@@ -331,8 +331,15 @@ class IncompleteEvidenceClassificationTests(AvailabilityExposureServiceTestCase)
 
     def assert_incomplete_elevated(self, created: dict, gap: str) -> None:
         self.assertEqual(policy(created)[0], "elevated_admin")
-        self.assertEqual(policy(created)[1], "safety_critical")
+        # HAMCP-285: incomplete evidence is still elevated, never standard,
+        # but without positive evidence naming a protected object or
+        # automation its consequence is labelled unknown.
+        self.assertEqual(policy(created)[1], "unknown")
         disclosure = child_disclosures(created)[0]
+        self.assertFalse(any(
+            reason.startswith(planning.POSITIVE_DEPENDENCY_REASON_PREFIX)
+            for reason in disclosure["protection"]["dependency_reasons"]
+        ), disclosure["protection"])
         self.assertIn(
             planning.INCOMPLETE_PREFIX + gap, disclosure["protection"]["dependency_reasons"]
         )

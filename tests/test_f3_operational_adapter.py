@@ -55,6 +55,7 @@ from ha_mcp_engineering.f3_configuration.locks import (
 from ha_mcp_engineering.governance.models import ApprovalState
 from ha_mcp_engineering.governance.helper_dependency import (
     HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
 )
 
 from tests.f3_operational_fixtures import (
@@ -627,7 +628,14 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         binding = prepared.baseline["dependency_risk"]
         locks = context.adapter.lock_requests(prepared)
 
-        self.assertEqual(HELPER_DEPENDENCY_RISK_MODEL, binding["model"])
+        # HAMCP-285: the executable input_boolean binding is the v14
+        # projection; the shared v13 builder is its read-only base.
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, binding["model"])
+        self.assertNotEqual(HELPER_DEPENDENCY_RISK_MODEL, binding["model"])
+        self.assertIs(
+            binding["dependency_lock_projection"]["coarse_automation_fence"],
+            False,
+        )
         self.assertEqual(
             stable_hash(
                 {

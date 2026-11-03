@@ -42,6 +42,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
@@ -189,7 +190,17 @@ class SupersededEvidenceAuthorityTests(unittest.TestCase):
     """R5: compatibility is readability, not execution authority."""
 
     def test_model_sets_are_distinct_and_ordered(self):
+        # HAMCP-285: input_boolean execution authority is the target-scoped
+        # v14 reader; v13 is readable compatibility only.
         self.assertIn(
+            INPUT_BOOLEAN_DEPENDENCY_MODEL,
+            HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
+        )
+        self.assertIn(
+            HELPER_DEPENDENCY_RISK_MODEL,
+            HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
+        )
+        self.assertNotIn(
             HELPER_DEPENDENCY_RISK_MODEL,
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )

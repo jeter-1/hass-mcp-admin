@@ -39,6 +39,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
 )
@@ -95,6 +96,26 @@ def _snapshot(result) -> DependencyIndexSnapshot:
 
 def _binding(snapshot: DependencyIndexSnapshot, entity_id: str) -> dict:
     return build_helper_dependency_risk_binding(
+        snapshot,
+        entity_id=entity_id,
+        index_metadata={
+            "freshness": "current",
+            "evidence_stale": False,
+            "invalidated": False,
+        },
+    )
+
+
+def _executable_binding(
+    snapshot: DependencyIndexSnapshot, entity_id: str
+) -> dict:
+    """HAMCP-285: fresh input_boolean execution authority is v14."""
+
+    from ha_mcp_engineering.governance.input_boolean_dependency import (
+        build_input_boolean_dependency_binding,
+    )
+
+    return build_input_boolean_dependency_binding(
         snapshot,
         entity_id=entity_id,
         index_metadata={
@@ -518,15 +539,21 @@ class Beta48TargetPolarityTests(unittest.TestCase):
         self.assertEqual(1, projected["exact_dependency_obligation_count"])
         self.assertFalse(projected["execution_eligible"])
 
-    def test_v3_through_v12_are_readable_but_only_v13_executes(self):
+    def test_v3_through_v13_are_readable_but_only_v14_executes(self):
+        # HAMCP-285: v13 is still the shared base-builder model name but is
+        # read-only; only the target-scoped input_boolean v14 executes.
         self.assertEqual(
             "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v13"}),
+            frozenset({"helper-dependency-risk-v14"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 13):
+        self.assertIn(
+            INPUT_BOOLEAN_DEPENDENCY_MODEL,
+            HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
+        )
+        for version in range(3, 14):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)
@@ -697,8 +724,11 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
                 )
                 self.assertEqual((STANDARD_TARGET,), item.exact_entity_ids)
 
-                binding = _binding(
+                binding = _executable_binding(
                     _coverage_snapshot(item), STANDARD_TARGET
+                )
+                self.assertEqual(
+                    INPUT_BOOLEAN_DEPENDENCY_MODEL, binding["model"]
                 )
                 risk = helper_dependency_risk_assessment(
                     {
