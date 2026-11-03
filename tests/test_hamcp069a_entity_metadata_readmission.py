@@ -178,6 +178,7 @@ REVIEWED_EMPTY_STATIC_ROUTES = frozenset(
         "get_execution_task",
         "get_incident_logs",
         "get_trace_snapshot",
+        "inspect_governance_record",  # HAMCP-253: governance-local read
         "list_capabilities",
         "list_change_plans",
         "list_execution_tasks",

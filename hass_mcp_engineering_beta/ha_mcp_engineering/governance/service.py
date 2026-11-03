@@ -18935,6 +18935,8 @@ _HEALTH_OVERLAY_FIELDS = (
     "storage", "storage_status", "storage_corruption_count", "total_plans",
     "active_apply_operations", "approval_notifications", "f3",
     "historical_validation", "plan_store_scaling",
+    # HAMCP-253: history-derived, so pending while validation runs.
+    "record_acknowledgement", "manual_review_warning",
 )
 # Process-live fields a pending summary still reports.
 # Build-time constants of every governance summary; never history-derived.

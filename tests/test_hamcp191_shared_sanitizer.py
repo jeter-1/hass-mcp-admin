@@ -593,6 +593,7 @@ SANITIZER_SITES = {
     ("governance/service.py", "ChangeGovernanceService._public_plan_observability_projection", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._review_summary", "rescan_stored_plan"): (3, "governance"),
     ("governance/service.py", "ChangeGovernanceService._safety_critical_review", "rescan_stored_plan"): (1, "governance"),
+    ("governance/service.py", "ChangeGovernanceService.acknowledge_governance_record", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.approve", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.create_dashboard_update_plan", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "_sanitize_configuration_caller_context", "sanitize_untrusted_data"): (1, "governance"),

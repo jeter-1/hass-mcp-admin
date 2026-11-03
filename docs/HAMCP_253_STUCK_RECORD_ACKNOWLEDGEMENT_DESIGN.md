@@ -248,6 +248,10 @@ cached build and its generation keys are unchanged.
     unacknowledged and `ledger_status` reports the code.
   - If the overlay itself fails, it falls back to the warnings computed
     without acknowledgement.
+- **Startup validation pending.** Both new fields are history-derived, so
+  they are listed in `_HEALTH_OVERLAY_FIELDS`. While historical validation
+  is still running, a pending summary reports them as `None` and names them
+  in `pending_fields`, like every other history-derived field.
 
 ### What does not change (brief D)
 
