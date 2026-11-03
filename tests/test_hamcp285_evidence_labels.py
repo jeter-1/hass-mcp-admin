@@ -856,6 +856,78 @@ class Beta59RecordTests(Beta59RecordCase):
                     self.lock_modes(plan)
 
 
+class Beta59ExistingTaskTests(Beta59RecordCase):
+    """A task that beta.59 itself created for the approved v13 record.
+
+    beta.59 executed v13 bindings, so the patch below rebuilds exactly that
+    build's authority: no replan gate and the v13 graph as execution locks.
+    """
+
+    def as_beta59(self):
+        locks = mock.patch.object(
+            OperationalLockSetCalculator, "calculate",
+            OperationalLockSetCalculator.calculate_for_readback,
+        )
+        gate = mock.patch.object(
+            type(self.service), "_helper_dependency_replan_required",
+            staticmethod(lambda _plan: False),
+        )
+        return locks, gate
+
+    async def beta59_task(self, *, run: bool):
+        record = self.restore("approved")
+        locks, gate = self.as_beta59()
+        with locks, gate:
+            if run:
+                await self.service.apply(record["plan_id"], record["plan_hash"])
+            else:
+                plan = self.service._load(record["plan_id"])
+                await self.runtime._initialize(plan, record["plan_hash"])
+        task = self.service.task_repository.get_for_plan(record["plan_id"])
+        self.assertIsNotNone(task)
+        return record, task
+
+    async def test_a_pre_intent_v13_task_is_refused_with_the_structured_replan(self):
+        record, task = await self.beta59_task(run=False)
+        self.assertTrue(self.runtime._pre_intent_task(task))
+        before = _tree_hashes(self.root)
+        try:
+            await self.service.apply(record["plan_id"], record["plan_hash"])
+        except Exception as exc:  # noqa: BLE001
+            raised = exc
+        else:
+            raised = None
+        self.assertIsInstance(raised, GovernanceError, repr(raised))
+        self.assertEqual(raised.code, ErrorCode.OPERATIONAL_VALIDATION_FAILED)
+        self.assertEqual(raised.details,
+                         {"resource_id": record["plan_id"], **SUPERSEDED_REPLAN})
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(_tree_hashes(self.root), before)
+
+    async def test_a_pre_intent_v13_task_can_still_be_cancelled(self):
+        _record, task = await self.beta59_task(run=False)
+        result = await self.service.cancel_execution_task(task.task_id)
+        self.assertEqual(result["status"], "cancelled_pre_dispatch", result)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+    async def test_a_terminal_v13_task_returns_its_recorded_result(self):
+        # Under the v14 reader beta.59's run ends in its recorded drift
+        # refusal; the shipped beta.36 rollback fixtures cover a verified one.
+        record, task = await self.beta59_task(run=True)
+        self.assertEqual(task.state.value, "failed_pre_dispatch")
+        self.assertEqual(self.helper.dispatch_count, 0)
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(record["plan_id"], record["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        details = raised.exception.details
+        self.assertEqual(details["task_id"], task.task_id)
+        self.assertEqual(details["task_state"], "failed_pre_dispatch")
+        self.assertEqual(details["pre_dispatch_refusal"]["diagnostic_codes"],
+                         ["dependency_risk_drift"])
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+
 # --------------------------------------------------------------------------
 # D. End to end on an unreferenced input_boolean, and a helper options apply
 # --------------------------------------------------------------------------

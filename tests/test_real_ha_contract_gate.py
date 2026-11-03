@@ -376,6 +376,8 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             "HelperStateGateway",
             "DirectHaDependencyProvider",
             "HelperDependencyRiskService",
+            "binding_builder=build_input_boolean_dependency_binding",
+            "INPUT_BOOLEAN_DEPENDENCY_MODEL",
             "F3RuntimeIntegration",
             "create_helper_state_plan",
             "succeeded_verified",

@@ -1022,6 +1022,59 @@ class HistoricalBeta58RecordTests(InputSelectServiceTestCase):
                     calculator.calculate(operation)
 
 
+class HistoricalBeta58ExistingTaskTests(InputSelectServiceTestCase):
+    """A task that beta.58 itself created for the approved v1 record (HAMCP-285).
+
+    beta.58 executed v1 bindings, so the patch below rebuilds exactly that
+    build's authority: no replan gate and the v1 graph as execution locks.
+    """
+
+    provenance = staticmethod(HistoricalBeta58RecordTests.provenance)
+    restore = HistoricalBeta58RecordTests.restore
+
+    async def beta58_task(self) -> tuple[dict[str, Any], Any]:
+        record = self.restore("approved")
+        locks = mock.patch.object(
+            OperationalLockSetCalculator, "calculate",
+            OperationalLockSetCalculator.calculate_for_readback,
+        )
+        gate = mock.patch.object(
+            type(self.service), "_helper_dependency_replan_required",
+            staticmethod(lambda _plan: False),
+        )
+        with locks, gate:
+            plan = self.service._load(record["plan_id"])
+            await self.runtime._initialize(plan, record["plan_hash"])
+        task = self.service.task_repository.get_for_plan(record["plan_id"])
+        self.assertIsNotNone(task)
+        self.assertTrue(self.runtime._pre_intent_task(task))
+        return record, task
+
+    async def test_a_pre_intent_v1_task_is_refused_with_the_structured_replan(self):
+        record, _task = await self.beta58_task()
+        before = _tree_hashes(self.root)
+        try:
+            await self.service.apply(record["plan_id"], record["plan_hash"])
+        except Exception as exc:  # noqa: BLE001
+            raised = exc
+        else:
+            raised = None
+        # beta.59 raised an unstructured lock-calculator ValueError here.
+        self.assertIsInstance(raised, GovernanceError, repr(raised))
+        self.assertEqual(raised.code, ErrorCode.OPERATIONAL_VALIDATION_FAILED)
+        self.assertEqual(raised.details,
+                         {"resource_id": record["plan_id"], **SUPERSEDED_REPLAN})
+        self.assertEqual(self.sent(), [], "zero provider calls")
+        self.assertEqual(_tree_hashes(self.root), before)
+
+    async def test_a_pre_intent_v1_task_can_still_be_cancelled(self):
+        _record, task = await self.beta58_task()
+        result = await self.service.cancel_execution_task(task.task_id)
+        self.assertEqual(result["status"], "cancelled_pre_dispatch", result)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(self.sent(), [])
+
+
 # --------------------------------------------------------------------------
 # End to end (real governance, real F3, real reader)
 # --------------------------------------------------------------------------
