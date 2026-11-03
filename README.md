@@ -7,7 +7,12 @@ positive evidence; incomplete evidence is `unknown` with its gaps stated.
 An unreferenced input_boolean plans as `standard_admin`. An input_boolean plan
 approved on beta.59 or beta.60 returns a structured replan refusal. The
 beta.60 global references stay informational and do not affect these labels.
-Execution refusals, approval binding and readback are unchanged. No tool,
+An input_boolean or input_select helper in any group is held elevated with
+the groups named, because group consumers are not attributed to members yet
+(HAMCP-287). Execution refusals, approval binding and readback are unchanged,
+except that an input_boolean plan approved for an automation without a
+bounded lock identity now refuses as `dependency_risk_drift` instead of
+`dependency_coverage_failure`. No tool,
 input schema, signed profile, persisted format or Home Assistant write
 changes. Rollback is reinstalling beta.60. Read the
 [2.4.1-beta.61 release notes](docs/V2_4_1_BETA61_RELEASE_NOTES.md) and the

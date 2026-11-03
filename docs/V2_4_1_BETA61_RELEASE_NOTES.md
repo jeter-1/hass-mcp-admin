@@ -35,10 +35,13 @@ treat consequence as decision support.
 - **input_boolean relevance by evidence.** The input_boolean reader (binding
   model `helper-dependency-risk-v14`) uses the beta.59 target-scoped rules:
   an automation is relevant only when it references this target literally,
-  through a group, `expand()`, an area, a label, a device, or domain-wide
-  iteration such as `states.input_boolean`, or when an obligation stays
-  genuinely opaque for this target. Classification, consumer naming and
-  locks follow the beta.59 input_select table:
+  through `expand()`, an area, a label, a device, or domain-wide iteration
+  such as `states.input_boolean`, or when an obligation stays genuinely
+  opaque for this target. A plain group reference (a state trigger, state
+  condition or `is_state` on a `group.*` entity) is not attributed to the
+  group's members; see **Group members are held elevated** below.
+  Classification, consumer naming and locks follow the beta.59 input_select
+  table:
 
   | Relevant consumers | Result |
   |---|---|
@@ -50,6 +53,24 @@ treat consequence as decision support.
   A bounded consumer set takes per-automation locks. An opaque or
   over-budget set takes `reload:automation` in exclusive mode instead of
   being refused, so the plan may over-lock but never under-locks.
+- **Group members are held elevated.** For input_boolean and input_select,
+  a helper that is a member of any group, directly or nested up to 8
+  levels, is never reported as unconsumed. Membership is read from the same
+  bounded group evidence the index uses for `expand()`. The plan is
+  `elevated_admin`, risk `high`, physical consequence `unknown`, with
+  incomplete consequence evidence and the coarse `reload:automation`
+  exclusive fence. The binding's `group_membership_hold` names up to 16
+  groups (direct, nested or possible) with a fingerprint over all of them,
+  and its reason is `group_membership_consumers_unattributed`. When
+  membership cannot be decided (incomplete group listing, a `group.*` entity
+  of unknown source, an incomplete state inventory such as more than 10,000
+  states or an invalid or duplicate state record, missing evidence, or depth
+  over 8) the helper is treated as a member, the reason is
+  `group_membership_unresolved`, and each cause is listed. The disclosure
+  says the helper's group consumers are not attributed yet. Literal,
+  `expand()`, area, label and domain consumers keep their attribution and
+  classification. Precise group-consumer attribution is HAMCP-287. A helper
+  in no group gets exactly the reader output it had before this hold.
 - **Positive evidence for `safety_critical`.** Helper options plans, and
   elevated availability plans, now carry
   `consequence_model: positive_evidence_v1` in their risk evidence. A
@@ -67,6 +88,16 @@ treat consequence as decision support.
 - **Floors unchanged.** Helper options plans stay elevated: the config-entry
   helper chain gap is always present. Availability keeps its protected-object
   floors; a standard availability plan is risk `low`.
+- **What the options and availability planners attribute.** Over the real
+  dependency index, a literal reference, `expand()` of a group and a label
+  target attribute the consumer, and a consumer that unlocks a lock makes
+  the plan `safety_critical`. Area and domain-wide iteration and opaque
+  templates are not attributed: they are disclosed as
+  `unresolved_dynamic_consumer` and labelled `unknown`. A plain group
+  reference is not attributed and adds nothing: an availability disable of a
+  group member stays `standard_admin` / `none`, and a helper options plan
+  keeps only its floor. The group-member hold does not apply to these
+  planners; precise group attribution is HAMCP-287.
 - **Persisted plans.** Helper options and availability plans created before
   beta.61 carry no `consequence_model`. They keep the shipped rule and
   re-classify identically. Any other `consequence_model` value is incomplete
@@ -106,13 +137,21 @@ treat consequence as decision support.
   the plan's dependency model.
 - **Execution uncertainty unchanged.** Stale state, an ambiguous target, an
   unadmitted provider, a dependency index failure, drift between approval
-  and apply, and a no-op still refuse with their existing codes. Approval
-  binding, at-most-once dispatch and exact readback are unchanged.
+  and apply, and a no-op still refuse with their existing codes, with one
+  exception. An input_boolean plan approved for an automation without a
+  bounded lock identity used to fail before dispatch with
+  `dependency_coverage_failure`; it now fails before dispatch with
+  `dependency_risk_drift`. Fresh v14 evidence is execution-contract complete
+  and eligible under the coarse fence, with incomplete evidence and a
+  changed fingerprint, so apply reports drift. Approval binding,
+  at-most-once dispatch and exact readback are unchanged.
 
 ## Not changed
 
-- input_select (beta.59 binding bytes unchanged), input_number and other
-  helper types.
+- input_select: beta.59 binding bytes are unchanged for a helper in no
+  group. A group member's binding gains `group_membership_hold` and is held
+  elevated (above); the binding model is unchanged.
+- input_number and other helper types.
 - Availability `disable` with bounded consumers is not newly elevated. That
   would change the consumer-evidence fingerprint bound into already-approved
   plans; it is left for Josh to decide.

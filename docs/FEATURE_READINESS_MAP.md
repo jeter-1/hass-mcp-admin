@@ -401,7 +401,8 @@ These are not feature rows. They change the readiness of the rows above:
   relevance rules for `set_input_boolean_state`, and `safety_critical` only
   with positive evidence for helper options and availability/exposure.
   Incomplete evidence is `unknown` with its gaps stated; planner floors are
-  unchanged.
+  unchanged. Group-member helpers are held elevated until HAMCP-287 adds
+  group-consumer attribution.
 - **HAMCP-273** (Backlog, Small, depends on 263): large-dashboard readback
   (RCG-045, RCG-048). It limits the completeness of 267 and 270.
 - **HAMCP-277** (Ready, Small, Medium): the dependency index's 6 s dashboard

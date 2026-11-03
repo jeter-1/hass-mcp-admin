@@ -50,7 +50,20 @@ The review needs a security section covering:
   path is added.
 - **Execution refusals.** Stale state, an ambiguous target, an unadmitted
   provider, a dependency index failure, dependency drift between approval
-  and apply, and a no-op are still refused with their existing codes.
+  and apply, and a no-op are still refused with their existing codes. One
+  code changes: an input_boolean plan approved for an automation without a
+  bounded lock identity fails before dispatch with `dependency_risk_drift`
+  instead of `dependency_coverage_failure`, because fresh v14 evidence is
+  execution-contract complete and eligible under the coarse fence, with
+  incomplete evidence and a changed fingerprint
+  (`tests/test_beta54_owner_authoritative_execution.py`).
+- **Group members.** An input_boolean or input_select helper in any group
+  (direct or nested, depth at most 8) is `elevated_admin`, risk `high`,
+  physical `unknown`, with the coarse fence and a disclosure naming the
+  groups. Membership that cannot be decided is treated as membership, with
+  the reason stated. Plain group references are not attributed to members
+  until HAMCP-287. A helper in no group keeps exactly its prior reader
+  output.
 - **Labels.** `safety_critical` requires positive evidence. Incomplete
   evidence is `unknown` with its gaps stated, and stays elevated where the
   planner floor requires it. Availability writes the `consequence_model`
@@ -79,11 +92,36 @@ Required offline evidence, `tests/test_hamcp285_evidence_labels.py`:
   an existing beta.59 input_boolean task, refused with a structured replan
   instead of a `ValueError`. The matching beta.58 input_select task is in
   `tests/test_hamcp274_input_select_relevance.py`.
-- **Per-planner matrix**, one test each: literal reference; group,
-  `expand()`, area and label; domain-wide iteration; opaque (elevated,
-  disclosed); template-heavy but unrelated; a positive safety-relevant
-  consumer (still `safety_critical`); stale state, ambiguous target and
-  unverified provider (still refused with their precise codes).
+- **input_boolean matrix**, one test each: literal reference; `expand()`,
+  area and label; domain-wide iteration; opaque (elevated, disclosed);
+  template-heavy but unrelated; a positive safety-relevant consumer (still
+  `safety_critical`); stale state, ambiguous target and unverified provider
+  (still refused with their precise codes).
+- **Group-member hold**, `tests/test_hamcp285_group_membership_hold.py`,
+  for input_boolean and input_select through the real index and planner,
+  minimal and with installation noise: a group consumer by state trigger,
+  state condition and `is_state`; membership alone; nested groups;
+  malformed, over-bound and unknown-source membership (unresolved, treated
+  as membership); `expand()` and literal controls keep attribution; apply
+  after approval dispatches once; membership added after approval fails
+  before dispatch with `dependency_risk_drift`. Non-members: plain forms
+  stay `standard_admin`, and reader-output digests are pinned to 2630d901
+  (`tests/hamcp285_nonmember_digests.py` regenerates them from that tree).
+- **Options and availability matrix**, `tests/test_hamcp285_planner_matrix.py`,
+  with snapshots built by the real dependency index, minimal and with
+  installation noise. It proves: literal, `expand()` and label consumers are
+  attributed and a lock consumer is `safety_critical`; a notify-only
+  consumer adds no reason; area, domain-wide and opaque templates are
+  disclosed as `unresolved_dynamic_consumer` and labelled `unknown`;
+  unrelated template-heavy automations add nothing; a plain group reference
+  is not attributed (availability stays `standard_admin` / `none`, options
+  keep only the floor); one malformed unrelated label record makes every
+  label consumer unresolved (elevated `unknown`). Floors: options always
+  elevated, with MEDIUM base risk when not elevated; availability
+  protected-object floor (`disable_protected_object`) and LOW standard
+  risk. It passes unchanged against 2630d901, so the planners did not move.
+  It does not prove area attribution: with the entity's registry `area_id`
+  set, `area_entities()` is still disclosed as unresolved in these planners.
 - **Fixtures** written by exact beta.59 (`8615ad1`) with provenance:
   pending and approved v13 input_boolean records; exact refusal, zero
   provider calls, approval unconsumed, files byte-unchanged and the recovery
@@ -96,7 +134,8 @@ Required offline evidence, `tests/test_hamcp285_evidence_labels.py`:
   `succeeded_verified` with one provider call, for input_boolean and
   input_select. On beta.59 it was refused at apply with
   `policy_snapshot_mismatch`. No other operation's policy family changes.
-- input_select binding bytes unchanged; response size bound.
+- input_select binding bytes unchanged for a helper in no group; response
+  size bound.
 - **Non-interaction with HAMCP-270**: for helper options and availability,
   classification, intent and fingerprints are identical with no global
   reader and with a reader that returns references.

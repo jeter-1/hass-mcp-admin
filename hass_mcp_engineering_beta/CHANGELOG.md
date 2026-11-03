@@ -13,6 +13,14 @@ write change.
   elevated with precise locks. Opaque or over-budget consumer sets are
   elevated with disclosure and take the coarse `reload:automation` fence
   instead of being refused.
+- An input_boolean or input_select helper in any group (direct or nested,
+  depth at most 8) is held `elevated_admin`, risk `high`, physical
+  `unknown`, with the coarse fence and `group_membership_hold` naming the
+  groups. Undecidable membership is treated as membership with its reason.
+  Plain group references are not attributed to members yet (HAMCP-287); a
+  helper in no group keeps its prior reader output byte for byte. The
+  options and availability planners do not attribute plain group
+  references either.
 - Helper options and availability/exposure plans label `safety_critical`
   only with positive evidence (a protected object or a protected automation
   the target feeds). Incomplete evidence is `unknown` with its gaps stated,
@@ -31,8 +39,11 @@ write change.
   (`elevated_admin`, risk `medium`) now applies. F3 refused it at apply with
   `policy_snapshot_mismatch` on beta.59 and beta.60 (input_select).
 - The input_boolean create response is bounded like input_select. Execution
-  refusals are unchanged: stale state, ambiguous target, unadmitted
-  provider, index failure, drift and no-op.
+  refusals are unchanged (stale state, ambiguous target, unadmitted
+  provider, index failure, drift and no-op) with one exception: an
+  input_boolean plan approved for an automation without a bounded lock
+  identity now fails before dispatch with `dependency_risk_drift` instead of
+  `dependency_coverage_failure`.
 - The Real HA contract harness builds the input_boolean reader with the
   v14 binding, as the runtime does.
 
