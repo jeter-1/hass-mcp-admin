@@ -508,6 +508,12 @@ class LabelSelectorAuthorityEvidence:
     raw_bound_exceeded: bool
     authority_fingerprint: str
     anomaly_fingerprint: str
+    # HAMCP-274: which entity each malformed relevant record names, so a
+    # target-scoped reader can tell a record about another entity from one
+    # that could be about its target.  A record without a valid entity_id is
+    # unattributable.  Additive: neither fingerprint above binds these.
+    malformed_record_entity_ids: tuple[str, ...] = ()
+    malformed_unattributable_record_count: int = 0
 
 
 @dataclass

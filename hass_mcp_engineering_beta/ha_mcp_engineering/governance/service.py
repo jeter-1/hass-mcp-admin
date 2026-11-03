@@ -227,6 +227,7 @@ from . import input_select_option as input_select_contract
 from ..ha_core_readmission.routes import SCRIPT_TRACE_PROFILE
 from . import input_select_option_planning
 from .input_select_dependency import (
+    INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS,
     INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS,
     option_trigger_disclosure,
     read_input_select_dependency_risk,
@@ -3579,15 +3580,22 @@ class ChangeGovernanceService:
         directly executable.
         """
 
-        if plan.operation != ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+        if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            compatible_models = HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
+            execution_models = HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+        elif plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION:
+            # HAMCP-274: a v1 input_select binding used global relevance.
+            compatible_models = INPUT_SELECT_DEPENDENCY_COMPATIBLE_MODELS
+            execution_models = INPUT_SELECT_DEPENDENCY_EXECUTION_MODELS
+        else:
             return False
         binding = ChangeGovernanceService._helper_dependency_binding(plan)
         if binding is None:
             return False
         model = binding.get("model")
         return bool(
-            model in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
-            and model not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+            model in compatible_models
+            and model not in execution_models
         )
 
     @staticmethod
@@ -5039,7 +5047,9 @@ class ChangeGovernanceService:
         _before_persist()
         self._supersede_prior(plan)
         self._record(plan, "set_input_select_option_plan_created", "success")
-        public = self._public(plan, include_configs=False)
+        public = self._bounded_helper_plan_public(
+            self._public(plan, include_configs=False)
+        )
         return {
             "status": "awaiting_approval",
             "proposal_only": True,
@@ -8343,6 +8353,59 @@ class ChangeGovernanceService:
             "record_fingerprint": stable_hash(items[offset]),
             "page_size": page_size,
         }
+
+    # HAMCP-274 F: the governed create response omits paged evidence lists
+    # once the plan would exceed the response budget.  Every omitted list is
+    # named with its exact count and remains readable through the existing
+    # get_change_plan detail sections; the plan hash and the evidence
+    # fingerprint still bind the complete persisted inputs.
+    _HELPER_PLAN_PAGED_SECTIONS = (
+        ("obligation_evidence", "obligation_evidence"),
+        ("downstream_profiles", "downstream_profiles"),
+        ("selector_authority_diagnostics", "summary"),
+    )
+
+    def _bounded_helper_plan_public(
+        self,
+        public: dict[str, Any],
+        *,
+        response_limit: int = 60_000,
+    ) -> dict[str, Any]:
+        budget = max(
+            4_096,
+            int(response_limit) - PLAN_OBSERVABILITY_RESPONSE_HEADROOM_CHARS,
+        )
+        if self._plan_observability_encoded_chars(public) <= budget:
+            return public
+        compact = deepcopy(public)
+        binding = self._public_helper_dependency_binding(compact)
+        omitted: dict[str, Any] = {}
+        if binding is not None:
+            for key, section in self._HELPER_PLAN_PAGED_SECTIONS:
+                items = binding.pop(key, None)
+                total = len(items) if isinstance(items, list) else 0
+                omitted[key] = {
+                    "returned_count": 0,
+                    "total_count": total,
+                    "truncated": total > 0,
+                    "detail_section": section,
+                }
+        paging = {
+            "response_compacted": True,
+            "paging_tool": "get_change_plan",
+            "plan_id": public.get("plan_id"),
+            "omitted_sections": omitted,
+        }
+        compact["response_paging"] = paging
+        if self._plan_observability_encoded_chars(compact) > budget:
+            compact = {
+                **self._compact_plan_observability_core(public),
+                "response_paging": {
+                    **paging,
+                    "base_plan_projection_compacted": True,
+                },
+            }
+        return compact
 
     @staticmethod
     def _compact_plan_observability_core(

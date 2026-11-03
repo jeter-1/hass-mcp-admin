@@ -1,93 +1,111 @@
 # Engineering 2.4.1-beta.59 release notes
 
-Engineering 2.4.1-beta.59 (HAMCP-270) shows scene, group and dashboard
-references in four governed plan disclosures before approval: entity
-availability/exposure, automation and script delete, entity metadata, and
-helper options. The references are information only. They are not bound by
-the approval, and they never change risk, policy or approval. It builds on
-2.4.1-beta.58 (#342, HAMCP-278). No tool, input schema, route, provider,
-signed profile, fingerprint, plan or approval binding, persisted format,
-add-on option or Home Assistant write changes.
+Engineering 2.4.1-beta.59 (HAMCP-274) decides `set_input_select_option`
+relevance per target from evidence. An input_select that no automation
+references now plans as `standard_admin` instead of `prohibited`. It builds
+on 2.4.1-beta.58 (#342, HAMCP-278). No tool, input schema, route, provider,
+signed profile, contract fingerprint, persisted format, add-on option or Home
+Assistant write changes.
 
 Acceptance: [`V2_4_1_BETA59_ACCEPTANCE.md`](V2_4_1_BETA59_ACCEPTANCE.md).
 
+## Why
+
+The signed `core.typed_input_select_option_operation` capability (sequence
+15) could not be used. On beta.54, a plan to change the unreferenced
+`input_select.engineering_acceptance` from A to B came back `prohibited`,
+`critical` and `safety_critical`. The reasons were
+`helper_execution_contract_incomplete` and
+`technical_execution_authority_required`, with execution block
+`helper_lock_graph_resource_limit_exceeded`, 198 opaque obligations, 50
+relevant automations and a 658,879-character response.
+
+The cause was that the reader shared the input_boolean rule. Any opaque
+template anywhere, and any coverage gap, made every automation relevant to
+every helper. That is consequence uncertainty, not execution uncertainty:
+the target, option, provider, state, dispatch and readback were all exact.
+Josh's direction is to fail closed only for execution uncertainty and to
+treat consequence as decision support.
+
 ## The change
 
-- Each of those plans gets one `global_source_consumers` block (model
-  `global_source_consumers_v1`) in its plan-level dry-run results, next to the
-  bound consumer evidence of each operation. It is built from
-  `global_sources.visible().findings` in the dependency snapshot the index
-  already holds, read once per plan. Building it never triggers a build or
-  refresh, so it sends no new Home Assistant request.
-  - The block states the shared context once: status, per-source
-    `completeness`, `reasons`, `statements` and `provenance` (fingerprint
-    prefix and index generation).
-  - `children` then lists each child in operation order: its `target` (or
-    `targets` for a multi-entity child), `count`, nonzero `by_source` totals,
-    `truncated`, and its top `items`.
-  - **Scenes and groups** are listed by id and name. They are loaded
-    membership, so the relation and list position are implied.
-  - **Dashboards** show the url path, title, card location, rule and whether
-    the card shows only under a condition (`conditional: true`).
-  - **Completeness** is reported per source (`complete`, `partial`,
-    `unavailable`), with the first reason for each incomplete source.
-    Templates are listed as unavailable, so that gap stays visible.
-    Dashboards are partial or unavailable live until HAMCP-277. When the
-    dashboard provider authority has changed, cached dashboard evidence is
-    withheld and reported as unavailable.
-- **Statements.** The block says, once per plan:
-  - the references are information only;
-  - scene and group references are loaded membership;
-  - while any source is incomplete, that a count of 0 is not proof of none;
-  - when a list is cut, how many each child lists and that counts are totals;
-  - that the bound note `dashboards_scripts_and_templates_not_scanned`
-    describes the risk evidence, not these references.
-- **Unbound by construction.** The block lives only in the projected dry-run
-  results. It is excluded from the consumer evidence fingerprint, plan hash,
-  policy subject and decision hashes, semantic projection hash and approval
-  binding. A plan approved before a scene, group or dashboard change still
-  applies.
-- **Never a refusal.** If no snapshot is held, or the store is absent or
-  unreadable, the block reports `status: unavailable` with a reason, each
-  child names only its target (no count is claimed), and planning continues.
-- **Distinct references stay distinct.** References are deduplicated and
-  ordered on their full original source, target, location and relation
-  before any display truncation. Two distinct references whose shortened
-  displays collide stay separate; the later one gets a short `~N` id suffix.
-- **Bounded.** One plan shares an 8-item budget across its children (at least
-  1 each). Every string is length-bounded (ids 32, names 24, locations 32
-  characters).
+- **Relevance by evidence.** The input_select reader (binding model
+  `helper-dependency-risk-input-select-v2`, `relevance_model:
+  target_scoped_evidence`) counts an automation only when it references this
+  target. That covers:
+  - a literal reference;
+  - an indirect reference through a group, `expand()`, an area, a label, a
+    device, or domain-wide iteration such as `states.input_select`;
+  - an obligation that stays genuinely opaque for this target, such as a
+    dynamically built ID.
 
-## Unchanged by design
+  A template that cannot touch the target is not relevant. A coverage gap
+  that belongs to a named automation scopes only that automation. Only an
+  unattributable gap still scopes every automation.
+- **Classification.**
 
-The bound coverage notes are left as they were: the entity metadata
-`coverage_gaps` entry `dashboards_scripts_and_templates_not_scanned`, and the
-availability/delete coverage warnings. They are part of the consumer evidence
-fingerprint or the policy subject hash, so rewording them would change plan
-bindings. The block says those notes describe the risk evidence only.
+  | Relevant consumers | Result |
+  |---|---|
+  | none | `standard_admin`, risk `low`, physical `none` |
+  | bounded, none consequential | `elevated_admin`, risk `medium`, physical `none`, reason `relevant_helper_consumer_disclosed` |
+  | bounded, consequential | `elevated_admin`, risk `high`, physical `direct` or `safety_critical` |
+  | opaque | `elevated_admin`, risk `high`, physical `unknown`, with disclosure |
 
-## Where the block appears
+  Each consumer is named with its `evidence_class` (`referenced`, `opaque`
+  or `conservative_scope`) and its relationships. Positive evidence alone
+  sets the physical consequence. An opaque consumer contributes at most
+  `unknown`, and its own profile's consequence is disclosed separately as
+  `potential_physical_consequence`.
+- **Locks.** A bounded consumer set takes the same per-automation locks as
+  before. If the set exceeds the 50-lock bound, or a consumer has no lock
+  identity, or an unattributable gap remains, the plan takes the existing
+  `reload:automation` key in exclusive mode instead of being refused. Every
+  automation mutation and reload holds that key, so the plan may over-lock
+  but never under-locks. An input_select v2 projection must state
+  `coarse_automation_fence`; if it does not, the lock set is invalid and
+  nothing is dispatched.
+- **Malformed registry records.** A malformed entity-registry record that
+  names another entity no longer leaves a label selector undecided for this
+  target. A malformed record that names the target, or one with no entity
+  ID, still leaves it unresolved. It is reported with
+  `malformed_record_entity_ids` and elevates the plan.
+- **Response size.** If a governed create response would exceed 60,000
+  characters, it leaves out the paged evidence lists. These are
+  `obligation_evidence`, `downstream_profiles` and
+  `selector_authority_diagnostics`. `response_paging` names each one with its
+  total count, `truncated` and the `get_change_plan` section that returns
+  it. The plan hash and the evidence fingerprint still bind the complete
+  persisted inputs.
+- **Execution uncertainty unchanged.** The following still refuse with
+  their existing codes:
+  - stale state;
+  - an ambiguous target;
+  - an unadmitted provider;
+  - a dependency index failure;
+  - dependency drift between approval and apply;
+  - a no-op.
 
-Only in the create-plan response (`create_entity_availability_exposure_plan`,
-`create_configuration_delete_plan`, `create_entity_metadata_plan`,
-`create_helper_options_plan`, and the rollback plans built through them).
-`get_change_plan` and `list_change_plans` strip dry-run results, so they do
-not show it, and nothing else exposes it.
+  Approval binding, at-most-once dispatch and exact readback are unchanged.
+- **Superseded plans.** An input_select plan created under the v1 binding
+  is `replan_required`. It cannot be approved or applied. Applying one that
+  beta.58 already approved returns `OPERATIONAL_VALIDATION_FAILED` /
+  `helper_dependency_evidence_superseded_replan_required` before any task,
+  lock or provider call, and the approval is not consumed. Its recovery
+  readback still reconstructs the shipped v1 lock graph.
 
-## Known limitation
+## Not changed
 
-A tool response is bounded at 60,000 characters. When a plan response is
-larger, the existing bounded renderer drops the largest optional parts and
-flags the response (`response_completeness.truncated: true`,
-`approval_disclosures_complete: false`). Its retrieval hint names
-`get_change_plan`, which returns the plan summary but not these references.
-
-This happens to availability/exposure plans of eight entities, as it did
-before this release, whatever the reference store holds. Plans of up to seven
-entities fit with the block, with or without references (measured with the
-store absent, empty, and about 120 references per entity).
+- `set_input_boolean_state` keeps its shipped helper-wide rule.
+- Helper options planning keeps its shipped helper-wide rule. Beta.57 live
+  evidence showed it can still label a sensor with no consumers
+  `safety_critical`. That rule does not use this reader, and its fix is
+  reported as a follow-up.
+- Signed profiles and contract fingerprints: 62 comparisons across 31
+  distinct runtime profiles, all unchanged from beta.58.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.58. Plans keep their hashes and approvals, because the
-block was never bound. No persisted format changed.
+Reinstall 2.4.1-beta.58. Plans created on beta.59 use the v2 binding.
+Beta.58's lock calculator accepts only the v1 model (from source; not
+exercised against an installation), so beta.58 refuses those plans before
+dispatch, and a fresh plan is needed. No persisted format changed.

@@ -1,0 +1,95 @@
+{
+  "boundary": "Hash-bearing bytes are copied verbatim from the exact beta.58 writer and must not be edited.  Current code may read them and reconstruct the shipped v1 recovery lock graph, but must refuse fresh execution with a structured replan result.",
+  "compatibility_model": "hamcp274-beta58-input-select-v1-replan-v1",
+  "generated_at": "2026-11-02T20:40:00Z",
+  "generator": "scripts/generate_hamcp274_beta58_input_select_v1_fixture.py",
+  "generator_command": "python scripts/generate_hamcp274_beta58_input_select_v1_fixture.py --source-root <exact-beta58-clone> --output-dir tests/fixtures --generated-at 2026-11-02T20:40:00Z",
+  "generator_sha256": "3078e3c14a35f9712c6fe806d4d8c4660e64147b67c5c88ae787130e27294678",
+  "records": {
+    "approved": {
+      "approval_state": "approved",
+      "dependency_model": "helper-dependency-risk-input-select-v1",
+      "files": {
+        "audit.jsonl": "cc341c6ee3e0ee2cd4a45e3b02c7e863b99413fbd5d63868031403897fd987f3",
+        "plans/operational-administration-v3/465255cabaff44f6977d128163944593.json": "691a787ec9b85203ac48cd895b926780a90f1eff8efed886764410fb343cb495"
+      },
+      "plan_hash": "fff6cbeb0f2e6a4f1bc981d856df56a83309766ffe1bf74cc30d048d1ffa4ffd",
+      "plan_id": "465255cabaff44f6977d128163944593",
+      "provider_write_count": 0,
+      "shipped_execution_lock_graph": [
+        [
+          "helper:input_select.house_mode",
+          "exclusive"
+        ],
+        [
+          "helper_dependency:input_boolean_dynamic",
+          "shared"
+        ],
+        [
+          "helper_dependency:input_select.house_mode",
+          "shared"
+        ],
+        [
+          "home_assistant:core",
+          "shared"
+        ],
+        [
+          "reload:automation",
+          "shared"
+        ],
+        [
+          "reload:input_select",
+          "shared"
+        ]
+      ],
+      "status": "approved"
+    },
+    "pending": {
+      "approval_state": "required",
+      "dependency_model": "helper-dependency-risk-input-select-v1",
+      "files": {
+        "audit.jsonl": "0394f97932ba72fb8a2a4d242616a2737bb006a9a67d73d0ec29b92ea55d5532",
+        "plans/operational-administration-v3/6453ba7b2aee45fdaac6191432244455.json": "4c204feec2e3c931458ddd6b7d83def2e3d70a01caadeb9457aa58d6151e08b2"
+      },
+      "plan_hash": "8567d5ab8cc9c67fb89f3d3502b776ce7ab883f6fef150d78656e638b5da2e6c",
+      "plan_id": "6453ba7b2aee45fdaac6191432244455",
+      "provider_write_count": 0,
+      "shipped_execution_lock_graph": [
+        [
+          "helper:input_select.house_mode",
+          "exclusive"
+        ],
+        [
+          "helper_dependency:input_boolean_dynamic",
+          "shared"
+        ],
+        [
+          "helper_dependency:input_select.house_mode",
+          "shared"
+        ],
+        [
+          "home_assistant:core",
+          "shared"
+        ],
+        [
+          "reload:automation",
+          "shared"
+        ],
+        [
+          "reload:input_select",
+          "shared"
+        ]
+      ],
+      "status": "awaiting_approval"
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "d09fc8a6196593880832de2d77cc5ce143562891",
+    "input_select_dependency_source_sha256": "4e33f8c076737c9d3fea5c0fe14943c1099ebb6d7c433c10f5c9cc775e2abd5f",
+    "operational_locks_source_sha256": "c5decfcc6b31e63a05d1d8d539775ac456d0e35a35af4c6f96a36d103d478d7c",
+    "service_source_sha256": "c3ca9bb511c1c5c9b8fdb74fe8b7aced0538b64fcd1702edd50bec9c2d5bf350",
+    "tag": "v2.4.1-beta.58",
+    "writer": "tests.hamcp145_input_select_fixtures.InputSelectServiceTestCase create_select('Away') [+ approve] on the exact source revision"
+  }
+}

@@ -1,86 +1,103 @@
 # Engineering 2.4.1-beta.59 acceptance
 
-This contract covers HAMCP-270: availability/exposure, delete, entity
-metadata and helper options plans disclose scene, group and dashboard
-references before approval, as information only. It follows 2.4.1-beta.58
-and includes it.
+This contract covers HAMCP-274: `set_input_select_option` relevance by
+evidence, so that an unreferenced input_select is no longer prohibited. It
+follows 2.4.1-beta.58 and includes it.
 
 See also the release notes:
 [`V2_4_1_BETA59_RELEASE_NOTES.md`](V2_4_1_BETA59_RELEASE_NOTES.md).
 
 **Release target.** `2.4.1-beta.59`, following 2.4.1-beta.58 (#342,
-HAMCP-278). The release is materialized in all three version authorities,
+HAMCP-278). The release is materialized in all three version authorities
 with no staged declaration left. Nothing is published or deployed. If
-another pull request takes beta.59 first, this one restages to the next
-beta.
+another pull request takes beta.59 first, this one restages to the next free
+beta; that collision is expected and is not a finding.
 
 The contract has four stages:
 1. source and offline acceptance;
 2. release CI;
 3. publication;
-4. installed read-only acceptance.
+4. installed acceptance.
 
 It authorizes none of the later stages.
 
 ## 1. Source and offline acceptance
 
 Bind:
-- the HAMCP-270 row in [`FEATURE_READINESS_MAP.md`](FEATURE_READINESS_MAP.md):
-  disclosure only, no fingerprint change, no risk downgrade, and no promised
-  dashboard coverage;
-- the non-goals:
-  - HAMCP-277 (dashboard live completeness);
-  - HAMCP-273;
-  - renames;
-  - new capabilities;
-  - signing;
-  - `ci.yml`;
-- `2.4.1-beta.59` materialized before Ready, with exact document resolution;
-- the PR head SHA, its `validate` run and the Evidence tier log named in the
-  PR.
+- Josh's direction for HAMCP-274: fail closed only for execution
+  uncertainty, meaning an ambiguous target, stale state, an unverified
+  provider, a race, a duplicate dispatch or an unverifiable result.
+  Consequence and risk classifications are decision support;
+- the non-goals: HAMCP-253, HAMCP-275, signing, `ci.yml` and new
+  capabilities;
+- signed contracts unchanged: the 62 Core contract fingerprints, including
+  `core.typed_input_select_option_operation`, are identical to beta.58;
+- `2.4.1-beta.59` materialized in all three version authorities before
+  Ready, with exact document resolution;
+- the PR head SHA, its `validate` run and the Evidence tier log named in
+  the PR.
 
 The review needs a security section covering:
-- **No new reach.** The block is built from the dependency snapshot already
-  held, through `read_cached_dependency_snapshot`. It triggers no build or
-  refresh, so it sends no new Home Assistant request. It adds no tool,
-  schema, route, provider or write.
-- **Signed profiles.** No Core profile contract or fingerprint changes. Profile
-  contract material does not include plan output.
-- **Bindings.** The block is projected only into the plan-level dry-run
-  results. It is not
-  read by:
-  - the consumer evidence fingerprint;
-  - the plan hash;
-  - the policy subject or decision hashes;
-  - the semantic projection hash;
-  - the approval binding.
-- **Risk.** The block never raises or lowers risk or policy.
+- **No new reachability.** No tool, route, provider, service or dispatch
+  path is added. `input_select.select_option` remains the only call sent.
+- **Execution refusals.** Each of these is still refused with its existing
+  code:
+  - stale state;
+  - an ambiguous target;
+  - an unadmitted provider;
+  - a dependency index failure;
+  - dependency drift between approval and apply;
+  - a no-op.
+- **Locks.** A bounded set of named consumers, opaque ones included, takes
+  precise per-automation locks plus the existing shared stability fences.
+  The coarse `reload:automation` exclusive fence applies only when the
+  consumer set is over the 50-lock budget, a consumer's lock identity is
+  unavailable, or a coverage gap is unattributable. An input_select v2
+  projection that does not state its fence is invalid, and nothing is
+  dispatched.
+- **Approval binding.** The plan hash and the evidence fingerprint bind
+  every relevant consumer, including those beyond the disclosure bound,
+  through `relevant_consumer_fingerprint`. A v1 plan is `replan_required`
+  and cannot be approved or applied. Applying a v1 plan that beta.58
+  already approved returns `OPERATIONAL_VALIDATION_FAILED` /
+  `helper_dependency_evidence_superseded_replan_required` before any task,
+  lock or provider call; the approval is not consumed.
 
-Required offline evidence, `tests/test_hamcp270_global_reference_disclosure.py`:
-- each of the four planners shows one plan-level `global_source_consumers`
-  block (never a per-operation copy) with per-source completeness, the
-  informational, membership, zero-count and bound-note statements, each
-  child's target in operation order, and truthful partial or unavailable
-  dashboards;
-- distinct references are deduplicated on their full original identity, so
-  long ids or locations that shorten to the same display stay separate, true
-  duplicates collapse, and order and bounds are deterministic;
-- binding invariance: adding, changing, withholding or removing global
-  findings leaves bindings and the bound disclosure byte-identical, and an
-  approved plan applies after a scene, group or dashboard change;
-- risk is never downgraded, including for elevated plans;
-- the actual tool response envelope for 5, 6, 7 and 8 children with the
-  store absent, empty and large (about 120 references per child): up to 7
-  children fit with headroom, and 8 keeps the flagged bounded shape it had
-  before this release;
-- an absent snapshot, a raising reader, an absent store and an unreadable
-  store each give `unavailable` with no failure and no refusal;
-- mutation testing in copied and restored trees, counting only assertion
-  failures as kills and reporting invalid mutants separately, including
-  valid-digest key-in-fingerprint mutants and a dropped-informational-statement
-  mutant;
-- the unchanged HAMCP-069a, 069b, 155, 165, 227 and 232 suites;
-- the complete repository suite in the Evidence tier.
+Required offline evidence, `tests/test_hamcp274_input_select_relevance.py`:
+- **Reproduction.** An installation-shaped fixture has 65 automations with
+  templates, call_service filters and label selectors, and a malformed
+  registry record for another entity. The plan is `prohibited`, `critical`
+  and `safety_critical` at beta.58 (`d09fc8a6`), and `standard_admin`, `low`
+  and `none` with no `safety_critical` label after the fix.
+- **Classification matrix.** One test each:
+  - literal reference;
+  - label;
+  - group and `expand()`;
+  - area;
+  - domain-wide iteration;
+  - dynamic or opaque ID: elevated, not prohibited;
+  - template-heavy, not touching the target: not relevant;
+  - unrelated malformed record: no effect;
+  - related malformed record: reported and elevated;
+  - stale state, ambiguous target and unadmitted provider: refused with
+    their precise codes.
+- **Labels.** Opaque consumers are `unknown`, with the potential
+  consequence disclosed. A literal consumer is `safety_critical`, and a
+  `safety_critical` plan still executes after approval.
+- **Locks.** Precise locks; the coarse fence; and no dispatch without a lock
+  set.
+- **Size.** The response stays under 60,000 characters, with truncation
+  flags and counts and a `get_change_plan` page.
+- **End to end**, using real governance and F3:
+  - plan → approve → apply → `succeeded_verified` with exact readback;
+  - restore B → A;
+  - a no-op is refused with `no_change` and no plan created;
+  - exactly one provider call per applied path.
+- **Mutation testing** of the relevance, classification, label, lock-fence,
+  malformed-record and response-size code, in a copied tree, with every
+  kill classified.
+- The unchanged HAMCP-145 suite and the complete repository suite in the
+  Evidence tier.
 
 ## 2. Release CI
 
@@ -92,35 +109,25 @@ beta.58 → beta.59 release transition.
 Publication happens only through Josh's Ready action and the repository's
 head-bound workflow.
 
-## 4. Installed read-only acceptance (separately authorized, after deploy)
+## 4. Installed acceptance (separately authorized)
 
-The architect performs these steps against the deployed beta.59. Create
-plans only; **never approve or apply them.** Change nothing in Home
-Assistant.
+After Josh deploys beta.59 and refreshes the connector:
 
-1. Pick an entity that is a member of a scene or a group (for example from
-   `ha_config_list_groups` or a scene's configuration).
-2. Create one plan for it with `create_entity_availability_exposure_plan`
-   (`operation: disable`), or a removal plan for a referencing automation or
-   script with `create_configuration_delete_plan`. Do not approve it.
-3. In the create-plan response, confirm that `dry_run_results` has one
-   `global_source_consumers` block with:
-   - `status: read` and `informational: true`;
-   - a child whose `target` is that entity, with an item of `type` `scene`
-     or `group` for it;
-   - per-source `completeness`, with `dashboard` shown as `partial` or
-     `unavailable` and `template` as `unavailable`;
-   - the statements: information only, loaded membership, "A count of 0 is
-     not proof of none while a source is incomplete.", and the bound-note
-     clarification.
-   The block appears only in the create-plan response; `get_change_plan`
-   does not return dry-run results.
-4. Note the `plan_hash`. Read the plan again with `get_change_plan` and
-   confirm that `plan_hash` and the policy decision are unchanged.
-5. Leave the plan unapproved. It expires or is superseded with no effect.
+1. **Read-only.** Create a plan on an input_select that an automation
+   references, and never approve or apply it. PASS if it is
+   `elevated_admin`, its consumers are named in `downstream_profiles` with
+   `evidence_class` and relationships, and the response is under 60,000
+   characters.
+2. **With Josh approving,** on `input_select.engineering_acceptance`:
+   - A → B plans as `standard_admin`. Approve and apply it: PASS if the
+     result is `succeeded_verified`.
+   - B → A, by a fresh plan or `rollback_change`. Approve and apply it:
+     PASS if the result is `succeeded_verified`.
+   - Plan the current option again: PASS if it is refused as a no-op with
+     `status: no_change`, `plan_created: false` and
+     `provider_dispatch_occurred: false`.
+3. Helper options re-plan: not covered. Helper options keep the shipped
+   helper-wide rule, and their fix is a follow-up.
 
-PASS needs all of steps 3 and 4. If the block reports `unavailable`
-because no dependency snapshot is held yet, that is truthful, not a failure.
-Record it, and repeat once after the dependency index has built. If a step
-fails, record the response in HAMCP-270. Whether to roll back is Josh's
-decision.
+If a step fails, keep the plan IDs, responses and audit records, and record
+them in HAMCP-274. Whether to roll back to beta.58 is Josh's decision.

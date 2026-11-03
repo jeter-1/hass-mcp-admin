@@ -1,26 +1,35 @@
 # Changelog
 
-## 2.4.1-beta.59 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
+## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
 
 Builds on 2.4.1-beta.58 (HAMCP-278, #342). No tool, input schema, route,
-provider, signed profile, fingerprint, plan or approval binding, persisted
-format, add-on option or Home Assistant write change.
+provider, signed profile, contract fingerprint, add-on option, persisted
+format or Home Assistant write change.
 
-- Entity availability/exposure, delete, entity metadata and helper options
-  plans carry one informational `global_source_consumers` block in their
-  plan-level dry-run results, built once per plan from the held HAMCP-227
-  global-source snapshot. It states per-source completeness, reasons and
-  statements once, then lists each child's target with its scene and group
-  loaded membership and dashboard card locations. Dashboards are partial or
-  unavailable until HAMCP-277. Only the create-plan response carries it.
-- The block is never part of a fingerprint, plan hash, policy hash,
-  semantic projection or approval binding, and never changes risk or
-  policy. An unavailable store is disclosed as `unavailable`, never a
-  refusal.
-- Bounded: counts plus a shared 8-item budget with truncation flags,
-  deduplicated on each reference's full original identity. Plans that fit
-  the response bound before still fit (up to seven availability/exposure
-  children, with or without references).
+- `set_input_select_option` decides relevance per target. It counts literal
+  and indirect references (group, `expand()`, area, label, device,
+  domain-wide iteration) and genuinely opaque obligations, with binding
+  model `helper-dependency-risk-input-select-v2`. An unreferenced helper is
+  `standard_admin`. Bounded consumers are named and elevated. Opaque
+  consumers are elevated with disclosure, not prohibited.
+- Incomplete evidence contributes at most `unknown`, never
+  `safety_critical`. The opaque profile's consequence is disclosed as
+  `potential_physical_consequence`.
+- Bounded, named consumers, opaque ones included, take precise locks plus
+  the existing shared stability fences. The coarse `reload:automation`
+  exclusive fence replaces refusal only when the consumer set is over
+  budget, a consumer's lock identity is unavailable, or a coverage gap is
+  unattributable. A malformed registry record that
+  names another entity no longer affects this target.
+- A governed create response over 60,000 characters names its omitted
+  evidence lists with counts and paging through `get_change_plan`.
+- Execution refusals are unchanged: stale state, ambiguous target,
+  unadmitted provider, index failure, drift and no-op. A v1 plan is
+  `replan_required`; applying one that beta.58 already approved returns
+  the structured `helper_dependency_evidence_superseded_replan_required`
+  refusal without consuming the approval. `set_input_boolean_state` and
+  helper options keep
+  their shipped rule.
 
 ## 2.4.1-beta.58 - Core release registry read from the `registry` branch, with one-tap owner signing (HAMCP-278)
 

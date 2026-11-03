@@ -1,12 +1,13 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.59** (HAMCP-270) shows scene,
-group and dashboard references in availability/exposure, delete, entity
-metadata and helper options plans before approval. They are information
-only: never approval-bound, and they never change risk or policy. Each
-source reports its completeness, and dashboards stay partial until
-HAMCP-277. No tool, input schema, fingerprint, plan binding, persisted format
-or Home Assistant write changes. Rollback is reinstalling beta.58. Read the
+Not yet released: Engineering **2.4.1-beta.59** (HAMCP-274) decides
+`set_input_select_option` relevance per target from evidence. An
+unreferenced input_select plans as `standard_admin` instead of `prohibited`.
+Referenced and opaque consumers are named and elevated. Over-budget consumer
+sets take the existing automation-domain lock instead of being refused.
+Execution refusals, approval binding and readback are unchanged. No tool,
+input schema, signed profile, persisted format or Home Assistant write
+changes. Rollback is reinstalling beta.58. Read the
 [2.4.1-beta.59 release notes](docs/V2_4_1_BETA59_RELEASE_NOTES.md) and the
 [2.4.1-beta.59 acceptance contract](docs/V2_4_1_BETA59_ACCEPTANCE.md).
 

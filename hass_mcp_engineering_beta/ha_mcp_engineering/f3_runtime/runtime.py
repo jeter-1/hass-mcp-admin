@@ -2864,6 +2864,25 @@ class F3RuntimeIntegration:
             or not self.service._valid_external_approval(plan, "apply")
         ):
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+        if (
+            plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION
+            and self.service._helper_dependency_replan_required(plan)
+        ):
+            # HAMCP-274: an input_select plan approved under the superseded v1
+            # dependency model has no fresh execution lock authority.  Refuse
+            # before task creation, lock preparation or any persistence; the
+            # approval stays unconsumed.  Recovery of an existing durable
+            # child still reconstructs the shipped v1 graph for readback.
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                details={
+                    "resource_id": plan.plan_id,
+                    "reason": (
+                        "helper_dependency_evidence_superseded_replan_required"
+                    ),
+                    "replan_required": True,
+                },
+            )
         task = self.service._create_task_for_plan(plan, calculated, persist=False)
         approval_hash = _approval_bundle_hash(plan)
         prepared, complete_requests, sequence_hash = await self._prepare(
