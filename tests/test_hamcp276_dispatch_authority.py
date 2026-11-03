@@ -245,9 +245,9 @@ class SignedCore(unittest.IsolatedAsyncioTestCase):
 
 async def signed_core(case: unittest.IsolatedAsyncioTestCase, *withheld: str) -> SignedCore:
     authority = SignedCore()
+    authority.addCleanup = case.addCleanup
     await authority.asyncSetUp()
     case.addAsyncCleanup(authority.asyncTearDown)
-    case.addCleanup(authority.doCleanups)
     health = await authority.admit(*withheld)
     case.assertEqual(health["compatible_count"], len(COMPILED) - len(withheld))
     return authority

@@ -24,6 +24,7 @@ is otherwise a success.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -32,6 +33,9 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
+import traceback
+from unittest.mock import patch
 import time
 import unittest
 from unittest.case import _SubTest
@@ -291,14 +295,57 @@ def fixture_skipped(selected, result):
     return rows
 
 
+@contextmanager
+def scratch_session(root):
+    """Own one shard's temp area, report leftovers before removing it.
+
+    Every remaining child is scratch, including subprocess-created directories.
+    Explicit mkdtemp destinations outside the area are checked too. Attribution
+    names the creating Python call when observed in this process; child-process
+    creators are unknown. Hard kills cannot run finalizers; the runner's temp
+    lifecycle remains responsible for interrupted processes. No global /tmp sweep.
+    """
+    parent = Path(root) / ".artifacts" / "tmp"
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="hamcp-unit-", dir=parent) as directory:
+        created = {}
+        original = tempfile.mkdtemp
+        previous_tempdir = tempfile.tempdir
+        def tracked(*args, **kwargs):
+            name = original(*args, **kwargs)
+            frames = traceback.extract_stack()[:-1]
+            callers = [f"{f.filename}:{f.lineno} ({f.name})" for f in frames
+                       if Path(f.filename).name.startswith("test_") or "/tests/" in f.filename]
+            created[Path(name).resolve()] = callers[-1] if callers else "fixture/subprocess (unknown test)"
+            return name
+        state = {"leftovers": []}
+        try:
+            tempfile.tempdir = directory
+            with patch.dict(os.environ, {"TMPDIR": directory, "TEMP": directory, "TMP": directory}), \
+                    patch.object(tempfile, "mkdtemp", tracked):
+                yield state
+        finally:
+            tempfile.tempdir = previous_tempdir
+            leftovers = set(Path(directory).iterdir())
+            leftovers.update(path for path in created if path.exists())
+            # Only outermost leftovers: one directory can contain many journal files.
+            paths = sorted(path for path in leftovers if not any(p in leftovers for p in path.parents))
+            state["leftovers"] = [
+                {"path": str(path), "creator": created.get(path, "fixture/subprocess (unknown test)")}
+                for path in paths]
+            for row in state["leftovers"]:
+                print(f"Scratch leak: {row['path']} created by {row['creator']}", file=sys.stderr)
+
+
 def run_shard(root, shard, env, output):
-    cases = discover(root)
-    ids, assignment, count, bound = identity(root, cases)
-    require(0 <= shard < count, "invalid_shard_index")
-    selected = [case for case in cases if assignment[case.id()] == shard]
-    run_id, attempt = run_identity(env)
-    runner = unittest.TextTestRunner(stream=sys.stderr, verbosity=2, resultclass=RecordingResult)
-    result = runner.run(unittest.TestSuite(selected))
+    with scratch_session(root) as scratch:
+        cases = discover(root)
+        ids, assignment, count, bound = identity(root, cases)
+        require(0 <= shard < count, "invalid_shard_index")
+        selected = [case for case in cases if assignment[case.id()] == shard]
+        run_id, attempt = run_identity(env)
+        runner = unittest.TextTestRunner(stream=sys.stderr, verbosity=2, resultclass=RecordingResult)
+        result = runner.run(unittest.TestSuite(selected))
     manifest = {
         "schema_version": 1,
         "source_sha": head(root),
@@ -311,7 +358,8 @@ def run_shard(root, shard, env, output):
         + fixture_skipped(selected, result),
         "unattributed_errors": len([t for t, _ in result.errors if t.id() not in result.outcomes])
         + len([t for t, _ in result.failures if t.id() not in result.outcomes]),
-        "was_successful": result.wasSuccessful(),
+        "was_successful": result.wasSuccessful() and not scratch["leftovers"],
+        "scratch_leaks": scratch["leftovers"],
         "durations": result.durations,
         "python_version": platform.python_version(),
     }

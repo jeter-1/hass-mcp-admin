@@ -449,9 +449,9 @@ class SignedTestRegistryAdmissionTests(unittest.IsolatedAsyncioTestCase):
 class ServiceTestCase(LabelServiceTestCase):
     async def signed_core(self) -> CoreRuntime:
         authority = SignedTestRegistryAdmissionTests()
+        authority.addCleanup = self.addCleanup
         await authority.asyncSetUp()
         self.addAsyncCleanup(authority.asyncTearDown)
-        self.addCleanup(authority.doCleanups)
         await authority.publish(authority.with_references())
         self.clock[0] = datetime.now(timezone.utc)
         self.runtime.core_runtime = authority.core

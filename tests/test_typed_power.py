@@ -464,8 +464,9 @@ class PowerGatewayTests(unittest.TestCase):
 class PowerSignedAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from tests.test_core_update_continuity import CoreContinuityTests
-        self.fixture = CoreContinuityTests(); await self.fixture.asyncSetUp()
-        self.addCleanup(self.fixture.doCleanups)
+        self.fixture = CoreContinuityTests()
+        self.fixture.addCleanup = self.addCleanup
+        await self.fixture.asyncSetUp()
 
     async def test_real_signed_core_authority_for_each_closed_domain(self):
         from ha_mcp_engineering.f3.contracts import OperationTarget
