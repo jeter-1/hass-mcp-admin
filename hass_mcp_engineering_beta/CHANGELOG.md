@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.1-beta.61 - Inspect and acknowledge stuck governance records (HAMCP-253)
+
+Builds on 2.4.1-beta.60 (HAMCP-270, #344). No existing tool or input schema,
+provider, signed profile, fingerprint, plan or task persisted format,
+approval binding, add-on option or Home Assistant write changes.
+
+- New read-only MCP tool `inspect_governance_record(record_kind, record_id)`
+  returns allowlisted, closed-token metadata for one exact change plan or
+  execution task, including projection-failed plans that `get_change_plan`
+  refuses. Events are bounded to 64 with truncation reported, and unreadable
+  fields are named. It has no payloads, configuration, targets, notes,
+  principals or tokens. Static tools go from 79 to 80.
+- New Ingress pages under **Stuck records**. An administrator can
+  acknowledge a failed or refused plan, or a terminal manual-review task, as
+  `historical_record` or `current_defect` with a reason of at most 500
+  characters, or revoke an acknowledgement. The action binds the reviewed
+  fingerprint and uses a one-shot CSRF token. It is appended to a separate
+  hash-chained ledger, and every outcome, including no-ops and refusals, is
+  audited. There is no MCP acknowledge tool.
+- Health adds `governance.record_acknowledgement` counts and bounded ID
+  lists. `projection_failure_warning` and the new `manual_review_warning`
+  appear only while unacknowledged records exist. Raw counts are unchanged.
+- The ledger is never read by approve, apply, recovery, startup validation
+  or projection verification. An acknowledged record stays exactly as
+  ineligible as before.
+
 ## 2.4.1-beta.60 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
 
 Builds on 2.4.1-beta.59 (HAMCP-274, #346), which includes 2.4.1-beta.58

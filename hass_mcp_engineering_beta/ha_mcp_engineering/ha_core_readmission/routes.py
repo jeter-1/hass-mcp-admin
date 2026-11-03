@@ -432,6 +432,12 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "power task reconciles through its own typed Core authority, and "
             "no other path makes a Home Assistant call.",
         ),
+        "inspect_governance_record": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Reads metadata of one persisted Engineering plan or execution "
+            "task and the local acknowledgement ledger; it makes no Home "
+            "Assistant call.",
+        ),
         "list_execution_tasks": CoreIndependence(
             CORE_INDEPENDENT_LOCAL_STATE,
             "Lists persisted Engineering execution tasks; it makes no Home "

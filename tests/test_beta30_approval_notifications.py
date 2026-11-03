@@ -588,7 +588,7 @@ class Beta30ReleaseBoundaryTests(unittest.TestCase):
         )
 
     def test_scope_adds_no_tool_or_provider_fallback(self):
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 54)
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 55)
         source = (
             BETA_DIR
             / "ha_mcp_engineering"

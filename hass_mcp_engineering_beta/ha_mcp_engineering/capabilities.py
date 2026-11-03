@@ -706,6 +706,17 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none",
     },
     {
+        "tool": "inspect_governance_record",
+        "category": "governance",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "operation_class": "governance_record_inspection",
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "fallback": "none",
+    },
+    {
         "tool": "list_execution_tasks",
         "category": "execution_task",
         "status": "beta_native",

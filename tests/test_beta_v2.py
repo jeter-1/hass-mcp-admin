@@ -585,7 +585,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 79)
+        self.assertEqual(len(self.beta_tools), 80)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -630,6 +630,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_change_plan",
                 "list_change_plans",
                 "get_execution_task",
+                "inspect_governance_record",
                 "list_execution_tasks",
                 "cancel_execution_task",
                 "approve_change_plan",
@@ -714,7 +715,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 79)
+        self.assertEqual(result["data"]["tool_count"], 80)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -724,7 +725,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 79)
+        self.assertEqual(catalog["registered_count"], 80)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -772,6 +773,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_change_plan",
                 "list_change_plans",
                 "get_execution_task",
+                "inspect_governance_record",
                 "list_execution_tasks",
                 "cancel_execution_task",
                 "approve_change_plan",
@@ -915,7 +917,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 79)
+        self.assertEqual(len(names), 80)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]

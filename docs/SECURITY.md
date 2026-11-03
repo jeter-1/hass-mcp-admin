@@ -613,6 +613,34 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.61` slice (HAMCP-253) adds read-only inspection of one stuck
+governance record and an administrator acknowledgement of it. It adds no
+Home Assistant request, provider, fallback, add-on option or permission.
+
+- **New write path (Engineering storage only).** One append-only,
+  hash-chained ledger file under the governance storage root
+  (`hamcp253-record-acknowledgement-v1/acknowledgements.json`).
+  - It is reachable only through the Ingress route
+    `POST /records/{kind}/{record_id}/acknowledge`. That route requires the
+    per-request Home Assistant administrator check (HAMCP-205) and a
+    one-shot CSRF token bound to the principal and the record fingerprint.
+  - It is form-urlencoded only, at most 8192 bytes and 8 fields, with a
+    bounded read time.
+  - There is no MCP acknowledge tool, so the AI cannot acknowledge.
+- **No execution authority.** Plans and tasks are never rewritten or
+  deleted. Approve, apply, recovery, startup validation and projection
+  verification never read the ledger. An acknowledged failed plan is
+  refused exactly as before.
+- **Disclosure.** Inspection copies allowlisted metadata only. Every string
+  must match a closed token pattern or is reported as `unrecognized_value`.
+  The acknowledgement reason is at most 500 printable characters. It is
+  refused when the shared sanitizer redacts it or fails closed. Audit
+  records the reason's length, never its text.
+- **Integrity.** The chain is validated on every read. A damaged or
+  unreadable ledger is never trusted: health warns as if nothing were
+  acknowledged, and new acknowledgements are refused. Writes use a
+  non-blocking lock, a temporary file, fsync and `os.replace`.
+
 The `2.4.1-beta.53` slice (HAMCP-071) adds a governed edit of one existing
 UI-managed scene, **unreachable at release**. It switches on with the
 sequence-16 signing. It adds no permission, add-on option, role, fallback

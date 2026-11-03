@@ -328,6 +328,16 @@ class ExecutionTaskRepository:
             self._ensure_navigation_index()
             return tuple(task_id for _, task_id in self._nonterminal_keys)
 
+    def manual_review_task_ids(self) -> tuple[str, ...]:
+        """HAMCP-253: navigation-only IDs of manual-review tasks for health."""
+
+        with self._lock:
+            self._ensure_navigation_index()
+            return tuple(sorted(
+                task_id for task_id, entry in self._entries.items()
+                if entry.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value
+            ))
+
     def f3_nonterminal_task_ids(self, *, limit: int) -> tuple[str, ...]:
         """Return bounded F3-authority navigation without mixed-task scans.
 
@@ -578,6 +588,32 @@ class ExecutionTaskRepository:
             if task is not None and entry is None:
                 self._put_entry(task)
                 self._mark_navigation_current()
+            return task
+
+    def read_for_inspection(self, task_id: str) -> ExecutionTask | None:
+        """HAMCP-253: read one task record as stored, with no side effects.
+
+        Unlike ``get`` this never quarantines a corrupt record and never
+        adds a navigation entry. An identifier whose file is already
+        quarantined is reported as a storage error, not as missing.
+        """
+        if not TASK_ID.fullmatch(task_id):
+            return None
+        with self._lock:
+            self._ensure_navigation_index()
+            entry = self._entries.get(task_id)
+            task = self._load(
+                self._path(task_id, plan_id=entry.plan_id)
+                if entry is not None
+                else self._path(task_id),
+                quarantine_corrupt=False,
+            )
+            if task is None and entry is None and any(
+                self.quarantine.glob(f"*.{task_id}.*.corrupt")
+            ):
+                raise ExecutionTaskStorageError(
+                    "Execution-task identifier is quarantined"
+                )
             return task
 
     def quarantine_listing(self) -> tuple[str, ...] | None:

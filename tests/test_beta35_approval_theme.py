@@ -205,6 +205,10 @@ class ApprovalThemeTests(unittest.TestCase):
                 "/typed": frozenset({"GET", "HEAD"}),
                 "/typed/{kind}/{task_id}": frozenset({"GET", "HEAD"}),
                 "/typed/{kind}/{task_id}/release": frozenset({"POST"}),
+                # HAMCP-253: stuck-record inspection and acknowledgement.
+                "/records": frozenset({"GET", "HEAD"}),
+                "/records/{kind}/{record_id}": frozenset({"GET", "HEAD"}),
+                "/records/{kind}/{record_id}/acknowledge": frozenset({"POST"}),
             },
         )
 

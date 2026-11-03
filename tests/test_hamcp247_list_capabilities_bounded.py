@@ -7,12 +7,13 @@ never narrowed by a filter, and the envelope's generic bound drops ``/data``
 whole.  The tool now returns a bounded summary by default, narrows every
 section by a filter, and returns one full section on request.
 
-The committed catalog fixture is a 107-tool synthetic, live-shaped catalog:
+The committed catalog fixture is a 108-tool synthetic, live-shaped catalog:
 the real UpstreamReadGateway is driven offline with the captured stock
-ha-mcp 8.6.0 descriptors and the signed release registry disabled (79 native
-+ 28 dynamic = 107 registered; live had 106).  The 108-tool cases use the
+ha-mcp 8.6.0 descriptors and the signed release registry disabled (80 native
++ 28 dynamic = 108 registered; live had 106 before HAMCP-253 added one native
+read).  The "108-tool" cases (now 109) use the
 exact ha-mcp 8.5.0 component capture with the optional ``ha_config_get_yaml``
-admitted (79 + 29 = 108), as the round-1 review did; neither is a claim about
+admitted (80 + 29 = 109), as the round-1 review did; neither is a claim about
 the household's current provider version.  Every call shape is rendered by
 the real tool and envelope, at that size and with every section grown by
 half.  Nothing is sent anywhere.
@@ -144,7 +145,7 @@ def _call_at(limit, **arguments):
 
 
 class _LiveShapedCatalog(unittest.TestCase):
-    # The 107-tool synthetic fixture (stock ha-mcp 8.6.0 descriptors).
+    # The 108-tool synthetic fixture (stock ha-mcp 8.6.0 descriptors).
     @staticmethod
     def upstream_capture():
         return capture("8.6.0")["tools"], "8.6.0"
@@ -238,7 +239,7 @@ def _request_of(entry):
 class LiveShapedFixtureTests(_LiveShapedCatalog):
     def test_the_fixture_reproduces_the_live_overflow(self):
         self.assertEqual(len(self.dynamic), 28)
-        self.assertEqual(build_capability_catalog()["registered_count"], 107)
+        self.assertEqual(build_capability_catalog()["registered_count"], 108)
         for arguments in ({}, {"status": "delegated"}):
             catalog = build_capability_catalog(**arguments)
             # The established filter-less catalog alone exceeds the cap.
@@ -256,7 +257,7 @@ class SizeTests(_LiveShapedCatalog):
 
     def test_every_call_shape_returns_data_under_the_cap_at_half_again_growth(self):
         with self.grown():
-            self.assertEqual(build_capability_catalog()["registered_count"], 161)
+            self.assertEqual(build_capability_catalog()["registered_count"], 163)
             for arguments in SHAPES:
                 with self.subTest(**arguments):
                     self.assert_usable(_call(**arguments), arguments)
@@ -325,7 +326,7 @@ class SummaryTests(_LiveShapedCatalog):
                     "dynamic_upstream_count", "status_values", "planned",
                     "core_admission"):
             self.assertEqual(data[key], catalog[key], key)
-        self.assertEqual(data["registered_count"], 107)
+        self.assertEqual(data["registered_count"], 108)
         self.assertEqual(
             data["server"],
             {
@@ -337,7 +338,7 @@ class SummaryTests(_LiveShapedCatalog):
             },
         )
         index = {item["tool"]: item for item in data["tool_index"]}
-        self.assertEqual(len(index), 107)
+        self.assertEqual(len(index), 108)
         for item in (*catalog["tools"], *catalog["beta_native"],
                      *catalog["dynamic_upstream"]):
             self.assertEqual(
@@ -500,7 +501,7 @@ class FilterSemanticsTests(_LiveShapedCatalog):
             [dict(row) for row in capabilities.CAPABILITY_PROVIDER_MATRIX],
         )
         self.assertEqual(catalog["upstream_read_gateway"], self.gateway)
-        self.assertEqual(len(catalog["beta_native"]), 54)
+        self.assertEqual(len(catalog["beta_native"]), 55)
 
 
 class SectionSelectorTests(_LiveShapedCatalog):
@@ -541,7 +542,7 @@ class SectionSelectorTests(_LiveShapedCatalog):
             _call(detail_section=" Beta_Native "), {"detail_section": " Beta_Native "}
         )
         self.assertEqual(data["filters"]["detail_section"], "beta_native")
-        self.assertEqual(len(data["beta_native"]), 54)
+        self.assertEqual(len(data["beta_native"]), 55)
 
     def test_an_unknown_section_is_refused_clearly(self):
         for section in ("planned", "everything", "tool_index", "beta-native"):
@@ -742,7 +743,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         data = build_capability_view(detail_section="beta_native", response_limit=20_000)
         record = data["beta_native"]
         self.assertIs(record["paged"], True)
-        self.assertEqual(record["item_count"], 54)
+        self.assertEqual(record["item_count"], 55)
         self.assertEqual(record["page"]["offset"], 0)
         self.assertIs(record["page"]["final"], False)
         count = record["page"]["row_count"]
@@ -900,7 +901,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         record = data["beta_native"]
         self.assertEqual(record["reason"], "page_row_exceeds_response_limit")
         self.assertEqual(record["retrieval"], [])
-        self.assertEqual(record["item_count"], 54)
+        self.assertEqual(record["item_count"], 55)
         self.assertEqual(data["sections"]["beta_native"]["included"], "omitted_size_limit")
 
 
@@ -1043,7 +1044,7 @@ class SizeGuardTests(_LiveShapedCatalog):
 
 
 class _Catalog108(_LiveShapedCatalog):
-    """The exact ha-mcp 8.5.0 component capture: 79 native + 29 upstream."""
+    """The exact ha-mcp 8.5.0 component capture: 80 native + 29 upstream (109; 108 before HAMCP-253)."""
 
     @staticmethod
     def upstream_capture():
@@ -1059,7 +1060,7 @@ class ReviewReproductionTests(_Catalog108, _Crawler):
 
     def test_the_fixture_is_the_108_tool_catalog(self):
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 108)
+        self.assertEqual(catalog["registered_count"], 109)
         self.assertEqual(catalog["dynamic_upstream_count"], 29)
         self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 49)
 
