@@ -206,6 +206,7 @@ These apply to every row and are not repeated:
 - **Effort:** S.
 - **Verdict:** **ready** for disclosure-only work, with the same
   qualification: no fingerprint change and no promised dashboard coverage.
+  The implementation (2.4.1-beta.60) is in draft review.
 
 ### HAMCP-149: pane-approval completion signaling and client continuation
 
@@ -396,7 +397,7 @@ These are not feature rows. They change the readiness of the rows above:
   option plans were prohibited even for unreferenced helpers (RCG-026).
   Relevance is now decided per target from evidence; an unreferenced helper
   is standard, and consumers are named and elevated.
-- **HAMCP-285** (Active, Medium, materialized as 2.4.1-beta.60): the same
+- **HAMCP-285** (Active, Medium, materialized as 2.4.1-beta.61): the same
   relevance rules for `set_input_boolean_state`, and `safety_critical` only
   with positive evidence for helper options and availability/exposure.
   Incomplete evidence is `unknown` with its gaps stated; planner floors are

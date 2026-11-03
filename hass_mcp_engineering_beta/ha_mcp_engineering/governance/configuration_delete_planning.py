@@ -17,6 +17,7 @@ from typing import Any
 
 from ..errors import AuthorizationError, HomeAssistantApiError
 from . import configuration_delete as delete_contract
+from . import global_reference_disclosure
 from .entity_availability_exposure_planning import (
     INCOMPLETE_IMPACT_TEXT,
     MAX_DISCLOSED_CONSUMERS,
@@ -109,6 +110,9 @@ class Item:
     intent: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
+    # HAMCP-270: this child's entry of the informational plan disclosure;
+    # never in the intent or the disclosure.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -116,6 +120,8 @@ class Preparation:
     request: Request
     items: list[Item]
     plan_disclosure: dict[str, Any] = field(default_factory=dict)
+    # HAMCP-270: the one informational ``global_source_consumers`` block.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
     def item(self, operation_id: str) -> Item:
         for candidate in self.items:
@@ -358,13 +364,20 @@ async def prepare(
     request: Request,
     *,
     known_secrets: tuple[str, ...] = (),
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
 ) -> Preparation:
-    """Read, refuse, bind and classify every child.  Nothing is dispatched."""
+    """Read, refuse, bind and classify every child.  Nothing is dispatched.
+
+    ``global_reader`` returns the dependency snapshot already held (HAMCP-270);
+    its references are disclosed only and bind nothing.
+    """
 
     from .resources import normalize_resource_config, resource_fingerprint
     from .resources import resource_identity_matches
 
     items: list[Item] = []
+    global_limit = global_reference_disclosure.per_child_limit(len(request.deletions))
+    global_context = global_reference_disclosure.read(global_reader)
     for index, (resource_type, target_id) in enumerate(request.deletions):
         target = {"resource_type": resource_type, "target_id": target_id}
         current = await _read(
@@ -507,6 +520,9 @@ async def prepare(
                 intent=intent,
                 disclosure=disclosure,
                 classification=classify(basis, statements, disclosure["warnings"]),
+                global_references=global_reference_disclosure.child(
+                    global_context, (entity_id,), limit=global_limit,
+                ),
             )
         )
     return Preparation(
@@ -522,6 +538,10 @@ async def prepare(
             "fallback": "none",
             "rollback": "new_separately_approved_recreate_plan",
         },
+        global_references=global_reference_disclosure.plan_block(
+            global_context, [item.global_references for item in items],
+            limit=global_limit,
+        ),
     )
 
 

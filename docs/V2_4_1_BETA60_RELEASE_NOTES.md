@@ -1,108 +1,92 @@
 # Engineering 2.4.1-beta.60 release notes
 
-Engineering 2.4.1-beta.60 (HAMCP-285) applies evidence-based classification
-to three more planners: helper options, entity availability and exposure, and
-input_boolean state. It builds on 2.4.1-beta.59 (#346, HAMCP-274). No tool,
-input schema, route, provider, signed profile, contract fingerprint,
-persisted format, add-on option or Home Assistant write changes.
+Engineering 2.4.1-beta.60 (HAMCP-270) shows scene, group and dashboard
+references in four governed plan disclosures before approval: entity
+availability/exposure, automation and script delete, entity metadata, and
+helper options. The references are information only. They are not bound by
+the approval, and they never change risk, policy or approval. It builds on
+2.4.1-beta.59 (#346, HAMCP-274). No tool, input schema, route, provider,
+signed profile, fingerprint, plan or approval binding, persisted format,
+add-on option or Home Assistant write changes.
 
 Acceptance: [`V2_4_1_BETA60_ACCEPTANCE.md`](V2_4_1_BETA60_ACCEPTANCE.md).
 
-## Why
-
-- **Helper options.** On beta.57, a helper options plan for the template
-  sensor `sensor.local_outdoor_temperature_delta_vs_forecast` was labelled
-  `safety_critical`, risk `high`, `elevated_admin`. It had no consumers. The
-  only evidence was incomplete: the config-entry helper chain cannot be
-  covered. Elevated approval with disclosure was right. The
-  `safety_critical` label was not, because nothing positively showed a
-  protected consequence.
-- **Availability and exposure.** The planner used the same rule: any
-  elevated basis was labelled `safety_critical`.
-- **input_boolean.** `set_input_boolean_state` still used the helper-wide
-  reader that beta.59 replaced for input_select. Any opaque template
-  anywhere, and any coverage gap, made every automation relevant to every
-  input_boolean. In addition, applying an input_boolean plan approved under
-  a superseded binding failed with an unstructured lock-calculator error
-  instead of a structured replan result.
-
-Josh's direction is to fail closed only for execution uncertainty and to
-treat consequence as decision support.
-
 ## The change
 
-- **input_boolean relevance by evidence.** The input_boolean reader (binding
-  model `helper-dependency-risk-v14`) uses the beta.59 target-scoped rules:
-  an automation is relevant only when it references this target literally,
-  through a group, `expand()`, an area, a label, a device, or domain-wide
-  iteration such as `states.input_boolean`, or when an obligation stays
-  genuinely opaque for this target. Classification, consumer naming and
-  locks follow the beta.59 input_select table:
+- Each of those plans gets one `global_source_consumers` block (model
+  `global_source_consumers_v1`) in its plan-level dry-run results, next to the
+  bound consumer evidence of each operation. It is built from
+  `global_sources.visible().findings` in the dependency snapshot the index
+  already holds, read once per plan. Building it never triggers a build or
+  refresh, so it sends no new Home Assistant request.
+  - The block states the shared context once: status, per-source
+    `completeness`, `reasons`, `statements` and `provenance` (fingerprint
+    prefix and index generation).
+  - `children` then lists each child in operation order: its `target` (or
+    `targets` for a multi-entity child), `count`, nonzero `by_source` totals,
+    `truncated`, and its top `items`.
+  - **Scenes and groups** are listed by id and name. They are loaded
+    membership, so the relation and list position are implied.
+  - **Dashboards** show the url path, title, card location, rule and whether
+    the card shows only under a condition (`conditional: true`).
+  - **Completeness** is reported per source (`complete`, `partial`,
+    `unavailable`), with the first reason for each incomplete source.
+    Templates are listed as unavailable, so that gap stays visible.
+    Dashboards are partial or unavailable live until HAMCP-277. When the
+    dashboard provider authority has changed, cached dashboard evidence is
+    withheld and reported as unavailable.
+- **Statements.** The block says, once per plan:
+  - the references are information only;
+  - scene and group references are loaded membership;
+  - while any source is incomplete, that a count of 0 is not proof of none;
+  - when a list is cut, how many each child lists and that counts are totals;
+  - that the bound note `dashboards_scripts_and_templates_not_scanned`
+    describes the risk evidence, not these references.
+- **Unbound by construction.** The block lives only in the projected dry-run
+  results. It is excluded from the consumer evidence fingerprint, plan hash,
+  policy subject and decision hashes, semantic projection hash and approval
+  binding. A plan approved before a scene, group or dashboard change still
+  applies.
+- **Never a refusal.** If no snapshot is held, or the store is absent or
+  unreadable, the block reports `status: unavailable` with a reason, each
+  child names only its target (no count is claimed), and planning continues.
+- **Distinct references stay distinct.** References are deduplicated and
+  ordered on their full original source, target, location and relation
+  before any display truncation. Two distinct references whose shortened
+  displays collide stay separate; the later one gets a short `~N` id suffix.
+- **Bounded.** One plan shares an 8-item budget across its children (at least
+  1 each). Every string is length-bounded (ids 32 characters before the
+  bounded collision suffix, names 24, locations 32 characters).
 
-  | Relevant consumers | Result |
-  |---|---|
-  | none | `standard_admin`, risk `low`, physical `none` |
-  | bounded, none consequential | `elevated_admin`, risk `medium`, physical `none` |
-  | bounded, consequential | `elevated_admin`, risk `high`, physical `direct` or `safety_critical` |
-  | opaque | `elevated_admin`, risk `high`, physical `unknown`, with disclosure |
+## Unchanged by design
 
-  A bounded consumer set takes per-automation locks. An opaque or
-  over-budget set takes `reload:automation` in exclusive mode instead of
-  being refused, so the plan may over-lock but never under-locks.
-- **Positive evidence for `safety_critical`.** Helper options and
-  availability plans now carry `consequence_model: positive_evidence_v1` in
-  their risk evidence. `safety_critical` requires positive evidence:
-  - helper options: a dependency reason naming a protected object, a
-    proposed protected object, or a protected automation the helper feeds;
-  - availability and exposure: a protected object basis, or a dependency
-    reason naming a protected automation the entity feeds.
+The bound coverage notes are left as they were: the entity metadata
+`coverage_gaps` entry `dashboards_scripts_and_templates_not_scanned`, and the
+availability/delete coverage warnings. They are part of the consumer evidence
+fingerprint or the policy subject hash, so rewording them would change plan
+bindings. The block says those notes describe the risk evidence only.
 
-  Otherwise an elevated plan is labelled `unknown` and its gaps are stated.
-  A plan with no elevated basis is `none`. Positive reasons are kept first
-  when the dependency-reason list is bounded.
-- **Floors unchanged.** Helper options plans stay elevated: the config-entry
-  helper chain gap is always present. Availability keeps its protected-object
-  floors; a standard availability plan is risk `low`.
-- **Persisted plans.** Helper options and availability plans created before
-  beta.60 carry no `consequence_model`. They keep the shipped rule and
-  re-classify identically. Any other `consequence_model` value is incomplete
-  evidence and is refused.
-- **Superseded input_boolean plans.** An input_boolean plan created under the
-  v13 binding is `replan_required`. It cannot be approved. Applying one that
-  beta.59 already approved returns `OPERATIONAL_VALIDATION_FAILED` /
-  `helper_dependency_evidence_superseded_replan_required` before any task,
-  lock or provider call, and the approval is not consumed. Its recovery
-  readback still reconstructs the shipped v13 lock graph.
-- **Bounded, non-consequential consumers now apply.** Since beta.59 the
-  planner labels a helper value change with a bounded relevant consumer and
-  no physical consequence `elevated_admin`, risk `medium`. The F3 apply check
-  did not list that family, so an approved plan was always refused at apply
-  with `policy_snapshot_mismatch` and nothing was dispatched. This affected
-  input_select on beta.59 and would have affected input_boolean here. F3 now
-  accepts exactly that family for helper value operations. Every other
-  operation keeps its fixed family.
-- **Response size.** The input_boolean create response is bounded the same
-  way as input_select: oversized paged evidence lists are left out and named
-  in `response_paging`. The plan hash binds the complete persisted inputs.
-- **Execution uncertainty unchanged.** Stale state, an ambiguous target, an
-  unadmitted provider, a dependency index failure, drift between approval
-  and apply, and a no-op still refuse with their existing codes. Approval
-  binding, at-most-once dispatch and exact readback are unchanged.
+## Where the block appears
 
-## Not changed
+Only in the create-plan response (`create_entity_availability_exposure_plan`,
+`create_configuration_delete_plan`, `create_entity_metadata_plan`,
+`create_helper_options_plan`, and the rollback plans built through them).
+`get_change_plan` and `list_change_plans` strip dry-run results, so they do
+not show it, and nothing else exposes it.
 
-- input_select (beta.59 binding bytes unchanged), input_number and other
-  helper types.
-- Availability `disable` with bounded consumers is not newly elevated. That
-  would change the consumer-evidence fingerprint bound into already-approved
-  plans; it is left for Josh to decide.
-- Configuration delete planning keeps its shipped consequence rule.
+## Known limitation
+
+A tool response is bounded at 60,000 characters. When a plan response is
+larger, the existing bounded renderer drops the largest optional parts and
+flags the response (`response_completeness.truncated: true`,
+`approval_disclosures_complete: false`). Its retrieval hint names
+`get_change_plan`, which returns the plan summary but not these references.
+
+In the measured disable-plan fixtures, 5–7 children fit for absent, empty and
+large stores; eight is flagged as before. Other plan content can change the
+threshold.
 
 ## Rollback
 
-Reinstall 2.4.1-beta.59. From source (not exercised against an
-installation): beta.59 executes only v13 input_boolean bindings, so it
-refuses beta.60 input_boolean plans before dispatch; and beta.59 policy
-treats an elevated helper options or availability plan whose label is not
-`safety_critical` as incomplete, so it refuses those plans too. A fresh plan
-is needed. No persisted format changed.
+Reinstall 2.4.1-beta.59. Plans keep their hashes and approvals, because the
+block was never bound. No persisted format changed.

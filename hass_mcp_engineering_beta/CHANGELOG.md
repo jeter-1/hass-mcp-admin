@@ -1,10 +1,11 @@
 # Changelog
 
-## 2.4.1-beta.60 - evidence-based labels for helper options, availability and input_boolean (HAMCP-285)
+## 2.4.1-beta.61 - evidence-based labels for helper options, availability and input_boolean (HAMCP-285)
 
-Builds on 2.4.1-beta.59 (HAMCP-274, #346). No tool, input schema, route,
-provider, signed profile, contract fingerprint, add-on option, persisted
-format or Home Assistant write change.
+Builds on 2.4.1-beta.60 (HAMCP-270, #344), which includes 2.4.1-beta.59
+(HAMCP-274, #346). No tool, input schema, route, provider, signed profile,
+contract fingerprint, add-on option, persisted format or Home Assistant
+write change.
 
 - `set_input_boolean_state` decides relevance per target with the beta.59
   rules (binding model `helper-dependency-risk-v14`). An unreferenced
@@ -15,19 +16,48 @@ format or Home Assistant write change.
 - Helper options and availability/exposure plans label `safety_critical`
   only with positive evidence (a protected object or a protected automation
   the target feeds). Incomplete evidence is `unknown` with its gaps stated,
-  and the planner floors are unchanged. Their risk evidence carries
-  `consequence_model: positive_evidence_v1`; plans persisted without it keep
-  the shipped rule.
+  and the planner floors are unchanged. Helper options plans and elevated
+  availability plans carry `consequence_model: positive_evidence_v1` in
+  their risk evidence; plans persisted without it keep the shipped rule.
+  The beta.60 global references do not feed these labels.
 - A v13 input_boolean plan is `replan_required`; applying one that beta.59
-  already approved returns the structured
+  or beta.60 already approved returns the structured
   `helper_dependency_evidence_superseded_replan_required` refusal without
-  consuming the approval, instead of an unstructured lock error.
+  consuming the approval, instead of an unstructured lock error. An
+  existing task under a superseded input_boolean or input_select binding
+  rebuilds its shipped lock graph for readback, and a pre-intent one is
+  refused with the same structured replan result instead of a `ValueError`.
 - An approved helper value plan with a bounded, non-consequential consumer
   (`elevated_admin`, risk `medium`) now applies. F3 refused it at apply with
-  `policy_snapshot_mismatch` on beta.59 (input_select).
+  `policy_snapshot_mismatch` on beta.59 and beta.60 (input_select).
 - The input_boolean create response is bounded like input_select. Execution
   refusals are unchanged: stale state, ambiguous target, unadmitted
   provider, index failure, drift and no-op.
+- The Real HA contract harness builds the input_boolean reader with the
+  v14 binding, as the runtime does.
+
+## 2.4.1-beta.60 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
+
+Builds on 2.4.1-beta.59 (HAMCP-274, #346), which includes 2.4.1-beta.58
+(HAMCP-278, #342). No tool, input schema, route, provider, signed profile,
+fingerprint, plan or approval binding, persisted format, add-on option or
+Home Assistant write change.
+
+- Entity availability/exposure, delete, entity metadata and helper options
+  plans carry one informational `global_source_consumers` block in their
+  plan-level dry-run results, built once per plan from the held HAMCP-227
+  global-source snapshot. It states per-source completeness, reasons and
+  statements once, then lists each child's target with its scene and group
+  loaded membership and dashboard card locations. Dashboards are partial or
+  unavailable until HAMCP-277. Only the create-plan response carries it.
+- The block is never part of a fingerprint, plan hash, policy hash,
+  semantic projection or approval binding, and never changes risk or
+  policy. An unavailable store is disclosed as `unavailable`, never a
+  refusal.
+- Bounded: counts plus a shared 8-item budget with truncation flags,
+  deduplicated on each reference's full original identity. In the measured
+  disable-plan fixtures, 5–7 children fit for absent, empty and large stores;
+  eight is flagged as before. Other plan content can change the threshold.
 
 ## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
 

@@ -1617,6 +1617,135 @@ class AvailabilityDisclosureTests(AvailabilityExposureServiceTestCase):
         )
         self.assertEqual(self.ws.writes(), [])
 
+# --------------------------------------------------------------------------
+# HAMCP-270 non-interaction: the informational global references never feed
+# a HAMCP-285 classification, intent, statement, marker or fingerprint.
+# --------------------------------------------------------------------------
+
+
+from ha_mcp_engineering.governance import (  # noqa: E402
+    global_reference_disclosure as global_disclosure,
+)
+
+from tests import test_hamcp270_global_reference_disclosure as global_tests  # noqa: E402
+
+
+class GlobalReferenceNonInteractionMixin:
+    """Plan twice: no global reader, then a reader returning references."""
+
+    # The HAMCP-270 recomputation of every bound value, plan identity
+    # normalized, and of every dry-run result the fingerprints read.
+    stored = global_tests.PlanDisclosureTestCase.stored
+    bindings = global_tests.PlanDisclosureTestCase.bindings
+    bound_disclosure = global_tests.PlanDisclosureTestCase.bound_disclosure
+
+    def observe(self, created: dict[str, Any]) -> dict[str, Any]:
+        plan = self.stored(created)
+        decision = created["policy_decision"]
+        return {
+            "classification": (decision["policy_class"],
+                               decision["physical_consequence"],
+                               decision["reason_codes"],
+                               decision["required_acknowledgements"]),
+            "risk": created["risk"],
+            "marker": next((item["consequence_model"]
+                            for operation in plan.operations
+                            for item in operation.risk.evidence
+                            if isinstance(item, dict) and "consequence_model" in item),
+                           None),
+            "intent": [item.proposed_config for item in plan.operations],
+            "bindings": self.bindings(created),
+            "bound_disclosure": self.bound_disclosure(created),
+        }
+
+    async def assert_no_interaction(self, plan, target: str) -> dict[str, Any]:
+        self.service.global_reference_snapshot_reader = None
+        without = await plan()
+        block = without["dry_run_results"][global_disclosure.KEY]
+        self.assertEqual(block["status"], "unavailable")
+        sources = global_tests.diagnostics(global_tests.references_for(target),
+                                           dashboard="complete")
+        self.service.global_reference_snapshot_reader = lambda: global_tests.held(sources)
+        with_references = await plan()
+        block = with_references["dry_run_results"][global_disclosure.KEY]
+        # The reader was read and its references were disclosed...
+        self.assertEqual(block["children"][0]["count"], 3, block)
+        # ...and nothing HAMCP-285 classifies or binds moved.
+        observed = self.observe(without)
+        self.assertEqual(self.observe(with_references), observed)
+        return observed
+
+
+class HelperOptionsGlobalReferenceNonInteractionTests(
+    GlobalReferenceNonInteractionMixin, HelperOptionsServiceTestCase
+):
+    async def test_unknown_consequence_ignores_global_references(self):
+        entity_id = self.add_template_sensor()
+        observed = await self.assert_no_interaction(
+            lambda: self.create_options({"entity_id": entity_id,
+                                         "set": {"state": "{{ 3 }}"}}),
+            entity_id,
+        )
+        self.assertEqual(observed["classification"][:2], ("elevated_admin", "unknown"))
+        self.assertEqual(observed["marker"], "positive_evidence_v1")
+
+    async def test_safety_critical_consequence_ignores_global_references(self):
+        entity_id = self.add_template_binary_sensor()
+        self.ws.entries[entity_id]["original_device_class"] = "smoke"
+        observed = await self.assert_no_interaction(
+            lambda: self.create_options({"entity_id": entity_id,
+                                         "set": {"state": "{{ false }}"}}),
+            entity_id,
+        )
+        self.assertEqual(observed["classification"][:2],
+                         ("elevated_admin", "safety_critical"))
+        self.assertEqual(observed["marker"], "positive_evidence_v1")
+
+
+class AvailabilityGlobalReferenceNonInteractionTests(
+    GlobalReferenceNonInteractionMixin, AvailabilityExposureServiceTestCase
+):
+    def disable(self, entity_id: str):
+        return lambda: self.create(operation="disable", entity_ids=[entity_id])
+
+    async def test_standard_plan_ignores_global_references(self):
+        self.add_entity("sensor.hall_motion")
+        observed = await self.assert_no_interaction(
+            self.disable("sensor.hall_motion"), "sensor.hall_motion")
+        self.assertEqual(observed["classification"][:2], ("standard_admin", "none"))
+        self.assertIsNone(observed["marker"])
+
+    async def test_unknown_consequence_ignores_global_references(self):
+        self.add_entity("sensor.hall_motion")
+        self.snapshot = exposure_snapshot(
+            findings=(finding("sensor.hall_motion", "unknown_effect"),),
+            read_failures=(SimpleNamespace(source_id="broken_automation"),),
+        )
+        observed = await self.assert_no_interaction(
+            self.disable("sensor.hall_motion"), "sensor.hall_motion")
+        self.assertEqual(observed["classification"][:2], ("elevated_admin", "unknown"))
+        self.assertEqual(observed["marker"], "positive_evidence_v1")
+
+    async def test_safety_critical_feed_ignores_global_references(self):
+        self.add_entity("sensor.hall_motion")
+        self.snapshot = exposure_snapshot(
+            findings=(finding("sensor.hall_motion", "unlock_on_motion"),),
+            profiles=(automation_profile("unlock_on_motion", "safety_critical"),),
+        )
+        observed = await self.assert_no_interaction(
+            self.disable("sensor.hall_motion"), "sensor.hall_motion")
+        self.assertEqual(observed["classification"][:2],
+                         ("elevated_admin", "safety_critical"))
+        self.assertEqual(observed["marker"], "positive_evidence_v1")
+
+    async def test_protected_object_ignores_global_references(self):
+        self.add_entity("binary_sensor.smoke", original_device_class="smoke")
+        observed = await self.assert_no_interaction(
+            self.disable("binary_sensor.smoke"), "binary_sensor.smoke")
+        self.assertEqual(observed["classification"][:2],
+                         ("elevated_admin", "safety_critical"))
+        self.assertIn("disable_protected_object", observed["classification"][2])
+
 
 if __name__ == "__main__":
     unittest.main()

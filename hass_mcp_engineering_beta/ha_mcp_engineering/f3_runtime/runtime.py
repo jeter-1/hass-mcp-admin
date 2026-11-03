@@ -5649,7 +5649,11 @@ class F3RuntimeIntegration:
                     raise helper_options_planning.Refusal(
                         "helper_options_provider_unavailable", kind="unavailable"
                     )
-                prepared = await helper_options_planning.prepare(gateway, request)
+                prepared = await helper_options_planning.prepare(
+                    gateway,
+                    request,
+                    global_reader=getattr(self.service, "global_reference_snapshot_reader", None),
+                )
             except entity_metadata_planning.EntityMetadataRefusal as exc:
                 raise refuse(
                     "helper_options_rollback_baseline_drift"
@@ -6060,6 +6064,7 @@ class F3RuntimeIntegration:
                 request,
                 current_override=forward_result,
                 final_override=restore,
+                global_reader=getattr(self.service, "global_reference_snapshot_reader", None),
             )
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self.service._entity_metadata_refusal_error(
@@ -6221,6 +6226,7 @@ class F3RuntimeIntegration:
                 self.service.entity_availability_exposure_snapshot_reader,
                 request,
                 rollback_fingerprints=fingerprints,
+                global_reader=getattr(self.service, "global_reference_snapshot_reader", None),
             )
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self.service._entity_metadata_refusal_error(exc, {}) from None
