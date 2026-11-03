@@ -17,14 +17,17 @@ This change adds three things:
 1. **Inspect.** A bounded, read-only metadata view of one exact record, as
    the MCP tool `inspect_governance_record` and on an Ingress page.
 2. **Acknowledge.** A one-step administrator decision on the Ingress
-   approval panel. It is stored in a separate append-only ledger with an
-   audit event.
+   approval panel. It is stored in a separate append-only ledger and takes
+   effect only once its audit event is durably written.
 3. **Health.** Health reports unacknowledged, acknowledged-historical and
    acknowledged-current-defect records separately, and warns only on
    unacknowledged ones.
 
-Plans and tasks are never deleted, rewritten or re-validated. Nothing calls
-Home Assistant. An acknowledgement never makes a record executable.
+Plans and tasks are never deleted, rewritten or re-validated. Inspection and
+the ledger operations make no Home Assistant call and no provider dispatch.
+The only Home Assistant call on the acknowledgement path is the Ingress
+gate's read-only administrator-role lookup (`config/auth/list`). An
+acknowledgement never makes a record executable.
 
 ## Part 1: how records get stuck (source map)
 
@@ -113,10 +116,26 @@ The view contains only:
 - `unreadable_fields`, `acknowledgeable`, `record_fingerprint`, and the
   current acknowledgement state.
 
-Every string value must match a closed token pattern. Anything else is
-reported as `unrecognized_value`. Because only allowlisted fields are
-copied, the view never contains configuration, targets, notes, principals,
-approver tokens or free-form error text.
+Stored metadata is untrusted (round-1 correction R1-M2):
+
+- The view names the record by the validated requested ID only.
+  `stored_identity` is the fixed code `matches_request` or
+  `stored_identifier_mismatch`; a stored plan or task ID is never echoed.
+- A field with a closed vocabulary (operation, plan status, task state,
+  policy class, approval state and kind, error code, projection category)
+  shows a member of it or `unrecognized_value`.
+- Every other string (event names, family and type tokens, timestamps)
+  must match a short token pattern and pass the shared sanitizer with the
+  configured sensitive values unchanged; otherwise it is reported as
+  `unrecognized_value`.
+- Screening happens before the view is fingerprinted, rendered on Ingress
+  or counted in health. The same rule covers the HAMCP-097 health rows:
+  a stored projection-failure `plan_id` is shown only in the 32-hex record
+  format, and anything else is `unrecognized_value`.
+
+Because only allowlisted fields are copied, the view never contains
+configuration, targets, notes, principals, approver tokens or free-form
+error text.
 
 Events are bounded to 64 rows. `event_count`, `events_truncated` and an
 `event_sequence_digest` over all events report truncation. The approval
@@ -124,9 +143,16 @@ event sequence is taken from every event, not only the displayed rows, and
 has its own bound of 64 with `approval_event_count` and
 `approval_events_truncated`.
 
-Inspection reads through a side-effect-free repository read: it never
-quarantines a corrupt record and never updates a navigation index, so a
-corrupt record stays in place and reads as unreadable every time.
+Inspection never mutates storage (round-1 correction R1-M1). It resolves
+the exact record path by name, without reading, rebuilding or writing a
+navigation index, and then does a non-quarantining read. A corrupt record
+stays in place and reads as unreadable every time. Two files for one ID are
+ambiguous and an ID whose file is already quarantined is a storage error;
+both are reported as `record_unreadable`. The stuck-record list and the
+acknowledgement eligibility checks follow the same rule: with a stale index
+they read every record as stored instead of rebuilding the index, and skip
+an unreadable one. Normal startup, `get`, and storage quarantine behavior
+are unchanged.
 
 `record_fingerprint` is the SHA-256 of the view without the acknowledgement
 block. It changes whenever the inspected metadata changes.
@@ -151,9 +177,13 @@ not an MCP tool.
 - MCP callers have no Home Assistant user identity: `caller_id` is a hash
   of the client address (`routing.py`).
 - The only Home Assistant administrator check in the product is the
-  Ingress gate `_require_administrator` (HAMCP-205), which asks Core for the
-  forwarded user's role on every request.
-- The AI therefore cannot acknowledge a record.
+  Ingress gate `_require_administrator` (HAMCP-205). On every request it
+  makes one read-only Core call, `config/auth/list`, to look up the
+  forwarded user's role.
+- The Engineering MCP connector therefore exposes no acknowledgement tool.
+  An authenticated Home Assistant administrator browser session on Ingress
+  can acknowledge. Josh's rule stands: each record is acknowledged
+  individually, after inspection, by an administrator.
 
 The routes are on the Ingress approval application:
 
@@ -168,7 +198,8 @@ Inputs are the record kind, the full record ID, the action (`acknowledge` or
 none for revoke), a reason, and the fingerprint from inspection.
 
 **Refusals**, checked in this order. Each refusal returns its reason and
-writes an audit event.
+a best-effort audit event, with `audit_recorded` stating whether it was
+written.
 
 1. `administrator_required`
 2. `record_identifier_invalid`
@@ -184,10 +215,16 @@ writes an audit event.
 10. `record_unreadable`
 11. `record_not_acknowledgeable`
 12. `record_fingerprint_stale` (the record changed since inspection)
-13. `record_not_acknowledged`: revoke when nothing was acknowledged
-14. Ledger refusals: `acknowledgement_in_progress`,
+13. `audit_unavailable`: the audit log is disabled or has no destination.
+    Checked before the ledger is opened, so nothing is appended.
+14. `record_not_acknowledged`: revoke when nothing was acknowledged
+15. Ledger refusals: `acknowledgement_in_progress`,
     `acknowledgement_persistence_failed`,
-    `acknowledgement_capacity_exceeded`, and integrity or namespace codes.
+    `acknowledgement_capacity_exceeded`, `acknowledgement_audit_pending`
+    (an earlier decision still has no audit event and cannot be completed
+    now), and integrity or namespace codes.
+16. `audit_write_failed`: the decision's audit event was not written. The
+    decision is completed as `abandoned` and never takes effect.
 
 A request rejected before its fields are trusted is audited as
 `request_invalid_or_stale` (bad CSRF, body or encoding) or
@@ -201,16 +238,44 @@ A request rejected before its fields are trusted is audited as
 | `reclassified` | The classification or reason changed. History is kept. | One |
 | `revoked` | A superseding entry. The warning returns. | One |
 | `no_op` | An identical repeat, or a revoke after a revoke. | None |
+| `pending` | The process failed after the decision was stored and before its completion. Not effective. Reported as `acknowledgement_audit_reconciliation_pending`. | Decision only |
 
-Every outcome reports `record_written: false`, `home_assistant_calls: 0` and
-`execution_eligibility_changed: false`.
+Every outcome reports `record_written: false`, `home_assistant_calls: 0`,
+`execution_eligibility_changed: false` and `audit_recorded`.
+
+**Audit coordination (round-1 correction R1-M3).**
+
+- An effective decision (`acknowledged`, `reclassified`, `revoked`) is two
+  ledger entries: the decision, then its audit event, then an
+  `audit_completion` entry with outcome `recorded`. Only a recorded decision
+  counts. The audit event's identifier is derived from the decision hash,
+  so writing it again is a no-op in the audit log.
+- If the audit write returns anything but one written event or raises, the
+  completion is `abandoned` and the request is refused with
+  `audit_write_failed`. An abandoned decision never acknowledges or revokes.
+- A decision with no completion (a crash between the steps) is pending. At
+  service start and inside every acknowledgement transaction it is
+  reconciled: its audit event is written (or found already written) and the
+  completion `recorded` is appended. Until then health reports
+  `audit_pending_count`, inspection reports `audit_pending`, and new
+  decisions are refused with `acknowledgement_audit_pending`.
+- `audit_recorded` is `true` only when an audit event for the request was
+  durably written. A disabled audit log reports success without writing, so
+  it is treated as not written.
+- **Contract wording correction.** `no_op` and refusal outcomes change no
+  ledger state and keep a single best-effort audit event. They are not
+  blocked by an audit failure; `audit_recorded` reports truthfully whether
+  their event was written. Earlier wording ("each refusal ... writes an
+  audit event") is corrected to this.
 
 ### Ledger (`governance/record_acknowledgement.py`)
 
 - **Location.** One JSON file at
   `<governance root>/hamcp253-record-acknowledgement-v1/acknowledgements.json`.
 - **Format.** Append-only and hash-chained: each event carries its
-  sequence, body, the previous hash and its own hash.
+  sequence, body, the previous hash and its own hash. A body is a
+  `decision` or an `audit_completion` that names one earlier decision by
+  sequence and audit identifier, exactly once.
 - **Reading.** Reads use `O_NOFOLLOW` and refuse a symlinked namespace. Each
   read validates every entry and the chain. A token of (inode, size,
   mtime) memoizes the result.
@@ -234,7 +299,10 @@ cached build and its generation keys are unchanged.
 - **Counts.** `record_acknowledgement` reports, for projection-failed
   plans and manual-review tasks separately, the `unacknowledged`,
   `acknowledged_historical`, `acknowledged_current_defect` and `stale`
-  counts, ID lists bounded to 8, and `ids_truncated`.
+  counts, ID lists bounded to 8, and `ids_truncated`. A stored ID that is
+  not a screened record ID is never listed: it is counted as unacknowledged
+  and in `unrecognized_identifier_count`. Health also reports
+  `audit_pending_count` and `audit_abandoned_count`.
 - **Warnings.** `projection_failure_warning` and the new
   `manual_review_warning` are present only when unacknowledged records
   exist. A stale acknowledgement counts as unacknowledged.
@@ -271,13 +339,18 @@ cached build and its generation keys are unchanged.
   - The route sits behind the per-request Home Assistant administrator
     check and a one-shot CSRF token bound to the principal and the
     fingerprint.
-  - There is no MCP write tool, no Home Assistant request and no provider
-    dispatch.
+  - There is no MCP write tool. Inspection and the ledger operations make
+    no Home Assistant request and no provider dispatch; the gate's
+    read-only `config/auth/list` role lookup is the only Core call.
+  - An effective decision requires an enabled, writable audit destination
+    and is never left silently unaudited (R1-M3).
 - **No execution authority.** No approve, apply, recovery or verification
   path reads the ledger. An acknowledged failed plan is refused exactly as
   before.
 - **Disclosure.** Inspection uses allowlisted metadata with closed token
-  patterns. Reasons are screened by the shared sanitizer and refused when
+  patterns, never echoes a stored identifier, and screens extensible
+  metadata with the shared sanitizer and the configured sensitive values
+  (R1-M2). Inspection never quarantines or re-indexes (R1-M1). Reasons are screened by the shared sanitizer and refused when
   it redacts. The audit event records the reason's length, never its text.
 - **Bounded input.** The reason is at most 500 printable characters. Form
   bodies are at most 8192 bytes and 8 fields. The ledger has an entry cap
@@ -287,6 +360,12 @@ cached build and its generation keys are unchanged.
   acknowledgements are refused.
 
 ## Follow-ups (not in this change)
+
+- A stored plan whose `plan_id` is not 32 hex characters makes the plan
+  navigation rebuild raise `ValueError` (`storage.py`
+  `_identifier_signature`), at startup or on index invalidation. This is
+  pre-existing and unchanged here; inspection and the HAMCP-253 health rows
+  do not echo the value.
 
 - Prohibited contract-v3 operational plans fail projection because the
   prohibited event allowlist does not accept family-specific creation

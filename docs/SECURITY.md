@@ -615,7 +615,10 @@ performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
 The `2.4.1-beta.61` slice (HAMCP-253) adds read-only inspection of one stuck
 governance record and an administrator acknowledgement of it. It adds no
-Home Assistant request, provider, fallback, add-on option or permission.
+provider, fallback, add-on option or permission. Inspection and the ledger
+operations make no Home Assistant request and no provider dispatch; the
+Ingress gate's existing read-only `config/auth/list` role lookup is the only
+Core call on the acknowledgement path.
 
 - **New write path (Engineering storage only).** One append-only,
   hash-chained ledger file under the governance storage root
@@ -626,13 +629,26 @@ Home Assistant request, provider, fallback, add-on option or permission.
     one-shot CSRF token bound to the principal and the record fingerprint.
   - It is form-urlencoded only, at most 8192 bytes and 8 fields, with a
     bounded read time.
-  - There is no MCP acknowledge tool, so the AI cannot acknowledge.
+  - The Engineering MCP connector exposes no acknowledgement tool; an
+    authenticated Home Assistant administrator browser session on Ingress
+    can acknowledge, one record at a time.
+  - An effective decision requires an enabled, writable audit destination.
+    The decision is appended, its audit event is written, and only then is
+    it completed as `recorded`. An audit failure completes it as
+    `abandoned` (no effect, `audit_write_failed`); a crash between the
+    steps leaves it pending until reconciliation at start or by the next
+    writer. `audit_recorded` is true only when audit bytes were written.
 - **No execution authority.** Plans and tasks are never rewritten or
   deleted. Approve, apply, recovery, startup validation and projection
   verification never read the ledger. An acknowledged failed plan is
   refused exactly as before.
-- **Disclosure.** Inspection copies allowlisted metadata only. Every string
-  must match a closed token pattern or is reported as `unrecognized_value`.
+- **Disclosure.** Inspection copies allowlisted metadata only. It names the
+  record by the requested ID and reports a stored ID only as
+  `matches_request` or `stored_identifier_mismatch`. Closed-vocabulary
+  fields show a member or `unrecognized_value`; other strings must be short
+  tokens that the shared sanitizer, given the configured sensitive values,
+  leaves unchanged, or they are `unrecognized_value`. Inspection never
+  quarantines a record or rebuilds a navigation index.
   The acknowledgement reason is at most 500 printable characters. It is
   refused when the shared sanitizer redacts it or fails closed. Audit
   records the reason's length, never its text.

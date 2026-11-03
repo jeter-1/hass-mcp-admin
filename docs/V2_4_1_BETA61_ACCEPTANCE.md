@@ -29,7 +29,10 @@ Bind:
   and the design in
   [`HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md`](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md);
 - Josh's decision (2026-11-03) that acknowledgement is an Ingress action and
-  that MCP gets the read-only inspect tool only;
+  that MCP gets the read-only inspect tool only: the Engineering MCP
+  connector exposes no acknowledgement tool, and an authenticated Home
+  Assistant administrator browser session can acknowledge, one record at a
+  time;
 - the non-goals: no change to projection verification, startup validation,
   the approve, apply or recovery paths, or persisted plan and task formats;
   no fix for the prohibited-plan event allowlist (a follow-up);
@@ -40,11 +43,21 @@ Bind:
 The review needs a security section covering:
 - **New write path.** One append-only ledger file under Engineering's
   governance storage, reachable only through the Ingress acknowledge route
-  behind the administrator check and the one-shot CSRF token. It has no MCP
-  write tool, no Home Assistant request and no provider dispatch.
+  behind the administrator check (a read-only `config/auth/list` role
+  lookup) and the one-shot CSRF token. It has no MCP write tool, and
+  inspection and the ledger operations make no Home Assistant request and
+  no provider dispatch.
+- **Audit coordination.** An effective decision needs an enabled, writable
+  audit destination and is completed only after its audit event is durably
+  written; a failure abandons it, and an interrupted decision is reconciled.
+  No-op and refusal outcomes get a best-effort audit with a truthful
+  `audit_recorded`.
 - **No execution authority.** No approve, apply, recovery or verification
   path reads the ledger.
-- **Disclosure.** Inspection uses allowlisted metadata with closed tokens.
+- **Disclosure.** Inspection uses allowlisted metadata with closed tokens,
+  never echoes a stored identifier, screens extensible metadata with the
+  shared sanitizer and configured sensitive values, and never quarantines
+  or re-indexes storage.
   The reason is screened by the sanitizer, and audit records only its
   length.
 - **Integrity.** The hash chain is validated on every read. A damaged ledger
@@ -60,6 +73,13 @@ Required offline evidence is in `tests/test_hamcp253_*.py`:
   warning returns; persistence across restart;
 - every refusal in the design, with zero Home Assistant and provider calls
   asserted;
+- round-1 corrections (`tests/test_hamcp253_round1_corrections.py`): cold
+  and invalidated indexes with an unrelated corrupt record leave source,
+  quarantine and navigation state unchanged across repeated inspection and
+  an acknowledgement attempt; a configured secret in a stored event name,
+  plan ID or task ID never appears in inspection, Ingress, health or audit;
+  disabled, failing and interrupted audit paths refuse, abandon or
+  reconcile, and `audit_recorded` is true only when audit bytes changed;
 - redaction: a secret-like value never appears in inspection,
   acknowledgement, health, audit or the ledger;
 - regression: approve and apply of an acknowledged failed plan are still

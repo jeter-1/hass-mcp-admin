@@ -34,10 +34,15 @@ Design: [`HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md`](HAMCP_253_STUCK_REC
   - revoke an earlier acknowledgement.
 
   The decision binds the fingerprint the administrator reviewed. It is
-  appended to Engineering's own acknowledgement ledger and audited. An
-  identical repeat is a no-op, a reclassification keeps history, and a
-  revoke is a superseding entry that brings the warning back. The AI cannot
-  acknowledge: there is no MCP acknowledge tool.
+  appended to Engineering's own acknowledgement ledger and takes effect
+  only once its audit event is durably written; with the audit log disabled
+  or failing, it is refused. An identical repeat is a no-op, a
+  reclassification keeps history, and a revoke is a superseding entry that
+  brings the warning back. The Engineering MCP connector exposes no
+  acknowledgement tool; an authenticated administrator browser session on
+  Ingress can acknowledge. Inspection and the ledger make no Home Assistant
+  call and no provider dispatch; the Ingress gate's read-only
+  `config/auth/list` role lookup is unchanged.
 - **Health.** `governance.record_acknowledgement` reports, for
   projection-failed plans and manual-review tasks separately:
   - `unacknowledged`, `acknowledged_historical`,

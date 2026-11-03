@@ -11,14 +11,22 @@ approval binding, add-on option or Home Assistant write changes.
   execution task, including projection-failed plans that `get_change_plan`
   refuses. Events are bounded to 64 with truncation reported, and unreadable
   fields are named. It has no payloads, configuration, targets, notes,
-  principals or tokens. Static tools go from 79 to 80.
+  principals or tokens. Stored identifiers are never echoed, extensible
+  metadata is screened with the shared sanitizer, and inspection never
+  quarantines a record or rebuilds a navigation index. Static tools go
+  from 79 to 80.
 - New Ingress pages under **Stuck records**. An administrator can
   acknowledge a failed or refused plan, or a terminal manual-review task, as
   `historical_record` or `current_defect` with a reason of at most 500
   characters, or revoke an acknowledgement. The action binds the reviewed
   fingerprint and uses a one-shot CSRF token. It is appended to a separate
-  hash-chained ledger, and every outcome, including no-ops and refusals, is
-  audited. There is no MCP acknowledge tool.
+  hash-chained ledger and takes effect only once its audit event is durably
+  written; a disabled or failing audit log refuses it, and a decision
+  interrupted between the steps is reconciled at start or by the next
+  writer. No-ops and refusals get a best-effort audit event, and
+  `audit_recorded` reports whether it was written. The Engineering MCP
+  connector exposes no acknowledgement tool; an authenticated administrator
+  browser session can acknowledge.
 - Health adds `governance.record_acknowledgement` counts and bounded ID
   lists. `projection_failure_warning` and the new `manual_review_warning`
   appear only while unacknowledged records exist. Raw counts are unchanged.

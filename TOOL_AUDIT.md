@@ -18,11 +18,17 @@ including records that `get_change_plan` refuses. It never returns
 proposed configuration, targets, notes, principals or tokens. Events are
 bounded to 64 rows, and truncation is reported.
 
-Acknowledgement is **not** an MCP tool. It is a one-step action on the
-Ingress approval panel (`/records`), behind the per-request Home Assistant
-administrator check and a one-shot CSRF token. It appends to Engineering's
-own acknowledgement ledger and writes an audit event. It never changes the
-record, calls Home Assistant or affects execution. The catalog is 80 static
+Acknowledgement is **not** an MCP tool: the Engineering MCP connector
+exposes no acknowledgement tool, and an authenticated Home Assistant
+administrator browser session on the Ingress approval panel (`/records`) can
+acknowledge. Each request passes the per-request administrator check (a
+read-only `config/auth/list` role lookup in Core, the only Home Assistant
+call on that path) and a one-shot CSRF token. An effective decision requires
+an enabled, writable audit destination: it is appended to Engineering's own
+acknowledgement ledger and takes effect only once its audit event is
+durably written. Inspection and the ledger operations make no Home Assistant
+call and no provider dispatch, never change the record and never affect
+execution. The catalog is 80 static
 + 28 delegated = 108 (109 with the optional YAML reader). See
 [HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md](docs/HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md).
 
