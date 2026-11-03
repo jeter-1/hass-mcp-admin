@@ -16,6 +16,7 @@ from typing import Any
 
 from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
+from . import global_reference_disclosure
 from . import helper_options as contract
 from .entity_availability_exposure_planning import (
     INCOMPLETE_IMPACT_TEXT,
@@ -190,6 +191,9 @@ class Item:
     intent: dict[str, Any]
     disclosure: dict[str, Any]
     classification: dict[str, Any]
+    # HAMCP-270: this child's entry of the informational plan disclosure;
+    # never in the intent or the disclosure.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -197,6 +201,8 @@ class Preparation:
     request: Request
     items: list[Item]
     plan_disclosure: dict[str, Any] = field(default_factory=dict)
+    # HAMCP-270: the one informational ``global_source_consumers`` block.
+    global_references: dict[str, Any] = field(default_factory=dict)
 
     def item(self, operation_id: str) -> Item:
         for candidate in self.items:
@@ -374,7 +380,12 @@ def _statements(
     return [item[:300] for item in statements[:MAX_STATEMENTS]]
 
 
-async def prepare(gateway: Any, request: Request) -> Preparation:
+async def prepare(
+    gateway: Any,
+    request: Request,
+    *,
+    global_reader: global_reference_disclosure.SnapshotReader | None = None,
+) -> Preparation:
     """Read, refuse, bind and classify every child.  Nothing is dispatched.
 
     The only flow this opens is aborted before return; a failed abort is
@@ -385,6 +396,8 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
     seen_entries: set[str] = set()
     plan_domain: str | None = None
     orphan_flows = 0
+    global_limit = global_reference_disclosure.per_child_limit(len(request.changes))
+    global_context = global_reference_disclosure.read(global_reader)
     for index, change in enumerate(request.changes):
         target = {"entity_id": change.entity_id}
         registry = await _read(
@@ -596,6 +609,9 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
                 intent=intent,
                 disclosure=disclosure,
                 classification=classify(basis, statements, disclosure["warnings"]),
+                global_references=global_reference_disclosure.child(
+                    global_context, entity_ids, limit=global_limit,
+                ),
             )
         )
     return Preparation(
@@ -614,6 +630,10 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
             "residual_concurrency_window": CONCURRENCY_DISCLOSURE,
             "orphan_flows": orphan_flows,
         },
+        global_references=global_reference_disclosure.plan_block(
+            global_context, [item.global_references for item in items],
+            limit=global_limit,
+        ),
     )
 
 

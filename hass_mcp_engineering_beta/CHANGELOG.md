@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.1-beta.60 - Governed plans disclose scene, group and dashboard references before approval (HAMCP-270)
+
+Builds on 2.4.1-beta.59 (HAMCP-274, #346), which includes 2.4.1-beta.58
+(HAMCP-278, #342). No tool, input schema, route, provider, signed profile,
+fingerprint, plan or approval binding, persisted format, add-on option or
+Home Assistant write change.
+
+- Entity availability/exposure, delete, entity metadata and helper options
+  plans carry one informational `global_source_consumers` block in their
+  plan-level dry-run results, built once per plan from the held HAMCP-227
+  global-source snapshot. It states per-source completeness, reasons and
+  statements once, then lists each child's target with its scene and group
+  loaded membership and dashboard card locations. Dashboards are partial or
+  unavailable until HAMCP-277. Only the create-plan response carries it.
+- The block is never part of a fingerprint, plan hash, policy hash,
+  semantic projection or approval binding, and never changes risk or
+  policy. An unavailable store is disclosed as `unavailable`, never a
+  refusal.
+- Bounded: counts plus a shared 8-item budget with truncation flags,
+  deduplicated on each reference's full original identity. In the measured
+  disable-plan fixtures, 5–7 children fit for absent, empty and large stores;
+  eight is flagged as before. Other plan content can change the threshold.
+
 ## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
 
 Builds on 2.4.1-beta.58 (HAMCP-278, #342). No tool, input schema, route,

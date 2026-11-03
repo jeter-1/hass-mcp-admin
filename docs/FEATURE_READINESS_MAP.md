@@ -206,6 +206,7 @@ These apply to every row and are not repeated:
 - **Effort:** S.
 - **Verdict:** **ready** for disclosure-only work, with the same
   qualification: no fingerprint change and no promised dashboard coverage.
+  The implementation (2.4.1-beta.60) is in draft review.
 
 ### HAMCP-149: pane-approval completion signaling and client continuation
 
