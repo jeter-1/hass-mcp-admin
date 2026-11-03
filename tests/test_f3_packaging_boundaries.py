@@ -67,6 +67,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     # helper policy family, and the F3 service harness.
     "tests/hamcp285_fixtures.py",
     "tests/test_hamcp285_evidence_labels.py",
+    # HAMCP-285 R1-H1: group-member hold lock modes and the coarse fence.
+    "tests/test_hamcp285_group_membership_hold.py",
     # HAMCP-285: records the exact beta.59 lock graph beside its v13 fixtures.
     "scripts/generate_hamcp285_beta59_input_boolean_v13_fixture.py",
     # HAMCP-271: configuration final-read outcomes (NormalizedOperationOutcome).

@@ -21,6 +21,7 @@ from ha_mcp_engineering.dependency.models import (  # noqa: E402
     SourceCoverageItem,
 )
 from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
+    ExpandSnapshotEvidence,
     extract_document_with_obligations,
 )
 from ha_mcp_engineering.f3.operational_locks import (  # noqa: E402
@@ -199,6 +200,9 @@ def snapshot(
         obligation_overflow_fingerprint=(
             stable_hash({"overflow": overflow}) if overflow else None
         ),
+        # An installation with no group: HAMCP-285 R1-H1 holds a helper
+        # whose group membership cannot be proven absent.
+        expand_snapshot_evidence=ExpandSnapshotEvidence({}, True, True),
     )
 
 

@@ -742,10 +742,19 @@ class LockTests(InstallationTestCase):
             actions=[{"action": "notify.notify", "data": {"message": "x"}}],
         )}))["plan"]
         self.assert_elevated_not_prohibited(plan)
-        projection = self.stored_binding(plan)["dependency_lock_projection"]
+        binding = self.stored_binding(plan)
+        projection = binding["dependency_lock_projection"]
         self.assertTrue(projection["coarse_automation_fence"])
+        # ``automation.Uses_Mode`` is not a valid state entity id, so the
+        # state inventory cannot prove the helper is in no group (HAMCP-285
+        # R1-H1): the plan also holds for unresolved group membership.
         self.assertEqual(projection["coarse_automation_fence_reason_codes"],
-                         ["automation_lock_identity_unavailable"])
+                         ["automation_lock_identity_unavailable",
+                          "group_membership_unresolved"])
+        self.assertEqual(
+            binding["group_membership_hold"]["unresolved_reason_codes"],
+            ["group_membership_state_inventory_incomplete"],
+        )
         self.assertEqual(self.lock_modes(plan)["reload:automation"],
                          LockMode.EXCLUSIVE)
 

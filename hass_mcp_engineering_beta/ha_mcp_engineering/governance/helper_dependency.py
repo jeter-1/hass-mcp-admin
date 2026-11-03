@@ -2552,7 +2552,8 @@ def helper_dependency_risk_assessment(
         warnings = [
             *warnings,
             " ".join(notes)
-            + " The plan is held elevated with an unknown consequence.",
+            + " Group membership keeps this plan elevated; its consequence "
+            "is never reported as none.",
         ]
     return ChangeRiskAssessment(
         level=level,
