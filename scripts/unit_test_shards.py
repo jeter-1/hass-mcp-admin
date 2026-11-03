@@ -295,6 +295,29 @@ def fixture_skipped(selected, result):
     return rows
 
 
+def scratch_git_ceilings(root, env, directory=None):
+    """Bound implicit Git discovery, preserving explicit root and fixture reads.
+
+    Git ignores a ceiling equal to cwd. Include .artifacts as well as tmp so
+    commands in the scratch parent itself cannot climb into the real checkout.
+    Explicit GIT_DIR/--git-dir/-C remain intentional Git addressing; the identity
+    guards detect writes to the real repository through those paths.
+    """
+    artifacts = Path(root).resolve() / ".artifacts"
+    paths = [str(artifacts.resolve()), str((artifacts / "tmp").resolve())]
+    for name in ("TMPDIR", "TEMP", "TMP", "RUNNER_TEMP"):
+        value = env.get(name)
+        if value and Path(value).is_absolute():
+            path = Path(value).resolve()
+            paths.extend((str(path.parent), str(path)))
+    if directory is not None:
+        paths.append(str(Path(directory).resolve()))
+    inherited = env.get("GIT_CEILING_DIRECTORIES")
+    if inherited:
+        paths.insert(0, inherited)
+    return os.pathsep.join(dict.fromkeys(paths))
+
+
 @contextmanager
 def scratch_session(root):
     """Own one shard's temp area, report leftovers before removing it.
@@ -321,7 +344,8 @@ def scratch_session(root):
         state = {"leftovers": []}
         try:
             tempfile.tempdir = directory
-            with patch.dict(os.environ, {"TMPDIR": directory, "TEMP": directory, "TMP": directory}), \
+            with patch.dict(os.environ, {"TMPDIR": directory, "TEMP": directory, "TMP": directory,
+                                         "GIT_CEILING_DIRECTORIES": scratch_git_ceilings(root, os.environ, directory)}), \
                     patch.object(tempfile, "mkdtemp", tracked):
                 yield state
         finally:
@@ -417,6 +441,7 @@ def load_manifests(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
+    ceilings = commands.add_parser("ceilings", help="print scratch Git discovery boundaries for validation children")
     count = commands.add_parser("count", help="print the shard indexes as a JSON list")
     run = commands.add_parser("run")
     run.add_argument("--shard", type=int, required=True)
@@ -424,11 +449,13 @@ def main():
     aggregate = commands.add_parser("aggregate")
     aggregate.add_argument("--manifests", type=Path, required=True)
     describe = commands.add_parser("describe", help="print the module plan for review")
-    for command in (count, run, aggregate, describe):
+    for command in (ceilings, count, run, aggregate, describe):
         command.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     try:
-        if args.operation == "count":
+        if args.operation == "ceilings":
+            print(scratch_git_ceilings(args.repo_root, os.environ))
+        elif args.operation == "count":
             print(json.dumps(list(range(load_plan_file(args.repo_root)[0] + 1))))
         elif args.operation == "describe":
             cases = discover(args.repo_root)

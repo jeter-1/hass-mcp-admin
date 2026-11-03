@@ -17,6 +17,9 @@ unittest's own suite machinery, not in each module:
   before the first module started. A difference is reported as a
   ``tearDownModule (<module>)`` error naming the module and the leaked entries,
   then restored so the failure stays with the module that caused it.
+* Repository identity: shared local and current-worktree user.name/user.email
+  are compared at module boundaries. A change fails the module without printing
+  values or repairing config; later modules inherit the observed config.
 * Restoration is deep and keeps identity: the catalog globals are rewritten in
   place, nested dicts and lists included, so code holding the global or any
   value inside it sees the snapshot again (``ModuleAttributeProbe``).
@@ -33,6 +36,9 @@ import asyncio
 import copy
 import logging
 import os
+from pathlib import Path
+import shutil
+import subprocess
 import sys
 import unittest
 from unittest import case as _case, suite as _suite
@@ -59,6 +65,65 @@ _MISSING = object()
 
 class ProcessStateLeak(AssertionError):
     """A test module left process-wide state different from the run's baseline."""
+
+
+class GitIdentityGuard:
+    """Compare repository identity at module boundaries; never repair live config.
+
+    Paths and environment are bound before fixtures run, so a test's cwd or Git
+    environment cannot redirect the check to its disposable repository. Read
+    only identity keys, including their origins and duplicate values. Inspect
+    config.worktree even when disabled: a dormant write must not escape notice.
+    Source-only copies outside any repository have no config to guard; nested
+    copies still protect the containing repository that Git would discover.
+    """
+
+    def __init__(self, root):
+        self.root = Path(root).resolve()
+        self.git = shutil.which("git")
+        self.environment = {key: value for key, value in os.environ.items()
+                            if not key.startswith("GIT_")}
+        self.paths = None
+        self.baseline = None
+
+    def _read(self, *args, absent=False):
+        if self.git is None:
+            raise OSError("git unavailable")
+        result = subprocess.run([self.git, "-C", str(self.root), *args],
+                                env=self.environment, capture_output=True, timeout=15)
+        if result.returncode not in ((0, 1) if absent else (0,)):
+            raise OSError("git identity read failed")
+        return result.stdout
+
+    def capture(self):
+        if self.paths is None:
+            if not any((path / ".git").exists() for path in (self.root, *self.root.parents)):
+                self.paths = {}
+            else:
+                common = Path(os.fsdecode(self._read("rev-parse", "--git-common-dir")).strip())
+                current = Path(os.fsdecode(self._read("rev-parse", "--absolute-git-dir")).strip())
+                self.paths = {"local": (self.root / common).resolve() / "config",
+                              "worktree": current / "config.worktree"}
+        return {scope: self._read("config", "--null", "--show-origin", "--includes",
+                                  "--file", str(path), "--get-regexp", r"^user\.(name|email)$",
+                                  absent=True)
+                for scope, path in self.paths.items()}
+
+    def check(self, module):
+        try:
+            current = self.capture()
+        except (OSError, subprocess.SubprocessError):
+            return f"test module {module!r}: repository Git identity could not be verified"
+        if self.baseline is None:
+            self.baseline = current
+        if current != self.baseline:
+            scopes = sorted(scope for scope in current if current[scope] != self.baseline[scope])
+            # Do not overwrite concurrent/user changes. Fail the originating
+            # module once; subsequent modules inherit the observed state.
+            self.baseline = current
+            return (f"test module {module!r} changed repository Git identity "
+                    f"(user.name/user.email; scopes: {', '.join(scopes)}); config was NOT restored")
+        return None
 
 
 def _listed(items):
@@ -503,13 +568,14 @@ PROBES = (
 class Guard:
     """Snapshot, compare and restore ``probes`` for one bound test result."""
 
-    def __init__(self, probes=PROBES, observer=None):
+    def __init__(self, probes=PROBES, observer=None, identity_guard=None):
         self.probes = tuple(probes)
         self.observer = observer
         self.baseline = None
         self.modules_checked = 0
         self.tests_reset = 0
         self.leaks = []
+        self.identity_guard = identity_guard
 
     def capture(self):
         return [(probe, probe.capture()) for probe in self.probes]
@@ -538,15 +604,16 @@ class Guard:
     def module_boundary(self, module):
         """Return the leak message for ``module`` (or None) and restore the baseline."""
 
+        identity_message = self.identity_guard.check(module) if self.identity_guard else None
         if self.baseline is None:
             self.baseline = self.capture()
-            return None
+            return identity_message
         if module is None:
-            return None
+            return identity_message
         self.modules_checked += 1
         changes = self.changes(self.baseline)
         if not changes:
-            return None
+            return identity_message
         self.restore(self.baseline)
         self.leaks.append((module, changes))
         if self.observer:
@@ -559,7 +626,7 @@ class Guard:
             # stays with this module instead of moving to an innocent one.
             self.baseline = self.capture()
             message += "; NOT restorable, later modules compared with it: " + "; ".join(residual)
-        return message
+        return message + ("; " + identity_message if identity_message else "")
 
 
 def restore_after_class(cls, probes=PROBES):
@@ -576,7 +643,7 @@ def restore_after_class(cls, probes=PROBES):
 class _State:
     def __init__(self):
         self.guards = {}
-        self.process_guard = Guard()
+        self.process_guard = Guard(identity_guard=GitIdentityGuard(Path(__file__).resolve().parents[2]))
         self.process_result = None
 
 

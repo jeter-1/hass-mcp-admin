@@ -1008,9 +1008,11 @@ class PrEvidenceTests(unittest.TestCase):
 
     def validation_payload(self) -> dict[str, object]:
         step_names = (
+            "Snapshot repository Git identity",
             "Verify base reference",
             "Bind clean Evidence snapshot",
             "Verify protected-path scope",
+            "Bound scratch Git discovery",
             "Compile repository Python",
             "Run complete unittest suite",
             "Validate add-on metadata",
@@ -1023,6 +1025,7 @@ class PrEvidenceTests(unittest.TestCase):
             "Check committed Git whitespace",
             "Check changed text whitespace",
             "Recheck Evidence snapshot",
+            "Recheck repository Git identity",
         )
         coverage = (
             ("full_local_gate", "executed_locally"),
@@ -1202,6 +1205,17 @@ class PrEvidenceTests(unittest.TestCase):
         text = self.generate().read_text(encoding="utf-8")
         self.assertIn("working tree is not a bound clean snapshot", text)
         self.assertNotIn("Overall local status: **passed**", text)
+
+    def test_passed_evidence_requires_scratch_and_identity_guards(self):
+        for name in ("Snapshot repository Git identity", "Bound scratch Git discovery",
+                     "Recheck repository Git identity"):
+            with self.subTest(missing=name):
+                payload = self.validation_payload()
+                payload["steps"] = [step for step in payload["steps"] if step["name"] != name]
+                self.write_validation(payload)
+                text = self.generate().read_text(encoding="utf-8")
+                self.assertIn("incomplete passed Evidence step contract", text)
+                self.assertNotIn("Overall local status: **passed**", text)
 
     def test_malformed_or_inconsistent_validation_is_not_claimed(self):
         evidence = self.fixture.root / ".artifacts" / "validation.json"
