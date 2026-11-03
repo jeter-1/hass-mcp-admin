@@ -714,11 +714,32 @@ class AvailabilityLabelTests(AvailabilityExposureServiceTestCase):
              policy["physical_consequence"]),
             ("standard_admin", "low", "none"),
         )
-        marker = created["risk"]["evidence"][0]
-        self.assertNotIn("consequence_model", marker)
         plan = self.repository.get(created["plan_id"])
+        self.assertEqual(plan.operations[0].risk.evidence[0], {
+            "field": plan.operations[0].operation_id,
+            "trigger": "entity_availability_exposure_policy",
+            "policy": "standard",
+            "physical_consequence": "none",
+            "basis": "",
+        })
         self.assertEqual(evaluate_change_policy(plan).policy_class,
                          ApprovalPolicyClass.STANDARD_ADMIN)
+
+    async def test_a_protected_object_that_feeds_protection_lists_both_bases(self):
+        self.add_entity("binary_sensor.smoke", original_device_class="smoke")
+        self.snapshot = exposure_snapshot(
+            findings=(finding("binary_sensor.smoke", "unlock_on_motion"),),
+            profiles=(automation_profile("unlock_on_motion", "safety_critical"),),
+        )
+        created = await self.disable("binary_sensor.smoke")
+        marker = created["risk"]["evidence"][0]
+        self.assertEqual(marker["basis"],
+                         "disable_protected_object,disable_protected_dependency")
+        self.assertEqual(marker["physical_consequence"], "safety_critical")
+        self.assertEqual(marker["consequence_model"], POSITIVE_EVIDENCE_V1)
+        decision = evaluate_change_policy(self.repository.get(created["plan_id"]))
+        self.assertEqual(decision.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN)
+        self.assertEqual(decision.physical_consequence.value, "safety_critical")
 
     async def test_an_elevated_plan_carries_the_marker(self):
         self.add_entity("sensor.hall_motion")
@@ -906,10 +927,50 @@ class Beta59ExistingTaskTests(Beta59RecordCase):
 
     async def test_a_pre_intent_v13_task_can_still_be_cancelled(self):
         _record, task = await self.beta59_task(run=False)
-        result = await self.service.cancel_execution_task(task.task_id)
+        try:
+            result = await self.service.cancel_execution_task(task.task_id)
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"cancel must not raise: {exc!r}")
         self.assertEqual(result["status"], "cancelled_pre_dispatch", result)
         self.assertFalse(result["provider_dispatch_occurred"])
         self.assertEqual(self.helper.dispatch_count, 0)
+
+    async def test_a_post_intent_v13_task_keeps_its_recovery_path(self):
+        # beta.59 committed a durable intent and the process was lost before
+        # any outcome; continuing is recovery, not a first dispatch.
+        record = self.restore("approved")
+        planned = self.service._load(record["plan_id"]).operational.baseline[
+            "dependency_risk"
+        ]
+
+        async def frozen(_entity_id, *, refresh=True, fenced=False):
+            return {"binding": deepcopy(planned)}
+
+        def crash(point):
+            if point == "after_durable_intent_persistence":
+                raise SystemExit("simulated process loss after intent")
+
+        locks, gate = self.as_beta59()
+        reader = mock.patch.object(
+            helper_module, "read_runtime_helper_dependency_risk", frozen
+        )
+        with locks, gate, reader:
+            self.runtime.children._fault_hook = crash
+            try:
+                with self.assertRaises(SystemExit):
+                    await self.service.apply(record["plan_id"], record["plan_hash"])
+            finally:
+                self.runtime.children._fault_hook = None
+        task = self.service.task_repository.get_for_plan(record["plan_id"])
+        self.assertNotIn(task.state.value, {"failed_pre_dispatch", "cancelled_pre_dispatch"})
+        self.assertFalse(self.runtime._pre_intent_task(task))
+        dispatches = self.helper.dispatch_count
+        try:
+            await self.service.apply(record["plan_id"], record["plan_hash"])
+        except GovernanceError as exc:
+            self.assertNotEqual(exc.details,
+                                {"resource_id": record["plan_id"], **SUPERSEDED_REPLAN})
+        self.assertEqual(self.helper.dispatch_count, dispatches)
 
     async def test_a_terminal_v13_task_returns_its_recorded_result(self):
         # Under the v14 reader beta.59's run ends in its recorded drift
@@ -980,6 +1041,26 @@ class InputBooleanEndToEndTests(InputBooleanCase):
                          self.child(result["task_id"]).to_dict())
         self.assertNotIn("policy_snapshot_mismatch",
                          self.child_codes(result["task_id"]))
+        self.assertEqual(self.helper.dispatched, [(ENTITY, "on")])
+
+
+    async def test_a_current_model_task_created_before_apply_dispatches_once(self):
+        # A retained pre-intent task under the current v14 binding is not
+        # superseded, so a later apply continues it to one verified dispatch.
+        plan = (await self.planned("on"))["plan"]
+        self.assert_standard(plan)
+        await self.grant(plan)
+        await self.runtime._initialize(self.service._load(plan["plan_id"]),
+                                       plan["plan_hash"])
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertTrue(self.runtime._pre_intent_task(task))
+        try:
+            result = await self.apply(plan)
+        except GovernanceError as exc:
+            self.fail(f"a current-model task must not be refused: {exc.details!r}")
+        self.assertEqual(result["task_state"], "succeeded_verified",
+                         self.child(result["task_id"]).to_dict())
+        self.assertEqual(result["task_id"], task.task_id)
         self.assertEqual(self.helper.dispatched, [(ENTITY, "on")])
 
 

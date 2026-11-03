@@ -1069,7 +1069,10 @@ class HistoricalBeta58ExistingTaskTests(InputSelectServiceTestCase):
 
     async def test_a_pre_intent_v1_task_can_still_be_cancelled(self):
         _record, task = await self.beta58_task()
-        result = await self.service.cancel_execution_task(task.task_id)
+        try:
+            result = await self.service.cancel_execution_task(task.task_id)
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"cancel must not raise: {exc!r}")
         self.assertEqual(result["status"], "cancelled_pre_dispatch", result)
         self.assertFalse(result["provider_dispatch_occurred"])
         self.assertEqual(self.sent(), [])
