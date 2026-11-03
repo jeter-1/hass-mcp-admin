@@ -1064,11 +1064,14 @@ def _group_membership_hold(
     """Groups that contain ``entity_id``, or why that cannot be decided.
 
     Membership is read from the same bounded ``expand`` authority the index
-    uses for ``expand('group.x')``.  Pinned Core restricts every platform
-    group (light, switch, ...) to members of its own domain, so only a
-    ``group.*`` entity, or a group-sourced entity of the target's own domain,
-    can contain the target.  Returns ``None`` only when the evidence proves
-    the target is in no group; a non-member's binding is then unchanged.
+    uses for ``expand('group.x')``.  For the two supported helper domains
+    (input_boolean, input_select) only a ``group.*`` entity, or a
+    group-sourced entity of the target's own domain, can contain the target.
+    Pinned Core 2026.10.3 has no group platform for either domain; its
+    sensor group accepts sensor, number and input_number members, but no
+    platform group accepts input_boolean or input_select.  Returns ``None``
+    only when the evidence proves the target is in no group; a non-member's
+    binding is then unchanged.
     """
 
     evidence = getattr(snapshot, "expand_snapshot_evidence", None)

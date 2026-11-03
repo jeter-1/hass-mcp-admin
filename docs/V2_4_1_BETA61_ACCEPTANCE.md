@@ -59,11 +59,16 @@ The review needs a security section covering:
   (`tests/test_beta54_owner_authoritative_execution.py`).
 - **Group members.** An input_boolean or input_select helper in any group
   (direct or nested, depth at most 8) is `elevated_admin`, risk `high`,
-  physical `unknown`, with the coarse fence and a disclosure naming the
-  groups. Membership that cannot be decided is treated as membership, with
-  the reason stated. Plain group references are not attributed to members
-  until HAMCP-287. A helper in no group keeps exactly its prior reader
-  output.
+  with the coarse fence and a disclosure naming the groups. The hold turns
+  physical `none` into `unknown` and keeps a positive label (a literal
+  consumer's `safety_critical` stays `safety_critical`). Membership that
+  cannot be decided is treated as membership, with `membership_resolved`
+  `false` and the causes listed. The reason is
+  `group_membership_unresolved` only when no definite membership was found;
+  a known group plus an unresolved cause, such as depth over 8, keeps
+  `group_membership_consumers_unattributed`. Plain group references are
+  not attributed to members until HAMCP-287. A helper in no group keeps
+  exactly its prior reader output.
 - **Labels.** `safety_critical` requires positive evidence. Incomplete
   evidence is `unknown` with its gaps stated, and stays elevated where the
   planner floor requires it. Availability writes the `consequence_model`

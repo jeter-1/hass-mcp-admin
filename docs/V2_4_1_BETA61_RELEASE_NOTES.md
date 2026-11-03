@@ -57,16 +57,21 @@ treat consequence as decision support.
   a helper that is a member of any group, directly or nested up to 8
   levels, is never reported as unconsumed. Membership is read from the same
   bounded group evidence the index uses for `expand()`. The plan is
-  `elevated_admin`, risk `high`, physical consequence `unknown`, with
-  incomplete consequence evidence and the coarse `reload:automation`
-  exclusive fence. The binding's `group_membership_hold` names up to 16
-  groups (direct, nested or possible) with a fingerprint over all of them,
-  and its reason is `group_membership_consumers_unattributed`. When
-  membership cannot be decided (incomplete group listing, a `group.*` entity
-  of unknown source, an incomplete state inventory such as more than 10,000
-  states or an invalid or duplicate state record, missing evidence, or depth
-  over 8) the helper is treated as a member, the reason is
-  `group_membership_unresolved`, and each cause is listed. The disclosure
+  `elevated_admin`, risk `high`, with incomplete consequence evidence and
+  the coarse `reload:automation` exclusive fence. The hold turns a physical
+  consequence of `none` into `unknown` and keeps a positive label (for
+  example, a literal consumer's `safety_critical` stays `safety_critical`).
+  The binding's `group_membership_hold` names up to 16 groups (direct,
+  nested or possible) with a fingerprint over all of them. When membership
+  cannot be decided (incomplete group listing, a `group.*` entity of unknown
+  source, an incomplete state inventory such as more than 10,000 states or
+  an invalid or duplicate state record, missing evidence, or depth over 8)
+  the helper is treated as a member, `membership_resolved` is `false`, and
+  each cause is listed in `unresolved_reason_codes`. The reason is
+  `group_membership_unresolved` only when no definite (direct or nested)
+  membership was found. Otherwise, including a known group plus an
+  unresolved cause such as depth over 8, it is
+  `group_membership_consumers_unattributed`. The disclosure
   says the helper's group consumers are not attributed yet. Literal,
   `expand()`, area, label and domain consumers keep their attribution and
   classification. Precise group-consumer attribution is HAMCP-287. A helper

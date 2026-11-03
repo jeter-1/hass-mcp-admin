@@ -14,9 +14,12 @@ write change.
   elevated with disclosure and take the coarse `reload:automation` fence
   instead of being refused.
 - An input_boolean or input_select helper in any group (direct or nested,
-  depth at most 8) is held `elevated_admin`, risk `high`, physical
-  `unknown`, with the coarse fence and `group_membership_hold` naming the
-  groups. Undecidable membership is treated as membership with its reason.
+  depth at most 8) is held `elevated_admin`, risk `high`, with the coarse
+  fence and `group_membership_hold` naming the groups. The hold turns
+  physical `none` into `unknown` and keeps positive labels (`safety_critical`
+  stays `safety_critical`). Undecidable membership is treated as membership
+  (`membership_resolved: false`, causes listed); the reason is
+  `group_membership_unresolved` only when no definite membership was found.
   Plain group references are not attributed to members yet (HAMCP-287); a
   helper in no group keeps its prior reader output byte for byte. The
   options and availability planners do not attribute plain group
