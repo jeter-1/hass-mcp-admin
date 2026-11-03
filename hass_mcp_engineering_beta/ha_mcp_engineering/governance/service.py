@@ -4617,7 +4617,11 @@ class ChangeGovernanceService:
             "provider": HELPER_STATE_PROVIDER,
             "fallback": "none",
             "fallback_occurred": False,
-            "plan": self._public(plan, include_configs=False),
+            # HAMCP-285: a target-scoped binding may name up to the bounded
+            # consumer set; the create response pages it like input_select.
+            "plan": self._bounded_helper_plan_public(
+                self._public(plan, include_configs=False)
+            ),
         }
 
     async def create_input_select_option_plan(

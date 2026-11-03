@@ -37,8 +37,10 @@ from .entity_availability_exposure import (
     proposed_errors as availability_exposure_proposed_errors,
 )
 from .entity_availability_exposure_planning import (
+    CONSEQUENCE_MODEL as AVAILABILITY_EXPOSURE_CONSEQUENCE_MODEL,
     MAX_ENTITIES as AVAILABILITY_EXPOSURE_MAX_ENTITIES,
     POLICY_TRIGGER as AVAILABILITY_EXPOSURE_POLICY_TRIGGER,
+    expected_consequence as availability_exposure_expected_consequence,
 )
 from .label_registry import (
     BINDINGS_KEY as LABEL_BINDINGS_KEY,
@@ -71,9 +73,11 @@ from .helper_options import (
     intent_errors as helper_options_intent_errors,
 )
 from .helper_options_planning import (
+    CONSEQUENCE_MODEL as HELPER_OPTIONS_CONSEQUENCE_MODEL,
     MAX_CHANGES as HELPER_OPTIONS_MAX_ENTRIES,
     POLICY_TRIGGER as HELPER_OPTIONS_POLICY_TRIGGER,
     expected_basis as helper_options_expected_basis,
+    expected_consequence as helper_options_expected_consequence,
 )
 from .configuration_delete_planning import (
     MAX_DELETIONS as CONFIGURATION_DELETE_MAX_TARGETS,
@@ -733,6 +737,8 @@ def _availability_exposure_operation_policy(
 
     The marker must agree exactly with the basis recomputed from the bound
     protection evidence; any disagreement or gap is prohibited as incomplete.
+    HAMCP-285: a marker carrying ``consequence_model`` must also agree with
+    the positive-evidence label; a marker without it keeps the shipped rule.
     """
 
     incomplete = OperationPolicyClassification(
@@ -772,6 +778,19 @@ def _availability_exposure_operation_policy(
     basis_codes = tuple(item for item in basis.split(",") if item)
     if basis_codes != _availability_exposure_expected_basis(operation):
         return incomplete
+    if "consequence_model" in marker:
+        # HAMCP-285: the positive-evidence label recomputed from the bound
+        # protection evidence.
+        if marker["consequence_model"] != AVAILABILITY_EXPOSURE_CONSEQUENCE_MODEL:
+            return incomplete
+        expected_label = availability_exposure_expected_consequence(
+            basis_codes,
+            operation.proposed_config[AVAILABILITY_EXPOSURE_BINDINGS_KEY][
+                "protection"
+            ]["dependency_reasons"],
+        )
+    else:
+        expected_label = PhysicalConsequence.SAFETY_CRITICAL.value
     policy = marker.get("policy")
     consequence = marker.get("physical_consequence")
     if (
@@ -792,13 +811,13 @@ def _availability_exposure_operation_policy(
     if (
         basis_codes
         and policy == "elevated"
-        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and consequence == expected_label
         and operation.risk.level is RiskLevel.HIGH
     ):
         return OperationPolicyClassification(
             ApprovalPolicyClass.ELEVATED_ADMIN,
             RiskDelta.HIGH,
-            PhysicalConsequence.SAFETY_CRITICAL,
+            PhysicalConsequence(expected_label),
             tuple(
                 sorted(
                     {
@@ -1255,6 +1274,11 @@ def _helper_options_operation_policy(
     OD-4: incomplete consumer evidence is a protected dependency, so it is
     elevated, never standard and never refused on consequence alone.  The
     planning marker must agree exactly with the basis recomputed here.
+
+    HAMCP-285: a marker carrying ``consequence_model`` must also agree with
+    the positive-evidence label recomputed from the bound reasons, so
+    incomplete evidence alone is ``unknown``, not ``safety_critical``.  A
+    marker without the key was written by the shipped rule and keeps it.
     """
 
     incomplete = OperationPolicyClassification(
@@ -1279,6 +1303,14 @@ def _helper_options_operation_policy(
         return incomplete
     if tuple(item for item in basis.split(",") if item) != expected:
         return incomplete
+    if "consequence_model" in marker:
+        if marker["consequence_model"] != HELPER_OPTIONS_CONSEQUENCE_MODEL:
+            return incomplete
+        expected_label = helper_options_expected_consequence(
+            intent["dependency_reasons"]
+        )
+    else:
+        expected_label = PhysicalConsequence.SAFETY_CRITICAL.value
     policy = marker.get("policy")
     consequence = marker.get("physical_consequence")
     if (
@@ -1299,14 +1331,14 @@ def _helper_options_operation_policy(
     if not (
         expected
         and policy == "elevated"
-        and consequence == PhysicalConsequence.SAFETY_CRITICAL.value
+        and consequence == expected_label
         and operation.risk.level is RiskLevel.HIGH
     ):
         return incomplete
     return OperationPolicyClassification(
         ApprovalPolicyClass.ELEVATED_ADMIN,
         RiskDelta.HIGH,
-        PhysicalConsequence.SAFETY_CRITICAL,
+        PhysicalConsequence(expected_label),
         tuple(
             sorted(
                 {

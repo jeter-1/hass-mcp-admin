@@ -228,12 +228,61 @@ def expected_basis(dependency_reasons: list[str]) -> tuple[str, ...]:
     return (BASIS_PROTECTED_DEPENDENCY,) if dependency_reasons else ()
 
 
+# HAMCP-285: the consequence label is decided from positive evidence.
+# Incomplete evidence alone keeps the edit elevated and disclosed, labelled
+# ``unknown``; only a protected object or an automation proven to have a
+# safety-critical consequence is ``safety_critical``.  A marker without this
+# key was written by the shipped rule and keeps that rule.
+CONSEQUENCE_MODEL = "positive_evidence_v1"
+POSITIVE_SAFETY_REASON_PREFIXES = (
+    "protected_object:",
+    "proposed_protected_object:",
+    "feeds_protected_automation:",
+)
+
+
+def is_positive_safety_reason(reason: str) -> bool:
+    return reason.startswith(POSITIVE_SAFETY_REASON_PREFIXES)
+
+
+def bounded_dependency_reasons(reasons: set[str]) -> list[str]:
+    """Bound the persisted reasons without ever dropping positive evidence.
+
+    Positive safety evidence is retained first so the label recomputed from
+    the persisted list cannot be lowered by truncation; the result is sorted
+    as the intent contract requires.
+    """
+
+    values = sorted(
+        {reason[: contract.MAX_DEPENDENCY_REASON_LENGTH] for reason in reasons}
+    )
+    positive = [item for item in values if is_positive_safety_reason(item)]
+    other = [item for item in values if not is_positive_safety_reason(item)]
+    kept = (positive + other)[: contract.MAX_DEPENDENCY_REASONS]
+    return sorted(kept)
+
+
+def expected_consequence(dependency_reasons: list[str]) -> str:
+    """The positive-evidence label; policy recomputes it from the plan."""
+
+    if not dependency_reasons:
+        return "none"
+    if any(is_positive_safety_reason(item) for item in dependency_reasons):
+        return "safety_critical"
+    return "unknown"
+
+
 def classify(
-    basis: tuple[str, ...], statements: list[str], warnings: list[str]
+    basis: tuple[str, ...],
+    statements: list[str],
+    warnings: list[str],
+    dependency_reasons: list[str],
 ) -> dict[str, Any]:
     return {
         "policy": "elevated" if basis else "standard",
-        "physical_consequence": "safety_critical" if basis else "none",
+        "physical_consequence": (
+            expected_consequence(list(dependency_reasons)) if basis else "none"
+        ),
         "basis": list(basis),
         "statements": list(statements),
         "warnings": list(warnings),
@@ -249,9 +298,10 @@ def risk_assessment(
     reasons = list(classification["statements"])
     if elevated:
         reasons = [
-            "Protected options edit: "
+            "Options edit with incomplete or protected dependency evidence: "
             + ", ".join(classification["basis"])
-            + " (elevated approval required)",
+            + f" (consequence {classification['physical_consequence']}; "
+            "elevated approval required)",
             *reasons,
         ][:MAX_STATEMENTS]
     return ChangeRiskAssessment(
@@ -265,6 +315,7 @@ def risk_assessment(
                 "policy": classification["policy"],
                 "physical_consequence": classification["physical_consequence"],
                 "basis": ",".join(classification["basis"]),
+                "consequence_model": CONSEQUENCE_MODEL,
             }
         ],
         warnings=list(classification["warnings"]),
@@ -369,7 +420,8 @@ def _statements(
         statements.append(
             f"For this helper, {INCOMPLETE_IMPACT_TEXT} ("
             + ", ".join(gaps[:8])
-            + "); this is treated as protected."
+            + "); the edit needs elevated approval, and its consequence is "
+            "unknown unless positive evidence names a protected object."
         )
     return [item[:300] for item in statements[:MAX_STATEMENTS]]
 
@@ -526,10 +578,7 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
         reasons.update(
             _proposed_protection(facts.domain, step_id, entity_ids, proposal.proposed)
         )
-        dependency_reasons = sorted(
-            reason[: contract.MAX_DEPENDENCY_REASON_LENGTH] for reason in reasons
-        )
-        dependency_reasons = sorted(set(dependency_reasons))[: contract.MAX_DEPENDENCY_REASONS]
+        dependency_reasons = bounded_dependency_reasons(reasons)
         basis = expected_basis(dependency_reasons)
         consumers = {
             "status": "read",
@@ -595,7 +644,9 @@ async def prepare(gateway: Any, request: Request) -> Preparation:
                 current=intent[contract.INTENT_KEY]["baseline"],
                 intent=intent,
                 disclosure=disclosure,
-                classification=classify(basis, statements, disclosure["warnings"]),
+                classification=classify(
+                    basis, statements, disclosure["warnings"], dependency_reasons
+                ),
             )
         )
     return Preparation(
@@ -632,6 +683,9 @@ def projection(item: Item) -> dict[str, Any]:
 
 __all__ = [
     "ALLOWED_INPUT_FIELDS",
+    "CONSEQUENCE_MODEL",
+    "bounded_dependency_reasons",
+    "expected_consequence",
     "CHANGE_FIELDS",
     "Change",
     "FIELD_NOT_SUPPORTED",

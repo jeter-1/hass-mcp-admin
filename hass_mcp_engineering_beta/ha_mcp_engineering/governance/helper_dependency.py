@@ -25,6 +25,10 @@ from .normalize import stable_hash
 
 
 HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v13"
+# HAMCP-285: the input_boolean reader wraps the v13 base material (still
+# named by ``HELPER_DEPENDENCY_RISK_MODEL``, so the input_select v2 binding
+# that wraps the same base is unchanged) in target-scoped relevance.
+INPUT_BOOLEAN_DEPENDENCY_MODEL = "helper-dependency-risk-v14"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -42,6 +46,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v11",
         "helper-dependency-risk-v12",
         HELPER_DEPENDENCY_RISK_MODEL,
+        INPUT_BOOLEAN_DEPENDENCY_MODEL,
     }
 )
 # Execution authority: only current-model evidence may authorize approval,
@@ -49,7 +54,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
 # superseded dependency question and requires an explicit replan; it must
 # never be presented as directly executable.
 HELPER_DEPENDENCY_RISK_EXECUTION_MODELS = frozenset(
-    {HELPER_DEPENDENCY_RISK_MODEL}
+    {INPUT_BOOLEAN_DEPENDENCY_MODEL}
 )
 MAX_RELEVANT_AUTOMATIONS = 50
 MAX_RELEVANT_OBLIGATIONS = 256
@@ -95,7 +100,8 @@ _EXECUTION_BLOCKING_COVERAGE_REASONS = frozenset(
         "home_assistant_version_unsupported",
     }
 )
-# HAMCP-274 target-scoped relevance (input_select reader only).  These
+# HAMCP-274 target-scoped relevance (input_select v2 and, since HAMCP-285,
+# the input_boolean v14 reader).  These
 # coverage reasons name the exact automations they concern, so when every
 # counted failure is attributable to a named source only that source becomes
 # relevant (opaque) instead of every automation in the installation.
@@ -1051,7 +1057,7 @@ def _build_obligation_binding(
 ) -> dict[str, Any]:
     """Build the target-specific governance contract from one shared ledger.
 
-    ``target_scoped`` (HAMCP-274, input_select reader only) decides relevance
+    ``target_scoped`` (HAMCP-274 input_select, HAMCP-285 input_boolean) decides relevance
     by evidence about this target: an attributable coverage gap makes only its
     own automation relevant, consumers beyond the disclosure bound are counted
     and fenced by a coarse automation lock instead of refusing, and missing
@@ -2061,8 +2067,9 @@ class HelperDependencyRiskService:
     ):
         self.index = index
         # HAMCP-145: a domain reader supplies its own builder; without one
-        # the unchanged input_boolean v13 builder is resolved at each call,
-        # exactly as before.
+        # the unchanged v13 base builder is resolved at each call, exactly as
+        # before.  HAMCP-285: the runtime input_boolean reader supplies the
+        # target-scoped v14 builder.
         self.binding_builder = binding_builder
 
     async def assess(
@@ -2197,22 +2204,11 @@ class HelperDependencyRiskService:
 async def read_runtime_helper_dependency_risk(
     entity_id: str, *, refresh: bool = True, fenced: bool = False
 ) -> dict[str, Any]:
-    from ..dependency import DEPENDENCY_ANALYSIS
+    """Read the runtime input_boolean binding (HAMCP-285: target-scoped v14)."""
 
-    try:
-        index = DEPENDENCY_ANALYSIS.require().index
-    except Exception as exc:
-        return {
-            "binding": _failed_binding(entity_id, "failed"),
-            "provenance": {
-                "provider": "dependency_index",
-                "completeness": "failed",
-                "failure_category": type(exc).__name__[:64],
-                "fallback": "none",
-                "fallback_occurred": False,
-            },
-        }
-    return await HelperDependencyRiskService(index).assess(
+    from .input_boolean_dependency import read_input_boolean_dependency_risk
+
+    return await read_input_boolean_dependency_risk(
         entity_id, refresh=refresh, fenced=fenced
     )
 
@@ -2220,8 +2216,9 @@ async def read_runtime_helper_dependency_risk(
 def helper_consumers_disclosed(binding: dict[str, Any]) -> bool:
     """Whether a target-scoped binding names a relevant consumer (HAMCP-274).
 
-    Only the input_select v2 binding states ``relevance_model``; every other
-    helper binding keeps its shipped classification.
+    Only the input_select v2 and input_boolean v14 bindings state
+    ``relevance_model``; every older helper binding keeps its shipped
+    classification.
     """
     count = binding.get("relevant_consumer_count")
     return (
@@ -2420,6 +2417,7 @@ def helper_dependency_risk_assessment(
 
 __all__ = [
     "HELPER_DEPENDENCY_RISK_MODEL",
+    "INPUT_BOOLEAN_DEPENDENCY_MODEL",
     "HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS",
     "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
     "VERSION_UNAVAILABLE_REASON",

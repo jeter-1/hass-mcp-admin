@@ -2865,14 +2865,19 @@ class F3RuntimeIntegration:
         ):
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
         if (
-            plan.operation == ChangeOperation.SET_INPUT_SELECT_OPTION
+            plan.operation in {
+                ChangeOperation.SET_INPUT_SELECT_OPTION,
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+            }
             and self.service._helper_dependency_replan_required(plan)
         ):
             # HAMCP-274: an input_select plan approved under the superseded v1
-            # dependency model has no fresh execution lock authority.  Refuse
-            # before task creation, lock preparation or any persistence; the
-            # approval stays unconsumed.  Recovery of an existing durable
-            # child still reconstructs the shipped v1 graph for readback.
+            # dependency model has no fresh execution lock authority.
+            # HAMCP-285: likewise an input_boolean plan approved under a
+            # model before v14.  Refuse before task creation, lock
+            # preparation or any persistence; the approval stays unconsumed.
+            # Recovery of an existing durable child still reconstructs the
+            # shipped graph for readback.
             raise GovernanceError(
                 ErrorCode.OPERATIONAL_VALIDATION_FAILED,
                 details={

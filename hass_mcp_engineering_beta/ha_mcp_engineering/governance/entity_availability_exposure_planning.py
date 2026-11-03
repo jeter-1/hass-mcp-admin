@@ -451,7 +451,9 @@ def _statements(
             statements.append(
                 f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ("
                 + ", ".join(consumers["evidence_gaps"])
-                + "); this is treated as protected."
+                + "); the change needs elevated approval, and its consequence "
+                "is unknown unless positive evidence names a protected object "
+                "or automation."
             )
         elif not consumers["count"]:
             statements.append(
@@ -510,6 +512,38 @@ def _statements(
     )
 
 
+# HAMCP-285: the consequence label is decided from positive evidence.  A
+# protected object, or a consumer automation proven to have a safety-critical
+# consequence, is ``safety_critical``; incomplete or unresolved consumer
+# evidence alone keeps the change elevated and disclosed as ``unknown``.  A
+# marker without this key was written by the shipped rule and keeps it.
+CONSEQUENCE_MODEL = "positive_evidence_v1"
+_OBJECT_BASIS = frozenset(
+    {
+        "expose_protected_object",
+        "disable_protected_object",
+        "enable_exposed_protected_object",
+    }
+)
+POSITIVE_DEPENDENCY_REASON_PREFIX = "feeds_protected_automation:"
+
+
+def expected_consequence(
+    basis: list[str] | tuple[str, ...], dependency_reasons: list[str]
+) -> str:
+    """The positive-evidence label; policy recomputes it from the bindings."""
+
+    if not basis:
+        return "none"
+    if set(basis) & _OBJECT_BASIS or any(
+        isinstance(item, str)
+        and item.startswith(POSITIVE_DEPENDENCY_REASON_PREFIX)
+        for item in dependency_reasons
+    ):
+        return "safety_critical"
+    return "unknown"
+
+
 def classify(operation: str, disclosure: dict[str, Any]) -> dict[str, Any]:
     """Classify under OD-5: standard, or elevated for protected cases."""
 
@@ -530,7 +564,9 @@ def classify(operation: str, disclosure: dict[str, Any]) -> dict[str, Any]:
         basis.append("enable_exposed_protected_object")
     return {
         "policy": "elevated" if basis else "standard",
-        "physical_consequence": "safety_critical" if basis else "none",
+        "physical_consequence": expected_consequence(
+            basis, list(protection["dependency_reasons"])
+        ),
         "basis": basis,
         "statements": list(disclosure["consequence_statements"]),
         "warnings": list(disclosure["warnings"]),
@@ -544,9 +580,10 @@ def risk_assessment(operation_id: str, classification: dict[str, Any]) -> Change
     reasons = list(classification["statements"])
     if elevated:
         reasons = [
-            "Protected object: "
+            "Protected object or dependency: "
             + ", ".join(classification["basis"])
-            + " (elevated approval required)",
+            + f" (consequence {classification['physical_consequence']}; "
+            "elevated approval required)",
             *reasons,
         ][:MAX_STATEMENTS]
     return ChangeRiskAssessment(
@@ -560,6 +597,7 @@ def risk_assessment(operation_id: str, classification: dict[str, Any]) -> Change
                 "policy": classification["policy"],
                 "physical_consequence": classification["physical_consequence"],
                 "basis": ",".join(classification["basis"]),
+                "consequence_model": CONSEQUENCE_MODEL,
             }
         ],
         warnings=list(classification["warnings"]),
