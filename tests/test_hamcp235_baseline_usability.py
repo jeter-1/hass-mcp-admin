@@ -25,6 +25,8 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 from test_automation_baseline_capture import Client, Core, fixture  # noqa: E402
 from test_hamcp228_baseline_store import OWNER, Harness, capture_id  # noqa: E402
 from ha_mcp_engineering.audit_baseline import capture_contracts as c  # noqa: E402
+from ha_mcp_engineering.audit_baseline import capture_provider as provider_module  # noqa: E402
+from ha_mcp_engineering.clients import audit_baseline as client_module  # noqa: E402
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider  # noqa: E402
 from ha_mcp_engineering.audit_baseline.comparison import CAVEAT_STATEMENTS  # noqa: E402
 from ha_mcp_engineering.audit_baseline.models import FINGERPRINT_MODEL  # noqa: E402
@@ -459,49 +461,152 @@ class FinalFenceTests(LiveHarness):
 
 
 
-class DeadlineClient(Client):
-    """The fake client under ``BaselinePeer``'s bounds, with per-read latency.
+class LogicalClock:
+    """Advance only when every active reader is parked on synthetic I/O.
 
-    As ``BaselinePeer.remaining()``: one collection bound from the start of the
-    capture, each read at most ``READ_SECONDS``. ``delay(kind, fence)`` gives a
-    read's latency; ``fence`` is 0 for the first fence, 1 for the final one.
+    Module-local proxies leave asyncio's real loop and worker threads alone.
+    Real Timeout contexts retain cancellation/translation semantics, but are
+    armed only when logical time reaches the requested production deadline.
+    Waiting for all reader tasks prevents advancing while a projector worker
+    or a sibling read is still running. No loop internals or polling sleeps.
     """
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleepers, self.deadlines, self.children = {}, {}, set()
+        self.changed = asyncio.Event()
+        self.expired = []
+
+    def monotonic(self):
+        return self.now
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+    async def sleep(self, delay):
+        task = asyncio.current_task()
+        future = asyncio.get_running_loop().create_future()
+        # None is an actual hang: only a production timeout can release it.
+        self.sleepers[task] = (future, None if delay is None else round(self.now + delay, 9))
+        self.changed.set()
+        try:
+            await future
+        finally:
+            del self.sleepers[task]
+            self.changed.set()
+
+    @asynccontextmanager
+    async def timeout(self, delay):
+        async with asyncio.timeout(None) as context:
+            self.deadlines[context] = (asyncio.current_task(), round(self.now + delay, 9))
+            try:
+                yield context
+            finally:
+                self.deadlines.pop(context, None)
+
+    def create_task(self, coroutine):
+        task = asyncio.create_task(coroutine)
+        self.children.add(task)
+        task.add_done_callback(lambda _: self.changed.set())
+        return task
+
+    async def drive(self, coroutine):
+        root = asyncio.create_task(coroutine)
+        root.add_done_callback(lambda _: self.changed.set())
+        try:
+            while not root.done():
+                await self.changed.wait()
+                self.changed.clear()
+                readers = {task for task in self.children if not task.done()} or {root}
+                if not readers.issubset(self.sleepers):
+                    continue
+                wakeups = [at for _, at in self.sleepers.values() if at is not None]
+                wakeups += [at for _, at in self.deadlines.values()]
+                if not wakeups:
+                    # A missing deadline on a hanging read is caught by the
+                    # separate real-time safety guard, never treated as success.
+                    continue
+                self.now = min(wakeups)
+                for context, (task, at) in list(self.deadlines.items()):
+                    if at <= self.now:
+                        self.expired.append(at)
+                        del self.deadlines[context]
+                        context.reschedule(asyncio.get_running_loop().time())
+                for future, at in self.sleepers.values():
+                    if at is not None and at <= self.now and not future.done():
+                        future.set_result(None)
+            return await root
+        finally:
+            if not root.done():
+                root.cancel()
+            await asyncio.gather(root, return_exceptions=True)
+
+
+class ClockAsyncio:
+    """Patch only the two production modules' timing/task entry points."""
+
+    def __init__(self, clock):
+        self.timeout, self.create_task = clock.timeout, clock.create_task
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+
+class DeadlineClient(Client):
+    """Synthetic I/O inside the real BaselinePeer attempt/remaining budget."""
 
     def __init__(self, data, delay):
         super().__init__(data)
         self.delay, self.principal_reads = delay, 0
-        self.started = None
-        self.timeline = []
+        self.clock = LogicalClock()
+        self.timeline, self.events = [], []
 
     @asynccontextmanager
     async def capture(self, version, authorize):
-        self.started = time.monotonic()
+        self.peer = client_module.BaselinePeer(None, version, authorize)
         async with super().capture(version, authorize) as peer:
             yield peer
-
-    def remaining(self):
-        seconds = c.COLLECTION_SECONDS - (time.monotonic() - self.started)
-        if seconds <= 0:
-            raise c.CaptureError('timeout')
-        return min(c.READ_SECONDS, seconds)
 
     async def bounded(self, kind, call):
         if kind == 'principal':
             self.principal_reads += 1
         fence = self.principal_reads - 1
-        self.timeline.append((kind, round(time.monotonic() - self.started, 3)))
+        self.timeline.append((kind, self.clock.now))
+        self.events.append(('started', kind, fence, self.clock.now))
         try:
-            async with asyncio.timeout(self.remaining()):
-                await asyncio.sleep(self.delay(kind, fence))
-                return await call()
-        except TimeoutError:
-            raise c.CaptureError('timeout') from None
+            async with self.peer.attempt(kind):
+                await self.clock.sleep(self.delay(kind, fence))
+                result = await call()
+            self.events.append(('completed', kind, fence, self.clock.now))
+            return result
+        except asyncio.CancelledError:
+            self.events.append(('cancelled', kind, fence, self.clock.now))
+            raise
+        except c.CaptureError as exc:
+            self.events.append((exc.reason, kind, fence, self.clock.now))
+            raise
 
     async def read(self, kind):
         return await self.bounded(kind, partial(super().read, kind))
 
     async def configuration(self, identifier):
         return await self.bounded('config', partial(super().configuration, identifier))
+
+
+async def logical_capture(test, service):
+    clock = service.provider.client.clock
+    proxy = ClockAsyncio(clock)
+    with patch.object(provider_module, 'time', clock), patch.object(client_module, 'time', clock), \
+            patch.object(provider_module, 'asyncio', proxy), patch.object(client_module, 'asyncio', proxy):
+        try:
+            # Safety only: 30 real seconds for a normally subsecond fixture.
+            # All budget, ordering and outcome assertions use logical time.
+            page = await asyncio.wait_for(clock.drive(test.capture(service)), timeout=30)
+        except TimeoutError:
+            test.fail('capture did not finish: production deadline failed to abandon a hanging read (30 s safety ceiling)')
+    report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
+    service.provider.client.events.append(('recorded', 'identity', 1, clock.now))
+    return report, clock.now
 
 
 class ReserveTests(LiveHarness):
@@ -518,11 +623,8 @@ class ReserveTests(LiveHarness):
         return service, client
 
     async def timed(self, service, **bounds):
-        began = time.monotonic()
         with patch.multiple(c, **{**self.SCALED, **bounds}):
-            page = await self.capture(service)
-        report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
-        return report, time.monotonic() - began
+            return await logical_capture(self, service)
 
     def test_the_shipped_reserve_bounds_cover_the_identity_reads(self):
         self.assertEqual(c.IDENTITY_READS, ('principal', 'entries', 'devices'))
@@ -533,19 +635,18 @@ class ReserveTests(LiveHarness):
     async def test_the_reserve_is_twice_the_measured_identity_reads_within_bounds(self):
         def slow(kinds, seconds):
             return lambda kind, fence: seconds if fence == 0 and kind in kinds else 0
-        for label, delay, bounds, low, high in (
-                ('identity', slow({'devices'}, 0.3), {}, 0.6, 0.9),
-                ('inventory_not_counted', slow({'states', 'registry'}, 0.3), {}, 0.5, 0.5),
-                ('minimum', slow(set(), 0), {'FINAL_FENCE_RESERVE_MIN': 0.7}, 0.7, 0.7),
+        for label, delay, bounds, expected in (
+                ('identity', slow({'devices'}, 0.3), {}, 0.6),
+                ('inventory_not_counted', slow({'states', 'registry'}, 0.3), {}, 0.5),
+                ('minimum', slow(set(), 0), {'FINAL_FENCE_RESERVE_MIN': 0.7}, 0.7),
                 ('maximum', slow({'principal', 'entries', 'devices'}, 0.3),
-                 {'FINAL_FENCE_RESERVE_MAX': 1.0}, 1.0, 1.0)):
+                 {'FINAL_FENCE_RESERVE_MAX': 1.0}, 1.0)):
             with self.subTest(label):
                 self.fresh_store()
                 service, _ = self.deadline(2, delay)
                 report, _ = await self.timed(service, **bounds)
                 reserve = report['diagnostics']['final_fence_reserve_seconds']
-                self.assertGreaterEqual(reserve, low)
-                self.assertLessEqual(reserve, high)
+                self.assertAlmostEqual(reserve, expected)
                 self.assertEqual(report['diagnostics']['final_fence'], 'complete')
 
     async def test_no_configuration_read_is_scheduled_or_outlasts_the_window(self):
@@ -553,7 +654,7 @@ class ReserveTests(LiveHarness):
         # hang to the collection bound; the window (4.0 s) cuts them
         # (unreadable, timeout), nothing is scheduled after it (timed_out),
         # and the final fence keeps its whole reserve and completes.
-        service, client = self.deadline(6, lambda kind, fence: 30 if kind == 'config' else 0)
+        service, client = self.deadline(6, lambda kind, fence: None if kind == 'config' else 0)
         report, elapsed = await self.timed(service, READ_SECONDS=5)
         diagnostics = report['diagnostics']
         statuses = Counter(row['configuration']['status'] for row in report['baseline']['records'])
@@ -566,9 +667,9 @@ class ReserveTests(LiveHarness):
         final = [at for _, at in client.timeline[len(c.FENCE_READS) + len(configs):]]
         self.assertEqual(len(configs), c.CONCURRENCY, 'nothing is scheduled after the window')
         self.assertEqual(len(final), len(c.FENCE_READS))
-        self.assertGreaterEqual(min(final), 4.0 - 0.01)
-        self.assertLess(min(final), 4.0 + 0.25, 'in-flight reads end at the window')
-        self.assertLess(elapsed, 4.5)
+        self.assertEqual(set(final), {4.0}, 'in-flight reads end exactly at the window')
+        self.assertEqual(elapsed, 4.0)
+        self.assertEqual(client.clock.expired, [4.0] * c.CONCURRENCY)
 
     async def test_a_slow_final_fence_still_records_identity(self):
         # The first fence's identity reads take 0.1 s each (reserve 0.6 s,
@@ -577,10 +678,10 @@ class ReserveTests(LiveHarness):
         def hang(*slow):
             def delay(kind, fence):
                 if kind == 'config':
-                    return 30
+                    return None
                 if kind in c.IDENTITY_READS:
                     return 0.1
-                return 30 if fence and kind in slow else 0
+                return None if fence and kind in slow else 0
             return delay
         for label, delay, final, reason in (
                 ('slow_identity_reads_complete', hang(), 'complete', None),
@@ -588,17 +689,28 @@ class ReserveTests(LiveHarness):
                 ('hanging_registry_read', hang('registry'), 'identity_only', 'timeout')):
             with self.subTest(label):
                 self.fresh_store()
-                service, _ = self.deadline(6, delay)
+                service, client = self.deadline(6, delay)
                 report, elapsed = await self.timed(service, READ_SECONDS=5)
                 diagnostics = report['diagnostics']
                 self.assertEqual(set(diagnostics['record_outcomes'].values()), {'timeout'})
                 self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), (final, reason))
-                self.assertGreaterEqual(diagnostics['final_fence_reserve_seconds'], 0.6)
-                self.assertLess(diagnostics['final_fence_reserve_seconds'], 0.9)
+                self.assertAlmostEqual(diagnostics['final_fence_reserve_seconds'], 0.6)
                 self.assertEqual(report['baseline']['installation']['status'], 'established')
                 self.assertEqual(report['baseline']['installation']['installation_id'],
                                  diagnostics['first_fence_installation_id'])
-                self.assertLess(elapsed, 4.5 + 0.1)
+                self.assertEqual(client.clock.expired[:c.CONCURRENCY], [3.9] * c.CONCURRENCY)
+                self.assertEqual(elapsed, 4.2 if final == 'complete' else 4.5)
+                if final == 'identity_only':
+                    kind = 'states' if label == 'hanging_states_read' else 'registry'
+                    self.assertEqual(client.clock.expired[-1], 4.5)
+                    events = client.events
+                    identity = events.index(('completed', 'devices', 1, 4.2))
+                    hanging = events.index(('started', kind, 1, 4.2))
+                    abandoned = events.index(('timeout', kind, 1, 4.5))
+                    recorded = events.index(('recorded', 'identity', 1, 4.5))
+                    self.assertLess(identity, hanging)
+                    self.assertLess(hanging, abandoned)
+                    self.assertLess(abandoned, recorded)
 
 
 class CoverageTests(LiveHarness):
@@ -615,18 +727,16 @@ class CoverageTests(LiveHarness):
         service, _ = self.service(fixture(LIVE_COUNT))
         client = DeadlineClient(service.provider.client.data, lambda kind, fence: 1.0)
         service.provider.client = client
-        began = time.monotonic()
-        page = await self.capture(service)
-        elapsed = time.monotonic() - began
-        report, _ = service.store.get(capture_id(page), OWNER, service.now_ms())
+        report, elapsed = await logical_capture(self, service)
         diagnostics = report['diagnostics']
         statuses = Counter(row['configuration']['status'] for row in report['baseline']['records'])
         self.assertEqual(statuses, {'readable': LIVE_COUNT})
         self.assertEqual(diagnostics['record_outcomes'], {})
         self.assertEqual((diagnostics['final_fence'], diagnostics['final_fence_reason']), ('complete', None))
-        self.assertGreaterEqual(diagnostics['final_fence_reserve_seconds'], 6.0)
-        self.assertLess(diagnostics['final_fence_reserve_seconds'], 10.0)
+        self.assertEqual(diagnostics['final_fence_reserve_seconds'], 6.0)
+        self.assertEqual(elapsed, 39.0)
         self.assertLess(elapsed, c.COLLECTION_SECONDS)
+        self.assertEqual(client.clock.expired, [])
 
 
 class HistoricalWriterTests(LiveHarness):
