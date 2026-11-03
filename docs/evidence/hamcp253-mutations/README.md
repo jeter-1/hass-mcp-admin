@@ -160,3 +160,54 @@ survivors.
   even length. `MAX_EVENTS` is 2048, and for an even length, `len+1 > 2048`
   and `len+2 > 2048` give the same answer. An odd length means a decision is
   pending, and append refuses that first.
+
+## Round-2 corrections (R2-M1, R2-M2, R2-M3)
+
+`run_round2_mutations.py` reuses the same harness, kill rule and copied-tree
+layout. It mutates only the code the round-2 corrections added or changed, and
+runs all four HAMCP-253 modules without fail-fast. The fourth module is
+`tests/test_hamcp253_round2_corrections.py`.
+
+One round-1 fragment no longer matches the current code: R1S13, which removed
+the record-ID pattern check from the health projection-failure rows. Round 2
+replaced that check with the shared screen. R2S3 (the raw stored identifier)
+and R2S2 (the screen without configured values) supersede it, so it is not
+ported.
+
+The mutant groups are:
+
+| Group | Area | Mutants |
+|---|---|---|
+| R2S | R2-M1, projection-failure rows in health and `list_change_plans` | 6 |
+| R2D | R2-M2, the audit destination check before the ledger | 8 |
+| R2U | R2-M3, a write failing after the ledger replacement | 6 |
+
+| Pass | Unit | File | Mutants | Killed | Not killed |
+|---|---|---|---|---|---|
+| Single (17:13–17:28 CST, 2026-11-03) | `hamcp253-r2-mutations` | `results-round2-corrections.json` | 20 | 20 | none |
+
+The pass started after another session's HAMCP-277 Evidence unit had ended
+and the one-minute load average had dropped below 2. At the start, no other
+Evidence, mutation or full-suite unit was running. The baseline ran 119 tests
+in 43 s with return code 0, on Python 3.12.14.
+
+**Test added before the pass.** R2D2 removes the regular-file check. A
+directory is refused without that check, because opening it for append fails.
+So `AuditDestinationTests` adds a `character device` destination: the audit
+path is a symlink to `/dev/null`. It opens and takes writes, but keeps nothing,
+so only the regular-file check refuses it. As a negative control, disabling
+the check produced 5 assertion failures before the pass.
+
+**Final result.** 20 mutants, all 20 killed by an assertion failure. There are
+no equivalent mutants and no unexpected survivors.
+
+Two notes on what kills what:
+
+- **R2D7 (the probe opens the log with `wb`).** The probe would truncate the
+  audit log. `test_reclassify_revoke_and_repeat` kills it, because the earlier
+  decision events are gone.
+- **R2-M3 completion writes.** The completion-failure tests also pass without
+  the R2-M3 code, because a completion failure was already reported as
+  pending. They are regression tests. The decision-write test kills R2U1 and
+  R2U3–R2U6. `test_persistence_failure_records_nothing` (before the
+  replacement) kills R2U2.
