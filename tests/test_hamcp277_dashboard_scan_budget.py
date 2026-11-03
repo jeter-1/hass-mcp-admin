@@ -17,7 +17,13 @@ prove:
   rest are named ``not_attempted_budget``; the source is partial, never
   complete, and the first warning carries "Dashboards read: N of M listed";
 * named paths are screened and bounded, the read order is fixed, and the
-  diagnostic store never changes a plan's bindings, risk or policy.
+  diagnostic store never changes a plan's bindings, risk or policy;
+* (round 1) no read enters the reader at or after the phase deadline, even
+  when it was scheduled before the deadline and waited behind other work, and
+  a read's own allowance is the remainder when it runs, not when it queued;
+* (round 1) a listed dashboard beyond the 50-read limit is named
+  ``not_attempted_limit``, never dropped, so the first line counts every
+  listed dashboard, and a truncated inventory is reported as "at least".
 
 Every value is synthetic. No live dependency is used.
 """
@@ -28,6 +34,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import time
 import unittest
 from unittest.mock import patch
@@ -300,6 +307,241 @@ class CollectorOutcomeTests(unittest.TestCase):
         self.assertEqual(sorted(result["outcomes"]), sorted(PATHS))
         self.assertTrue(set(result["outcomes"].values()) <= set(g.DASHBOARD_OUTCOMES))
         self.assertEqual(sum(result["profile"]["outcome_counts"].values()), len(PATHS))
+
+
+class EnteringReader(t227.BudgetReader):
+    """Records the simulated time at which each read actually enters the reader."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.entered: list[tuple[str, float]] = []
+
+    async def read(self, path):
+        self.entered.append((path, self.clock.now))
+        return await super().read(path)
+
+
+def reconcile(test, result, *, read, denominator, omitted=0, bounded=False):
+    """The first line, the outcomes, the counts and the errors tell one story."""
+
+    counts = result["profile"]["outcome_counts"]
+    first = result["coverage"].warnings[0]
+    expected = (f"Dashboards read: {read} of at least {denominator} (inventory truncated)"
+                if bounded else f"Dashboards read: {read} of {denominator} listed")
+    if omitted:
+        expected += f"; {omitted} not attempted ({g.MAX_DEPENDENCY_DASHBOARDS}-read limit)"
+    test.assertEqual(first, expected)
+    test.assertLessEqual(len(first), grd.MAX_REASON)
+    test.assertEqual(len(result["outcomes"]), denominator)
+    test.assertEqual(sum(counts.values()), denominator)
+    test.assertEqual(counts.get("read", 0), read)
+    test.assertEqual(result["profile"]["successful_documents"], read)
+    test.assertEqual(counts.get("not_attempted_limit", 0), omitted)
+    test.assertEqual(t227.errors(result).get("dashboard_not_read_inventory_limit", 0), omitted)
+    test.assertLessEqual(result["profile"]["read_attempts"], g.MAX_DEPENDENCY_DASHBOARDS)
+    # HAMCP-270 shows exactly this first line as the plan's dashboard reason.
+    diagnostics = asyncio.run(g.collect_global_sources(
+        [], [], registry_complete=True, secret=SECRET, dashboards=result))
+    block = grd.disclose(lambda: SimpleNamespace(global_sources=diagnostics, generation=1), [])
+    if result["coverage"].completeness == "complete":
+        test.assertNotIn("dashboard", block.get("reasons", {}))
+    else:
+        test.assertEqual(block["reasons"]["dashboard"], expected)
+
+
+class ReadStartDeadlineTests(unittest.TestCase):
+    """R1-M1: the deadline is checked when a read runs, not when it was queued."""
+
+    DOCUMENTS = t227.DashboardBudgetTests.DOCUMENTS
+
+    def collect_entering(self, read_cost):
+        clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+        reader = EnteringReader(self.DOCUMENTS, clock, read_cost=read_cost)
+        return reader, sleep, t227.collect_budget(reader, clock, sleep)
+
+    def test_a_read_queued_before_the_deadline_never_enters_the_reader_after_it(self):
+        # Every worker queues a read at t=0; each read moves the clock 2.1 s.
+        # Round 0 entered the reader at 0, 2.1, 4.2 and 6.3 s (6.3 is past
+        # the 6.0 s deadline); now the fourth read is never started.
+        reader, sleep, result = self.collect_entering(2.1)
+        times = [at for _, at in reader.entered]
+        self.assertEqual(len(times), 3)
+        for expected, at in zip((0.0, 2.1, 4.2), times):
+            self.assertAlmostEqual(at, expected)
+        self.assertTrue(all(at < g.DASHBOARD_SCAN_SECONDS for at in times), times)
+        late = sorted(self.DOCUMENTS)[3]
+        self.assertNotIn(late, reader.reads)
+        self.assertEqual(result["outcomes"][late], "not_attempted_budget")
+        self.assertEqual(result["profile"]["read_attempts"], 3)
+        self.assertEqual(outcomes(result, "read"), sorted(self.DOCUMENTS)[:3])
+        self.assertEqual(outcomes(result, "not_attempted_budget"), sorted(self.DOCUMENTS)[3:])
+        self.assertEqual(t227.errors(result), {"dashboard_not_read": len(self.DOCUMENTS) - 3,
+                                               "dashboard_scan_budget_exhausted": 1})
+        self.assertEqual(result["coverage"].warnings[0], f"Dashboards read: 3 of {len(self.DOCUMENTS)} listed")
+        # The allowance is the remainder when the read ran: 6.0 - 4.2 s for
+        # the third, not the 3.0 s that was left when it was queued at t=0.
+        timers = sorted(sleep.durations)
+        self.assertEqual(len(timers), 4)
+        self.assertAlmostEqual(timers[0], g.DASHBOARD_SCAN_SECONDS - 4.2)
+        self.assertEqual(timers[1:], [g.DASHBOARD_READ_SECONDS, g.DASHBOARD_READ_SECONDS,
+                                      g.DASHBOARD_SCAN_SECONDS])
+
+    def test_a_read_that_would_start_exactly_at_the_deadline_is_not_started(self):
+        # Entries at 0, 2 and 4 s; the fourth would enter at exactly 6.0 s.
+        reader, _, result = self.collect_entering(2.0)
+        self.assertEqual([at for _, at in reader.entered], [0.0, 2.0, 4.0])
+        self.assertEqual(result["outcomes"][sorted(self.DOCUMENTS)[3]], "not_attempted_budget")
+        self.assertEqual(result["profile"]["read_attempts"], 3)
+
+    def test_queued_reads_overtaken_by_other_work_are_left_unattempted(self):
+        # The clock passes the deadline between the moment the reads are
+        # queued and the moment they would run (another task's work), so no
+        # read starts at all, and none is counted as attempted or timed out.
+        clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+        reader = EnteringReader(self.DOCUMENTS, clock)
+        original = g._within
+
+        async def overtaken(start, allowance, sleep_):
+            clock.now = g.DASHBOARD_SCAN_SECONDS + 0.5
+            return await original(start, allowance, sleep_)
+
+        with patch.object(g, "_within", overtaken):
+            result = t227.collect_budget(reader, clock, sleep)
+        self.assertEqual(reader.entered, [])
+        self.assertEqual(result["profile"]["read_attempts"], 0)
+        self.assertEqual(set(result["outcomes"].values()), {"not_attempted_budget"})
+        self.assertEqual(t227.errors(result), {"dashboard_not_read": len(self.DOCUMENTS),
+                                               "dashboard_scan_budget_exhausted": 1})
+        self.assertEqual(sleep.durations, [g.DASHBOARD_SCAN_SECONDS])
+
+    def test_cancellation_while_queued_or_running_leaves_no_task(self):
+        # Two reads hang in the reader, two more are queued; the parent is
+        # cancelled. Every task is cancelled and awaited, nothing leaks.
+        async def scenario():
+            clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+            reader = t227.BudgetReader(self.DOCUMENTS, clock, hang_reads=True)
+            before = asyncio.all_tasks()
+            task = asyncio.ensure_future(
+                g.collect_dashboard_sources(reader, secret=SECRET, clock=clock, sleep=sleep))
+            for _ in range(20):
+                await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            return reader, task, asyncio.all_tasks() - before - {asyncio.current_task()}
+
+        reader, task, leftover = asyncio.run(scenario())
+        self.assertTrue(task.cancelled())
+        self.assertEqual(sorted(reader.cancelled), sorted(reader.reads))
+        self.assertEqual(len(reader.reads), g.DASHBOARD_READ_CONCURRENCY)
+        self.assertEqual(leftover, set())
+
+    def test_a_read_given_the_full_allowance_at_the_boundary_is_a_read_timeout(self):
+        # R1-L3 (N11): the last read starts with exactly DASHBOARD_READ_SECONDS
+        # left, so its own cap and the phase remainder coincide. It received
+        # the full per-read allowance, so it is a read timeout; nothing else
+        # is queued, so no dashboard went unattempted for budget, and the
+        # budget is not reported exhausted. (The watchdog is held back here:
+        # in production it can win the tie, and then it does report the
+        # budget, which is also truthful.)
+        clock = t227.FakeClock()
+        timers: list[tuple[float, asyncio.Event]] = []
+
+        async def sleep(seconds):
+            # The read's own timer fires once the clock reaches the deadline;
+            # the watchdog (the full phase budget) never does.
+            event = asyncio.Event()
+            timers.append((seconds, event))
+            if seconds == g.DASHBOARD_READ_SECONDS and clock.now >= g.DASHBOARD_SCAN_SECONDS:
+                event.set()
+            await event.wait()
+
+        def on_hang(_):
+            clock.now = g.DASHBOARD_SCAN_SECONDS
+            for seconds, event in timers:
+                if seconds == g.DASHBOARD_READ_SECONDS:
+                    event.set()
+
+        reader = t227.BudgetReader({"lovelace": t227.DEFAULT_DASHBOARD}, clock,
+                                   list_cost=g.DASHBOARD_SCAN_SECONDS - g.DASHBOARD_READ_SECONDS,
+                                   hang_reads=True, on_hang=on_hang)
+        result = t227.collect_budget(reader, clock, sleep)
+        self.assertEqual(sorted(seconds for seconds, _ in timers),
+                         [g.DASHBOARD_READ_SECONDS, g.DASHBOARD_SCAN_SECONDS])
+        self.assertEqual(result["outcomes"], {"lovelace": "timed_out"})
+        self.assertEqual(t227.errors(result), {"dashboard_read_timeout": 1})
+        self.assertEqual(result["terminals"], [])
+        self.assertNotIn("dashboard_scan_budget_exhausted: 1", result["coverage"].warnings)
+        self.assertEqual(result["coverage"].completeness, "partial")
+
+
+class InventoryAccountingTests(unittest.TestCase):
+    """R1-M2: the read cap bounds reads, never the outcome accounting."""
+
+    @staticmethod
+    def documents(count):
+        paths = ["lovelace"] + [f"synthetic-{index:02d}" for index in range(count - 1)]
+        return {path: t227.DEFAULT_DASHBOARD for path in paths}
+
+    def test_fifty_listed_are_all_read_and_complete(self):
+        documents = self.documents(g.MAX_DEPENDENCY_DASHBOARDS)
+        reader = t227.FakeReader(documents)
+        result = collect(reader)
+        self.assertEqual(result["coverage"].completeness, "complete")
+        self.assertEqual(t227.errors(result), {})
+        self.assertEqual(len(reader.reads), 50)
+        reconcile(self, result, read=50, denominator=50)
+
+    def test_the_fifty_first_listed_is_named_not_attempted_limit(self):
+        documents = self.documents(g.MAX_DEPENDENCY_DASHBOARDS + 1)
+        reader = t227.FakeReader(documents)
+        result = collect(reader)
+        last = sorted(documents)[-1]
+        self.assertEqual(sorted(reader.reads), sorted(documents)[:50])
+        self.assertNotIn(last, reader.reads)
+        self.assertEqual(result["outcomes"][last], "not_attempted_limit")
+        self.assertIn(f"Dashboards not_attempted_limit: {last}", result["coverage"].warnings)
+        self.assertEqual(t227.errors(result), {"dashboard_inventory_limit_exceeded": 1,
+                                               "dashboard_not_read_inventory_limit": 1})
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual([t.reason_code for t in result["terminals"]], ["dashboard_inventory_limit_exceeded"])
+        reconcile(self, result, read=50, denominator=51, omitted=1)
+
+    def test_an_upstream_truncated_inventory_is_at_least_never_complete(self):
+        # Upstream returned the requested 51 and said there are more.
+        documents = self.documents(g.MAX_DEPENDENCY_DASHBOARDS + 1)
+        result = collect(t227.FakeReader(documents, truncated=True))
+        self.assertEqual(result["coverage"].completeness, "partial")
+        self.assertEqual(result["outcomes"][sorted(documents)[-1]], "not_attempted_limit")
+        reconcile(self, result, read=50, denominator=51, omitted=1, bounded=True)
+        # A response-size truncation can return fewer than the read limit;
+        # every returned dashboard is read, and the total is still a bound.
+        small = collect(t227.FakeReader(self.documents(6), truncated=True))
+        self.assertEqual(small["coverage"].completeness, "partial")
+        self.assertEqual(t227.errors(small), {"dashboard_inventory_limit_exceeded": 1})
+        reconcile(self, small, read=6, denominator=6, bounded=True)
+
+    def test_a_reader_returning_more_than_requested_is_bounded_at_least(self):
+        # Outside the reader contract (it asks for 51): accounting stays
+        # bounded at the request size and the total is only a lower bound.
+        documents = self.documents(60)
+        result = collect(t227.FakeReader(documents))
+        self.assertEqual(len(result["outcomes"]), g.MAX_DEPENDENCY_DASHBOARDS + 1)
+        reconcile(self, result, read=50, denominator=51, omitted=1, bounded=True)
+
+    def test_omitted_dashboards_stay_limit_outcomes_when_the_budget_runs_out(self):
+        documents = self.documents(g.MAX_DEPENDENCY_DASHBOARDS + 1)
+        clock, sleep = t227.FakeClock(), t227.ControlledSleep()
+        reader = t227.BudgetReader(documents, clock, read_cost=2.0)
+        result = t227.collect_budget(reader, clock, sleep)
+        counts = result["profile"]["outcome_counts"]
+        self.assertEqual(counts, {"read": 3, "not_attempted_budget": 47, "not_attempted_limit": 1})
+        self.assertEqual(t227.errors(result), {"dashboard_inventory_limit_exceeded": 1,
+                                               "dashboard_not_read": 47,
+                                               "dashboard_not_read_inventory_limit": 1,
+                                               "dashboard_scan_budget_exhausted": 1})
+        reconcile(self, result, read=3, denominator=51, omitted=1)
 
 
 class Contention:

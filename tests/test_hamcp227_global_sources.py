@@ -402,7 +402,9 @@ class DashboardWalkTests(unittest.TestCase):
         reader = FakeReader(documents)
         result = collect(reader)
         self.assertEqual(result["coverage"].completeness, "partial")
-        self.assertEqual(errors(result), {"dashboard_inventory_limit_exceeded": 1})
+        # HAMCP-277 R1-M2: the 51st listed dashboard is named, not dropped.
+        self.assertEqual(errors(result), {"dashboard_inventory_limit_exceeded": 1,
+                                          "dashboard_not_read_inventory_limit": 1})
         self.assertEqual(len(reader.reads), g.MAX_DEPENDENCY_DASHBOARDS)
         self.assertEqual([t.reason_code for t in result["terminals"]], ["dashboard_inventory_limit_exceeded"])
         exact = FakeReader(dict(list(documents.items())[:g.MAX_DEPENDENCY_DASHBOARDS]))
@@ -633,11 +635,13 @@ class DashboardBudgetTests(unittest.TestCase):
         reader = BudgetReader(self.DOCUMENTS, clock, read_cost=2.0)
         result = collect_budget(reader, clock, sleep)
         self.assertEqual(result["coverage"].completeness, "partial")
-        # HAMCP-277: each read runs in its own bounded task, so every worker
-        # starts one read before the first simulated cost moves the clock.
-        self.assertEqual(len(reader.reads), g.DASHBOARD_READ_CONCURRENCY)
+        # HAMCP-277 R1-M1: every worker schedules a read at t=0, but each read
+        # checks the deadline when it actually runs. The queued reads enter
+        # the reader at 0, 2 and 4 s; the fourth would enter at 6 s, the
+        # deadline, so it never starts. (Round 0 accepted that late start.)
+        self.assertEqual(len(reader.reads), 3)
         self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
-                                          "dashboard_not_read": len(self.DOCUMENTS) - g.DASHBOARD_READ_CONCURRENCY})
+                                          "dashboard_not_read": len(self.DOCUMENTS) - 3})
         self.assertEqual({item.source_id for item in result["findings"]}, set(reader.reads))
         self.assertIn(("dependency_provider", "dashboard_scan_budget_exhausted"),
                       [(t.source_id, t.reason_code) for t in result["terminals"]])
