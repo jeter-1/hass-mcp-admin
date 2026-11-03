@@ -69,10 +69,12 @@ The repository's offline credential scan (`Test-SecretPatterns` in
 `scripts/check.ps1`) matches `sk-` followed by 20 or more identifier
 characters. Two mutant IDs matched it by accident, through the substring
 `task-`. After the rounds ran, both IDs were renamed by an exact literal
-substitution in `run_mutations.py` and in all three results files:
+substitution in `run_mutations.py` and in all three results files. The old
+spellings are not reproduced here, because quoting them would trip the same
+scan. The change was `task` → `tasks` in these IDs:
 
-- `H3-task-consistency-guard-removed` → `H3-tasks-consistency-guard-removed`
-- `Q5-task-inspection-read-quarantines` → `Q5-tasks-inspection-read-quarantines`
+- `H3-tasks-consistency-guard-removed`
+- `Q5-tasks-inspection-read-quarantines`
 
 Nothing else in the results changed: the verdicts, `FAIL:` lines, test counts
 and timings are as generated. The per-mutant log paths recorded in the results
