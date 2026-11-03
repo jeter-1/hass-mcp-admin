@@ -179,6 +179,10 @@ class IngressReviewPageTests(Hamcp253IngressCase):
             response = await client.get(self.review_path(plan_id))
             self.assertEqual(response.status_code, 200)
             self.assertIn("<h1>Governance record</h1>", response.text)
+            self.assertIn(
+                "<tr><th>Stored identifier</th><td><code>matches_request</code></td></tr>",
+                response.text,
+            )
             fields = hidden(response.text)
             self.assertEqual(fields["record_fingerprint"], view["record_fingerprint"])
             self.assertGreaterEqual(len(fields["csrf"]), 32)

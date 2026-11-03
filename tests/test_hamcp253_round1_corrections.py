@@ -211,7 +211,10 @@ class PlanInspectionNeverMutatesStorageTests(Hamcp253Case):
         self.assertEqual(len(list(self.repository.quarantine.glob("*.corrupt"))), 1)
         before = tree(self.repository.root)
         with no_home_assistant(self):
-            view = self.inspect_record("change_plan", self.unreadable)
+            try:
+                view = self.inspect_record("change_plan", self.unreadable)
+            except GovernanceError as exc:
+                self.fail(f"a quarantined record was reported as {exc.code.value}")
             outcome = self.acknowledge("change_plan", self.unreadable, fingerprint="0" * 64)
         self.assertIs(view["readable"], False)
         self.assert_refused(outcome, "record_unreadable")
@@ -488,8 +491,73 @@ class StoredTaskMetadataIsNeverEchoedTests(ManualReviewTaskCase):
         self.assertEqual(view["plan_id"], self.plan_id)
         self.assertIs(view["acknowledgeable"], True)
 
+    async def test_identifier_shaped_configured_value_is_never_listed(self):
+        # Only the configured values can reject a well-formed identifier.
+        configured = "5ec2e7" + "0" * 26
+        listed = "ab" * 16
+        self.assertIsNone(
+            record_inspection.screened_record_id(configured, (configured,))
+        )
+        self.assertEqual(
+            record_inspection.screened_record_id(listed, (configured,)), listed
+        )
+        self.assertEqual(
+            record_inspection.screened_record_id(configured, ()), configured
+        )
 
-# -- R1-M3 ------------------------------------------------------------------
+    async def test_closed_fields_show_only_their_vocabulary(self):
+        # Token-shaped values outside a fixed vocabulary, one of them a
+        # configured secret, are replaced by the marker, never shown.
+        task = self.recovered.task_repository.read_for_inspection(self.task_id)
+        task.operation = TOKEN_SECRET
+        task.state = "not_a_task_state"
+        task.events[-1].state_after = TOKEN_SECRET
+        view = record_inspection.task_view(
+            task, self.task_id, sensitive_values=SCREENED_VALUES
+        )
+        self.assertEqual(view["record_type"], UNRECOGNIZED)
+        self.assertEqual(view["status"], UNRECOGNIZED)
+        self.assertEqual(view["events"][-1]["state_after"], UNRECOGNIZED)
+        assert_absent(self, json.dumps(view), "task view")
+        self.assertNotIn("not_a_task_state", json.dumps(view))
+
+    async def test_task_file_under_another_identifier_reports_the_requested_one(self):
+        # A self-consistent task file stored under a second name stays
+        # readable; the service shows the name it was read by and a code.
+        repository = self.recovered.task_repository
+        other = "f" * 32
+        self.assertNotEqual(other, self.task_id)
+        repository._path(other).write_bytes(repository._path(self.task_id).read_bytes())
+        with no_home_assistant(self):
+            view = self.recovered.inspect_governance_record(
+                record_kind="execution_task", record_id=other
+            )
+        self.assertIs(view["readable"], True)
+        self.assertEqual(view["record_id"], other)
+        self.assertEqual(view["stored_identity"], "stored_identifier_mismatch")
+        self.assertIs(view["acknowledgeable"], False)
+        self.assertNotIn(self.task_id, json.dumps(view))
+
+    async def test_configured_value_in_a_stored_reason_code_is_screened(self):
+        # The value is token-shaped, so only the configured sensitive values
+        # the service passes to the view can reject it. A stored edit is
+        # refused by the task's materialization check, so the loaded record
+        # carries the value instead.
+        repository = self.recovered.task_repository
+        task = repository.read_for_inspection(self.task_id)
+        task.manual_review_reason = TOKEN_SECRET
+        with no_home_assistant(self), patch.object(
+            repository, "read_for_inspection", return_value=task
+        ):
+            view = self.recovered.inspect_governance_record(
+                record_kind="execution_task", record_id=self.task_id
+            )
+        self.assertIs(view["readable"], True)
+        self.assertEqual(view["failure"]["reason_code"], UNRECOGNIZED)
+        assert_absent(self, json.dumps(view), "task inspection")
+
+
+# -- R1-M3------------------------------------------------------------------
 
 
 class AuditCoordinationTests(Hamcp253Case):
@@ -576,6 +644,26 @@ class AuditCoordinationTests(Hamcp253Case):
         self.assert_audit_recorded_is_truthful(outcome, before)
         self.assertEqual(outcome["ledger_sequence"], 5)
         self.assertEqual(self.completions(), {1: "abandoned", 3: "abandoned", 5: "recorded"})
+
+    async def test_transient_sink_failure_still_audits_the_refusal(self):
+        # Only the decision's audit write fails; the refusal that reports
+        # the abandoned decision is then audited, and says so.
+        real, calls = self.service.audit.write_batch, []
+
+        def first_write_fails(entries, **kwargs):
+            calls.append(1)
+            return 0 if len(calls) == 1 else real(entries, **kwargs)
+
+        before = self.audit_bytes()
+        with patch.object(self.service.audit, "write_batch", side_effect=first_write_fails):
+            outcome = self.acknowledge("change_plan", self.target)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(outcome["refusal_reason"], "audit_write_failed")
+        self.assertEqual(self.completions(), {1: "abandoned"})
+        self.assertIs(outcome["audit_recorded"], True)
+        self.assert_audit_recorded_is_truthful(outcome, before)
+        (decision,) = self.decisions()
+        self.assertEqual(self.decision_audits(decision), [])
 
     async def test_audit_failure_on_a_refusal_reports_audit_recorded_false(self):
         before = self.audit_bytes()
@@ -667,9 +755,16 @@ class AuditCoordinationTests(Hamcp253Case):
         ledger = self.ledger_path().read_bytes()
         with patch.object(self.service.audit, "write_batch", return_value=0):
             outcome = self.acknowledge("change_plan", self.target)
+            # A request that appends nothing is refused for the same reason,
+            # not answered as if the pending decision were absent.
+            revoke = self.acknowledge(
+                "change_plan", self.target, action="revoke", classification=None
+            )
         self.assertEqual(outcome["status"], "refused")
         self.assertEqual(outcome["refusal_reason"], "acknowledgement_audit_pending")
         self.assertIs(outcome["audit_recorded"], False)
+        self.assertEqual(revoke["status"], "refused")
+        self.assertEqual(revoke["refusal_reason"], "acknowledgement_audit_pending")
         self.assertEqual(self.ledger_path().read_bytes(), ledger)
         # Without an audit destination a restart leaves it pending too.
         self.service.audit = AuditLogger(
@@ -713,9 +808,15 @@ class CompletionValidationTests(Hamcp253Case):
 
     def assert_rejected(self, change):
         self.rechain(change)
-        with self.assertRaises(AcknowledgementStorageError) as raised:
+        try:
             self.service.acknowledgements.read()
-        self.assertEqual(str(raised.exception), "acknowledgement_storage_invalid")
+        except AcknowledgementStorageError as exc:
+            self.assertEqual(str(exc), "acknowledgement_storage_invalid")
+        except Exception as exc:
+            # Any other error escapes the storage boundary unclassified.
+            self.fail(f"a tampered ledger raised {type(exc).__name__}")
+        else:
+            self.fail("a tampered ledger was read")
         health = self.service.health_summary()
         self.assertEqual(health["record_acknowledgement"]["ledger_status"], "unavailable")
         self.assertEqual(health["projection_failure_warning"], PROJECTION_WARNING)
@@ -746,9 +847,26 @@ class CompletionValidationTests(Hamcp253Case):
                 self.assert_rejected(change)
                 self.ledger_path().write_bytes(self.setUp_ledger)
 
+    async def test_a_settled_decision_is_never_completed_again(self):
+        ledger = self.ledger_path().read_bytes()
+        with self.service.acknowledgements.transaction() as transaction:
+            decision = transaction.events[0]
+            for outcome in ("recorded", "abandoned"):
+                with self.assertRaises(AcknowledgementStorageError) as raised:
+                    transaction.complete(decision, outcome, self.service._timestamp())
+                self.assertEqual(str(raised.exception), "acknowledgement_body_invalid")
+        self.assertEqual(self.ledger_path().read_bytes(), ledger)
+        self.assertEqual(
+            ledger_module.completions(self.service.acknowledgements.read()),
+            {1: "recorded", 3: "recorded"},
+        )
+
     async def test_completion_naming_a_completion(self):
         def change(events):
+            # With the audit identifier entry 2 would have, only the entry
+            # type of the target can reject it.
             events[3]["body"]["decision_sequence"] = 2
+            events[3]["body"]["audit_event_id"] = ledger_module.audit_event_id(events[1])
         self.assert_rejected(change)
 
     async def test_malformed_completion_body(self):
@@ -768,6 +886,24 @@ class CompletionValidationTests(Hamcp253Case):
     async def test_decision_without_entry_type_is_invalid(self):
         def change(events):
             del events[0]["body"]["entry_type"]
+        self.rechain(change)
+        with self.assertRaises(AcknowledgementStorageError) as raised:
+            self.service.acknowledgements.read()
+        self.assertEqual(str(raised.exception), "acknowledgement_body_invalid")
+
+    async def test_decision_with_an_unknown_entry_type_is_invalid(self):
+        saved = self.ledger_path().read_bytes()
+        decision = json.loads(saved)["events"][0]["body"]
+        for entry_type in ("decision_v0", ledger_module.AUDIT_COMPLETION):
+            with self.subTest(entry_type=entry_type):
+                with self.service.acknowledgements.transaction() as transaction:
+                    with self.assertRaises(AcknowledgementStorageError) as raised:
+                        transaction.append({**decision, "entry_type": entry_type})
+                self.assertEqual(str(raised.exception), "acknowledgement_body_invalid")
+                self.assertEqual(self.ledger_path().read_bytes(), saved)
+
+        def change(events):
+            events[0]["body"]["entry_type"] = "decision_v0"
         self.rechain(change)
         with self.assertRaises(AcknowledgementStorageError) as raised:
             self.service.acknowledgements.read()
