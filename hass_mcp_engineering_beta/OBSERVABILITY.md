@@ -940,7 +940,7 @@ the upstream operation, `result_status` and `fallback_occurred: false`.
 the index itself.
 A dashboard budget overrun appears in the dashboard coverage row
 (`dashboard_scan_budget_exhausted`, `dashboard_not_read`) and in
-`bounded_sources`. Since 2.4.1-beta.63 (HAMCP-277) the dashboard phase runs
+`bounded_sources`. Since 2.4.1-beta.62 (HAMCP-277) the dashboard phase runs
 after the other sources, a read stopped by its 3 s per-read bound or by the
 phase deadline counts `dashboard_read_timeout`, the row's first warning is
 `Dashboards read: N of M listed`, and the build profile's

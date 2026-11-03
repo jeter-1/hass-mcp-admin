@@ -1,13 +1,13 @@
-# Engineering 2.4.1-beta.63 release notes
+# Engineering 2.4.1-beta.62 release notes
 
-Engineering 2.4.1-beta.63 (HAMCP-277) lets the dependency index read the
+Engineering 2.4.1-beta.62 (HAMCP-277) lets the dependency index read the
 household's dashboards within its existing 6 s dashboard budget, and names
 the outcome of every dashboard it lists. It builds on 2.4.1-beta.61 (#353,
 HAMCP-285). No tool, input schema, route, provider, upstream tool, admission
 rule, signed profile, contract fingerprint, persisted format, add-on option
 or Home Assistant write changes.
 
-Acceptance: [`V2_4_1_BETA63_ACCEPTANCE.md`](V2_4_1_BETA63_ACCEPTANCE.md).
+Acceptance: [`V2_4_1_BETA62_ACCEPTANCE.md`](V2_4_1_BETA62_ACCEPTANCE.md).
 
 ## Why
 

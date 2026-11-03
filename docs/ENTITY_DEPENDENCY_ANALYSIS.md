@@ -139,7 +139,7 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   partial with counted reasons.
 - **Dashboards.** One reviewed `list_dashboards` request, then one reviewed
   analysis read per dashboard (at most 50, 4 concurrent, in sorted
-  `url_path` order, 6 s budget). Since 2.4.1-beta.63 (HAMCP-277) the
+  `url_path` order, 6 s budget). Since 2.4.1-beta.62 (HAMCP-277) the
   dashboard phase starts after the build's other sources finish, so their
   requests cannot spend its budget, and each read is bounded by 3 s
   (`DASHBOARD_READ_SECONDS`, capped by what remains of the phase), so one

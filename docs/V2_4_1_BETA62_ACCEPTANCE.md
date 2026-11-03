@@ -1,17 +1,19 @@
-# Engineering 2.4.1-beta.63 acceptance
+# Engineering 2.4.1-beta.62 acceptance
 
 This contract covers HAMCP-277: the dependency index's dashboard phase reads
 the household's dashboards within its bounded budget, or reads as many as
 truthfully fit and names the rest. It follows 2.4.1-beta.61 and includes it.
 
 See also the release notes:
-[`V2_4_1_BETA63_RELEASE_NOTES.md`](V2_4_1_BETA63_RELEASE_NOTES.md).
+[`V2_4_1_BETA62_RELEASE_NOTES.md`](V2_4_1_BETA62_RELEASE_NOTES.md).
 
-**Release target.** `2.4.1-beta.63`, following 2.4.1-beta.61 (#353,
+**Release target.** `2.4.1-beta.62`, following 2.4.1-beta.61 (#353,
 HAMCP-285). The release is materialized in all three version authorities
-with no staged declaration left. Nothing is published or deployed. If
-another pull request takes this beta first, this one restages to the next
-free beta; that collision is expected and is not a finding.
+with no staged declaration left. Nothing is published or deployed.
+HAMCP-253 (#354) also expects beta.62 but had not materialized it when this
+was staged, and the release transition accepts only beta.61 → beta.62.
+Whichever merges first keeps beta.62; the other restages to the next free
+beta with full Evidence. That collision is expected and is not a finding.
 
 **Deploy freeze.** Nothing deploys before the HAMCP-278 cutover. Stage 4
 waits for that cutover and for Josh.
@@ -71,7 +73,7 @@ updated `tests/test_hamcp227_global_sources.py`):
 ## 2. Release CI
 
 The exact materialized head's `validate` check passes, including the
-beta.61 → beta.63 release transition.
+beta.61 → beta.62 release transition.
 
 ## 3. Publication
 
@@ -80,7 +82,7 @@ head-bound workflow.
 
 ## 4. Installed acceptance (separately authorized)
 
-After the HAMCP-278 cutover, Josh deploys beta.63 and refreshes the
+After the HAMCP-278 cutover, Josh deploys beta.62 and refreshes the
 connector. The architect then runs read-only checks only:
 
 1. **Read-only.** Run `entity_dependency_analysis` on an entity that a

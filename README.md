@@ -1,6 +1,6 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.63** (HAMCP-277) lets the
+Not yet released: Engineering **2.4.1-beta.62** (HAMCP-277) lets the
 dependency index read the household's dashboards within its 6 s dashboard
 budget. The dashboard phase now runs after the other dependency sources, so
 they cannot spend its budget; each read is bounded; and every listed
@@ -9,8 +9,8 @@ attempted, with `Dashboards read: N of M listed` first. Dashboard references
 stay diagnostic: no tool, route, admission, signed profile, fingerprint,
 policy, persisted format or Home Assistant write changes. Rollback is
 reinstalling beta.61. Read the
-[2.4.1-beta.63 release notes](docs/V2_4_1_BETA63_RELEASE_NOTES.md) and the
-[2.4.1-beta.63 acceptance contract](docs/V2_4_1_BETA63_ACCEPTANCE.md).
+[2.4.1-beta.62 release notes](docs/V2_4_1_BETA62_RELEASE_NOTES.md) and the
+[2.4.1-beta.62 acceptance contract](docs/V2_4_1_BETA62_ACCEPTANCE.md).
 
 Not yet released: Engineering **2.4.1-beta.61** (HAMCP-285) applies
 evidence-based classification to helper options, entity availability and

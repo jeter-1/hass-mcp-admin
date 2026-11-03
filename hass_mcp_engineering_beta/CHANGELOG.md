@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.1-beta.63 - the dependency index reads the household's dashboards within its budget (HAMCP-277)
+## 2.4.1-beta.62 - the dependency index reads the household's dashboards within its budget (HAMCP-277)
 
 Builds on 2.4.1-beta.61 (HAMCP-285, #353). No tool, input schema, route,
 provider, upstream tool, admission rule, signed profile, contract

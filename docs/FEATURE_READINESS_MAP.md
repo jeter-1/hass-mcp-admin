@@ -184,7 +184,7 @@ These apply to every row and are not repeated:
   membership (RCG-006) and for large dashboards (RCG-045). The dashboard
   input is also bounded by the 6 s dependency scan, which read 0 of 6
   dashboards at live scale on beta.55 (RCG-093). HAMCP-277 fixes the cause
-  in source (beta.63), but useful live dashboard coverage is not
+  in source (beta.62), but useful live dashboard coverage is not
   demonstrated until its post-deployment acceptance.
 - **Write commands:** none.
 - **Readback:** not applicable. Partial sources must be stated, with their
@@ -406,7 +406,7 @@ These are not feature rows. They change the readiness of the rows above:
   group-consumer attribution.
 - **HAMCP-273** (Backlog, Small, depends on 263): large-dashboard readback
   (RCG-045, RCG-048). It limits the completeness of 267 and 270.
-- **HAMCP-277** (Active, Small, Medium; beta.63 in review): the dependency
+- **HAMCP-277** (Active, Small, Medium; beta.62 in review): the dependency
   index's 6 s dashboard scan read 0 of 6 dashboards at live scale on beta.55
   (RCG-093). Cause, from source and fixture experiments: the phase clock
   started at scan start and ran concurrently with the other sources, which
