@@ -2662,6 +2662,8 @@ def _build_label_membership_evidence(
     identical_duplicates: Counter[str] = Counter()
     conflicting_duplicates: Counter[str] = Counter()
     malformed_relevant: Counter[str] = Counter()
+    malformed_entity_ids: dict[str, set[str]] = defaultdict(set)
+    malformed_unattributable: Counter[str] = Counter()
     if not entity_inventory_available:
         for selector in ordered_selectors:
             failure_reasons[selector].add(
@@ -2733,6 +2735,7 @@ def _build_label_membership_evidence(
             for selector in ordered_selectors:
                 entity_selector_complete[selector] = False
                 malformed_relevant[selector] += 1
+                malformed_unattributable[selector] += 1
                 failure_reasons[selector].add(
                     "entity_registry_malformed_relevant_record"
                 )
@@ -2760,9 +2763,20 @@ def _build_label_membership_evidence(
             )
         ):
             # An unreadable label collection could contain any admitted label.
+            raw_malformed_id = item.get("entity_id")
+            malformed_id = (
+                raw_malformed_id
+                if isinstance(raw_malformed_id, str)
+                and valid_entity_id(raw_malformed_id)
+                else None
+            )
             for selector in ordered_selectors:
                 entity_selector_complete[selector] = False
                 malformed_relevant[selector] += 1
+                if malformed_id is None:
+                    malformed_unattributable[selector] += 1
+                else:
+                    malformed_entity_ids[selector].add(malformed_id)
                 failure_reasons[selector].add(
                     "entity_registry_malformed_relevant_record"
                 )
@@ -2784,6 +2798,7 @@ def _build_label_membership_evidence(
             for selector in relevant_selectors:
                 entity_selector_complete[selector] = False
                 malformed_relevant[selector] += 1
+                malformed_unattributable[selector] += 1
                 failure_reasons[selector].add(
                     "entity_registry_malformed_relevant_record"
                 )
@@ -2816,6 +2831,7 @@ def _build_label_membership_evidence(
             for selector in relevant_selectors:
                 entity_selector_complete[selector] = False
                 malformed_relevant[selector] += malformed_count
+                malformed_entity_ids[selector].add(entity_id)
                 failure_reasons[selector].add(
                     "entity_registry_malformed_relevant_record"
                 )
@@ -2951,6 +2967,15 @@ def _build_label_membership_evidence(
             raw_bound_exceeded=raw_bound_exceeded,
             authority_fingerprint=authority_fingerprint,
             anomaly_fingerprint=anomaly_fingerprint,
+            malformed_record_entity_ids=tuple(
+                sorted(
+                    malformed_entity_ids[selector],
+                    key=lambda value: value.encode("utf-8"),
+                )
+            ),
+            malformed_unattributable_record_count=(
+                malformed_unattributable[selector]
+            ),
         )
     complete = bool(
         ordered_selectors
