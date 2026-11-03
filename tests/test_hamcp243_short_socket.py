@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import socket
 import stat
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -111,6 +113,83 @@ class CopiedShardTests(unittest.TestCase):
         self.assertIn("unix_socket.py:", leak["creator"])
         self.assertIn("Scratch leak:", result.stderr)
         self.assertFalse(Path(leak["path"]).exists(), "guard left its tracked socket directory behind")
+
+    def test_unremovable_path_still_fails_copied_shard_after_other_cleanup(self):
+        fixture = self.fixture()
+        external = fixture.root / ".artifacts/external"
+        external.mkdir(parents=True)
+        foreign = external / "foreign"
+        foreign.mkdir()
+        (foreign / "keep").write_text("foreign scratch")
+        (fixture.root / "tests/test_synthetic.py").write_text(
+            "import tempfile, unittest\nfrom pathlib import Path\n"
+            "class Synthetic(unittest.TestCase):\n"
+            "    def test_scratch(self):\n"
+            f"        outer = Path({str(external)!r})\n"
+            "        blocked = Path(tempfile.mkdtemp(prefix='a-blocked-', dir=outer))\n"
+            "        blocked.rmdir()\n"
+            "        blocked.symlink_to(outer / 'foreign', target_is_directory=True)\n"
+            "        tempfile.mkdtemp(prefix='z-removable-', dir=outer)\n")
+        result = subprocess.run(
+            [sys.executable, "scripts/unit_test_shards.py", "run", "--shard", "0",
+             "--output", "manifest.json"], cwd=fixture.root,
+            env={**os.environ, "GITHUB_RUN_ID": "1001", "GITHUB_RUN_ATTEMPT": "1"},
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(list(external.glob("z-removable-*")), [], "later scratch was not removed")
+        self.assertEqual((foreign / "keep").read_text(), "foreign scratch")
+        self.assertIn("Scratch leak:", result.stderr)
+        self.assertIn("Scratch cleanup error:", result.stderr)
+        self.assertIn("Scratch cleanup failed:", result.stderr)
+
+
+class CleanupFailureTests(unittest.TestCase):
+    def test_every_path_attempted_errors_reported_and_original_exception_chained(self):
+        shards = teardown.load("unit_test_shards")
+        with tempfile.TemporaryDirectory() as temporary:
+            outer = Path(temporary)
+            foreign = outer / "foreign"
+            foreign.mkdir()
+            sentinel = foreign / "keep"
+            sentinel.write_text("foreign scratch")
+            original = RuntimeError("synthetic original shard exception")
+            for body_fails in (False, True):
+                with self.subTest(body_fails=body_fails):
+                    blocked = []
+                    removable = []
+                    output = io.StringIO()
+                    caught = None
+                    try:
+                        with patch.object(shards.sys, "stderr", output), shards.scratch_session(outer / "repo") as state:
+                            # All four allocations are external to this session's
+                            # deep scratch, but remain under the test's .artifacts.
+                            for prefix in ("a-blocked-", "b-blocked-"):
+                                path = Path(tempfile.mkdtemp(prefix=prefix, dir=outer))
+                                path.rmdir()
+                                path.symlink_to(foreign, target_is_directory=True)
+                                blocked.append(path)
+                            for prefix in ("c-removable-", "d-removable-"):
+                                removable.append(Path(tempfile.mkdtemp(prefix=prefix, dir=outer)))
+                            if body_fails:
+                                raise original
+                    except Exception as exc:
+                        caught = exc
+                    self.assertTrue(all(not path.exists() for path in removable),
+                                    "cleanup stopped before attempting remaining eligible paths")
+                    self.assertIsInstance(caught, OSError, "cleanup errors must fail the shard with an aggregate")
+                    self.assertEqual(sentinel.read_text(), "foreign scratch")
+                    self.assertEqual({row["path"] for row in state["leftovers"]},
+                                     {str(path) for path in blocked + removable})
+                    for path in blocked:
+                        self.assertTrue(path.is_symlink())
+                        self.assertIn(str(path), str(caught))
+                        self.assertIn(f"Scratch cleanup error: {path}: OSError:", output.getvalue())
+                    self.assertIn("Scratch cleanup failed:", str(caught))
+                    self.assertIs(caught.__cause__, original if body_fails else None)
+                    for path in blocked + removable:
+                        self.assertIn(f"Scratch leak: {path} created by", output.getvalue())
+                    for path in blocked:
+                        path.unlink()
 
 
 class PrefixCollisionTests(unittest.TestCase):
