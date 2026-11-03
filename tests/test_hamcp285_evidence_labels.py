@@ -50,6 +50,9 @@ from ha_mcp_engineering.f3.contracts import LockMode  # noqa: E402
 from ha_mcp_engineering.f3.operational_locks import (  # noqa: E402
     OperationalLockSetCalculator,
 )
+from ha_mcp_engineering.f3.operational_models import (  # noqa: E402
+    operational_policy_expectation_is_valid,
+)
 from ha_mcp_engineering.governance import (  # noqa: E402
     entity_availability_exposure_planning as availability_planning,
 )
@@ -861,6 +864,44 @@ class InputBooleanEndToEndTests(InputBooleanCase):
         self.assertFalse(noop["provider_dispatch_occurred"])
         self.assertEqual(self.service.repository.list(), plans_before)
         self.assertEqual(self.helper.dispatch_count, 2)
+
+    async def test_a_bounded_notify_only_consumer_applies_as_medium_elevated(self):
+        plan = (await self.planned("on", extra={"flag_notice": consumer(
+            "Flag notice",
+            triggers=[{"trigger": "state", "entity_id": ENTITY, "to": "on"}],
+            actions=[{"action": "notify.notify", "data": {"message": "x"}}],
+        )}))["plan"]
+        self.assert_elevated_and_named(plan, "flag_notice", "none")
+        self.assertEqual(self.decision(plan), ("elevated_admin", "moderate", "none"))
+        self.assertEqual(plan["risk"]["level"], "medium")
+        await self.grant(plan)
+        result = await self.apply(plan)
+        self.assertEqual(result["task_state"], "succeeded_verified",
+                         self.child(result["task_id"]).to_dict())
+        self.assertNotIn("policy_snapshot_mismatch",
+                         self.child_codes(result["task_id"]))
+        self.assertEqual(self.helper.dispatched, [(ENTITY, "on")])
+
+
+class HelperPolicyExpectationTests(unittest.TestCase):
+    def test_the_medium_elevated_family_is_accepted_only_for_helper_values(self):
+        medium = (("elevated_admin", "moderate", "none"), "medium")
+        for operation in ("set_input_boolean_state", "set_input_select_option"):
+            self.assertTrue(operational_policy_expectation_is_valid(operation, *medium))
+            # Neighbouring tuples that policy never issues stay invalid.
+            for invalid in (
+                (("elevated_admin", "moderate", "none"), "high"),
+                (("elevated_admin", "moderate", "none"), "low"),
+                (("elevated_admin", "moderate", "direct"), "medium"),
+                (("standard_admin", "moderate", "none"), "medium"),
+            ):
+                self.assertFalse(
+                    operational_policy_expectation_is_valid(operation, *invalid),
+                    invalid,
+                )
+        self.assertFalse(
+            operational_policy_expectation_is_valid("controlled_reload", *medium)
+        )
 
 
 class HelperOptionsEndToEndTests(HelperOptionsServiceTestCase):

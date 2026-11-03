@@ -63,6 +63,12 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_hamcp274_input_select_relevance.py",
     # HAMCP-274: records the exact beta.58 lock graph beside its v1 fixtures.
     "scripts/generate_hamcp274_beta58_input_select_v1_fixture.py",
+    # HAMCP-285: input_boolean v14 lock modes, the coarse fence, the medium
+    # helper policy family, and the F3 service harness.
+    "tests/hamcp285_fixtures.py",
+    "tests/test_hamcp285_evidence_labels.py",
+    # HAMCP-285: records the exact beta.59 lock graph beside its v13 fixtures.
+    "scripts/generate_hamcp285_beta59_input_boolean_v13_fixture.py",
     # HAMCP-271: configuration final-read outcomes (NormalizedOperationOutcome).
     "tests/test_hamcp271_stranded_children.py",
     # HAMCP-276: Core dispatch authority refusals across every F3 identity.

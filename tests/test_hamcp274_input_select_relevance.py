@@ -1050,6 +1050,24 @@ class EndToEndTests(InstallationTestCase):
         self.assertIs(no_op["provider_dispatch_occurred"], False)
         self.assertEqual(len(self.sent()), 2)
 
+    async def test_a_bounded_notify_only_consumer_change_executes_once(self):
+        # HAMCP-285: the medium elevated family that policy issues for a
+        # bounded, non-consequential consumer was approvable but always
+        # refused at apply with policy_snapshot_mismatch.
+        await self.install(extra={"mode_notice": consumer(
+            "Mode notice",
+            triggers=[{"trigger": "state", "entity_id": ENTITY, "to": "Away"}],
+        )})
+        plan = await self.approved_select("Away")
+        decision = plan["policy_decision"]
+        self.assertEqual(
+            (decision["policy_class"], decision["risk_delta"],
+             decision["physical_consequence"], plan["risk"]["level"]),
+            ("elevated_admin", "moderate", "none", "medium"),
+        )
+        await self.apply_verified(plan, "Away")
+        self.assertEqual(len(self.sent()), 1)
+
     async def test_an_opaque_consumer_change_executes_once_after_approval(self):
         await self.install(extra={"dynamic": consumer(
             "Dynamic",

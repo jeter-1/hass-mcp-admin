@@ -43,6 +43,10 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HelperDependencyRiskService,
     build_helper_dependency_risk_binding,
 )
+from ha_mcp_engineering.governance.input_boolean_dependency import (  # noqa: E402
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
+    build_input_boolean_dependency_binding,
+)
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance import policy as policy_module  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
@@ -350,7 +354,50 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         return plan, task, declaration
 
     async def _fresh_v13_crash(self, stage: str):
-        self.dependency.model = HELPER_DEPENDENCY_RISK_MODEL
+        """Persist a v13/f2-v2 post-intent record through v13 authority.
+
+        HAMCP-285: v13 is no longer an execution model, so the pre-v14 writer
+        (v13 executable, current f2-v2 policy) is reproduced by patching only
+        the execution-model authority while the record is written.  Recovery
+        then runs on the unpatched current build.
+        """
+
+        model = HELPER_DEPENDENCY_RISK_MODEL
+        execution_models = frozenset({model})
+        patches = (
+            patch(
+                "ha_mcp_engineering.governance.service."
+                "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+                execution_models,
+            ),
+            patch.object(
+                ChangeGovernanceService,
+                "_helper_dependency_plan_is_actionable",
+                new=staticmethod(
+                    lambda plan: _historical_helper_plan_is_actionable(
+                        plan, model
+                    )
+                ),
+            ),
+            patch(
+                "ha_mcp_engineering.f3.operational_locks."
+                "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+                execution_models,
+            ),
+        )
+        for item in patches:
+            item.start()
+        try:
+            return await self._fresh_crash(stage, model)
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+    async def _fresh_v14_crash(self, stage: str):
+        return await self._fresh_crash(stage, INPUT_BOOLEAN_DEPENDENCY_MODEL)
+
+    async def _fresh_crash(self, stage: str, model: str):
+        self.dependency.model = model
         created = await self.service.create_helper_state_plan(
             entity_id=self.helper.entity_id,
             desired_state="on",
@@ -358,7 +405,7 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         )
         plan = created["plan"]
         self.assertEqual(
-            HELPER_DEPENDENCY_RISK_MODEL,
+            model,
             self.service._load(plan["plan_id"])
             .operational.baseline["dependency_risk"]["model"],
         )
@@ -781,7 +828,17 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, self.helper.dispatch_count)
 
     async def test_expired_v13_f2_v2_post_intent_recovers_by_readback(self):
-        plan, _task, declaration = await self._fresh_v13_crash(
+        await self._assert_expired_post_intent_recovers_by_readback(
+            self._fresh_v13_crash
+        )
+
+    async def test_expired_v14_f2_v2_post_intent_recovers_by_readback(self):
+        await self._assert_expired_post_intent_recovers_by_readback(
+            self._fresh_v14_crash
+        )
+
+    async def _assert_expired_post_intent_recovers_by_readback(self, fresh):
+        plan, _task, declaration = await fresh(
             "after_durable_intent_persistence"
         )
         before = self.runtime.children.get(declaration["child_id"])
@@ -913,7 +970,17 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(readback.await_count, 1)
 
     async def test_manual_v13_reconciliation_after_expiry_is_readback_only(self):
-        plan, _task, declaration = await self._fresh_v13_crash(
+        await self._assert_manual_reconciliation_is_readback_only(
+            self._fresh_v13_crash
+        )
+
+    async def test_manual_v14_reconciliation_after_expiry_is_readback_only(self):
+        await self._assert_manual_reconciliation_is_readback_only(
+            self._fresh_v14_crash
+        )
+
+    async def _assert_manual_reconciliation_is_readback_only(self, fresh):
+        plan, _task, declaration = await fresh(
             "after_durable_intent_persistence"
         )
         self._expire_post_intent(plan, declaration)
@@ -1030,7 +1097,10 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         )
         _snapshot, rebuilt, _lookup_ms = await index.get(refresh=True)
         self.assertTrue(rebuilt)
-        evidence = await HelperDependencyRiskService(index).assess(
+        # HAMCP-285: the runtime input_boolean reader is the v14 builder.
+        evidence = await HelperDependencyRiskService(
+            index, binding_builder=build_input_boolean_dependency_binding
+        ).assess(
             self.target,
             refresh=False,
         )
@@ -1075,6 +1145,7 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         *,
         source_id: str,
         source_entity_id: str | None,
+        binding_builder=build_input_boolean_dependency_binding,
     ) -> tuple[dict, beta50.SyntheticBeta50Rest]:
         rest = beta50.SyntheticBeta50Rest()
         rest.configs = {
@@ -1123,7 +1194,7 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ),
             )
-        binding = build_helper_dependency_risk_binding(
+        binding = binding_builder(
             snapshot,
             entity_id=beta50.STANDARD_TARGET,
             index_metadata={
@@ -1330,12 +1401,31 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
             source_entity_id="automation.bounded_unreadable",
         )
         binding = evidence["binding"]
-        expected_resources = sorted(
-            {
-                "bounded_unreadable",
-                *(f"consequential_{index}" for index in range(7)),
-            },
-            key=lambda value: value.encode("utf-8"),
+        # HAMCP-285: under the target-scoped v14 binding an attributable
+        # read failure scopes only its own automation; the consequential
+        # automations that never name this helper are no longer locked.
+        # The read-only v13 contract still locked every bounded source.
+        legacy, _legacy_rest = await self._automation_inventory_failure_evidence(
+            source_id="bounded_unreadable",
+            source_entity_id="automation.bounded_unreadable",
+            binding_builder=build_helper_dependency_risk_binding,
+        )
+        self.assertEqual(
+            sorted(
+                {
+                    "bounded_unreadable",
+                    *(f"consequential_{index}" for index in range(7)),
+                },
+                key=lambda value: value.encode("utf-8"),
+            ),
+            legacy["binding"]["dependency_lock_projection"][
+                "automation_resource_ids"
+            ],
+        )
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, binding["model"])
+        expected_resources = ["bounded_unreadable"]
+        self.assertFalse(
+            binding["dependency_lock_projection"]["coarse_automation_fence"]
         )
         self.assertIn(
             "automation_inventory_incomplete",
@@ -1443,11 +1533,38 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
             source_entity_id=None,
         )
         binding = unbounded["binding"]
-        self.assertFalse(binding["execution_contract_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        # The read-only v13 contract refuses an automation without a bounded
+        # lock identity.
+        legacy, _legacy_rest = await self._automation_inventory_failure_evidence(
+            source_id="Unbounded/Automation Identity",
+            source_entity_id=None,
+            binding_builder=build_helper_dependency_risk_binding,
+        )
+        self.assertFalse(legacy["binding"]["execution_contract_complete"])
+        self.assertFalse(legacy["binding"]["execution_eligible"])
         self.assertEqual(
             ["automation_lock_identity_unavailable"],
-            binding["execution_block_reason_codes"],
+            legacy["binding"]["execution_block_reason_codes"],
+        )
+        # HAMCP-285: the target-scoped v14 binding fences it with the coarse
+        # automation lock instead of refusing.  The approved plan was bound
+        # to different evidence, so apply still fails before dispatch, now as
+        # dependency drift.
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertEqual([], binding["execution_block_reason_codes"])
+        self.assertTrue(
+            binding["dependency_lock_projection"]["coarse_automation_fence"]
+        )
+        self.assertEqual(
+            ["automation_lock_identity_unavailable"],
+            binding["dependency_lock_projection"][
+                "coarse_automation_fence_reason_codes"
+            ],
+        )
+        self.assertNotEqual(
+            bounded["binding"]["evidence_fingerprint"],
+            binding["evidence_fingerprint"],
         )
         self.assertFalse(
             any(
@@ -1475,10 +1592,52 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(reader.fenced_read_count, 1)
         self.assertTrue(
             any(
-                "dependency_coverage_failure" in event["diagnostic_codes"]
+                "dependency_risk_drift" in event["diagnostic_codes"]
                 for event in child.events
             )
         )
+
+    async def test_unbounded_automation_read_identity_takes_coarse_fence(
+        self,
+    ):
+        # HAMCP-285: a plan bound to the fenced v14 evidence is actionable
+        # and executes once under the exclusive reload:automation fence.
+        unbounded, _rest = await self._automation_inventory_failure_evidence(
+            source_id="Unbounded/Automation Identity",
+            source_entity_id=None,
+        )
+        reader = self._install_helper_evidence(unbounded)
+        created = await self.service.create_helper_state_plan(
+            entity_id=beta50.STANDARD_TARGET,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        self.assertEqual("high", plan["risk"]["level"])
+        self.assertEqual(
+            "elevated_admin", plan["policy_decision"]["policy_class"]
+        )
+        self.assertTrue(plan["approval_actionable"])
+        await self._approve_once(plan)
+        self.assertEqual(0, self.helper.dispatch_count)
+        applied = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        declaration = self.runtime.children.declarations_for_task(
+            applied["task_id"]
+        )[0]
+        child = self.runtime.children.get(declaration["child_id"])
+        assert child is not None
+        self.assertEqual(
+            "succeeded_verified", applied["task_state"], child.to_dict()
+        )
+        locks = {item["key"]: item["mode"] for item in child.lock_tokens}
+        self.assertEqual("exclusive", locks["reload:automation"])
+        self.assertFalse(
+            any("Unbounded" in key for key in locks)
+        )
+        self.assertEqual(1, child.dispatch_count)
+        self.assertEqual(1, self.helper.dispatch_count)
+        self.assertGreaterEqual(reader.fenced_read_count, 1)
 
     async def test_already_desired_still_rejects_consequence_evidence_drift(self):
         created = await self.service.create_helper_state_plan(
@@ -1542,11 +1701,15 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 beta50.SyntheticBeta50WebSocket(),
             )
         )
-        evidence = await HelperDependencyRiskService(index).assess(
+        # HAMCP-285: the runtime input_boolean reader is the v14 builder.
+        evidence = await HelperDependencyRiskService(
+            index, binding_builder=build_input_boolean_dependency_binding
+        ).assess(
             beta50.CONSEQUENTIAL_TARGET,
             refresh=True,
         )
         binding = evidence["binding"]
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, binding["model"])
         self.assertEqual(7, binding["exact_dependency_obligation_count"])
         self.assertEqual(7, len(binding["downstream_profiles"]))
         self.assertEqual("safety_critical", binding["physical_consequence"])

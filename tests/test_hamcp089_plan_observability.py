@@ -648,7 +648,8 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["plan_id"], plan_id)
         self.assertEqual(
             summary["dependency_risk_binding_model"],
-            "helper-dependency-risk-v13",
+            # HAMCP-285: fresh input_boolean bindings are the v14 projection.
+            "helper-dependency-risk-v14",
         )
         self.assertEqual(summary["exact_dependency_count"], 2)
         self.assertEqual(summary["retained_obligation_count"], 2)
@@ -848,16 +849,30 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(rendered), 60_000)
         self.assertTrue(receipt["success"])
         self.assertFalse(receipt["data"]["provider_dispatch_occurred"])
-        self.assertTrue(receipt["response_completeness"]["truncated"])
-        self.assertFalse(receipt["response_completeness"]["approval_disclosures_complete"])
+        # HAMCP-285: create_helper_state_plan now bounds its own plan
+        # projection (like input_select), so the receipt is not truncated by
+        # the tool framework; the omitted profile is disclosed explicitly in
+        # response_paging and stays retrievable through get_change_plan.
+        self.assertNotIn("response_completeness", receipt)
         plan = receipt["data"]["plan"]
         self.assertEqual(
             plan["plan_hash"], self.service.plan_hash(self.service._load(plan["plan_id"]))
         )
-        reads = receipt["response_completeness"]["retrieval"]
-        self.assertEqual(reads[0]["tool"], "get_change_plan")
-        self.assertEqual(reads[0]["arguments"]["plan_id"], plan["plan_id"])
-        self.assertIn("downstream_profiles", reads[0]["detail_sections"])
+        paging = plan["response_paging"]
+        self.assertTrue(paging["response_compacted"])
+        self.assertEqual(paging["paging_tool"], "get_change_plan")
+        self.assertEqual(paging["plan_id"], plan["plan_id"])
+        omitted = paging["omitted_sections"]["downstream_profiles"]
+        self.assertEqual(omitted["detail_section"], "downstream_profiles")
+        self.assertTrue(omitted["truncated"])
+        self.assertEqual(omitted["returned_count"], 0)
+        self.assertEqual(omitted["total_count"], len(profiles))
+        public_binding = plan["operational"]["baseline"]["dependency_risk"]
+        self.assertNotIn("downstream_profiles", public_binding)
+        stored_binding = self.service.repository.get(
+            plan["plan_id"]
+        ).operational.baseline["dependency_risk"]
+        self.assertEqual(stored_binding["downstream_profiles"], profiles)
         from ha_mcp_engineering.models.responses import SuccessResponse
         minimum = SuccessResponse(
             "create_helper_state_plan", "Created proposal", completed[0]

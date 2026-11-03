@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -44,6 +45,10 @@ from ha_mcp_engineering.governance.helper_dependency import (
     HelperDependencyRiskService,
     helper_dependency_risk_assessment,
 )
+from ha_mcp_engineering.governance.input_boolean_dependency import (
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
+    build_input_boolean_dependency_binding,
+)
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.storage import ChangePlanRepository
 from ha_mcp_engineering.governance.normalize import stable_hash
@@ -79,6 +84,14 @@ RUNNER = (
     / "support"
     / "replay_hamcp089_beta52_production_path.py"
 )
+
+
+def _executable_risk_service(index) -> HelperDependencyRiskService:
+    """HAMCP-285: the runtime input_boolean reader is the v14 builder."""
+
+    return HelperDependencyRiskService(
+        index, binding_builder=build_input_boolean_dependency_binding
+    )
 
 
 def _labels(*selectors: str) -> list[dict[str, str]]:
@@ -584,6 +597,18 @@ class VariantReplayWebSocket(CapturedBeta50ReplayWebSocket):
             result.append(conflict)
         elif self.mode == "malformed_relevant":
             selected["entity_id"] = "malformed"
+        elif self.mode == "raw_overflow":
+            # Same synthetic overflow as the pinned Beta 52 replay runner.
+            result.extend(
+                {
+                    "entity_id": f"sensor.synthetic_overflow_{index:05d}",
+                    "labels": [],
+                    "platform": "synthetic",
+                }
+                for index in range(
+                    MAX_EXPAND_SNAPSHOT_ENTITIES + 1 - len(result)
+                )
+            )
         return result
 
 
@@ -601,7 +626,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         )
         snapshot, rebuilt, _lookup_ms = await index.get(refresh=True)
         self.assertTrue(rebuilt)
-        evidence = await HelperDependencyRiskService(index).assess(
+        evidence = await _executable_risk_service(index).assess(
             self.target, refresh=False
         )
         return rest, websocket, index, snapshot, evidence
@@ -629,6 +654,8 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         duplicate_binding = duplicate[4]["binding"]
 
         self.assertEqual("helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL)
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, complete_binding["model"])
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, duplicate_binding["model"])
         self.assertEqual(complete_snapshot.fingerprint, duplicate_snapshot.fingerprint)
         self.assertEqual(
             complete_snapshot.label_memberships,
@@ -676,19 +703,40 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(assessment.apply_allowed)
         self.assertEqual(0, duplicate_binding["opaque_obligation_count"])
         self.assertEqual([], duplicate_binding["downstream_profiles"])
+        # The collapse is canonical snapshot authority, independent of model.
+        self.assertEqual(
+            [0, 1, 1],
+            sorted(
+                item.identical_duplicates_collapsed
+                for item in duplicate_snapshot.label_selector_authority.values()
+            ),
+        )
+        # The read-only v13 contract still persists every selector diagnostic.
+        legacy_binding = (
+            await HelperDependencyRiskService(duplicate[2]).assess(
+                self.target, refresh=False
+            )
+        )["binding"]
+        self.assertEqual(HELPER_DEPENDENCY_RISK_MODEL, legacy_binding["model"])
         duplicate_counts = sorted(
             item["identical_duplicates_collapsed"]
-            for item in duplicate_binding["selector_authority_diagnostics"]
+            for item in legacy_binding["selector_authority_diagnostics"]
         )
         self.assertEqual([0, 1, 1], duplicate_counts)
         self.assertTrue(
             all(
                 item["target_disposition"] == "excluded"
-                for item in duplicate_binding[
+                for item in legacy_binding[
                     "selector_authority_diagnostics"
                 ]
             )
         )
+        # HAMCP-285: the executable v14 binding is target scoped, so selectors
+        # proven to exclude the target are counted, not persisted per item.
+        for binding in (complete_binding, duplicate_binding):
+            self.assertEqual([], binding["selector_authority_diagnostics"])
+            self.assertEqual(0, binding["selector_authority_diagnostic_count"])
+            self.assertEqual(3, binding["unrelated_selector_count"])
         self.assertEqual(0, complete[0].calls.count(("POST", "/")))
 
     async def test_conflict_and_malformed_consequences_remain_disclosed(self):
@@ -733,9 +781,27 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_selector_diagnostics_persist_paginate_and_redact(self):
-        rest, websocket, index, _snapshot, _evidence = await self._run(
-            "identical_duplicate"
-        )
+        # HAMCP-285: the executable v14 binding persists only selectors that
+        # include the target or stay unresolved for it.  The identical
+        # duplicate replay's three selectors all exclude the target, so the
+        # unresolved conflicting duplicate is the paginated disclosure case.
+        for mode, expected_count, reason in (
+            ("identical_duplicate", 0, None),
+            (
+                "conflicting_duplicate",
+                2,
+                "entity_registry_conflicting_duplicate",
+            ),
+        ):
+            with self.subTest(mode=mode):
+                await self._assert_selector_diagnostics_page(
+                    mode, expected_count, reason
+                )
+
+    async def _assert_selector_diagnostics_page(
+        self, mode: str, expected_count: int, reason: str | None
+    ) -> None:
+        rest, websocket, index, _snapshot, _evidence = await self._run(mode)
         helper = FakeHelperStateGateway()
         helper.entity_id = self.target
         with tempfile.TemporaryDirectory() as temporary:
@@ -745,7 +811,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
                 now=Clock(),
                 helper_state_gateway=helper,
                 helper_dependency_risk_reader=(
-                    HelperDependencyRiskService(index).assess
+                    _executable_risk_service(index).assess
                 ),
                 plan_observability_cursor_key=b"beta53-selector-detail" * 2,
             )
@@ -777,11 +843,18 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
                 if not detail["has_more"]:
                     break
                 cursor = detail["next_cursor"]
-            self.assertEqual(3, len(items))
+            self.assertEqual(expected_count, len(items))
             self.assertEqual(
-                3,
+                expected_count,
                 observed["canonical_summary"]
                 ["selector_authority_diagnostic_count"],
+            )
+            self.assertTrue(
+                all(
+                    reason in item["failure_reason_codes"]
+                    for item in items
+                    if reason is not None
+                )
             )
             encoded = json.dumps(items, sort_keys=True)
             for raw_selector in (
@@ -874,7 +947,11 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
 
 class Beta53HistoricalFalsificationTests(unittest.TestCase):
     def test_raw_overflow_precedes_deduplication_and_remains_disclosed(self):
-        completed = subprocess.run(
+        # HAMCP-285: the pinned Beta 52 runner builds the v13 binding, which
+        # is readable but no longer executable.  Against current source it
+        # must now fail closed at fresh lock calculation rather than report
+        # an actionable plan.
+        refused = subprocess.run(
             [
                 sys.executable,
                 str(RUNNER),
@@ -885,12 +962,19 @@ class Beta53HistoricalFalsificationTests(unittest.TestCase):
                 "--entity-registry-mode",
                 "raw_overflow",
             ],
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
-        observed = json.loads(completed.stdout)
-        self.assertEqual("helper-dependency-risk-v13", observed["risk_model"])
+        self.assertNotEqual(0, refused.returncode)
+        self.assertIn(
+            "helper dependency lock evidence is not executable",
+            refused.stderr,
+        )
+        self.assertEqual("", refused.stdout)
+
+        observed = asyncio.run(self._replay_current("raw_overflow"))
+        self.assertEqual(INPUT_BOOLEAN_DEPENDENCY_MODEL, observed["risk_model"])
         self.assertFalse(observed["coverage_complete"])
         self.assertFalse(observed["evidence_complete"])
         self.assertTrue(observed["execution_eligible"])
@@ -903,6 +987,7 @@ class Beta53HistoricalFalsificationTests(unittest.TestCase):
             "target_state_baseline"
         ]["entity_id"]
         self.assertIn(f"helper:{target}", observed["lock_keys"])
+        self.assertTrue(observed["selector_authority_diagnostics"])
         self.assertTrue(
             all(
                 item["raw_bound_exceeded"]
@@ -912,6 +997,74 @@ class Beta53HistoricalFalsificationTests(unittest.TestCase):
             )
         )
         self.assertEqual(0, observed["provider_dispatch_count"])
+
+    async def _replay_current(self, mode: str) -> dict:
+        """Replay the production planning path in-process on current source."""
+
+        fixture = _transport_fixture(self.capture)
+        target = fixture["target_entity_id"]
+        rest = CapturedBeta50ReplayRest(fixture)
+        websocket = VariantReplayWebSocket(fixture, rest.ids, mode)
+        index = DependencyIndex(
+            DirectHaDependencyProvider(rest, websocket, concurrency=4)
+        )
+        _snapshot, rebuilt, _lookup_ms = await index.get(refresh=True)
+        self.assertTrue(rebuilt)
+        helper = FakeHelperStateGateway()
+        helper.entity_id = target
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = ChangePlanRepository(Path(temporary) / "plans")
+            governance = ChangeGovernanceService(
+                repository,
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=(
+                    _executable_risk_service(index).assess
+                ),
+                plan_observability_cursor_key=b"beta52-production-replay" * 2,
+            )
+            created = await governance.create_helper_state_plan(
+                entity_id=target,
+                desired_state="on",
+            )
+            plan = created["plan"]
+            # The bounded public response pages selector diagnostics out;
+            # the persisted plan is the complete binding the runner read.
+            binding = repository.get(plan["plan_id"]).operational.baseline[
+                "dependency_risk"
+            ]
+        omitted = (
+            plan.get("response_paging", {})
+            .get("omitted_sections", {})
+            .get("selector_authority_diagnostics")
+        )
+        if omitted is not None:
+            self.assertEqual(
+                len(binding["selector_authority_diagnostics"]),
+                omitted["total_count"],
+            )
+        write_requests = [
+            (method, path)
+            for method, path in rest.calls
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}
+        ]
+        return {
+            "risk_model": binding["model"],
+            "coverage_complete": binding["coverage_complete"],
+            "evidence_complete": binding["evidence_complete"],
+            "execution_eligible": binding["execution_eligible"],
+            "approval_actionable": plan["approval_actionable"],
+            "lock_keys": sorted(
+                Beta53ProductionReplayTests._lock_keys(target, binding)
+            ),
+            "selector_authority_diagnostics": binding.get(
+                "selector_authority_diagnostics", []
+            ),
+            "provider_dispatch_count": len(write_requests)
+            + helper.dispatch_count
+            + int(bool(created["provider_dispatch_occurred"])),
+        }
 
     def test_exact_beta52_complete_and_identical_duplicate_controls(self):
         source_commit = self.capture["provenance"]["source_build_sha"]

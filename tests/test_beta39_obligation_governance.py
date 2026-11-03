@@ -35,6 +35,10 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
 )
+from ha_mcp_engineering.governance.input_boolean_dependency import (  # noqa: E402
+    INPUT_BOOLEAN_DEPENDENCY_MODEL,
+    build_input_boolean_dependency_binding,
+)
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance.risk import (  # noqa: E402
     automation_action_consequence_profile,
@@ -200,6 +204,20 @@ def snapshot(
 
 def bind(value: DependencyIndexSnapshot) -> dict:
     return build_helper_dependency_risk_binding(
+        value,
+        entity_id=TARGET,
+        index_metadata={
+            "freshness": "current",
+            "evidence_stale": False,
+            "invalidated": False,
+        },
+    )
+
+
+def bind_executable(value: DependencyIndexSnapshot) -> dict:
+    """HAMCP-285: fresh input_boolean lock authority is the v14 binding."""
+
+    return build_input_boolean_dependency_binding(
         value,
         entity_id=TARGET,
         index_metadata={
@@ -1475,7 +1493,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertTrue(risk.apply_allowed)
 
     def test_target_domain_is_bounded_opacity_not_inventory_failure(self):
-        observed = bind(
+        observed = bind_executable(
             snapshot(
                 (
                     obligation(
@@ -1673,7 +1691,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertTrue(complete["coverage_complete"])
 
     def test_external_opacity_binds_custom_template_and_conservative_locks(self):
-        observed = bind(
+        observed = bind_executable(
             snapshot(
                 (
                     obligation(
@@ -1699,7 +1717,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertIn("automation:porch_light", keys)
         self.assertIn("reload:custom_templates", keys)
 
-        dynamic = bind(
+        dynamic = bind_executable(
             snapshot(
                 (
                     obligation(
@@ -1729,7 +1747,12 @@ class ObligationGovernanceTests(unittest.TestCase):
             ],
             ["porch_light"],
         )
-        self.assertEqual(observed["model"], HELPER_DEPENDENCY_RISK_MODEL)
+        self.assertEqual(observed["model"], INPUT_BOOLEAN_DEPENDENCY_MODEL)
+        self.assertEqual(observed["base_model"], HELPER_DEPENDENCY_RISK_MODEL)
+        self.assertIs(
+            False,
+            observed["dependency_lock_projection"]["coarse_automation_fence"],
+        )
 
 
 if __name__ == "__main__":
