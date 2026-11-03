@@ -1,5 +1,17 @@
 # HA MCP Engineering Server
 
+Not yet released: Engineering **2.4.1-beta.60** (HAMCP-285) applies
+evidence-based classification to helper options, entity availability and
+exposure, and `set_input_boolean_state`. `safety_critical` now requires
+positive evidence; incomplete evidence is `unknown` with its gaps stated.
+An unreferenced input_boolean plans as `standard_admin`. An input_boolean plan
+approved on beta.59 returns a structured replan refusal. Execution refusals,
+approval binding and readback are unchanged. No tool, input schema, signed
+profile, persisted format or Home Assistant write changes. Rollback is
+reinstalling beta.59. Read the
+[2.4.1-beta.60 release notes](docs/V2_4_1_BETA60_RELEASE_NOTES.md) and the
+[2.4.1-beta.60 acceptance contract](docs/V2_4_1_BETA60_ACCEPTANCE.md).
+
 Not yet released: Engineering **2.4.1-beta.59** (HAMCP-274) decides
 `set_input_select_option` relevance per target from evidence. An
 unreferenced input_select plans as `standard_admin` instead of `prohibited`.

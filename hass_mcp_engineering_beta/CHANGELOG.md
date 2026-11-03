@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.1-beta.60 - evidence-based labels for helper options, availability and input_boolean (HAMCP-285)
+
+Builds on 2.4.1-beta.59 (HAMCP-274, #346). No tool, input schema, route,
+provider, signed profile, contract fingerprint, add-on option, persisted
+format or Home Assistant write change.
+
+- `set_input_boolean_state` decides relevance per target with the beta.59
+  rules (binding model `helper-dependency-risk-v14`). An unreferenced
+  input_boolean is `standard_admin`. Bounded consumers are named and
+  elevated with precise locks. Opaque or over-budget consumer sets are
+  elevated with disclosure and take the coarse `reload:automation` fence
+  instead of being refused.
+- Helper options and availability/exposure plans label `safety_critical`
+  only with positive evidence (a protected object or a protected automation
+  the target feeds). Incomplete evidence is `unknown` with its gaps stated,
+  and the planner floors are unchanged. Their risk evidence carries
+  `consequence_model: positive_evidence_v1`; plans persisted without it keep
+  the shipped rule.
+- A v13 input_boolean plan is `replan_required`; applying one that beta.59
+  already approved returns the structured
+  `helper_dependency_evidence_superseded_replan_required` refusal without
+  consuming the approval, instead of an unstructured lock error.
+- The input_boolean create response is bounded like input_select. Execution
+  refusals are unchanged: stale state, ambiguous target, unadmitted
+  provider, index failure, drift and no-op.
+
 ## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
 
 Builds on 2.4.1-beta.58 (HAMCP-278, #342). No tool, input schema, route,
