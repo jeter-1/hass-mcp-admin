@@ -656,6 +656,7 @@ class DependencyIndex:
             script_diagnostics=(scan.script_diagnostics.visible() if scan.script_diagnostics is not None else None),
             global_sources=scan.global_sources,
             state_trigger_values=tuple(scan.state_trigger_values),
+            expand_snapshot_evidence=scan.expand_snapshot_evidence,
             sanitizer_registry=registry,
         )
         # Revalidate after the last read and all parsing, before publishing.

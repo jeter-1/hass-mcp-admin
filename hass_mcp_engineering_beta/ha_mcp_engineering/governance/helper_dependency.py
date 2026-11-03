@@ -1048,6 +1048,113 @@ def _target_scoped_consumers(
     return retained, observed, failures, disclosure
 
 
+# HAMCP-285 R1-H1: a consumer that references a group containing the helper
+# (state trigger, state condition, ``is_state``) is not attributed to the
+# helper until HAMCP-287.  Until then group membership withholds the
+# unreferenced/excluded result instead of claiming the helper is unconsumed.
+GROUP_MEMBERSHIP_UNATTRIBUTED_REASON = "group_membership_consumers_unattributed"
+GROUP_MEMBERSHIP_UNRESOLVED_REASON = "group_membership_unresolved"
+MAX_GROUP_MEMBERSHIP_DEPTH = 8
+MAX_GROUP_MEMBERSHIP_DISCLOSURE = 16
+
+
+def _group_membership_hold(
+    snapshot: Any, entity_id: str
+) -> dict[str, Any] | None:
+    """Groups that contain ``entity_id``, or why that cannot be decided.
+
+    Membership is read from the same bounded ``expand`` authority the index
+    uses for ``expand('group.x')``.  Pinned Core restricts every platform
+    group (light, switch, ...) to members of its own domain, so only a
+    ``group.*`` entity, or a group-sourced entity of the target's own domain,
+    can contain the target.  Returns ``None`` only when the evidence proves
+    the target is in no group; a non-member's binding is then unchanged.
+    """
+
+    evidence = getattr(snapshot, "expand_snapshot_evidence", None)
+    target_domain = entity_id.split(".", 1)[0]
+    unresolved: set[str] = set()
+    possible: set[str] = set()
+    parents: dict[str, set[str]] = {}
+    if evidence is None:
+        unresolved.add("group_membership_evidence_unavailable")
+    else:
+        if not evidence.state_inventory_complete:
+            unresolved.add("group_membership_state_inventory_incomplete")
+        for group_id, item in sorted(evidence.entities.items()):
+            group_domain = group_id.split(".", 1)[0]
+            if item.expandable_kind == "group" and group_domain in {
+                "group",
+                target_domain,
+            }:
+                if not item.membership_complete:
+                    unresolved.add("group_membership_incomplete")
+                    possible.add(group_id)
+                for member in item.member_entity_ids:
+                    parents.setdefault(member, set()).add(group_id)
+            elif item.expandable_kind == "unknown" and group_domain == "group":
+                unresolved.add("group_membership_source_unknown")
+                possible.add(group_id)
+    depths: dict[str, int] = {}
+    frontier = {entity_id}
+    for depth in range(1, MAX_GROUP_MEMBERSHIP_DEPTH + 1):
+        frontier = {
+            group_id
+            for member in frontier
+            for group_id in parents.get(member, ())
+            if group_id not in depths and group_id != entity_id
+        }
+        for group_id in frontier:
+            depths[group_id] = depth
+        if not frontier:
+            break
+    else:
+        if any(
+            group_id not in depths and group_id != entity_id
+            for member in frontier
+            for group_id in parents.get(member, ())
+        ):
+            unresolved.add("group_membership_depth_exceeded")
+    if not depths and not unresolved:
+        return None
+    records = sorted(
+        [
+            {
+                "group_entity_id": group_id,
+                "membership": "direct" if depth == 1 else "nested",
+                "depth": depth,
+            }
+            for group_id, depth in depths.items()
+        ]
+        + [
+            {
+                "group_entity_id": group_id,
+                "membership": "possible",
+                "depth": None,
+            }
+            for group_id in possible - set(depths)
+        ],
+        key=lambda item: (
+            {"direct": 0, "nested": 1, "possible": 2}[item["membership"]],
+            item["group_entity_id"],
+        ),
+    )
+    return {
+        "reason_code": (
+            GROUP_MEMBERSHIP_UNRESOLVED_REASON
+            if unresolved and not depths
+            else GROUP_MEMBERSHIP_UNATTRIBUTED_REASON
+        ),
+        "membership_resolved": not unresolved,
+        "unresolved_reason_codes": sorted(unresolved),
+        "groups": records[:MAX_GROUP_MEMBERSHIP_DISCLOSURE],
+        "group_count": len(records),
+        "groups_truncated": len(records) > MAX_GROUP_MEMBERSHIP_DISCLOSURE,
+        "groups_fingerprint": stable_hash(records),
+        "maximum_depth": MAX_GROUP_MEMBERSHIP_DEPTH,
+    }
+
+
 def _build_obligation_binding(
     snapshot: DependencyIndexSnapshot,
     *,
@@ -1319,7 +1426,12 @@ def _build_obligation_binding(
         semantic_precision = "exact"
     else:
         semantic_precision = "coverage_failure"
-    evidence_complete = bool(coverage_complete and not opaque_count)
+    group_hold = (
+        _group_membership_hold(snapshot, entity_id) if target_scoped else None
+    )
+    evidence_complete = bool(
+        coverage_complete and not opaque_count and group_hold is None
+    )
     if not evidence_complete and observed_consequence == "none":
         observed_consequence = "unknown"
 
@@ -1349,6 +1461,9 @@ def _build_obligation_binding(
         # Unattributable gaps can hide an automation the scan never named;
         # per-automation locks cannot cover it, the domain fence can.
         coarse_fence_reasons.add("unattributable_coverage_failure")
+    if group_hold is not None:
+        # A group consumer is not named, so it cannot be locked by name.
+        coarse_fence_reasons.add(group_hold["reason_code"])
     execution_block_reason_codes = _bounded_reason_codes(
         execution_block_reasons
     )
@@ -1362,6 +1477,7 @@ def _build_obligation_binding(
         coverage_reasons,
         selector_uncertainty,
         (["opaque_downstream_obligations"] if opaque_count else []),
+        ([group_hold["reason_code"]] if group_hold is not None else []),
     )
     execution_eligible = execution_contract_complete
     lock_projection = {
@@ -1372,7 +1488,7 @@ def _build_obligation_binding(
         # holds the unconstrained key so an uncertain configuration mutation
         # cannot race the final refresh and dispatch boundary.
         "conservative_helper_dependency": bool(
-            opaque_count or not coverage_complete
+            opaque_count or not coverage_complete or group_hold is not None
         ),
         "automation_resource_ids": resource_ids,
         "custom_template_reload": bool(
@@ -1497,6 +1613,8 @@ def _build_obligation_binding(
             }
         )
         material.pop("lock_identity_unavailable", None)
+        if group_hold is not None:
+            material["group_membership_hold"] = group_hold
     return {
         **material,
         "selector_authority_diagnostics": selector_diagnostics,
@@ -2406,6 +2524,36 @@ def helper_dependency_risk_assessment(
             ],
         },
     ]
+    group_hold = binding.get("group_membership_hold")
+    if isinstance(group_hold, dict):
+        named = [
+            str(item.get("group_entity_id"))
+            for item in group_hold.get("groups") or []
+            if isinstance(item, dict) and item.get("membership") != "possible"
+        ]
+        unresolved = [
+            str(code) for code in group_hold.get("unresolved_reason_codes") or []
+        ]
+        notes = []
+        if named:
+            notes.append(
+                "This helper is a member of "
+                + ", ".join(named)
+                + (" and more groups" if group_hold.get("groups_truncated") else "")
+                + "; automations that reference a group are not attributed "
+                "to its members yet."
+            )
+        if unresolved:
+            notes.append(
+                "Group membership of this helper could not be fully resolved ("
+                + ", ".join(unresolved)
+                + "); it is treated as a possible group member."
+            )
+        warnings = [
+            *warnings,
+            " ".join(notes)
+            + " The plan is held elevated with an unknown consequence.",
+        ]
     return ChangeRiskAssessment(
         level=level,
         reasons=reasons,
@@ -2416,6 +2564,8 @@ def helper_dependency_risk_assessment(
 
 
 __all__ = [
+    "GROUP_MEMBERSHIP_UNATTRIBUTED_REASON",
+    "GROUP_MEMBERSHIP_UNRESOLVED_REASON",
     "HELPER_DEPENDENCY_RISK_MODEL",
     "INPUT_BOOLEAN_DEPENDENCY_MODEL",
     "HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS",
