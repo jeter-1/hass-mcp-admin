@@ -15,7 +15,7 @@
   "A21-health-memo-not-cleared-after-write",
   "Q3-plan-inspection-uses-get",
   "Q4-task-inspection-uses-get",
-  "Q5-task-inspection-read-quarantines",
+  "Q5-tasks-inspection-read-quarantines",
   "I8-any-task-acknowledgeable",
   "I9-token-pattern-not-applied",
   "L1-chain-link-not-verified",
@@ -31,7 +31,7 @@
   "A8-malformed-fingerprint-accepted",
   "Q3-plan-inspection-uses-get",
   "Q4-task-inspection-uses-get",
-  "Q5-task-inspection-read-quarantines",
+  "Q5-tasks-inspection-read-quarantines",
   "I8-any-task-acknowledgeable",
   "I9-token-pattern-not-applied",
   "L1-chain-link-not-verified",
@@ -614,7 +614,7 @@
    "seconds": 23.0
   },
   {
-   "id": "H3-task-consistency-guard-removed",
+   "id": "H3-tasks-consistency-guard-removed",
    "class": "health counts, warnings or index freshness wrong",
    "replacements": [
     [
@@ -634,7 +634,7 @@
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/H3-task-consistency-guard-removed.log",
+   "log_path": "mutation-logs/H3-tasks-consistency-guard-removed.log",
    "seconds": 22.9
   },
   {
@@ -862,7 +862,7 @@
    "seconds": 22.6
   },
   {
-   "id": "Q5-task-inspection-read-quarantines",
+   "id": "Q5-tasks-inspection-read-quarantines",
    "class": "inspection read has side effects or misreports",
    "replacements": [
     [
@@ -882,7 +882,7 @@
    ],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/Q5-task-inspection-read-quarantines.log",
+   "log_path": "mutation-logs/Q5-tasks-inspection-read-quarantines.log",
    "seconds": 22.2
   },
   {

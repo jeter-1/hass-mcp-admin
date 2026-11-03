@@ -65,7 +65,7 @@
    "seconds": 24.3
   },
   {
-   "id": "Q5-task-inspection-read-quarantines",
+   "id": "Q5-tasks-inspection-read-quarantines",
    "class": "inspection read has side effects or misreports",
    "replacements": [
     [
@@ -85,7 +85,7 @@
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/Q5-task-inspection-read-quarantines.log",
+   "log_path": "mutation-logs/Q5-tasks-inspection-read-quarantines.log",
    "seconds": 24.8
   }
  ]

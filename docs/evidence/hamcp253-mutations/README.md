@@ -62,3 +62,18 @@ affects.
 - **The Ingress content-type, body-size and field-count fragments.** These
   fragments are shared with the existing approval routes, so they do not
   match uniquely. The HAMCP-253 web tests cover each limit directly.
+
+## Identifier rename after generation
+
+The repository's offline credential scan (`Test-SecretPatterns` in
+`scripts/check.ps1`) matches `sk-` followed by 20 or more identifier
+characters. Two mutant IDs matched it by accident, through the substring
+`task-`. After the rounds ran, both IDs were renamed by an exact literal
+substitution in `run_mutations.py` and in all three results files:
+
+- `H3-task-consistency-guard-removed` → `H3-tasks-consistency-guard-removed`
+- `Q5-task-inspection-read-quarantines` → `Q5-tasks-inspection-read-quarantines`
+
+Nothing else in the results changed: the verdicts, `FAIL:` lines, test counts
+and timings are as generated. The per-mutant log paths recorded in the results
+point into the ignored `.artifacts/`, where the logs keep their original names.

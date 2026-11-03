@@ -14,7 +14,7 @@
   "A21-health-memo-not-cleared-after-write",
   "Q3-plan-inspection-uses-get",
   "Q4-task-inspection-uses-get",
-  "Q5-task-inspection-read-quarantines",
+  "Q5-tasks-inspection-read-quarantines",
   "W2-binding-principal-not-compared"
  ],
  "equivalent": {
@@ -24,7 +24,7 @@
  "unexpected_survivors": [
   "Q3-plan-inspection-uses-get",
   "Q4-task-inspection-uses-get",
-  "Q5-task-inspection-read-quarantines"
+  "Q5-tasks-inspection-read-quarantines"
  ],
  "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
  "python": "3.12.14",
@@ -607,7 +607,7 @@
    "seconds": 26.2
   },
   {
-   "id": "H3-task-consistency-guard-removed",
+   "id": "H3-tasks-consistency-guard-removed",
    "class": "health counts, warnings or index freshness wrong",
    "replacements": [
     [
@@ -627,7 +627,7 @@
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/H3-task-consistency-guard-removed.log",
+   "log_path": "mutation-logs/H3-tasks-consistency-guard-removed.log",
    "seconds": 24.8
   },
   {
@@ -855,7 +855,7 @@
    "seconds": 28.0
   },
   {
-   "id": "Q5-task-inspection-read-quarantines",
+   "id": "Q5-tasks-inspection-read-quarantines",
    "class": "inspection read has side effects or misreports",
    "replacements": [
     [
@@ -875,7 +875,7 @@
    ],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/Q5-task-inspection-read-quarantines.log",
+   "log_path": "mutation-logs/Q5-tasks-inspection-read-quarantines.log",
    "seconds": 28.3
   },
   {
