@@ -11,7 +11,6 @@ approval, task, or dispatch authority.
 from __future__ import annotations
 
 import hmac
-import re
 
 from ..errors import ErrorCode
 from .historical_policy import (
@@ -30,7 +29,6 @@ from .policy import (
 
 PROJECTION_FAILURE_CATEGORY_MODEL = "hamcp198-projection-failure-category-v1"
 MAX_HEALTH_PROJECTION_FAILURES = 8
-_RECORD_ID = re.compile(r"^[a-f0-9]{32}$")
 PROJECTION_FAILURE_CATEGORIES = (
     # The stored subject hash does not reproduce from the immutable plan
     # subject: corruption, or a subject derivation that changed after writing.
@@ -111,6 +109,8 @@ def projection_failure_category(
 
 def projection_failure_identification(
     failures: list[tuple[ChangePlan, ErrorCode]],
+    *,
+    sensitive_values: tuple[str, ...],
 ) -> tuple[list[dict[str, str]], bool]:
     """Return at most eight ``{plan_id, category}`` rows and a truncation flag.
 
@@ -118,16 +118,18 @@ def projection_failure_identification(
     listed records are examined, so the cost is bounded by the row limit.
     """
 
+    # record_inspection imports this module.
+    from .record_inspection import UNRECOGNIZED, screened_record_id
+
     ordered = sorted(failures, key=lambda item: str(item[0].plan_id))
     rows = [
         {
-            # HAMCP-253 R1-M2: a stored identifier is shown only in the
-            # record-ID format; anything else is a fixed marker.
+            # HAMCP-253 R1-M2/R2-M1: a stored identifier passes the same
+            # record-ID and configured-value screen as the acknowledgement
+            # bucket; anything else is a fixed marker.
             "plan_id": (
-                plan.plan_id
-                if isinstance(plan.plan_id, str)
-                and _RECORD_ID.fullmatch(plan.plan_id)
-                else "unrecognized_value"
+                screened_record_id(plan.plan_id, sensitive_values)
+                or UNRECOGNIZED
             ),
             "category": projection_failure_category(plan, error_code),
         }

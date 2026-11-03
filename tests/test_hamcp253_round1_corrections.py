@@ -412,7 +412,9 @@ class StoredMetadataIsNeverEchoedTests(ScreenedServiceMixin, Hamcp253IngressCase
         error = self.service._projection_failure_for_plan(plan)
         self.assertIsNotNone(error)
         plan.plan_id = TOKEN_SECRET
-        rows, truncated = projection_failure_identification([(plan, error)])
+        rows, truncated = projection_failure_identification(
+            [(plan, error)], sensitive_values=self.service.sensitive_values
+        )
         self.assertEqual(rows[0]["plan_id"], UNRECOGNIZED)
         self.assertEqual(rows[0]["category"], "policy_subject_hash_not_reproducible")
         self.assertIs(truncated, False)

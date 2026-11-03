@@ -18161,7 +18161,9 @@ class ChangeGovernanceService:
             if resolved_history is None else resolved_history
         )
         failure_rows, failures_truncated = (
-            projection_failure_identification(projection_failures)
+            projection_failure_identification(
+                projection_failures, sensitive_values=self.sensitive_values
+            )
         )
         plan_generation = (
             self.repository.generation if captured_plan_generation is None
