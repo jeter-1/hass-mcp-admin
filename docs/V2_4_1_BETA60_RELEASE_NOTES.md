@@ -55,8 +55,8 @@ Acceptance: [`V2_4_1_BETA60_ACCEPTANCE.md`](V2_4_1_BETA60_ACCEPTANCE.md).
   before any display truncation. Two distinct references whose shortened
   displays collide stay separate; the later one gets a short `~N` id suffix.
 - **Bounded.** One plan shares an 8-item budget across its children (at least
-  1 each). Every string is length-bounded (ids 32, names 24, locations 32
-  characters).
+  1 each). Every string is length-bounded (ids 32 characters before the
+  bounded collision suffix, names 24, locations 32 characters).
 
 ## Unchanged by design
 
@@ -82,10 +82,9 @@ flags the response (`response_completeness.truncated: true`,
 `approval_disclosures_complete: false`). Its retrieval hint names
 `get_change_plan`, which returns the plan summary but not these references.
 
-This happens to availability/exposure plans of eight entities, as it did
-before this release, whatever the reference store holds. Plans of up to seven
-entities fit with the block, with or without references (measured with the
-store absent, empty, and about 120 references per entity).
+In the measured disable-plan fixtures, 5–7 children fit for absent, empty and
+large stores; eight is flagged as before. Other plan content can change the
+threshold.
 
 ## Rollback
 

@@ -19,9 +19,9 @@ Home Assistant write change.
   policy. An unavailable store is disclosed as `unavailable`, never a
   refusal.
 - Bounded: counts plus a shared 8-item budget with truncation flags,
-  deduplicated on each reference's full original identity. Plans that fit
-  the response bound before still fit (up to seven availability/exposure
-  children, with or without references).
+  deduplicated on each reference's full original identity. In the measured
+  disable-plan fixtures, 5–7 children fit for absent, empty and large stores;
+  eight is flagged as before. Other plan content can change the threshold.
 
 ## 2.4.1-beta.59 - input_select option relevance by evidence (HAMCP-274)
 

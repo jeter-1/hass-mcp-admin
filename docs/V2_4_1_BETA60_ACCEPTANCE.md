@@ -101,9 +101,9 @@ Assistant.
 
 1. Pick an entity that is a member of a scene or a group (for example from
    `ha_config_list_groups` or a scene's configuration).
-2. Create one plan for it with `create_entity_availability_exposure_plan`
-   (`operation: disable`), or a removal plan for a referencing automation or
-   script with `create_configuration_delete_plan`. Do not approve it.
+2. Create one availability/exposure disable plan for that scene or group
+   member with `create_entity_availability_exposure_plan`
+   (`operation: disable`). Leave it unapproved.
 3. In the create-plan response, confirm that `dry_run_results` has one
    `global_source_consumers` block with:
    - `status: read` and `informational: true`;
