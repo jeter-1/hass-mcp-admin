@@ -6,6 +6,14 @@ names. It never contains proposed or current configuration, targets, notes,
 principals, tokens or free-form error text. It reads the record exactly as
 stored: it does not resolve lifecycle, expire, recover or save anything, and
 it works on records that the plan and task tools refuse.
+
+Stored metadata is untrusted (R1-M2). The view names a record by the
+validated requested identifier and reports a stored identifier only as a
+fixed match or mismatch code. A field with a known closed vocabulary shows a
+member of it or the fixed unrecognized marker. Any other field must be a
+short token that the shared sanitizer, given the configured sensitive values,
+leaves unchanged, or it is replaced by the same marker. Screening happens
+before the view is fingerprinted or rendered.
 """
 
 from __future__ import annotations
@@ -16,7 +24,15 @@ import re
 from typing import Any
 
 from ..errors import ErrorCode, GovernanceError
-from .models import ApprovalPolicyClass, ChangePlan, PlanStatus
+from ..sanitization import sanitize_untrusted_data
+from .models import (
+    ApprovalActionKind,
+    ApprovalPolicyClass,
+    ApprovalState,
+    ChangeOperation,
+    ChangePlan,
+    PlanStatus,
+)
 from .projection_diagnostics import (
     PROJECTION_FAILURE_CATEGORY_MODEL,
     projection_failure_category,
@@ -30,7 +46,17 @@ MAX_INSPECTED_EVENTS = 64
 MAX_HEALTH_ACKNOWLEDGEMENT_IDS = 8
 _TOKEN = re.compile(r"^[a-z][a-z0-9_.-]{0,95}$")
 _TIMESTAMP = re.compile(r"^[0-9T:.+\-Z ]{10,40}$")
+_RECORD_ID = re.compile(r"^[a-f0-9]{32}$")
 UNRECOGNIZED = "unrecognized_value"
+STORED_IDENTITY_MATCH = "matches_request"
+STORED_IDENTITY_MISMATCH = "stored_identifier_mismatch"
+_OPERATIONS = frozenset(item.value for item in ChangeOperation)
+_PLAN_STATUSES = frozenset(item.value for item in PlanStatus)
+_TASK_STATES = frozenset(item.value for item in ExecutionTaskState)
+_POLICY_CLASSES = frozenset(item.value for item in ApprovalPolicyClass)
+_APPROVAL_STATES = frozenset(item.value for item in ApprovalState)
+_APPROVAL_KINDS = frozenset(item.value for item in ApprovalActionKind)
+_ERROR_CODES = frozenset(item.value for item in ErrorCode)
 # Plans in these persisted states have already failed or been refused.
 ACKNOWLEDGEABLE_PLAN_STATUSES = frozenset({
     PlanStatus.VALIDATION_FAILED,
@@ -42,17 +68,43 @@ ACKNOWLEDGEABLE_PLAN_STATUSES = frozenset({
 _APPROVAL_EVENT = re.compile(r"(approv|reject|challenge|supersed|prohibit)")
 
 
-def _token(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = getattr(value, "value", value)
-    return text if isinstance(text, str) and _TOKEN.fullmatch(text) else UNRECOGNIZED
+class _Screen:
+    """Project one stored value as a fixed member, a screened token or marker."""
+
+    def __init__(self, sensitive_values: tuple[str, ...]) -> None:
+        self.sensitive_values = tuple(
+            value for value in sensitive_values if isinstance(value, str) and value
+        )
+
+    def closed(self, value: Any, vocabulary: frozenset[str]) -> str | None:
+        if value is None:
+            return None
+        text = getattr(value, "value", value)
+        return text if isinstance(text, str) and text in vocabulary else UNRECOGNIZED
+
+    def open(self, value: Any, pattern: re.Pattern[str] = _TOKEN) -> str | None:
+        if value is None:
+            return None
+        text = getattr(value, "value", value)
+        if not isinstance(text, str) or not pattern.fullmatch(text):
+            return UNRECOGNIZED
+        result = sanitize_untrusted_data(text, known_secrets=self.sensitive_values)
+        if result.failed_closed or result.redaction_applied or result.value != text:
+            return UNRECOGNIZED
+        return text
+
+    def timestamp(self, value: Any) -> str | None:
+        return self.open(value, _TIMESTAMP)
+
+    def record_id(self, value: Any) -> str | None:
+        return self.open(value, _RECORD_ID)
 
 
-def _timestamp(value: Any) -> str | None:
-    if value is None:
-        return None
-    return value if isinstance(value, str) and _TIMESTAMP.fullmatch(value) else UNRECOGNIZED
+def screened_record_id(value: Any, sensitive_values: tuple[str, ...]) -> str | None:
+    """A stored identifier fit to show, or ``None`` when it is not."""
+
+    shown = _Screen(sensitive_values).record_id(value)
+    return None if shown in {None, UNRECOGNIZED} else shown
 
 
 def _digest(rows: list[Any]) -> str:
@@ -70,9 +122,15 @@ def record_fingerprint(view: dict[str, Any]) -> str:
     return _digest([material])
 
 
-def _event_rows(events: list[tuple[Any, ...]], fields: tuple[str, ...]) -> dict[str, Any]:
+def _event_rows(
+    events: list[tuple[Any, ...]],
+    fields: tuple[tuple[str, Any], ...],
+) -> dict[str, Any]:
     rows = [
-        {"order": index, **{name: _token(value) for name, value in zip(fields, row)}}
+        {
+            "order": index,
+            **{name: project(value) for (name, project), value in zip(fields, row)},
+        }
         for index, row in enumerate(events, 1)
     ]
     # Taken from every event, not only the displayed rows, with its own bound.
@@ -92,7 +150,14 @@ def _event_rows(events: list[tuple[Any, ...]], fields: tuple[str, ...]) -> dict[
     }
 
 
-def plan_view(service: Any, plan: ChangePlan) -> dict[str, Any]:
+def plan_view(service: Any, plan: ChangePlan, record_id: str) -> dict[str, Any]:
+    """``record_id`` is the validated identifier the record was read by."""
+
+    screen = _Screen(service.sensitive_values)
+    identity = (
+        STORED_IDENTITY_MATCH if plan.plan_id == record_id
+        else STORED_IDENTITY_MISMATCH
+    )
     unreadable: list[str] = []
     try:
         error = service._projection_failure_for_plan(plan)
@@ -116,15 +181,20 @@ def plan_view(service: Any, plan: ChangePlan) -> dict[str, Any]:
     decision = plan.policy_decision
     policy_class = None
     try:
-        policy_class = _token(decision.policy_class) if decision is not None else None
+        policy_class = (
+            screen.closed(decision.policy_class, _POLICY_CLASSES)
+            if decision is not None else None
+        )
     except Exception:
         unreadable.append("policy_class")
     approval: dict[str, Any] = {}
     try:
         approval = {
-            "state": _token(plan.approval.state),
-            "approval_kind": _token(plan.approval.approval_kind),
-            "bundle_state": _token(plan.approval.bundle_state),
+            "state": screen.closed(plan.approval.state, _APPROVAL_STATES),
+            "approval_kind": screen.closed(
+                plan.approval.approval_kind, _APPROVAL_KINDS
+            ),
+            "bundle_state": screen.open(plan.approval.bundle_state),
             "authority_version": (
                 plan.approval.authority_version
                 if type(plan.approval.authority_version) is int else None
@@ -138,33 +208,40 @@ def plan_view(service: Any, plan: ChangePlan) -> dict[str, Any]:
     except Exception:
         terminal = None
         unreadable.append("terminal")
-    acknowledgeable = error is not None or plan.status in ACKNOWLEDGEABLE_PLAN_STATUSES or (
-        terminal is True
-        and decision is not None
-        and decision.policy_class == ApprovalPolicyClass.PROHIBITED
+    acknowledgeable = identity == STORED_IDENTITY_MATCH and (
+        error is not None or plan.status in ACKNOWLEDGEABLE_PLAN_STATUSES or (
+            terminal is True
+            and decision is not None
+            and decision.policy_class == ApprovalPolicyClass.PROHIBITED
+        )
     )
-    event_rows = _event_rows(events, ("event", "result_status", "error_code"))
+    event_rows = _event_rows(events, (
+        ("event", screen.open),
+        ("result_status", screen.open),
+        ("error_code", screen.open),
+    ))
     view = {
         "inspection_model": INSPECTION_MODEL,
         "record_kind": "change_plan",
-        "record_id": plan.plan_id,
+        "record_id": record_id,
+        "stored_identity": identity,
         "readable": True,
-        "record_type": _token(plan.operation),
-        "plan_family": _token(plan.plan_family),
+        "record_type": screen.closed(plan.operation, _OPERATIONS),
+        "plan_family": screen.open(plan.plan_family),
         "contract_version": plan.contract_version if type(plan.contract_version) is int else None,
-        "status": _token(plan.status),
+        "status": screen.closed(plan.status, _PLAN_STATUSES),
         "terminal": terminal,
-        "created_at": _timestamp(plan.created_at),
-        "updated_at": _timestamp(plan.updated_at),
-        "expires_at": _timestamp(plan.expires_at),
+        "created_at": screen.timestamp(plan.created_at),
+        "updated_at": screen.timestamp(plan.updated_at),
+        "expires_at": screen.timestamp(plan.expires_at),
         "policy_class": policy_class,
         "approval": approval,
         "failure": {
             "projection_failed": error is not None,
-            "reason_code": _token(error or check_error),
+            "reason_code": screen.closed(error or check_error, _ERROR_CODES),
             "category": category,
             "category_model": PROJECTION_FAILURE_CATEGORY_MODEL,
-            "execution_outcome": _token(plan.execution_outcome),
+            "execution_outcome": screen.open(plan.execution_outcome),
         },
         **event_rows,
         "unreadable_fields": unreadable,
@@ -174,7 +251,16 @@ def plan_view(service: Any, plan: ChangePlan) -> dict[str, Any]:
     return view
 
 
-def task_view(task: ExecutionTask) -> dict[str, Any]:
+def task_view(
+    task: ExecutionTask, record_id: str, *, sensitive_values: tuple[str, ...]
+) -> dict[str, Any]:
+    """``record_id`` is the validated identifier the record was read by."""
+
+    screen = _Screen(sensitive_values)
+    identity = (
+        STORED_IDENTITY_MATCH if task.task_id == record_id
+        else STORED_IDENTITY_MISMATCH
+    )
     unreadable: list[str] = []
     events: list[tuple[Any, ...]] = []
     try:
@@ -184,36 +270,44 @@ def task_view(task: ExecutionTask) -> dict[str, Any]:
         ]
     except Exception:
         unreadable.append("events")
-    event_rows = _event_rows(events, ("event", "state_before", "state_after"))
+    event_rows = _event_rows(events, (
+        ("event", screen.open),
+        ("state_before", lambda value: screen.closed(value, _TASK_STATES)),
+        ("state_after", lambda value: screen.closed(value, _TASK_STATES)),
+    ))
     manual_review = task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
     last_error = task.last_error if isinstance(task.last_error, dict) else {}
     view = {
         "inspection_model": INSPECTION_MODEL,
         "record_kind": "execution_task",
-        "record_id": task.task_id,
+        "record_id": record_id,
+        "stored_identity": identity,
         "readable": True,
-        "record_type": _token(task.operation),
-        "plan_id": task.plan_id if re.fullmatch(r"[a-f0-9]{32}", str(task.plan_id)) else UNRECOGNIZED,
+        "record_type": screen.closed(task.operation, _OPERATIONS),
+        "plan_id": screen.record_id(task.plan_id) or UNRECOGNIZED,
         "task_schema_version": (
             task.task_schema_version if type(task.task_schema_version) is int else None
         ),
-        "status": _token(task.state),
-        "terminal_outcome": _token(task.terminal_outcome),
-        "created_at": _timestamp(task.created_at),
-        "updated_at": _timestamp(task.updated_at),
-        "completed_at": _timestamp(task.completed_at),
-        "policy_class": _token(
+        "status": screen.closed(task.state, _TASK_STATES),
+        "terminal_outcome": screen.open(task.terminal_outcome),
+        "created_at": screen.timestamp(task.created_at),
+        "updated_at": screen.timestamp(task.updated_at),
+        "completed_at": screen.timestamp(task.completed_at),
+        "policy_class": screen.closed(
             task.approval_reference.get("policy_class")
-            if isinstance(task.approval_reference, dict) else None
+            if isinstance(task.approval_reference, dict) else None,
+            _POLICY_CLASSES,
         ),
         "failure": {
             "manual_review_required": manual_review,
-            "reason_code": _token(task.manual_review_reason),
-            "last_error_category": _token(last_error.get("failure_category")),
+            "reason_code": screen.open(task.manual_review_reason),
+            "last_error_category": screen.open(last_error.get("failure_category")),
         },
         **event_rows,
         "unreadable_fields": unreadable,
-        "acknowledgeable": manual_review,
+        "acknowledgeable": bool(
+            manual_review and identity == STORED_IDENTITY_MATCH
+        ),
     }
     view["record_fingerprint"] = record_fingerprint(view)
     return view

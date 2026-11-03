@@ -15868,7 +15868,7 @@ class ChangeGovernanceService:
                     ErrorCode.CHANGE_PLAN_NOT_FOUND,
                     details={"resource_id": record_id},
                 )
-            return record_inspection.plan_view(self, plan)
+            return record_inspection.plan_view(self, plan, record_id)
         try:
             task = self.task_repository.read_for_inspection(record_id)
         except ExecutionTaskStorageError:
@@ -15880,7 +15880,9 @@ class ChangeGovernanceService:
                 ErrorCode.EXECUTION_TASK_NOT_FOUND,
                 details={"resource_id": record_id},
             )
-        return record_inspection.task_view(task)
+        return record_inspection.task_view(
+            task, record_id, sensitive_values=self.sensitive_values
+        )
 
     @staticmethod
     def _acknowledgement_projection(
@@ -16204,8 +16206,15 @@ class ChangeGovernanceService:
             groups: dict[str, list[str]] = {
                 "unacknowledged": [], "historical_record": [], "current_defect": [],
             }
-            stale = 0
+            stale = unrecognized = 0
             for record_id in ids:
+                if record_inspection.screened_record_id(
+                    record_id, self.sensitive_values
+                ) is None:
+                    # A stored identifier that is not a record ID, or that
+                    # holds a sensitive value, is counted and never listed.
+                    unrecognized += 1
+                    continue
                 entry = entries.get((kind, record_id))
                 state = "unacknowledged"
                 classification = None
@@ -16224,7 +16233,8 @@ class ChangeGovernanceService:
                 ].append(record_id)
             limit = record_inspection.MAX_HEALTH_ACKNOWLEDGEMENT_IDS
             return {
-                "unacknowledged_count": len(groups["unacknowledged"]),
+                "unacknowledged_count": len(groups["unacknowledged"]) + unrecognized,
+                "unrecognized_identifier_count": unrecognized,
                 "acknowledged_historical_count": len(groups["historical_record"]),
                 "acknowledged_current_defect_count": len(groups["current_defect"]),
                 "stale_acknowledgement_count": stale,

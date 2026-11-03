@@ -1373,6 +1373,7 @@ def _render_record_view(view: dict[str, Any]) -> str:
     rows = (
         ("Kind", view.get("record_kind")),
         ("Identifier", view.get("record_id")),
+        ("Stored identifier", view.get("stored_identity")),
         ("Readable", view.get("readable")),
         ("Type", view.get("record_type")),
         ("Status", view.get("status")),
