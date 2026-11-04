@@ -98,7 +98,7 @@ These apply to every row and are not repeated:
   records) is a persistence boundary and needs a security section.
 - **Effort:** M (estimate; the register gives none).
 - **Verdict:** **ready**.
-  The implementation (2.4.1-beta.62) is in draft review: the read-only tool
+  The implementation (2.4.1-beta.63) is in draft review: the read-only tool
   `inspect_governance_record` and an Ingress-only acknowledgement
   ([design](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md)).
 
@@ -186,8 +186,11 @@ These apply to every row and are not repeated:
   reference store, which already exists. Its inputs are partial for scene
   membership (RCG-006) and for large dashboards (RCG-045). The dashboard
   input is also bounded by the 6 s dependency scan, which read 0 of 6
-  dashboards at live scale on beta.55 (RCG-093, HAMCP-277), so useful
-  dashboard coverage is not demonstrated.
+  dashboards at live scale on beta.55 (RCG-093). HAMCP-277 addresses, in
+  source (beta.62), an overlap/contention mechanism that synthetic
+  experiments reproduce; its share of the live symptom is not measured, and
+  useful live dashboard coverage is not
+  demonstrated until its post-deployment acceptance.
 - **Write commands:** none.
 - **Readback:** not applicable. Partial sources must be stated, with their
   counted reasons.
@@ -408,9 +411,14 @@ These are not feature rows. They change the readiness of the rows above:
   group-consumer attribution.
 - **HAMCP-273** (Backlog, Small, depends on 263): large-dashboard readback
   (RCG-045, RCG-048). It limits the completeness of 267 and 270.
-- **HAMCP-277** (Ready, Small, Medium): the dependency index's 6 s dashboard
-  scan read 0 of 6 dashboards at live scale on beta.55 (RCG-093). Its cause
-  is not established. It is distinct from 273, and limits 267 and 270 too.
+- **HAMCP-277** (Active, Small, Medium; beta.62 in review): the dependency
+  index's 6 s dashboard scan read 0 of 6 dashboards at live scale on beta.55
+  (RCG-093). Source analysis and synthetic experiments reproduce an
+  overlap/contention mechanism: the phase clock started at build start and
+  ran concurrently with the other sources; live contention was not
+  measured. The fix runs the phase after them, bounds each read, starts no
+  read after the deadline and names every listed dashboard's outcome. Live coverage awaits deployment and
+  acceptance. It is distinct from 273, and limits 267 and 270 too.
 - **HAMCP-271** (Active, High, in review as #340): stranded children under a
   terminal parent in the configuration and operational-helper families keep
   their locks. It limits every governed configuration write, including 071

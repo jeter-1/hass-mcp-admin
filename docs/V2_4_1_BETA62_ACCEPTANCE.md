@@ -1,157 +1,125 @@
 # Engineering 2.4.1-beta.62 acceptance
 
-This contract covers HAMCP-253: bounded read-only inspection of one stuck
-governance record, an Ingress-only administrator acknowledgement, and health
-that warns only on unacknowledged records. It follows 2.4.1-beta.61
-(HAMCP-285, #353) and includes it.
+This contract covers HAMCP-277: the dependency index's dashboard phase reads
+the household's dashboards within its bounded budget, or reads as many as
+truthfully fit and names the rest. It follows 2.4.1-beta.61 and includes it.
 
 See also the release notes:
 [`V2_4_1_BETA62_RELEASE_NOTES.md`](V2_4_1_BETA62_RELEASE_NOTES.md).
 
 **Release target.** `2.4.1-beta.62`, following 2.4.1-beta.61 (#353,
-HAMCP-285). This change was first staged as beta.61 because `main` was then
-at beta.60 and the release transition accepts only beta N to N+1 (60 to 62
-is refused). #353 merged first and kept beta.61, so this change restaged to
-beta.62 with the round-1 corrections and full Evidence. The release is
-materialized in all three version authorities, with no staged declaration
-left. Nothing is published or deployed.
+HAMCP-285). The release is materialized in all three version authorities
+with no staged declaration left. Nothing is published or deployed.
+HAMCP-253 (#354) also expects beta.62 but had not materialized it when this
+was staged, and the release transition accepts only beta.61 → beta.62.
+Whichever merges first keeps beta.62; the other restages to the next free
+beta with full Evidence. That collision is expected and is not a finding.
+
+**Deploy freeze.** Nothing deploys before the HAMCP-278 cutover. Stage 4
+waits for that cutover and for Josh.
 
 The contract has four stages:
 1. source and offline acceptance;
 2. release CI;
 3. publication;
-4. installed read-only acceptance.
+4. installed acceptance.
 
 It authorizes none of the later stages.
 
 ## 1. Source and offline acceptance
 
 Bind:
-- the HAMCP-253 row in [`FEATURE_READINESS_MAP.md`](FEATURE_READINESS_MAP.md)
-  and the design in
-  [`HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md`](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md);
-- Josh's decision (2026-11-03) that acknowledgement is an Ingress action and
-  that MCP gets the read-only inspect tool only: the Engineering MCP
-  connector exposes no acknowledgement tool, and an authenticated Home
-  Assistant administrator browser session can acknowledge, one record at a
-  time;
-- the non-goals: no change to projection verification, startup validation,
-  the approve, apply or recovery paths, or persisted plan and task formats;
-  no fix for the prohibited-plan event allowlist (a follow-up);
-- `2.4.1-beta.62` materialized before Ready, with exact document resolution;
-- the PR head SHA, its `validate` run and the Evidence tier log named in the
-  PR.
+- the objective: at live scale the dashboard source reads the household's
+  dashboards within its bounded budget, or reads as many as truthfully fit
+  and names the rest, so dashboard-only references reach
+  `entity_dependency_analysis`, `change_impact_analysis` and the HAMCP-270
+  disclosures;
+- the non-goals: HAMCP-273 large-dashboard readback, any dashboard write
+  path, a new upstream tool or provider route, and any admission or
+  signed-profile change;
+- the bounds: `DASHBOARD_SCAN_SECONDS` stays 6 s; the 300 s build deadline,
+  50-dashboard, 4-concurrent, 2 MiB document and 10,000-finding bounds are
+  unchanged; each read is bounded by `DASHBOARD_READ_SECONDS` = 3 s, capped
+  by what remains of the phase;
+- the store stays diagnostic: outside the snapshot fingerprint and the
+  helper obligation ledger, never lowering risk (HAMCP-227, HAMCP-270).
 
-The review needs a security section covering:
-- **New write path.** One append-only ledger file under Engineering's
-  governance storage, reachable only through the Ingress acknowledge route
-  behind the administrator check (a read-only `config/auth/list` role
-  lookup) and the one-shot CSRF token. It has no MCP write tool, and
-  inspection and the ledger operations make no Home Assistant request and
-  no provider dispatch.
-- **Audit coordination.** An effective decision needs an enabled, writable
-  audit destination and is completed only after its audit event is durably
-  written; a failure abandons it, and an interrupted decision is reconciled.
-  No-op and refusal outcomes get a best-effort audit with a truthful
-  `audit_recorded`.
-- **No execution authority.** No approve, apply, recovery or verification
-  path reads the ledger.
-- **Disclosure.** Inspection uses allowlisted metadata with closed tokens,
-  never echoes a stored identifier, screens extensible metadata with the
-  shared sanitizer and configured sensitive values, and never quarantines
-  or re-indexes storage.
-  The reason is screened by the sanitizer, and audit records only its
-  length.
-- **Integrity.** The hash chain is validated on every read. A damaged ledger
-  makes health warn as if nothing were acknowledged and refuses new
-  acknowledgements.
-
-Required offline evidence is in `tests/test_hamcp253_*.py`:
-- inspection of each failure category from real code-path fixtures, with
-  their provenance, including records that the plan tools refuse and
-  unreadable records;
-- acknowledging a historical record: the warning clears, the counts move,
-  and the record bytes are unchanged; reclassify and revoke, after which the
-  warning returns; persistence across restart;
-- every refusal in the design, with zero Home Assistant and provider calls
-  asserted;
-- round-1 corrections (`tests/test_hamcp253_round1_corrections.py`): cold
-  and invalidated indexes with an unrelated corrupt record leave source,
-  quarantine and navigation state unchanged across repeated inspection and
-  an acknowledgement attempt; a configured secret in a stored event name,
-  plan ID or task ID never appears in inspection, Ingress, health or audit;
-  disabled, failing and interrupted audit paths refuse, abandon or
-  reconcile, and `audit_recorded` is true only when audit bytes changed;
-- round-2 corrections (`tests/test_hamcp253_round2_corrections.py`): a
-  configured value stored as a plan identifier never reaches health,
-  `list_change_plans`, inspection, Ingress, MCP or audit, while counts,
-  order and bounds hold;
-  a directory, character-device, missing-parent, non-writable, disabled
-  or missing audit
-  destination is refused before the acknowledgement namespace or ledger
-  changes; a decision or completion write that fails after the ledger
-  replacement (fault hook, directory open, directory fsync) is reported as
-  pending, and on restart, whether the replacement was kept or lost, it
-  converges with no pending entry, no duplicate correlated audit event and
-  no effective decision without its audit event;
-- redaction: a secret-like value never appears in inspection,
-  acknowledgement, health, audit or the ledger;
-- regression: approve and apply of an acknowledged failed plan are still
-  refused;
-- the Ingress routes: the administrator gate, CSRF, content type, body
-  bounds and escaping;
-- mutation testing in a copied tree, counting only assertion failures as
-  kills and listing equivalent mutants with reasons;
-- the complete repository suite in the Evidence tier.
+Offline evidence (`tests/test_hamcp277_dashboard_scan_budget.py`, the
+updated `tests/test_hamcp227_global_sources.py`):
+- **Positive.** Six dashboards at realistic latencies all read within the
+  budget, with every dashboard's reference in dependency analysis and a
+  HAMCP-270 disclosure item.
+- **Oversized.** One dashboard refused as too large is reported exactly as
+  `too_large`; the other five are read, and the row is partial.
+- **Slow reads.** Hanging reads time out per read (`timed_out`) and the
+  rest are still read. When the budget truly runs out, as many as fit are
+  read and the rest are named `not_attempted_budget`; the row is partial,
+  never complete, and the budget overrun is counted.
+- **Phase clock.** A slow earlier phase holding a modeled shared Core longer
+  than the whole dashboard budget does not spend it: all six dashboards are
+  read after it releases.
+- **No late start.** Under deferred scheduling and clock advancement, every
+  read enters the reader strictly before the phase deadline; a read queued
+  before the deadline that would run at or after it is never started and is
+  `not_attempted_budget`, and a read's allowance is the remainder when it
+  runs. Cancellation while reads are queued or running leaves no task.
+- **Inventory accounting.** With 50 listed, all 50 are read; with 51, 50 are
+  read and the 51st is `not_attempted_limit`, and the first line is
+  `Dashboards read: 50 of 51 listed; 1 not attempted (50-read limit)`; an
+  upstream-truncated inventory reads `of at least M (inventory truncated)`
+  and is never complete. Read counts, outcomes, omitted counts and the
+  HAMCP-270 first-line reason reconcile.
+- **Exact outcomes.** Every listed dashboard has exactly one known outcome;
+  the first warning is `Dashboards read: N of M listed` (or its bounded
+  form above); named paths are screened and bounded.
+- **Non-interaction with HAMCP-270.** For all five planners, plan bindings,
+  bound disclosure, policy class, physical consequence, required
+  acknowledgements and risk are identical with no dashboard reader, with all
+  dashboards read, with one too large and with the budget exhausted; only
+  the disclosure's reasons differ, truthfully.
+- **Mutation testing** in a copied tree, with every kill classified
+  (`docs/evidence/hamcp277-mutations/`).
+- The complete repository suite in the Evidence tier.
 
 ## 2. Release CI
 
 The exact materialized head's `validate` check passes, including the
-release transition.
+beta.61 → beta.62 release transition.
 
 ## 3. Publication
 
 Publication happens only through Josh's Ready action and the repository's
 head-bound workflow.
 
-## 4. Installed read-only acceptance (separately authorized, after deploy)
+## 4. Installed acceptance (separately authorized)
 
-**Deploy freeze.** Nothing newer than beta.57 deploys before the HAMCP-278
-cutover. This stage runs only after Josh separately authorizes deploying
-this release.
+After the HAMCP-278 cutover, Josh deploys beta.62 and refreshes the
+connector. The architect then runs read-only checks only. None of them
+creates, approves or applies a plan.
 
-The architect inspects the five live targets **read-only** with
-`inspect_governance_record`:
+1. **Read-only.** Run `entity_dependency_analysis` on an entity that a
+   dashboard references. PASS if the dashboard coverage row reports at
+   least the 5 normal dashboards read (`Dashboards read: N of M listed`
+   with N ≥ 5) and `home-admin-dashboard` either read or reported exactly
+   as `too_large` (`Dashboards too_large: home-admin-dashboard`), and the
+   dashboard reference appears in the result.
+2. **Read-only.** Run `change_impact_analysis` for the same entity. PASS
+   if the dashboard reference appears with the same coverage reason.
+3. **Read-only.** In the step 1 result, the dashboard coverage row's first
+   warning is the line the HAMCP-270 plan disclosure shows as its dashboard
+   reason; offline tests prove that mapping. PASS if that first warning is
+   exactly `Dashboards read: N of M listed`, its N and M agree with the
+   per-outcome lines that follow and with
+   `global_sources.dashboard.outcome_counts` from `get_server_health`, and M
+   is the number of dashboards `list_dashboards` reports.
 
-| Kind | Record ID | Expected |
-|---|---|---|
-| `change_plan` | `2ab4764fe8304f429ea3b533f66caa4a` | projection failed, `approval_sequence_inconsistent` |
-| `change_plan` | `faba2fbdb10c4da0b33193718636e19c` | projection failed, `approval_sequence_inconsistent` |
-| `change_plan` | `4cf748d13c1e452fb510d93c8a4e3a0c` | `set_input_select_option`, prohibited, bundle `prohibited` |
-| `execution_task` | `6896e7a1938144b788f29708f27ea20e` | `manual_review_required`, child verification mismatch |
-| `execution_task` | `d63e3a87d7834236a585376180388609` | `manual_review_required`, dashboard update |
+Seeing the disclosure on a real plan requires creating one:
+`create_entity_metadata_plan` and the other HAMCP-270 planners persist a
+governed plan even though they dispatch no Home Assistant change. That is a
+separate planning action, outside this read-only acceptance, and needs
+Josh's explicit authorization; if authorized, the plan is never approved.
 
-For each target, confirm:
-- `readable: true`, or an explicit `unreadable_reason`;
-- the type, status, policy class, failure code and category, and ordered
-  approval events;
-- `acknowledgeable` and a 64-character `record_fingerprint`;
-- no payload, configuration, principal or token anywhere in the response.
-
-Confirm that `get_server_health` shows `record_acknowledgement` with three
-unacknowledged plans and two unacknowledged tasks, and still shows both
-warnings.
-
-**Acknowledgement needs Josh's explicit approval for each record.** Only
-after Josh approves acknowledging a specific record, and with the
-classification he chooses, does Josh (or the architect at his direction)
-use the Ingress **Stuck records** page to acknowledge that one record. Then
-confirm:
-- the outcome `acknowledged`;
-- health counts moved for that record only;
-- `inspect_governance_record` shows the acknowledgement state;
-- `get_change_plan` still refuses a projection-failed plan as before.
-
-PASS needs every inspection check. Acknowledgements are optional and
-per-record. If a step fails, record the response in HAMCP-253. Whether to
-roll back is Josh's decision.
+If a step fails, keep the responses, the build profile from
+`get_server_health` (including `global_sources.dashboard.outcome_counts`)
+and the audit records, and record them in HAMCP-277. Whether to roll back
+to beta.61 is Josh's decision.

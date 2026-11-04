@@ -385,7 +385,8 @@ class DashboardWalkTests(unittest.TestCase):
         self.assertEqual(errors(result), {"dashboard_read_upstream_unavailable": 1,
                                           "dashboard_read_or_parse_failure": 1})
         self.assertEqual({item.source_id for item in result["findings"]}, {"lovelace", "synthetic-other"})
-        self.assertIn("Dashboards not analyzed after a read failure: synthetic-broken, synthetic-raises",
+        # HAMCP-277: each listed dashboard is named under its exact outcome.
+        self.assertIn("Dashboards failed: synthetic-broken, synthetic-raises",
                       result["coverage"].warnings)
         self.assertEqual(sorted(reader.reads), sorted(reader.documents))
 
@@ -401,7 +402,9 @@ class DashboardWalkTests(unittest.TestCase):
         reader = FakeReader(documents)
         result = collect(reader)
         self.assertEqual(result["coverage"].completeness, "partial")
-        self.assertEqual(errors(result), {"dashboard_inventory_limit_exceeded": 1})
+        # HAMCP-277 R1-M2: the 51st listed dashboard is named, not dropped.
+        self.assertEqual(errors(result), {"dashboard_inventory_limit_exceeded": 1,
+                                          "dashboard_not_read_inventory_limit": 1})
         self.assertEqual(len(reader.reads), g.MAX_DEPENDENCY_DASHBOARDS)
         self.assertEqual([t.reason_code for t in result["terminals"]], ["dashboard_inventory_limit_exceeded"])
         exact = FakeReader(dict(list(documents.items())[:g.MAX_DEPENDENCY_DASHBOARDS]))
@@ -632,6 +635,10 @@ class DashboardBudgetTests(unittest.TestCase):
         reader = BudgetReader(self.DOCUMENTS, clock, read_cost=2.0)
         result = collect_budget(reader, clock, sleep)
         self.assertEqual(result["coverage"].completeness, "partial")
+        # HAMCP-277 R1-M1: every worker schedules a read at t=0, but each read
+        # checks the deadline when it actually runs. The queued reads enter
+        # the reader at 0, 2 and 4 s; the fourth would enter at 6 s, the
+        # deadline, so it never starts. (Round 0 accepted that late start.)
         self.assertEqual(len(reader.reads), 3)
         self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
                                           "dashboard_not_read": len(self.DOCUMENTS) - 3})
@@ -653,8 +660,10 @@ class DashboardBudgetTests(unittest.TestCase):
         self.assertEqual(result["coverage"].completeness, "partial")
         self.assertEqual(len(reader.reads), g.DASHBOARD_READ_CONCURRENCY)
         self.assertEqual(sorted(reader.cancelled), sorted(reader.reads))
+        # HAMCP-277: a read cancelled in flight is timed out, not "not read".
         self.assertEqual(errors(result), {"dashboard_scan_budget_exhausted": 1,
-                                          "dashboard_not_read": len(self.DOCUMENTS)})
+                                          "dashboard_read_timeout": g.DASHBOARD_READ_CONCURRENCY,
+                                          "dashboard_not_read": len(self.DOCUMENTS) - g.DASHBOARD_READ_CONCURRENCY})
         self.assertEqual((reader.sessions_open, reader.sessions_closed), (1, 1))
 
     def test_within_the_budget_is_complete(self):

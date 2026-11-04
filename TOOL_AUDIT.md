@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Stuck governance record inspection (2.4.1-beta.62, HAMCP-253)
+## Stuck governance record inspection (2.4.1-beta.63, HAMCP-253)
 
 `inspect_governance_record` is a native, read-only governance tool:
 - category `governance`, routing `engineering_native`, provider

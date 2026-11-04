@@ -741,23 +741,12 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
 
     async def scan(self) -> DependencyScanResult:
-        """Read every source; dashboards are read concurrently and never outlive the scan."""
-        from .global_sources import collect_dashboard_sources
+        """Read every source; the dashboard phase runs last and never outlives the scan."""
         from .script_sources import create_script_reader
 
-        reader = create_script_reader(self.dashboard_reader_factory)
-        dashboard_task = (
-            asyncio.create_task(collect_dashboard_sources(reader, secret=self.secret))
-            if reader is not None else None
-        )
-        try:
-            return await self._scan_sources(dashboard_task)
-        finally:
-            if dashboard_task is not None and not dashboard_task.done():
-                dashboard_task.cancel()
-                await asyncio.gather(dashboard_task, return_exceptions=True)
+        return await self._scan_sources(create_script_reader(self.dashboard_reader_factory))
 
-    async def _scan_sources(self, dashboard_task) -> DependencyScanResult:
+    async def _scan_sources(self, dashboard_reader) -> DependencyScanResult:
         # Import after the dependency package is initialized; governance uses
         # this shared index at runtime and a module-level import would create a
         # package initialization cycle.
@@ -1874,12 +1863,14 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             request_time_ms["delegated_script_configuration"] += script_diagnostics.profile["read_time_ms"]
             maximum_concurrency = max(maximum_concurrency, script_diagnostics.profile["maximum_concurrent_reads"])
         # HAMCP-227: scenes, groups and templates reuse the inventories read
-        # above (no request); dashboards come from the concurrent reviewed reads.
-        from .global_sources import collect_global_sources
+        # above (no request); dashboards come from the reviewed reads.
+        # HAMCP-277: the dashboard phase starts here, after the other sources,
+        # so their requests cannot spend its DASHBOARD_SCAN_SECONDS budget.
+        from .global_sources import collect_dashboard_sources, collect_global_sources
         dashboards = None
-        if dashboard_task is not None:
+        if dashboard_reader is not None:
             try:
-                dashboards = await dashboard_task
+                dashboards = await collect_dashboard_sources(dashboard_reader, secret=self.secret)
             except asyncio.CancelledError:
                 raise
             except Exception:

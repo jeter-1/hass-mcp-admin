@@ -613,7 +613,7 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
-The `2.4.1-beta.62` slice (HAMCP-253) adds read-only inspection of one stuck
+The `2.4.1-beta.63` slice (HAMCP-253) adds read-only inspection of one stuck
 governance record and an administrator acknowledgement of it. It adds no
 provider, fallback, add-on option or permission. Inspection and the ledger
 operations make no Home Assistant request and no provider dispatch; the
