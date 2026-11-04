@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.1-rc.1 - Release candidate for the accepted 2.4.1 line (HAMCP-302)
+
+Promotes 2.4.1-beta.63 (HAMCP-253, #354) to release candidate. No runtime
+change since beta.63: no tool, input schema, route, provider, signed
+profile, contract fingerprint, persisted format, dependency, add-on option
+or Home Assistant write change.
+
+- The three Engineering version declarations move to `2.4.1-rc.1` through
+  the staged `.release/next-version` promotion.
+- New exact `V2_4_1_RC1` release notes and acceptance contract; the
+  acceptance carries the post-deploy live plan and the known issues
+  (HAMCP-301, HAMCP-288, HAMCP-300, HAMCP-304, HAMCP-305).
+- The add-on store README is a short pointer to the root README and the
+  release index.
+- Rollback to 2.4.1-beta.63 is safe (same runtime and storage contracts).
+  2.4.1-beta.57 or earlier is not a safe rollback.
+
 ## 2.4.1-beta.63 - Inspect and acknowledge stuck governance records (HAMCP-253)
 
 Builds on 2.4.1-beta.62 (HAMCP-277, #356), which includes 2.4.1-beta.61
