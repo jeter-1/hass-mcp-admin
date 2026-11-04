@@ -54,9 +54,11 @@ The review needs a security section covering:
   dashboard that fits the response can now be planned against. The
   unchanged F3 configuration cap (40,000 bytes), the patch cap
   (16,384 bytes), the hashes and the approval bindings still apply.
-- **Bounded output.** The estimate is never below the real response, so a
-  returned configuration is never truncated and never exceeds the limit.
-  The refusal carries no configuration.
+- **Bounded output.** The estimate is never below the real response's
+  compact JSON, and exceeds it by at most 84 characters. So a returned
+  configuration is never truncated and the returned text never exceeds the
+  limit; that text is the indented JSON only when the indented form also
+  fits. The refusal carries no configuration.
 
 Required offline evidence is in `tests/test_hamcp306_dashboard_read_size.py`:
 - a ~30 KB nested dashboard, which the old check refused, is returned with
@@ -67,14 +69,24 @@ Required offline evidence is in `tests/test_hamcp306_dashboard_read_size.py`:
   estimate returns, and one less refuses with the same estimate;
 - the boundary at the default 60,000 limit: estimates of 59,999 and 60,000
   return, and 60,001 refuses;
-- a worst-case tool envelope (maximal timing values, a 128-character request
-  ID) stays within the estimate;
+- the estimate against the real compact response, for small, ~30 KB,
+  non-ASCII-heavy and near-limit fixtures, without and with a request
+  context, a 128-character request ID, and the growing timing members at
+  their narrowest and widest: never below it, at most 84 characters above
+  it (0 at the widest, exactly 84 at the narrowest);
+- a complete response of 59,612 compact characters is returned (Codex R1);
+- real compact responses of 59,999 and 60,000 return and 60,001 refuses
+  when the growing members are at full width; a real response of 59,916
+  returns when they are at their narrowest; a real response of 60,001 is
+  refused with an estimate above the limit;
 - the sanitized configuration is what is measured;
 - regression: the dashboard read, write, readback and dependency-scan suites
   are unchanged and pass;
 - mutation testing in a copied tree, counting only assertion failures as
-  kills, for a wrong measure, an off-by-one at the boundary, and a reported
-  number that differs from the checked one;
+  kills, for a wrong measure, an off-by-one at the boundary, a reported
+  number that differs from the checked one, a growing timing member left
+  unwidened, a narrower float width, a substituted request ID, a changed
+  summary, and an added reserve;
 - the complete repository suite in the Evidence tier.
 
 ## 2. Release CI
@@ -100,7 +112,9 @@ release.
    - `success: true` and `configuration_returned: true`;
    - a `configuration` body with `config_hash` and
      `engineering_config_hash`;
-   - `estimated_serialized_size` is at most `response_limit` (60,000);
+   - `estimated_serialized_size` is at most `response_limit` (60,000).
+     Expected near 32,000–34,000: the rc.1 refusal's raw compact size of
+     29,907 plus the wrapper. This is an estimate, not a pass threshold;
    - `config_hash` matches the hash the rc.1 refusal reported
      (`f692af48683ac6f1`) if the dashboard has not changed since.
 3. **Tool catalog.** A fresh `tools/list` shows the same tool names and

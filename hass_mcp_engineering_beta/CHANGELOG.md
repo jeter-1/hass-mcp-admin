@@ -12,11 +12,17 @@ add-on option or Home Assistant write change.
   the raw configuration's compact size. A ~30 KB nested dashboard was refused
   with a reported size of half the 60,000 limit.
 - The check and the reported `estimated_serialized_size` are now one
-  measure, the one the general response limit admits by: compact
-  ASCII-escaped JSON of the provider's data, warnings and metadata, plus a
-  1,024-character reserve for the tool envelope. A configuration of about
-  57,000 compact characters fits the default limit, and the estimate never
-  falls below the real response.
+  measure, the one the general response limit admits by: the compact,
+  ASCII-escaped JSON length of the whole tool response. It is serialized
+  with the tool's real wrapper and request ID; the four timing members
+  still growing at the check (`total_ms`, `tool_ms`, `upstream_ms`,
+  `upstream_wall_clock_span_ms`) are counted at the widest a JSON float can
+  be (24 characters).
+- The estimate is never below the real compact response and exceeds it by
+  at most 84 characters (4 x (24 - 3)). Every response of at most 59,916
+  compact characters is returned; a 59,612-character response that the
+  first draft refused is returned. In the offline fixtures a configuration
+  of about 57,400 compact characters fits the default limit.
 - The plan preread, post-apply readback and metadata fingerprint reader
   inherit the corrected threshold; the write caps, hashes and approval
   bindings are unchanged. No paging or partial reads (RCG-045, HAMCP-273).

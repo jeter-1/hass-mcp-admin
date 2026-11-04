@@ -32,13 +32,18 @@ from ..clients.mcp import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
-from ..models.responses import _compact_json
+from ..models.responses import SuccessResponse, _compact_json
 from ..observability import METRICS
-from ..request_context import current_telemetry, mark_provider_send
+from ..request_context import (
+    current_request_id,
+    current_telemetry,
+    mark_provider_send,
+)
 from ..sanitization import (
     RedactionTally,
     sanitize_untrusted_data,
 )
+from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
     load_reviewed_upstream_release_registry,
@@ -166,10 +171,24 @@ MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SAFE_UPSTREAM_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 RESPONSE_ENVELOPE_RESERVE = 16_000
-# HAMCP-306: upper bound, in compact JSON characters, on the members the
-# get_dashboard_config tool adds around the provider result (operation,
-# summary, timing, request_id and success).
-CONFIGURATION_TOOL_ENVELOPE_RESERVE = 1_024
+# HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
+# provider result in. The size estimate serializes this exact wrapper.
+CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"
+CONFIGURATION_TOOL_SUMMARY = (
+    "Returned exact read-only dashboard configuration evidence."
+)
+# Timing members still growing when the size is checked: the elapsed times,
+# and the upstream attempt, which _execute closes after the normalizer runs.
+# Every other timing member, and the request ID, is final at the check.
+CONFIGURATION_TOOL_GROWING_TIMING = (
+    "total_ms",
+    "tool_ms",
+    "upstream_ms",
+    "upstream_wall_clock_span_ms",
+)
+# The widest JSON a float renders as (sign, 17 significant digits, point,
+# three-digit negative exponent): 24 characters.
+WIDEST_JSON_FLOAT = -2.2250738585072014e-308
 REACHABILITY_FRESHNESS_SECONDS = 120.0
 
 _ERROR_CODES = {
@@ -2314,28 +2333,36 @@ def _analysis_configuration(result, url_path):
 def _estimated_configuration_response_size(
     data: dict[str, Any], warnings: list[str], metadata: dict[str, Any]
 ) -> int:
-    """Estimate the get_dashboard_config response in the limit's own measure.
+    """Size the get_dashboard_config response in the limit's own measure.
 
     HAMCP-306: the general response limit (``dump_json_with_truncation``)
-    admits a response whose compact, ASCII-escaped JSON fits, whatever the
-    indented form would need. This is that character count for the provider
-    members plus the fixed tool-envelope reserve, so it is never below the
-    real response. The count includes its own ``estimated_serialized_size``
+    returns a response untruncated whenever its compact, ASCII-escaped JSON
+    fits, whatever the indented form would need. This is the length of that
+    compact JSON for the whole tool response: the tool's real wrapper, this
+    request's ID and its final timing members, with each timing member still
+    growing at the check rendered at the widest a float can be. It is never
+    below the compact response and exceeds it by at most 4 x (24 - 3) = 84
+    characters. The count includes its own ``estimated_serialized_size``
     value; widening digits only grow it, so the loop reaches a fixed point.
     """
 
+    timing = timing_since(time.perf_counter())
+    for name in CONFIGURATION_TOOL_GROWING_TIMING:
+        setattr(timing, name, WIDEST_JSON_FLOAT)
+    response = SuccessResponse(
+        operation=CONFIGURATION_TOOL_OPERATION,
+        summary=CONFIGURATION_TOOL_SUMMARY,
+        warnings=list(warnings),
+        metadata=metadata,
+        timing=timing,
+        request_id=current_request_id(),
+    ).as_dict()
     sized = dict(data)
+    response["data"] = sized
     size = 0
     while True:
         sized["estimated_serialized_size"] = size
-        measured = (
-            len(
-                _compact_json(
-                    {"data": sized, "warnings": warnings, "metadata": metadata}
-                )
-            )
-            + CONFIGURATION_TOOL_ENVELOPE_RESERVE
-        )
+        measured = len(_compact_json(response))
         if measured == size:
             return size
         size = measured

@@ -34,24 +34,38 @@ response limit uses to admit a response, and reports that same number. The
 general limit (`dump_json_with_truncation`) returns a response whole if its
 compact, ASCII-escaped JSON fits.
 
-- The estimate is the compact JSON length of the provider's `data`,
-  `warnings` and `metadata`. It includes its own `estimated_serialized_size`
-  value. A fixed 1,024-character reserve
-  (`CONFIGURATION_TOOL_ENVELOPE_RESERVE`) is added for the members the tool
-  adds around them: operation, summary, timing, request ID and success. The
-  largest possible envelope measures 825 characters.
+- The estimate is the compact JSON length of the whole tool response,
+  including its own `estimated_serialized_size` value. The provider
+  serializes the tool's real wrapper around its `data`, `warnings` and
+  `metadata`: operation, summary, timing, this request's ID and success.
+  Every timing member is final when the size is checked except four that
+  are still growing: `total_ms`, `tool_ms`, `upstream_ms` and
+  `upstream_wall_clock_span_ms` (the upstream attempt is closed after the
+  check). Those four are counted at the widest a JSON float can be,
+  24 characters.
+- **Bound.** The estimate is never below the real response's compact JSON.
+  It exceeds it by at most 84 characters: four members, each at most
+  24 − 3 characters wider than their narrowest real form (`0.0`). Offline
+  measurements across small, ~30 KB, non-ASCII-heavy and near-limit
+  fixtures gave 68–78 characters with real timing in one run, exactly 84
+  with every growing member at `0.0`, and 0 with every growing member at
+  full width.
 - The configuration is returned when the estimate is at most the limit. It
-  is refused when the estimate is above the limit.
+  is refused when the estimate is above the limit. So every response of at
+  most 59,916 compact characters (60,000 − 84) is returned, every response
+  above 60,000 is refused, and between the two the timing digits decide.
 - The success response and the refusal report the same
   `estimated_serialized_size`. A refused read reports exactly the number the
   limit was compared with.
-- The estimate is never below the size of the real response, so a returned
-  configuration is never truncated.
+- A returned configuration is never truncated and never exceeds the limit.
+  The returned text is the indented JSON when that also fits the limit,
+  otherwise the compact JSON. The indented text can be longer than the
+  estimate, which bounds the compact form only.
 
-With the default 60,000-character limit, a configuration of about 57,000
-compact characters now fits. The exact figure depends on warnings and
-redaction metadata. A 30 KB nested dashboard is now returned with
-`config_hash` and `engineering_config_hash`.
+With the default 60,000-character limit, a configuration of about 57,400
+compact characters fits in the offline fixtures. The exact figure depends
+on warnings, redaction metadata and the request ID's length. A 30 KB nested
+dashboard is now returned with `config_hash` and `engineering_config_hash`.
 
 The response shape is unchanged. Only the meaning of
 `estimated_serialized_size` changed: it is now the estimated compact size of
