@@ -1,7 +1,7 @@
 # HAMCP-303: docs and README consolidation plan (Part 1)
 
-Status: **plan only.** No document is moved, deleted or rewritten by this
-branch. Part 2 waits for architect review and Josh's approval of this plan.
+Status: **plan approved; implemented in Part 2 on this branch** (see §5.6). The
+text below is the Part 1 plan as reviewed.
 
 ## 1. Baseline
 
@@ -313,6 +313,22 @@ Evidence for the cutover, read-only:
 6. Record the "update one README paragraph plus one index row" release
    convention in `docs/CODEX_WORKFLOW.md` (about 3 lines)? Optional. It is an
    instruction-file change and triggers `InstructionFileTests`.
+
+### 5.6 Decisions (Josh, 2026-11-03, in session)
+
+Josh approved the plan for Part 2:
+
+1. Layout: keep every file in place and add the index (`docs/RELEASES.md`, `docs/README.md`).
+2. Runbook: Option A, annotations only, with no test change.
+3. Refresh `hass_mcp_engineering_beta/README.md` to a short pointer at the root README.
+4. Add the `2_1_ROADMAP.md` historical banner.
+5. Add `tests/test_docs_index.py`.
+6. Add the release-convention note to `docs/CODEX_WORKFLOW.md`.
+
+He also asked for a dated note in `docs/V2_4_1_BETA62_ACCEPTANCE.md`, below
+line 12 and with the original text unchanged, stating that its HAMCP-278
+deploy freeze ended with the 2026-11-03 sequence-15 cutover. HAMCP-253 had
+merged (`main` `34b8538b`), so Part 2 proceeded on the same base.
 
 ## 6. Risk list
 

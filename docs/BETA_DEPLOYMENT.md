@@ -1,5 +1,10 @@
 # Historical beta deployment and validation
 
+> [!WARNING]
+> **Historical: not current guidance.** Superseded by
+> [README § Install or update Engineering](../README.md#install-or-update-engineering).
+> Release history is in [`RELEASES.md`](RELEASES.md). The text below is unchanged.
+
 This document records the former beta deployment process and is not current
 2.0.x rollback guidance. At the time, RC v2.0.0-rc.2 ran as **HA MCP
 Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100) beside

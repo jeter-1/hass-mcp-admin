@@ -1,1050 +1,204 @@
 # HA MCP Engineering Server
 
-Not yet released: Engineering **2.4.1-beta.63** (HAMCP-253) adds the
-read-only `inspect_governance_record` tool. It shows why one exact stuck
-plan or task is stuck, including plans the plan tools refuse, and never
-returns payloads or secrets. An administrator can acknowledge or revoke a
-record on the Ingress **Stuck records** page, and health then warns only on
-unacknowledged records. Records are never rewritten. Approve, apply,
-recovery, verification and persisted formats are unchanged, and nothing in
-Home Assistant changes. Rollback is reinstalling beta.62. Read the
-[2.4.1-beta.63 release notes](docs/V2_4_1_BETA63_RELEASE_NOTES.md) and the
+HA MCP Engineering Server is a Home Assistant add-on that gives an AI client
+one MCP endpoint for inspecting, analyzing and safely changing a Home
+Assistant installation. The client connects to that endpoint through the
+Home Assistant Cloud (Nabu Casa) path. Reviewed
+[ha-mcp](https://github.com/homeassistant-ai/ha-mcp) tools serve as internal
+delegated providers behind it, and Engineering-native tools supply deeper
+semantics: dependency, reliability and integrity analysis, governed
+configuration changes, typed device control, recovery and audit. The client
+never needs a second connector or has to choose a provider.
+
+The aim is to make AI use with Home Assistant as capable and safe as
+practical. Reads are bounded and redacted. Changes are exact, approved by
+the owner, applied once and verified by read-back.
+
+## Current release
+
+The current source version is **2.4.1-beta.63**. It adds the read-only
+`inspect_governance_record` tool and the Ingress **Stuck records** page. Read
+the [2.4.1-beta.63 release notes](docs/V2_4_1_BETA63_RELEASE_NOTES.md) and the
 [2.4.1-beta.63 acceptance contract](docs/V2_4_1_BETA63_ACCEPTANCE.md).
 
-Not yet released: Engineering **2.4.1-beta.62** (HAMCP-277) lets the
-dependency index read the household's dashboards within its 6 s dashboard
-budget. The dashboard phase now runs after the other dependency sources, so
-they cannot spend its budget; each read is bounded and none starts after
-the deadline; and every listed dashboard is reported as read, too large,
-timed out, failed or not attempted (including any beyond the 50-read
-limit), with `Dashboards read: N of M listed` first. Dashboard references
-stay diagnostic: no tool, route, admission, signed profile, fingerprint,
-policy, persisted format or Home Assistant write changes. Rollback is
-reinstalling beta.61. Read the
-[2.4.1-beta.62 release notes](docs/V2_4_1_BETA62_RELEASE_NOTES.md) and the
-[2.4.1-beta.62 acceptance contract](docs/V2_4_1_BETA62_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.61** (HAMCP-285) applies
-evidence-based classification to helper options, entity availability and
-exposure, and `set_input_boolean_state`. `safety_critical` now requires
-positive evidence; incomplete evidence is `unknown` with its gaps stated.
-An unreferenced input_boolean plans as `standard_admin`. An input_boolean plan
-approved on beta.59 or beta.60 returns a structured replan refusal. The
-beta.60 global references stay informational and do not affect these labels.
-An input_boolean or input_select helper in any group is held elevated with
-the groups named, because group consumers are not attributed to members yet
-(HAMCP-287). Execution refusals, approval binding and readback are unchanged,
-except that an input_boolean plan approved for an automation without a
-bounded lock identity now refuses as `dependency_risk_drift` instead of
-`dependency_coverage_failure`. No tool,
-input schema, signed profile, persisted format or Home Assistant write
-changes. Rollback is reinstalling beta.60. Read the
-[2.4.1-beta.61 release notes](docs/V2_4_1_BETA61_RELEASE_NOTES.md) and the
-[2.4.1-beta.61 acceptance contract](docs/V2_4_1_BETA61_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.60** (HAMCP-270) shows scene,
-group and dashboard references in availability/exposure, delete, entity
-metadata and helper options plans before approval. They are information
-only: never approval-bound, and they never change risk or policy. Each
-source reports its completeness, and dashboards stay partial until
-HAMCP-277. No tool, input schema, fingerprint, plan binding, persisted format
-or Home Assistant write changes. Rollback is reinstalling beta.59. Read the
-[2.4.1-beta.60 release notes](docs/V2_4_1_BETA60_RELEASE_NOTES.md) and the
-[2.4.1-beta.60 acceptance contract](docs/V2_4_1_BETA60_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.59** (HAMCP-274) decides
-`set_input_select_option` relevance per target from evidence. An
-unreferenced input_select plans as `standard_admin` instead of `prohibited`.
-Referenced and opaque consumers are named and elevated. Over-budget consumer
-sets take the existing automation-domain lock instead of being refused.
-Execution refusals, approval binding and readback are unchanged. No tool,
-input schema, signed profile, persisted format or Home Assistant write
-changes. Rollback is reinstalling beta.58. Read the
-[2.4.1-beta.59 release notes](docs/V2_4_1_BETA59_RELEASE_NOTES.md) and the
-[2.4.1-beta.59 acceptance contract](docs/V2_4_1_BETA59_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.58** (HAMCP-278) reads the
-signed Core release registry from the `registry` branch instead of `main`;
-only the URL's branch segment changes, with the same key, verifier and cache
-and no override. It adds an owner-gated one-tap signing workflow whose
-separate publish job pushes one commit to `registry`. Josh must create the
-`registry` branch before deploying (see the
-[owner runbook](docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md)). No tool, input
-schema, persisted format or Home Assistant write changes. Rollback is
-reinstalling beta.57. Read the
-[2.4.1-beta.58 release notes](docs/V2_4_1_BETA58_RELEASE_NOTES.md) and the
-[2.4.1-beta.58 acceptance contract](docs/V2_4_1_BETA58_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.57** (HAMCP-276) reports an F3
-apply refused because its plan predates a Home Assistant Core authority
-retirement or change as `core_authority_changed_since_plan`, with the
-remedy "create and approve a fresh plan", instead of the generic
-`dispatch_authority_unavailable`. Authority decisions, approval binding
-and the stale-plan cutoff are unchanged. No tool, input schema, signed
-profile, persisted format or Home Assistant write changes. Rollback is
-reinstalling beta.56. Read the
-[2.4.1-beta.57 release notes](docs/V2_4_1_BETA57_RELEASE_NOTES.md) and the
-[2.4.1-beta.57 acceptance contract](docs/V2_4_1_BETA57_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.56** (HAMCP-271) settles a
-stranded post-intent child under an already-terminal parent through one
-read-only readback in every configuration family and in
-`set_input_boolean_state` and `set_input_select_option`, as beta.54 does
-for dashboards. It releases the expired locks that blocked later
-governed applies. The parent is never changed and nothing is
-redispatched. No tool, input schema, persisted format or Home Assistant
-write changes. Rollback is reinstalling beta.55. Read the
-[2.4.1-beta.56 release notes](docs/V2_4_1_BETA56_RELEASE_NOTES.md) and the
-[2.4.1-beta.56 acceptance contract](docs/V2_4_1_BETA56_ACCEPTANCE.md).
-
-Staged, not yet released: Engineering **2.4.1-beta.55** (HAMCP-227) adds
-scene, group and dashboard references to `entity_dependency_analysis` and
-`change_impact_analysis`. Scenes and groups come from the loaded membership
-in states the build already reads; dashboards come from the reviewed list
-and read path and the existing dashboard walker. The evidence is a
-diagnostic partition outside the governance-bound index, each source is
-`complete` only when everything was read and parsed, and templates are
-reported as deferred (HAMCP-264). Read-only; no tool, schema or write
-changes. Rollback is reinstalling beta.54. Read the
-[2.4.1-beta.55 release notes](docs/V2_4_1_BETA55_RELEASE_NOTES.md) and the
-[2.4.1-beta.55 acceptance contract](docs/V2_4_1_BETA55_ACCEPTANCE.md).
-
-Not yet released: Engineering **2.4.1-beta.54** (HAMCP-263) lets a
-dispatched governed dashboard update reach a truthful terminal outcome
-through one read-only readback, never a redispatch. It settles a
-dashboard child stranded under an already-terminal parent without
-changing that parent, and releases the expired locks such a child kept,
-which blocked later governed configuration applies. No tool, input
-schema, persisted format or Home Assistant write changes. It builds on
-beta.53. Rollback is reinstalling beta.53. Read the
-[2.4.1-beta.54 release notes](docs/V2_4_1_BETA54_RELEASE_NOTES.md) and the
-[2.4.1-beta.54 acceptance contract](docs/V2_4_1_BETA54_ACCEPTANCE.md).
-
-Staged, not yet released: Engineering **2.4.1-beta.53** (HAMCP-071) builds
-a governed edit of one existing UI-managed scene, inactive. The new tool
-`create_scene_configuration_plan` proposes `name`, `icon` and member-state
-(`entities`) changes to one scene by `config_id`. It sends one
-`POST /api/config/scene/config/{config_id}` with the full proposed
-configuration (no `id`, `metadata` kept exactly). It verifies the result by
-exact readback of the stored configuration and the registry identity; it
-does not verify the scene Home Assistant has loaded
-(`loaded_state: "not_verified"`). Saving never activates the scene, and the tool never sends
-`scene.turn_on`, `scene.apply`, `scene.create`, `scene.reload`,
-`scene.delete` or the scene-config DELETE. It refuses
-`pending_signed_registry_admission` before any Home Assistant request or
-persistence until a signed Core registry sequence (planned 16) names
-`core.scene_configuration_operation`. Creating a scene is a follow-up
-(HAMCP-071 Part 3). No signed registry, signed profile, existing
-fingerprint or existing schema changes. Static tools 79; advertised catalog
-107 (108 with the optional YAML reader). Rollback is reinstalling beta.52.
-Read the
-[2.4.1-beta.53 release notes](docs/V2_4_1_BETA53_RELEASE_NOTES.md) and
-[2.4.1-beta.53 acceptance contract](docs/V2_4_1_BETA53_ACCEPTANCE.md).
-
-It builds on beta.52 and the releases below.
-
-Not yet released: Engineering **2.4.1-beta.52** (HAMCP-097) stops
-`get_server_health(check_ha=false)` from re-decoding and re-projecting
-unchanged history. Terminal records and their projections are reused only
-for byte-identical input, and the historical validation now runs in the
-background at startup. Cost still grows with retained history, because
-every record is still read and hashed: the offline benchmark of the
-governance component gives a warm median of 698 ms at today's 501 plans
-and 1,398 ms at 1,226 plans, and a first call after 5 changes of 1,739 ms
-at 1,226 plans. That miss of the 1.5 s warm SLO is accepted and tracked as
-HAMCP-259. Until it finishes, governance
-health says `historical_validation: in_progress` and reports every
-history-derived field as pending instead of guessing. Once it finishes,
-every field equals the full projection. No tool, input schema, persisted
-format or Home Assistant write changes. Rollback is reinstalling beta.51.
-Read the [2.4.1-beta.52 release notes](docs/V2_4_1_BETA52_RELEASE_NOTES.md)
-and the [2.4.1-beta.52 acceptance contract](docs/V2_4_1_BETA52_ACCEPTANCE.md).
-
-Engineering **2.4.1-beta.51** (HAMCP-252) lets the
-readback verifier compare a `sun` condition used as an action step
-(`after`/`before`/offsets, exact comparison only), which unblocks the A109
-camera automations. A verifier refusal also names its structural path and
-known field names in `pre_dispatch_refusal.verifier_location`; no values are
-stored. No other preflight decision, tool, input schema or Home Assistant
-write changes. Rollback is reinstalling beta.50. Read the
-[2.4.1-beta.51 release notes](docs/V2_4_1_BETA51_RELEASE_NOTES.md) and
-[2.4.1-beta.51 acceptance contract](docs/V2_4_1_BETA51_ACCEPTANCE.md).
-
-Staged, not yet released: Engineering **2.4.1-beta.50** (HAMCP-106,
-HAMCP-255) builds governed dashboard metadata inactive. The new tool
-`create_dashboard_metadata_plan` proposes title, icon, sidebar and
-admin-only changes to one existing storage dashboard. It sends one
-`lovelace/dashboards/update` by id, carrying only the requested fields, and
-verifies the result by exact readback with the dashboard content unchanged.
-It refuses `pending_signed_registry_admission` before any Home Assistant
-request or persistence until a signed Core registry sequence (planned 15)
-names `core.dashboard_metadata_operation`. Dashboard content, YAML
-dashboards and the default Overview are never changed. The Core-authority
-reconciliation audit record is now columnar (`ha-core-authority-audit-v2`),
-so the audit logger stores it whole instead of a truncated stub. No signed
-registry, signed profile, existing fingerprint or existing schema change.
-Static tools 78; advertised catalog 106 (107 with the optional YAML reader).
-Rollback is reinstalling beta.49. Read the
-[2.4.1-beta.50 release notes](docs/V2_4_1_BETA50_RELEASE_NOTES.md) and
-[2.4.1-beta.50 acceptance contract](docs/V2_4_1_BETA50_ACCEPTANCE.md).
-
-It builds on beta.49 and the releases below.
-
-Engineering **2.4.1-beta.49** (HAMCP-198, HAMCP-120) explains the health
-warnings that stayed lit. Health names up to
-eight projection-failed plans as `{plan_id, category}` from a fixed
-vocabulary (no record contents; the count and warning are unchanged), and
-`reviewed_tool_accounting_valid` uses the HAMCP-162 optional reviewed-tool
-model, checked by name (false for any missing, duplicate, unreviewed or
-drifted tool). Manual-review counts are unchanged by decision
-(acknowledgment is HAMCP-253). No approval, execution, tool, input schema
-or Home Assistant write change. Rollback is reinstalling beta.48. Read the
-[2.4.1-beta.49 release notes](docs/V2_4_1_BETA49_RELEASE_NOTES.md) and
-[2.4.1-beta.49 acceptance contract](docs/V2_4_1_BETA49_ACCEPTANCE.md).
-
-It builds on beta.49, beta.48 and the releases below.
-
-Engineering **2.4.1-beta.48** lets a full automation baseline capture
-complete its final fence (HAMCP-248). On beta.45 every full capture ended
-`final_fence: "unavailable"`, `malformed_response`, installation
-`unestablished`: the capture websocket idles through collection, the
-Supervisor proxy pings it after 30 s, and the unanswered PING was refused as a
-malformed frame. A read now answers a PING (at most four control frames, within
-its deadline and byte budget; owner decision replacing the "control frames are
-refused, not automatically ponged" rule); every other failure keeps its own
-fixed reason (`connection_closed`, `transport_error`, `unexpected_frame`,
-`protocol_error`, `control_frame_limit`, `response_limit`).
-A compare row with a missing digest no longer also claims a fingerprint-model
-mismatch. No budget, concurrency, resume, stored-format, tool or Home Assistant
-write change. Rollback is reinstalling beta.47. Read the [2.4.1-beta.48 release
-notes](docs/V2_4_1_BETA48_RELEASE_NOTES.md) and [2.4.1-beta.48 acceptance
-contract](docs/V2_4_1_BETA48_ACCEPTANCE.md).
-
-It builds on beta.47 and the releases below.
-
-Engineering **2.4.1-beta.47** makes every pre-dispatch refusal name its
-reason (HAMCP-249). A closed-vocabulary
-`pre_dispatch_refusal` (`error_code`, `check`, fixed `detail`, and the
-readback verifier rule when that check refused) is reported on the F3 child
-view, the parent task's `last_error` and `verification_summary`, the
-`apply_change_plan` result and errors, the refusal event and its add-on log
-and audit line, including a later child refused after an earlier one
-completed (which stays `manual_review_required`). Older records read their child's stored codes or `unknown_legacy`;
-nothing is rewritten. Reporting only: no preflight, tool, input schema or
-Home Assistant write change. Rollback is reinstalling beta.46. Read the
-[2.4.1-beta.47 release notes](docs/V2_4_1_BETA47_RELEASE_NOTES.md) and
-[2.4.1-beta.47 acceptance contract](docs/V2_4_1_BETA47_ACCEPTANCE.md).
-
-It builds on beta.46 and the releases below.
-
-Engineering **2.4.1-beta.46** makes `list_capabilities` return usable data
-within the response cap (HAMCP-247). On beta.44 the unfiltered call and
-`status=delegated` succeeded with `/data` omitted and nothing to retrieve.
-The unfiltered call is now a bounded summary with a `sections` map; `status`
-and `category` narrow every section they apply to; the new optional
-`detail_section` returns one section in full, paged by the new optional
-`detail_cursor` when it is larger than the limit; and every response states
-what it omitted and the request that returns it (`size_limit`). The global cap
-and the envelope's truncation are unchanged. Two optional, additive inputs; no
-tool, routing, provider or governance change. Rollback is reinstalling
-beta.45. Read the [2.4.1-beta.46 release
-notes](docs/V2_4_1_BETA46_RELEASE_NOTES.md) and [2.4.1-beta.46 acceptance
-contract](docs/V2_4_1_BETA46_ACCEPTANCE.md).
-
-It builds on beta.45 and the releases below.
-
-Engineering **2.4.1-beta.45** makes automation baseline compare and resume
-usable on a real installation (HAMCP-235). On beta.40 (HAOS, 115
-automations), two identical captures compared as UNKNOWN 115 because their
-final fence failed, and a resume minutes later was refused with no detail.
-By owner decision (Josh, option a), `compare_automation_baselines` now
-classifies rows by digest and states installation identity, authority
-continuity and non-atomic capture once, in `caveats`; `UNKNOWN` is kept for
-incomparable rows, each with its reason (`timed_out` included). Resume
-compares only stable identity (installation anchor, configuration ids and
-their entities) and a refusal names its fixed categories
-(`details.resume_changes`); a base with no installation anchor is refused as
-`installation_anchor_missing` (owner decision D4). The final fence reads the
-identity first, records its failure reason and keeps a reserve sized for its
-identity reads. No new Core command, input
-schema or tool. The architect's live re-run of the owner's case is required
-for acceptance. Rollback is reinstalling beta.44. Read the [2.4.1-beta.45
-release notes](docs/V2_4_1_BETA45_RELEASE_NOTES.md) and [2.4.1-beta.45
-acceptance contract](docs/V2_4_1_BETA45_ACCEPTANCE.md).
-
-It builds on beta.44 and the releases below.
-
-Engineering **2.4.1-beta.44** itemizes withheld Core capabilities in
-`get_server_health` (HAMCP-242). `home_assistant_core_authority` now lists
-each held, quarantined or unavailable capability once, in
-`withheld_capabilities`: its id, disposition, reason code and the
-Engineering tools it affects, sorted, bounded at 64
-(`withheld_capabilities_truncated`). A fixed `count_semantics` states that
-`withheld_count` is held + quarantined + unavailable, a total rather than an
-additional set. The counts are unchanged and must agree with the list. On
-Core 2026.10.3 under registry sequence 14, the list names the three dormant
-November profiles (`positive_authority_missing`). No admission, registry,
-tool or schema changes. Rollback is reinstalling beta.43. Read the
-[2.4.1-beta.44 release notes](docs/V2_4_1_BETA44_RELEASE_NOTES.md) and
-[2.4.1-beta.44 acceptance contract](docs/V2_4_1_BETA44_ACCEPTANCE.md).
-
-It builds on beta.43 and the releases below.
-
-Engineering **2.4.1-beta.43** relaxes one host journal rule, proven by a live
-calibration (HAMCP-234 step 2). On beta.42, `addon:core_matter_server`
-withheld 37 of 40 lines as `user_pass_host.squashed`: with whitespace removed,
-matter.js timestamps and a later `@peer` read as `user:password@host`. In the
-journal only, `user_pass_host` now needs one contiguous token in the normal
-form. Every other rule is unchanged, in both forms. The
-configuration-definitions and trace paths are unchanged. The token is judged
-on the text as written and after each percent-decode round too, so an encoded
-`%20` or `%09` inside a password never splits it (owner clarification,
-2026-10-28), also when the `:` or `@` is encoded and decodes in the same
-round: each raw token is decoded on its own (at most four rounds), and it is
-normalized before its whitespace is removed (R3-H1, fixed), so whitespace that
-decoding or normalization introduces within one raw token is withheld.
-Non-ASCII whitespace no longer splits a raw token. Residual: raw ASCII
-whitespace (U+0009–U+000D, U+0020), journal mode, scheme-less only; disclosed
-residual, accepted by Josh 2026-10-28. A scheme-less `user:pass@host` split
-that way is shown in the journal, although Python's proxy parser
-(`urllib.request._parse_proxy`) accepts a literal space inside a password
-(verified offline); `http`, `https` and `socks5` forms stay withheld. Known
-limitation: journal final screening has no total-time bound and runs on the
-event loop (a maximum-size pathological read took about 408 s on c371c739,
-every field fully screened; the missing bound predates beta.43; the D320-H1
-correction made the slow shape about 1.5x slower than c0789386); tracked as
-HAMCP-240. Rollback is reinstalling beta.42. Read the [2.4.1-beta.43 release
-notes](docs/V2_4_1_BETA43_RELEASE_NOTES.md) and [2.4.1-beta.43 acceptance
-contract](docs/V2_4_1_BETA43_ACCEPTANCE.md).
-
-It builds on beta.42 and the releases below.
-
-Engineering **2.4.1-beta.42** makes host journal reads usable on real
-add-on log formats (HAMCP-234 step 1). A withheld entry names the fixed
-screen rule that withheld each part (`withheld_rules`), and `calibration:
-true` returns per-source counts only, with no text. `supervisor` and add-on
-levels are parsed from known log formats instead of the stderr priority.
-The tool description no longer says a manager role is needed. Nothing
-withheld is relaxed; relaxations follow a live calibration. Rollback is
-reinstalling beta.41. Read the
-[2.4.1-beta.42 release notes](docs/V2_4_1_BETA42_RELEASE_NOTES.md) and
-[2.4.1-beta.42 acceptance contract](docs/V2_4_1_BETA42_ACCEPTANCE.md).
-
-It builds on beta.41 and the releases below.
-
-Staged, not yet released: Engineering **2.4.1-beta.41** builds the November
-Core batch inactive (HAMCP-232, HAMCP-145): governed edits of existing
-template (sensor, binary_sensor), filter and statistics helpers through their
-options flow, governed input_select option selection, and script-trace reads
-sanitized by the same trace sanitizer as the HAMCP-225 automation traces. It
-activates nothing new: `create_helper_options_plan`,
-`create_input_select_option_plan`, `list_script_traces` and
-`get_script_trace` refuse `pending_signed_registry_admission` before any Home
-Assistant request or persistence until a signed Core registry sequence names
-their runtime-only profiles. The dormant sequence-15 evidence lanes are wired
-but do not run. No signed registry, signed profile, existing fingerprint or
-existing schema change; static tools 77, advertised catalog 105 (106 with the
-optional YAML reader). Read the
-[2.4.1-beta.41 release notes](docs/V2_4_1_BETA41_RELEASE_NOTES.md) and
-[2.4.1-beta.41 acceptance contract](docs/V2_4_1_BETA41_ACCEPTANCE.md).
-
-Engineering **2.4.1-beta.40** (HAMCP-226, HAMCP-228) names each source that
-reached a scan bound and reports unavailable entity references in the
-integrity, dependency and helper scans;
-stores each finished `capture_automation_baseline` durably (12 baselines,
-180 days, under the governance path); resumes a capture's timed-out records;
-and adds `compare_automation_baselines`, which compares stored captures or
-recorded fingerprints with no Home Assistant read (a matching 16-character
-prefix is `PREFIX_MATCH`, never `UNCHANGED`). No Home Assistant write; static
-tools 73, advertised catalog 101 (102 with the optional YAML reader). Read the
-[2.4.1-beta.40 release notes](docs/V2_4_1_BETA40_RELEASE_NOTES.md) and
-[2.4.1-beta.40 acceptance contract](docs/V2_4_1_BETA40_ACCEPTANCE.md).
-
-It builds on beta.39 and the releases below.
-
-Engineering **2.4.1-beta.39** adds automation trace snapshots (HAMCP-225).
-`capture_automation_trace` stores sanitized copies of an automation's
-retained traces before Core rotates them; `list_trace_snapshots` and
-`get_trace_snapshot` read them back with no Home Assistant call; and
-`set_automation_trace_watch` keeps up to 10 automations watched, capturing
-their new runs every 30 seconds with no plan or approval (read-only toward
-Home Assistant; every change is audited). Manual captures are refused at
-capacity; a watch evicts only its own oldest snapshot beyond 20.
-`get_automation_trace` is now sanitized and can be `partial`. No Home
-Assistant write; static tools 72, advertised catalog 100 (101 with the
-optional YAML reader). Read the
-[2.4.1-beta.39 release notes](docs/V2_4_1_BETA39_RELEASE_NOTES.md) and
-[2.4.1-beta.39 acceptance contract](docs/V2_4_1_BETA39_ACCEPTANCE.md).
-
-It builds on beta.38 and the releases below.
-
-Engineering **2.4.1-beta.38** lets `get_incident_logs` read the
-`supervisor`, `host`, `host:<category>` and `addon:<slug>` sources
-(HAMCP-224). Engineering keeps role `homeassistant`; with the new add-on
-option `journald: true` the Supervisor mounts the host journal read-only,
-and a fixed read-only `libsystemd` reader takes those sources from it with
-journal timestamps. A credential-looking journal field is withheld whole by
-the same screen as the configuration-definitions report,
-and journald off or unreadable is reported unavailable with its reason.
-Rollback is reinstalling beta.37. Static tools 68, advertised catalog 96 (97
-with the optional YAML reader). Read the
-[2.4.1-beta.38 release notes](docs/V2_4_1_BETA38_RELEASE_NOTES.md) and
-[2.4.1-beta.38 acceptance contract](docs/V2_4_1_BETA38_ACCEPTANCE.md).
-
-It builds on beta.37 below.
-
-Engineering **2.4.1-beta.37** stores truthful execution outcomes (HAMCP-181
-PR2, HAMCP-214, HAMCP-193). A call stopped after its dispatch intent, with
-positive proof that it was never sent, now reads
-`failed_after_intent_not_dispatched`, `provider_dispatch_occurred: false` and
-`dispatched_at: null` on every surface. A sent call's `dispatched_at` is the
-exact provider-call start time. A no-mutation claim needs a proven Core
-rejection. A verified plan shows plan-level `verification.status: verified`
-with its post-apply fingerprint, and its rollback availability is truthful.
-An intent is never discarded and an operation is never redispatched. No tool,
-schema, profile, fingerprint, signed registry or F3 persisted-format change;
-static tools 68, advertised catalog 96 (97 with the optional YAML reader).
-Downgrade to beta.8 is not supported while governed change plans exist (a
-pre-existing HAMCP-213 limitation). Read the
-[2.4.1-beta.37 release notes](docs/V2_4_1_BETA37_RELEASE_NOTES.md) and
-[2.4.1-beta.37 acceptance contract](docs/V2_4_1_BETA37_ACCEPTANCE.md).
-
-It builds on beta.36 below.
-
-Engineering **2.4.1-beta.36** corrects the governed delete's dispatch-time
-drift read (HAMCP-155), which now runs in its own short Core-authority window,
-and makes the governance and F3 test fakes enforce the real clients'
-Core-authority check. It activates nothing new. Read the
-[2.4.1-beta.36 release notes](docs/V2_4_1_BETA36_RELEASE_NOTES.md) and
-[2.4.1-beta.36 acceptance contract](docs/V2_4_1_BETA36_ACCEPTANCE.md).
-
-It builds on beta.35 below.
-
-Engineering **2.4.1-beta.35** ships governed deletion of UI-managed
-automations and scripts **inactive** (HAMCP-155). The new tool
-`create_configuration_delete_plan` proposes one to eight deletions. Its
-runtime-only Core profile `core.configuration_delete_operation` is not
-referenced by the signed registry (sequence 12), so the tool refuses with
-`pending_signed_registry_admission` before any Home Assistant read; the
-release activates nothing new. Once signed, a delete is checked for drift
-immediately before its single no-body `DELETE`, is verified by proof of
-absence (config 404, registry entry gone, state gone), is classified by the
-protected effects it removes, and can be recreated exactly from its
-pre-image by a separately approved `rollback_change` plan. Static tools 68,
-advertised catalog 96 (97 with the optional YAML reader).
-Read the [2.4.1-beta.35 release notes](docs/V2_4_1_BETA35_RELEASE_NOTES.md)
-and [2.4.1-beta.35 acceptance contract](docs/V2_4_1_BETA35_ACCEPTANCE.md).
-
-It builds on beta.34 below.
-
-Engineering **2.4.1-beta.34** ships governed label create, edit and entity
-assignment **inactive** (HAMCP-165). The new tool `create_label_plan` proposes
-1-8 ordered label operations: create or edit a label's name, colour, icon and
-description, optionally assigning it to exact registered entities through the
-signed HAMCP-069A path. Its resource type needs the new Core capability profile
-`core.label_registry_operation`, which the signed registry (sequence 12) does
-not reference. Every call is therefore refused with
-`CoreCapabilityUnavailable` / `pending_signed_registry_admission`, with no plan
-stored and nothing dispatched. The release also makes the two dormant
-HAMCP-069B profiles name every read their gateway sends (new fingerprints). It
-activates nothing new; it switches on with the sequence-13 signing. Static
-tools 67, advertised catalog 95 (96 with the optional YAML reader). Read the
-[2.4.1-beta.34 release notes](docs/V2_4_1_BETA34_RELEASE_NOTES.md) and
-[2.4.1-beta.34 acceptance contract](docs/V2_4_1_BETA34_ACCEPTANCE.md).
-
-It builds on beta.33 below.
-
-Engineering **2.4.1-beta.33** adds the read-only `get_configuration_definitions`
-tool (HAMCP-132 slice 2). For YAML-defined template, SQL and helper entities
-(template, sql, filter, derivative, statistics, group, integration, min_max,
-history_stats, threshold, trend, utility_meter) it reports:
-- how each is defined in `configuration.yaml`, as an allowlisted projection;
-- how the definition was matched to the entity: exact unique ID, a heuristic
-  with a stated confidence, ambiguous, or not found;
-- why an entity is unavailable, from Core's read-only signals.
-
-It never returns the SQL `db_url`, a credential or a `!secret` name. It
-discloses `!include` and packages without following them, and lists UI-created
-entries as not readable without a flow. The `ha_mcp_tools` component is not
-used. Static tools 66, advertised catalog 94 (95 with the optional YAML
-reader). Read the
-[2.4.1-beta.33 release notes](docs/V2_4_1_BETA33_RELEASE_NOTES.md) and
-[2.4.1-beta.33 acceptance contract](docs/V2_4_1_BETA33_ACCEPTANCE.md).
-
-It builds on beta.32 below.
-
-Engineering **2.4.1-beta.32** corrects `get_incident_logs` entry times
-(HAMCP-220). Supervisor 2026.10.3 writes log times in Home Assistant's local
-time without an offset, and earlier betas read them as UTC. Each call now
-reads Home Assistant's configured zone from Core's `/api/config`, under the
-tool's own read lease, before and again after its journal reads; a zone that
-changed or cannot be read again withholds what was read. Each page's first
-entry takes its exact UTC journal time, which confirms the zone. An unreadable zone reads no journal, so while
-Core is down the tool returns no entries; it never assumes the add-on's `TZ`
-or UTC. Any zone disagreement makes the read partial with `zone_mismatch`.
-DST-ambiguous or nonexistent times are resolved exactly within the request
-budget, or reported as uncertain with every candidate. Their surroundings
-are marked `ordering_uncertain`, and the read is partial. No tool, schema,
-permission or configuration changes; catalog 93 (94). Read the
-[2.4.1-beta.32 release notes](docs/V2_4_1_BETA32_RELEASE_NOTES.md) and
-[2.4.1-beta.32 acceptance contract](docs/V2_4_1_BETA32_ACCEPTANCE.md).
-
-It builds on beta.31 below.
-
-Engineering **2.4.1-beta.31** ships governed entity enable/disable and voice
-assistant exposure **inactive** (HAMCP-069B). The new tool
-`create_entity_availability_exposure_plan` proposes one operation (`disable`,
-`enable`, `expose` or `unexpose`) over 1-8 exact registered entities, for
-Assist or Google Assistant (Alexa refused). Its two resource types need two
-new Core capability profiles that the signed registry (sequence 12) does not
-reference. Every call is therefore refused with `CoreCapabilityUnavailable` /
-`pending_signed_registry_admission`, with no plan stored and nothing
-dispatched. `list_capabilities` and health show the same status. The
-release activates nothing new; activation and the live canaries wait for a
-separate owner-signed registry sequence 13. Static tools 65, advertised
-catalog 93 (94 with the optional YAML reader). Read the
-[2.4.1-beta.31 release notes](docs/V2_4_1_BETA31_RELEASE_NOTES.md) and
-[2.4.1-beta.31 acceptance contract](docs/V2_4_1_BETA31_ACCEPTANCE.md).
-
-It builds on beta.30 below.
-
-Engineering **2.4.1-beta.30** adds two read-only tools (HAMCP-131).
-`get_incident_logs` reads one incident window of at most 6 hours from the Core
-journal and Engineering's own add-on journal. It merges them in time order,
-with per-source coverage, gaps, retention edges, filter skips and a signed
-cursor. Supervisor, host and other add-on logs need Supervisor role `manager`.
-They are listed as unavailable with that exact reason and zero requests; no
-role is added. `get_history_slices` reads entity history continuously, through
-the sanitized delegated `ha_get_history` route. It uses fixed 6-hour slices
-over at most 7 days and a cursor that fails closed as stale when earlier
-history changes. Static tools 64, advertised catalog 92 (93 with the optional
-YAML reader). Read the
-[2.4.1-beta.30 release notes](docs/V2_4_1_BETA30_RELEASE_NOTES.md) and
-[2.4.1-beta.30 acceptance contract](docs/V2_4_1_BETA30_ACCEPTANCE.md).
-
-It builds on beta.29 below.
-
-Engineering **2.4.1-beta.29** makes exact automation and script changes that
-touch a protected physical object (lock, alarm panel, valve, water control or
-garage cover) actionable instead of prohibited (HAMCP-213 PR 1, policy
-`f2-v3`). Engineering compares the before and after physical effects. An
-equivalent change needs plan approval only. A changed or undeterminable
-effect, and any unlock or disarm, also needs a per-object safety-critical
-acknowledgement on the Ingress panel, which dispatch rechecks. Incomplete
-execution contracts, and changes past the review bounds, stay prohibited.
-Every called script is re-read before approval is consumed and before each
-write. No tool, schema or descriptor changes (90 tools, 91 with the optional
-YAML reader). Read the
-[2.4.1-beta.29 release notes](docs/V2_4_1_BETA29_RELEASE_NOTES.md) and
-[2.4.1-beta.29 acceptance contract](docs/V2_4_1_BETA29_ACCEPTANCE.md).
-
-It builds on beta.28 below.
-
-Engineering **2.4.1-beta.28** is a break-fix for Home Assistant Core
-authority (HAMCP-215). After a transient verification failure, Core authority
-now recovers on its own:
-- a bounded, jittered backoff (20 s doubling to a 240 s cap) replaces the
-  fixed 300 s retry;
-- authority returns only after 2 consecutive complete background
-  re-verifications about 15 s apart, or 3 when it flaps; a changed Core
-  version, identity, signed-registry authority or reviewed contract, seen by
-  any check, restarts the count;
-- only a process's very first boot may admit without confirmation; any later
-  re-initialization passes the same gate;
-- the catalog, the YAML reader and the dependency index then resume.
-
-Every verification failure, retirement, catalog withdrawal, recovery attempt
-and restoration is now a bounded WARNING log event. Health's
-`home_assistant_core_authority.recovery` reports the recovery state, the last
-failure reason and time, and the next attempt. Fail-closed behavior during
-recovery is unchanged. After a Core restart or update, Core-backed tools refuse
-for about 15–18 s until the confirmation completes. The same wait (about
-15 s) follows a changed Core version or signed-registry authority, an
-incompatible Core becoming compatible, and a Core not initialized at boot.
-Josh accepted these delays.
-No tool, schema, permission or descriptor changes (90
-tools, 91 with the optional YAML reader). Read the
-[2.4.1-beta.28 release notes](docs/V2_4_1_BETA28_RELEASE_NOTES.md) and
-[2.4.1-beta.28 acceptance contract](docs/V2_4_1_BETA28_ACCEPTANCE.md).
-
-It builds on beta.27 below.
-
-Engineering **2.4.1-beta.27** adds two read-only tools (HAMCP-132 slice 1).
-`get_recorder_settings` reports the recorder's effective settings, each with
-its origin: written in `configuration.yaml`, Core's default, or `unknown` with
-the reason, such as packages that could supply the key. It also reports
-filters, live recorder state, and Core's own "is this entity recorded" answer
-beside the computed filter, with `filter_drift` when they disagree. It never
-returns `db_url` or secret names. `get_unregistered_entities` lists entities
-that have a state but no registry entry, with their platform and config entry.
-The definition file is never guessed. Static tools 62, advertised catalog 90
-(91 with the optional YAML reader). Read the
-[2.4.1-beta.27 release notes](docs/V2_4_1_BETA27_RELEASE_NOTES.md) and
-[2.4.1-beta.27 acceptance contract](docs/V2_4_1_BETA27_ACCEPTANCE.md).
-
-It builds on beta.26 below.
-
-Engineering **2.4.1-beta.26** is a dependency security release (HAMCP-217).
-It upgrades `certifi` to 2026.10.19 for GHSA-6q48-6c7w-9gw2, removing the
-`emSign ECC Root CA - G3` root from the bundle that Engineering's httpx MCP
-clients trust. No runtime code, tool, schema or descriptor changes. Read the
-[2.4.1-beta.26 release notes](docs/V2_4_1_BETA26_RELEASE_NOTES.md) and
-[2.4.1-beta.26 acceptance contract](docs/V2_4_1_BETA26_ACCEPTANCE.md).
-
-It builds on beta.25 below.
-
-Engineering **2.4.1-beta.25** reads script configuration from what Home
-Assistant has loaded (HAMCP-212, fast dependency index part 2). The index
-build's single WebSocket batch adds two fixed, read-only commands per available
-script (`script/config` and `search/related`) and replaces one delegated ha-mcp
-read per script. Blueprint, unavailable and pending-write scripts still use the
-stored read, each counted with its reason. A failed loaded read is always
-reported as partial, and health's `last_build_profile` reports the script
-source counts. Script evidence matches beta.24 on the parity fixtures. No tool,
-schema, permission or descriptor changes (88 tools, 89 with the optional YAML
-reader). Read the
-[2.4.1-beta.25 release notes](docs/V2_4_1_BETA25_RELEASE_NOTES.md) and
-[2.4.1-beta.25 acceptance contract](docs/V2_4_1_BETA25_ACCEPTANCE.md).
-
-It builds on beta.24 below.
-
-Engineering **2.4.1-beta.24** adds one read-only tool, `get_backup_inventory`
-(HAMCP-130). It reports Home Assistant's backups from Core's own backup
-manager: per backup its date, size, content scope, protection flag, add-ons,
-folders and storage locations; the newest full backup and confirmed off-site
-copies; the automatic-backup schedule, retention and last attempt; and health
-signals that report `unknown` whenever an input could not be read. It makes two
-fixed admin-only Core WebSocket reads and needs no new permission. It cannot
-create, restore, delete, download or change backups. The encryption key is
-withheld in any letter case; a deliberately transformed copy in a backup name
-is an owner-accepted residual (see the release notes). Static tools 60,
-advertised catalog 88 (89 with the optional YAML reader). Read the
-[2.4.1-beta.24 release notes](docs/V2_4_1_BETA24_RELEASE_NOTES.md) and
-[2.4.1-beta.24 acceptance contract](docs/V2_4_1_BETA24_ACCEPTANCE.md).
-
-It builds on beta.23 below.
-
-Engineering **2.4.1-beta.23** builds the dependency index from the automation
-configuration Home Assistant has loaded (HAMCP-209). One WebSocket connection
-with two fixed, read-only commands per automation replaces one serialized REST
-fetch per automation. On a synthetic 113-automation model the build drops from
-34.6 s and 116 requests to 0.45 s and 5 requests, and a write during the build
-from 2.7 s to 0.32 s. Blueprint instances, unavailable or unreadable entries
-and writes Home Assistant has not reloaded keep the stored read, and each
-such fallback is counted with its reason. No tool, schema or route changes.
-Read the [2.4.1-beta.23 release notes](docs/V2_4_1_BETA23_RELEASE_NOTES.md) and
-[2.4.1-beta.23 acceptance contract](docs/V2_4_1_BETA23_ACCEPTANCE.md).
-
-It builds on beta.22 below.
-
-Engineering **2.4.1-beta.22** is a dependency security release (HAMCP-211).
-It upgrades `aiohttp` to 3.14.4 for GHSA-2g87-pp6c-29x5, CVE-2026-111063 and
-CVE-2026-111064, with the `yarl` 1.25.1 upgrade that 3.14.4 requires. beta.21
-was superseded before publication, so beta.22 is the first published beta with
-HAMCP-205's administrator verification below.
-Read the [2.4.1-beta.22 release notes](docs/V2_4_1_BETA22_RELEASE_NOTES.md) and
-[2.4.1-beta.22 acceptance contract](docs/V2_4_1_BETA22_ACCEPTANCE.md).
-
-It builds on beta.21 below.
-
-Engineering **2.4.1-beta.21** (superseded before publication; shipped in
-beta.22) requires a Home Assistant administrator on every
-Ingress approval page (HAMCP-205). On every review and decision it looks up the
-requesting user's role through Home Assistant's read-only `config/auth/list`
-and fails closed when the identity is missing or the lookup fails. Inactive
-users never decide. The anonymous default approver is removed: an approval
-stored under the anonymous principal must be re-approved by planning the change
-again. `get_server_health` counts refusals by reason.
-Read the [2.4.1-beta.21 release notes](docs/V2_4_1_BETA21_RELEASE_NOTES.md) and
-[2.4.1-beta.21 acceptance contract](docs/V2_4_1_BETA21_ACCEPTANCE.md).
-
-It builds on beta.20 below.
-
-Engineering **2.4.1-beta.20** gives every tool one shared sanitizer with
-identity-only redaction markers (HAMCP-191). Every rule runs first, then any
-untrusted string that still looks like a redaction marker is replaced as a
-whole by a collision marker, which closes two leaks where forged marker text
-let a secret through. Markers that Engineering produced in the same request
-are kept by object identity; stored plans keep beta.19's tolerance on re-read
-until HAMCP-207. `get_server_health` counts collisions and refusals, and a
-redacted delegated read now reports `partial`. Ordinary data is unchanged.
-Read the [2.4.1-beta.20 release notes](docs/V2_4_1_BETA20_RELEASE_NOTES.md) and
-[2.4.1-beta.20 acceptance contract](docs/V2_4_1_BETA20_ACCEPTANCE.md).
-
-It builds on beta.19 below.
-
-Engineering **2.4.1-beta.19** verifies slow typed fan and power devices
-promptly (HAMCP-192). After dispatch it polls the entity inline for about 10
-seconds and verifies on the first match, so a device that reports a few
-seconds late is `succeeded_verified` instead of `observing`. The typed entity
-lease is 30 s instead of 120 s, so a task that still yields is re-read within
-about a minute, and one final read at the evidence deadline decides verified
-or manual review. A `lock_conflict` receipt names the blocking task using the
-lock check's own predicate, and receipts gain additive `observation_status`
-hints. A manual-review hold can be released only on the Ingress page `/typed`,
-which shows the requested and freshly read state side by side; the release
-records a fresh readback and exactly one audit entry, never dispatches and
-keeps the outcome `manual_review_required`.
-
-It builds on beta.18 below.
-
-Engineering **2.4.1-beta.18** makes `get_server_health` much cheaper on
-large plan stores (HAMCP-171). Health reuses, in process memory only, the
-safety verdict of each unchanged persisted plan record. The verdict is keyed
-by filename, inode, size, mtime and a SHA-256 of the parsed bytes, so any
-change validates fresh. `get_server_health(deep_storage_audit=true)`
-re-validates everything. The 30 s recovery sweep now reads a parent task only
-when the child's own status requires it. No persisted format changes.
-
-It builds on beta.17 below.
-
-Engineering **2.4.1-beta.17** makes every Home Assistant REST path safe by
-construction (HAMCP-200). The REST transport accepts only a typed `Route`
-issued by `rest_path` for a reviewed template in a closed registry; a plain
-string is refused before any session or credential exists. Each bound value
-passes one guard that refuses dot segments, separators, control characters
-and their encoded forms. The transport sends a request only when the
-normalized URL equals the template, and it never follows redirects.
-`get_automation_config`, `get_entity`, `get_history` and
-`automation_reliability_analysis` refuse an invalid identifier as
-`invalid_request` without contacting Home Assistant. Automation
-configuration IDs no longer accept dots. The compatibility module's
-standalone entry point is removed. Before this change a crafted identifier
-could make Engineering send token-bearing GET requests to other
-HA/Supervisor routes, including any GET-enabled webhook (which can trigger
-automations); no POST/PUT/DELETE/PATCH was reachable.
-
-It builds on beta.16, which adds one optional reviewed delegated read,
-`ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
-`configuration.yaml` only:
-- every other file, including `secrets.yaml`, and every credential-shaped
-  path is refused before any upstream call;
-- `!secret`/`!env_var` become reference-name markers;
-- credential-shaped keys, connection strings and credential text are redacted
-  whole;
-- every result discloses that values are ha-mcp's YAML 1.2 parse.
-
-It is admitted only on the exact reviewed ha-mcp 8.4.3 and 8.5.0
-descriptors. `ha_list_files` and `ha_read_file` stay unexposed.
-
-Beta.16 builds on beta.15, which closes the remaining HAMCP-189 residuals:
-fresh rollback planning acquires its own Core lease before any planning read,
-so under degraded Core it is refused before any Home Assistant read; an
-observed read counts an upstream attempt only after the Core authorizer
-passes; a contract-v3 task whose approval expired before its dispatch intent
-ends truthfully as `failed_pre_dispatch` (`plan_expired`) after bounded
-retries, with no dispatch; and the gateway audit keeps the exact refusal
-reason for empty and non-string tool names. It builds on beta.14
-(HAMCP-189 PR A), where a governed
-step acquires Core authority before any read that could conclude "already
-satisfied", so under degraded Core it is refused before any Home Assistant
-read; an unmapped F3 operation is refused with the exact reason
-`core_requirement_unmapped`; and cancel is recorded durably before any
-provider contact, succeeds during an ha-mcp outage, and is never dispatched by
-a later recovery pass. It builds on beta.13's fail-closed Core gateway
-(HAMCP-164): a tool with no Core requirement mapping is refused as
-`core_requirement_unmapped` before any provider, upstream or Home Assistant
-call, and Core independence comes only from a closed, justified allowlist of
-exact tool names. It also builds on beta.12's
-audit hardening (HAMCP-184): provider
-dispositions fail closed and every compiled ha-mcp release declares them
-explicitly (ha-mcp 8.2.0 backup and lifecycle become held; all other
-admission unchanged, including production 8.5.0 and rollback 8.4.3), F3
-re-apply validates the approved plan hash, approvals decided by the anonymous
-Ingress fallback principal no longer report `principal_separation_enforced:
-true` (reporting only; eligibility unchanged), and the CI runner guard checks
-generated matrix runners. It also builds on beta.11's MCP Python SDK 1.30.0 upgrade
-for CVE-2026-59951 (HAMCP-188), beta.10's truthful dispatch facts on every
-public surface (HAMCP-181), beta.9's truthful entity-registry error results
-(HAMCP-183), beta.8's dependency-scoped dashboard write admission (HAMCP-177),
-beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
-`ha_get_integration`), beta.6's typed power and fan admission repair, beta.5's
-deep-health correction, beta.4's dormant governed
-entity-registry metadata administration (`create_entity_metadata_plan`) and
-beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-At beta.18 the healthy catalog was **87 tools: 59 native and 28 admitted
-delegated reads** (the current count is under *Capabilities and compatibility*). The Core profiles, probe and signed fingerprints, storage
-formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
-Installing Engineering does not upgrade upstream or complete installed acceptance.
-
-Josh's Engineering installation continues on the development track. The earlier
-RC1-to-GA proposal is superseded; this beta uses the same existing technical Beta
-installation and public connector, with no GA prerequisite or second installation.
-
-Beta.16's [bounded garage configuration eligibility](docs/HAMCP135_CONFIGURATION_ELIGIBILITY.md)
-and beta.15's [dashboard analyzer](docs/DASHBOARD_INTEGRITY_ANALYSIS.md) remain
-available, together with beta.1's
-[governed configuration inverse](docs/HAMCP135_GOVERNED_ROLLBACK.md).
-Completed household D2 evidence remains separate; this release requires no
-repeat drill. Restoring the original script also restores its retry weakness,
-and saved bytes alone do not prove activation or settled runs. Govee
-administration and add-on restart work are not included.
-A release milestone does not authorize household operations.
-
-Historically, beta.14 added [native automation-baseline capture](docs/V2_4_0_BETA14_RELEASE_NOTES.md)
-for the existing offline comparator. It captures loaded automations, including
-those switched off, with canonical IDs, exact configuration hashes, explicit
-coverage and a verified registry lineage. Raw configuration bodies are not
-retained; frozen continuation pages perform no additional Home Assistant reads.
-Its release catalog was **57 static tools plus 25 delegated reads (82 total)**.
-The new read requires a separately reviewed signed Core capability; this release
-does not activate it automatically. See [capture scope](docs/AUTOMATION_BASELINE_CAPTURE.md)
-and the [offline command and format](docs/AUTOMATION_AUDIT_BASELINE.md).
-
-Historically, beta.13 delivered the offline comparator and superseded unpublished
-beta.12, with the merged Alarmo responsiveness-test isolation correction. That
-correction preserves its fixture and timing limits; it makes no production
-latency claim. Legacy baseline identity/fingerprint gaps remain explicit.
-
-Beta.11's [bounded Alarmo configuration inspector](docs/V2_4_0_BETA11_RELEASE_NOTES.md)
-reports selected configured membership, modes and delays with explicit partial
-coverage. Its separately signed Core extension is retained unchanged. Installing
-beta.14 neither grants authority nor proves Alarmo protection.
-
-PyJWT remains at 2.15.0 with hash-locked inputs and security regressions.
-Beta.10's [bounded logbook and response processing](docs/LOGBOOK_READS.md)
-remain unchanged; no prior acceptance campaign is repeated. Publication,
-deployment and installed acceptance remain separate gates.
-
-Beta.9's cold-health correction remains unchanged, including its disclosed
-synchronous costs and separately required approval-interval continuity.
-See [performance scope](docs/HEALTH_PERFORMANCE.md).
-
-Beta.7's [configuration verification and supplementary re-verification](docs/V2_4_0_BETA7_RELEASE_NOTES.md)
-remain available. Standalone trigger-condition IDs verify correctly, and preflight
-rejects unverifiable candidates before that operation dispatches. The existing
-[`reverify_configuration_task`](docs/CONFIGURATION_REVERIFICATION.md) checks all
-approved saved objects of an eligible historical mismatch and writes a dated
-supplementary receipt without resending configuration, operating a device,
-consuming approval or replacing the original failed outcome. Beta.14 acceptance
-does not repeat a completed supplementary observation.
-The inherited [beta.6 lock recovery](docs/V2_4_0_BETA6_RELEASE_NOTES.md) preserves
-complete unions up to 256 tokens and can settle qualifying retained locks.
-**Beta.5 cannot read expanded token records above sixteen; preserve compatible
-recovery state and the optional new receipt namespace through any downgrade.**
-Beta.5 [bounded automation lifecycle analysis](docs/AUTOMATION_LIFECYCLE_ANALYSIS.md)
-remains available, with exact paths and explicit partial coverage. Static
-findings do not prove observed failure or restart recovery.
-Beta.4 [bounded script-call dependency paths](docs/SCRIPT_CALL_DEPENDENCIES.md)
-remain available; neither analysis executes scripts or automations.
-The beta.3 [256-leaf dashboard capacity and safe diagnostics](docs/F3_DASHBOARD_WRITE_CONTRACT.md#semantic-capacity-and-safe-diagnostics)
-remain, with unchanged approval binding, one-dispatch execution and exact readback.
-[Bounded Core log history](docs/CORE_LOG_HISTORY.md) remains available through the
-existing native Supervisor reader. Its owner-approved `homeassistant` role grants
-broader Core administration to the process; the MCP tool exposes only the fixed log read.
-The beta.10 baseline has 55 static tools plus 25 admitted delegated reads (80 total);
-published beta.1 retains its original 53/78 inventory. Existing bounded script
-dependency evidence is preserved. **2.3.0** remains the last accepted stable release.
-Historical plan readability, exact fan/light/switch operations, signed Core
-applicability and protected automatic publication retain their existing behavior.
-Received Host/Origin enforcement and secret-path authentication remain.
-It provides one public MCP endpoint through the existing Nabu Casa
-connector, with a unified catalog.
-Engineering selects reviewed, admitted ha-mcp or native providers internally.
-
-The installation retains its technical **Beta** identity. Choose **HA MCP
-Engineering Server Beta**, directory and slug `hass_mcp_engineering_beta`.
-No second installation or migration is required. Historical v1.1.2 in
-`hass_mcp_admin/` is frozen and operationally retired; it is neither the
-current installation target nor a supported Engineering rollback. Since
-HAMCP-203 it is no longer offered by this add-on repository: its add-on
-configuration is renamed so the Supervisor does not discover it, and only the
-code is kept. See [`hass_mcp_admin/README.md`](hass_mcp_admin/README.md).
-
-Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
-[2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
-not prove publication, deployment or installed acceptance.
+Every earlier release is listed in the [release index](docs/RELEASES.md).
+Published images and notes are on
+[GitHub Releases](https://github.com/jeter-1/hass-mcp-admin/releases). A
+source version is not proof of what is installed: read health and the
+connector catalog on the running system.
 
 ## Install or update Engineering
 
-Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.29 deployment. MCP aliases beyond the strict loopback
-authority defaults and browser Origins need exact configuration. Explicit host
-lists replace the defaults. Retain independent management access because invalid
-options refuse startup; historical acceptance does not establish this boundary.
-
-1. Use this repository in the Home Assistant add-on store:
+1. Add this repository to the Home Assistant add-on store:
    `https://github.com/jeter-1/hass-mcp-admin`.
-2. Select **HA MCP Engineering Server Beta**. Update an existing Engineering
-   installation in place after publication and authorized deployment. Do not
-   install the historical v1 package or move its data into Engineering.
-3. Reconcile `mcp_allowed_hosts` and `mcp_allowed_origins` for intended paths
-   through the supported add-on interface. Preserve other connection and trust
-   settings, keeping access secrets in the operator's private interface.
-4. Use the existing public Engineering Nabu Casa connector. MCP remains on port
-   `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
-   port `8110`. The approval panel is not a second MCP endpoint.
-5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_4_0_BETA13_ACCEPTANCE.md).
+2. Install or update **HA MCP Engineering Server Beta**
+   (`hass_mcp_engineering_beta`). Update an existing Engineering installation
+   in place. Options, persistent data, ports, ingress and the technical Beta
+   identity are preserved across updates.
+3. Read the [inbound policy](docs/INBOUND_SECURITY.md) and set
+   `mcp_allowed_hosts` and `mcp_allowed_origins` for the paths you use. The
+   defaults admit only strict loopback authorities, and an explicit list
+   replaces them. Invalid options refuse startup, so keep independent
+   management access while you change them. Keep access secrets in the
+   add-on's private options, never in chat or files.
+4. Connect the client to the Engineering Nabu Casa endpoint. MCP listens on
+   port `8100`. The authenticated, admin-only **HA MCP Approval** ingress
+   panel uses internal port `8110`; it is not a second MCP endpoint.
+5. Refresh the client connector and read health before relying on the new
+   version.
 
-The image repository remains
-`ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.4.0-beta.13. Published 2.2.0 retains its historical
-`linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
-requires a supported 64-bit installation. This source change does not migrate or
-uninstall an existing system. Existing options, persistent paths, ports, ingress
-and technical Beta identities are preserved. Persisted field names and schema
-versions remain, but the expanded lock-token range is not backward-reader
-compatible; follow the beta.6 recovery contract. The existing header-policy
-options retain strict admission defaults; preserve the intended path configuration.
+Engineering requires a supported 64-bit Home Assistant installation
+(`linux/amd64` or `linux/arm64`). Images are published at
+`ghcr.io/jeter-1/hass-mcp-engineering-beta`. The build pins its base image and
+the full runtime wheel closure; see [controlled build inputs](docs/BUILD_INPUTS.md).
 
-The controlled build introduced in 2.2.1 pins the base image and complete runtime
-wheel closure.
-See [controlled build inputs](docs/BUILD_INPUTS.md) for architecture checks,
-dependency updates, publication verification and their evidence limits.
+Do not install the retired v1 package (`hass_mcp_admin`) or move its data into
+Engineering. Its retirement is recorded in
+[`hass_mcp_admin/README.md`](hass_mcp_admin/README.md).
 
-The [private observer contract](docs/INBOUND_TOPOLOGY_CAPTURE.md) requires
-separate source-bound arming, bounded collection and private evidence handling.
-Installation does not authorize or start a capture, and observation does not
-implement Host/Origin enforcement.
+## Using it
 
-## Capabilities and compatibility
+Ask the client in ordinary language. Typical work:
 
-This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**67 static tools plus 28 delegated reads, 95 total** (96 with the optional
-reviewed YAML reader admitted; the seven newest static tools are HAMCP-132's
-read-only `get_recorder_settings`, `get_unregistered_entities` and
-`get_configuration_definitions`, HAMCP-131's read-only `get_incident_logs`
-and `get_history_slices`, HAMCP-069B's
-`create_entity_availability_exposure_plan` and HAMCP-165's
-`create_label_plan`, the last two refused until a signed registry admits
-their profiles). The Core inventory represents
-**25 capability profiles** (four dormant, unselected by any signed entry: the
-earlier one, HAMCP-069B's two and HAMCP-165's label profile). Each signed entry selects its exact reviewed reference
-set; historical journal sequences do not prove the current installation.
-Actual authority and provider admission determine availability. Fresh protocol
-enumeration and descriptor comparison establish the catalog; a health count or
-cached client inventory alone does not.
-`ha_get_operation_status` remains held and absent from ordinary registration.
+- **Look things up.** Entities, devices, areas, services, history, logbook,
+  traces, logs, recorder settings, dashboards, blueprints and configuration,
+  through bounded reads. See the [read coverage matrix](docs/READ_COVERAGE_MATRIX.md)
+  and the [feature readiness map](docs/FEATURE_READINESS_MAP.md).
+- **Analyze.** What depends on an entity, what a change would affect, why an
+  automation is unreliable, and where configuration or dashboards are
+  inconsistent. See [dependency analysis](docs/ENTITY_DEPENDENCY_ANALYSIS.md),
+  [integrity analysis](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md) and
+  [automation reliability](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
+  Coverage is disclosed: a result with no detected references does not prove
+  that none exist.
+- **Change configuration.** Automations, scripts, scenes, helpers, entity
+  metadata, labels and dashboards, through the governed cycle below.
+- **Operate one device.** The typed fan and power requests below.
 
-Engineering supports bounded inspection, dependency/reliability/integrity
-analysis, reviewed reads and governed operations. Native capabilities supplement
-upstream functionality where deeper Engineering semantics are required.
-Provider unavailability grants no fallback authority or arbitrary forwarding.
-Dependency analysis adds bounded script configuration evidence through the
-admitted internal reader, with canonical renamed/disabled identities and explicit
-partial inventory. Script diagnostics do not expand helper execution evidence.
-Scene, group, template and dashboard configuration coverage remains unavailable;
-dynamic references and script blueprint bodies remain opaque. An analysis with
-no detected references does not prove none exist. See
-[dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
-
-Installed inspector acceptance requires the actual installed Core version
-to be admitted by a valid signed registry, with all 21 applicable profiles
-compatible after the separately authorized extension, and an exactly
-admitted provider. The 8.6 upgrade has its separate acceptance contract. Record REST/WebSocket identity agreement, the observed Core
-version, registry sequence and authority state in each acceptance receipt;
-beta.13 adds no installed-Core version pin. Reproducible CI lanes keep
-their explicit version pins and prove only their declared scenarios.
-Core 2026.9.2 retains its immutable 17-reference entry and historical typed
-fan/power route; its two new signed typed references remain unavailable as
-intended. Installing 2.4.0-beta.13 neither configures trust nor updates Core. Admission still requires exact current
-Core/provider identity and valid authority.
-
-The [8.5.0 compatibility contract](docs/HA_MCP_8_5_0_COMPATIBILITY.md)
-preserves the public blueprint getter through a closed list/get adapter.
-Metadata-only results remain partial; installed configuration and source-download
-provenance stay distinct. Generic blueprint writes remain unavailable.
-Historical acceptance does not establish the new installed pairing.
-
-The [Core registry contract](docs/CORE_RELEASE_REGISTRY.md) governs exact-version
-review, separate Core trust, signatures, expiry, retained denials and authority
-retirement. Signed data can select existing compiled contracts; incompatible
-semantics require review and possibly code changes. Future Core and ha-mcp
-versions receive no blanket compatibility from this milestone.
+Responses are bounded and paginated. See
+[bounded response guidance](docs/TOKEN_EFFICIENCY.md).
 
 ## Ordinary fan requests
 
-`control_fan` supports exact `turn_on`, `turn_off` and `set_percentage` requests
-for one fan under ordinary authenticated connector authorization. The assistant
-generates and reuses the operation ID; no configuration plan or panel approval
-is added for this typed action. Generic service forwarding stays closed.
-
-Fan operations require admitted ha-mcp 8.4.3, 8.5.0 or 8.6.0 and exact Core authority.
-The signed registry selects reviewed typed applicability for each exact Core
-version; Core 2026.9.2 retains its historical route. A version without reviewed
-applicability remains unavailable.
-Inspect authoritative task state and exact state/percentage readback. An uncertain
-action is reconciled read-only, never blindly retried; unresolved outcomes retain
-protection for the affected fan. Verification reflects HA state, not independent
-physical feedback, and consumer coverage remains incomplete. Restoration requires
-a separate exact owner request. See [typed fan control](docs/TYPED_FAN_CONTROL.md).
+`control_fan` handles one exact `turn_on`, `turn_off` or `set_percentage`
+request for one fan under ordinary authenticated connector authorization. The
+assistant generates and reuses the operation ID; no configuration plan or panel
+approval is involved. It requires an admitted ha-mcp provider and exact Core
+authority, and reports authoritative task state with exact state and
+percentage read-back. An uncertain outcome is reconciled read-only, never
+blindly retried, and keeps the fan protected until it is resolved.
+Verification reflects Home Assistant state, not independent physical feedback.
+See [typed fan control](docs/TYPED_FAN_CONTROL.md).
 
 ## Ordinary light and switch requests
 
-`control_power` supports one exact light or switch ON/OFF request under ordinary
-authenticated connector authority. The assistant manages its operation ID; no
-configuration plan or panel approval is created. The contracts require exact
-Core authority and admitted ha-mcp 8.4.3, 8.5.0 or 8.6.0, with the same registry-selected
-and historical routes described above. Generic services, toggle, brightness,
-color, bulk targets and other domains remain outside this tool.
+`control_power` handles one exact ON or OFF request for one light or switch
+under ordinary authenticated connector authorization, with the same provider,
+Core authority and read-back requirements. Toggle, brightness, color, bulk
+targets, other domains and generic service calls are outside this tool. Power
+can affect critical loads, groups and other consumers, and a light turned on
+may restore integration defaults; these consequences are disclosed, not
+hidden. See [typed power control](docs/TYPED_POWER_CONTROL.md).
 
-Power may affect critical loads, integration-defined groups and consumers.
-Coverage is incomplete, and light ON may restore integration defaults. Verify
-the authoritative task and independent HA state; physical effects are not
-independently established. Uncertainty protects the exact target and never
-permits redispatch. Restoration needs a separate exact owner request.
-See [typed power control](docs/TYPED_POWER_CONTROL.md).
+## Capabilities and compatibility
+
+From current source (`python scripts/codex-context.py --format json`), this
+version defines **80 static tools plus 28 delegated reads, 108 expected
+connector tools**, reviewed against ha-mcp **8.6.0**. Delegated reads require
+an exactly admitted ha-mcp provider: **8.4.3, 8.5.0 or 8.6.0**. These counts are
+source expectations, not installed proof. Admission is per tool and fails
+closed, so a running system can expose a smaller compatible subset; a fresh
+client catalog establishes what is actually available.
+
+Home Assistant Core compatibility comes from a
+[signed Core release registry](docs/CORE_RELEASE_REGISTRY.md). Each signed
+entry selects the reviewed capability profiles for one exact Core version. A
+new Core version gets no blanket compatibility: until its entry is published,
+Core-backed capabilities for it stay unavailable. Do not upgrade Home Assistant
+Core before its release is published on the `registry` branch; see the
+[owner runbook](docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md).
+
+## Safety model
+
+- **One endpoint, explicit providers.** Routing to a delegated provider is
+  explicit, attributed and admitted per tool. An upstream description or schema
+  never admits itself.
+- **No fallback.** If a provider is unavailable, the tool is unavailable. There
+  is no direct-HA fallback, generic service forwarding or provider switching.
+- **Bounded and redacted.** Output is bounded, secrets are redacted, and every
+  governed action is attributed in the [audit log](docs/AUDIT_LOG.md).
+- **Exact or refused.** An operation is refused when its exact target,
+  arguments, authority, provider, current state, concurrency safety or
+  verification cannot be established.
+- **Consequences are disclosed, not decisive.** Physical and household
+  consequences and risk labels are explained to the owner. The owner decides
+  whether they are acceptable; see
+  [ADR-022](docs/architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md).
 
 ## Governed changes and evidence
 
-Inspect, explain evidence and effects, prepare an exact plan, obtain its
-authenticated approval, apply once, inspect execution, read back and verify.
-`approve_change_plan` requests approval; it does not grant it. Approval
-remains bound to current evidence and execution conditions.
+Configuration changes follow one cycle:
 
-After a timeout or incomplete response, reconcile the persisted task and
-authoritative target state. Attempt count alone does not prove dispatch.
-Do not blindly repeat a mutation, reuse a failed approval or change providers.
-Dashboard saves remain non-atomic against external editors.
+1. inspect the current configuration and explain the evidence and effects;
+2. prepare an exact, immutable change plan;
+3. approve it in the **HA MCP Approval** ingress panel (`approve_change_plan`
+   requests approval; it does not grant it);
+4. apply it once;
+5. inspect the execution task, then read back and verify.
 
-Engineering 2.3.0-beta.4 introduced Core-bound fan/power records that
-2.3.0-beta.3 cannot read. Preserve
-current execution IDs, receipts and holds; binary downgrade alone is not storage
-recovery. Use a verified compatible artifact and an exact recovery plan.
+Approval is bound to the exact plan hash and to current evidence. Multi-step
+plans stop at the first failure and never roll back automatically.
+
+After a timeout or incomplete response, reconcile the persisted task against
+the authoritative target state. Do not repeat a mutation, reuse a failed
+approval or change providers. An attempt count alone does not prove dispatch.
+
+`inspect_governance_record` explains why one exact plan or task is stuck. An
+administrator can acknowledge or revoke a stuck record on the Ingress **Stuck
+records** page; records are never rewritten.
 
 - [Change governance](docs/CHANGE_GOVERNANCE.md)
 - [External approval](docs/EXTERNAL_APPROVAL.md)
 - [Execution recovery](docs/GOVERNED_EXECUTION_RECOVERY.md)
-- [Bounded response guidance](docs/TOKEN_EFFICIENCY.md)
-- [Integrity analysis](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md)
-- [Automation reliability](docs/AUTOMATION_RELIABILITY_ANALYSIS.md)
 - [Audit records](docs/AUDIT_LOG.md)
+
+## Recovery and rollback
+
+Rollback is reinstalling the previous release; each release's notes name its
+predecessor and any storage limits. A binary downgrade alone is not storage
+recovery. When a newer release has written records an older one cannot read,
+follow that release's recovery contract and the
+[downgrade versus backup restore](docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md)
+runbook. Other runbooks are in [`docs/runbooks/`](docs/runbooks/), including
+[post-update recovery verification](docs/runbooks/POST-UPDATE-RECOVERY-VERIFICATION.md)
+and [governance and task persistence recovery](docs/runbooks/RECOVER-GOVERNANCE-AND-TASK-PERSISTENCE.md).
 
 ## Development and release
 
-Follow the [Engineering README](hass_mcp_engineering_beta/README.md),
-[docs/CODEX_WORKFLOW.md](docs/CODEX_WORKFLOW.md) and applicable instructions.
-Resolve the exact release context before work:
+Follow [docs/CODEX_WORKFLOW.md](docs/CODEX_WORKFLOW.md), the repository
+[`AGENTS.md`](AGENTS.md) and the nested instruction files it names. Resolve the
+exact release context before work:
 
 ```sh
 python scripts/codex-context.py --format json
 ```
 
-Materialize a release in its original PR through
-`scripts/promote_next_release.py`; the temporary declaration is consumed.
-Final clean-head Evidence and candidate CI remain separate from publication
-and installed acceptance. A version-changing main merge can automatically
-publish; the owner decision must cover that consequence. Deployment is separate.
-The [current roadmap](docs/2_1_ROADMAP.md#current-direction) tracks script dependency
-acceptance and subsequent feature priorities.
+A release is materialized in its own pull request through
+`scripts/promote_next_release.py`; the temporary declaration is consumed in
+that PR. Evidence, CI, publication, deployment and installed acceptance are
+separate steps with separate authorization. A release PR updates the
+**Current release** section above and adds one row to
+[`docs/RELEASES.md`](docs/RELEASES.md); it does not add release narration here.
 
 ## Historical references
 
-Published artifacts and historical evidence remain immutable. RC9's accepted
-runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
+- [Release index](docs/RELEASES.md): every release's notes and acceptance
+  contract, newest first.
+- [Documentation map](docs/README.md).
+- [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases).
+- [Architecture history](V2_BETA_ARCHITECTURE.md).
+- [This README before consolidation](https://github.com/jeter-1/hass-mcp-admin/blob/34b8538ba704ded6032f13600ec5b185590100eb/README.md),
+  with the per-release narration through 2.4.1-beta.63.
 
-- [2.3.0 stable notes](docs/V2_3_0_RELEASE_NOTES.md) and
-  [2.3.0 acceptance](docs/V2_3_0_ACCEPTANCE.md)
-- [2.2.0 notes](docs/V2_2_0_RELEASE_NOTES.md) and
-  [2.2.0 acceptance](docs/V2_2_0_ACCEPTANCE.md)
-- [RC9 notes](docs/V2_2_0_RC9_RELEASE_NOTES.md) and
-  [RC9 acceptance](docs/V2_2_0_RC9_ACCEPTANCE.md)
-- [Architecture history](V2_BETA_ARCHITECTURE.md)
-- [Historical beta deployment guidance](docs/BETA_DEPLOYMENT.md)
-- [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
-
-Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.4.0-beta.13 contract.
+Published artifacts and historical evidence are immutable. Historical counts,
+pairings and installation guidance describe their own release only.

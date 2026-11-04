@@ -1,5 +1,11 @@
 # Engineering roadmap
 
+> [!WARNING]
+> **Historical: not the current roadmap.** The latest entry is dated
+> 2026-10-02 (2.4.0-beta.14). Live work is tracked in the HAMCP task register;
+> current releases are in [`RELEASES.md`](RELEASES.md). The text below is
+> unchanged.
+
 ## Current direction
 
 ### 2026-10-02 — Accepted baseline and parallel preparation

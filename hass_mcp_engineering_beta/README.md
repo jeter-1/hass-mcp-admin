@@ -1,252 +1,33 @@
 # HA MCP Engineering Server Beta
 
-Engineering **2.4.0-beta.11** is the materialized candidate for the
-[bounded Alarmo configuration inspector](../docs/V2_4_0_BETA11_RELEASE_NOTES.md).
-It reports selected configured membership, modes and delays with explicit partial
-coverage. The healthy catalog has **56 static tools plus 25 delegated reads (81 total)**.
-The additional Core read profile is withheld by existing signed 19-reference
-entries until a separately reviewed extension is signed and activated. Installing
-this release does not grant that authority or prove Alarmo protection.
+This add-on is the HA MCP Engineering Server: one MCP endpoint through which an
+AI client inspects, analyzes and safely changes Home Assistant. Reviewed ha-mcp
+tools run as internal delegated providers behind it.
 
-PyJWT is updated to 2.15.0 with hash-locked inputs and security regressions.
-Beta.10's [bounded logbook and response processing](../docs/LOGBOOK_READS.md)
-remain unchanged; no prior acceptance campaign is repeated. Publication,
-deployment and useful installed Alarmo acceptance remain separate gates.
+The product overview, install and update steps, the safety model and the
+current release are in the [root README](../README.md). Every release's notes
+and acceptance contract are in the [release index](../docs/RELEASES.md), and
+all other documentation is in the [documentation map](../docs/README.md).
 
-Beta.9's cold-health correction remains unchanged, including its disclosed
-synchronous costs and separately required approval-interval continuity.
-See [performance scope](../docs/HEALTH_PERFORMANCE.md).
+## Installation identity
 
-Beta.7's [configuration verification](../docs/V2_4_0_BETA7_RELEASE_NOTES.md)
-and [`reverify_configuration_task`](../docs/CONFIGURATION_REVERIFICATION.md)
-remain available with their original bounds. The latter saves dated supplementary
-evidence without resending configuration, operating a device, consuming approval
-or replacing historical failure. Beta.11 acceptance does not repeat completed
-supplementary observations.
-
-The candidate has 56 static tools plus 25 admitted delegated reads (81 total).
-**2.3.0** remains the last accepted stable release. Prior script dependencies,
-lifecycle analysis, Core log history and lock recovery remain available; their
-partial-coverage and recovery limits remain. The Core-log reader retains the
-owner-approved `homeassistant` role, which grants broader Core administration to
-the process; the tool still exposes only its fixed read. The Alarmo inspector
-adds only its separately admitted bounded configuration reads.
-See [2.4.0-beta.11 acceptance](../docs/V2_4_0_BETA11_ACCEPTANCE.md) and
-[2.4.0-beta.11 release notes](../docs/V2_4_0_BETA11_RELEASE_NOTES.md).
-
-Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.4.0-beta.11 update. Configure exact aliases for MCP paths beyond its loopback-authority
-defaults; explicit host lists replace those defaults. Native clients may omit
-Origin; browser MCP clients require an explicit origin. Approval ingress retains
-its separate authentication. Invalid options refuse startup, so retain independent
-management access. Source version declarations do not establish publication or
-installed acceptance.
-
-## Retained installation identity
+These values are kept stable across updates; update the existing add-on in
+place.
 
 | Surface | Value |
 | --- | --- |
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.4.0-beta.11 | `amd64`, `aarch64` |
+| Architectures | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
-| Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
+| Admin-only approval ingress | Internal port `8110`, panel **HA MCP Approval** |
 | Server ID | `hass-mcp-engineering-beta` |
 
-Published 2.2.0 retains its three-platform images. 2.2.1 retired
-32-bit `armv7`, following [Home Assistant OS support](https://github.com/home-assistant/operating-system/releases/tag/17.0).
-An affected installation needs an independently planned migration to supported
-64-bit hardware/OS; changing this package does not migrate its data.
+Set `mcp_allowed_hosts` and `mcp_allowed_origins` as described in the
+[inbound policy](../docs/INBOUND_SECURITY.md) before relying on a non-loopback
+path; invalid options refuse startup. See
+[install or update Engineering](../README.md#install-or-update-engineering).
 
-The controlled build introduced in 2.2.1 uses a digest-pinned Python base and
-complete hash-locked runtime wheels. See [build inputs](../docs/BUILD_INPUTS.md) for maintenance, both
-architecture smoke checks and final-digest inventory verification.
-
-Update the same add-on after authorized publication/deployment; preserve
-settings, connector, data and ingress. New installations select this add-on
-using the [root installation guidance](../README.md#install-or-update-engineering).
-No slug rename, second installation, connection change or persistent-data move
-belongs to this milestone.
-
-Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
-outside the Engineering dependency audit and not an Engineering rollback.
-2.4.0-beta.11 preserves existing options, original task/plan records, ports, ingress and image
-repository. Preserve the optional supplementary receipt namespace during rollback;
-older code cannot display its resolution. Inherited beta.6 expanded lock-token
-records remain incompatible with beta.5 above sixteen tokens; binary downgrade
-alone is not a recovery plan. The existing options, `mcp_allowed_hosts` and `mcp_allowed_origins`,
-enforce the received-header boundary before ordinary MCP behavior. The private
-observer retains its [existing contract](../docs/INBOUND_TOPOLOGY_CAPTURE.md),
-disabled by default with separate authorization and source-bound arming. The observer grants no
-provider authority and installation does not arm it.
-
-## Unified catalog and exact compatibility
-
-Clients use the existing Engineering Nabu Casa connector. Engineering selects
-suitable admitted ha-mcp or native providers, enforcing provider admission,
-target binding, authority, dispatch, attribution and verification internally.
-
-The healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **56 static plus
-25 delegated tools, 81 total**. The Core inventory represents **20 profiles**,
-whose admission depends on exact current Core authority.
-`ha_get_operation_status` stays held. Fresh raw descriptor comparison is
-required catalog evidence; a cached inventory or count alone is insufficient.
-Provider unavailability grants no fallback, arbitrary forwarding or alternate
-provider retry.
-
-Installed acceptance requires the actual installed Core version to be admitted
-by a valid signed registry, with all 20 applicable profiles compatible after the
-separately authorized extension, and exactly
-admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
-version, registry sequence and authority state in each acceptance receipt;
-beta.11 imposes no separate installed-Core version pin. CI lane pins remain
-reproducible test fixtures, not blanket compatibility evidence.
-Core 2026.9.2 retains its immutable 17-reference entry and historical typed
-fan/power route; the two signed typed references are intentionally unavailable
-on that entry. Installation does
-not activate trust or update Core. Existing compiled pairings retain their behavior.
-
-The [8.5.0 compatibility contract](../docs/HA_MCP_8_5_0_COMPATIBILITY.md)
-preserves the public blueprint getter through a closed list/get adapter.
-Metadata-only results remain partial; installed configuration and source-download
-provenance stay distinct. Generic blueprint writes remain unavailable.
-Historical acceptance does not establish the new installed pairing.
-
-The [Core registry contract](../docs/CORE_RELEASE_REGISTRY.md) preserves
-separate Core trust, signatures, exact compiled capability/probe references,
-expiry, retained denials and authority retirement. Unknown or changed
-contracts need review and possibly code changes. Future releases are not
-automatically compatible.
-
-## Ordinary fan control
-
-The additive `control_fan` tool uses ordinary authenticated connector authority
-for one exact `turn_on`, `turn_off` or `set_percentage` request. The assistant
-manages the operation ID automatically and reuses it for reconciliation. No
-configuration plan or panel approval is created. Generic services and fallback
-remain unavailable. Operations require exact Core authority and admitted ha-mcp
-8.4.3 or 8.5.0. The signed registry selects reviewed typed applicability for each
-exact Core version; Core 2026.9.2 retains its historical route. A generic read
-grant cannot authorize typed actions, and a version without reviewed
-applicability remains unavailable.
-
-At most one mutation may dispatch per operation. Verify authoritative task state
-and exact HA state/percentage, retaining uncertainty and incomplete consumer
-coverage. Lost acknowledgements and recovery never grant redispatch. Unresolved
-outcomes hold only the affected target after active dependency locks settle;
-receipts and bounded audit retain provider and original-request attribution.
-There is no automatic restoration, independent physical feedback or hold override.
-See [typed fan control](../docs/TYPED_FAN_CONTROL.md) for the full contract.
-
-## Ordinary light and switch control
-
-`control_power` adds exact light/switch ON/OFF with assistant-managed operation IDs
-and ordinary authenticated connector authority. It creates no configuration plan,
-notification or panel approval. Exact Core authority and admitted ha-mcp 8.4.3
-or 8.5.0 are required, with the registry-selected and historical routes above.
-Generic services, toggle, brightness/color, bulk selectors
-and other domains remain closed.
-
-At-most-once dispatch, independent HA state verification, target-local uncertainty
-holds and bounded audit reuse the existing execution machinery. Power records
-use a separate namespace without changing historical fan receipts. Consequence
-coverage remains incomplete: a switch may power a critical load, and a light
-may restore integration defaults. HA state is not independent physical feedback.
-See [typed power control](../docs/TYPED_POWER_CONTROL.md) for reconciliation,
-separate restoration and rollback limitations.
-
-## Execution, evidence and recovery
-
-Governed execution requires current exact targets, fresh evidence, an immutable
-plan, its authenticated panel approval and current execution authority.
-`approve_change_plan` requests approval; each approved plan still needs one
-apply. Inspect authoritative task/child evidence and independently verify the
-target. Keep incomplete consumer coverage visible when disclosing consequences.
-
-Bounded JSON responses retain reconciliation identities and available facts.
-Use supported detail selections and pagination for omitted evidence. Attempt
-count alone is not dispatch proof. Reconcile uncertain execution before further
-mutation; recovery cannot redispatch after durable intent or override an active
-owner. Never reuse failed approval material or overwrite unexpected state.
-
-Dashboard saves remain non-atomic against outside editors. A canary needs an
-edit-free window, exact readbacks and a separately approved inverse plan.
-
-Shared dependency builds own their authority independently of callers.
-The cooperative build deadline stays **300 seconds**, with **600-second soft**
-and **3600-second hard** evidence TTLs. Source fences and semantic applicability
-remain enforced. Cancellation and deadlines do not guarantee remote abort.
-Dependency diagnostics add bounded script evidence through the admitted internal
-reader, retaining canonical renamed/disabled identity and explicit partial
-inventory. This separate index partition does not expand the helper execution
-ledger. Since 2.4.1-beta.55 (HAMCP-227), a second diagnostic partition adds
-scene and group loaded membership and reviewed dashboard reads to dependency
-and impact analysis, outside the governance-bound index. Template coverage
-remains unavailable (HAMCP-264); dynamic references and script blueprint
-bodies remain opaque. See
-[dependency coverage](../docs/ENTITY_DEPENDENCY_ANALYSIS.md).
-
-Beta.3 cannot read beta.4's new Core-bound fan/power records. Preserve current
-execution IDs, receipts, holds and uncertain work. Binary downgrade alone is not
-storage recovery; a compatible artifact and exact recovery plan are required.
-
-- [Governance](../docs/CHANGE_GOVERNANCE.md) and
-  [external approval](../docs/EXTERNAL_APPROVAL.md)
-- [Execution recovery](../docs/GOVERNED_EXECUTION_RECOVERY.md)
-- [Response bounds](../docs/TOKEN_EFFICIENCY.md)
-- [Integrity analysis](../docs/CONFIGURATION_INTEGRITY_ANALYSIS.md)
-- [Change impact](../docs/CHANGE_IMPACT_ANALYSIS.md)
-- [Audit](../docs/AUDIT_LOG.md) and [rate limiting](../docs/RATE_LIMITING.md)
-
-## Development and release validation
-
-Read applicable root/subtree instructions and
-[docs/CODEX_WORKFLOW.md](../docs/CODEX_WORKFLOW.md). Use isolated development
-environments and repository-declared dependencies. Source work does not
-authorize live endpoints or production credentials.
-
-```sh
-python scripts/codex-context.py --format json
-python -m unittest discover -s tests -v
-```
-
-Full/Evidence includes full discovery, metadata and exact scope checks.
-A passing Evidence full-suite run need not be duplicated. Candidate CI also
-runs architecture builds, supported disposable Core pairings, exact-image
-gateway checks and exact add-on runtime acceptance.
-
-Materialize versions in the same PR with the shipped promotion tool. Keep the
-candidate draft for review. A version-changing main merge can automatically
-publish on the retained image path; owner authorization must cover that
-consequence. Deployment and verification of the final installation are separate.
-See the [current roadmap](../docs/2_1_ROADMAP.md#current-direction) for the
-script dependency acceptance gates and subsequent feature priorities.
-
-## Acceptance and history
-
-Retained RC9, 2.2.0, beta.3/beta.4, RC2 and 2.3.0 source/build, installed-image, catalog and
-live receipts remain bound to their original source, pairing, time and attribution.
-The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
-not establish 2.4.0-beta.11 installed acceptance. The
-[2.4.0-beta.11 contract](../docs/V2_4_0_BETA11_ACCEPTANCE.md) separately
-requires final publication/image identity, fresh catalog and bounded installed
-verification. Any unclosed historical beta.9 approval-interval gate remains
-separate and requires its own authorization; warm-only reads cannot close it.
-Beta.11 Alarmo acceptance creates no plan or approval and repeats no completed
-household cycle. Do not replay failed or stale plans.
-
-Complete Android navigation, cache-only startup during an outage and independent
-backup-content verification were not established. Notification clearing is an
-operator observation with narrower coverage than approval navigation.
-
-[2.3.0 notes](../docs/V2_3_0_RELEASE_NOTES.md),
-[2.3.0 acceptance](../docs/V2_3_0_ACCEPTANCE.md),
-[2.2.0 notes](../docs/V2_2_0_RELEASE_NOTES.md),
-[2.2.0 acceptance](../docs/V2_2_0_ACCEPTANCE.md),
-[RC9 notes](../docs/V2_2_0_RC9_RELEASE_NOTES.md),
-[RC9 acceptance](../docs/V2_2_0_RC9_ACCEPTANCE.md),
-[architecture history](../V2_BETA_ARCHITECTURE.md) and
-[historical beta deployment guidance](../docs/BETA_DEPLOYMENT.md) preserve their
-original scope. Historical rollback versions cannot replace a recovery plan
-covering compatible Core, configuration/database state and usable backups.
+The retired v1 package in `hass_mcp_admin/` is not an Engineering rollback.
+Release-by-release changes are in [`CHANGELOG.md`](CHANGELOG.md).

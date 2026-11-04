@@ -1186,6 +1186,10 @@ state blocks that state's promotion/publication/deployment action. Existing
 context and metadata validators remain authoritative; this guide adds no new
 version transition or bypass.
 
+Release documents stay flat in `docs/`; do not move earlier records. A release
+PR adds one row at the top of `docs/RELEASES.md` and replaces the root README's
+**Current release** section; it does not add release narration to the README.
+
 ### One-pull-request protected release
 
 Josh's October 8, 2026 direction keeps his Engineering installation on the
