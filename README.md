@@ -22,8 +22,10 @@ changes. Read the [2.4.1-rc.1 release notes](docs/V2_4_1_RC1_RELEASE_NOTES.md)
 and the [2.4.1-rc.1 acceptance contract](docs/V2_4_1_RC1_ACCEPTANCE.md),
 including the known issues it carries.
 
-This version's delegated catalog is reviewed against ha-mcp 8.6.0. beta.63
-reported 109 tools on Josh's installation (observed live by the architect,
+This version's delegated catalog is reviewed against ha-mcp 8.6.0. Its source
+baseline is 108 expected connector tools (80 native/static plus 28 automatic
+delegated reads), or 109 (80 + 29) with the optional reader. beta.63 reported
+109 tools on Josh's installation (observed live by the architect,
 2026-11-03). Updating from beta.63 is version-only, and rolling back to
 beta.63 is safe.
 
@@ -108,12 +110,11 @@ hidden. See [typed power control](docs/TYPED_POWER_CONTROL.md).
 
 ## Capabilities and compatibility
 
-The source baseline is **108 expected connector tools: 80 native/static plus
-28 automatic delegated reads**, as counted by
-`python scripts/codex-context.py --format json`. The optional
-`ha_config_get_yaml` reader is admitted per exact ha-mcp version, so an
-installation can show **109 (80 + 29)**. These counts are source
-expectations, not installed proof.
+The source baseline of expected connector tools, native/static plus
+automatic delegated reads, is what `python scripts/codex-context.py --format json`
+counts; the current figures are under **Current release**. The optional
+`ha_config_get_yaml` reader is admitted per exact ha-mcp version and adds one
+tool when admitted. Source counts are expectations, not installed proof.
 
 Delegated eligibility is decided per tool and per exact upstream contract;
 see `hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py`,

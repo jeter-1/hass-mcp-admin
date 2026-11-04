@@ -45,11 +45,15 @@ the [release index](RELEASES.md); this list does not repeat them.
   acknowledgement, on the Ingress **Stuck records** page only
   (2.4.1-beta.63, HAMCP-253).
 - **HACS to Marketplace evidence.** Core 2026.11 replaces HACS with the
-  built-in Marketplace. Source-pinned analysis of the household and
-  `ha_get_hacs_info` effect is recorded in
+  built-in Marketplace. This project's analysis of the migration on this
+  installation, its effect on installed HACS items and the `ha_get_hacs_info`
+  effect is recorded in
   [HAMCP-290](evidence/hamcp290/HAMCP-290-hacs-marketplace-migration.md) and the
-  [HAMCP-251 Core 2026.11 beta report](evidence/hamcp251/HAMCP-251-part-b1-core-2026.11-beta.md);
-  it changes no runtime behavior and selects no disposition.
+  [HAMCP-251 Core 2026.11 beta report](evidence/hamcp251/HAMCP-251-part-b1-core-2026.11-beta.md).
+  Those findings were read from Core 2026.11 beta source (2026.11.0b4 for
+  HAMCP-290, 2026.11.0b3 for HAMCP-251 Part B1) and are unverified against
+  the final 2026.11.0 release until the HAMCP-251 Part B2 and HAMCP-280 work. The analysis changes no runtime behavior and selects no
+  disposition.
 
 ## Same installation
 
@@ -106,3 +110,6 @@ Publication, deployment and installed acceptance are separate steps with
 separate authorization, under the
 [RC1 acceptance contract](V2_4_1_RC1_ACCEPTANCE.md). Any later code change is
 a new release, not part of this version-only promotion.
+
+Development continues as 2.4.2-beta.1; no stable 2.4.1 is planned (Josh,
+2026-11-03, recorded in HAMCP-302).

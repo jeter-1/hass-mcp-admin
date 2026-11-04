@@ -123,12 +123,22 @@ tokens stay private interactive inputs.
      dashboards within its phase budget, with completeness reported;
    - HAMCP-285: helper plans carry the evidence-based labels and group
      membership disclosure (known issue HAMCP-301 still applies).
-6. **One approved helper write round trip.** On the acceptance helper used for
-   beta.61 (`input_boolean.engineering_acceptance`), create one value plan,
-   have Josh approve that exact plan on the Ingress panel, apply it once, read
-   the execution task, and confirm the new value by an independent state read
-   that is not the task's own readback. Restoring the prior value is a second
-   plan under the same rules, at Josh's choice.
+6. **Approved helper write round trip, two plans, both required.** On the
+   acceptance helper used for beta.61
+   (`input_boolean.engineering_acceptance`), record its pre-state by an
+   independent state read before the first plan. Then:
+   1. **Change:** create one value plan that sets the helper from its
+      recorded pre-state to the other value;
+   2. **Restore:** create a second, separate value plan that sets it back to
+      the recorded pre-state.
+
+   Each plan is approved by Josh on the Ingress panel for that exact plan,
+   applied once, its execution task read, and its result confirmed by an
+   independent state read that is not the task's own readback. The step
+   passes only if the final independent read equals the recorded pre-state.
+   If either plan is not approved or applied, the step is INCOMPLETE. If
+   restoration fails, the step is FAIL: record the observed state, and Josh
+   decides recovery.
 7. **No-op control.** Request the helper's current value. Expect
    `status: no_change`, `outcome: already_in_desired_state`,
    `plan_created: false` and `provider_dispatch_occurred: false`.
@@ -161,4 +171,5 @@ Documented, not fixed in this release:
 RC1 is accepted only when every source, review, CI, publication and installed
 gate above has matching evidence. Any code change after rc.1 is a new release
 with its own review and sequencing; it is not folded into this promotion.
-What follows rc.1 is decided separately.
+Development continues as 2.4.2-beta.1; no stable 2.4.1 is planned (Josh,
+2026-11-03, recorded in HAMCP-302).
