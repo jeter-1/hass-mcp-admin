@@ -107,6 +107,11 @@ None of these.
   snapshot bound is 10,000. The state bound counts state records, not
   registry entries. Reaching it would need more than 7,400 state-only
   entities (I: implausible, not observed).
+  - The live finding in the HAMCP-301 register row (architect, 2026-11-03)
+    reports `group.family` present in the snapshot.
+  - Over the bound the snapshot holds no entities at all (§1.4).
+  - So the live state list was within the bound, and the cause is a
+    per-record rejection.
 - **Paging cap.** Ruled out (V). `/api/states` is a single unpaged response.
   No paging code exists on this path.
 - **Missing entity class.** Ruled out (V). The check is per record and does
