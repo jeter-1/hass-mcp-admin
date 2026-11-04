@@ -694,7 +694,8 @@ and no Evidence run.
 
 ### Decisions pending Josh
 
-Each item below is **pending Josh**. None has been answered in this session.
+This list is kept as written for the record. Josh answered it on 2026-11-04;
+see **Decisions recorded** below.
 
 1. Which option or options to implement, and in what order.
 2. Whether to authorize the read-only live observation for the three facts in
@@ -713,10 +714,36 @@ Each item below is **pending Josh**. None has been answered in this session.
 7. Whether the dashboard registry `structural_limit` (§1.2) gets its own
    register row.
 
+### Decisions recorded (Josh, 2026-11-04)
+
+Josh answered the list above in session on 2026-11-04.
+
+1. Implement **Option A now**, as one 2.4.2 release PR. B and C are decided
+   later.
+2. The architect performs the read-only live observations. Fact 1 is
+   established: `binary_sensor.1_1_1_1` and `binary_sensor.8_8_8_8` are the
+   state records rejected by `valid_entity_id`. Neither is in the `group`
+   domain or a helper domain. The architect's other observations (including
+   the `bounded_sources` reason code) are recorded in the HAMCP-301 register
+   notes. They are not reproduced here.
+3. **No operational rename** in Home Assistant.
+4. **Yes**: Option A includes per-record attribution for `expand()`
+   resolution (C14).
+5. B3 is **deferred**.
+6. **No disclosure change.** `potential_physical_consequence` already reports
+   `safety_critical`.
+7. The dashboard registry `structural_limit` is **HAMCP-307**.
+
+HAMCP-301 severity is lowered to **Medium**.
+
+Implementation waits for the architect's Option A contract. This document
+does not define that contract.
+
 ## 9. Limits of this diagnosis
 
-- No live observation was made. The three facts in §8 are **unknown**, not
-  inferred.
+- This session made no live observation. When it was written, the three facts
+  in §8 were **unknown**, not inferred. The architect has since observed
+  fact 1 (see **Decisions recorded**).
 - Core behaviour statements marked (I) need exact-version source review at
   the pinned 2026.10.3. That includes Core's entity-id grammar at 2026.10.3,
   the non-entity producers, `integration_entities` semantics and the pure
