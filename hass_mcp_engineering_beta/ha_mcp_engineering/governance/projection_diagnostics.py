@@ -109,6 +109,8 @@ def projection_failure_category(
 
 def projection_failure_identification(
     failures: list[tuple[ChangePlan, ErrorCode]],
+    *,
+    sensitive_values: tuple[str, ...],
 ) -> tuple[list[dict[str, str]], bool]:
     """Return at most eight ``{plan_id, category}`` rows and a truncation flag.
 
@@ -116,10 +118,19 @@ def projection_failure_identification(
     listed records are examined, so the cost is bounded by the row limit.
     """
 
-    ordered = sorted(failures, key=lambda item: item[0].plan_id)
+    # record_inspection imports this module.
+    from .record_inspection import UNRECOGNIZED, screened_record_id
+
+    ordered = sorted(failures, key=lambda item: str(item[0].plan_id))
     rows = [
         {
-            "plan_id": plan.plan_id,
+            # HAMCP-253 R1-M2/R2-M1: a stored identifier passes the same
+            # record-ID and configured-value screen as the acknowledgement
+            # bucket; anything else is a fixed marker.
+            "plan_id": (
+                screened_record_id(plan.plan_id, sensitive_values)
+                or UNRECOGNIZED
+            ),
             "category": projection_failure_category(plan, error_code),
         }
         for plan, error_code in ordered[:MAX_HEALTH_PROJECTION_FAILURES]

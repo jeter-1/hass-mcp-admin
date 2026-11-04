@@ -1,5 +1,16 @@
 # HA MCP Engineering Server
 
+Not yet released: Engineering **2.4.1-beta.63** (HAMCP-253) adds the
+read-only `inspect_governance_record` tool. It shows why one exact stuck
+plan or task is stuck, including plans the plan tools refuse, and never
+returns payloads or secrets. An administrator can acknowledge or revoke a
+record on the Ingress **Stuck records** page, and health then warns only on
+unacknowledged records. Records are never rewritten. Approve, apply,
+recovery, verification and persisted formats are unchanged, and nothing in
+Home Assistant changes. Rollback is reinstalling beta.62. Read the
+[2.4.1-beta.63 release notes](docs/V2_4_1_BETA63_RELEASE_NOTES.md) and the
+[2.4.1-beta.63 acceptance contract](docs/V2_4_1_BETA63_ACCEPTANCE.md).
+
 Not yet released: Engineering **2.4.1-beta.62** (HAMCP-277) lets the
 dependency index read the household's dashboards within its 6 s dashboard
 budget. The dashboard phase now runs after the other dependency sources, so

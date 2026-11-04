@@ -2,6 +2,37 @@
 
 Date: 2026-07-10
 
+## Stuck governance record inspection (2.4.1-beta.63, HAMCP-253)
+
+`inspect_governance_record` is a native, read-only governance tool:
+- category `governance`, routing `engineering_native`, provider
+  `engineering`, operation class `governance_record_inspection`;
+- risk `read`, fallback none, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- Core-independent (`CORE_INDEPENDENT_LOCAL_STATE`): no signed profile,
+  upstream admission or Home Assistant request.
+
+It returns bounded metadata for one exact change plan or execution task,
+including records that `get_change_plan` refuses. It never returns
+proposed configuration, targets, notes, principals or tokens. Events are
+bounded to 64 rows, and truncation is reported.
+
+Acknowledgement is **not** an MCP tool: the Engineering MCP connector
+exposes no acknowledgement tool, and an authenticated Home Assistant
+administrator browser session on the Ingress approval panel (`/records`) can
+acknowledge. Each request passes the per-request administrator check (a
+read-only `config/auth/list` role lookup in Core, the only Home Assistant
+call on that path) and a one-shot CSRF token. An effective decision requires
+an enabled, writable audit destination, checked before the ledger is
+opened: it is appended to Engineering's own
+acknowledgement ledger and takes effect only once its audit event is
+durably written. Inspection and the ledger operations make no Home Assistant
+call and no provider dispatch, never change the record and never affect
+execution. The catalog is 80 static
++ 28 delegated = 108 (109 with the optional YAML reader). See
+[HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md](docs/HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md).
+
 ## Scene, group and dashboard dependency coverage (2.4.1-beta.55, HAMCP-227)
 
 No tool, descriptor or input schema changes. `entity_dependency_analysis`

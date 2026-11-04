@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.4.1-beta.63 - Inspect and acknowledge stuck governance records (HAMCP-253)
+
+Builds on 2.4.1-beta.62 (HAMCP-277, #356), which includes 2.4.1-beta.61
+(HAMCP-285, #353). No existing tool or input schema,
+provider, signed profile, fingerprint, plan or task persisted format,
+approval binding, add-on option or Home Assistant write changes.
+
+- New read-only MCP tool `inspect_governance_record(record_kind, record_id)`
+  returns allowlisted, closed-token metadata for one exact change plan or
+  execution task, including projection-failed plans that `get_change_plan`
+  refuses. Events are bounded to 64 with truncation reported, and unreadable
+  fields are named. It has no payloads, configuration, targets, notes,
+  principals or tokens. Stored identifiers are never echoed, extensible
+  metadata is screened with the shared sanitizer, and inspection never
+  quarantines a record or rebuilds a navigation index. Static tools go
+  from 79 to 80.
+- New Ingress pages under **Stuck records**. An administrator can
+  acknowledge a failed or refused plan, or a terminal manual-review task, as
+  `historical_record` or `current_defect` with a reason of at most 500
+  characters, or revoke an acknowledgement. The action binds the reviewed
+  fingerprint and uses a one-shot CSRF token. It is appended to a separate
+  hash-chained ledger and takes effect only once its audit event is durably
+  written; a missing, disabled or unusable audit destination refuses it
+  before the ledger changes, a failing audit write abandons it, and a decision
+  interrupted between the steps is reconciled at start or by the next
+  writer. No-ops and refusals get a best-effort audit event, and
+  `audit_recorded` reports whether it was written. The Engineering MCP
+  connector exposes no acknowledgement tool; an authenticated administrator
+  browser session can acknowledge.
+- The projection-failure rows of health and of `list_change_plans` show a
+  stored plan identifier only when it is a record identifier that passes
+  the shared sanitizer with the configured sensitive values; otherwise
+  `unrecognized_value`. Counts, order and bounds are unchanged.
+- Health adds `governance.record_acknowledgement` counts and bounded ID
+  lists. `projection_failure_warning` and the new `manual_review_warning`
+  appear only while unacknowledged records exist. Raw counts are unchanged.
+- The ledger is never read by approve, apply, recovery, startup validation
+  or projection verification. An acknowledged record stays exactly as
+  ineligible as before.
+
 ## 2.4.1-beta.62 - the dependency index reads the household's dashboards within its budget (HAMCP-277)
 
 Builds on 2.4.1-beta.61 (HAMCP-285, #353). No tool, input schema, route,

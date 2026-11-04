@@ -434,6 +434,7 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "list_change_plans": frozenset({"limit"}),
     "get_execution_task": frozenset(),
     "list_execution_tasks": frozenset({"limit"}),
+    "inspect_governance_record": frozenset({"record_kind"}),
     "cancel_execution_task": frozenset(),
     "reverify_configuration_task": frozenset(),
     "approve_change_plan": frozenset({"approval_note"}),
@@ -528,6 +529,7 @@ ORDINARY_ARGUMENTS: dict[str, dict] = {
     "get_change_plan": {"plan_id": PLAN_ID},
     "list_change_plans": {"status": "awaiting_approval"},
     "get_execution_task": {"task_id": TASK_ID},
+    "inspect_governance_record": {"record_kind": "change_plan", "record_id": PLAN_ID},
     "list_execution_tasks": {"state": "created", "terminal_outcome": "completed", "plan_id": PLAN_ID},
     "cancel_execution_task": {"task_id": TASK_ID},
     "reverify_configuration_task": {

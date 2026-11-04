@@ -12,14 +12,17 @@ import hashlib
 import hmac
 import logging
 import json
+import os
+import re
 import secrets
+import stat
 import time
 from typing import Any, Awaitable, Callable
 import uuid
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from ..audit import AuditLogger
+from ..audit import AuditLogger, AuditRecord
 from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import (
@@ -123,6 +126,13 @@ from .projection_diagnostics import (
     PROJECTION_FAILURE_CATEGORY_MODEL,
     projection_failure_identification,
 )
+from . import record_acknowledgement as acknowledgement_ledger
+from .record_acknowledgement import (
+    AcknowledgementPersistenceUncertain,
+    AcknowledgementStorageError,
+    AcknowledgementStore,
+)
+from . import record_inspection
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
@@ -861,6 +871,10 @@ class ChangeGovernanceService:
         self._hot_path_metrics: dict[str, dict[str, Any]] = {}
         self._health_cache_key: tuple[int, int] | None = None
         self._health_cache: dict[str, Any] | None = None
+        # HAMCP-253: administrator acknowledgements of stuck records. Read
+        # only by health and inspection; never by approve, apply or recovery.
+        self.acknowledgements = AcknowledgementStore(repository.root)
+        self._acknowledgement_health_memo: tuple[Any, dict[str, Any]] | None = None
         self._health_cache_built_at: datetime | None = None
         self._health_cache_deadline: datetime | None = None
         self._health_cache_has_lifecycle_provider = False
@@ -912,6 +926,9 @@ class ChangeGovernanceService:
             tuple[dict[str, int], dict[str, int]] | None
         ) = None
         self.historical_validation_wait_seconds = HISTORICAL_VALIDATION_WAIT_SECONDS
+        # HAMCP-253 R1-M3: finish an acknowledgement whose audit write was
+        # interrupted, before the first health summary counts it.
+        self._reconcile_acknowledgement_audits_at_start()
         self._health_cache = self._build_health_summary(
             include_provider_health=False
         )
@@ -1007,12 +1024,16 @@ class ChangeGovernanceService:
         # A projection-only rebuild cannot certify the health aggregate:
         # it may have discovered changed records. Never retag old health data.
 
-    def _ensure_projection_index_current(self) -> None:
+    def _ensure_projection_index_current(
+        self, *, invalidate_health: bool = True
+    ) -> None:
         if (
             self._observed_plan_index_rebuild_count
             != self.repository.index_rebuild_count
         ):
-            self._rebuild_projection_failure_index()
+            self._rebuild_projection_failure_index(
+                invalidate_health=invalidate_health
+            )
 
     def _update_projection_failure_index(self, plan: ChangePlan) -> None:
         error = self._projection_failure_for_plan(plan)
@@ -9002,7 +9023,14 @@ class ChangeGovernanceService:
             indexed_failures[plan.plan_id] = error
         projected_failures = [
             {
-                "plan_id": plan_id,
+                # HAMCP-253 R2-M1 (Josh, 2026-11-03): the health rows' screen.
+                # Order, bound and count still use the stored identifier.
+                "plan_id": (
+                    record_inspection.screened_record_id(
+                        plan_id, self.sensitive_values
+                    )
+                    or record_inspection.UNRECOGNIZED
+                ),
                 "error_code": error_code.value,
             }
             for plan_id, error_code in sorted(indexed_failures.items())[
@@ -15834,6 +15862,666 @@ class ChangeGovernanceService:
         self._record(plan, "rollback_succeeded", "success")
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
+    # HAMCP-253: inspect and acknowledge stuck governance records. Inspection
+    # reads one record as stored and acknowledgement appends only to its own
+    # ledger. Neither saves a plan or task, resolves lifecycle or calls Home
+    # Assistant, and nothing that approves, applies or recovers reads either.
+    def _inspection_record(self, record_kind: str, record_id: str) -> dict[str, Any]:
+        if (
+            record_kind not in acknowledgement_ledger.RECORD_KINDS
+            or not isinstance(record_id, str)
+            or not re.fullmatch(r"[a-f0-9]{32}", record_id)
+        ):
+            raise GovernanceError(ErrorCode.INVALID_REQUEST)
+        if record_kind == "change_plan":
+            try:
+                plan = self.repository.read_for_inspection(record_id)
+            except ChangePlanStorageError:
+                return record_inspection.unreadable_view(
+                    record_kind, record_id, ErrorCode.CHANGE_PLAN_STORAGE_ERROR
+                )
+            if plan is None:
+                raise GovernanceError(
+                    ErrorCode.CHANGE_PLAN_NOT_FOUND,
+                    details={"resource_id": record_id},
+                )
+            return record_inspection.plan_view(self, plan, record_id)
+        try:
+            task = self.task_repository.read_for_inspection(record_id)
+        except ExecutionTaskStorageError:
+            return record_inspection.unreadable_view(
+                record_kind, record_id, ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            )
+        if task is None:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_NOT_FOUND,
+                details={"resource_id": record_id},
+            )
+        return record_inspection.task_view(
+            task, record_id, sensitive_values=self.sensitive_values
+        )
+
+    @staticmethod
+    def _acknowledgement_projection(
+        entry: dict[str, Any] | None, current_fingerprint: str | None
+    ) -> dict[str, Any]:
+        if entry is None:
+            return {"state": "unacknowledged", "classification": None,
+                    "recorded_at": None, "history_count": 0}
+        state = (
+            "revoked" if entry["action"] == "revoke"
+            else "acknowledged"
+            if current_fingerprint is not None
+            and hmac.compare_digest(entry["record_fingerprint"], current_fingerprint)
+            # The record changed after review: the acknowledgement no longer
+            # describes it, so the record warns again.
+            else "stale"
+        )
+        return {
+            "state": state,
+            "classification": entry["classification"] if state == "acknowledged" else None,
+            "recorded_at": entry["recorded_at"],
+            "history_count": entry["history_count"],
+        }
+
+    def inspect_governance_record(
+        self, *, record_kind: str, record_id: str
+    ) -> dict[str, Any]:
+        """Bounded metadata for one exact plan or task, refused or not."""
+
+        view = self._inspection_record(record_kind, record_id)
+        try:
+            events = self.acknowledgements.read()
+            entry = acknowledgement_ledger.current_entries(events).get(
+                (record_kind, record_id)
+            )
+            # A decision whose audit event is not yet written is not in
+            # effect; it is shown, never applied (R1-M3).
+            audit_pending = any(
+                (decision["body"]["record_kind"], decision["body"]["record_id"])
+                == (record_kind, record_id)
+                for decision in acknowledgement_ledger.pending_decisions(events)
+            )
+            ledger_status = "ok"
+        except AcknowledgementStorageError:
+            entry, audit_pending, ledger_status = None, False, "unavailable"
+        view["acknowledgement"] = {
+            **self._acknowledgement_projection(entry, view["record_fingerprint"]),
+            "audit_pending": audit_pending,
+            "ledger_status": ledger_status,
+        }
+        view["payload_included"] = False
+        return view
+
+    def _acknowledgement_audit_enabled(self) -> bool:
+        # A disabled logger reports success without writing; it is not an
+        # audit destination (R1-M3).
+        return (
+            self.audit is not None
+            and getattr(self.audit, "enabled", False) is True
+            and bool(getattr(self.audit, "path", None))
+        )
+
+    def _acknowledgement_audit_usable(self) -> bool:
+        """Whether the audit destination can take this decision's event.
+
+        HAMCP-253 R2-M2: checked before the acknowledgement ledger is opened,
+        so a destination known to be unusable changes no ledger state. The
+        log and its lock are opened as the audit logger opens them, without
+        writing; an existing target must be a regular file, so a directory
+        or a pipe is refused without opening it. A later transient failure
+        is still handled by the decision, audit and completion steps.
+        """
+
+        if not self._acknowledgement_audit_enabled():
+            return False
+        path = str(self.audit.path)
+        for target, mode in ((path, "ab"), (path + ".lock", "a+b")):
+            try:
+                try:
+                    if not stat.S_ISREG(os.stat(target).st_mode):
+                        return False
+                except FileNotFoundError:
+                    pass
+                with open(target, mode):
+                    pass
+            except (OSError, ValueError):
+                return False
+        return True
+
+    def _acknowledgement_decision_status(
+        self, events: list[dict[str, Any]], body: dict[str, Any]
+    ) -> tuple[str, str | None]:
+        """What ``body`` would do on top of the effective ``events``."""
+
+        latest = acknowledgement_ledger.current_entries(events).get(
+            (body["record_kind"], body["record_id"])
+        )
+        if body["action"] == "revoke":
+            if latest is None:
+                return "refused", "record_not_acknowledged"
+            return ("no_op" if latest["action"] == "revoke" else "revoked"), None
+        effective = self._acknowledgement_projection(
+            latest, body["record_fingerprint"]
+        )["state"]
+        if (
+            effective == "acknowledged"
+            and latest["classification"] == body["classification"]
+            and latest["reason"] == body["reason"]
+        ):
+            return "no_op", None
+        return ("reclassified" if effective == "acknowledged" else "acknowledged"), None
+
+    def _write_acknowledgement_decision_audit(
+        self,
+        events: list[dict[str, Any]],
+        decision: dict[str, Any],
+        *,
+        reconciled: bool,
+    ) -> bool:
+        """Durably write the audit event of one decision entry, idempotently."""
+
+        body = decision["body"]
+        earlier = [
+            event for event in events if event["sequence"] < decision["sequence"]
+        ]
+        status, _ = self._acknowledgement_decision_status(earlier, body)
+        outcome = self._acknowledgement_outcome_body(
+            status, None, body["record_kind"], body["record_id"], body["action"],
+            body["classification"], body["record_fingerprint"],
+            sequence=decision["sequence"],
+        )
+        record = self._acknowledgement_audit_record(
+            outcome, None, body["principal"], body["reason"],
+            reconciled=reconciled,
+        )
+        record["audit_event_id"] = acknowledgement_ledger.audit_event_id(decision)
+        if not self._acknowledgement_audit_enabled():
+            return False
+        try:
+            return self.audit.write_batch((record,)) == 1
+        except Exception:
+            return False
+
+    def _reconcile_acknowledgement_audits(self, transaction: Any) -> None:
+        """Record or refuse: a pending decision is never left behind silently.
+
+        Runs inside the ledger transaction. Writing the same audit identifier
+        again is a no-op in the audit log, so a decision whose audit event was
+        written before a crash is completed without a duplicate.
+        """
+
+        for decision in acknowledgement_ledger.pending_decisions(transaction.events):
+            if not self._write_acknowledgement_decision_audit(
+                transaction.events, decision, reconciled=True
+            ):
+                raise AcknowledgementStorageError("acknowledgement_audit_pending")
+            transaction.complete(decision, "recorded", self._timestamp())
+
+    def _reconcile_acknowledgement_audits_at_start(self) -> None:
+        try:
+            if self.acknowledgements.token() is None or not (
+                acknowledgement_ledger.pending_decisions(self.acknowledgements.read())
+            ):
+                return
+            if not self._acknowledgement_audit_enabled():
+                return
+            with self.acknowledgements.transaction() as transaction:
+                self._reconcile_acknowledgement_audits(transaction)
+        except AcknowledgementStorageError:
+            # Health reports the pending decision; the next writer retries.
+            return
+        finally:
+            self._acknowledgement_health_memo = None
+
+    def acknowledge_governance_record(
+        self,
+        *,
+        record_kind: str,
+        record_id: str,
+        action: str,
+        classification: str | None,
+        reason: str,
+        record_fingerprint: str,
+        principal: str,
+    ) -> dict[str, Any]:
+        """One administrator acknowledgement, reclassification or revoke.
+
+        Appends one ledger entry or refuses. The plan or task named is never
+        written, and execution eligibility is never consulted or changed.
+        """
+
+        refusal: str | None = None
+        view: dict[str, Any] | None = None
+        if not isinstance(principal, str) or not (
+            acknowledgement_ledger.ADMIN_PRINCIPAL.fullmatch(principal)
+        ):
+            refusal = "administrator_required"
+        elif (
+            record_kind not in acknowledgement_ledger.RECORD_KINDS
+            or not isinstance(record_id, str)
+            or not re.fullmatch(r"[a-f0-9]{32}", record_id)
+        ):
+            refusal = "record_identifier_invalid"
+        elif action not in acknowledgement_ledger.ACTIONS:
+            refusal = "action_invalid"
+        elif (
+            classification not in acknowledgement_ledger.CLASSIFICATIONS
+            if action == "acknowledge"
+            else classification is not None
+        ):
+            refusal = "classification_invalid"
+        elif not isinstance(reason, str) or len(reason) > (
+            acknowledgement_ledger.MAX_REASON_CHARS
+        ):
+            refusal = "reason_oversize"
+        elif not acknowledgement_ledger.reason_shape_valid(reason):
+            refusal = "reason_invalid"
+        elif (
+            lambda result: result.failed_closed or result.redaction_applied
+        )(sanitize_untrusted_data(reason, known_secrets=self.sensitive_values)):
+            # Never store a redacted or secret-bearing reason.
+            refusal = "reason_contains_sensitive_value"
+        elif not isinstance(record_fingerprint, str) or not re.fullmatch(
+            r"[a-f0-9]{64}", record_fingerprint
+        ):
+            refusal = "record_fingerprint_stale"
+        if refusal is None:
+            try:
+                view = self._inspection_record(record_kind, record_id)
+            except GovernanceError:
+                other = (
+                    self.task_repository if record_kind == "change_plan"
+                    else self.repository
+                )
+                try:
+                    exists_as_other = (
+                        other.read_for_inspection(record_id) is not None
+                    )
+                except (ChangePlanStorageError, ExecutionTaskStorageError):
+                    # A stored but unreadable record of the other kind.
+                    exists_as_other = True
+                refusal = (
+                    "record_kind_mismatch" if exists_as_other else "record_not_found"
+                )
+        if refusal is None and view is not None:
+            if not view["readable"]:
+                refusal = "record_unreadable"
+            elif not view["acknowledgeable"]:
+                refusal = "record_not_acknowledgeable"
+            elif not hmac.compare_digest(
+                view["record_fingerprint"], record_fingerprint
+            ):
+                refusal = "record_fingerprint_stale"
+        if refusal is None and not self._acknowledgement_audit_usable():
+            # R1-M3/R2-M2: no ledger change without a usable audit
+            # destination.
+            refusal = "audit_unavailable"
+        if refusal is not None:
+            return self._acknowledgement_outcome(
+                "refused", refusal, record_kind, record_id, action,
+                classification, record_fingerprint, principal, reason,
+            )
+        body = {
+            "entry_type": acknowledgement_ledger.DECISION,
+            "record_kind": record_kind,
+            "record_id": record_id,
+            "action": action,
+            "classification": classification if action == "acknowledge" else None,
+            "reason": reason,
+            "record_fingerprint": record_fingerprint,
+            "principal": principal,
+            "recorded_at": self._timestamp(),
+        }
+        sequence: int | None = None
+        decision: dict[str, Any] | None = None
+        decision_audited: bool | None = None
+        completed = False
+        try:
+            with self.acknowledgements.transaction() as transaction:
+                self._reconcile_acknowledgement_audits(transaction)
+                status, refusal = self._acknowledgement_decision_status(
+                    transaction.events, body
+                )
+                if status in {"acknowledged", "reclassified", "revoked"}:
+                    # Decision, then its audit event, then the completion
+                    # that makes it effective (R1-M3).
+                    try:
+                        decision = transaction.append(body)
+                    except AcknowledgementPersistenceUncertain as exc:
+                        # R2-M3: the decision may persist and be reconciled
+                        # later, so it is reported as pending, never refused.
+                        decision = exc.candidate
+                        raise
+                    decision_audited = self._write_acknowledgement_decision_audit(
+                        transaction.events, decision, reconciled=False
+                    )
+                    transaction.complete(
+                        decision,
+                        "recorded" if decision_audited else "abandoned",
+                        self._timestamp(),
+                    )
+                    completed = True
+                    if decision_audited:
+                        sequence = decision["sequence"]
+                    else:
+                        status, refusal = "refused", "audit_write_failed"
+        except AcknowledgementStorageError as exc:
+            status, refusal, sequence = "refused", str(exc), None
+            if decision is not None and not completed:
+                # The decision is or may be stored, and its completion is
+                # not known to be durable. Whichever completion was lost,
+                # the next writer or start can still complete the decision
+                # as recorded once its audit event is written (an uncertain
+                # `abandoned` may vanish), so it is reported as pending,
+                # never as refused or settled (R1-M3, R2-M3).
+                status = "pending"
+                refusal = "acknowledgement_audit_reconciliation_pending"
+                sequence = decision["sequence"]
+        finally:
+            self._acknowledgement_health_memo = None
+        return self._acknowledgement_outcome(
+            status, refusal, record_kind, record_id, action, classification,
+            record_fingerprint, principal, reason, sequence=sequence,
+            # A decision's own audit event is its outcome audit; a failed
+            # one is followed by a best-effort refusal audit.
+            decision_audited=(
+                decision_audited
+                if decision is not None and (decision_audited or not completed)
+                else None
+            ),
+        )
+
+    def refuse_governance_record_acknowledgement(
+        self, refusal: str, *, record_kind: Any, record_id: Any, principal: Any,
+    ) -> dict[str, Any]:
+        """Audit an Ingress request refused before its fields were trusted."""
+
+        return self._acknowledgement_outcome(
+            "refused", refusal, record_kind, record_id, None, None, None,
+            principal, None,
+        )
+
+    @staticmethod
+    def _acknowledgement_outcome_body(
+        status: str,
+        refusal: str | None,
+        record_kind: Any,
+        record_id: Any,
+        action: Any,
+        classification: Any,
+        record_fingerprint: Any,
+        *,
+        sequence: int | None = None,
+    ) -> dict[str, Any]:
+        def known(value: Any, allowed: tuple[str, ...]) -> str | None:
+            return value if value in allowed else None
+
+        def matching(value: Any, pattern: str) -> str | None:
+            return (
+                value if isinstance(value, str) and re.fullmatch(pattern, value)
+                else None
+            )
+
+        return {
+            "status": status,
+            "refusal_reason": refusal,
+            "record_kind": known(record_kind, acknowledgement_ledger.RECORD_KINDS),
+            "record_id": matching(record_id, r"[a-f0-9]{32}"),
+            "action": known(action, acknowledgement_ledger.ACTIONS),
+            "classification": known(
+                classification, acknowledgement_ledger.CLASSIFICATIONS
+            ),
+            "record_fingerprint": matching(record_fingerprint, r"[a-f0-9]{64}"),
+            "ledger_sequence": sequence,
+            "record_written": False,
+            "home_assistant_calls": 0,
+            "execution_eligibility_changed": False,
+        }
+
+    @staticmethod
+    def _acknowledgement_audit_record(
+        outcome: dict[str, Any],
+        refusal: str | None,
+        principal: Any,
+        reason: Any,
+        *,
+        reconciled: bool = False,
+    ) -> dict[str, Any]:
+        status = outcome["status"]
+        return AuditRecord(
+            request_id=uuid.uuid4().hex,
+            tool_name=None,
+            capability_classification="ingress_record_acknowledgement",
+            operation_category="governance_record_acknowledgement",
+            access=(
+                "refused" if status in {"refused", "pending"} else "governance_write"
+            ),
+            authenticated=refusal != "administrator_required",
+            caller_id=(
+                principal
+                if isinstance(principal, str)
+                and acknowledgement_ledger.ADMIN_PRINCIPAL.fullmatch(principal)
+                else None
+            ),
+            # The reason text stays in the ledger; audit records its length
+            # only.
+            parameters={
+                key: outcome[key]
+                for key in (
+                    "record_kind", "record_id", "action",
+                    "classification", "record_fingerprint",
+                    "ledger_sequence",
+                )
+            } | {
+                "reason_length": (
+                    len(reason) if isinstance(reason, str) else None
+                ),
+                # Written by reconciliation after an interrupted request.
+                "audit_reconciled": reconciled,
+            },
+            result_status=status,
+            error_code=refusal,
+            resource_ids=(
+                {"record_id": outcome["record_id"]}
+                if outcome["record_id"] else {}
+            ),
+            event="governance_record_acknowledgement",
+        ).as_dict()
+
+    def _acknowledgement_outcome(
+        self,
+        status: str,
+        refusal: str | None,
+        record_kind: Any,
+        record_id: Any,
+        action: Any,
+        classification: Any,
+        record_fingerprint: Any,
+        principal: Any,
+        reason: Any,
+        *,
+        sequence: int | None = None,
+        decision_audited: bool | None = None,
+    ) -> dict[str, Any]:
+        outcome = self._acknowledgement_outcome_body(
+            status, refusal, record_kind, record_id, action, classification,
+            record_fingerprint, sequence=sequence,
+        )
+        if decision_audited is not None:
+            audited = decision_audited
+        elif not self._acknowledgement_audit_enabled():
+            # A disabled logger reports success without writing.
+            audited = False
+        else:
+            try:
+                audited = self.audit.write(
+                    self._acknowledgement_audit_record(
+                        outcome, refusal, principal, reason
+                    )
+                ) is True
+            except Exception:
+                audited = False
+        # True only when an audit event for this request is durably written.
+        outcome["audit_recorded"] = audited
+        return outcome
+
+    def stuck_governance_records(self) -> dict[str, Any]:
+        """Projection-failed plans and manual-review tasks with their state."""
+
+        return self._acknowledgement_health(storage_read_only=True)
+
+    def _acknowledgement_health(
+        self, *, storage_read_only: bool = False
+    ) -> dict[str, Any]:
+        if not storage_read_only:
+            # A navigation rebuild since the last projection pass leaves the
+            # index stale; refresh it the same way the read paths do.
+            self._ensure_projection_index_current(invalidate_health=False)
+            plan_ids = sorted(self._projection_failure_index)
+        elif (
+            self._observed_plan_index_rebuild_count
+            == self.repository.index_rebuild_count
+        ):
+            plan_ids = sorted(self._projection_failure_index)
+        else:
+            # The Ingress list never rebuilds an index: a rebuild quarantines
+            # corrupt records (R1-M1). Read the plans as stored instead.
+            plan_ids = sorted(
+                plan.plan_id
+                for plan in self.repository.read_all_for_inspection()
+                if self._projection_failure_for_plan(plan) is not None
+            )
+        try:
+            task_ids = sorted(self.task_repository.manual_review_task_ids())
+            task_index_status = "ok"
+        except ExecutionTaskStorageError:
+            # Task storage health already reports the failure.
+            task_ids, task_index_status = [], "unavailable"
+        try:
+            token = self.acknowledgements.token()
+        except AcknowledgementStorageError:
+            token = "unavailable"
+        key = (
+            token, self.repository.generation, self.task_repository.generation,
+            tuple(plan_ids), tuple(task_ids),
+        )
+        memo = self._acknowledgement_health_memo
+        if memo is not None and memo[0] == key:
+            return deepcopy(memo[1])
+        try:
+            events = self.acknowledgements.read()
+            entries = acknowledgement_ledger.current_entries(events)
+            ledger_status = "ok"
+        except AcknowledgementStorageError:
+            # An unreadable ledger acknowledges nothing: every record warns.
+            events, entries, ledger_status = [], {}, "unavailable"
+
+        def bucket(kind: str, ids: list[str]) -> dict[str, Any]:
+            groups: dict[str, list[str]] = {
+                "unacknowledged": [], "historical_record": [], "current_defect": [],
+            }
+            stale = unrecognized = 0
+            for record_id in ids:
+                if record_inspection.screened_record_id(
+                    record_id, self.sensitive_values
+                ) is None:
+                    # A stored identifier that is not a record ID, or that
+                    # holds a sensitive value, is counted and never listed.
+                    unrecognized += 1
+                    continue
+                entry = entries.get((kind, record_id))
+                state = "unacknowledged"
+                classification = None
+                if entry is not None and entry["action"] == "acknowledge":
+                    try:
+                        current = self._inspection_record(kind, record_id)[
+                            "record_fingerprint"
+                        ]
+                    except Exception:
+                        current = None
+                    projected = self._acknowledgement_projection(entry, current)
+                    state, classification = projected["state"], projected["classification"]
+                    stale += state == "stale"
+                groups[
+                    classification if state == "acknowledged" else "unacknowledged"
+                ].append(record_id)
+            limit = record_inspection.MAX_HEALTH_ACKNOWLEDGEMENT_IDS
+            return {
+                "unacknowledged_count": len(groups["unacknowledged"]) + unrecognized,
+                "unrecognized_identifier_count": unrecognized,
+                "acknowledged_historical_count": len(groups["historical_record"]),
+                "acknowledged_current_defect_count": len(groups["current_defect"]),
+                "stale_acknowledgement_count": stale,
+                "unacknowledged_ids": groups["unacknowledged"][:limit],
+                "acknowledged_historical_ids": groups["historical_record"][:limit],
+                "acknowledged_current_defect_ids": groups["current_defect"][:limit],
+                "ids_truncated": any(len(group) > limit for group in groups.values()),
+            }
+
+        result = {
+            "model": acknowledgement_ledger.MODEL,
+            "ledger_status": ledger_status,
+            "ledger_entry_count": len(events),
+            # Decisions whose audit event is not yet written, and decisions
+            # that never took effect because it could not be (R1-M3).
+            **acknowledgement_ledger.audit_counts(events),
+            "manual_review_index_status": task_index_status,
+            "projection_failed_plans": bucket("change_plan", plan_ids),
+            "manual_review_tasks": bucket("execution_task", task_ids),
+            "acknowledgement_affects_execution": False,
+        }
+        self._acknowledgement_health_memo = (key, deepcopy(result))
+        return result
+
+    def _apply_acknowledgement_health(self, summary: dict[str, Any]) -> None:
+        """Only unacknowledged stuck records warn; raw counts stay unchanged."""
+
+        try:
+            block = self._acknowledgement_health()
+        except Exception:
+            # Fail toward warning: raw counts and the original warning stand.
+            summary["record_acknowledgement"] = {
+                "model": acknowledgement_ledger.MODEL,
+                "ledger_status": "unavailable",
+                "acknowledgement_affects_execution": False,
+            }
+            summary["manual_review_warning"] = (
+                "one_or_more_execution_tasks_require_manual_review"
+                if summary.get("execution_tasks", {}).get("tasks_manual_review")
+                else None
+            )
+            return
+        summary["record_acknowledgement"] = block
+        plans, tasks = block["projection_failed_plans"], block["manual_review_tasks"]
+
+        def total(bucket: dict[str, Any]) -> int:
+            return (
+                bucket["unacknowledged_count"]
+                + bucket["acknowledged_historical_count"]
+                + bucket["acknowledged_current_defect_count"]
+            )
+
+        # The raw counts come from the cached build. If the acknowledgement
+        # view saw a different record set, it cannot clear the warning.
+        raw_plans = summary.get("projection_failure_count") or 0
+        raw_tasks = summary.get("execution_tasks", {}).get("tasks_manual_review") or 0
+        block["counts_consistent"] = (
+            total(plans) == raw_plans and total(tasks) == raw_tasks
+        )
+        summary["projection_failure_warning"] = (
+            "one_or_more_governance_plans_could_not_be_projected"
+            if plans["unacknowledged_count"]
+            or (raw_plans and total(plans) != raw_plans)
+            else None
+        )
+        summary["manual_review_warning"] = (
+            "one_or_more_execution_tasks_require_manual_review"
+            if tasks["unacknowledged_count"]
+            or (raw_tasks and total(tasks) != raw_tasks)
+            else None
+        )
+
     def health_summary(
         self,
         *,
@@ -16962,6 +17650,7 @@ class ChangeGovernanceService:
                 "record_becomes_authority_relevant"
             ),
         }
+        self._apply_acknowledgement_health(summary)
         return summary
 
     def _backup_provider_health_snapshot(self) -> dict[str, Any]:
@@ -17518,7 +18207,9 @@ class ChangeGovernanceService:
             if resolved_history is None else resolved_history
         )
         failure_rows, failures_truncated = (
-            projection_failure_identification(projection_failures)
+            projection_failure_identification(
+                projection_failures, sensitive_values=self.sensitive_values
+            )
         )
         plan_generation = (
             self.repository.generation if captured_plan_generation is None
@@ -18490,6 +19181,8 @@ _HEALTH_OVERLAY_FIELDS = (
     "storage", "storage_status", "storage_corruption_count", "total_plans",
     "active_apply_operations", "approval_notifications", "f3",
     "historical_validation", "plan_store_scaling",
+    # HAMCP-253: history-derived, so pending while validation runs.
+    "record_acknowledgement", "manual_review_warning",
 )
 # Process-live fields a pending summary still reports.
 # Build-time constants of every governance summary; never history-derived.

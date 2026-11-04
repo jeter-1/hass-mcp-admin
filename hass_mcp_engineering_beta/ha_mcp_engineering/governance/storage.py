@@ -1042,10 +1042,60 @@ class ChangePlanRepository:
                     self._mark_navigation_current()
             return plan
 
+    def read_for_inspection(self, plan_id: str) -> ChangePlan | None:
+        """HAMCP-253: read one plan record as stored, with no side effects.
+
+        Unlike ``get`` this never quarantines a corrupt record and never
+        updates the navigation index, so a corrupt record stays in place and
+        reads as unreadable on every inspection. An identifier whose file is
+        already quarantined is reported as a storage error, not as missing.
+        """
+        paths = self._read_paths(plan_id)
+        if paths is None:
+            return None
+        with self._lock:
+            existing = [path for path in paths if path.exists()]
+            if len(existing) > 1:
+                raise ChangePlanStorageError(
+                    "Ambiguous governance record identifier"
+                )
+            if not existing:
+                if any(
+                    any(directory.glob(f"{plan_id}.*.corrupt"))
+                    for directory in (
+                        self.quarantine, self.operational_quarantine
+                    )
+                ):
+                    raise ChangePlanStorageError(
+                        "Governance record identifier is quarantined"
+                    )
+                return None
+            return self._load(existing[0], quarantine_corrupt=False)
+
+    def read_all_for_inspection(self) -> list[ChangePlan]:
+        """HAMCP-253: every readable plan as stored, with no side effects.
+
+        For the acknowledgement view when the projection index is stale: a
+        navigation rebuild would quarantine corrupt records (R1-M1), so this
+        reads each record without quarantine and leaves an unreadable one in
+        place.
+        """
+        with self._lock:
+            plans: list[ChangePlan] = []
+            for path in self._record_paths():
+                try:
+                    plan = self._load(path, quarantine_corrupt=False)
+                except ChangePlanStorageError:
+                    continue
+                if plan is not None:
+                    plans.append(plan)
+            return plans
+
     def _load(
         self,
         path: Path,
         *,
+        quarantine_corrupt: bool = True,
         before_quarantine: Callable[[], None] | None = None,
         evidence: dict[str, PlanRecordEvidence] | None = None,
         reuse_terminal: bool = False,
@@ -1083,7 +1133,8 @@ class ChangePlanRepository:
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
             if before_quarantine is not None:
                 before_quarantine()
-            self._quarantine(path)
+            if quarantine_corrupt:
+                self._quarantine(path)
             raise ChangePlanStorageError("Governance record is corrupt") from exc
 
     def list(self) -> list[ChangePlan]:

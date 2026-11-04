@@ -48,7 +48,11 @@ _PROPOSAL_TOOLS = {
     "create_configuration_plan",
     "create_dashboard_update_plan",
 }
-_TASK_READ_TOOLS = {"get_execution_task", "list_execution_tasks"}
+_TASK_READ_TOOLS = {
+    "get_execution_task",
+    "list_execution_tasks",
+    "inspect_governance_record",
+}
 _TASK_READ_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,

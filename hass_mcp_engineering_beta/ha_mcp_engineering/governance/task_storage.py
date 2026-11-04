@@ -285,8 +285,8 @@ class ExecutionTaskRepository:
                 "nonterminal_records": len(self._nonterminal_ids),
             }
 
-    def _ensure_navigation_index(self) -> None:
-        if (
+    def _navigation_index_stale(self) -> bool:
+        return bool(
             self._observed_directory_token != self._directory_token()
             or len(self._ordered_keys) != len(self._entries)
             or len(self._task_by_plan) != len(self._entries)
@@ -319,7 +319,10 @@ class ExecutionTaskRepository:
                 != F3_EXECUTION_AUTHORITY
                 for task_id in self._f3_nonterminal_ids
             )
-        ):
+        )
+
+    def _ensure_navigation_index(self) -> None:
+        if self._navigation_index_stale():
             self.index_invalidation_count += 1
             self.rebuild_navigation_index()
 
@@ -327,6 +330,35 @@ class ExecutionTaskRepository:
         with self._lock:
             self._ensure_navigation_index()
             return tuple(task_id for _, task_id in self._nonterminal_keys)
+
+    def manual_review_task_ids(self) -> tuple[str, ...]:
+        """HAMCP-253: IDs of manual-review tasks, with no storage side effect.
+
+        A current navigation index answers directly. A stale one is never
+        rebuilt here, because a rebuild loads every record with quarantine
+        enabled; the records are read as stored instead and an unreadable
+        one is left in place and omitted (R1-M1).
+        """
+
+        with self._lock:
+            if not self._navigation_index_stale():
+                return tuple(sorted(
+                    task_id for task_id, entry in self._entries.items()
+                    if entry.state
+                    == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value
+                ))
+            task_ids: list[str] = []
+            for path in self._record_paths():
+                try:
+                    task = self._load(path, quarantine_corrupt=False)
+                except ExecutionTaskStorageError:
+                    continue
+                if (
+                    task is not None
+                    and task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
+                ):
+                    task_ids.append(task.task_id)
+            return tuple(sorted(task_ids))
 
     def f3_nonterminal_task_ids(self, *, limit: int) -> tuple[str, ...]:
         """Return bounded F3-authority navigation without mixed-task scans.
@@ -578,6 +610,28 @@ class ExecutionTaskRepository:
             if task is not None and entry is None:
                 self._put_entry(task)
                 self._mark_navigation_current()
+            return task
+
+    def read_for_inspection(self, task_id: str) -> ExecutionTask | None:
+        """HAMCP-253: read one task record as stored, with no side effects.
+
+        Unlike ``get`` this never quarantines a corrupt record and never
+        reads, rebuilds or writes the navigation index: the file is resolved
+        by name alone, because a navigation rebuild loads every record with
+        quarantine enabled (R1-M1). Two files for one identifier are
+        ambiguous, and an identifier whose file is already quarantined is
+        reported as a storage error, not as missing.
+        """
+        if not TASK_ID.fullmatch(task_id):
+            return None
+        with self._lock:
+            task = self._load(self._path(task_id), quarantine_corrupt=False)
+            if task is None and any(
+                self.quarantine.glob(f"*.{task_id}.*.corrupt")
+            ):
+                raise ExecutionTaskStorageError(
+                    "Execution-task identifier is quarantined"
+                )
             return task
 
     def quarantine_listing(self) -> tuple[str, ...] | None:

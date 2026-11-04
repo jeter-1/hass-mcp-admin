@@ -98,6 +98,9 @@ These apply to every row and are not repeated:
   records) is a persistence boundary and needs a security section.
 - **Effort:** M (estimate; the register gives none).
 - **Verdict:** **ready**.
+  The implementation (2.4.1-beta.63) is in draft review: the read-only tool
+  `inspect_governance_record` and an Ingress-only acknowledgement
+  ([design](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md)).
 
 ### HAMCP-231: Thread/Matter topology visibility
 

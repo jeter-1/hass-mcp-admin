@@ -586,6 +586,8 @@ SANITIZER_SITES = {
     ("f3_dashboard/approval_projection.py", "validate_dashboard_approval_projection", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/config_validation.py", "normalize_configuration_validation", "sanitize_untrusted_data"): (2, "governance"),
     ("governance/operational_lifecycle.py", "OperationalLifecycleGateway.configuration_validation", "sanitize_untrusted_data"): (1, "governance"),
+    # HAMCP-253 R1-M2: screens stored inspection metadata before projection.
+    ("governance/record_inspection.py", "_Screen.open", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/resources.py", "persistence_safety_errors", "rescan_stored_plan"): (1, "governance"),
     ("governance/resources.py", "persistence_safety_errors", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/semantic_projection.py", "_review_snapshot", "sanitize_untrusted_data"): (1, "governance"),
@@ -593,6 +595,7 @@ SANITIZER_SITES = {
     ("governance/service.py", "ChangeGovernanceService._public_plan_observability_projection", "rescan_stored_plan"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService._review_summary", "rescan_stored_plan"): (3, "governance"),
     ("governance/service.py", "ChangeGovernanceService._safety_critical_review", "rescan_stored_plan"): (1, "governance"),
+    ("governance/service.py", "ChangeGovernanceService.acknowledge_governance_record", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.approve", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "ChangeGovernanceService.create_dashboard_update_plan", "sanitize_untrusted_data"): (1, "governance"),
     ("governance/service.py", "_sanitize_configuration_caller_context", "sanitize_untrusted_data"): (1, "governance"),

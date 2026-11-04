@@ -115,6 +115,7 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
     "get_change_plan": ("plan_id",),
     "list_change_plans": ("status",),
     "get_execution_task": ("task_id",),
+    "inspect_governance_record": ("record_id",),
     "list_execution_tasks": ("state", "terminal_outcome", "plan_id"),
     "cancel_execution_task": ("task_id",),
     "reverify_configuration_task": ("task_id", "expected_plan_hash", "request_id"),
@@ -567,6 +568,39 @@ async def get_execution_task(
         metadata={
             "resource_type": "execution_task",
             **_identifier_metadata(resource_id=task_id),
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def inspect_governance_record(
+    record_kind: Literal["change_plan", "execution_task"],
+    record_id: Annotated[
+        str, Field(pattern=r"^[a-f0-9]{32}$")
+    ],
+) -> str:
+    """Inspect one exact plan or execution task as stored, read-only.
+
+    Works on records that other plan and task tools refuse. Returns bounded
+    metadata only: type, status, timestamps, policy class, fixed failure
+    category and reason code, the order of event names, the current
+    administrator acknowledgement state and a record fingerprint. Never
+    returns configuration, payloads, targets, notes, principals or tokens.
+    Acknowledgement is an administrator action in the Ingress panel only.
+    """
+    return await run_structured(
+        "inspect_governance_record",
+        "Returned bounded metadata for one exact governance record.",
+        _screened(
+            "inspect_governance_record",
+            locals(),
+            lambda: GOVERNANCE.require().inspect_governance_record(
+                record_kind=record_kind, record_id=record_id
+            ),
+        ),
+        metadata={
+            "resource_type": record_kind,
+            **_identifier_metadata(resource_id=record_id),
         },
         response_limit=SETTINGS.response_size_limit,
     )
@@ -1839,6 +1873,7 @@ GOVERNANCE_TOOLS = (
     get_change_plan,
     list_change_plans,
     get_execution_task,
+    inspect_governance_record,
     list_execution_tasks,
     cancel_execution_task,
     reverify_configuration_task,

@@ -1,0 +1,538 @@
+{
+ "baseline": {
+  "modules": [
+   "test_hamcp253_record_acknowledgement.py",
+   "test_hamcp253_record_acknowledgement_web.py",
+   "test_hamcp253_round1_corrections.py",
+   "test_hamcp253_round2_corrections.py"
+  ],
+  "returncode": 0,
+  "tests": 119,
+  "seconds": 43.4
+ },
+ "mutation_count": 20,
+ "killed": 20,
+ "not_killed": [],
+ "equivalent": {},
+ "unexpected_survivors": [],
+ "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "R2S1-health-rows-without-configured-values",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                projection_failures, sensitive_values=self.sensitive_values\n",
+     "                projection_failures, sensitive_values=()\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_configured_hex_value_as_a_consistent_record_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_as_a_consistent_record_identifier)",
+    "FAIL test_configured_hex_value_stored_as_a_plan_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_stored_as_a_plan_identifier)",
+    "FAIL test_the_marker_preserves_counts_order_and_bounds (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_the_marker_preserves_counts_order_and_bounds)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S1-health-rows-without-configured-values.log",
+   "seconds": 42.1
+  },
+  {
+   "id": "R2S2-health-rows-screen-ignores-configured-values",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "                screened_record_id(plan.plan_id, sensitive_values)\n",
+     "                screened_record_id(plan.plan_id, ())\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_configured_hex_value_as_a_consistent_record_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_as_a_consistent_record_identifier)",
+    "FAIL test_configured_hex_value_stored_as_a_plan_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_stored_as_a_plan_identifier)",
+    "FAIL test_the_marker_preserves_counts_order_and_bounds (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_the_marker_preserves_counts_order_and_bounds)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S2-health-rows-screen-ignores-configured-values.log",
+   "seconds": 42.3
+  },
+  {
+   "id": "R2S3-health-rows-raw-identifier",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "                screened_record_id(plan.plan_id, sensitive_values)\n                or UNRECOGNIZED\n",
+     "                plan.plan_id\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_health_identification_never_lists_a_stored_secret (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_health_identification_never_lists_a_stored_secret)",
+    "FAIL test_configured_hex_value_as_a_consistent_record_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_as_a_consistent_record_identifier)",
+    "FAIL test_configured_hex_value_stored_as_a_plan_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_configured_hex_value_stored_as_a_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S3-health-rows-raw-identifier.log",
+   "seconds": 42.1
+  },
+  {
+   "id": "R2S4-list-plans-without-configured-values",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        plan_id, self.sensitive_values\n",
+     "                        plan_id, ()\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)",
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)",
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S4-list-plans-without-configured-values.log",
+   "seconds": 42.5
+  },
+  {
+   "id": "R2S5-list-plans-raw-identifier",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    record_inspection.screened_record_id(\n                        plan_id, self.sensitive_values\n                    )\n                    or record_inspection.UNRECOGNIZED\n",
+     "                    plan_id\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)",
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)",
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S5-list-plans-raw-identifier.log",
+   "seconds": 42.2
+  },
+  {
+   "id": "R2S6-list-plans-marker-dropped",
+   "class": "projection-failure row shows an unscreened identifier (R2-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    or record_inspection.UNRECOGNIZED\n                ),\n                \"error_code\": error_code.value,\n",
+     "                    or None\n                ),\n                \"error_code\": error_code.value,\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_list_change_plans_screens_the_stored_identifier (test_hamcp253_round2_corrections.HealthIdentificationScreensConfiguredValuesTests.test_list_change_plans_screens_the_stored_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2S6-list-plans-marker-dropped.log",
+   "seconds": 42.0
+  },
+  {
+   "id": "R2D1-enabled-only-check",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if refusal is None and not self._acknowledgement_audit_usable():\n",
+     "        if refusal is None and not self._acknowledgement_audit_enabled():\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 20,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D1-enabled-only-check.log",
+   "seconds": 43.3
+  },
+  {
+   "id": "R2D2-non-regular-target-accepted",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    if not stat.S_ISREG(os.stat(target).st_mode):\n",
+     "                    if False:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D2-non-regular-target-accepted.log",
+   "seconds": 42.7
+  },
+  {
+   "id": "R2D3-lock-target-not-checked",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        for target, mode in ((path, \"ab\"), (path + \".lock\", \"a+b\")):\n",
+     "        for target, mode in ((path, \"ab\"),):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D3-lock-target-not-checked.log",
+   "seconds": 42.3
+  },
+  {
+   "id": "R2D4-log-target-not-checked",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        for target, mode in ((path, \"ab\"), (path + \".lock\", \"a+b\")):\n",
+     "        for target, mode in ((path + \".lock\", \"a+b\"),):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 11,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D4-log-target-not-checked.log",
+   "seconds": 42.7
+  },
+  {
+   "id": "R2D5-open-failure-accepted",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            except (OSError, ValueError):\n                return False\n        return True\n",
+     "            except (OSError, ValueError):\n                pass\n        return True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 11,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)",
+    "FAIL test_existing_ledger_is_byte_unchanged (test_hamcp253_round2_corrections.AuditDestinationTests.test_existing_ledger_is_byte_unchanged)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D5-open-failure-accepted.log",
+   "seconds": 42.6
+  },
+  {
+   "id": "R2D6-missing-target-refused",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                except FileNotFoundError:\n                    pass\n                with open(target, mode):\n",
+     "                except FileNotFoundError:\n                    return False\n                with open(target, mode):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_a_destination_lost_after_the_check_abandons_the_decision (test_hamcp253_round2_corrections.AuditDestinationTests.test_a_destination_lost_after_the_check_abandons_the_decision)",
+    "FAIL test_a_new_file_in_a_usable_directory_is_accepted (test_hamcp253_round2_corrections.AuditDestinationTests.test_a_new_file_in_a_usable_directory_is_accepted)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D6-missing-target-refused.log",
+   "seconds": 42.2
+  },
+  {
+   "id": "R2D7-probe-truncates-the-log",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        for target, mode in ((path, \"ab\"), (path + \".lock\", \"a+b\")):\n",
+     "        for target, mode in ((path, \"wb\"), (path + \".lock\", \"a+b\")):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 18,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_reclassify_revoke_and_repeat (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_reclassify_revoke_and_repeat)",
+    "FAIL test_persistence_failure_records_nothing (test_hamcp253_record_acknowledgement.AcknowledgementRefusalTests.test_persistence_failure_records_nothing)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D7-probe-truncates-the-log.log",
+   "seconds": 42.4
+  },
+  {
+   "id": "R2D8-disabled-logger-accepted",
+   "class": "unusable audit destination reaches the ledger (R2-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if not self._acknowledgement_audit_enabled():\n            return False\n        path = str(self.audit.path)\n",
+     "        path = str(getattr(self.audit, 'path', ''))\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 8,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_disabled_audit_refuses_before_the_ledger_changes (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_before_the_ledger_changes)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2D8-disabled-logger-accepted.log",
+   "seconds": 42.4
+  },
+  {
+   "id": "R2U1-replacement-never-marked",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "            replaced = True\n",
+     "            replaced = False\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U1-replacement-never-marked.log",
+   "seconds": 42.3
+  },
+  {
+   "id": "R2U2-replacement-marked-before-replace",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "            self._inject(\"before_replace\")\n            os.replace(temporary, self.path)\n",
+     "            replaced = True\n            self._inject(\"before_replace\")\n            os.replace(temporary, self.path)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_persistence_failure_records_nothing (test_hamcp253_record_acknowledgement.AcknowledgementRefusalTests.test_persistence_failure_records_nothing)",
+    "FAIL test_failures_before_replacement_are_settled (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_failures_before_replacement_are_settled)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U2-replacement-marked-before-replace.log",
+   "seconds": 42.1
+  },
+  {
+   "id": "R2U3-uncertain-never-raised",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "            if replaced:\n",
+     "            if False:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U3-uncertain-never-raised.log",
+   "seconds": 42.2
+  },
+  {
+   "id": "R2U4-candidate-not-attached",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "            exc.candidate = deepcopy(event)\n",
+     "            pass\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U4-candidate-not-attached.log",
+   "seconds": 42.2
+  },
+  {
+   "id": "R2U5-service-drops-candidate",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        decision = exc.candidate\n",
+     "                        pass\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U5-service-drops-candidate.log",
+   "seconds": 42.1
+  },
+  {
+   "id": "R2U6-uncertain-decision-reported-refused",
+   "class": "uncertain ledger write reported as refused or settled (R2-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        decision = exc.candidate\n                        raise\n",
+     "                        raise AcknowledgementStorageError(\n                            str(exc)\n                        ) from None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)",
+    "FAIL test_decision_write_failing_after_replacement (test_hamcp253_round2_corrections.PersistenceUncertaintyTests.test_decision_write_failing_after_replacement)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2U6-uncertain-decision-reported-refused.log",
+   "seconds": 42.2
+  }
+ ]
+}

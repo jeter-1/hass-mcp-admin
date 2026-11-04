@@ -70,6 +70,10 @@ SUPERVISOR_INGRESS_PEER = "172.30.32.2"
 _INGRESS_PATH = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]{8,128}$")
 _TYPED_TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 TYPED_HOLD_KINDS = ("fan", "power")
+_RECORD_KINDS = ("change_plan", "execution_task")
+_MAX_RECORD_ROWS = 8
+_MAX_REASON_CHARS = 500
+_MAX_RECORD_EVENTS = 64
 
 # HAMCP-205 refusal pages: (title, explanation, HTTP status).
 _IDENTITY_REFUSALS = {
@@ -394,6 +398,9 @@ class IngressApprovalApplication:
         # maps kind -> zero-argument callable returning the configured service.
         self._typed_services = typed_services
         self._typed_csrf: dict[tuple[str, str], tuple[str, str, int, str, str, str]] = {}
+        # Keyed by (principal, kind, record_id): two administrators reviewing
+        # the same record each keep their own one-shot binding.
+        self._record_csrf: dict[tuple[str, str, str], tuple[str, str, str]] = {}
 
     def create(self) -> Starlette:
         app = Starlette(
@@ -409,6 +416,9 @@ class IngressApprovalApplication:
                 Route("/typed", self.typed_inbox, methods=["GET"]),
                 Route("/typed/{kind}/{task_id}", self.typed_review, methods=["GET"]),
                 Route("/typed/{kind}/{task_id}/release", self.typed_release, methods=["POST"]),
+                Route("/records", self.records_inbox, methods=["GET"]),
+                Route("/records/{kind}/{record_id}", self.record_review, methods=["GET"]),
+                Route("/records/{kind}/{record_id}/acknowledge", self.record_acknowledge, methods=["POST"]),
             ],
         )
         app.add_middleware(_SecurityHeadersMiddleware)
@@ -1012,6 +1022,219 @@ class IngressApprovalApplication:
             )
         )
 
+    # HAMCP-253: inspect and acknowledge stuck governance records. The view is
+    # metadata only. Acknowledging appends one ledger entry; it never writes
+    # the plan or task, calls Home Assistant, or changes what may execute.
+    async def records_inbox(self, request: Request) -> Response:
+        context = await self._require_administrator(request, "record_inbox")
+        if isinstance(context, Response):
+            return context
+        prefix, _principal = context
+        try:
+            stuck = self.governance.require().stuck_governance_records()
+        except Exception:
+            return self._response(
+                _page("Stuck records unavailable",
+                      "<p>Governance storage could not be read.</p>", prefix=prefix),
+                503,
+            )
+        sections = []
+        for kind, key, label in (
+            ("change_plan", "projection_failed_plans", "Plans that could not be projected"),
+            ("execution_task", "manual_review_tasks", "Execution tasks requiring manual review"),
+        ):
+            bucket = stuck.get(key, {})
+            rows = []
+            for state, field in (
+                ("unacknowledged", "unacknowledged_ids"),
+                ("acknowledged: historical record", "acknowledged_historical_ids"),
+                ("acknowledged: current defect", "acknowledged_current_defect_ids"),
+            ):
+                for record_id in bucket.get(field, [])[:_MAX_RECORD_ROWS]:
+                    record_id = _text(record_id, 32)
+                    rows.append(
+                        '<li><a href="{}">{}</a> — {}</li>'.format(
+                            escape(f"{prefix}/records/{kind}/{record_id}", quote=True),
+                            escape(record_id),
+                            escape(state),
+                        )
+                    )
+            truncated = (
+                "<p>Only the first identifiers in each state are listed.</p>"
+                if bucket.get("ids_truncated") else ""
+            )
+            sections.append(
+                f"<h2>{escape(label)}</h2>"
+                + ("<ul>" + "".join(rows) + "</ul>" if rows else "<p>None.</p>")
+                + truncated
+            )
+        ledger = _text(stuck.get("ledger_status"), 32)
+        notice = (
+            "<p>Acknowledging a record only stops its health warning. It never "
+            "changes, deletes or re-enables the record.</p>"
+            f"<p>Acknowledgement ledger: {escape(ledger)}</p>"
+        )
+        return self._response(
+            _page("Stuck governance records", notice + "".join(sections), prefix=prefix)
+        )
+
+    async def record_review(self, request: Request) -> Response:
+        context = await self._require_administrator(request, "record_review")
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        kind = request.path_params["kind"]
+        record_id = request.path_params["record_id"]
+        view = None
+        if kind in _RECORD_KINDS and _TYPED_TASK_ID.fullmatch(record_id):
+            try:
+                view = self.governance.require().inspect_governance_record(
+                    record_kind=kind, record_id=record_id
+                )
+            except Exception:
+                view = None
+        if view is None:
+            return self._response(
+                _page("Record unavailable",
+                      "<p>No governance record of this kind has this identifier.</p>",
+                      prefix=prefix),
+                404,
+            )
+        content = _render_record_view(view)
+        if view.get("acknowledgeable") and view.get("record_fingerprint"):
+            token = secrets.token_urlsafe(32)
+            if len(self._record_csrf) >= 128:
+                self._record_csrf.pop(next(iter(self._record_csrf)))
+            self._record_csrf[(principal, kind, record_id)] = (
+                hashlib.sha256(token.encode()).hexdigest(),
+                principal,
+                view["record_fingerprint"],
+            )
+            action_url = escape(f"{prefix}/records/{kind}/{record_id}/acknowledge", quote=True)
+            hidden = "".join(
+                f'<input type="hidden" name="{name}" value="{escape(str(value), quote=True)}">'
+                for name, value in (
+                    ("csrf", token),
+                    ("record_fingerprint", view["record_fingerprint"]),
+                )
+            )
+            content += (
+                f'<form method="post" action="{action_url}">{hidden}'
+                '<p><label for="action">Action</label> '
+                '<select id="action" name="action">'
+                '<option value="acknowledge">acknowledge</option>'
+                '<option value="revoke">revoke acknowledgement</option></select></p>'
+                '<p><label for="classification">Classification</label> '
+                '<select id="classification" name="classification">'
+                '<option value="historical_record">historical record</option>'
+                '<option value="current_defect">current defect</option>'
+                '<option value="">none (revoke only)</option></select></p>'
+                '<p><label for="reason">Reason</label><br>'
+                f'<textarea id="reason" name="reason" rows="3" cols="60" maxlength="{_MAX_REASON_CHARS}" required></textarea></p>'
+                "<p>This records your decision only. The record stays unchanged and "
+                "cannot be approved or applied because of it.</p>"
+                '<button type="submit">record decision</button></form>'
+            )
+        else:
+            content += "<p>This record cannot be acknowledged.</p>"
+        return self._response(_page("Governance record", content, prefix=prefix))
+
+    async def record_acknowledge(self, request: Request) -> Response:
+        context = await self._require_administrator(request, "record_acknowledge")
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/x-www-form-urlencoded":
+            return self._response(
+                _page("Invalid request", "<p>Unsupported content type.</p>", prefix=prefix),
+                415,
+            )
+        kind = request.path_params["kind"]
+        record_id = request.path_params["record_id"]
+        try:
+            governance = self.governance.require()
+        except Exception:
+            return self._response(
+                _page("Unavailable",
+                      "<p>Governance is unavailable. Nothing was recorded.</p>",
+                      prefix=prefix),
+                503,
+            )
+        try:
+            content_length = int(request.headers.get("content-length", "0"))
+            if not 1 <= content_length <= MAX_BODY_BYTES:
+                raise ValueError
+            raw = await asyncio.wait_for(request.body(), timeout=MAX_REQUEST_SECONDS)
+            if len(raw) > MAX_BODY_BYTES:
+                raise ValueError
+            parsed = parse_qs(raw.decode("utf-8", "strict"), keep_blank_values=True, max_num_fields=8)
+            one = lambda name: parsed.get(name, [""])[0]
+            binding = self._record_csrf.pop((principal, kind, record_id), None)
+            supplied = hashlib.sha256(one("csrf")[:256].encode()).hexdigest()
+            if binding is None or binding[1] != principal or not hmac.compare_digest(binding[0], supplied):
+                raise ValueError
+            if not hmac.compare_digest(binding[2], one("record_fingerprint")[:64]):
+                raise ValueError
+        except TimeoutError:
+            governance.refuse_governance_record_acknowledgement(
+                "request_timeout", record_kind=kind, record_id=record_id, principal=principal
+            )
+            return self._response(
+                _page("Request timeout", "<p>The bounded request timed out.</p>", prefix=prefix),
+                408,
+            )
+        except (UnicodeDecodeError, ValueError):
+            governance.refuse_governance_record_acknowledgement(
+                "request_invalid_or_stale", record_kind=kind, record_id=record_id, principal=principal
+            )
+            return self._response(
+                _page("Invalid request",
+                      "<p>The bounded action is invalid or stale. Review the record again.</p>",
+                      prefix=prefix),
+                400,
+            )
+        action = one("action")[:16]
+        classification = one("classification")[:32] or None
+        result = governance.acknowledge_governance_record(
+            record_kind=kind,
+            record_id=record_id,
+            action=action,
+            classification=classification,
+            reason=one("reason"),
+            record_fingerprint=one("record_fingerprint")[:64],
+            principal=principal,
+        )
+        status = _text(result.get("status"), 32)
+        back = (
+            f'<p><a href="{escape(f"{prefix}/records/{kind}/{record_id}", quote=True)}">'
+            "Return to the record</a></p>"
+        )
+        if status == "refused":
+            return self._response(
+                _page("Acknowledgement refused",
+                      f"<p>{escape(_text(result.get('refusal_reason'), 64))}</p>"
+                      "<p>Nothing was recorded.</p>" + back, prefix=prefix),
+                409,
+            )
+        if status == "pending":
+            # HAMCP-253 R1-M3: stored, not in effect until its audit event
+            # is confirmed by the next acknowledgement or a restart.
+            return self._response(
+                _page("Acknowledgement pending",
+                      f"<p>{escape(_text(result.get('refusal_reason'), 64))}</p>"
+                      "<p>The decision is stored but is not in effect. It takes "
+                      "effect only when its audit event is written.</p>" + back,
+                      prefix=prefix),
+                202,
+            )
+        audit = "recorded" if result.get("audit_recorded") else "not recorded"
+        return self._response(
+            _page("Decision recorded",
+                  f"<p>{escape(status)}</p><p>The record itself was not changed. "
+                  f"Audit: {escape(audit)}.</p>" + back, prefix=prefix)
+        )
+
     async def _decide(self, request: Request, decision: str) -> Response:
         context = await self._require_administrator(request, f"plan_{decision}")
         if isinstance(context, Response):
@@ -1151,6 +1374,51 @@ def _text(value: Any, limit: int) -> str:
     return safe[:limit]
 
 
+def _render_record_view(view: dict[str, Any]) -> str:
+    """Metadata only; every value is escaped and length-bounded."""
+
+    failure = view.get("failure") if isinstance(view.get("failure"), dict) else {}
+    acknowledgement = (
+        view.get("acknowledgement") if isinstance(view.get("acknowledgement"), dict) else {}
+    )
+    rows = (
+        ("Kind", view.get("record_kind")),
+        ("Identifier", view.get("record_id")),
+        ("Stored identifier", view.get("stored_identity")),
+        ("Readable", view.get("readable")),
+        ("Type", view.get("record_type")),
+        ("Status", view.get("status")),
+        ("Created", view.get("created_at")),
+        ("Updated", view.get("updated_at")),
+        ("Policy class", view.get("policy_class")),
+        ("Failure reason code", failure.get("reason_code")),
+        ("Failure category", failure.get("category")),
+        ("Unreadable fields", ", ".join(str(item) for item in view.get("unreadable_fields") or []) or "none"),
+        ("Acknowledgement", acknowledgement.get("state")),
+        ("Classification", acknowledgement.get("classification")),
+        ("Audit pending", acknowledgement.get("audit_pending")),
+        ("Fingerprint", view.get("record_fingerprint")),
+    )
+    table = "".join(
+        f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 160))}</code></td></tr>"
+        for label, value in rows
+    )
+    events = "".join(
+        "<li>{} ({})</li>".format(
+            escape(_text(event.get("event"), 96)),
+            escape(_text(event.get("result_status") or event.get("state_after"), 64)),
+        )
+        for event in (view.get("events") or [])[:_MAX_RECORD_EVENTS]
+        if isinstance(event, dict)
+    )
+    truncated = "<p>Later events are not shown.</p>" if view.get("events_truncated") else ""
+    return (
+        f"<table>{table}</table><h2>Events in order</h2>"
+        + (f"<ol>{events}</ol>" if events else "<p>None.</p>")
+        + truncated
+    )
+
+
 def _typed_state_value(value: Any, *, requested: bool) -> str:
     if value is None:
         return "any" if requested else "not reported"
@@ -1203,10 +1471,12 @@ def _page(title: str, content: str, *, prefix: str | None = None) -> str:
     if prefix is not None:
         approvals_href = escape(f"{prefix}/", quote=True)
         f3_href = escape(f"{prefix}/f3", quote=True)
+        records_href = escape(f"{prefix}/records", quote=True)
         navigation = (
             '<nav aria-label="Approval panel navigation">'
             f'<a href="{approvals_href}">Approvals</a>'
             f'<a href="{f3_href}">F3 reconciliation</a>'
+            f'<a href="{records_href}">Stuck records</a>'
             "</nav>"
         )
     return """<!doctype html>

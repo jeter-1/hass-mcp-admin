@@ -613,6 +613,57 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
+The `2.4.1-beta.63` slice (HAMCP-253) adds read-only inspection of one stuck
+governance record and an administrator acknowledgement of it. It adds no
+provider, fallback, add-on option or permission. Inspection and the ledger
+operations make no Home Assistant request and no provider dispatch; the
+Ingress gate's existing read-only `config/auth/list` role lookup is the only
+Core call on the acknowledgement path.
+
+- **New write path (Engineering storage only).** One append-only,
+  hash-chained ledger file under the governance storage root
+  (`hamcp253-record-acknowledgement-v1/acknowledgements.json`).
+  - It is reachable only through the Ingress route
+    `POST /records/{kind}/{record_id}/acknowledge`. That route requires the
+    per-request Home Assistant administrator check (HAMCP-205) and a
+    one-shot CSRF token bound to the principal and the record fingerprint.
+  - It is form-urlencoded only, at most 8192 bytes and 8 fields, with a
+    bounded read time.
+  - The Engineering MCP connector exposes no acknowledgement tool; an
+    authenticated Home Assistant administrator browser session on Ingress
+    can acknowledge, one record at a time.
+  - An effective decision requires an enabled, writable audit destination.
+    It is checked before the ledger is opened: a missing, disabled or
+    unusable destination (a directory or other non-regular file such as
+    a device, a missing parent, no write permission) is refused with `audit_unavailable` and changes no ledger
+    state. The decision is appended, its audit event is written, and only then is
+    it completed as `recorded`. An audit failure completes it as
+    `abandoned` (no effect, `audit_write_failed`); a crash between the
+    steps leaves it pending until reconciliation at start or by the next
+    writer. A ledger write that fails after the file was replaced cannot
+    exclude that the entry persists, so the request is reported as pending,
+    never as refused. `audit_recorded` is true only when audit bytes were written.
+- **No execution authority.** Plans and tasks are never rewritten or
+  deleted. Approve, apply, recovery, startup validation and projection
+  verification never read the ledger. An acknowledged failed plan is
+  refused exactly as before.
+- **Disclosure.** Inspection copies allowlisted metadata only. It names the
+  record by the requested ID and reports a stored ID only as
+  `matches_request` or `stored_identifier_mismatch`. Closed-vocabulary
+  fields show a member or `unrecognized_value`; other strings must be short
+  tokens that the shared sanitizer, given the configured sensitive values,
+  leaves unchanged, or they are `unrecognized_value`. Inspection never
+  quarantines a record or rebuilds a navigation index. The
+  projection-failure rows of health and `list_change_plans` apply the same
+  identifier screen.
+  The acknowledgement reason is at most 500 printable characters. It is
+  refused when the shared sanitizer redacts it or fails closed. Audit
+  records the reason's length, never its text.
+- **Integrity.** The chain is validated on every read. A damaged or
+  unreadable ledger is never trusted: health warns as if nothing were
+  acknowledged, and new acknowledgements are refused. Writes use a
+  non-blocking lock, a temporary file, fsync and `os.replace`.
+
 The `2.4.1-beta.53` slice (HAMCP-071) adds a governed edit of one existing
 UI-managed scene, **unreachable at release**. It switches on with the
 sequence-16 signing. It adds no permission, add-on option, role, fallback
