@@ -305,6 +305,31 @@ class ExpandAttributionTests(unittest.TestCase):
                 self.assertTrue(limit)
                 self.assertIn(LIMIT, material["failure_reasons"])
 
+    def test_a_rejection_in_the_missing_members_domain_keeps_the_bound(self):
+        # Codex R1: a rejected input_boolean.1_2 may be the absent
+        # input_boolean.missing's record, so the absence is not proven.
+        for domain in ("input_boolean", "input_select"):
+            with self.subTest(domain=domain):
+                _, material, complete, limit = self.resolve(
+                    [state(f"{domain}.1_2")], [f"{domain}.missing"]
+                )
+                self.assertFalse(complete)
+                self.assertTrue(limit)
+                self.assertEqual(material["failure_reasons"], [LIMIT])
+
+    def test_a_rejection_in_another_domain_leaves_the_member_missing(self):
+        for rejected, missing in (
+            ("input_boolean", "input_select"),
+            ("input_select", "input_boolean"),
+        ):
+            with self.subTest(rejected=rejected, missing=missing):
+                _, material, complete, limit = self.resolve(
+                    [state(f"{rejected}.1_2")], [f"{missing}.missing"]
+                )
+                self.assertFalse(complete)
+                self.assertFalse(limit)
+                self.assertEqual(material["failure_reasons"], [MISSING])
+
     def test_an_over_bound_state_list_keeps_the_bound(self):
         many = [state(f"sensor.s{n}") for n in range(10_001)]
         evidence = snapshot([], base=many)
@@ -352,6 +377,29 @@ class ExpandAttributionTests(unittest.TestCase):
         self.assertEqual(bound.reason_code, LIMIT)
         self.assertTrue(bound.limit_exceeded)
         self.assertEqual(bound.target_selector_scope, "coverage_failure")
+
+    def test_a_same_domain_rejection_is_a_ledger_coverage_failure(self):
+        base = replace(
+            ledger.obligation(
+                "bounded_semantic_opaque",
+                exact=("group.x",),
+                reason="entity_selector_transform_unresolved",
+            ),
+            context_provenance=("entity_selector_transform:expand",),
+        )
+        for domain in ("input_boolean", "input_select"):
+            with self.subTest(domain=domain):
+                evidence = snapshot([
+                    state(f"{domain}.1_2"),
+                    state("group.x", {"entity_id": [f"{domain}.missing"]}),
+                ])
+                [item] = resolve_expand_obligations(
+                    [base], expand_snapshot_evidence=evidence
+                )
+                self.assertEqual(item.outcome, "coverage_failure")
+                self.assertEqual(item.reason_code, LIMIT)
+                self.assertTrue(item.limit_exceeded)
+                self.assertEqual(item.target_selector_scope, "coverage_failure")
 
 
 # --------------------------------------------------------------------------

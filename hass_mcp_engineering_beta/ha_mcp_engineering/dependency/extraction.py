@@ -1618,11 +1618,14 @@ def _resolve_expand_candidates(
         record = evidence.entities.get(entity_id)
         if record is None:
             # HAMCP-301: a record is absent, not lost, when the inventory is
-            # complete or every rejected record is attributed to another id.
+            # complete or every rejected record is attributed outside the
+            # missing entity's domain.
             absent = (
                 evidence.state_inventory_complete
                 or expand_state_rejections_exclude(
-                    evidence, entity_id=entity_id
+                    evidence,
+                    domain=entity_id.split(".", 1)[0],
+                    entity_id=entity_id,
                 )
             )
             fail(
