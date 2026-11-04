@@ -18,6 +18,10 @@ beta with full Evidence. That collision is expected and is not a finding.
 **Deploy freeze.** Nothing deploys before the HAMCP-278 cutover. Stage 4
 waits for that cutover and for Josh.
 
+> Note (HAMCP-303, 2026-11-03): the deploy freeze above ended with the
+> HAMCP-278 cutover, executed 2026-11-03 at sequence 15 (Core 2026.10.3). The
+> contract text is unchanged.
+
 The contract has four stages:
 1. source and offline acceptance;
 2. release CI;

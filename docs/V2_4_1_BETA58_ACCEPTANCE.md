@@ -29,6 +29,11 @@ Bind:
 - the non-goals: no HAMCP-279 evidence automation, no new profile, no
   change to sequence 16 or its manual flow, no change to
   `scripts/prepare_core_release_registry.py`, no journal schema change;
+
+  > Note (HAMCP-303, 2026-11-03): the "sequence 16 / manual flow" non-goal is
+  > superseded. The cutover ran at sequence 15, and sequence 16 publishes on
+  > `registry`. The contract text is unchanged.
+
 - `2.4.1-beta.58` materialized in all three version authorities before
   Ready, with exact document resolution;
 - the PR head SHA, its `validate` run and the Evidence tier log named in

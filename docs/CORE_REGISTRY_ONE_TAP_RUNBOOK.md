@@ -5,6 +5,15 @@ the branch, the ruleset, the environment or the secret, dispatches the
 workflow, deploys, or handles the private key. Background and decisions are in
 [`CORE_RELEASE_REGISTRY.md`](CORE_RELEASE_REGISTRY.md#one-tap-signing-and-registry-branch-publication-hamcp-278).
 
+> [!NOTE]
+> **Status (HAMCP-303, 2026-11-03): the cutover is done.** It ran at
+> **sequence 15** (Core 2026.10.3), not sequence 16 as written below.
+> `registry` is `f95a8c1a`, created from `main` `c731ad8b`; its journal
+> sha256 `a4dfbb14…` matches `main`. Steps 0–6 are the executed record: do
+> not run step 2 again. The next publication is **sequence 16 (Core
+> 2026.11.0) on `registry`**, through steps 7–10 and the HAMCP-279 automated
+> input (HAMCP-280). The steps below are kept as written for HAMCP-278.
+
 Rules:
 
 - If any check prints `FAIL`, a refusal or anything other than what is
@@ -20,7 +29,7 @@ Rules:
 > **Do not upgrade Home Assistant Core** until all four of these are done, in
 > this order:
 >
-> 1. sequence 16 is live on `main` (step 1);
+> 1. sequence 16 is live on `main` (step 1); *(executed at sequence 15; see Status)*
 > 2. `registry` is created byte-identical from `main`, and the `cutover` hash
 >    check passes (step 2);
 > 3. this beta is deployed (step 6);
@@ -44,7 +53,8 @@ Rules:
 - The HAMCP-278 pull request is merged to `main`.
 - Sequence 16 is live on `main`: it is published at
   `upstream-trust/ha-core-release-registry.json` through its existing manual
-  flow, and the deployed Engineering health reports it.
+  flow, and the deployed Engineering health reports it. *(Executed at
+  sequence 15; see Status.)*
 - Do not start before both are true. `registry` must start from the final
   journal on `main`.
 
@@ -119,7 +129,8 @@ output.
 2. Refresh the Claude connector.
 3. Read Core health. `release_registry` must show `registry_id_status:
    accepted`, `freshness_status: current`, a `refresh_status` of `accepted` or
-   `idempotent`, and the same `sequence` as `registry` (sequence 16).
+   `idempotent`, and the same `sequence` as `registry` (sequence 16). *(Executed
+   at sequence 15; see Status.)*
 
 At cutover, `main` and `registry` hold the same bytes, so this check shows the
 new build accepts `registry`. The first publication in step 10 is the definitive

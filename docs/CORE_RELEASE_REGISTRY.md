@@ -482,6 +482,10 @@ before its candidate can be prepared. HAMCP-278 does not change the HAMCP-182
 signing tools, sequence 16 or its manual flow. The owner setup and cutover steps
 are in [`CORE_REGISTRY_ONE_TAP_RUNBOOK.md`](CORE_REGISTRY_ONE_TAP_RUNBOOK.md).
 
+> Superseded 2026-11-03 (HAMCP-303): the cutover used sequence 15 (Core
+> 2026.10.3). Sequence 16 (Core 2026.11.0) will be the first publication on
+> `registry` (HAMCP-280). The text above is preserved as written for HAMCP-278.
+
 ## Validation and release completion
 
 Offline tests cover signed new-release admission, unknown/unsigned refusal,
