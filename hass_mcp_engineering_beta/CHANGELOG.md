@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.2-beta.1 - Dashboard read size check uses the response limit's measure (HAMCP-306)
+
+Builds on 2.4.1-rc.1 (HAMCP-302, #359). No tool, input schema, route,
+provider, signed profile, contract fingerprint, persisted format, dependency,
+add-on option or Home Assistant write change.
+
+- `get_dashboard_config` no longer refuses a dashboard whose response fits.
+  It used to check the sanitized configuration as indented JSON plus a
+  16,000-character reserve (about 44,000 indented characters), and to report
+  the raw configuration's compact size. A ~30 KB nested dashboard was refused
+  with a reported size of half the 60,000 limit.
+- The check and the reported `estimated_serialized_size` are now one
+  measure, the one the general response limit admits by: compact
+  ASCII-escaped JSON of the provider's data, warnings and metadata, plus a
+  1,024-character reserve for the tool envelope. A configuration of about
+  57,000 compact characters fits the default limit, and the estimate never
+  falls below the real response.
+- The plan preread, post-apply readback and metadata fingerprint reader
+  inherit the corrected threshold; the write caps, hashes and approval
+  bindings are unchanged. No paging or partial reads (RCG-045, HAMCP-273).
+- The read-coverage matrix states the new measure.
+- Rollback to 2.4.1-rc.1 is safe (same storage contracts).
+
 ## 2.4.1-rc.1 - Release candidate for the accepted 2.4.1 line (HAMCP-302)
 
 Promotes 2.4.1-beta.63 (HAMCP-253, #354) to release candidate. No runtime
