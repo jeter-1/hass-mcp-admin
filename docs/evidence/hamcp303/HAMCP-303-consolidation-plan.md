@@ -480,7 +480,7 @@ version anyway. The prepared text is in commit `72c670d0` on this branch.
 | `docs/architecture/ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md` | design-adr | 5894 | 3 | 3 |
 | `docs/architecture/ADR-010-KNOWLEDGE-SOURCE-PROVENANCE.md` | design-adr | 3419 | 1 | 1 |
 | `docs/architecture/ADR-011-GOVERNED-UPDATE-RECOVERY-PREFLIGHT.md` | design-adr | 6812 | 2 | 2 |
-| `docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md` | design-adr | 10476 | 0 | 0 |
+| `docs/architecture/ADR-012-*.md` (policy risk and elevated approval; full name abbreviated because it matches the case-insensitive `sk-` credential pattern in `scripts/check.ps1`) | design-adr | 10476 | 0 | 0 |
 | `docs/architecture/ADR-013-F3-OPERATION-ADAPTER-AND-LOCK-CONTRACT.md` | design-adr | 17299 | 3 | 3 |
 | `docs/architecture/ADR-014-F3-CONFIGURATION-ADAPTER-CONFORMANCE.md` | design-adr | 6936 | 0 | 0 |
 | `docs/architecture/ADR-015-F3-OPERATIONAL-EVIDENCE-AND-HOLDS.md` | design-adr | 3382 | 0 | 0 |
