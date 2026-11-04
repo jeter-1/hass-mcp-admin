@@ -330,6 +330,13 @@ line 12 and with the original text unchanged, stating that its HAMCP-278
 deploy freeze ended with the 2026-11-03 sequence-15 cutover. HAMCP-253 had
 merged (`main` `34b8538b`), so Part 2 proceeded on the same base.
 
+Item 3 is deferred (Josh, 2026-11-03, in session). `scripts/validate_addon_metadata.py`
+treats any change under `hass_mcp_engineering_beta/` except `AGENTS.md` as an
+add-on change that requires a version bump, so CI refused the refreshed add-on
+README. That file is not copied into the image. It is left byte-identical
+here, and the refresh moves to the HAMCP-302 2.4.1-rc.1 PR, which bumps the
+version anyway. The prepared text is in commit `72c670d0` on this branch.
+
 ## 6. Risk list
 
 | Risk | Mitigation |
