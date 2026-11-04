@@ -40,7 +40,17 @@ MAX_MEMBERSHIP_FINDINGS = 10_000
 MAX_DEPENDENCY_DASHBOARDS = 50
 MAX_DASHBOARD_FINDINGS = 10_000
 DASHBOARD_SCAN_SECONDS = 6.0
+# HAMCP-277: one read may take at most this long (and never past the phase
+# deadline), so a slow dashboard cannot hold a worker for the whole phase.
+DASHBOARD_READ_SECONDS = 3.0
 DASHBOARD_READ_CONCURRENCY = 4
+MAX_DASHBOARD_OUTCOME_PATHS = 10
+# Exact per-dashboard outcome, in report order.
+DASHBOARD_OUTCOMES = (
+    "read", "too_large", "timed_out", "failed",
+    "not_attempted_budget", "not_attempted_authority", "not_attempted_failure",
+    "not_attempted_limit",
+)
 MAX_GLOBAL_BOUNDED_TERMINALS = 1_000
 DEFAULT_DASHBOARD_PATH = "lovelace"
 GLOBAL_SOURCE_TYPES = ("scene", "group", "template", "dashboard")
@@ -365,15 +375,78 @@ def dashboard_findings(
     return findings
 
 
+_NOT_STARTED = object()
+
+
+async def _within(
+    start: Callable[[], Any], allowance: Callable[[], float], sleep: Callable[[float], Any],
+) -> tuple[str, float, Any]:
+    """Run one bounded read: ``(status, seconds, result)``.
+
+    ``allowance()`` is evaluated inside the scheduled task, immediately before
+    ``start()`` invokes the reader, with no event-loop turn between them. Work
+    that waited behind other tasks therefore cannot start once the allowance is
+    spent (HAMCP-277 R1-M1): it returns ``("not_started", seconds, None)``. A
+    started read returns ``("done", seconds, result)``, or ``("timeout",
+    seconds, None)`` when its ``seconds`` passed first.
+    """
+
+    seconds = 0.0
+    timer: asyncio.Future | None = None
+
+    async def expire(limit: float) -> None:
+        await sleep(limit)
+        task.cancel()
+
+    async def operation() -> Any:
+        nonlocal seconds, timer
+        seconds = allowance()
+        if seconds <= 0:
+            return _NOT_STARTED
+        timer = asyncio.ensure_future(expire(seconds))
+        return await start()
+
+    task = asyncio.ensure_future(operation())
+    try:
+        await asyncio.wait((task,))
+    finally:
+        if timer is not None:
+            timer.cancel()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if timer is not None:
+            await asyncio.gather(timer, return_exceptions=True)
+    if task.cancelled():
+        return "timeout", seconds, None
+    result = task.result()
+    if result is _NOT_STARTED:
+        return "not_started", seconds, None
+    return "done", seconds, result
+
+
+def _outcome_warning(outcome: str, paths: list[str], secret: str) -> str:
+    shown = [path for path in paths if screen(path, (secret,) if secret else ()) is None]
+    shown = shown[:MAX_DASHBOARD_OUTCOME_PATHS]
+    others = len(paths) - len(shown)
+    return (f"Dashboards {outcome}: " + (", ".join(shown) if shown else "none shown")
+            + (f", and {others} other{'s' if others != 1 else ''}" if others else ""))
+
+
 async def collect_dashboard_sources(
     reader, *, secret: str, clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Any] = asyncio.sleep,
 ) -> dict[str, Any]:
     """Read each listed dashboard once, isolated per dashboard, within one budget.
 
-    One deadline covers the session, the list and every read. No read starts
-    once the deadline has passed, and a watchdog cancels whatever is still in
-    flight when it expires; the session context then releases its lease.
+    One deadline covers the session, the list and every read; the caller
+    starts this phase after the other sources (HAMCP-277), so their work does
+    not spend it. Each read is bounded by ``DASHBOARD_READ_SECONDS`` and the
+    deadline. The deadline is checked inside each scheduled read, immediately
+    before the reader is invoked, so no read starts once it has passed; a
+    watchdog cancels whatever is still in flight when it expires, and the
+    session context then releases its lease. Every listed dashboard gets one
+    exact outcome, including those beyond the read limit.
     """
     started = clock()
     deadline = started + DASHBOARD_SCAN_SECONDS
@@ -381,14 +454,17 @@ async def collect_dashboard_sources(
     terminals: list[GlobalBoundedTerminal] = []
     findings: list[DependencyFinding] = []
     documents: list[tuple[str, str]] = []
-    failed_paths: list[str] = []
     profile = {"list_requests": 0, "read_attempts": 0, "successful_documents": 0,
                "maximum_concurrent_reads": 0, "read_time_ms": 0.0}
     findings_bounded = False
     budget_exhausted = False
     inventory_read = False
+    inventory_bounded = False
     listed: list[dict] = []
-    completed: set[str] = set()
+    omitted: list[dict] = []
+    attempted: set[str] = set()
+    outcomes: dict[str, str] = {}
+    stale = False
 
     def expired() -> bool:
         nonlocal budget_exhausted
@@ -397,49 +473,86 @@ async def collect_dashboard_sources(
         return budget_exhausted
 
     async def run() -> None:
-        nonlocal listed, inventory_read
+        nonlocal listed, omitted, inventory_read, inventory_bounded
         async with reader.session() as session:
             if expired():
                 return
             profile["list_requests"] += 1
             inventory = await session.list(MAX_DEPENDENCY_DASHBOARDS + 1)
             inventory_read = True
-            listed = list(inventory["dashboards"])
+            entries = list(inventory["dashboards"])
             if inventory.get("partial"):
                 errors["dashboard_inventory_partial"] += 1
-            paths = [item["url_path"] for item in listed]
+            paths = [item["url_path"] for item in entries]
             if DEFAULT_DASHBOARD_PATH not in paths:
                 errors["dashboard_default_not_listed"] += 1
-            if len(listed) > MAX_DEPENDENCY_DASHBOARDS or inventory.get("truncated"):
+            # Upstream truncation, or more entries than were requested, means the
+            # total is only known to be at least the count accounted here.
+            inventory_bounded = (inventory.get("truncated") is True
+                                 or len(entries) > MAX_DEPENDENCY_DASHBOARDS + 1)
+            if len(entries) > MAX_DEPENDENCY_DASHBOARDS or inventory_bounded:
                 errors["dashboard_inventory_limit_exceeded"] += 1
                 terminals.append(GlobalBoundedTerminal(
                     "dashboard", "dependency_provider", None, "dashboard_inventory_limit_exceeded",
                 ))
-            listed = listed[:MAX_DEPENDENCY_DASHBOARDS]
-            queue = iter(listed)
+            # A fixed order: the same household is read the same way each build.
+            # Accounting keeps every listed entry (bounded at the request size);
+            # only the first MAX_DEPENDENCY_DASHBOARDS are queued for reading,
+            # and the rest are named, not dropped (HAMCP-277 R1-M2).
+            listed = sorted(entries, key=lambda item: item["url_path"])[:MAX_DEPENDENCY_DASHBOARDS + 1]
+            omitted = listed[MAX_DEPENDENCY_DASHBOARDS:]
+            for entry in omitted:
+                outcomes[entry["url_path"]] = "not_attempted_limit"
+                errors["dashboard_not_read_inventory_limit"] += 1
+            queued = listed[:MAX_DEPENDENCY_DASHBOARDS]
+            queue = iter(queued)
             active = 0
 
             async def process(entry: dict) -> None:
-                nonlocal active, findings_bounded
+                nonlocal active, findings_bounded, budget_exhausted
                 path = entry["url_path"]
-                read_started = clock()
-                profile["read_attempts"] += 1
-                active += 1
-                profile["maximum_concurrent_reads"] = max(profile["maximum_concurrent_reads"], active)
+                read_started: float | None = None
+
+                def allowance() -> float:
+                    # Evaluated when the read actually runs, not when it was
+                    # queued: other work may have spent the remainder meanwhile.
+                    return min(DASHBOARD_READ_SECONDS, deadline - clock())
+
+                def start():
+                    nonlocal active, read_started
+                    read_started = clock()
+                    profile["read_attempts"] += 1
+                    attempted.add(path)
+                    active += 1
+                    profile["maximum_concurrent_reads"] = max(profile["maximum_concurrent_reads"], active)
+                    return session.read(path)
+
                 try:
-                    document = await session.read(path)
+                    status, seconds, document = await _within(start, allowance, sleep)
                 finally:
-                    active -= 1
-                    profile["read_time_ms"] += (clock() - read_started) * 1000
-                completed.add(path)
+                    if read_started is not None:
+                        active -= 1
+                        profile["read_time_ms"] += (clock() - read_started) * 1000
+                if status == "not_started":
+                    # The deadline passed while this read waited to run; it is
+                    # left unattempted and named not_attempted_budget below.
+                    budget_exhausted = True
+                    return
+                if status == "timeout":
+                    # Capped by the phase deadline: the budget, not the read, ran out.
+                    budget_exhausted = budget_exhausted or seconds < DASHBOARD_READ_SECONDS
+                    document = {"failure": "timeout"}
                 if document.get("failure"):
-                    errors[f"dashboard_read_{document['failure']}"] += 1
-                    failed_paths.append(path)
-                    if document["failure"] == "response_limit":
+                    failure = document["failure"]
+                    errors[f"dashboard_read_{failure}"] += 1
+                    outcomes[path] = ("too_large" if failure == "response_limit"
+                                      else "timed_out" if failure == "timeout" else "failed")
+                    if failure == "response_limit":
                         terminals.append(GlobalBoundedTerminal(
                             "dashboard", path, None, "dashboard_document_limit_exceeded",
                         ))
                     return
+                outcomes[path] = "read"
                 profile["successful_documents"] += 1
                 documents.append((path, str(document.get("projection_hash") or "")))
                 for reason, count in document.get("gaps", {}).items():
@@ -457,20 +570,23 @@ async def collect_dashboard_sources(
                 )
 
             async def worker() -> None:
+                nonlocal stale
                 for entry in queue:
-                    if expired() or not reader.current():
+                    if expired():
+                        return
+                    if not reader.current():
+                        stale = True
                         return
                     try:
                         await process(entry)
                     except asyncio.CancelledError:
                         raise
                     except Exception:
-                        completed.add(entry["url_path"])
-                        failed_paths.append(entry["url_path"])
+                        outcomes[entry["url_path"]] = "failed"
                         errors["dashboard_read_or_parse_failure"] += 1
 
             workers = [asyncio.create_task(worker())
-                       for _ in range(min(len(listed), DASHBOARD_READ_CONCURRENCY))]
+                       for _ in range(min(len(queued), DASHBOARD_READ_CONCURRENCY))]
             try:
                 await asyncio.gather(*workers)
             finally:
@@ -503,9 +619,18 @@ async def collect_dashboard_sources(
             terminals.append(GlobalBoundedTerminal(
                 "dashboard", "dependency_provider", None, "dashboard_scan_budget_exhausted",
             ))
-        not_read = len(listed) - len(completed)
-        if not_read:
-            errors["dashboard_not_read"] += not_read
+        for entry in listed:
+            path = entry["url_path"]
+            if path in outcomes:
+                continue
+            if path in attempted:
+                # In flight when the phase deadline cancelled it.
+                outcomes[path] = "timed_out"
+                errors["dashboard_read_timeout"] += 1
+                continue
+            outcomes[path] = ("not_attempted_budget" if budget_exhausted
+                              else "not_attempted_authority" if stale else "not_attempted_failure")
+            errors["dashboard_not_read"] += 1
     if findings_bounded:
         errors["dashboard_finding_limit_exceeded"] += 1
         terminals.append(GlobalBoundedTerminal(
@@ -519,12 +644,24 @@ async def collect_dashboard_sources(
         completeness = "partial"
     else:
         completeness = "unavailable"
-    warnings = [*(f"{key}: {count}" for key, count in sorted(errors.items()))]
-    if failed_paths:
-        shown = [path for path in sorted(set(failed_paths))
-                 if screen(path, (secret,) if secret else ()) is None][:10]
-        warnings.append("Dashboards not analyzed after a read failure: " + ", ".join(shown) + (
-            "" if len(set(failed_paths)) <= len(shown) else ", and others"))
+    by_outcome: dict[str, list[str]] = {}
+    for path, outcome in sorted(outcomes.items()):
+        by_outcome.setdefault(outcome, []).append(path)
+    profile["outcome_counts"] = {outcome: len(by_outcome[outcome])
+                                 for outcome in DASHBOARD_OUTCOMES if outcome in by_outcome}
+    warnings = []
+    if inventory_read:
+        # First, so a one-line reader (HAMCP-270 disclosure) sees the count.
+        # The denominator is every listed dashboard accounted, not the read
+        # queue; a truncated inventory is only a lower bound on the total.
+        first = (f"Dashboards read: {successes} of at least {len(listed)} (inventory truncated)"
+                 if inventory_bounded else f"Dashboards read: {successes} of {len(listed)} listed")
+        if omitted:
+            first += f"; {len(omitted)} not attempted ({MAX_DEPENDENCY_DASHBOARDS}-read limit)"
+        warnings.append(first)
+    warnings.extend(f"{key}: {count}" for key, count in sorted(errors.items()))
+    warnings.extend(_outcome_warning(outcome, by_outcome[outcome], secret)
+                    for outcome in DASHBOARD_OUTCOMES[1:] if outcome in by_outcome)
     if errors.get("dashboard_default_not_listed"):
         warnings.append(
             "The default dashboard (lovelace) was not in the reviewed dashboard list and was not read."
@@ -543,6 +680,7 @@ async def collect_dashboard_sources(
         "findings": findings, "coverage": coverage, "terminals": terminals,
         "documents": sorted(documents), "errors": sorted(errors.items()),
         "profile": profile, "current": reader.current if reader is not None else None,
+        "outcomes": dict(sorted(outcomes.items())),
     }
 
 
