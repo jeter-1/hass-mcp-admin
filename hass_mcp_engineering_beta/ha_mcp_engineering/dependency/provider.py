@@ -36,8 +36,10 @@ from .extraction import (
     MAX_EXPAND_SNAPSHOT_ENTITIES,
     ExpandEntitySnapshotEvidence,
     ExpandSnapshotEvidence,
+    ExpandStateRejectionEvidence,
     LABEL_LOOKUP_MODEL,
     discharge_resolved_blueprint_source_obligation,
+    expand_state_rejection_entity_id,
     extract_document_with_obligations,
     make_coverage_failure_obligation,
     project_obligations,
@@ -2100,7 +2102,12 @@ def _build_expand_snapshot_evidence(
     source_inventory_complete = bool(entity_registry_complete)
     state_records: dict[str, dict[str, Any]] = {}
     duplicate_states: set[str] = set()
-    if len(states) > MAX_EXPAND_SNAPSHOT_ENTITIES:
+    # HAMCP-301: each rejected state record is attributed or counted, so a
+    # rejection outside a target's container domains need not hold it.
+    attributable_rejections: set[str] = set()
+    unattributable_rejections = 0
+    states_bounded = len(states) <= MAX_EXPAND_SNAPSHOT_ENTITIES
+    if not states_bounded:
         state_inventory_complete = False
         bounded_states: list[Any] = []
     else:
@@ -2115,6 +2122,7 @@ def _build_expand_snapshot_evidence(
     ):
         if not isinstance(raw, dict):
             state_inventory_complete = False
+            unattributable_rejections += 1
             continue
         entity_id = raw.get("entity_id")
         attributes = raw.get("attributes")
@@ -2124,12 +2132,49 @@ def _build_expand_snapshot_evidence(
             or not isinstance(attributes, dict)
         ):
             state_inventory_complete = False
+            attributed = expand_state_rejection_entity_id(raw)
+            if attributed is None:
+                unattributable_rejections += 1
+            else:
+                attributable_rejections.add(attributed)
             continue
         if entity_id in state_records:
             duplicate_states.add(entity_id)
             state_inventory_complete = False
+            # Both copies must pass; the first copy's attributes are retained.
+            if (
+                expand_state_rejection_entity_id(raw) is None
+                or "entity_id" in state_records[entity_id]
+            ):
+                unattributable_rejections += 1
+            else:
+                attributable_rejections.add(entity_id)
             continue
         state_records[entity_id] = attributes
+    state_rejections: ExpandStateRejectionEvidence | None = None
+    if states_bounded:
+        attributable_ids = tuple(
+            sorted(
+                attributable_rejections,
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        state_rejections = ExpandStateRejectionEvidence(
+            attributable_entity_ids=attributable_ids,
+            unattributable_count=unattributable_rejections,
+            fingerprint=hashlib.sha256(
+                json.dumps(
+                    {
+                        "model": EXPAND_LOOKUP_MODEL,
+                        "attributable_entity_ids": list(attributable_ids),
+                        "unattributable_count": unattributable_rejections,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
 
     source_domains: dict[str, str] = {}
     invalid_sources: set[str] = set()
@@ -2280,6 +2325,7 @@ def _build_expand_snapshot_evidence(
         entities=projected,
         state_inventory_complete=state_inventory_complete,
         source_inventory_complete=source_inventory_complete,
+        state_rejections=state_rejections,
     )
 
 
