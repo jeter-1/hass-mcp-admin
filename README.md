@@ -16,10 +16,16 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.1-beta.63**. It adds the read-only
-`inspect_governance_record` tool and the Ingress **Stuck records** page. Read
-the [2.4.1-beta.63 release notes](docs/V2_4_1_BETA63_RELEASE_NOTES.md) and the
-[2.4.1-beta.63 acceptance contract](docs/V2_4_1_BETA63_ACCEPTANCE.md).
+The current source version is **2.4.1-rc.1**, the release candidate for the
+2.4.1 line. Its runtime is identical to 2.4.1-beta.63; only the version
+changes. Read the [2.4.1-rc.1 release notes](docs/V2_4_1_RC1_RELEASE_NOTES.md)
+and the [2.4.1-rc.1 acceptance contract](docs/V2_4_1_RC1_ACCEPTANCE.md),
+including the known issues it carries.
+
+This version's delegated catalog is reviewed against ha-mcp 8.6.0. beta.63
+reported 109 tools on Josh's installation (observed live by the architect,
+2026-11-03). Updating from beta.63 is version-only, and rolling back to
+beta.63 is safe.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on
@@ -102,13 +108,19 @@ hidden. See [typed power control](docs/TYPED_POWER_CONTROL.md).
 
 ## Capabilities and compatibility
 
-From current source (`python scripts/codex-context.py --format json`), this
-version defines **80 static tools plus 28 delegated reads, 108 expected
-connector tools**, reviewed against ha-mcp **8.6.0**. Delegated reads require
-an exactly admitted ha-mcp provider: **8.4.3, 8.5.0 or 8.6.0**. These counts are
-source expectations, not installed proof. Admission is per tool and fails
-closed, so a running system can expose a smaller compatible subset; a fresh
-client catalog establishes what is actually available.
+The source baseline is **108 expected connector tools: 80 native/static plus
+28 automatic delegated reads**, as counted by
+`python scripts/codex-context.py --format json`. The optional
+`ha_config_get_yaml` reader is admitted per exact ha-mcp version, so an
+installation can show **109 (80 + 29)**. These counts are source
+expectations, not installed proof.
+
+Delegated eligibility is decided per tool and per exact upstream contract;
+see `hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py`,
+the compiled `hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json`
+and `hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py`.
+Admission fails closed, so a running system can expose a smaller compatible
+subset; a fresh client catalog establishes what is actually available.
 
 Home Assistant Core compatibility comes from a
 [signed Core release registry](docs/CORE_RELEASE_REGISTRY.md). Each signed
@@ -154,8 +166,11 @@ the authoritative target state. Do not repeat a mutation, reuse a failed
 approval or change providers. An attempt count alone does not prove dispatch.
 
 `inspect_governance_record` explains why one exact plan or task is stuck. An
-administrator can acknowledge or revoke a stuck record on the Ingress **Stuck
-records** page; records are never rewritten.
+administrator can acknowledge a stuck record or revoke its acknowledgement,
+through the Ingress **Stuck records** page only. Acknowledgement is a
+supplementary warning ledger; it never rewrites, deletes, approves or
+re-applies the underlying plan or task, and revoking it only restores the
+warning.
 
 - [Change governance](docs/CHANGE_GOVERNANCE.md)
 - [External approval](docs/EXTERNAL_APPROVAL.md)
