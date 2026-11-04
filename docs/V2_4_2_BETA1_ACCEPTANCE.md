@@ -81,7 +81,12 @@ Required offline evidence is in `tests/test_hamcp306_dashboard_read_size.py`:
   refused with an estimate above the limit;
 - the sanitized configuration is what is measured;
 - regression: the dashboard read, write, readback and dependency-scan suites
-  are unchanged and pass;
+  pass. One fixture changed: the refusal-shape test in
+  `tests/test_rc3a_dashboard_provider.py` used one 10,000-character card
+  against a 6,000 limit. The sanitizer bounds that string, and its
+  sanitized response (5,637 compact characters) now fits and is returned
+  correctly. The test now uses three such cards and also asserts that the
+  reported size is above the limit;
 - mutation testing in a copied tree, counting only assertion failures as
   kills, for a wrong measure, an off-by-one at the boundary, a reported
   number that differs from the checked one, a growing timing member left

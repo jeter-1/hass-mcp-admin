@@ -1370,7 +1370,10 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.tool_dispatch_count, 0)
 
     async def test_large_configuration_returns_structured_omission(self):
-        config = {"views": [{"cards": ["x" * 10_000]}]}
+        # HAMCP-306: the sanitizer bounds each string, and the size is
+        # measured on the sanitized response, so one 10,000-character card
+        # now fits 6,000. Three cards are over it in any measure.
+        config = {"views": [{"cards": ["x" * 10_000] * 3}]}
         transport = FakeTransport(
             payload={
                 "success": True,
@@ -1395,6 +1398,10 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
             result["error_code"], "upstream_dashboard_response_too_large"
         )
         self.assertFalse(result["details"]["configuration_returned"])
+        self.assertEqual(result["details"]["response_limit"], 6_000)
+        self.assertGreater(
+            result["details"]["estimated_serialized_size"], 6_000
+        )
         self.assertEqual(
             result["details"]["config_hash"],
             _upstream_config_hash(config),
