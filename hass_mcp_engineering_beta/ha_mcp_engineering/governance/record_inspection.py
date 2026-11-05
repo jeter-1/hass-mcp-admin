@@ -18,6 +18,7 @@ before the view is fingerprinted or rendered.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import hashlib
 import json
 import re
@@ -55,7 +56,18 @@ _PLAN_STATUSES = frozenset(item.value for item in PlanStatus)
 _TASK_STATES = frozenset(item.value for item in ExecutionTaskState)
 _POLICY_CLASSES = frozenset(item.value for item in ApprovalPolicyClass)
 _APPROVAL_STATES = frozenset(item.value for item in ApprovalState)
-_APPROVAL_KINDS = frozenset(item.value for item in ApprovalActionKind)
+# HAMCP-304: a plan stores the kind of approval it awaits, ``apply`` or
+# ``rollback`` (``ApprovalRecord.approval_kind``, set by the challenge and
+# rollback paths). ``ApprovalActionKind`` names approval action records; the
+# view screened against it before HAMCP-304, so every stored kind showed the
+# unrecognized marker.
+_APPROVAL_KINDS = frozenset({"apply", "rollback"})
+_PRE_HAMCP304_APPROVAL_KINDS = frozenset(item.value for item in ApprovalActionKind)
+# True only while ``plan_view`` reproduces its pre-HAMCP-304 projection, so an
+# acknowledgement recorded against that view is still recognized.
+PRE_HAMCP304_PROJECTION: ContextVar[bool] = ContextVar(
+    "pre_hamcp304_projection", default=False
+)
 _ERROR_CODES = frozenset(item.value for item in ErrorCode)
 # Plans in these persisted states have already failed or been refused.
 ACKNOWLEDGEABLE_PLAN_STATUSES = frozenset({
@@ -150,9 +162,29 @@ def _event_rows(
     }
 
 
-def plan_view(service: Any, plan: ChangePlan, record_id: str) -> dict[str, Any]:
-    """``record_id`` is the validated identifier the record was read by."""
+def plan_view(
+    service: Any, plan: ChangePlan, record_id: str, *, pre_hamcp304: bool = False
+) -> dict[str, Any]:
+    """``record_id`` is the validated identifier the record was read by.
 
+    ``pre_hamcp304`` rebuilds the view exactly as it was before HAMCP-304. It
+    is used only to recognize an acknowledgement recorded against that view
+    and is never shown.
+    """
+
+    token = PRE_HAMCP304_PROJECTION.set(pre_hamcp304)
+    try:
+        return _plan_view(
+            service, plan, record_id,
+            _PRE_HAMCP304_APPROVAL_KINDS if pre_hamcp304 else _APPROVAL_KINDS,
+        )
+    finally:
+        PRE_HAMCP304_PROJECTION.reset(token)
+
+
+def _plan_view(
+    service: Any, plan: ChangePlan, record_id: str, approval_kinds: frozenset[str]
+) -> dict[str, Any]:
     screen = _Screen(service.sensitive_values)
     identity = (
         STORED_IDENTITY_MATCH if plan.plan_id == record_id
@@ -192,7 +224,7 @@ def plan_view(service: Any, plan: ChangePlan, record_id: str) -> dict[str, Any]:
         approval = {
             "state": screen.closed(plan.approval.state, _APPROVAL_STATES),
             "approval_kind": screen.closed(
-                plan.approval.approval_kind, _APPROVAL_KINDS
+                plan.approval.approval_kind, approval_kinds
             ),
             "bundle_state": screen.open(plan.approval.bundle_state),
             "authority_version": (
