@@ -823,7 +823,9 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "nonterminal_execution_count", "active_conflict_hold_count",
             "active_normal_lock_count", "fallback_count")), "candidate_dashboard_not_settled")
         core_health = core.health_snapshot()
-        require(core_health["compatible_count"] == (19 if typed_core(core_version) else 17)
+        # The disposable test authority signs every compiled typed profile on a
+        # typed Core (power, fan and, from HAMCP-311, helper value).
+        require(core_health["compatible_count"] == (20 if typed_core(core_version) else 17)
                 and core_health["issued_lease_count"] == 0
                 and core_health["active_commit_count"] == 0
                 and core_health["fallback_count"] == 0, "candidate_core_not_settled")

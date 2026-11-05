@@ -90,9 +90,11 @@ NOT_F3 = {
     "core.configuration_validation": "planning",
     "core.dependency_helper_planning": "planning",
     "core.governance_observability": "observability",
-    # control_fan / control_power are direct typed tools, not F3 plans.
+    # control_fan / control_power / control_helper (HAMCP-311) are direct
+    # typed tools, not F3 plans.
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
+    "core.typed_helper_value_operation": "direct_typed_tool",
 }
 
 
@@ -636,7 +638,12 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         self.assertEqual(COMPILED - required, set(NOT_F3))
         self.assertEqual(required | set(NOT_F3), set(COMPILED))
         # Every runtime-only write profile that gates an F3 entry is activated.
-        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - {"core.script_trace_read"}, required)
+        # The script trace read and the direct typed helper value tool
+        # (HAMCP-311) are listed there only to keep it "compiled minus shipped".
+        never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation"}
+        self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
+        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
+        self.assertFalse(never_f3 & required)
 
     async def test_admitted_identity_is_authorized_once(self):
         for entry in self.entries:

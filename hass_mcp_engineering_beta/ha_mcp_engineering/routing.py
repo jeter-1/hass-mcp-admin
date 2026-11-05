@@ -25,6 +25,7 @@ from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
+from .helper_value.service import request_summary as _helper_value_request_summary
 from .ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
     CORE_ROUTE_DELEGATED,
@@ -769,6 +770,13 @@ class AuthenticatedMcpGateway:
                                 telemetry.ordinary_power_binding = digest(power_request.model_dump())
                             except ValueError:
                                 pass
+                        if tool_name == "control_helper" and isinstance(raw_parameters, dict):
+                            from .helper_value.contracts import HelperRequest, digest
+                            try:
+                                helper_request = HelperRequest.model_validate(raw_parameters).checked()
+                                telemetry.ordinary_helper_value_binding = digest(helper_request.model_dump())
+                            except ValueError:
+                                pass
                         telemetry.tool_name = tool_name
                         telemetry.tool_started = time.perf_counter()
                         METRICS.record_tool_call()
@@ -798,6 +806,19 @@ class AuthenticatedMcpGateway:
                 failure = FailureResponse(
                     operation="control_power", error="InvalidPowerRequest",
                     error_code=telemetry.error_code, message="The light/switch power request is invalid.",
+                    retryable=False, request_id=request_id,
+                )
+                return await self._respond(
+                    send, 400, failure.to_json(self.settings.response_size_limit).encode(),
+                    request_id, b"application/json",
+                )
+
+            if tool_name == "control_helper" and telemetry.ordinary_helper_value_binding is None:
+                telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                failure = FailureResponse(
+                    operation="control_helper", error="InvalidHelperValueRequest",
+                    error_code=telemetry.error_code,
+                    message="The helper value request is invalid or not allowlisted.",
                     retryable=False, request_id=request_id,
                 )
                 return await self._respond(
@@ -1189,6 +1210,7 @@ class AuthenticatedMcpGateway:
         finally:
             telemetry.ordinary_fan_binding = None
             telemetry.ordinary_power_binding = None
+            telemetry.ordinary_helper_value_binding = None
             if core_authority is not None:
                 # A task that escaped the request lifetime must not inherit a
                 # callback that can authorize another provider interaction.
@@ -1608,6 +1630,8 @@ class AuthenticatedMcpGateway:
                         if tool_name == "control_fan"
                         else _power_request_summary(telemetry)
                         if tool_name == "control_power"
+                        else _helper_value_request_summary(telemetry)
+                        if tool_name == "control_helper"
                         else
                         {
                             **dict(telemetry.audit_context),

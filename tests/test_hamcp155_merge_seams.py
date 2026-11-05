@@ -48,6 +48,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     EXPOSURE_PROFILE,
     F3_ENTRY_ADMISSION_PROFILES,
     HELPER_OPTIONS_PROFILE,
+    HELPER_VALUE_PROFILE,
     INPUT_SELECT_PROFILE,
     LABEL_PROFILE,
     SCENE_CONFIGURATION_PROFILE,
@@ -271,7 +272,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
              # HAMCP-106.
              DASHBOARD_METADATA_PROFILE,
              # HAMCP-071 seq 16.
-             SCENE_CONFIGURATION_PROFILE},
+             SCENE_CONFIGURATION_PROFILE,
+             # HAMCP-311: direct typed tool, never an F3 identity.
+             HELPER_VALUE_PROFILE},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),

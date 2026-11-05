@@ -186,7 +186,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
             # HAMCP-069A/069B/155/165/232/145: the dormant entity, delete, label and November-batch
-            # (seq 15+) profiles are not signed here.
+            # (seq 15+) profiles are not signed here, nor (HAMCP-311) the signed-only helper value one.
             if p.capability_id not in {'core.entity_registry_metadata_operation',
                                        'core.entity_registry_availability_operation',
                                        'core.entity_assistant_exposure_operation',
@@ -196,7 +196,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
                                        'core.typed_input_select_option_operation',
                                        'core.script_trace_read',
                                        'core.dashboard_metadata_operation',
-                                       'core.scene_configuration_operation'}]
+                                       'core.scene_configuration_operation',
+                                       'core.typed_helper_value_operation'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)

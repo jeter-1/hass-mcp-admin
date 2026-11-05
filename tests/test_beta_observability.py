@@ -113,6 +113,7 @@ def preserve_create_application_state(test):
         application.HANDOFF_GENERATION,
         application.FAN_OPERATIONS,
         application.POWER_OPERATIONS,
+        application.HELPER_VALUE_OPERATIONS,  # + HAMCP-311
         application.TRACE_SNAPSHOTS,
         AUTOMATION_BASELINE_CAPTURE,
         BACKUP_INVENTORY,
@@ -861,7 +862,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 80)
+        self.assertEqual(health["registered_tool_count"], 81)
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]

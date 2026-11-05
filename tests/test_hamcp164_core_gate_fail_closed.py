@@ -86,6 +86,7 @@ STATIC_CORE_TABLE = {
     "configuration_integrity_analysis": MAPPED,
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
+    "control_helper": DOWNSTREAM,
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
@@ -193,6 +194,9 @@ ALLOWLIST_ARGUMENTS = {
     "control_power": {
         "entity_id": "light.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "control_helper": {
+        "entity_id": "input_boolean.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
+    },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},
     "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
@@ -248,7 +252,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 80)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 81)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -273,7 +277,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 22)
+        self.assertEqual(len(ALLOWLISTED), 23)  # + HAMCP-311 control_helper (downstream authority)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[

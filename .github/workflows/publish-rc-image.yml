@@ -331,7 +331,7 @@ jobs:
       - recovery-source
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     permissions:
       contents: read
     outputs:
