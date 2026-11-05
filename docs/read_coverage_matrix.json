@@ -139,12 +139,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
-       "line": 1021,
+       "line": 1023,
        "anchor": "\"type\": \"automation/config\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
-       "line": 1092,
+       "line": 1094,
        "anchor": "rest_path(\"/config/automation/config/{}\", internal_id)"
       }
      ]
@@ -394,7 +394,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
-       "line": 1003,
+       "line": 1005,
        "anchor": "\"type\": \"script/config\""
       }
      ]
@@ -1060,7 +1060,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
-       "line": 1273,
+       "line": 1275,
        "anchor": "_read_blueprint_with_status(path)"
       },
       {
@@ -2782,7 +2782,7 @@
      "purpose_binding": "DASHBOARD_CONFIGURATION_EVIDENCE; ha_mcp_dashboard_read_v2; dual hash (upstream-compatible config_hash + engineering_config_hash)",
      "admission": "upstream:ha_config_get_dashboard wrapper; signed:core.dashboard_configuration_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
-     "detail": "Exact config body with hash verification, but refuses with response_too_large when estimated_serialized_size exceeds SETTINGS.response_size_limit (default 60_000). Since HAMCP-306 (2.4.2-beta.1) that estimate is the measure the general response limit admits by: compact ASCII-escaped JSON characters of the whole tool response, serialized with the tool's real wrapper and request ID and with the four timing members still growing at the check (CONFIGURATION_TOOL_GROWING_TIMING) at the widest JSON float (24 characters). It is never below the real compact response and at most 84 characters above it, so every response of at most 59,916 compact characters is returned; the returned text is the indented form only when that also fits. The refusal reports that same number (before, the check was indented sanitized JSON + 16_000, about 44 KB indented, while the report was the raw config's compact size). Error carries hashes and configuration_returned=False; no paging, streaming or partial return. Storage-mode only.",
+     "detail": "Exact config body with hash verification, but refuses with response_too_large when estimated_serialized_size exceeds SETTINGS.response_size_limit (default 60_000). Since HAMCP-306 (2.4.2-beta.2) that estimate is the measure the general response limit admits by: compact ASCII-escaped JSON characters of the whole tool response, serialized with the tool's real wrapper and request ID and with the four timing members still growing at the check (CONFIGURATION_TOOL_GROWING_TIMING) at the widest JSON float (24 characters). It is never below the real compact response and at most 84 characters above it, so every response of at most 59,916 compact characters is returned; the returned text is the indented form only when that also fits. The refusal reports that same number (history, through 2.4.2-beta.1: the check was indented sanitized JSON + 16_000, an indented cap of about 44,000 characters, while the report was the raw config's compact size). Error carries hashes and configuration_returned=False; no paging, streaming or partial return. Storage-mode only.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -2906,7 +2906,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
-       "line": 1873,
+       "line": 1875,
        "anchor": "dashboards = await collect_dashboard_sources(dashboard_reader, secret=self.secret)"
       }
      ]
@@ -2920,7 +2920,7 @@
      ],
      "policy": "bounded_existing_dashboard_update_non_atomic_v1 (F3 update_existing_dashboard)",
      "admission": "native governed plan/approve/apply; reads via signed:core.dashboard_configuration_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
-     "detail": "Existing storage-mode dashboard only, patch operations 1-16, MAX_PATCH_BYTES 16_384, raw and result config capped at 40_000 bytes, artifact 262_144. Preread uses list_dashboards(limit=200)+get_dashboard_config(force_reload=True), so dashboards over the 60k/44k read limit cannot be planned or read back. One non-retrying setter call; prepare_rollback returns None (no rollback). Dashboard create/delete and resource writes are not reachable.",
+     "detail": "Existing storage-mode dashboard only, patch operations 1-16, MAX_PATCH_BYTES 16_384, raw and result config capped at 40_000 bytes, artifact 262_144. Preread uses list_dashboards(limit=200)+get_dashboard_config(force_reload=True), so a dashboard whose get_dashboard_config response is refused cannot be planned or read back. That read refuses when its compact whole-response estimate exceeds SETTINGS.response_size_limit (default 60_000); the estimate is at most 84 characters above the real compact response, so every response of at most 59,916 compact characters is returned. One non-retrying setter call; prepare_rollback returns None (no rollback). Dashboard create/delete and resource writes are not reachable.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",

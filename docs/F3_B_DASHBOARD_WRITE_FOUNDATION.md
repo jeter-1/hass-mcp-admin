@@ -153,10 +153,13 @@ hash-invalid data is rejected. The configuration is deep-cloned after
 validation. It is never included in the public proposal projection, errors,
 events, or health.
 
-The raw and resulting configuration limit is 40,000 serialized bytes. The
-existing dashboard provider reserves 16,000 bytes of its 60,000-byte response
-limit; 40,000 bytes leaves that envelope plus 4,000 bytes of extra margin. This
-is an F3-B defensive bound, not an upstream Home Assistant maximum.
+The raw and resulting configuration limit is 40,000 serialized bytes. This
+is an F3-B defensive bound, not an upstream Home Assistant maximum. History:
+when F3-B was written, the dashboard provider reserved 16,000 bytes of its
+60,000-byte response limit, and 40,000 bytes left that envelope plus 4,000
+bytes of extra margin. Since HAMCP-306 (2.4.2-beta.2) the read is checked by
+its compact whole-response estimate against the response limit, with no
+fixed reserve; the 40,000-byte cap is unchanged.
 
 ### Patch grammar and canonical pointers
 
