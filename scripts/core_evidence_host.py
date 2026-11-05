@@ -15,10 +15,13 @@ availability:
   ``sudo install -m MODE S D`` or ``sudo rm -rf D``, the commands the workflow
   ran before this helper existed, so Actions behaviour is unchanged.
 * ``local`` (off Actions, only with ``CORE_EVIDENCE_HOST_MODE=local``): no
-  sudo.  The pinned fixture writer image runs with no network and mounts only
-  the owned directory (and, to stage, the one source file read-only).  The
-  destination's SHA-256 and mode are verified inside the container and the
-  host checks that receipt; removal refuses if any residue remains.
+  sudo and no network fetch.  The pinned fixture writer image must already be
+  present locally by its digest; if it is absent the helper refuses, and every
+  ``docker run`` uses ``--pull never``.  The container runs with no network
+  and mounts only the owned directory (and, to stage, the one source file
+  read-only).  The destination's SHA-256 and mode are verified inside the
+  container and the host checks that receipt; removal refuses if any residue
+  remains.
 
 Anything else refuses.  Standard library only.
 """
@@ -109,8 +112,17 @@ def require_canonical_directory(path):
         raise Refusal("owned directory is missing, a symlink or not canonical")
 
 
+def require_local_image(run):
+    """Refuse unless the pinned image is already local; ``image inspect`` never pulls."""
+    result = run(["docker", "image", "inspect", "--format", "{{.Id}}", FIXTURE_IMAGE],
+                 check=False, capture_output=True, timeout=DOCKER_TIMEOUT)
+    if result.returncode != 0:
+        raise Refusal(f"pinned fixture image {FIXTURE_IMAGE} is not present locally; "
+                      "local mode never pulls, so load that exact digest first")
+
+
 def docker_argv(owned, code, *extra, source=None):
-    argv = ["docker", "run", "--rm", "--pull", "missing", "--network", "none",
+    argv = ["docker", "run", "--rm", "--pull", "never", "--network", "none",
             "--user", "0:0", "--security-opt", "no-new-privileges", "--read-only",
             "--entrypoint", "python",
             "--mount", f"type=bind,source={owned},target=/owned"]
@@ -133,6 +145,7 @@ def local_stage(args, environ, run):
         raise Refusal("destination must be inside the owned directory")
     relative = PurePosixPath(destination.relative_to(owned).as_posix())
     expected = hashlib.sha256(source.read_bytes()).hexdigest()
+    require_local_image(run)
     result = run(docker_argv(owned, STAGE_CODE, expected, str(relative), args.mode, source=source),
                  check=False, capture_output=True, timeout=DOCKER_TIMEOUT)
     if result.returncode != 0 or len(result.stdout) > RECEIPT_BOUND:
@@ -157,6 +170,7 @@ def local_remove(args, environ, run):
     if not os.path.lexists(owned):
         return {"removed": False, "reason": "owned directory already absent"}
     require_canonical_directory(owned)
+    require_local_image(run)
     result = run(docker_argv(owned, REMOVE_CODE), check=False, capture_output=True,
                  timeout=DOCKER_TIMEOUT)
     if result.returncode != 0:

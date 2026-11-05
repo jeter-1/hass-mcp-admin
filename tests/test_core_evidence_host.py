@@ -2,7 +2,8 @@
 
 Offline only: Docker is emulated by running the helper's in-container code
 with ``/owned`` and ``/source`` rewritten to temporary paths, after checking
-the exact ``docker run`` isolation argv.  ``sudo`` is never executed; the
+the exact ``docker run`` isolation argv.  The emulated local image cache
+holds the pinned image unless a test removes it; nothing ever pulls.  ``sudo`` is never executed; the
 Actions mode's exec is captured.
 """
 
@@ -40,17 +41,37 @@ class Exec(Exception):
     pass
 
 
-class FakeDocker:
-    """Checks the isolation argv, then runs the code as the container would."""
+INSPECT = ["docker", "image", "inspect", "--format", "{{.Id}}", host.FIXTURE_IMAGE]
 
-    def __init__(self, owned, source=None, after=None, returncode=None, stdout=None):
-        self.owned, self.source = owned, source
+
+class FakeDocker:
+    """Checks the isolation argv, then runs the code as the container would.
+
+    ``calls`` records ``docker run`` invocations and ``inspections`` the local
+    image lookups; any other Docker command (``pull`` included) fails the test.
+    """
+
+    def __init__(self, owned, source=None, after=None, returncode=None, stdout=None, present=True):
+        self.owned, self.source, self.present = owned, source, present
         self.after, self.returncode, self.stdout = after, returncode, stdout
-        self.calls = []
+        self.calls, self.inspections, self.commands = [], [], []
 
     def __call__(self, argv, check, capture_output, timeout):
-        self.calls.append(argv)
+        self.commands.append(argv)
         assert check is False and capture_output is True and timeout == host.DOCKER_TIMEOUT
+        assert "pull" not in argv[:2], argv
+        if argv[:3] == ["docker", "image", "inspect"]:
+            assert argv == INSPECT, argv
+            self.inspections.append(argv)
+            if not self.present:
+                return subprocess.CompletedProcess(argv, 1, b"", b"Error: No such image\n")
+            return subprocess.CompletedProcess(argv, 0, b"sha256:" + b"1" * 64 + b"\n", b"")
+        assert argv[:2] == ["docker", "run"], argv
+        self.calls.append(argv)
+        # --pull never: an absent image fails the run rather than being fetched.
+        assert argv[argv.index("--pull") + 1] == "never", argv
+        if not self.present:
+            return subprocess.CompletedProcess(argv, 125, b"", b"No such image\n")
         image = argv.index(host.FIXTURE_IMAGE)
         options, (code, *extra) = argv[:image], argv[image + 2:]
         assert argv[image + 1] == "-c"
@@ -59,7 +80,7 @@ class FakeDocker:
         if self.source is not None:
             expected.append(f"type=bind,source={self.source},target=/source,readonly")
         assert mounts == expected, mounts
-        assert options[:4] == ["docker", "run", "--rm", "--pull"]
+        assert options[:5] == ["docker", "run", "--rm", "--pull", "never"]
         for flag in (["--network", "none"], ["--user", "0:0"], ["--entrypoint", "python"]):
             assert any(options[i:i + 2] == flag for i in range(len(options))), flag
         assert "--privileged" not in options and "-v" not in options and "--volume" not in options
@@ -188,6 +209,7 @@ class LocalStageTests(Base):
         self.assertEqual(stat.S_IMODE(self.destination.stat().st_mode), 0o600)
         argv = run.calls[0]
         self.assertEqual(argv[argv.index(host.FIXTURE_IMAGE) + 3:], [digest, ".storage/alarmo.storage", "600"])
+        self.assertEqual(run.commands, [INSPECT, argv])
         # A pre-existing destination is truncated and re-moded, like install -m.
         self.destination.write_bytes(b"older and longer content " * 8)
         self.destination.chmod(0o644)
@@ -309,6 +331,7 @@ class LocalRemoveTests(Base):
         self.assertFalse(os.path.lexists(self.owned))
         self.assertEqual((outside / "file").read_text(), "keep")
         self.assertEqual(len(run.calls), 1)
+        self.assertEqual(run.commands, [INSPECT, run.calls[0]])
 
     def test_residue_left_behind_refuses(self):
         for after in (lambda: (self.owned / "late").write_text("residue"),
@@ -358,6 +381,46 @@ class LocalRemoveTests(Base):
         run = FakeDocker(self.owned)
         code, stdout, _, _ = self.main(self.argv(), run=run)
         self.assertEqual((code, json.loads(stdout)["removed"], run.calls), (0, False, []))
+
+
+class NoPullTests(Base):
+    """Local mode never fetches an image (Codex HAMCP-309 Part 2 review, M1)."""
+
+    def test_every_local_docker_run_uses_pull_never(self):
+        for code in (host.STAGE_CODE, host.REMOVE_CODE):
+            for source in (None, self.source):
+                with self.subTest(code=code[:20], source=source):
+                    argv = host.docker_argv(self.owned, code, source=source)
+                    self.assertEqual(argv[:5], ["docker", "run", "--rm", "--pull", "never"])
+                    self.assertEqual(argv.count("--pull"), 1)
+                    self.assertNotIn("missing", argv)
+                    self.assertNotIn("always", argv)
+
+    def test_absent_image_refuses_naming_it_with_zero_pull_attempts(self):
+        message = (f"core_evidence_host: refused: pinned fixture image {host.FIXTURE_IMAGE} is not "
+                   "present locally; local mode never pulls, so load that exact digest first\n")
+        self.destination.write_bytes(b"left alone")
+        for argv in (self.stage_argv(), ["remove-owned-dir", "--directory", str(self.owned)]):
+            with self.subTest(command=argv[0]):
+                run = FakeDocker(self.owned, self.source if argv[0] == "stage" else None, present=False)
+                code, stdout, stderr, execs = self.main(argv, run=run)
+                self.assertEqual((code, stdout, execs), (1, "", []))
+                self.assertEqual(stderr, f"core_evidence_host: mode local ({argv[0]})\n" + message)
+                # Only the local lookup ran: no docker run, no pull, nothing written or removed.
+                self.assertEqual((run.commands, run.calls), ([INSPECT], []))
+                self.assertEqual(self.destination.read_bytes(), b"left alone")
+                self.assertTrue((self.owned / ".storage" / "core.config").is_file())
+
+    def test_present_image_is_looked_up_by_its_pinned_digest_without_pulling(self):
+        self.assertIn("@sha256:", INSPECT[-1])
+        for argv in (self.stage_argv(), ["remove-owned-dir", "--directory", str(self.owned)]):
+            with self.subTest(command=argv[0]):
+                run = FakeDocker(self.owned, self.source if argv[0] == "stage" else None)
+                code, _, stderr, _ = self.main(argv, run=run)
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(run.commands[0], INSPECT)
+                self.assertEqual(len(run.commands), 2)
+                self.assertTrue(all("pull" not in command[:2] for command in run.commands))
 
 
 class WorkflowTests(unittest.TestCase):

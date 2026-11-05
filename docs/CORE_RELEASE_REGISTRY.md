@@ -642,10 +642,12 @@ variable is unset and behaviour is unchanged. `scripts/core_evidence_host.py`
 replaces the two `sudo` steps: on Actions it executes exactly the former
 `sudo install -m 600` / `sudo rm -rf` argv, and locally it uses the pinned
 fixture writer image with no network, mounting only the lane's owned
-disposable directory, verifying the staged file's SHA-256 and mode and
-refusing on any removal residue. Locally, `github_retry.py download` may fetch
-the public `codeload.github.com` archive without a token, but only with a
-pinned `--sha256` (the workflow now also passes the Alarmo pin on Actions).
+disposable directory. Local mode never fetches that image: it must already be
+present by its pinned digest (otherwise the helper refuses, naming it) and
+every `docker run` uses `--pull never`. It verifies the staged file's SHA-256
+and mode and refuses on any removal residue. Locally, `github_retry.py
+download` may fetch the public `codeload.github.com` archive without a token,
+but only with a pinned `--sha256` (the workflow now also passes the Alarmo pin on Actions).
 The disposable image binding accepts the configuration digest, or the pinned
 index digest only with a local chain proof: hash-exact local amd64 manifest
 and configuration blobs, the index link proven from the verifier's
