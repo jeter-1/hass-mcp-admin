@@ -1,103 +1,84 @@
 # Engineering 2.4.2-beta.1 release notes
 
-Engineering 2.4.2-beta.1 (HAMCP-306) fixes `get_dashboard_config` refusing a
-dashboard whose response fits the response limit. It builds on 2.4.1-rc.1
-(HAMCP-302, #359), and its runtime is otherwise identical to it.
+Engineering 2.4.2-beta.1 (HAMCP-301, Option A) stops one rejected
+`/api/states` record from holding every input_boolean and input_select plan
+as `group_membership_unresolved`. It follows 2.4.1-rc.1 (HAMCP-302, #359).
+If #361 (HAMCP-306) merges first and takes beta.1, this change restages once
+to 2.4.2-beta.2.
 
 Acceptance: [`V2_4_2_BETA1_ACCEPTANCE.md`](V2_4_2_BETA1_ACCEPTANCE.md).
-Per-release records: [release index](RELEASES.md).
+Diagnosis: the HAMCP-301 diagnosis on
+[PR #360](https://github.com/jeter-1/hass-mcp-admin/pull/360).
 
 ## The defect
 
-On 2.4.1-rc.1, the architect read `home-admin-dashboard` with
-`get_dashboard_config` and got `upstream_dashboard_response_too_large`. The
-refusal reported `estimated_serialized_size` 29,907 against a
-`response_limit` of 60,000. The defect is not new in rc.1: 2.4.1-beta.63 has
-the same runtime.
+The dependency snapshot rejects a state record whose id fails the
+Engineering `valid_entity_id` rule, which requires a letter in the object id.
+Home Assistant accepts digit-only object ids. On Josh's installation the
+connectivity sensors `binary_sensor.1_1_1_1` and `binary_sensor.8_8_8_8` were
+rejected (observed live by the architect, 2026-11-04). One rejected record
+marked the whole expand snapshot incomplete, and then:
 
-The provider (`providers/upstream_dashboard.py`, at 2.4.1-rc.1) used two
-different measures:
-
-- **What it checked** was the sanitized configuration as indented JSON
-  (`indent=2`) plus a fixed 16,000-character reserve. This effectively capped
-  the indented configuration at 44,000 characters.
-- **What it reported** was the size of the raw configuration as compact JSON.
-
-Indentation inflates deeply nested dashboards. A sections dashboard with
-stacked cards is about 30 KB compact and about 86 KB indented, so it was
-refused, and the refusal reported a number half the limit.
+- every helper plan carried `group_membership_unresolved`
+  (`group_membership_state_inventory_incomplete`), with the "Group membership
+  keeps this plan elevated" warning and the coarse `reload:automation` fence;
+- every `expand()` member absent from the snapshot became the coverage
+  failure `expand_state_inventory_limit_exceeded`.
 
 ## The change
 
-`get_dashboard_config` now checks with the same measure that the general
-response limit uses to admit a response, and reports that same number. The
-general limit (`dump_json_with_truncation`) returns a response whole if its
-compact, ASCII-escaped JSON fits.
+Each rejected state record is now attributed or counted. A rejected record
+releases the group hold for a target only when all of these hold:
 
-- The estimate is the compact JSON length of the whole tool response,
-  including its own `estimated_serialized_size` value. The provider
-  serializes the tool's real wrapper around its `data`, `warnings` and
-  `metadata`: operation, summary, timing, this request's ID and success.
-  Every timing member is final when the size is checked except four that
-  are still growing: `total_ms`, `tool_ms`, `upstream_ms` and
-  `upstream_wall_clock_span_ms` (the upstream attempt is closed after the
-  check). Those four are counted at the widest a JSON float can be,
-  24 characters.
-- **Bound.** The estimate is never below the real response's compact JSON.
-  It exceeds it by at most 84 characters: four members, each at most
-  24 − 3 characters wider than their narrowest real form (`0.0`). Offline
-  measurements across small, ~30 KB, non-ASCII-heavy and near-limit
-  fixtures gave 68–78 characters with real timing in one run, exactly 84
-  with every growing member at `0.0`, and 0 with every growing member at
-  full width.
-- The configuration is returned when the estimate is at most the limit. It
-  is refused when the estimate is above the limit. So every response of at
-  most 59,916 compact characters (60,000 − 84) is returned, every response
-  above 60,000 is refused, and between the two the timing digits decide.
-- The success response and the refusal report the same
-  `estimated_serialized_size`. A refused read reports exactly the number the
-  limit was compared with.
-- A returned configuration is never truncated and never exceeds the limit.
-  The returned text is the indented JSON when that also fits the limit,
-  otherwise the compact JSON. The indented text can be longer than the
-  estimate, which bounds the compact form only.
+1. its `entity_id` matches Core's grammar (`homeassistant/core.py:180-183`,
+   Core 2026.10.3);
+2. its domain is not `group`, not `zone` and not the target's own domain;
+   Core's `expand` (`helpers/template/extensions/state.py:145-185`) expands
+   only `group` entities, group-sourced entities and `zone` entities
+   (`persons`, `const.py:461`);
+3. its attributes are a dict with no `entity_id` key. A rejected record cannot
+   prove its source integration, so this stands in for a group-sourced entity.
 
-With the default 60,000-character limit, a configuration of about 57,400
-compact characters fits in the offline fixtures. The exact figure depends
-on warnings, redaction metadata and the request ID's length. A 30 KB nested
-dashboard is now returned with `config_hash` and `engineering_config_hash`.
+Anything else still holds: a non-dict record or attributes, a non-string or
+Core-invalid id, a `group.*` or `zone.*` record, a record in the target's
+domain, a record with an `entity_id` attribute, a duplicate that fails the
+rule in either copy, and a state list over the 10,000-record snapshot bound.
 
-The response shape is unchanged. Only the meaning of
-`estimated_serialized_size` changed: it is now the estimated compact size of
-the whole response, not of the raw configuration. Its key, type, position and
-the refusal's detail keys are the same.
+For `expand()`, a member absent from the snapshot is now
+`expand_member_state_missing` (bounded semantic opaque) when every rejected
+record is attributable. Otherwise it stays the coverage failure
+`expand_state_inventory_limit_exceeded`. The rejection fingerprint is bound
+into the expand resolution fingerprint only when the inventory is incomplete,
+so complete-inventory fingerprints are unchanged.
+
+The new evidence stores the attributed ids, a count of unattributable records
+and a fingerprint. It stores no attribute value.
 
 ## Unchanged by design
 
-- The dashboard write tools, their 40,000-byte configuration cap and
-  16,384-byte patch cap, plan and readback hashes, and approval bindings.
-- The dependency index's dashboard scan (its own read path) and global
-  response truncation.
-- Tool and input schemas, providers, signed profiles, contract fingerprints,
-  persisted formats and add-on options.
-
-The plan preread, the post-apply readback and the metadata fingerprint reader
-call the same provider read. They inherit the corrected threshold: a
-dashboard that fits the response is now readable, and the unchanged write
-caps still apply after it.
-
-Static tools stay at 80. The advertised catalog stays at 108, or 109 with the
-optional YAML reader.
+- `valid_entity_id` itself, the obligation ledger, the template semantics
+  registry, policy classes, exact-obligation handling, action profiles,
+  coverage and bounded-source logic.
+- Tools, input and output schemas, providers, signed profiles, persisted plan
+  and task formats, add-on options and Home Assistant writes. Static tools
+  stay at 80; the advertised catalog stays 108, or 109 with the optional YAML
+  reader.
+- A helper that really is a group member stays held, and `guest_mode` stays
+  `safety_critical`.
+- A helper with opaque dynamic consumers, such as `engineering_acceptance`,
+  loses only the group code: it stays `elevated_admin` because of
+  `opaque_downstream_obligations` (Options B and C are later work).
 
 ## Known limitations
 
-- A dashboard whose whole response exceeds the limit is still refused. There
-  is no paging or partial read (RCG-045, HAMCP-273).
-- The known issues carried by 2.4.1-rc.1 are not addressed here, apart from
-  this defect.
+- `valid_entity_id` still rejects Core-valid digit-only ids, so those
+  entities are still not projected as expand entities or members.
+- The `entity_id` attribute test is conservative: an ordinary rejected
+  entity that carries an `entity_id` attribute still holds every helper.
+- `entity_ids.STRICT_ENTITY_ID` and the `entity_filter.py` Core pin are
+  labelled 2026.10.1; this release does not relabel them.
 
 ## Rollback
 
-Reinstall 2.4.1-rc.1. It has the same storage, plan and task formats. Dashboards
-that fit only under the new measure are refused again, as before. An image
-rollback does not restore household configuration or physical state.
+Reinstall 2.4.1-rc.1. Helper plans are held again as before. No persisted
+format changes.

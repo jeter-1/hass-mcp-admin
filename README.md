@@ -16,10 +16,9 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.1**, the first 2.4.2 beta. It
-fixes `get_dashboard_config` refusing a dashboard whose response fits the
-response limit (HAMCP-306); the rest of its runtime is identical to
-2.4.1-rc.1. Read the
+The current source version is **2.4.2-beta.1** (HAMCP-301). A rejected
+Home Assistant state record, such as a digit-only entity id, no longer holds
+every input_boolean and input_select plan for group membership. Read the
 [2.4.2-beta.1 release notes](docs/V2_4_2_BETA1_RELEASE_NOTES.md) and the
 [2.4.2-beta.1 acceptance contract](docs/V2_4_2_BETA1_ACCEPTANCE.md).
 

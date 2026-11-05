@@ -1,33 +1,26 @@
 # Changelog
 
-## 2.4.2-beta.1 - Dashboard read size check uses the response limit's measure (HAMCP-306)
+## 2.4.2-beta.1 - Attribute rejected expand-snapshot states (HAMCP-301)
 
-Builds on 2.4.1-rc.1 (HAMCP-302, #359). No tool, input schema, route,
-provider, signed profile, contract fingerprint, persisted format, dependency,
-add-on option or Home Assistant write change.
+Follows 2.4.1-rc.1 (HAMCP-302, #359). No tool, input or output schema,
+provider, signed profile, persisted format, dependency, add-on option or
+Home Assistant write change.
 
-- `get_dashboard_config` no longer refuses a dashboard whose response fits.
-  It used to check the sanitized configuration as indented JSON plus a
-  16,000-character reserve (about 44,000 indented characters), and to report
-  the raw configuration's compact size. A ~30 KB nested dashboard was refused
-  with a reported size of half the 60,000 limit.
-- The check and the reported `estimated_serialized_size` are now one
-  measure, the one the general response limit admits by: the compact,
-  ASCII-escaped JSON length of the whole tool response. It is serialized
-  with the tool's real wrapper and request ID; the four timing members
-  still growing at the check (`total_ms`, `tool_ms`, `upstream_ms`,
-  `upstream_wall_clock_span_ms`) are counted at the widest a JSON float can
-  be (24 characters).
-- The estimate is never below the real compact response and exceeds it by
-  at most 84 characters (4 x (24 - 3)). Every response of at most 59,916
-  compact characters is returned; a 59,612-character response that the
-  first draft refused is returned. In the offline fixtures a configuration
-  of about 57,400 compact characters fits the default limit.
-- The plan preread, post-apply readback and metadata fingerprint reader
-  inherit the corrected threshold; the write caps, hashes and approval
-  bindings are unchanged. No paging or partial reads (RCG-045, HAMCP-273).
-- The read-coverage matrix states the new measure.
-- Rollback to 2.4.1-rc.1 is safe (same storage contracts).
+- A rejected `/api/states` record no longer holds every input_boolean and
+  input_select plan as `group_membership_unresolved`. It releases the hold
+  for a target only when its id matches Core's grammar (core.py:180-183,
+  2026.10.3), its domain is not `group`, `zone` or the target's domain, and
+  its attributes are a dict without `entity_id`. Every other rejected
+  record, and an over-bound state list, still holds.
+- An `expand()` member absent from such a snapshot is now
+  `expand_member_state_missing` (bounded semantic opaque) instead of the
+  coverage failure `expand_state_inventory_limit_exceeded`.
+- The new evidence holds attributed ids, a count and a fingerprint, and no
+  attribute value. Complete-inventory fingerprints are unchanged.
+- A real group member stays held, `guest_mode` stays `safety_critical`, and
+  helpers with opaque dynamic consumers stay `elevated_admin`.
+- New exact `V2_4_2_BETA1` release notes and plan-only acceptance contract.
+  Rollback to 2.4.1-rc.1 is safe.
 
 ## 2.4.1-rc.1 - Release candidate for the accepted 2.4.1 line (HAMCP-302)
 

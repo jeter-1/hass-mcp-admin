@@ -1,97 +1,76 @@
 # Engineering 2.4.2-beta.1 acceptance
 
-This contract covers HAMCP-306: `get_dashboard_config` checks a dashboard read
-against the response limit using the limit's own measure, and reports that
-same measure. It follows 2.4.1-rc.1 (HAMCP-302, #359).
+This contract covers HAMCP-301 Option A: per-record attribution of rejected
+expand-snapshot state records, so that a rejected record outside `group`,
+`zone` and the target's domain no longer holds helper plans for group
+membership or turns an absent `expand()` member into a coverage failure. It
+follows 2.4.1-rc.1 (HAMCP-302, #359).
 
 See also the release notes:
 [`V2_4_2_BETA1_RELEASE_NOTES.md`](V2_4_2_BETA1_RELEASE_NOTES.md).
 
-**Release target.** `2.4.2-beta.1`, following 2.4.1-rc.1. A release
-candidate may advance to beta.1 of the next patch. HAMCP-301 is being
-developed at the same time and also targets 2.4.2-beta.1. Merge order is
-fixed when a PR reaches Ready. A PR that merges second merges `main` with a
-merge commit, restages once to the next free beta, and then runs final
-Evidence once. The release is materialized in all three version
-authorities, with no staged declaration left. Nothing is published or
-deployed.
+**Release target.** `2.4.2-beta.1`, following 2.4.1-rc.1. The release
+transition accepts only `2.4.1-rc.1 -> 2.4.2-beta.1` from the current base.
+#361 (HAMCP-306) also claims 2.4.2-beta.1. Merge order is fixed when Codex
+review marks a PR ready; only the next-in-line PR runs final Evidence. If
+#361 merges first, this change merges `main` (merge commit), restages once to
+2.4.2-beta.2 and runs final Evidence once (Josh's decision, 2026-11-04). The
+release is materialized in all three version authorities, with no staged
+declaration left. Nothing is published or deployed.
 
 The contract has four stages:
 1. source and offline acceptance;
 2. release CI;
 3. publication;
-4. installed read-only acceptance.
+4. installed acceptance, plan-only.
 
 It authorizes none of the later stages.
 
 ## 1. Source and offline acceptance
 
 Bind:
-- the HAMCP-306 contract (architect, 2026-11-04) and the decision to run
-  HAMCP-306 and HAMCP-301 in parallel as the first 2.4.2 work (Josh,
-  2026-11-04);
-- the cause, with file and line at the 2.4.1-rc.1 base `38b29a3f`:
-  `providers/upstream_dashboard.py:608-610` checked
-  `len(json.dumps(safe_config, indent=2)) + RESPONSE_ENVELOPE_RESERVE`
-  (16,000, `:167`). `:595` and `:617`/`:645` reported the raw configuration's
-  compact size instead;
-- the non-goals:
-  - no change to the dashboard write tools, plan or readback hashes, the
-    dependency index or global response truncation;
-  - no schema change;
-  - no paging or partial reads (RCG-045, HAMCP-273);
-- `2.4.2-beta.1` materialized before Ready, with exact document resolution;
+- the HAMCP-301 diagnosis and Josh's Option A decision (2026-11-04) on PR
+  #360;
+- the pinned Core 2026.10.3 source: `homeassistant/core.py:180-183` (entity
+  id grammar), `helpers/template/extensions/state.py:145-185` (`expand`) and
+  `const.py:461` (`ATTR_PERSONS`);
+- the non-goals: no change to `valid_entity_id`, the obligation ledger, the
+  semantics registry, policy classes, exact-obligation handling, action
+  profiles, coverage or bounded-source logic, tools or schemas;
+- the three protected runtime files, each declared with
+  `-AuthorizedProtectedPath`: `dependency/provider.py`
+  (`_build_expand_snapshot_evidence`), `governance/helper_dependency.py`
+  (`_group_membership_hold`) and `dependency/extraction.py` (expand
+  resolution);
 - the PR head SHA, its `validate` run and the Evidence tier log named in the
   PR.
 
 The review needs a security section covering:
-- **No new reachability.** No new tool, route, provider dispatch, write or
-  fallback. A read that was refused before now returns the sanitized
-  configuration through the same provider, admission and redaction path,
-  with one upstream dispatch.
-- **Inherited threshold.** The F3 plan preread, the post-apply readback and
-  the governance metadata fingerprint reader use the same provider read. A
-  dashboard that fits the response can now be planned against. The
-  unchanged F3 configuration cap (40,000 bytes), the patch cap
-  (16,384 bytes), the hashes and the approval bindings still apply.
-- **Bounded output.** The estimate is never below the real response's
-  compact JSON, and exceeds it by at most 84 characters. So a returned
-  configuration is never truncated and the returned text never exceeds the
-  limit; that text is the indented JSON only when the indented form also
-  fits. The refusal carries no configuration.
+- **No new reachability.** No tool, route, provider dispatch, service call or
+  Home Assistant write is added. The change can only remove a group hold or
+  turn a coverage failure into a bounded opaque obligation; it never makes a
+  target exact or dependency-neutral.
+- **Fail closed.** Every rejected record that cannot be attributed, and every
+  over-bound state list, keeps the earlier hold and coverage failure.
+- **Disclosure.** The new evidence holds attributed ids, a count and a
+  fingerprint, and no attribute value.
 
-Required offline evidence is in `tests/test_hamcp306_dashboard_read_size.py`:
-- a ~30 KB nested dashboard, which the old check refused, is returned with
-  both hashes and is complete;
-- an oversized dashboard is refused truthfully: the reported estimate is
-  above the limit and equals the success-path measure of the same response;
-- the reported size is the exact admission threshold: a limit equal to the
-  estimate returns, and one less refuses with the same estimate;
-- the boundary at the default 60,000 limit: estimates of 59,999 and 60,000
-  return, and 60,001 refuses;
-- the estimate against the real compact response, for small, ~30 KB,
-  non-ASCII-heavy and near-limit fixtures, without and with a request
-  context, a 128-character request ID, and the growing timing members at
-  their narrowest and widest: never below it, at most 84 characters above
-  it (0 at the widest, exactly 84 at the narrowest);
-- a complete response of 59,612 compact characters is returned (Codex R1);
-- real compact responses of 59,999 and 60,000 return and 60,001 refuses
-  when the growing members are at full width; a real response of 59,916
-  returns when they are at their narrowest; a real response of 60,001 is
-  refused with an estimate above the limit;
-- the sanitized configuration is what is measured;
-- regression: the dashboard read, write, readback and dependency-scan suites
-  pass. One fixture changed: the refusal-shape test in
-  `tests/test_rc3a_dashboard_provider.py` used one 10,000-character card
-  against a 6,000 limit. The sanitizer bounds that string, and its
-  sanitized response (5,637 compact characters) now fits and is returned
-  correctly. The test now uses three such cards and also asserts that the
-  reported size is above the limit;
+Required offline evidence is in `tests/test_hamcp301_group_attribution.py`:
+- released: the live digit-only ids `binary_sensor.1_1_1_1` and
+  `binary_sensor.8_8_8_8` (attributes without `entity_id`) for input_boolean
+  and input_select targets; `expand(group.x)` with resolvable members is
+  decided;
+- held: a rejected `group.*`, `zone.*` (with persons) or target-domain id;
+  any rejected record with an `entity_id` attribute; non-dict attributes or
+  records; a non-string or Core-invalid id; a duplicate `group.*` id; a
+  duplicate of a group-sourced record; an over-bound snapshot;
+- unchanged: a real group member stays held; `guest_mode` stays
+  `safety_critical` with seven exact obligations and an unrelated rejected
+  record present (the beta48 and beta54 tests are unchanged);
+- live-shaped: an `engineering_acceptance`-shaped helper loses
+  `group_membership_unresolved` and is still `elevated_admin`;
 - mutation testing in a copied tree, counting only assertion failures as
-  kills, for a wrong measure, an off-by-one at the boundary, a reported
-  number that differs from the checked one, a growing timing member left
-  unwidened, a narrower float width, a substituted request ID, a changed
-  summary, and an added reserve;
+  kills;
 - the complete repository suite in the Evidence tier.
 
 ## 2. Release CI
@@ -104,26 +83,18 @@ release transition.
 Publication happens only through Josh's Ready action and the repository's
 head-bound workflow.
 
-## 4. Installed read-only acceptance (separately authorized, after deploy)
+## 4. Installed acceptance, plan-only (separately authorized, after deploy)
 
-This stage runs only after Josh separately authorizes deploying this
-release.
+This stage runs only after Josh separately authorizes deploying this release.
+It is plan-only: nothing is approved or applied.
 
-1. **Identity.** `server_info` and `get_server_health` report
-   `2.4.2-beta.1` (or the beta this change restaged to), the merged release
-   SHA as build SHA and `dirty: false`.
-2. **The defect.** The architect reads `home-admin-dashboard` read-only with
-   `get_dashboard_config`. Confirm:
-   - `success: true` and `configuration_returned: true`;
-   - a `configuration` body with `config_hash` and
-     `engineering_config_hash`;
-   - `estimated_serialized_size` is at most `response_limit` (60,000).
-     Expected near 32,000–34,000: the rc.1 refusal's raw compact size of
-     29,907 plus the wrapper. This is an estimate, not a pass threshold;
-   - `config_hash` matches the hash the rc.1 refusal reported
-     (`f692af48683ac6f1`) if the dashboard has not changed since.
-3. **Tool catalog.** A fresh `tools/list` shows the same tool names and
-   descriptors as 2.4.1-rc.1.
+The architect creates two unapproved plans:
 
-PASS needs every check. If a step fails, record the response in HAMCP-306.
-Whether to roll back is Josh's decision.
+| Helper | Expected |
+|---|---|
+| `input_boolean.engineering_acceptance` | `elevated_admin`; no `group_membership_unresolved` or `group_membership_consumers_unattributed` in the uncertainty codes; no "Group membership keeps this plan elevated" warning; `opaque_downstream_obligations` still present |
+| `input_boolean.guest_mode` | `safety_critical` physical consequence, unchanged from 2.4.1-rc.1 |
+
+Both plans are left unapproved and expire. PASS needs both rows. If a row
+fails, record the response in HAMCP-301. Whether to roll back is Josh's
+decision.
