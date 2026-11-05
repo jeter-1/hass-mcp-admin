@@ -86,6 +86,7 @@ STATIC_CORE_TABLE = {
     "configuration_integrity_analysis": MAPPED,
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
+    "control_helper": DOWNSTREAM,
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
@@ -192,6 +193,9 @@ ALLOWLIST_ARGUMENTS = {
     },
     "control_power": {
         "entity_id": "light.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
+    },
+    "control_helper": {
+        "entity_id": "input_boolean.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},

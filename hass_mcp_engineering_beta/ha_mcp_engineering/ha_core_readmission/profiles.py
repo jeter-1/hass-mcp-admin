@@ -450,6 +450,16 @@ CORE_TYPED_OPERATION_PROFILES = tuple(
          "exact_state_and_requested_percentage_no_quantization_substitution"),
         ("power", ["light", "switch"], ["turn_on", "turn_off"],
          "empty_service_data_integration_defaults_may_apply", "exact_on_off_state"),
+        # HAMCP-311: distinct from core.typed_helper_operation, whose signed
+        # semantics name the governed helper plan adapter. Dormant until an
+        # owner-signed registry sequence names this profile.
+        ("helper_value",
+         ["counter", "input_boolean", "input_button", "input_datetime", "input_number",
+          "input_select", "input_text", "timer"],
+         ["cancel", "decrement", "finish", "increment", "pause", "press", "reset",
+          "select_option", "set_datetime", "set_value", "start", "turn_off", "turn_on"],
+         "closed_per_domain_service_allowlist_fixed_data_keys_validated_against_live_attributes",
+         "exact_value_or_documented_transition_against_predispatch_baseline"),
     )
 )
 from ..integration_inspection.contracts import CORE_METADATA_CONTRACT
