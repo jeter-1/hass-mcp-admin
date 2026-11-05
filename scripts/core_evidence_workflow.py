@@ -144,6 +144,37 @@ def fail_refusal(directory):
     raise SystemExit(message)
 
 
+# Scheduled discovery reads newest-first only until a page holds an official
+# stable release at or below the newest signed version. The bound therefore
+# limits releases newer than that predecessor (100 per page), not Core's history.
+RELEASE_PAGE_BOUND = 10
+
+
+def official(release):
+    return (not release.get("draft") and not release.get("prerelease")
+            and stable_version(release.get("tag_name")))
+
+
+def discover_releases(entries, requested):
+    if requested is not None:
+        # Exact tag only, no listing; the version is checked before it shapes the path.
+        if not stable_version(requested):
+            raise ValueError("requested release is not an official stable release")
+        release = github(f"{CORE}/releases/tags/{requested}", optional=True)
+        if not isinstance(release, dict) or release.get("tag_name") != requested:
+            raise ValueError("requested release is not an official stable release")
+        return [release]
+    if not entries:
+        raise ValueError("binding PR required: no signed predecessor")
+    floor = max(version_key(e["version"]) for e in entries)
+    releases = []
+    for page in range(1, RELEASE_PAGE_BOUND + 1):
+        batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
+        if len(batch) < 100 or any(official(r) and version_key(r["tag_name"]) <= floor for r in batch):
+            return releases
+    raise ValueError("release discovery did not reach the signed predecessor within the page bound")
+
+
 def prepare(directory, acceptance, requested):
     directory.mkdir(parents=True, exist_ok=True)
     if acceptance:
@@ -179,13 +210,7 @@ def prepare(directory, acceptance, requested):
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
         output(refused=False, run=True, release="2026.10.3", matrix=json.dumps({"include": rows}), registry_exists=False)
         return
-    releases = []
-    for page in range(1, 11):
-        batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
-        if len(batch) < 100:
-            break
-    else:
-        raise ValueError("release discovery exceeds pagination bound")
+    releases = discover_releases(entries, requested)
     newest = select_release(releases, {e["version"] for e in entries}, [], requested)
     if newest is None:
         summary("No newer eligible stable Core release.")

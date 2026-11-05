@@ -1,0 +1,80 @@
+[
+  {
+    "id": 1,
+    "name": "restore the 10-page raise",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 2,
+    "name": "restore the 10-page raise (prepare)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 3,
+    "name": "drop the early stop",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 4,
+    "name": "drop the early stop (prepare)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 5,
+    "name": "accept a prerelease (selection)",
+    "file": "scripts/core_release_evidence.py",
+    "test": "ReleaseDiscovery.test_exact_tag_prerelease_or_draft_refused_before_sources",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 6,
+    "name": "accept a prerelease (scheduled selection)",
+    "file": "scripts/core_release_evidence.py",
+    "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 7,
+    "name": "accept a prerelease (discovery boundary)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_prereleases_and_drafts_never_end_discovery",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 8,
+    "name": "exact tag identity unchecked",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_exact_tag_identity_and_shape_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 9,
+    "name": "request shapes the path unchecked",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_malformed_request_refused_before_any_read",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 0,
+    "name": "control (unmutated copy)",
+    "classification": "pass",
+    "exit_code": 0
+  }
+]

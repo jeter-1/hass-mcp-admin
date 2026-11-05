@@ -658,6 +658,15 @@ cancel that separate run before any owner approval if necessary. Never delete
 `registry-candidates/*` branches, including in cleanup sweeps; compare retained
 bytes and the original run for recovery. No deployment or Core upgrade is authorized by candidate preparation.
 
+Release discovery (HAMCP-309). A dispatch with `core_version` reads only that
+exact release tag (`releases/tags/<version>`) and never lists releases; a missing
+tag, a different returned tag, a prerelease or a draft refuses. Scheduled
+discovery lists Core releases newest first, 100 per page, and stops after the
+first page that holds an official stable release at or below the newest signed
+version. The bound is 10 pages, so it limits releases newer than the signed
+predecessor rather than Core's whole history; reaching it without that predecessor
+refuses. A listing that ends before the bound is complete and is used as before.
+
 Selected-release job names retain idempotency evidence after attempt artifacts expire;
 a pending or successful retained run suppresses another attempt. An O3 refusal
 emits a separate durable `core-release-refused-<version>` failed job. That run
