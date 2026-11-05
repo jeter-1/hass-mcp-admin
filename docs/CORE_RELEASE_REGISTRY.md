@@ -658,6 +658,29 @@ cancel that separate run before any owner approval if necessary. Never delete
 `registry-candidates/*` branches, including in cleanup sweeps; compare retained
 bytes and the original run for recovery. No deployment or Core upgrade is authorized by candidate preparation.
 
+Release discovery (HAMCP-309). A dispatch with `core_version` reads only that
+exact release tag (`releases/tags/<version>`) and never lists releases; a missing
+tag, a different returned tag, a prerelease or a draft refuses. Scheduled
+discovery lists Core releases newest first, 100 per page, and stops after the page
+that holds the signed predecessor's own release record: the official stable release
+whose tag equals the newest signed version. A version comparison never ends the
+scan, because a lower backport can be listed before a higher release. Every record
+read must have a `created_at` timestamp, and those timestamps must not increase
+across everything read. `published_at` is used only when `created_at` is absent
+(missing or null); a present `created_at` that is not a valid timestamp refuses and
+never falls back. One parser reads both fields and accepts only an ISO 8601 string
+with a UTC offset, so a missing, unparseable, timezone-less or increasing timestamp
+refuses. The bound is 10 pages, so it limits
+releases created after the signed predecessor rather than Core's whole history;
+reaching it without the predecessor's record refuses. A listing that ends before
+the bound without that record is complete and is used as before. Selection is
+unchanged.
+
+Residual assumption: a higher stable release created before the signed
+predecessor's record is listed after it and is not read. That happens only if the
+signed predecessor was itself a later backport. Josh reviews the selected version
+at the dry run, and a `core_version` dispatch reads any exact release directly.
+
 Selected-release job names retain idempotency evidence after attempt artifacts expire;
 a pending or successful retained run suppresses another attempt. An O3 refusal
 emits a separate durable `core-release-refused-<version>` failed job. That run
