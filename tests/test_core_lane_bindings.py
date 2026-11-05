@@ -551,5 +551,42 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
         websocket.command.assert_not_awaited()
 
 
+class HttpStorageBindingTests(unittest.IsolatedAsyncioTestCase):
+    """Exercise the actual projection assertions without Docker or Core."""
+
+    async def check_store(self, version, projection):
+        with patch.dict(os.environ, {"CORE_EVIDENCE_CONTEXT": ""}), \
+                patch.object(contract, "EXPECTED_HA_VERSION", version), \
+                patch.object(contract, "_docker_command", AsyncMock(return_value=json.dumps(projection))):
+            await contract._assert_http_configuration_contract()
+
+    async def test_exact_http_storage_versions_and_cross_version_refusal(self):
+        versions = {"2026.8.0": 2, "2026.8.1": 2,
+                    **{v: 2 for v in core_lane_bindings.REVIEWED_CORE_BINDINGS}, "2026.11.0": 3}
+        for version, expected in versions.items():
+            projection = {"version": expected, "has_yaml_migration_done": True,
+                          "yaml_migration_done": True, "has_pending": True, "pending": None,
+                          "has_stable": True, "stable_server_port": 8123, "stable_error": None}
+            with self.subTest(version=version):
+                await self.check_store(version, projection)
+                with self.assertRaises(AssertionError):
+                    await self.check_store(version, {**projection, "version": 2 if expected == 3 else 3})
+
+    async def test_new_version_preserves_every_other_migration_assertion(self):
+        projection = {"version": 3, "has_yaml_migration_done": True,
+                      "yaml_migration_done": True, "has_pending": True, "pending": None,
+                      "has_stable": True, "stable_server_port": 8123, "stable_error": None}
+        changes = {"has_yaml_migration_done": False, "yaml_migration_done": False,
+                   "has_pending": False, "pending": {}, "has_stable": False,
+                   "stable_server_port": 8124, "stable_error": "synthetic_error"}
+        for key, wrong in changes.items():
+            with self.subTest(field=key), self.assertRaises(AssertionError):
+                await self.check_store("2026.11.0", {**projection, key: wrong})
+
+    async def test_unreviewed_release_has_no_http_storage_authority(self):
+        with self.assertRaises(AssertionError):
+            await self.check_store(NEW_VERSION, {"version": 3})
+
+
 if __name__ == "__main__":
     unittest.main()
