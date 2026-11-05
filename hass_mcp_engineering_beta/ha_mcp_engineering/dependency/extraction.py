@@ -9,6 +9,7 @@ import json
 import re
 from typing import Any, Iterable
 
+from ..entity_ids import STRICT_ENTITY_ID
 from ..logging_config import redact_data
 from ..untrusted_text import screen
 from .dynamic_resolution import (
@@ -124,12 +125,83 @@ class ExpandEntitySnapshotEvidence:
 
 
 @dataclass(frozen=True)
+class ExpandStateRejectionEvidence:
+    """HAMCP-301: per-record attribution of rejected expand-snapshot states.
+
+    ``attributable_entity_ids`` are the rejected records that cannot be an
+    ``expand`` container (``expand_state_rejection_entity_id``); every other
+    rejected record only counts in ``unattributable_count``.  No attribute
+    value is retained.
+    """
+
+    attributable_entity_ids: tuple[str, ...]
+    unattributable_count: int
+    fingerprint: str
+
+
+@dataclass(frozen=True)
 class ExpandSnapshotEvidence:
     """One scan's bounded Home Assistant ``expand`` authority snapshot."""
 
     entities: dict[str, ExpandEntitySnapshotEvidence]
     state_inventory_complete: bool
     source_inventory_complete: bool
+    # HAMCP-301: ``None`` when rejected state records were not attributed
+    # (the state list exceeded the snapshot bound); an incomplete state
+    # inventory then decides nothing.
+    state_rejections: ExpandStateRejectionEvidence | None = None
+
+
+# Pinned Core 2026.10.3 ``StateExtension.expand``
+# (homeassistant/helpers/template/extensions/state.py:145-185) expands only
+# ``group`` entities, group-sourced entities (``ATTR_ENTITY_ID``) and ``zone``
+# entities (``ATTR_PERSONS``, homeassistant/const.py:461).
+EXPAND_CONTAINER_DOMAINS = frozenset({"group", "zone"})
+
+
+def expand_state_rejection_entity_id(raw: Any) -> str | None:
+    """Return the id of a rejected state record that is no ``expand`` container.
+
+    The record must be a dict whose ``entity_id`` matches Core's grammar
+    (homeassistant/core.py:180-183 at 2026.10.3, through ``STRICT_ENTITY_ID``,
+    a strict subset), whose domain is neither ``group`` nor ``zone``, and whose
+    attributes are a dict without an ``entity_id`` key.  A rejected record
+    cannot prove its source integration, so the ``entity_id`` test stands in
+    for a group-sourced entity.  Anything else returns ``None``.
+    """
+
+    if not isinstance(raw, dict):
+        return None
+    entity_id = raw.get("entity_id")
+    attributes = raw.get("attributes")
+    if not isinstance(entity_id, str) or STRICT_ENTITY_ID.fullmatch(entity_id) is None:
+        return None
+    if entity_id.split(".", 1)[0] in EXPAND_CONTAINER_DOMAINS:
+        return None
+    if not isinstance(attributes, dict) or "entity_id" in attributes:
+        return None
+    return entity_id
+
+
+def expand_state_rejections_exclude(
+    evidence: ExpandSnapshotEvidence,
+    *,
+    domain: str | None = None,
+    entity_id: str | None = None,
+) -> bool:
+    """Whether every rejected state record is attributed away from the query.
+
+    True only when the rejections were attributed, none is unattributable,
+    and no attributable rejection is in *domain* or is *entity_id*.
+    """
+
+    rejections = evidence.state_rejections
+    if rejections is None or rejections.unattributable_count:
+        return False
+    return not any(
+        item == entity_id or item.split(".", 1)[0] == domain
+        for item in rejections.attributable_entity_ids
+    )
 
 
 def _blueprint_source_obligation_fingerprint(
@@ -1545,11 +1617,22 @@ def _resolve_expand_candidates(
             return
         record = evidence.entities.get(entity_id)
         if record is None:
+            # HAMCP-301: a record is absent, not lost, when the inventory is
+            # complete or every rejected record is attributed outside the
+            # missing entity's domain.
+            absent = (
+                evidence.state_inventory_complete
+                or expand_state_rejections_exclude(
+                    evidence,
+                    domain=entity_id.split(".", 1)[0],
+                    entity_id=entity_id,
+                )
+            )
             fail(
-                "expand_state_inventory_limit_exceeded"
-                if not evidence.state_inventory_complete
-                else "expand_member_state_missing",
-                limit=not evidence.state_inventory_complete,
+                "expand_member_state_missing"
+                if absent
+                else "expand_state_inventory_limit_exceeded",
+                limit=not absent,
             )
             return
         records[entity_id] = {
@@ -1617,6 +1700,13 @@ def _resolve_expand_candidates(
         "complete": not failure_reasons,
         "limit_exceeded": limit_exceeded,
     }
+    if not evidence.state_inventory_complete:
+        # HAMCP-301: bind the rejection attribution this resolution relied on.
+        # A complete inventory keeps its earlier material unchanged.
+        rejections = evidence.state_rejections
+        material["state_rejection_fingerprint"] = (
+            rejections.fingerprint if rejections is not None else None
+        )
     return retained_leaves, material, not failure_reasons, limit_exceeded
 
 

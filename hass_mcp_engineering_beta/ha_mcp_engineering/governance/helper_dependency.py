@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ..dependency.bounded_sources import bounded_source_entries
+from ..dependency.extraction import expand_state_rejections_exclude
 from ..untrusted_text import screen_envelope
 from ..dependency.index import DependencyIndex
 from ..dependency.models import (
@@ -1082,7 +1083,11 @@ def _group_membership_hold(
     if evidence is None:
         unresolved.add("group_membership_evidence_unavailable")
     else:
-        if not evidence.state_inventory_complete:
+        # HAMCP-301: a rejected state record attributed outside ``group``,
+        # ``zone`` and the target's domain cannot contain the target.
+        if not evidence.state_inventory_complete and not (
+            expand_state_rejections_exclude(evidence, domain=target_domain)
+        ):
             unresolved.add("group_membership_state_inventory_incomplete")
         for group_id, item in sorted(evidence.entities.items()):
             group_domain = group_id.split(".", 1)[0]

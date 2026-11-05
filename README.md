@@ -16,18 +16,17 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.1-rc.1**, the release candidate for the
-2.4.1 line. Its runtime is identical to 2.4.1-beta.63; only the version
-changes. Read the [2.4.1-rc.1 release notes](docs/V2_4_1_RC1_RELEASE_NOTES.md)
-and the [2.4.1-rc.1 acceptance contract](docs/V2_4_1_RC1_ACCEPTANCE.md),
-including the known issues it carries.
+The current source version is **2.4.2-beta.2**. It fixes
+`get_dashboard_config` refusing a dashboard whose response fits the response
+limit (HAMCP-306); the rest of its runtime is identical to 2.4.2-beta.1
+(HAMCP-301). Read the
+[2.4.2-beta.2 release notes](docs/V2_4_2_BETA2_RELEASE_NOTES.md) and the
+[2.4.2-beta.2 acceptance contract](docs/V2_4_2_BETA2_ACCEPTANCE.md).
 
 This version's delegated catalog is reviewed against ha-mcp 8.6.0. Its source
 baseline is 108 expected connector tools (80 native/static plus 28 automatic
-delegated reads), or 109 (80 + 29) with the optional reader. beta.63 reported
-109 tools on Josh's installation (observed live by the architect,
-2026-11-03). Updating from beta.63 is version-only, and rolling back to
-beta.63 is safe.
+delegated reads), or 109 (80 + 29) with the optional reader, unchanged from
+2.4.2-beta.1. Rolling back to 2.4.2-beta.1 is safe.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on
