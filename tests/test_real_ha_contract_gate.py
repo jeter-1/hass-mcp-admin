@@ -1471,7 +1471,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn("/config/.storage/http", http_source)
         self.assertNotIn("storage_path.read_text", http_source)
         self.assertIn('stored.get("version") == 1', http_source)
-        self.assertIn('stored.get("version") == 2', http_source)
+        self.assertIn('stored.get("version") == expected_storage_version', http_source)
 
     def test_core_2026_9_contract_uses_production_gateway_for_all_device_consumers(self):
         runner = self.functions["_run_core_2026_9_child_contract"]

@@ -1,0 +1,168 @@
+{
+  "model": "hamcp280-local-lane-evidence-v1",
+  "publication_authority": false,
+  "core_version": "2026.11.0",
+  "predecessor_sequence": 15,
+  "new_sequence_intended": 16,
+  "start_utc": "2026-11-05T05:56:37+00:00",
+  "end_utc": "2026-11-05T06:04:02+00:00",
+  "tested_checkout_head": "4161ea3b23a1299a59870ef1fa17c62cb6a3ddd3",
+  "uncommitted_binding_expectation_changes": false,
+  "tested_engineering_version": "2.4.2-beta.2",
+  "target_image": "ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "context_sha256": "d14ba7209c78081332cc94989a905f618c213437b06ec01b4bf876878697c323",
+  "branch_sources_sha256": {
+    "scripts/core_lane_bindings.py": "8c955cfc666453c83aa99dd1382a5568ae1fed85d11c0f5e836c3118ba64c60e",
+    "scripts/real_ha_contract_tests.py": "975ce4e9f1d7b88aa8e638dcfea4d2badedf4df9eb3ce752fd96bbe834aa4352",
+    "scripts/core_evidence_lanes.py": "074db6ae4b722fd261ad0c9e8d51d786a15754da9377fdb15b34585838c67a1e"
+  },
+  "group_count": 12,
+  "profiles_supported_by_lane_results": 31,
+  "withheld": [],
+  "groups": [
+    {
+      "group": "general",
+      "passed": true,
+      "profiles": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.non_device_registry_read",
+        "core.direct_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.direct_entity_state_read",
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.configuration_validation",
+        "core.dependency_helper_planning",
+        "core.typed_helper_operation",
+        "core.f3_mutation_verification",
+        "core.governed_configuration_operation",
+        "core.governance_observability",
+        "core.typed_fan_operation",
+        "core.typed_power_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "737924974e80fd79ffdd625f79507aa3b70460ac750aa9f43cae7f96369bd126"
+    },
+    {
+      "group": "integration_inspection",
+      "passed": true,
+      "profiles": [
+        "core.integration_inspection_metadata_read"
+      ],
+      "error": null,
+      "receipt_sha256": "b72b372ae9e4d3591470b0e4018803653962ea1bdbe95a47f18e501b792e1b45"
+    },
+    {
+      "group": "automation_baseline",
+      "passed": true,
+      "profiles": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "error": null,
+      "receipt_sha256": "2c0efd64a9495c5fd6b102c0e92ce5c77fff927b9fd09628d909076a4db552a9"
+    },
+    {
+      "group": "entity_metadata",
+      "passed": true,
+      "profiles": [
+        "core.entity_registry_metadata_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "a3a6b7c398ee4a28e85e9295e5aaaea5eabcde709c22d9671f4135f9ff4a250e"
+    },
+    {
+      "group": "availability_exposure",
+      "passed": true,
+      "profiles": [
+        "core.entity_registry_availability_operation",
+        "core.entity_assistant_exposure_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "2a27dd8602037160552724d815016c37a0f107d34d5c4174435ec24d8d14e955"
+    },
+    {
+      "group": "label_registry",
+      "passed": true,
+      "profiles": [
+        "core.label_registry_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "9225db944e4c90bc817791797201cc3fd7832dc9faaa80de1dbfc67716a1b54a"
+    },
+    {
+      "group": "configuration_delete",
+      "passed": true,
+      "profiles": [
+        "core.configuration_delete_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "4cb06991c426ecc5bf80006f8385fc69df458220d00fa0f3e1923fe302bdbd9a"
+    },
+    {
+      "group": "helper_options",
+      "passed": true,
+      "profiles": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "577216b7f728b9011e104c7d56b2217987fdb7f36cc5c063bf65c7bd141176f3"
+    },
+    {
+      "group": "input_select_option",
+      "passed": true,
+      "profiles": [
+        "core.typed_input_select_option_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "dfe3174ad7bcb2a83626d302ace48cc1ee3fe49e2fc55ec74f7ca473777a97ee"
+    },
+    {
+      "group": "script_traces",
+      "passed": true,
+      "profiles": [
+        "core.script_trace_read"
+      ],
+      "error": null,
+      "receipt_sha256": "cf01c505d59123ad10c77af7c475d439352828e3f2a904f9ce20d9f1eb93856f"
+    },
+    {
+      "group": "dashboard_metadata",
+      "passed": true,
+      "profiles": [
+        "core.dashboard_metadata_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "75592ddc2a7f9ecaf022e762da0fbe64f171ca0a687e39afe73d26f478e9bb8b"
+    },
+    {
+      "group": "scene_configuration",
+      "passed": true,
+      "profiles": [
+        "core.scene_configuration_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "1dfe645171edf0f79d5f7bacfe51f3368eb5d70a66f031c8014aadafd74f4fd1"
+    }
+  ],
+  "cleanup": true,
+  "image_proof": "PASS",
+  "prior_evidence_files_preserved": 9921,
+  "limitations": [
+    "Local rehearsal, not GitHub CI or independent review",
+    "linux/amd64 execution only; arm64 provenance recorded but not executed",
+    "No candidate, signed admission or live-system change"
+  ],
+  "runner_static_review_sha256": "969a63ad91bdf6180bcd7aa32819ae4ae107bcdd86e5ad5af31116cc4aa9face",
+  "uncommitted_changes": false,
+  "supersedes": "attempt-5 pre-integration run; replaced in current PR documents, preserved in Git history and local attempt-5",
+  "checkout_identity_receipts": [
+    "checkout-before.json",
+    "checkout-after.json"
+  ],
+  "host_idle": false,
+  "host_concurrency_authorization": "Owner: Continue any way; see owner-host-concurrency-override.json"
+}

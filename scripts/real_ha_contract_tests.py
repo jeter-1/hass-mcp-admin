@@ -2435,7 +2435,9 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_stable") is False
         return
     assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"} or _core_binding(EXPECTED_HA_VERSION) is not None
-    assert stored.get("version") == 2
+    binding = _core_binding(EXPECTED_HA_VERSION)
+    expected_storage_version = binding.http_storage_version if binding is not None else 2
+    assert stored.get("version") == expected_storage_version
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
     assert stored.get("has_pending") is True
