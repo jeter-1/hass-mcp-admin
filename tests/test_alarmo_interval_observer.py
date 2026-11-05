@@ -1750,6 +1750,68 @@ class StoreClassRedactionTests(unittest.IsolatedAsyncioTestCase):
 UNSET = object()
 
 
+class FakeExport:
+    """A ``docker image save`` process streaming a synthetic OCI export."""
+
+    def __init__(self, members, returncode=0):
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w") as archive:
+            for name, raw in members:
+                info = tarfile.TarInfo(name)
+                if raw is None:
+                    info.type = tarfile.DIRTYPE
+                    archive.addfile(info)
+                else:
+                    info.size = len(raw)
+                    archive.addfile(info, io.BytesIO(raw))
+        stream.seek(0)
+        self.stdout, self.returncode, self.killed = stream, returncode, False
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def oci_export(case, *, top=None, manifest=UNSET, config=UNSET, index=False, extra=()):
+    """The local export of ``case``: top-level index plus the chain's blobs."""
+    def blob(digest):
+        return "blobs/sha256/" + digest.split(":", 1)[1]
+    if top is None:
+        top = json.dumps({"schemaVersion": 2, "mediaType": acceptance.OCI_INDEX, "manifests": [
+            {"mediaType": acceptance.OCI_MANIFEST, "digest": case.manifest_digest, "size": len(case.manifest),
+             "platform": {"os": "linux", "architecture": "amd64"},
+             "annotations": {"containerd.io/distribution.source.ghcr.io": "home-assistant/home-assistant"}},
+            {"mediaType": acceptance.OCI_MANIFEST, "digest": "sha256:" + "c" * 64, "size": 838,
+             "annotations": {"io.containerd.manifest.subject": case.manifest_digest}}]}).encode()
+    members = [("blobs", None), ("blobs/sha256", None), ("oci-layout", b'{"imageLayoutVersion":"1.0.0"}'),
+               ("index.json", top)]
+    if manifest is not None:
+        members.append((blob(case.manifest_digest), case.manifest if manifest is UNSET else manifest))
+    if config is not None:
+        members.append((blob(case.config_digest), case.config if config is UNSET else config))
+    if index:
+        members.append((blob(case.index_digest), case.index))
+    members.append(("blobs/sha256/" + "d" * 64, b"synthetic layer"))
+    return (members + list(extra),)
+
+
+AMD64_CONFIG = json.dumps({"os": "linux", "architecture": "amd64", "config": {}}).encode()
+LEGACY_RECEIPT_KEYS = {"result", "core_version", "support_slot", "index", "platform", "platform_manifest",
+                       "configuration_digest", "source_commit", "source_archive_sha256",
+                       "core_read_sources_sha256", "container_identity_continuity", "arm64_execution"}
+
+
 class PublicationCleanupTests(unittest.TestCase):
     def test_cleanup_requires_successful_enumeration_no_residue_and_actual_interval(self):
         value = cleanup_value(CORE)
@@ -1829,16 +1891,34 @@ class PublicationCleanupTests(unittest.TestCase):
                     acceptance.verify_disposable_cleanup(source, output, CORE)
                 baseline.assert_not_called()
 
-    def publication(self, root, slot, files=None, **archive_options):
-        """Point ``slot`` in the temp window at synthetic index, manifest and source bytes."""
+    def publication(self, root, slot, files=None, oci_config=None, **archive_options):
+        """Point ``slot`` in the temp window at synthetic index, manifest and source bytes.
+
+        With ``oci_config`` (configuration blob bytes) the index and manifest
+        carry the OCI media types and the configuration size, as the real
+        multi-platform Core index does (HAMCP-309 index-identity chain).
+        """
         version = WINDOW["core"][slot]["version"]
         archive = Path(root) / f"source-{slot}.tar.gz"
         hashes = core_archive(archive, files, **archive_options)
-        manifest = json.dumps({"config": {"digest": "sha256:" + "a" * 64}}).encode()
-        md = "sha256:" + sha256(manifest)
-        index = json.dumps({"manifests": [
-            {"digest": md, "size": len(manifest), "platform": {"os": "linux", "architecture": "amd64"}},
-            {"digest": "sha256:" + "b" * 64, "size": 1, "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
+        if oci_config is None:
+            manifest = json.dumps({"config": {"digest": "sha256:" + "a" * 64}}).encode()
+            md = "sha256:" + sha256(manifest)
+            index = json.dumps({"manifests": [
+                {"digest": md, "size": len(manifest), "platform": {"os": "linux", "architecture": "amd64"}},
+                {"digest": "sha256:" + "b" * 64, "size": 1, "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
+        else:
+            manifest = json.dumps({"schemaVersion": 2, "mediaType": acceptance.OCI_MANIFEST, "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": "sha256:" + sha256(oci_config), "size": len(oci_config)}}).encode()
+            md = "sha256:" + sha256(manifest)
+            index = json.dumps({"schemaVersion": 2, "mediaType": acceptance.OCI_INDEX, "manifests": [
+                {"mediaType": acceptance.OCI_MANIFEST, "digest": md, "size": len(manifest),
+                 "platform": {"os": "linux", "architecture": "amd64"}},
+                {"mediaType": acceptance.OCI_MANIFEST, "digest": "sha256:" + "c" * 64, "size": 838,
+                 "platform": {"os": "unknown", "architecture": "unknown"}},
+                {"mediaType": acceptance.OCI_MANIFEST, "digest": "sha256:" + "b" * 64, "size": 1,
+                 "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
         index_digest = "sha256:" + sha256(index)
         fixture = provenance_path(root, version)
         entry = json.loads(fixture.read_text())
@@ -1850,15 +1930,35 @@ class PublicationCleanupTests(unittest.TestCase):
         # binding list carries its digest for the duration of ``publish``.
         binding = dataclasses.replace(core_lane_bindings.REVIEWED_CORE_BINDINGS[version], image_index_digest=index_digest)
         identity = b"synthetic-container sha256:" + b"a" * 64
+        if oci_config is not None:
+            config_digest = "sha256:" + sha256(oci_config)
+            identity = b"synthetic-container " + index_digest.encode()
+            return SimpleNamespace(
+                version=version, slot=slot, archive=archive, hashes=hashes, entry=entry, binding=binding,
+                image=f"ghcr.io/home-assistant/home-assistant:{version}@{index_digest}",
+                container="beta25-real-ha-ha-" + version.replace(".", "-"), index=index, manifest=manifest,
+                manifest_digest=md, config=oci_config, config_digest=config_digest, index_digest=index_digest,
+                outputs=[index + b"\n", manifest, identity, index_digest.encode() + b" linux/amd64", identity,
+                         identity])
         return SimpleNamespace(
             version=version, slot=slot, archive=archive, hashes=hashes, entry=entry, binding=binding,
             image=f"ghcr.io/home-assistant/home-assistant:{version}@{index_digest}",
             container="beta25-real-ha-ha-" + version.replace(".", "-"),
             outputs=[index + b"\n", manifest, identity, b"sha256:" + b"a" * 64 + b" linux/amd64", identity])
 
-    def publish(self, root, case, outputs=None, *, image=None, container=None, version=UNSET, archive=None):
+    def publish(self, root, case, outputs=None, *, image=None, container=None, version=UNSET, archive=None,
+                export=None):
         output = Path(root) / "image.json"
+        self.exports = []
+
+        def popen(argv, **kwargs):
+            self.exports.append((argv, kwargs))
+            if export is None:
+                raise AssertionError("unexpected local image export")
+            return FakeExport(*export)
+
         with bound_window(root), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {case.version: case.binding}), \
+                patch("subprocess.Popen", side_effect=popen), \
                 patch("subprocess.run", side_effect=[
                 SimpleNamespace(stdout=x) for x in (case.outputs if outputs is None else outputs)]) as run:
             try:
@@ -1883,11 +1983,142 @@ class PublicationCleanupTests(unittest.TestCase):
                 self.assertEqual(result["core_read_sources_sha256"], case.hashes)
                 self.assertEqual(set(result["core_read_sources_sha256"]), set(acceptance.CORE_READ_SOURCES))
                 self.assertEqual(json.loads((root / "image.json").read_text()), result)
+                # HAMCP-309: the configuration-digest form is unchanged: five
+                # metadata commands, no local export and the legacy receipt keys.
+                self.assertEqual((self.calls, self.exports), (5, []))
+                self.assertEqual(set(result), LEGACY_RECEIPT_KEYS)
                 for i, wrong in ((0, b"wrong-index"), (1, b"wrong-manifest"), (3, b"sha256:" + b"a" * 64 + b" linux/arm64"),
                                  (4, b"other-container sha256:" + b"a" * 64)):
                     bad = list(case.outputs); bad[i] = wrong
                     with self.subTest(slot=slot, index=i), self.assertRaises(ValueError):
                         self.publish(root, case, bad)
+
+    def test_index_identity_passes_only_with_the_full_local_chain(self):
+        for slot in ALARMO_SLOTS:
+            for local_index in (False, True):
+                with self.subTest(slot=slot, local_index=local_index), tempfile.TemporaryDirectory() as directory:
+                    root = window_root(directory)
+                    case = self.publication(root, slot, oci_config=AMD64_CONFIG)
+                    result = self.publish(root, case, export=oci_export(case, index=local_index))
+                    self.assertEqual(self.calls, 6)
+                    self.assertEqual([argv for argv, _ in self.exports],
+                                     [["docker", "image", "save", "--platform", "linux/amd64", case.image]])
+                    self.assertEqual(result["result"], "PASS")
+                    self.assertEqual(result["index"], case.index_digest)
+                    self.assertEqual(result["configuration_digest"], case.config_digest)
+                    self.assertEqual(result["image_identity"], "index_with_local_chain")
+                    chain = result["local_image_chain"]
+                    self.assertEqual(chain["index_source"], "committed verifier pinned-hash-verified remote index")
+                    self.assertEqual(chain["verified_index_sha256"], case.index_digest.split(":")[1])
+                    self.assertEqual(chain["platform_manifest"], case.manifest_digest)
+                    self.assertEqual(chain["configuration_digest"], case.config_digest)
+                    self.assertEqual(chain["local_blobs"], sorted(
+                        [case.manifest_digest, case.config_digest] + ([case.index_digest] if local_index else [])))
+                    self.assertEqual(set(result) - LEGACY_RECEIPT_KEYS, {"image_identity", "local_image_chain"})
+                    self.assertEqual(json.loads((root / "image.json").read_text()), result)
+
+    def test_index_identity_without_a_complete_exact_chain_refuses(self):
+        arm64 = json.dumps({"os": "linux", "architecture": "arm64"}).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            root = window_root(directory)
+            case = self.publication(root, "rollback", oci_config=AMD64_CONFIG)
+
+            def top(**change):
+                value = json.loads(oci_export(case)[0][3][1])
+                value["manifests"][0].update(change)
+                return json.dumps(value).encode()
+
+            two = json.loads(top())
+            two["manifests"].append(dict(two["manifests"][0]))
+            other_type = json.loads(top())
+            other_type["mediaType"] = "application/vnd.docker.distribution.manifest.list.v2+json"
+            cases = {
+                "empty export": ([],),
+                "manifest blob missing": oci_export(case, manifest=None),
+                "config blob missing": oci_export(case, config=None),
+                "manifest hash mismatch": oci_export(case, manifest=case.manifest + b" "),
+                "config hash mismatch": oci_export(case, config=case.config + b" "),
+                "index blob hash mismatch": oci_export(case, extra=[
+                    ("blobs/sha256/" + case.index_digest.split(":")[1], case.index + b" ")]),
+                "duplicate manifest blob": oci_export(case, extra=[
+                    ("blobs/sha256/" + case.manifest_digest.split(":")[1], case.manifest)]),
+                "top index missing": ([m for m in oci_export(case)[0] if m[0] != "index.json"],),
+                "duplicate top index": oci_export(case, extra=[("index.json", top())]),
+                "top index wrong digest": oci_export(case, top=top(digest="sha256:" + "e" * 64)),
+                "top index wrong size": oci_export(case, top=top(size=len(case.manifest) + 1)),
+                "top index wrong media type": oci_export(
+                    case, top=top(mediaType="application/vnd.docker.distribution.manifest.v2+json")),
+                "top index wrong platform": oci_export(case, top=top(platform={"os": "linux", "architecture": "arm64"})),
+                "top index ambiguous": oci_export(case, top=json.dumps(two).encode()),
+                "top index not OCI": oci_export(case, top=json.dumps(other_type).encode()),
+                "metadata is a directory": oci_export(case, manifest=None, extra=[
+                    ("blobs/sha256/" + case.manifest_digest.split(":")[1], None)]),
+                "export failed": (oci_export(case)[0], 1),
+            }
+            # First matching key wins, most specific first.
+            reasons = {"top index missing": "top-level index missing", "duplicate": "Ambiguous or oversized",
+                       "directory": "Ambiguous or oversized", "top index": "index amd64 link mismatch",
+                       "missing": "missing the amd64 manifest or configuration", "mismatch": "content digest mismatch",
+                       "empty export": "missing the amd64 manifest or configuration",
+                       "export failed": "Local image export failed"}
+            for name, export in cases.items():
+                reason = next(value for key, value in reasons.items() if key in name)
+                with self.subTest(name), self.assertRaisesRegex(ValueError, reason):
+                    self.publish(root, case, export=export)
+                self.assertEqual(self.calls, 5)
+                self.assertFalse((root / "image.json").exists())
+            # A configuration for the wrong platform refuses.
+            case = self.publication(root, "rollback", oci_config=arm64)
+            with self.assertRaisesRegex(ValueError, "Local configuration platform mismatch"):
+                self.publish(root, case, export=oci_export(case))
+
+    def test_index_identity_refuses_container_change_platform_or_mixed_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = window_root(directory)
+            case = self.publication(root, "rollback", oci_config=AMD64_CONFIG)
+            identity = case.outputs[2]
+            config_identity = b"synthetic-container " + case.config_digest.encode()
+            for name, i, wrong in (
+                ("container replaced during chain proof", 5, b"other-container " + case.index_digest.encode()),
+                ("container image changed during chain proof", 5, config_identity),
+                ("container replaced before chain proof", 4, b"other-container " + case.index_digest.encode()),
+                ("index identity on arm64", 3, case.index_digest.encode() + b" linux/arm64"),
+                ("image is config but container is index", 3, case.config_digest.encode() + b" linux/amd64"),
+                ("container is config but image is index", 2, config_identity),
+                ("other index digest", 3, b"sha256:" + b"f" * 64 + b" linux/amd64"),
+            ):
+                outputs = list(case.outputs)
+                outputs[i] = wrong
+                if i == 2:
+                    outputs[4] = outputs[5] = wrong
+                with self.subTest(name), self.assertRaisesRegex(ValueError, "Running disposable image binding failed"):
+                    self.publish(root, case, outputs, export=oci_export(case))
+                # Continuity is re-proved after the export; earlier changes refuse before it.
+                self.assertEqual(len(self.exports), 1 if i == 5 else 0)
+                self.assertFalse((root / "image.json").exists())
+            self.assertEqual(identity, case.outputs[4])
+
+    def test_verified_remote_index_link_must_be_exact(self):
+        descriptor = {"mediaType": acceptance.OCI_MANIFEST, "digest": "sha256:" + "1" * 64, "size": 3,
+                      "platform": {"os": "linux", "architecture": "amd64"}}
+        config = AMD64_CONFIG
+        manifest = json.dumps({"config": {"digest": "sha256:" + sha256(config), "size": len(config)}}).encode()
+        descriptor = dict(descriptor, digest="sha256:" + sha256(manifest), size=len(manifest))
+        top = json.dumps({"schemaVersion": 2, "mediaType": acceptance.OCI_INDEX,
+                          "manifests": [descriptor]}).encode()
+        blobs = {descriptor["digest"]: manifest, "sha256:" + sha256(config): config}
+        good = json.dumps({"manifests": [descriptor]}).encode()
+        self.assertEqual(acceptance.verify_local_image_chain(blobs, top, good, descriptor, manifest)["platform"],
+                         "linux/amd64")
+        for remote in (
+            json.dumps({"manifests": []}).encode(),
+            json.dumps({"manifests": [descriptor, descriptor]}).encode(),
+            json.dumps({"manifests": [dict(descriptor, size=len(manifest) + 1)]}).encode(),
+            json.dumps({"manifests": [dict(descriptor, mediaType="application/vnd.docker.distribution.manifest.v2+json")]}).encode(),
+            json.dumps({"manifests": [dict(descriptor, digest="sha256:" + "2" * 64)]}).encode(),
+        ):
+            with self.subTest(remote=remote), self.assertRaisesRegex(ValueError, "Verified index amd64 link mismatch"):
+                acceptance.verify_local_image_chain(blobs, top, remote, descriptor, manifest)
 
     def test_publication_refuses_other_slot_container_image_or_unknown_core(self):
         with tempfile.TemporaryDirectory() as directory:
