@@ -1,0 +1,161 @@
+{
+  "model": "hamcp280-local-lane-evidence-v1",
+  "publication_authority": false,
+  "core_version": "2026.11.0",
+  "predecessor_sequence": 15,
+  "new_sequence_intended": 16,
+  "start_utc": "2026-11-05T03:11:31+00:00",
+  "end_utc": "2026-11-05T03:18:39+00:00",
+  "tested_checkout_head": "2a353defb2611aa9f323bcd1c0d64b37227eb683",
+  "uncommitted_binding_expectation_changes": true,
+  "tested_engineering_version": "2.4.1-rc.1",
+  "target_image": "ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "context_sha256": "b73e6352be359ef52fa12e95ea778b067dcd41db6bf08fdfdc8c2b0a87c02df7",
+  "branch_sources_sha256": {
+    "scripts/core_lane_bindings.py": "8c955cfc666453c83aa99dd1382a5568ae1fed85d11c0f5e836c3118ba64c60e",
+    "scripts/real_ha_contract_tests.py": "975ce4e9f1d7b88aa8e638dcfea4d2badedf4df9eb3ce752fd96bbe834aa4352",
+    "scripts/core_evidence_lanes.py": "074db6ae4b722fd261ad0c9e8d51d786a15754da9377fdb15b34585838c67a1e"
+  },
+  "group_count": 12,
+  "profiles_supported_by_lane_results": 31,
+  "withheld": [],
+  "groups": [
+    {
+      "group": "general",
+      "passed": true,
+      "profiles": [
+        "core.basic_rest_read",
+        "core.basic_websocket_read",
+        "core.state_service_discovery",
+        "core.non_device_registry_read",
+        "core.direct_device_registry_read",
+        "core.delegated_device_effective_area",
+        "core.direct_entity_state_read",
+        "core.automation_configuration_read",
+        "core.automation_trace_read",
+        "core.dashboard_configuration_read",
+        "core.template_semantics",
+        "core.configuration_validation",
+        "core.dependency_helper_planning",
+        "core.typed_helper_operation",
+        "core.f3_mutation_verification",
+        "core.governed_configuration_operation",
+        "core.governance_observability",
+        "core.typed_fan_operation",
+        "core.typed_power_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "cc2195efb8358726bbe5cdc8ea05b86c9fcd2290b9e366ead7c3ebb8b10420bc"
+    },
+    {
+      "group": "integration_inspection",
+      "passed": true,
+      "profiles": [
+        "core.integration_inspection_metadata_read"
+      ],
+      "error": null,
+      "receipt_sha256": "5e235f0e71c2cecc4d3dcd3a08dcfb96ae337bd48a3f4a7d5350583ceffdf05a"
+    },
+    {
+      "group": "automation_baseline",
+      "passed": true,
+      "profiles": [
+        "core.automation_baseline_metadata_read"
+      ],
+      "error": null,
+      "receipt_sha256": "64e956f9aac5eec735217e230c19b8d4427fe991eb09db96c19cde674aaf8d64"
+    },
+    {
+      "group": "entity_metadata",
+      "passed": true,
+      "profiles": [
+        "core.entity_registry_metadata_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "f36aba8555b8befce13e4d07ffe54be2e165b8380cc12e5bad5f96f3accaf7c9"
+    },
+    {
+      "group": "availability_exposure",
+      "passed": true,
+      "profiles": [
+        "core.entity_registry_availability_operation",
+        "core.entity_assistant_exposure_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "56fbe828b5e3ee7c3750f6ae8f6db4ad6b19fb033561ef62cf6aea8f310a7a40"
+    },
+    {
+      "group": "label_registry",
+      "passed": true,
+      "profiles": [
+        "core.label_registry_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "a90335b5bb931ec8e6e41ccecb6483a3c1cddff6c09343053b57013dfb5ae7d7"
+    },
+    {
+      "group": "configuration_delete",
+      "passed": true,
+      "profiles": [
+        "core.configuration_delete_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "f70f26ae17798d3e617a630fe0abf52f439eba308a7dd9915c59029ce6f72964"
+    },
+    {
+      "group": "helper_options",
+      "passed": true,
+      "profiles": [
+        "core.config_entry_helper_options_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "7a2eddb34742674955486af199d4b147a90080f5781c0a5fa073244ed932910a"
+    },
+    {
+      "group": "input_select_option",
+      "passed": true,
+      "profiles": [
+        "core.typed_input_select_option_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "2b27ddaecfb422ebda858dbbcd1c1e8bd7501e94969b6b30dd21b3cf163932da"
+    },
+    {
+      "group": "script_traces",
+      "passed": true,
+      "profiles": [
+        "core.script_trace_read"
+      ],
+      "error": null,
+      "receipt_sha256": "28d06f6c49a4bc75820dee150a74854ea54b9040b60f3cd2e1a68821cb99fd35"
+    },
+    {
+      "group": "dashboard_metadata",
+      "passed": true,
+      "profiles": [
+        "core.dashboard_metadata_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "3133f1e24402ed2d67b69808d43bd20cfaa6285cdafb700a647ae55d748b98c7"
+    },
+    {
+      "group": "scene_configuration",
+      "passed": true,
+      "profiles": [
+        "core.scene_configuration_operation"
+      ],
+      "error": null,
+      "receipt_sha256": "001cc32f61e7f9408ec6dde344323e7de71159344f76c43d7c118147f18d0f84"
+    }
+  ],
+  "cleanup": true,
+  "image_proof": "PASS",
+  "prior_evidence_files_preserved": 7910,
+  "limitations": [
+    "Local rehearsal, not GitHub CI or independent review",
+    "linux/amd64 execution only; arm64 provenance recorded but not executed",
+    "Final main integration follows this lane run; final merged Engineering runtime has not been container-tested by this rehearsal",
+    "No candidate, signed admission or live-system change"
+  ],
+  "runner_static_review_sha256": "17d75d1c52f87638a5bcf84cc0af1681b74941db1116b022af2dbf3a99662aed"
+}

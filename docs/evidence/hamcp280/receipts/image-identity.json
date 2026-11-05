@@ -1,0 +1,43 @@
+{
+  "container_after": [
+    "fdfd5c48c0597545f1359dd1658d6b1e8e7bc4b7b2b28b49a9ed6bf19fcb69e2",
+    "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e"
+  ],
+  "container_before": [
+    "fdfd5c48c0597545f1359dd1658d6b1e8e7bc4b7b2b28b49a9ed6bf19fcb69e2",
+    "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e"
+  ],
+  "container_id_after": "fdfd5c48c0597545f1359dd1658d6b1e8e7bc4b7b2b28b49a9ed6bf19fcb69e2",
+  "container_id_before": "fdfd5c48c0597545f1359dd1658d6b1e8e7bc4b7b2b28b49a9ed6bf19fcb69e2",
+  "container_identity_continuity": true,
+  "expected_config_digest": "sha256:c0f062fa32399e6634896e396726287ed238589a7726ed247ac60ad4e76fdb2f",
+  "image_identity": [
+    "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+    "linux/amd64"
+  ],
+  "local_chain": {
+    "command": [
+      "docker",
+      "image",
+      "save",
+      "--platform",
+      "linux/amd64",
+      "ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e"
+    ],
+    "configuration_digest": "sha256:c0f062fa32399e6634896e396726287ed238589a7726ed247ac60ad4e76fdb2f",
+    "content_sha256_verified": true,
+    "index": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+    "index_source": "committed verifier pinned-hash-verified remote index",
+    "local_required_blobs": [
+      "sha256:078222f9ea47cf47b172a301c2c45a1d2344b9d666827729b71fc3f7d7a57592",
+      "sha256:c0f062fa32399e6634896e396726287ed238589a7726ed247ac60ad4e76fdb2f"
+    ],
+    "platform": "linux/amd64",
+    "platform_manifest": "sha256:078222f9ea47cf47b172a301c2c45a1d2344b9d666827729b71fc3f7d7a57592",
+    "source": "local Docker image save",
+    "top_level_index_sha256": "1b20db55418113cb6a34165d362349b04135755df3aef06e63c2988c6ec1b2e5",
+    "verified_index_base64": "ewogICJzY2hlbWFWZXJzaW9uIjogMiwKICAibWVkaWFUeXBlIjogImFwcGxpY2F0aW9uL3ZuZC5vY2kuaW1hZ2UuaW5kZXgudjEranNvbiIsCiAgIm1hbmlmZXN0cyI6IFsKICAgIHsKICAgICAgIm1lZGlhVHlwZSI6ICJhcHBsaWNhdGlvbi92bmQub2NpLmltYWdlLm1hbmlmZXN0LnYxK2pzb24iLAogICAgICAiZGlnZXN0IjogInNoYTI1NjowNzgyMjJmOWVhNDdjZjQ3YjE3MmEzMDFjMmM0NWExZDIzNDRiOWQ2NjY4Mjc3MjliNzFmYzNmN2Q3YTU3NTkyIiwKICAgICAgInNpemUiOiA0NDg4LAogICAgICAicGxhdGZvcm0iOiB7CiAgICAgICAgImFyY2hpdGVjdHVyZSI6ICJhbWQ2NCIsCiAgICAgICAgIm9zIjogImxpbnV4IgogICAgICB9CiAgICB9LAogICAgewogICAgICAibWVkaWFUeXBlIjogImFwcGxpY2F0aW9uL3ZuZC5vY2kuaW1hZ2UubWFuaWZlc3QudjEranNvbiIsCiAgICAgICJkaWdlc3QiOiAic2hhMjU2OmQ4Y2UxMmFmYTI0N2I2NmI4MjUwNGZiY2I0YWFmMDdhY2Q2ZTUyYmJmNjgxOTY5ODBhZjkyYjAzYjg1ZjM4YWMiLAogICAgICAic2l6ZSI6IDgzOCwKICAgICAgImFubm90YXRpb25zIjogewogICAgICAgICJ2bmQuZG9ja2VyLnJlZmVyZW5jZS5kaWdlc3QiOiAic2hhMjU2OjA3ODIyMmY5ZWE0N2NmNDdiMTcyYTMwMWMyYzQ1YTFkMjM0NGI5ZDY2NjgyNzcyOWI3MWZjM2Y3ZDdhNTc1OTIiLAogICAgICAgICJ2bmQuZG9ja2VyLnJlZmVyZW5jZS50eXBlIjogImF0dGVzdGF0aW9uLW1hbmlmZXN0IgogICAgICB9LAogICAgICAicGxhdGZvcm0iOiB7CiAgICAgICAgImFyY2hpdGVjdHVyZSI6ICJ1bmtub3duIiwKICAgICAgICAib3MiOiAidW5rbm93biIKICAgICAgfQogICAgfSwKICAgIHsKICAgICAgIm1lZGlhVHlwZSI6ICJhcHBsaWNhdGlvbi92bmQub2NpLmltYWdlLm1hbmlmZXN0LnYxK2pzb24iLAogICAgICAiZGlnZXN0IjogInNoYTI1NjpkNDg2Y2VkMDAzZDNiNDViNGU1NWZjNDY4NGZlZDc2ZGNjZDJjZTU4M2IzNjE4YTkyZWZlODQyYWJiMjZjM2RjIiwKICAgICAgInNpemUiOiA0NDg4LAogICAgICAicGxhdGZvcm0iOiB7CiAgICAgICAgImFyY2hpdGVjdHVyZSI6ICJhcm02NCIsCiAgICAgICAgIm9zIjogImxpbnV4IgogICAgICB9CiAgICB9LAogICAgewogICAgICAibWVkaWFUeXBlIjogImFwcGxpY2F0aW9uL3ZuZC5vY2kuaW1hZ2UubWFuaWZlc3QudjEranNvbiIsCiAgICAgICJkaWdlc3QiOiAic2hhMjU2OjVmZjg3ZDI2NjEyNTExNDAwNDY1ZDMzYjMwNTc3NDMxN2JkY2M5OGM5MTU4MDRlZjk4ZTEwOGY5MjY0NDEzNDEiLAogICAgICAic2l6ZSI6IDgzOCwKICAgICAgImFubm90YXRpb25zIjogewogICAgICAgICJ2bmQuZG9ja2VyLnJlZmVyZW5jZS5kaWdlc3QiOiAic2hhMjU2OmQ0ODZjZWQwMDNkM2I0NWI0ZTU1ZmM0Njg0ZmVkNzZkY2NkMmNlNTgzYjM2MThhOTJlZmU4NDJhYmIyNmMzZGMiLAogICAgICAgICJ2bmQuZG9ja2VyLnJlZmVyZW5jZS50eXBlIjogImF0dGVzdGF0aW9uLW1hbmlmZXN0IgogICAgICB9LAogICAgICAicGxhdGZvcm0iOiB7CiAgICAgICAgImFyY2hpdGVjdHVyZSI6ICJ1bmtub3duIiwKICAgICAgICAib3MiOiAidW5rbm93biIKICAgICAgfQogICAgfQogIF0KfQ==",
+    "verified_index_sha256": "c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e"
+  },
+  "result": "PASS"
+}

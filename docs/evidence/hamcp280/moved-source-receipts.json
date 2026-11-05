@@ -1,0 +1,166 @@
+{
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "files": [
+    {
+      "path": "homeassistant/components/automation/__init__.py",
+      "sha256": "feb21036c23550cdbb66fcb200ae982fa47f2541963dff3c9bc21842e51c17f0",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/automation/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/automation/entity.py",
+      "sha256": "6535d1a79b1d490589f9b026e592f20635f91da7c04fd16f1a8ee7232cb936a3",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/automation/entity.py"
+    },
+    {
+      "path": "homeassistant/components/automation/services.py",
+      "sha256": "c2771ed108dc75bc8b10e432eba1f2172750dc28976be79221d96190c80a9e78",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/automation/services.py"
+    },
+    {
+      "path": "homeassistant/components/automation/util.py",
+      "sha256": "06bba3b86144c5e8c4ddc5fd99c62755bd13c38e6344f0941cd433cb776e1f83",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/automation/util.py"
+    },
+    {
+      "path": "homeassistant/components/fan/__init__.py",
+      "sha256": "c923bf3868e3203af61f455c6df5f371e53c5b685886a3c0aeba526f00c7caa8",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/fan/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/fan/entity.py",
+      "sha256": "02ae8c1d265c492fc48bfa4f2eaa3c1d8335080ec7eca31ae56470aebebdc911",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/fan/entity.py"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/__init__.py",
+      "sha256": "689c520e8c820b1849f2f7df1a457b951ca9e95a62d3e36d1bff9dfd9807abe8",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_boolean/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/entity.py",
+      "sha256": "e9ae1397aed919c3ac75a5876c84096dbacc95ec292d9f417f976c31f518ce80",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_boolean/entity.py"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/services.py",
+      "sha256": "999e90842934e88e6841a1dc877c3e2c9320fa9f4d819f3bbb26d96d9d98d2f6",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_boolean/services.py"
+    },
+    {
+      "path": "homeassistant/components/input_number/__init__.py",
+      "sha256": "ebda904c539246953a214baa97d91921138772adc618c6f9b952f2dcdda749d8",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_number/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/input_number/entity.py",
+      "sha256": "003497e230e6f5fdaedc6594b04847f66fd2d0ad074c405b093d67975e28d95d",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_number/entity.py"
+    },
+    {
+      "path": "homeassistant/components/input_number/services.py",
+      "sha256": "a4bc1dba21b302c4a7ea432602ff8b3659d0594316e564f955dcb2f96f1f20ad",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_number/services.py"
+    },
+    {
+      "path": "homeassistant/components/input_select/__init__.py",
+      "sha256": "3d20591af72e462abbbb9ded688fe907f61b3267483a61983b5f21dd9f0cae2f",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_select/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/input_select/entity.py",
+      "sha256": "92bbdbdf15dd401974bd934580567bff73b796c04758813be457e41457e9cb06",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_select/entity.py"
+    },
+    {
+      "path": "homeassistant/components/input_select/services.py",
+      "sha256": "b7ee2a6b675c6d5ba2308fcbe73229d4f9c708009c4c290906cda57acf915064",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_select/services.py"
+    },
+    {
+      "path": "homeassistant/components/light/__init__.py",
+      "sha256": "2143fe5238868715bf4f53d5ab70c509b6141d1feae25f30df3924555ac3c278",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/light/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/light/entity.py",
+      "sha256": "6be1060f6e2ec2b9506dcde17ed78d3be0fbf27acee705e5a713f5ef57f19c8e",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/light/entity.py"
+    },
+    {
+      "path": "homeassistant/components/lovelace/services.py",
+      "sha256": "0ff613c81a3c31c8adfe53f3872e053df92f0e6b75d6e35f984128bd9135f0fa",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/lovelace/services.py"
+    },
+    {
+      "path": "homeassistant/components/scene/__init__.py",
+      "sha256": "a72d27993479aaf57145e72063044713422cd7f4fb316c01341a2ad86b9e3091",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/scene/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/scene/entity.py",
+      "sha256": "46a7e860afa02ea5580f3ea081fd34888bb8aa7798a3c583e1fa8a9941f5a029",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/scene/entity.py"
+    },
+    {
+      "path": "homeassistant/components/script/__init__.py",
+      "sha256": "7c31746a225e14b074e5c3c3e3965ea261c03abf41fe5639e3a0f3103c8838ce",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/script/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/script/entity.py",
+      "sha256": "4cd2fe7bb68299e00d5d22c1f4284c52e490a9cf88f3a7f66670ac766c795d6a",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/script/entity.py"
+    },
+    {
+      "path": "homeassistant/components/script/services.py",
+      "sha256": "21109f6f45128fac4d45d448bb37f26632db2b6203a93dd928ddcb85dc1d5770",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/script/services.py"
+    },
+    {
+      "path": "homeassistant/components/script/util.py",
+      "sha256": "ee4700affe91152c727625c6a4baadab72f0ccdd751ee1f3fd91369230123a2d",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/script/util.py"
+    },
+    {
+      "path": "homeassistant/components/switch/__init__.py",
+      "sha256": "9a900a81c8ee6da74f165ca14afaa4066dd194e398417edf7fee6a8c9247f66d",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/switch/__init__.py"
+    },
+    {
+      "path": "homeassistant/components/switch/entity.py",
+      "sha256": "39802820992aa3bd9e2cfa8f2022d44113f409903a542711eef733d4c32cffd1",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/switch/entity.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/__init__.py",
+      "sha256": "926ae2a33a4f41da6e27a7c42f39e9c759ef50f023c7df0a9c55e3da84090358",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/__init__.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/conditions.py",
+      "sha256": "52edf537fcf380ea5941cbad29815f6a934098d804823081678f1d919bf58e4d",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/conditions.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/descriptions.py",
+      "sha256": "bdaecc80bfbc3225d49b53f133823de3802a5cc66c28b48a648b754c1fba5065",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/descriptions.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/entity_condition.py",
+      "sha256": "e7cd9ef5aeaf79e1d9fc4f5044bb826747de82c9c635d2f29d8dc213a3f24fe6",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/entity_condition.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/models.py",
+      "sha256": "b06dbb29896ad2f63717d08d652bc5e0c5112ffa9d65bc9af0df1be29283222d",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/models.py"
+    },
+    {
+      "path": "homeassistant/helpers/condition/tracing.py",
+      "sha256": "7b746684ef12d905df421ab336637c788cf01bd9af68ac7b220ce4013c4e232b",
+      "source_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/condition/tracing.py"
+    }
+  ],
+  "manifest_modified": false
+}
