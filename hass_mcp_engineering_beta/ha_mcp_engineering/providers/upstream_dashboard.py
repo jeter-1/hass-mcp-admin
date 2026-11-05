@@ -32,12 +32,18 @@ from ..clients.mcp import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
+from ..models.responses import SuccessResponse, _compact_json
 from ..observability import METRICS
-from ..request_context import current_telemetry, mark_provider_send
+from ..request_context import (
+    current_request_id,
+    current_telemetry,
+    mark_provider_send,
+)
 from ..sanitization import (
     RedactionTally,
     sanitize_untrusted_data,
 )
+from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
     load_reviewed_upstream_release_registry,
@@ -165,6 +171,24 @@ MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SAFE_UPSTREAM_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 RESPONSE_ENVELOPE_RESERVE = 16_000
+# HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
+# provider result in. The size estimate serializes this exact wrapper.
+CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"
+CONFIGURATION_TOOL_SUMMARY = (
+    "Returned exact read-only dashboard configuration evidence."
+)
+# Timing members still growing when the size is checked: the elapsed times,
+# and the upstream attempt, which _execute closes after the normalizer runs.
+# Every other timing member, and the request ID, is final at the check.
+CONFIGURATION_TOOL_GROWING_TIMING = (
+    "total_ms",
+    "tool_ms",
+    "upstream_ms",
+    "upstream_wall_clock_span_ms",
+)
+# The widest JSON a float renders as (sign, 17 significant digits, point,
+# three-digit negative exponent): 24 characters.
+WIDEST_JSON_FLOAT = -2.2250738585072014e-308
 REACHABILITY_FRESHNESS_SECONDS = 120.0
 
 _ERROR_CODES = {
@@ -561,10 +585,6 @@ class UpstreamDashboardProvider:
             if not isinstance(config, dict):
                 self._raise("invalid_response", dispatched=True)
             try:
-                upstream_serialized = _canonical_json(
-                    config,
-                    ensure_ascii=True,
-                )
                 expected_config_hash = _upstream_config_hash(config)
                 engineering_config_hash = _engineering_config_hash(config)
             except (TypeError, ValueError, OverflowError):
@@ -592,7 +612,6 @@ class UpstreamDashboardProvider:
                     dispatched=True,
                     details={"hash_validation": "mismatch"},
                 )
-            serialized_size = len(upstream_serialized.encode("utf-8"))
             canonical_path = payload.get("url_path")
             if not isinstance(canonical_path, str) or not CANONICAL_DASHBOARD_PATH.fullmatch(
                 canonical_path
@@ -605,20 +624,6 @@ class UpstreamDashboardProvider:
                 max_string=max(2_000, min(response_limit // 2, 20_000)),
             )
             safe_config = sanitation.value
-            safe_size = len(json.dumps(safe_config, default=str, indent=2))
-            estimated_envelope_size = safe_size + RESPONSE_ENVELOPE_RESERVE
-            if estimated_envelope_size > response_limit:
-                self._raise(
-                    "response_too_large",
-                    dispatched=True,
-                    details={
-                        "config_hash": supplied_config_hash,
-                        "engineering_config_hash": engineering_config_hash,
-                        "estimated_serialized_size": serialized_size,
-                        "response_limit": response_limit,
-                        "configuration_returned": False,
-                    },
-                )
 
             # HAMCP-191 Finding 11: one tally covers the configuration, the
             # warnings and hints, and the upstream identity.
@@ -642,7 +647,7 @@ class UpstreamDashboardProvider:
                 "configuration": safe_config,
                 "config_hash": supplied_config_hash,
                 "engineering_config_hash": engineering_config_hash,
-                "estimated_serialized_size": serialized_size,
+                "estimated_serialized_size": 0,
                 "configuration_returned": True,
             }
             if (
@@ -653,9 +658,28 @@ class UpstreamDashboardProvider:
             metadata["completeness"] = completeness
             if redactions.applied:
                 metadata["redaction"] = redactions.summary()
+            warnings = warnings[:20]
+            # HAMCP-306: the check and the reported size are one measure, the
+            # one the general response limit admits a response by.
+            estimated_size = _estimated_configuration_response_size(
+                data, warnings, metadata
+            )
+            if estimated_size > response_limit:
+                self._raise(
+                    "response_too_large",
+                    dispatched=True,
+                    details={
+                        "config_hash": supplied_config_hash,
+                        "engineering_config_hash": engineering_config_hash,
+                        "estimated_serialized_size": estimated_size,
+                        "response_limit": response_limit,
+                        "configuration_returned": False,
+                    },
+                )
+            data["estimated_serialized_size"] = estimated_size
             return DashboardProviderResult(
                 data=data,
-                warnings=warnings[:20],
+                warnings=warnings,
                 metadata=metadata,
                 completeness=completeness,
                 provider_authority=self._optional_dashboard_provider_authority(
@@ -2304,6 +2328,44 @@ def _analysis_configuration(result, url_path):
         raise c.AnalysisError("malformed_response") from None
     return {"configuration": configuration, "config_hash": supplied,
             "engineering_config_hash": engineering_hash}
+
+
+def _estimated_configuration_response_size(
+    data: dict[str, Any], warnings: list[str], metadata: dict[str, Any]
+) -> int:
+    """Size the get_dashboard_config response in the limit's own measure.
+
+    HAMCP-306: the general response limit (``dump_json_with_truncation``)
+    returns a response untruncated whenever its compact, ASCII-escaped JSON
+    fits, whatever the indented form would need. This is the length of that
+    compact JSON for the whole tool response: the tool's real wrapper, this
+    request's ID and its final timing members, with each timing member still
+    growing at the check rendered at the widest a float can be. It is never
+    below the compact response and exceeds it by at most 4 x (24 - 3) = 84
+    characters. The count includes its own ``estimated_serialized_size``
+    value; widening digits only grow it, so the loop reaches a fixed point.
+    """
+
+    timing = timing_since(time.perf_counter())
+    for name in CONFIGURATION_TOOL_GROWING_TIMING:
+        setattr(timing, name, WIDEST_JSON_FLOAT)
+    response = SuccessResponse(
+        operation=CONFIGURATION_TOOL_OPERATION,
+        summary=CONFIGURATION_TOOL_SUMMARY,
+        warnings=list(warnings),
+        metadata=metadata,
+        timing=timing,
+        request_id=current_request_id(),
+    ).as_dict()
+    sized = dict(data)
+    response["data"] = sized
+    size = 0
+    while True:
+        sized["estimated_serialized_size"] = size
+        measured = len(_compact_json(response))
+        if measured == size:
+            return size
+        size = measured
 
 
 def _canonical_json(value: Any, *, ensure_ascii: bool) -> str:
