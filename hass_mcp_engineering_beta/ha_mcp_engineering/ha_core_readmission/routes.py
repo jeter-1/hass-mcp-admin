@@ -181,6 +181,9 @@ INPUT_SELECT_TARGET_TYPE = "input_select"
 SCRIPT_TRACE_PROFILE = "core.script_trace_read"
 SCRIPT_TRACE_TOOLS = frozenset({"list_script_traces", "get_script_trace"})
 SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
+# control_helper (HAMCP-311): signed-only, acquired by the typed helper value
+# service itself; never an F3 plan requirement.
+HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
 
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
@@ -1060,6 +1063,9 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
+        # Direct typed tool, never an F3 identity, so it never matches here;
+        # listed so the entry set stays exactly "compiled minus shipped".
+        HELPER_VALUE_PROFILE,
     }
 )
 

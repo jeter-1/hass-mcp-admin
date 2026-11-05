@@ -260,8 +260,9 @@ class LaneDefinitionTests(unittest.TestCase):
         refs = seq15.predecessor_references()
         ids = {r["capability_id"] for r in refs}
         self.assertEqual(len(refs), 26)
-        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT))
-        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT,
+        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT | seq15.SIGNED_ONLY_DORMANT))
+        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT
+                         | seq15.SIGNED_ONLY_DORMANT,  # + HAMCP-311
                          {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
         # HAMCP-269 includes the scene profile in this five-capability batch.
         self.assertEqual(seq15.SEQ16_DORMANT, set())

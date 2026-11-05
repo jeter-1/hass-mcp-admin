@@ -91,6 +91,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "get_trace_snapshot",
                                                           "set_automation_trace_watch",
                                                           "compare_automation_baselines",
+                                                          "control_helper",  # + HAMCP-311
                                                           "inspect_governance_record"})
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
@@ -101,9 +102,11 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, actual["get_automation_trace"])
         from hamcp247_descriptor_changes import without_hamcp247_descriptor_change
         actual["list_capabilities"] = without_hamcp247_descriptor_change(self, actual["list_capabilities"])
+        from hamcp311_descriptor_changes import without_hamcp311_descriptor_changes  # + HAMCP-311
+        actual = without_hamcp311_descriptor_changes(self, actual)
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 80)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

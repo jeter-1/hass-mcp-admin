@@ -33,7 +33,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
-from seq13_contract_acceptance import NOVEMBER_DORMANT  # noqa: E402
+from seq13_contract_acceptance import NOVEMBER_DORMANT, SIGNED_ONLY_DORMANT  # noqa: E402
 from ha_mcp_engineering.governance.dashboard_metadata import (  # noqa: E402
     DEFAULT_DASHBOARD_URL_PATH, FIELDS as DASHBOARD_FIELDS, LIST_COMMAND as DASHBOARD_LIST,
     NEVER_SENT_COMMANDS as DASHBOARD_NEVER_SENT, UPDATE_COMMAND as DASHBOARD_UPDATE)
@@ -192,7 +192,8 @@ def predecessor_references(core_version=TARGET_CORE):
     """
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            if p.capability_id not in SEQ15_DORMANT | SEQ16_DORMANT]
+            # HAMCP-311: the signed-only helper value profile is in no predecessor.
+            if p.capability_id not in SEQ15_DORMANT | SEQ16_DORMANT | SIGNED_ONLY_DORMANT]
     assert len(refs) == PREDECESSOR_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     registry = json.loads(SIGNED_REGISTRY.read_text())
     assert target_core(core_version)

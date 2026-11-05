@@ -801,7 +801,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     refs = [{k: p.to_mapping()[k] for k in ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES
             # HAMCP-069A/069B/155/165/232/145: the dormant entity, delete, label and November-batch
-            # (seq 15+) profiles are not signed here.
+            # (seq 15+) profiles are not signed here, nor (HAMCP-311) the signed-only helper value one.
             if p.capability_id not in {"core.automation_baseline_metadata_read",
                                        "core.entity_registry_metadata_operation",
                                        "core.entity_registry_availability_operation",
@@ -812,7 +812,8 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                                        "core.typed_input_select_option_operation",
                                        "core.script_trace_read",
                                        "core.dashboard_metadata_operation",
-                                       "core.scene_configuration_operation"}]
+                                       "core.scene_configuration_operation",
+                                       "core.typed_helper_value_operation"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
