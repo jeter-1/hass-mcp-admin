@@ -34,6 +34,7 @@ class CoreBinding:
     device_registry: str
     typed_operations: bool
     child_consumer: str
+    http_storage_version: int = 2
 
     @property
     def lane(self) -> bool:
@@ -57,6 +58,9 @@ REVIEWED_CORE_BINDINGS = {
     # contracts read are byte-identical to 2026.10.1 (exact-source review).
     "2026.10.3": CoreBinding("sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
                              CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
+    # HAMCP-280: exact stable target; applicability evidence is reviewed separately.
+    "2026.11.0": CoreBinding("sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+                             CHILD_DEVICE_NAME_PARTS, True, "8.5.0", http_storage_version=3),
 }
 
 
@@ -72,7 +76,8 @@ def reviewed_core_binding(version):
     if binding is None:
         return None
     if (binding.device_registry not in DEVICE_REGISTRIES or binding.child_consumer not in CHILD_CONSUMERS
-            or type(binding.typed_operations) is not bool):
+            or type(binding.typed_operations) is not bool
+            or type(binding.http_storage_version) is not int or binding.http_storage_version not in {2, 3}):
         raise ValueError("malformed reviewed Core binding")
     return binding
 

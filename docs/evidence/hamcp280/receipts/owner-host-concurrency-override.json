@@ -1,0 +1,38 @@
+{
+  "recorded_utc": "2026-11-05T05:56:32+00:00",
+  "owner_instruction": "Continue any way",
+  "interpretation": "Proceed with attempt-6 despite competing host validation; idle prerequisite waived for this single run",
+  "stopped_owned_wait_pid": 2411199,
+  "other_jobs_untouched": true,
+  "tested_checkout_head": "4161ea3b23a1299a59870ef1fa17c62cb6a3ddd3",
+  "uncommitted_changes": false,
+  "last_host_observation": {
+    "checked_utc": "2026-11-05T05:56:03+00:00",
+    "host": "scriptbox",
+    "active_processes": [
+      {
+        "pid": 2394140,
+        "parent_pid": 2394139,
+        "elapsed_seconds": 1913,
+        "process": "pwsh",
+        "kind": "repository-validation"
+      },
+      {
+        "pid": 2394183,
+        "parent_pid": 2394140,
+        "elapsed_seconds": 1912,
+        "process": "python",
+        "kind": "lane-or-unit-harness"
+      },
+      {
+        "pid": 2420499,
+        "parent_pid": 2394183,
+        "elapsed_seconds": 414,
+        "process": "python",
+        "kind": "lane-or-unit-harness"
+      }
+    ],
+    "active_lane_containers": [],
+    "idle": false
+  }
+}

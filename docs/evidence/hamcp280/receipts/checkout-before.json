@@ -1,0 +1,13 @@
+{
+  "recorded_utc": "2026-11-05T05:39:31+00:00",
+  "tested_checkout_head": "4161ea3b23a1299a59870ef1fa17c62cb6a3ddd3",
+  "uncommitted_changes": false,
+  "uncommitted_binding_expectation_changes": false,
+  "tracked_status": "clean",
+  "engineering_version": "2.4.2-beta.2",
+  "attempt": 6,
+  "context_sha256": "d14ba7209c78081332cc94989a905f618c213437b06ec01b4bf876878697c323",
+  "previous_evidence_files": 9921,
+  "four_substitutions_path_normalized_unchanged": true,
+  "all_twelve_shell_bodies_unchanged": true
+}
