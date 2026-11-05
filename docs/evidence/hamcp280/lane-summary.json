@@ -4,13 +4,13 @@
   "core_version": "2026.11.0",
   "predecessor_sequence": 15,
   "new_sequence_intended": 16,
-  "start_utc": "2026-11-05T03:11:31+00:00",
-  "end_utc": "2026-11-05T03:18:39+00:00",
-  "tested_checkout_head": "2a353defb2611aa9f323bcd1c0d64b37227eb683",
-  "uncommitted_binding_expectation_changes": true,
-  "tested_engineering_version": "2.4.1-rc.1",
+  "start_utc": "2026-11-05T05:56:37+00:00",
+  "end_utc": "2026-11-05T06:04:02+00:00",
+  "tested_checkout_head": "4161ea3b23a1299a59870ef1fa17c62cb6a3ddd3",
+  "uncommitted_binding_expectation_changes": false,
+  "tested_engineering_version": "2.4.2-beta.2",
   "target_image": "ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
-  "context_sha256": "b73e6352be359ef52fa12e95ea778b067dcd41db6bf08fdfdc8c2b0a87c02df7",
+  "context_sha256": "d14ba7209c78081332cc94989a905f618c213437b06ec01b4bf876878697c323",
   "branch_sources_sha256": {
     "scripts/core_lane_bindings.py": "8c955cfc666453c83aa99dd1382a5568ae1fed85d11c0f5e836c3118ba64c60e",
     "scripts/real_ha_contract_tests.py": "975ce4e9f1d7b88aa8e638dcfea4d2badedf4df9eb3ce752fd96bbe834aa4352",
@@ -45,7 +45,7 @@
         "core.typed_power_operation"
       ],
       "error": null,
-      "receipt_sha256": "cc2195efb8358726bbe5cdc8ea05b86c9fcd2290b9e366ead7c3ebb8b10420bc"
+      "receipt_sha256": "737924974e80fd79ffdd625f79507aa3b70460ac750aa9f43cae7f96369bd126"
     },
     {
       "group": "integration_inspection",
@@ -54,7 +54,7 @@
         "core.integration_inspection_metadata_read"
       ],
       "error": null,
-      "receipt_sha256": "5e235f0e71c2cecc4d3dcd3a08dcfb96ae337bd48a3f4a7d5350583ceffdf05a"
+      "receipt_sha256": "b72b372ae9e4d3591470b0e4018803653962ea1bdbe95a47f18e501b792e1b45"
     },
     {
       "group": "automation_baseline",
@@ -63,7 +63,7 @@
         "core.automation_baseline_metadata_read"
       ],
       "error": null,
-      "receipt_sha256": "64e956f9aac5eec735217e230c19b8d4427fe991eb09db96c19cde674aaf8d64"
+      "receipt_sha256": "2c0efd64a9495c5fd6b102c0e92ce5c77fff927b9fd09628d909076a4db552a9"
     },
     {
       "group": "entity_metadata",
@@ -72,7 +72,7 @@
         "core.entity_registry_metadata_operation"
       ],
       "error": null,
-      "receipt_sha256": "f36aba8555b8befce13e4d07ffe54be2e165b8380cc12e5bad5f96f3accaf7c9"
+      "receipt_sha256": "a3a6b7c398ee4a28e85e9295e5aaaea5eabcde709c22d9671f4135f9ff4a250e"
     },
     {
       "group": "availability_exposure",
@@ -82,7 +82,7 @@
         "core.entity_assistant_exposure_operation"
       ],
       "error": null,
-      "receipt_sha256": "56fbe828b5e3ee7c3750f6ae8f6db4ad6b19fb033561ef62cf6aea8f310a7a40"
+      "receipt_sha256": "2a27dd8602037160552724d815016c37a0f107d34d5c4174435ec24d8d14e955"
     },
     {
       "group": "label_registry",
@@ -91,7 +91,7 @@
         "core.label_registry_operation"
       ],
       "error": null,
-      "receipt_sha256": "a90335b5bb931ec8e6e41ccecb6483a3c1cddff6c09343053b57013dfb5ae7d7"
+      "receipt_sha256": "9225db944e4c90bc817791797201cc3fd7832dc9faaa80de1dbfc67716a1b54a"
     },
     {
       "group": "configuration_delete",
@@ -100,7 +100,7 @@
         "core.configuration_delete_operation"
       ],
       "error": null,
-      "receipt_sha256": "f70f26ae17798d3e617a630fe0abf52f439eba308a7dd9915c59029ce6f72964"
+      "receipt_sha256": "4cb06991c426ecc5bf80006f8385fc69df458220d00fa0f3e1923fe302bdbd9a"
     },
     {
       "group": "helper_options",
@@ -109,7 +109,7 @@
         "core.config_entry_helper_options_operation"
       ],
       "error": null,
-      "receipt_sha256": "7a2eddb34742674955486af199d4b147a90080f5781c0a5fa073244ed932910a"
+      "receipt_sha256": "577216b7f728b9011e104c7d56b2217987fdb7f36cc5c063bf65c7bd141176f3"
     },
     {
       "group": "input_select_option",
@@ -118,7 +118,7 @@
         "core.typed_input_select_option_operation"
       ],
       "error": null,
-      "receipt_sha256": "2b27ddaecfb422ebda858dbbcd1c1e8bd7501e94969b6b30dd21b3cf163932da"
+      "receipt_sha256": "dfe3174ad7bcb2a83626d302ace48cc1ee3fe49e2fc55ec74f7ca473777a97ee"
     },
     {
       "group": "script_traces",
@@ -127,7 +127,7 @@
         "core.script_trace_read"
       ],
       "error": null,
-      "receipt_sha256": "28d06f6c49a4bc75820dee150a74854ea54b9040b60f3cd2e1a68821cb99fd35"
+      "receipt_sha256": "cf01c505d59123ad10c77af7c475d439352828e3f2a904f9ce20d9f1eb93856f"
     },
     {
       "group": "dashboard_metadata",
@@ -136,7 +136,7 @@
         "core.dashboard_metadata_operation"
       ],
       "error": null,
-      "receipt_sha256": "3133f1e24402ed2d67b69808d43bd20cfaa6285cdafb700a647ae55d748b98c7"
+      "receipt_sha256": "75592ddc2a7f9ecaf022e762da0fbe64f171ca0a687e39afe73d26f478e9bb8b"
     },
     {
       "group": "scene_configuration",
@@ -145,17 +145,24 @@
         "core.scene_configuration_operation"
       ],
       "error": null,
-      "receipt_sha256": "001cc32f61e7f9408ec6dde344323e7de71159344f76c43d7c118147f18d0f84"
+      "receipt_sha256": "1dfe645171edf0f79d5f7bacfe51f3368eb5d70a66f031c8014aadafd74f4fd1"
     }
   ],
   "cleanup": true,
   "image_proof": "PASS",
-  "prior_evidence_files_preserved": 7910,
+  "prior_evidence_files_preserved": 9921,
   "limitations": [
     "Local rehearsal, not GitHub CI or independent review",
     "linux/amd64 execution only; arm64 provenance recorded but not executed",
-    "Final main integration follows this lane run; final merged Engineering runtime has not been container-tested by this rehearsal",
     "No candidate, signed admission or live-system change"
   ],
-  "runner_static_review_sha256": "17d75d1c52f87638a5bcf84cc0af1681b74941db1116b022af2dbf3a99662aed"
+  "runner_static_review_sha256": "969a63ad91bdf6180bcd7aa32819ae4ae107bcdd86e5ad5af31116cc4aa9face",
+  "uncommitted_changes": false,
+  "supersedes": "attempt-5 pre-integration run; replaced in current PR documents, preserved in Git history and local attempt-5",
+  "checkout_identity_receipts": [
+    "checkout-before.json",
+    "checkout-after.json"
+  ],
+  "host_idle": false,
+  "host_concurrency_authorization": "Owner: Continue any way; see owner-host-concurrency-override.json"
 }

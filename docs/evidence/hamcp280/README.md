@@ -1,6 +1,6 @@
 # HAMCP-280: Core 2026.11.0 binding review
 
-This is preparer evidence for a draft binding PR, pending architect review and
+This is preparer evidence for a draft binding PR, pending architect final check and
 Josh's merge. It supports carrying all 31 seq-15 profiles forward for the intended
 seq-16 publication. It is not a candidate, signed admission, CI attestation, or
 approval to upgrade a live system. The manual publication flow applies; the
@@ -55,8 +55,9 @@ store migration is performed by this PR.
 
 ## Executed evidence
 
-One fresh attempt-5 ran on scriptbox after host idle was verified, from
-**2026-11-05T03:11:31Z to 2026-11-05T03:18:39Z**, including cleanup.
+One fresh attempt-6 ran on scriptbox after a host-idle check found another
+validation job and Josh explicitly directed concurrent execution, from
+**2026-11-05T05:56:37Z to 2026-11-05T06:04:02Z**, including cleanup.
 Each verdict below comes from its own results JSON, not an outer exit code.
 **WITHHELD: none. All 31 profiles have passing group evidence.**
 
@@ -79,7 +80,7 @@ Each verdict below comes from its own results JSON, not an outer exit code.
 exact tested source hashes. [Receipt hashes](receipt-hashes.json) cover the
 original bounded result, cleanup, source/image binding, context, and image-chain
 receipts in [receipts/](receipts/). Cleanup returned `clean:true`; owned containers,
-network, config and synthetic token were removed. All 7,910 prior evidence files
+network, config and synthetic token were removed. All 9,921 prior evidence files
 remained unchanged.
 
 The image proof **PASSED**. Observed Docker identities equal the pinned index,
@@ -91,13 +92,24 @@ as base64 in [the identity receipt](receipts/image-identity.json). No image-stor
 cause is asserted. This is the architect-authorized Checkpoint-12 conditional
 proof, not acceptance of an index identity alone.
 
-The lane run tested the task checkout at
-`2a353defb2611aa9f323bcd1c0d64b37227eb683` with the recorded uncommitted binding and
-HTTP assertion changes, Engineering **2.4.1-rc.1**. Per the contract, integration
-of main `7aa4c92db3b8f76cd8a38f011937dd3905d5c04a` (Engineering 2.4.2-beta.2)
-follows this run. These receipts do **not** claim a container test of the final
-merged Engineering runtime. Final repository validation is reported separately
-in the PR and handoff. Architect review remains pending.
+The lane run tested clean committed checkout
+`4161ea3b23a1299a59870ef1fa17c62cb6a3ddd3`, Engineering **2.4.2-beta.2**,
+after integration of main `7aa4c92db3b8f76cd8a38f011937dd3905d5c04a`.
+The [before](receipts/checkout-before.json) and
+[after](receipts/checkout-after.json) checkout receipts record `tested_checkout_head` and
+`uncommitted_changes:false`; all group receipts bind the same head and context.
+No tracked file changed during the run. The later evidence-only commit replaces
+these documents without changing the tested implementation.
+
+This run supersedes attempt-5's pre-integration evidence. The old run is dropped
+from the current PR documents; its exact bytes remain in Git history and the
+untouched local `attempt-5/` directory. All 12 group verdicts match its pass.
+The [owner concurrency override](receipts/owner-host-concurrency-override.json)
+records the observed busy host and the direction to proceed.
+Final-head repository Evidence already passed: 10,204 tests, 25 skipped, four
+workers. Per the architect's correction, Evidence is not rerun for this
+evidence-document-only replacement. CI on the updated head is reported separately
+in the PR and handoff. Architect final check remains pending.
 
 ## Local rehearsal differences
 
@@ -119,7 +131,7 @@ The copied step 9 invokes a local orchestrator implementing the latest direction
 profile failures record `passed:false`/WITHHELD and continue; setup, binding,
 identity and cleanup failures stop. No original contract assertion is removed.
 The general-failure continuation path was unit-tested but was not needed here.
-Every output uses fresh attempt-5 paths; an exclusive invocation marker prevents
+Every output uses fresh attempt-6 paths; an exclusive invocation marker prevents
 reuse. The static receipt hashes the exact workflow, copied-step diff, original
 verifier, helpers and branch sources. Six offline identity tests, three local
 orchestration tests, ten Python parses and twelve shell syntax checks passed.
@@ -146,7 +158,7 @@ and test changes can be reverted without changing any live store or admission.
 The evidence is a preparer assessment, not independent review or publication
 approval. No signing key, secret, environment, ruleset or approval was accessed.
 
-Architect review and Josh's merge are next. Only after that merge may preparation
+Architect final check and Josh's merge are next. Only after that merge may preparation
 produce local seq-16 candidate/evidence bytes against the freshly verified seq-15
 journal. Architect written approval of their exact SHA-256 values must precede
 any permanent candidate-branch push. Josh alone runs signing dry-run and real
