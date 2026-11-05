@@ -1083,8 +1083,15 @@ class ReachabilityTests(unittest.TestCase):
 
         gateway = PACKAGE / "governance" / "input_select_option.py"
         extraction = PACKAGE / "dependency" / "extraction.py"
+        # HAMCP-311: control_helper's ordinary helper-value path also names
+        # input_select.select_option (its tool action literal, contract table and
+        # service); it sends only under the signed-only Core profile
+        # core.typed_helper_value_operation, with no legacy Core contract.
+        helper_value = {PACKAGE / "helper_value" / "contracts.py",
+                        PACKAGE / "helper_value" / "service.py",
+                        PACKAGE / "tools" / "helper.py"}
         expected = {"select_option": {gateway, extraction,
-                                      PACKAGE / "ha_core_readmission" / "profiles.py"}}
+                                      PACKAGE / "ha_core_readmission" / "profiles.py", *helper_value}}
         extraction_source = extraction.read_text(encoding="utf-8")
         for transport in ("clients.", "websocket", "rest_path", "mark_provider_send"):
             self.assertNotIn(transport, extraction_source)

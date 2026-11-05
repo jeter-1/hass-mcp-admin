@@ -5796,6 +5796,30 @@ class UpstreamReadGateway:
                 raise PowerRefusal("power_provider_authority_denied")
             return digest({"power_authority": selection.authority_token})
 
+    def helper_value_provider_authority_token(self, version="8.4.3") -> str:
+        """Current deny-aware exact provider identity for a separate helper value contract.
+
+        Pure-read admission is not a helper value grant. The helper wrapper owns
+        its closed service contract and validates the complete catalog itself.
+        """
+        from ..helper_value.contracts import HelperRefusal, HELPER_RELEASES, digest
+        with self._lock:
+            release = self._release_registry.by_version.get(version) if self._release_registry else None
+            if version not in HELPER_RELEASES:
+                raise HelperRefusal("helper_provider_authority_unavailable")
+            if release is None or release.revoked or release.provider_disposition("read_gateway") != "admitted":
+                raise HelperRefusal("helper_provider_authority_unavailable")
+            if self._readmission_selector is None:
+                return digest({"helper_value_compiled": release.entry_id, "policy": release.policy_sha256})
+            selection = self._readmission_selector.select(
+                server_name="ha-mcp", version=version, protocol_version="2025-03-26",
+            )
+            if not selection.authority.decisions or any(
+                item.status.value != "positive" for item in selection.authority.decisions
+            ):
+                raise HelperRefusal("helper_provider_authority_denied")
+            return digest({"helper_value_authority": selection.authority_token})
+
     def health_snapshot(self) -> dict[str, Any]:
         with self._lock:
             value = deepcopy(self._state)

@@ -3,6 +3,7 @@ import argparse
 import base64
 import copy
 from dataclasses import asdict
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -144,6 +145,64 @@ def fail_refusal(directory):
     raise SystemExit(message)
 
 
+# Scheduled discovery reads newest-first and stops only after the page holding the
+# newest signed version's own release record. Version comparison never ends the scan:
+# a lower backport can be listed before a higher release. The bound therefore limits
+# releases created after that predecessor (100 per page), not Core's history.
+RELEASE_PAGE_BOUND = 10
+
+
+def official(release):
+    return (not release.get("draft") and not release.get("prerelease")
+            and stable_version(release.get("tag_name")))
+
+
+def listing_timestamp(value):
+    # The one parser for both fields: an ISO 8601 string carrying a UTC offset.
+    try:
+        stamp = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.utcoffset() is None:
+        raise ValueError("release listing order cannot be established")
+    return stamp
+
+
+def listed_at(release):
+    # created_at orders GitHub's listing. published_at is used only when created_at is
+    # absent (missing or null); a present but invalid created_at refuses, never falls back.
+    field = "published_at" if release.get("created_at") is None else "created_at"
+    return listing_timestamp(release.get(field))
+
+
+def discover_releases(entries, requested):
+    if requested is not None:
+        # Exact tag only, no listing; the version is checked before it shapes the path.
+        if not stable_version(requested):
+            raise ValueError("requested release is not an official stable release")
+        release = github(f"{CORE}/releases/tags/{requested}", optional=True)
+        if not isinstance(release, dict) or release.get("tag_name") != requested:
+            raise ValueError("requested release is not an official stable release")
+        return [release]
+    if not entries:
+        raise ValueError("binding PR required: no signed predecessor")
+    predecessor = max((e["version"] for e in entries), key=version_key)
+    releases = []; previous = None
+    for page in range(1, RELEASE_PAGE_BOUND + 1):
+        batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
+        for release in batch:
+            stamp = listed_at(release)
+            if previous is not None and stamp > previous:
+                raise ValueError("release listing is not newest-first")
+            previous = stamp
+        if any(official(r) and r["tag_name"] == predecessor for r in batch):
+            return releases
+        if len(batch) < 100:
+            # Exhausted: the listing is the complete candidate set.
+            return releases
+    raise ValueError("release discovery did not reach the signed predecessor within the page bound")
+
+
 def prepare(directory, acceptance, requested):
     directory.mkdir(parents=True, exist_ok=True)
     if acceptance:
@@ -179,13 +238,7 @@ def prepare(directory, acceptance, requested):
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
         output(refused=False, run=True, release="2026.10.3", matrix=json.dumps({"include": rows}), registry_exists=False)
         return
-    releases = []
-    for page in range(1, 11):
-        batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
-        if len(batch) < 100:
-            break
-    else:
-        raise ValueError("release discovery exceeds pagination bound")
+    releases = discover_releases(entries, requested)
     newest = select_release(releases, {e["version"] for e in entries}, [], requested)
     if newest is None:
         summary("No newer eligible stable Core release.")

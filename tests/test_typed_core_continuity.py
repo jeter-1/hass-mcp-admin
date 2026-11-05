@@ -104,7 +104,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         for version in ('2026.9.2', '2026.9.3'):
             self.source.version = version
             await self.runtime()
-            self.assertEqual(self.core.health_snapshot()['compatible_count'], 19)
+            self.assertEqual(self.core.health_snapshot()['compatible_count'], 20)  # + HAMCP-311: typed entries sign all three typed profiles
             for provider_version in ('8.4.3', '8.5.0'):
                 for family in ('fan', 'light', 'switch'):
                     with self.subTest(core=version, provider=provider_version, family=family):
@@ -371,7 +371,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         for entry in original_entries:
             self.assertEqual({p['capability_id']:p['contract_fingerprint']
                               for p in entry['capabilities']}, compiled)
-        self.assertEqual(len(CORE_TYPED_OPERATION_PROFILES), 2)
+        self.assertEqual(len(CORE_TYPED_OPERATION_PROFILES), 3)  # + HAMCP-311 helper value
 
     def test_exact_beta3_writer_declarations_preserve_contract_hash_and_bytes(self):
         folder = ROOT/'tests/fixtures/typed_beta3'
