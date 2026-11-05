@@ -94,7 +94,8 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
         return registry, observation
 
     async def test_positive_signed_exact_reference_and_old_authority_missing_new(self):
-        for new, expected in ((False, 19), (True, 20)):
+        # + HAMCP-311: the synthetic typed entry also signs the helper value profile.
+        for new, expected in ((False, 20), (True, 21)):
             registry, observation = await self.signed(new=new)
             result = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES).reconcile(observation, registry.selections("2026.9.3"))
             self.assertEqual(sum(d.disposition.admitted for d in result.generation.decisions), expected)
@@ -110,7 +111,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     result = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES).reconcile(
                         observation, registry.selections(version))
                     decisions = result.generation.decisions
-                    self.assertEqual(sum(d.disposition.admitted for d in decisions), 20 if admitted else 19)
+                    self.assertEqual(sum(d.disposition.admitted for d in decisions), 21 if admitted else 20)  # + HAMCP-311 synthetic helper value signature
                     self.assertEqual(result.generation.decision_for(c.CORE_CAPABILITY).disposition.admitted, admitted)
                     self.assertTrue(result.generation.decision_for("core.basic_websocket_read").disposition.admitted)
 
@@ -119,7 +120,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
         coordinator = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES)
         result = coordinator.reconcile(observation, registry.selections("2026.9.3"))
         self.assertFalse(result.generation.decision_for(c.CORE_CAPABILITY).disposition.admitted)
-        self.assertEqual(sum(d.disposition.admitted for d in result.generation.decisions), 19)
+        self.assertEqual(sum(d.disposition.admitted for d in result.generation.decisions), 20)  # + HAMCP-311
         registry, observation = await self.signed()
         selections = tuple(replace(s, status=CoreAuthorityStatus.REVOKED) if c.CORE_CAPABILITY in s.capability_ids else s
                            for s in registry.selections("2026.9.3"))
@@ -127,13 +128,15 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
         # the current production journal preparer can revoke one reference.
         result = coordinator.reconcile(observation, selections)
         self.assertFalse(result.generation.decision_for(c.CORE_CAPABILITY).disposition.admitted)
-        self.assertEqual(sum(d.disposition.admitted for d in result.generation.decisions), 19)
+        self.assertEqual(sum(d.disposition.admitted for d in result.generation.decisions), 20)  # + HAMCP-311
 
     def test_historical_19_profiles_and_probe_fingerprint_unchanged(self):
         retained = json.loads((FIXTURES / "core_metadata_applicability.json").read_text())
-        self.assertEqual([p.to_mapping() for p in CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES], retained["old_core_profiles"])
+        # HAMCP-311 appends the signed-only helper value typed profile; the historical 19 are unchanged.
+        self.assertEqual([p.to_mapping() for p in CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES
+                          if p.capability_id != "core.typed_helper_value_operation"], retained["old_core_profiles"])
         self.assertEqual(CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint, retained["old_probe_fingerprint"])
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 31)  # HAMCP-165 label + HAMCP-155 delete + HAMCP-232/145 November batch (+3) + HAMCP-106 dashboard metadata + HAMCP-071 scene configuration: runtime-only profiles
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 32)  # HAMCP-165 label + HAMCP-155 delete + HAMCP-232/145 November batch (+3) + HAMCP-106 dashboard metadata + HAMCP-071 scene configuration + HAMCP-311 helper value: runtime-only profiles
         self.assertNotIn(c.CORE_CAPABILITY, {name for s in compiled_exact_authority("2026.9.1") for name in s.capability_ids})
         profile = CORE_INTEGRATION_INSPECTION_PROFILES[0]
         self.assertTrue(profile.capability_class.semantic)

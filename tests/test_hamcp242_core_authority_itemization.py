@@ -80,6 +80,7 @@ SCRIPT_TRACE = "core.script_trace_read"
 HELPER_OPTIONS = "core.config_entry_helper_options_operation"
 DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
 SCENE_CONFIGURATION = "core.scene_configuration_operation"  # HAMCP-071 seq 16
+HELPER_VALUE = "core.typed_helper_value_operation"  # HAMCP-311 (signed-only)
 MISSING = "positive_authority_missing"
 
 # The public block before HAMCP-242, in order; it must survive unchanged.
@@ -138,10 +139,12 @@ REFUSED_BLOCK_KEYS = (
 ENTRY_KEYS = ("capability_id", "disposition", "reason_code", "affected_tools")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
 
-# The five profiles the signed sequence-14 2026.10.3 entry does not name
-# (three HAMCP-232/145, HAMCP-106 dashboard metadata and the HAMCP-071 seq 16
-# scene configuration), with the tools routes.py maps to each (pinned by
-# hand, not derived).
+# The six profiles the signed sequence-14 2026.10.3 entry does not name
+# (three HAMCP-232/145, HAMCP-106 dashboard metadata, the HAMCP-071 seq 16
+# scene configuration and the HAMCP-311 signed-only helper value profile),
+# with the tools routes.py maps to each (pinned by hand, not derived).
+# control_helper is Core-independent in routes.py (it acquires its own
+# signed exact-target authority), so the helper value profile maps no tool.
 EXPECTED_LIVE_WITHHELD = [
     {
         "capability_id": HELPER_OPTIONS,
@@ -166,6 +169,12 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["get_script_trace", "list_script_traces"],
+    },
+    {
+        "capability_id": HELPER_VALUE,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": [],
     },
     {
         "capability_id": INPUT_SELECT,
@@ -426,9 +435,10 @@ class LiveCaseTests(_LiveCase):
                 "held_count": 0,
                 "quarantined_count": 0,
                 # +1 HAMCP-106 dashboard metadata (dormant November batch),
-                # +1 HAMCP-071 seq 16 scene configuration
-                "unavailable_count": 5,
-                "withheld_count": 5,
+                # +1 HAMCP-071 seq 16 scene configuration,
+                # +1 HAMCP-311 signed-only helper value (no sequence names it)
+                "unavailable_count": 6,
+                "withheld_count": 6,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -443,9 +453,10 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # The five withheld profiles are still refused.
+        # The six withheld profiles are still refused.
         for capability in (
             INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
+            HELPER_VALUE,
         ):
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -453,14 +464,15 @@ class LiveCaseTests(_LiveCase):
         projection = await self.admit(sequence_15_entry())
         # The name predates HAMCP-106, which adds a 30th profile.  HAMCP-071
         # seq 16: sequence 15 does not name the scene configuration profile,
-        # so it alone stays withheld until sequence 16.
+        # so it stays withheld until sequence 16.  HAMCP-311: no sequence
+        # names the signed-only helper value profile, so it stays withheld too.
         self.assertEqual(projection["compatible_count"], 30)
-        self.assertEqual(projection["withheld_count"], 1)
-        self.assertEqual(projection["unavailable_count"], 1)
+        self.assertEqual(projection["withheld_count"], 2)
+        self.assertEqual(projection["unavailable_count"], 2)
         self.assertEqual(
             projection["withheld_capabilities"],
             [item for item in EXPECTED_LIVE_WITHHELD
-             if item["capability_id"] == SCENE_CONFIGURATION],
+             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE)],
         )
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual(
@@ -468,17 +480,24 @@ class LiveCaseTests(_LiveCase):
             projection["withheld_capabilities"],
         )
         self.assertIsNone(self.core.acquire((SCENE_CONFIGURATION,)))
+        self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
 
     async def test_after_sequence_16_the_list_is_empty_and_compatible_is_31(self):
-        # HAMCP-071 seq 16: the synthetic sequence-16 entry names every profile.
+        # HAMCP-071 seq 16: the synthetic sequence-16 entry names every
+        # November profile.  The name predates HAMCP-311: no sequence names
+        # the signed-only helper value profile, so it alone stays withheld
+        # (31 of 32 runtime profiles compatible).
         projection = await self.admit(sequence_15_entry(sequence_16=True))
         self.assertEqual(projection["compatible_count"], 31)
-        self.assertEqual(projection["compatible_count"], len(CORE_RUNTIME_CAPABILITY_PROFILES))
-        self.assertEqual(projection["withheld_count"], 0)
-        self.assertEqual(projection["unavailable_count"], 0)
-        self.assertEqual(projection["withheld_capabilities"], [])
+        self.assertEqual(projection["compatible_count"] + 1, len(CORE_RUNTIME_CAPABILITY_PROFILES))
+        self.assertEqual(projection["withheld_count"], 1)
+        self.assertEqual(projection["unavailable_count"], 1)
+        expected = [item for item in EXPECTED_LIVE_WITHHELD
+                    if item["capability_id"] == HELPER_VALUE]
+        self.assertEqual(projection["withheld_capabilities"], expected)
         self.assertIs(projection["withheld_capabilities_truncated"], False)
-        self.assertEqual((await self.public_block())["withheld_capabilities"], [])
+        self.assertEqual((await self.public_block())["withheld_capabilities"], expected)
+        self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
 
     async def test_projection_adds_no_core_call_and_persists_nothing(self):
         await self.admit(signed_sequence_14_entry())

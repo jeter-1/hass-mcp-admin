@@ -296,6 +296,8 @@ async def create_helper_state_plan(
     exact target and desired state require external administrator approval and
     the shared apply_change_plan lifecycle. Toggle, arbitrary services,
     service data, physical domains, and fallback are unreachable.
+    Superseded for value changes by control_helper (no plan or approval);
+    this tool remains available and unchanged.
     """
     return await run_structured(
         "create_helper_state_plan",
@@ -546,6 +548,10 @@ async def _get_execution_task(task_id):
         return await service.reconcile(task_id)
     from ..power.service import POWER_OPERATIONS
     service = POWER_OPERATIONS.service
+    if service is not None and service.load(task_id) is not None:
+        return await service.reconcile(task_id)
+    from ..helper_value.service import HELPER_VALUE_OPERATIONS
+    service = HELPER_VALUE_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
         return await service.reconcile(task_id)
     return GOVERNANCE.require().get_execution_task(task_id)
@@ -1411,6 +1417,8 @@ async def create_input_select_option_plan(
     exact readback. rollback_change plans a separately approved return to
     the prior option. Until a signed registry admits this capability the
     tool refuses with pending_signed_registry_admission.
+    Superseded for value changes by control_helper (no plan or approval);
+    this tool remains available and unchanged.
     """
     return await _input_select_option_plan(
         {

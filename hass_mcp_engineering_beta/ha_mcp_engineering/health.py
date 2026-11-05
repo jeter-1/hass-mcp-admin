@@ -35,6 +35,7 @@ class HealthRegistry:
     core_readmission: Any = None
     fan_operations: Any = None
     power_operations: Any = None
+    helper_value_operations: Any = None
 
     def configure(
         self,
@@ -53,6 +54,7 @@ class HealthRegistry:
         core_readmission=None,
         fan_operations=None,
         power_operations=None,
+        helper_value_operations=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -70,6 +72,7 @@ class HealthRegistry:
         self.core_readmission = core_readmission
         self.fan_operations = fan_operations
         self.power_operations = power_operations
+        self.helper_value_operations = helper_value_operations
 
     async def async_snapshot(
         self, ha_connection: dict[str, Any], *, deep_storage_audit: bool = False
@@ -99,6 +102,7 @@ class HealthRegistry:
             "home_assistant": ha_connection,
             "ordinary_fan": (self.fan_operations.health() if self.fan_operations else {"configured": False}),
             "ordinary_power": (self.power_operations.health() if self.power_operations else {"configured": False}),
+            "ordinary_helper_value": (self.helper_value_operations.health() if self.helper_value_operations else {"configured": False}),
             "latency": {
                 "mcp_operations": metrics["mcp_operation_latency"],
                 "tools": metrics["tool_latency"],
