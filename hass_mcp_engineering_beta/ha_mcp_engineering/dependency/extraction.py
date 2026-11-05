@@ -814,6 +814,7 @@ def extract_document_obligation_evidence(
             document_limit_reason = "configuration_structure_limit_exceeded"
             return
         if isinstance(value, dict):
+            relation = _step_relation(value, path, relation, source_type)
             add_state_changed_event_obligation(
                 value, path=path, relation=relation
             )
@@ -881,6 +882,7 @@ def extract_document_obligation_evidence(
             document_limit_exceeded = True
             return
         if isinstance(value, dict):
+            relation = _step_relation(value, path, relation, source_type)
             if set(value) == {"__blueprint_input__"}:
                 input_name = _bounded(
                     value.get("__blueprint_input__"), 128, secret
@@ -3201,6 +3203,7 @@ def extract_document(
 
     def walk(value: Any, path: str, relation: str, parent_key: str = ""):
         if isinstance(value, dict):
+            relation = _step_relation(value, path, relation, source_type)
             if source_type == "scene" and path in {"$", "$.entities"}:
                 entities = value.get("entities") if path == "$" else value
                 if isinstance(entities, dict):
@@ -3252,6 +3255,7 @@ def resolve_blueprint_roles(
 
     def walk(value: Any, path: str, relation: str):
         if isinstance(value, dict):
+            relation = _step_relation(value, path, relation, "blueprint")
             if set(value) == {"__blueprint_input__"}:
                 roles.setdefault(str(value["__blueprint_input__"]), set()).add(relation)
                 return
@@ -3308,6 +3312,29 @@ def _relation_for(path: str, key: str, current: str, source_type: str) -> str:
         return "script_reference"
     if lowered in {"action", "actions", "sequence", "parallel", "then", "else", "choose", "repeat"}:
         return "action_target"
+    return current
+
+
+#: HAMCP-310: Home Assistant Core's ``ACTIONS_MAP`` (2026.7.2 through 2026.9.1)
+#: classifies an action step carrying any of these keys as a check-condition
+#: action; ``and``/``or``/``not`` are the shorthand condition forms.
+_CONDITION_STEP_KEYS = frozenset({"condition", "and", "or", "not"})
+
+
+def _step_relation(
+    value: dict[str, Any], path: str, current: str, source_type: str
+) -> str:
+    """Return the relation for the members of one configuration mapping.
+
+    HAMCP-310: a condition step inside an action sequence gates every later
+    action, so its entity reads are causal exactly like a top-level, choose
+    or if condition.  Only the step-level ``action_target`` inherited from an
+    action path is reclassified; literal ``target`` and ``data`` values keep
+    their own non-causal relations.
+    """
+
+    if current == "action_target" and _CONDITION_STEP_KEYS.intersection(value):
+        return _relation_for(path, "condition", current, source_type)
     return current
 
 
