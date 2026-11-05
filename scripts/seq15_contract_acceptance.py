@@ -59,6 +59,9 @@ SEQ16_DORMANT = frozenset()
 assert not SEQ15_DORMANT & SEQ16_DORMANT and SEQ15_DORMANT | SEQ16_DORMANT == NOVEMBER_DORMANT
 # The seq-14 signed 2026.10.3 entry (upstream-trust/ha-core-release-registry.json).
 PREDECESSOR_COUNT = 26
+# The batch signs every compiled profile but the signed-only ones (HAMCP-311),
+# which the runtime reports as withheld (positive authority missing).
+BATCH_HEALTH = {"compatible_count": 31, "withheld_count": len(SIGNED_ONLY_DORMANT)}
 SIGNED_REGISTRY = ROOT / "upstream-trust" / "ha-core-release-registry.json"
 PENDING = "pending_signed_registry_admission"
 STALE = "stale_target_state"
@@ -369,7 +372,7 @@ def verify_result(lane_key, result, *, core_version, support_slot):
     assert result["production_authority"] is False and result["fixture_cleanup"] is True
     assert result["fixture_absence"] == dict.fromkeys(FIXTURE_ABSENCE, True)
     assert result["provider_identity"] == "synthetic_disposable_lane"
-    assert result["batch_health"] == {"compatible_count": 31, "withheld_count": 0}
+    assert result["batch_health"] == BATCH_HEALTH
     from ha_mcp_engineering.signed_registry import canonical_json
     assert result["predecessor_capabilities_sha256"] == hashlib.sha256(
         canonical_json(predecessor_references(core_version))).hexdigest()
@@ -945,7 +948,7 @@ async def _run_disposable(lane, configured, *, expected_image, core_version, sta
                 "issued_lease_count", "active_commit_count", "fallback_count"))
             batch = await authority(old + [ref for item in LANES.values() for ref in source_profiles(item)], "batch")
             batch_health = {name: batch.health_snapshot()[name] for name in ("compatible_count", "withheld_count")}
-            assert batch_health == {"compatible_count": 31, "withheld_count": 0}
+            assert batch_health == BATCH_HEALTH
             result = {
                 "result": "PASS", "lane": lane["key"], "core": core_version, "support_slot": binding["slot"],
                 "core_image": binding["image"], "image_index_digest": binding["image_index_digest"],
