@@ -986,6 +986,108 @@ def core_read_source_hashes(archive):
     return dict(sorted(found.items()))
 
 
+OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+LOCAL_EXPORT_BOUND = 16 * 1024 ** 3
+LOCAL_METADATA_BOUND = 2 * 1024 * 1024
+
+
+def _amd64(index_bytes):
+    return [d for d in json.loads(index_bytes).get("manifests", [])
+            if isinstance(d, dict) and isinstance(d.get("platform"), dict)
+            and d["platform"].get("os") == "linux" and d["platform"].get("architecture") == "amd64"]
+
+
+def verify_local_image_chain(blobs, top_index, verified_index, descriptor, manifest):
+    """HAMCP-280 Step B: prove the index-digest image identity from local bytes.
+
+    ``blobs`` maps digests to bytes read from the local ``docker image save``
+    export, ``top_index`` is that export's top-level ``index.json``, and
+    ``verified_index``, ``descriptor`` and ``manifest`` are the committed
+    verifier's pinned-hash-verified remote index, its unique linux/amd64
+    descriptor and the verified manifest bytes. Anything else refuses.
+    """
+    manifest_digest = descriptor["digest"]
+    config = json.loads(manifest)["config"]
+    if manifest_digest not in blobs or config["digest"] not in blobs:
+        raise ValueError("Local image chain is missing the amd64 manifest or configuration")
+    for name, raw in blobs.items():
+        if "sha256:" + hashlib.sha256(raw).hexdigest() != name:
+            raise ValueError("Local image content digest mismatch")
+    if blobs[manifest_digest] != manifest or len(manifest) != descriptor["size"]:
+        raise ValueError("Local manifest is not the verified amd64 manifest")
+    if len(blobs[config["digest"]]) != config["size"]:
+        raise ValueError("Local configuration size mismatch")
+    platform = json.loads(blobs[config["digest"]])
+    if platform.get("os") != "linux" or platform.get("architecture") != "amd64":
+        raise ValueError("Local configuration platform mismatch")
+    if top_index is None:
+        raise ValueError("Local export top-level index missing")
+    top = json.loads(top_index)
+    local = _amd64(top_index)
+    if (top.get("schemaVersion") != 2 or top.get("mediaType") != OCI_INDEX or len(local) != 1
+            or local[0].get("digest") != manifest_digest or local[0].get("size") != len(manifest)
+            or local[0].get("mediaType") != OCI_MANIFEST):
+        raise ValueError("Local export index amd64 link mismatch")
+    remote = _amd64(verified_index)
+    if (len(remote) != 1 or remote[0] != descriptor or remote[0].get("digest") != manifest_digest
+            or remote[0].get("size") != len(manifest) or remote[0].get("mediaType") != OCI_MANIFEST):
+        raise ValueError("Verified index amd64 link mismatch")
+    return {"index_source": "committed verifier pinned-hash-verified remote index",
+            "verified_index_sha256": hashlib.sha256(verified_index).hexdigest(),
+            "local_export_index_sha256": hashlib.sha256(top_index).hexdigest(),
+            "local_blobs": sorted(blobs), "platform": "linux/amd64",
+            "platform_manifest": manifest_digest, "configuration_digest": config["digest"],
+            "source": "docker image save --platform linux/amd64"}
+
+
+def local_image_chain(image, verified_index, descriptor, manifest, popen=None):
+    """Read the chain's metadata from the local image store only (no registry)."""
+    import subprocess
+    import tarfile
+    import threading
+    popen = popen or subprocess.Popen
+    index_digest = image.rpartition("@")[2]
+    config_digest = json.loads(manifest)["config"]["digest"]
+    targets = {"blobs/sha256/" + d.split(":", 1)[1]: d
+               for d in (index_digest, descriptor["digest"], config_digest)}
+    blobs, top_index, size = {}, None, 0
+    with popen(["docker", "image", "save", "--platform", "linux/amd64", image],
+               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+        timer = threading.Timer(90, process.kill)
+        timer.start()
+        try:
+            with tarfile.open(fileobj=process.stdout, mode="r|") as export:
+                for member in export:
+                    size += member.size
+                    if size > LOCAL_EXPORT_BOUND:
+                        raise ValueError("Oversized local image export")
+                    if member.name == "index.json" or member.name in targets:
+                        if not member.isfile() or member.size > LOCAL_METADATA_BOUND:
+                            raise ValueError("Ambiguous or oversized local image metadata")
+                        raw = export.extractfile(member).read()
+                        if member.name == "index.json":
+                            if top_index is not None:
+                                raise ValueError("Ambiguous or oversized local image metadata")
+                            top_index = raw
+                        elif targets[member.name] in blobs:
+                            raise ValueError("Ambiguous or oversized local image metadata")
+                        else:
+                            blobs[targets[member.name]] = raw
+            # The export must finish successfully; drain any tar padding.
+            while chunk := process.stdout.read(1024 * 1024):
+                size += len(chunk)
+                if size > LOCAL_EXPORT_BOUND:
+                    raise ValueError("Oversized local image export")
+            if process.wait(timeout=5) != 0:
+                raise ValueError("Local image export failed")
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.kill()
+    return verify_local_image_chain(blobs, top_index, verified_index, descriptor, manifest)
+
+
 def verify_disposable_publication(image, container, source_archive, output, core_version):
     """Bind owned linux/amd64 container to verified index/manifest bytes."""
     import subprocess
@@ -1030,7 +1132,18 @@ def verify_disposable_publication(image, container, source_archive, output, core
     before = command(["container", "inspect", "--format", "{{.Id}} {{.Image}}", container]).decode().strip().split()
     image_identity = command(["image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", image]).decode().strip().split()
     after = command(["container", "inspect", "--format", "{{.Id}} {{.Image}}", container]).decode().strip().split()
-    if len(before) != 2 or before != after or before[1] != config_digest or image_identity != [config_digest, "linux/amd64"]:
+    if len(before) != 2 or before != after:
+        raise ValueError("Running disposable image binding failed")
+    chain = None
+    if before[1] == config_digest and image_identity == [config_digest, "linux/amd64"]:
+        pass
+    elif before[1] == entry["image_index_digest"] and image_identity == [entry["image_index_digest"], "linux/amd64"]:
+        # HAMCP-309: a containerd image store reports the index digest. Accept it
+        # only with the full local chain, then re-prove container continuity.
+        chain = local_image_chain(image, index, descriptor, manifest)
+        if command(["container", "inspect", "--format", "{{.Id}} {{.Image}}", container]).decode().strip().split() != before:
+            raise ValueError("Running disposable image binding failed")
+    else:
         raise ValueError("Running disposable image binding failed")
     receipt = {"result": "PASS", "core_version": core_version, "support_slot": binding["slot"],
                "index": entry["image_index_digest"], "platform": "linux/amd64",
@@ -1038,6 +1151,8 @@ def verify_disposable_publication(image, container, source_archive, output, core
                "source_commit": entry["source_commit"], "source_archive_sha256": digest.hexdigest(),
                "core_read_sources_sha256": core_read_source_hashes(archive),
                "container_identity_continuity": True, "arm64_execution": False}
+    if chain is not None:
+        receipt.update(image_identity="index_with_local_chain", local_image_chain=chain)
     output = Path(output)
     output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
     output.with_suffix(".index.json").write_bytes(index)

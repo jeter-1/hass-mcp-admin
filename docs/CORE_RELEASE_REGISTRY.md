@@ -630,6 +630,26 @@ these timings do not prove a new run passed. All fixtures are synthetic, owned
 and cleaned up. Delete acceptance retains the elevated-path-only limitation.
 The candidate contains exactly the passing subset of the signed predecessor's
 references, preserving fingerprints and order; passing lanes cannot add profiles.
+A lane group that fails records `passed: false` and prints `WITHHELD`; the lane
+step still exits 0 by design so that every other group runs (HAMCP-309 confirmed
+this is intended, not a defect). The candidate builder selects only groups whose
+`passed` is exactly `true`, treats a missing receipt as withheld, refuses an
+empty subset, and in acceptance refuses anything short of all 31 references.
+
+Off GitHub Actions (HAMCP-309), the same committed harness runs only with an
+explicit `CORE_EVIDENCE_HOST_MODE=local`, which is logged; on Actions that
+variable is unset and behaviour is unchanged. `scripts/core_evidence_host.py`
+replaces the two `sudo` steps: on Actions it executes exactly the former
+`sudo install -m 600` / `sudo rm -rf` argv, and locally it uses the pinned
+fixture writer image with no network, mounting only the lane's owned
+disposable directory, verifying the staged file's SHA-256 and mode and
+refusing on any removal residue. Locally, `github_retry.py download` may fetch
+the public `codeload.github.com` archive without a token, but only with a
+pinned `--sha256` (the workflow now also passes the Alarmo pin on Actions).
+The disposable image binding accepts the configuration digest, or the pinned
+index digest only with a local chain proof: hash-exact local amd64 manifest
+and configuration blobs, the index link proven from the verifier's
+pinned-hash remote index bytes, linux/amd64, and unchanged container identity.
 
 PR acceptance is artifact-only: real .1→.3 refusal, identical-source **fixture**
 inheritance plus disposable lanes, and a separate real .3 run using main's binding.

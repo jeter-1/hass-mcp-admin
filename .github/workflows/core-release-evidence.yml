@@ -260,13 +260,15 @@ jobs:
           printf 'REAL_HA_ENTITY_METADATA_RESULT=%s\n' "$RUNNER_TEMP/entity-metadata-$HA_CONTRACT_LANE.json"
           printf 'REAL_HA_CORE_ARCHIVE=%s\n' "$core_archive"
         } >> "$GITHUB_ENV"
-        # Bounded retry on 429/5xx/network only; prepare-archive checks the pinned digest.
+        # Bounded retry on 429/5xx/network only; the download and prepare-archive both check the pinned digest.
         python3 -I -S scripts/github_retry.py download \
-          --url 'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive"
+          --url 'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive" \
+          --sha256 ab980cb4710024d1a46a9b9e8a254627aeb63096f74cb3b0a612f16f8a231a9d
         python scripts/alarmo_inspection_contract_acceptance.py --prepare-archive "$archive" --destination "$overlay"
         cp -R "$overlay/custom_components/alarmo" "$REAL_HA_CONTRACT_DIR/custom_components/"
         # Only this owned synthetic store needs the migration writer directory permissions.
-        sudo install -m 600 "$overlay/.storage/alarmo.storage" "$REAL_HA_CONTRACT_DIR/.storage/alarmo.storage"
+        python3 -I -S scripts/core_evidence_host.py stage --mode 600 \
+          --source "$overlay/.storage/alarmo.storage" --destination "$REAL_HA_CONTRACT_DIR/.storage/alarmo.storage"
         cp -R tests/fixtures/alarmo_interval_observer/custom_components/alarmo_interval_observer \
           "$REAL_HA_CONTRACT_DIR/custom_components/"
         printf '%s\n' 'alarmo_interval_observer:' "  core_version: \"$HA_CONTRACT_VERSION\"" \
@@ -355,7 +357,7 @@ jobs:
         docker rm -f "$HA_CONTRACT_CONTAINER" >/dev/null 2>&1 || true
         docker rm -f "$HA_WRITER_CONTAINER" >/dev/null 2>&1 || true
         rm -f "$REAL_HA_TOKEN_FILE"
-        sudo rm -rf "$REAL_HA_CONTRACT_DIR"
+        python3 -I -S scripts/core_evidence_host.py remove-owned-dir --directory "$REAL_HA_CONTRACT_DIR"
         docker network rm "$HA_CONTRACT_NETWORK" >/dev/null 2>&1 || true
     - name: Verify all owned containers and network removed
       if: always()

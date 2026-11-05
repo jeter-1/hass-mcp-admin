@@ -675,6 +675,91 @@ class DownloadTests(unittest.TestCase):
         self.assertTrue(issubclass(retry.DeadlineSSLSocket, retry.DeadlineIO))
 
 
+class LocalTokenlessDownloadTests(unittest.TestCase):
+    """HAMCP-309: the tokenless public-archive mode is explicit, off-Actions
+    only, pin-required, and never changes the token path."""
+
+    LOCAL = {"CORE_EVIDENCE_HOST_MODE": "local"}
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        self.output = self.directory / "alarmo.tar.gz"
+
+    def run_main(self, environ, opener, sha256=BODY_SHA):
+        argv = ["download", "--url", CORE_URL, "--output", str(self.output)]
+        if sha256 is not None:
+            argv += ["--sha256", sha256]
+        stdout, stderr = io.BytesIO(), io.StringIO()
+        with patch.object(retry.time, "sleep"), patch.object(retry, "default_opener", lambda: opener):
+            code = retry.main(argv, environ, stdout, stderr)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_local_tokenless_download_is_pinned_unauthenticated_and_logged(self):
+        opener = FakeOpener(FakeResponse())
+        code, stdout, stderr = self.run_main(self.LOCAL, opener)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout), {"bytes": len(BODY), "sha256": BODY_SHA})
+        self.assertEqual(self.output.read_bytes(), BODY)
+        self.assertEqual(stderr, "github_retry download mode: local tokenless public archive; "
+                         "pinned sha256 required\n")
+        request, _ = opener.requests[0]
+        self.assertEqual(request.unredirected_hdrs, {})
+        self.assertNotIn("Authorization", request.headers)
+        self.assertEqual(request.full_url, CORE_URL)
+
+    def test_local_tokenless_hash_mismatch_refuses_and_leaves_nothing(self):
+        opener = FakeOpener(FakeResponse(b"tampered archive"))
+        code, stdout, stderr = self.run_main(self.LOCAL, opener)
+        self.assertEqual(code, 1)
+        self.assertIn("last status sha256_mismatch", stderr)
+        self.assertEqual(stdout, b"")
+        self.assertEqual(list(self.directory.iterdir()), [])
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_local_tokenless_without_a_pin_refuses_before_any_request(self):
+        opener = FakeOpener(FakeResponse())
+        code, _, stderr = self.run_main(self.LOCAL, opener, sha256=None)
+        self.assertEqual(code, 1)
+        self.assertTrue(stderr.endswith("GitHub read refused: tokenless_pin_missing\n"))
+        self.assertEqual(opener.requests, [])
+        with self.assertRaisesRegex(ValueError, "tokenless_token_present"):
+            retry.download(CORE_URL, self.output, SYNTHETIC_TOKEN, BODY_SHA,
+                           FakeOpener(), tokenless=True)
+
+    def test_tokenless_is_never_selected_on_actions_or_without_explicit_local_mode(self):
+        for environ in (
+            {},
+            {"CORE_EVIDENCE_HOST_MODE": "actions"},
+            {"CORE_EVIDENCE_HOST_MODE": "LOCAL"},
+            {"GITHUB_ACTIONS": "true", "CORE_EVIDENCE_HOST_MODE": "local"},
+            {"GITHUB_ACTIONS": "true"},
+            {"GH_TOKEN": "", "GITHUB_ACTIONS": "true", "CORE_EVIDENCE_HOST_MODE": "local"},
+        ):
+            with self.subTest(environ=environ):
+                opener = FakeOpener(FakeResponse())
+                code, stdout, stderr = self.run_main(environ, opener)
+                # Unchanged token path: a missing token still fails closed.
+                self.assertEqual(code, 1)
+                self.assertEqual(stderr, "GitHub read failed: host codeload.github.com, "
+                                 "last status token_missing, 0 attempt(s), not retried\n")
+                self.assertEqual((stdout, opener.requests), (b"", []))
+                self.assertFalse(retry.local_tokenless(environ, ""))
+
+    def test_a_present_token_keeps_the_authenticated_path_even_in_local_mode(self):
+        for environ in (dict(self.LOCAL, GH_TOKEN=SYNTHETIC_TOKEN),
+                        {"GH_TOKEN": SYNTHETIC_TOKEN, "GITHUB_ACTIONS": "true"}):
+            with self.subTest(environ=sorted(environ)):
+                opener = FakeOpener(FakeResponse())
+                code, stdout, stderr = self.run_main(environ, opener)
+                self.assertEqual((code, stderr), (0, ""))
+                request, _ = opener.requests[0]
+                self.assertEqual(request.unredirected_hdrs,
+                                 {"Authorization": "Bearer " + SYNTHETIC_TOKEN})
+                self.assertNotIn(SYNTHETIC_TOKEN, stdout.decode())
+
+
 class ApiGetTests(unittest.TestCase):
     TIMELINE = "repos/jeter-1/hass-mcp-admin/issues/164/timeline?per_page=100"
 

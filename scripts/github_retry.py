@@ -6,7 +6,11 @@ One retry policy serves two read-only transports:
 * ``download`` fetches one exact-commit codeload.github.com archive over
   HTTPS (TLS 1.2 or newer, no redirects) with the job's ``GITHUB_TOKEN``
   (exported as ``GH_TOKEN``), streams it to a temporary file, checks an
-  optional exact SHA-256 and only then moves it into place.
+  optional exact SHA-256 and only then moves it into place.  Off GitHub
+  Actions only (``GITHUB_ACTIONS`` not ``true``), with no ``GH_TOKEN`` and an
+  explicit ``CORE_EVIDENCE_HOST_MODE=local``, the same public archive is
+  fetched tokenless, and then only against a required pinned SHA-256
+  (HAMCP-309).  The mode is logged; with a token present nothing changes.
 * ``api-get`` runs one repository-relative ``gh api`` GET (gh authenticates
   with ``GH_TOKEN``); ``--include`` exposes the HTTP status and Retry-After.
 
@@ -447,7 +451,7 @@ def download_attempt(request, output, sha256, timeout, opener, clock):
             os.unlink(partial)
 
 
-def download(url, output, token, sha256=None, opener=None, **bounds):
+def download(url, output, token, sha256=None, opener=None, tokenless=False, **bounds):
     parts = urllib.parse.urlsplit(url)
     if (parts.scheme != "https" or parts.hostname != DOWNLOAD_HOST or parts.port is not None
             or parts.username is not None or parts.password is not None
@@ -455,13 +459,20 @@ def download(url, output, token, sha256=None, opener=None, **bounds):
         raise ValueError("download_url_not_allowed")
     if sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ValueError("invalid_sha256")
-    if not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,4096}", token):
+    if tokenless:
+        # A public archive without a token is accepted only by its exact pin.
+        if token != "":
+            raise ValueError("tokenless_token_present")
+        if sha256 is None:
+            raise ValueError("tokenless_pin_missing")
+    elif not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,4096}", token):
         raise GitHubReadError(DOWNLOAD_HOST, "token_missing", 0, False)
     output = Path(output)
     output.unlink(missing_ok=True)
     request = urllib.request.Request(url, method="GET", headers={"User-Agent": "hass-mcp-admin-ci"})
-    # Unredirected: even a followed redirect could never carry the token.
-    request.add_unredirected_header("Authorization", "Bearer " + token)
+    if not tokenless:
+        # Unredirected: even a followed redirect could never carry the token.
+        request.add_unredirected_header("Authorization", "Bearer " + token)
     opener = opener or default_opener()
     clock = bounds.get("clock") or time.monotonic
     return bounded_retry(
@@ -505,6 +516,12 @@ def redact(message, token):
     return message.replace(token, "***") if token else message
 
 
+def local_tokenless(environ, token):
+    """The tokenless mode is explicit and never reachable on Actions."""
+    return (token == "" and environ.get("GITHUB_ACTIONS") != "true"
+            and environ.get("CORE_EVIDENCE_HOST_MODE") == "local")
+
+
 def main(argv=None, environ=os.environ, stdout=None, stderr=None):
     stdout = stdout or sys.stdout.buffer
     stderr = stderr or sys.stderr
@@ -521,7 +538,11 @@ def main(argv=None, environ=os.environ, stdout=None, stderr=None):
     token = environ.get("GH_TOKEN", "")
     try:
         if args.command == "download":
-            result = download(args.url, args.output, token, args.sha256)
+            tokenless = local_tokenless(environ, token)
+            if tokenless:
+                print("github_retry download mode: local tokenless public archive; "
+                      "pinned sha256 required", file=stderr)
+            result = download(args.url, args.output, token, args.sha256, tokenless=tokenless)
             stdout.write((json.dumps(result, sort_keys=True) + "\n").encode())
         else:
             stdout.write(api_get(args.route, args.pages))
