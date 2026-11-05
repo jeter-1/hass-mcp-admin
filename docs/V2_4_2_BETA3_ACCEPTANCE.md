@@ -74,7 +74,9 @@ The review needs a security section covering:
     when it does.
   - The acknowledgement is audited as a model-conveyed chat confirmation,
     never as external approval.
-  - Opaque readers and unavailable evidence never warn.
+  - Opaque readers and unavailable evidence never warn. Unavailable
+    evidence proceeds with a note, so a call without the acknowledgement is
+    not an unconditional no-dispatch guarantee.
 - **Bounded output and redaction.**
   - Consumer lists are capped at 20 entries.
   - Template examples are capped at 3.
@@ -87,16 +89,29 @@ against ha-mcp 8.4.3, 8.5.0 and 8.6.0 catalogs:
 - **Each helper type.** A positive set with readback, a no-op without
   dispatch, a live-invalid value refused without dispatch, and an
   unavailable entity refused.
+- **Empty values.** An empty `input_text` value within the live length and
+  pattern, and an empty `input_select` option in the live options, pass
+  preparation, no-op detection and readback. Empty states that the live
+  configuration does not allow, and `unknown`, `unavailable` or missing
+  states, refuse.
+- **Number steps.** The on-step check is exact decimal arithmetic with an
+  allowance of at most 1e-9 of one step at any magnitude. A half-step value
+  near 1e9 with step 1 refuses without dispatch; large on-step values and
+  ordinary decimal steps such as 0.3 at step 0.1 succeed.
 - **Transitions.** Press, increment and timer actions always dispatch.
   Counter limits, a timer state that would make the action a silent no-op,
   and unsupported patterns refuse.
 - **Safety.**
-  - A guest_mode-shaped fixture returns `confirmation_required` without the
+  - A synthetic guest_mode-shaped fixture (never the live helper) returns
+    `confirmation_required` without the
     acknowledgement, with no dispatch and no task. It succeeds with the
     acknowledgement, and the audit records `acknowledged`,
     `model_conveyed_chat_confirmation` and `external_approval: false`.
   - An engineering_acceptance-shaped (opaque-only) fixture never warns.
-  - Unavailable evidence proceeds with the note.
+  - Unavailable evidence proceeds with the note, including on the
+    guest-shaped fixture.
+  - Installed acceptance (section 4) contains no changing call on the live
+    `input_boolean.guest_mode`.
   - Both shapes are also proven against the shipped dependency index and
     binding builder (`HelperRealEvidenceTests`).
 - **Closed request.** Arbitrary service, domain, data, target, selector or
@@ -119,7 +134,10 @@ against ha-mcp 8.4.3, 8.5.0 and 8.6.0 catalogs:
   - treat opaque evidence as exact;
   - skip the readback;
   - allow a non-allowlisted service;
-  - drop the no-op check.
+  - drop the no-op check;
+  - restore the global empty-state refusal;
+  - restore the step-count-scaled tolerance;
+  - reintroduce a live changing guest_mode step in installed acceptance.
 - **The complete repository suite** in the Evidence tier.
 
 ## 2. Release CI
@@ -166,19 +184,25 @@ that and stop after step 2.
    - any template readers listed only as information.
 
    Ask for the current value again: it returns `no_change` with no dispatch.
-4. **Safety-critical warning, no change.**
-   - Read `input_boolean.guest_mode`'s state first.
-   - Call `control_helper` once with the action that would change it.
-   - Do NOT pass `acknowledge_safety_critical`.
-   - Expect `status: confirmation_required`, `dispatch: no_dispatch` and
-     `task_created: false`, listing the consequential automations.
+4. **Safety-critical target, read-only.** `input_boolean.guest_mode` is
+   never a `control_helper` target in this acceptance: make no changing call
+   on it, with or without `acknowledge_safety_critical`.
+   - Read its state with `get_entity`.
+   - Run `entity_dependency_analysis` for it. The exact automation references
+     must include the front-door lock consumers. Read each one with
+     `get_automation_config` and record its lock actions.
    - Read the state again: it must be unchanged.
 
-   **guest_mode must not be changed live.** Never repeat the call with the
-   acknowledgement.
+   A call without the acknowledgement is **not** an unconditional
+   no-dispatch guarantee. When dependency evidence is unavailable, the owner
+   rule makes the change proceed with a note and no warning. A successful
+   earlier read does not prove the evidence will be available for the next
+   call. `confirmation_required` with no dispatch is proven offline on
+   synthetic guest-shaped fixtures (section 1, **Safety**), not live.
+
 5. **Audit.** `get_audit_log` shows step 3's rows as
-   `typed_helper_value_lifecycle` `succeeded_verified`, and step 4's row as
-   `helper_value_outcome: confirmation_required` with no task ID.
+   `typed_helper_value_lifecycle` `succeeded_verified`, and no
+   `control_helper` row for `input_boolean.guest_mode`.
 
 PASS needs every check. If a step fails, record the response in HAMCP-311.
 Whether to roll back is Josh's decision.

@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -371,6 +372,109 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'no_change')
         self.assertEqual(self.transport.writes, 0)
 
+    # Empty values are valid when the live configuration allows them (Codex M1).
+
+    def optional_text(self, state, pattern=None):
+        self.transport.states['input_text.synthetic'].update(
+            state=state, attributes={'min': 0, 'max': 8, 'pattern': pattern, 'mode': 'text'})
+
+    async def test_empty_input_text_baseline_changes_to_value(self):
+        self.optional_text('')
+        await self.assert_verified(self.request('input_text.synthetic', 'set_value', 'hello'), 'hello')
+        self.assertEqual(self.dispatches()[0]['data'], {'value': 'hello'})
+
+    async def test_input_text_cleared_to_empty_is_verified_and_releases_locks(self):
+        self.optional_text('abc', pattern='[a-z]*')
+        result = await self.assert_verified(self.request('input_text.synthetic', 'set_value', ''), '')
+        self.assertEqual(result['provider_attempt_count'], 1)
+        self.assertEqual(self.dispatches()[0]['data'], {'value': ''})
+        self.assertEqual(self.transport.writes, 1)
+
+    async def test_empty_input_text_already_empty_is_no_change(self):
+        self.optional_text('')
+        result = await self.call(self.request('input_text.synthetic', 'set_value', ''))
+        self.assertEqual(result['status'], 'no_change', result)
+        self.assertEqual(result['provider_attempt_count'], 0)
+        self.assertFalse(result['dispatch_intent_recorded'])
+        self.assertEqual(self.dispatches(), [])
+        self.settled()
+
+    async def test_empty_live_select_option_selects_and_reads_back(self):
+        self.transport.states['input_select.synthetic']['attributes']['options'] = ['', 'Home', 'Away']
+        await self.assert_verified(self.request('input_select.synthetic', 'select_option', ''), '')
+        self.assertEqual(self.dispatches()[0]['data'], {'option': ''})
+        result = await self.call(self.request('input_select.synthetic', 'select_option', ''))
+        self.assertEqual(result['status'], 'no_change', result)
+        self.assertEqual(self.transport.writes, 1)
+        await self.assert_verified(self.request('input_select.synthetic', 'select_option', 'Away'), 'Away')
+
+    async def test_empty_value_or_state_outside_live_configuration_refuses(self):
+        # Empty request values: checked against live options, length and pattern.
+        for request, category in [(self.request('input_select.synthetic', 'select_option', ''), 'option_not_available'),
+                                  (self.request('input_text.synthetic', 'set_value', ''), 'length_out_of_range')]:
+            with self.subTest(request=request.entity_id), self.assertRaisesRegex(HelperRefusal, category):
+                await self.call(request)
+        # Empty, unknown, unavailable or missing states that the domain or the
+        # live configuration cannot hold stay unprovable.
+        cases = [('input_text.synthetic', '', {'min': 1, 'max': 8, 'pattern': None}, 'hello'),
+                 ('input_text.synthetic', '', {'min': 0, 'max': 8, 'pattern': '[a-z]+'}, 'hello'),
+                 ('input_text.synthetic', '', {'min': 0, 'max': 8, 'pattern': '['}, 'hello'),
+                 ('input_text.synthetic', 'unknown', {'min': 0, 'max': 8, 'pattern': None}, 'hello'),
+                 ('input_text.synthetic', None, {'min': 0, 'max': 8, 'pattern': None}, 'hello'),
+                 ('input_select.synthetic', '', {'options': ['Home', 'Away']}, 'Away'),
+                 ('input_select.synthetic', 'unknown', {'options': ['unknown', 'Away']}, 'Away'),
+                 ('input_number.synthetic', '', {'min': 10, 'max': 30, 'step': 0.5}, 22.5),
+                 ('input_datetime.synthetic', '', {'has_date': True, 'has_time': True}, '2026-12-24 18:00:00'),
+                 ('counter.synthetic', '', {'initial': 0, 'step': 1, 'minimum': 0, 'maximum': 6}, 2),
+                 ('timer.synthetic', 'unknown', {'duration': '0:05:00'}, None)]
+        for entity, state, attributes, value in cases:
+            with self.subTest(entity=entity, state=state, attributes=attributes):
+                self.transport.states[entity].update(state=state, attributes=attributes)
+                action = HELPER_ACTIONS[entity.split('.')[0]][-1 if entity.startswith('counter') else 0]
+                with self.assertRaisesRegex(HelperRefusal, 'target_state_unavailable'):
+                    await self.call(self.request(entity, action, value))
+        self.assertEqual(self.dispatches(), []); self.settled()
+
+    # The on-step check is bounded to a tiny fraction of ONE step (Codex M2).
+
+    def wide_number(self, low=0, high=2000000000, step=1, state='0.0'):
+        self.transport.states['input_number.synthetic'].update(
+            state=state, attributes={'min': low, 'max': high, 'step': step})
+
+    async def test_half_step_at_large_magnitude_refuses_without_dispatch(self):
+        self.wide_number()
+        for value in [1000000000.5, 1999999999.5, 1000000000.25, 1000000000.000001]:
+            with self.subTest(value=value), self.assertRaisesRegex(HelperRefusal, 'not_on_step') as caught:
+                await self.call(self.request('input_number.synthetic', 'set_value', value))
+            self.assertEqual(caught.exception.details['status'], 'refused')
+        self.assertEqual(self.dispatches(), []); self.assertEqual(self.transport.writes, 0)
+        self.settled()
+
+    async def test_large_on_step_values_are_accepted(self):
+        self.wide_number()
+        for value in [1000000000, 1999999999, 2000000000, 1000000001.0]:
+            await self.assert_verified(self.request('input_number.synthetic', 'set_value', value),
+                                       f'{float(value):.15}')
+        self.wide_number(step=0.5)
+        await self.assert_verified(self.request('input_number.synthetic', 'set_value', 1999999999.5),
+                                   '1999999999.5')
+        self.assertEqual(self.transport.writes, 5)
+
+    async def test_ordinary_decimal_steps_are_accepted(self):
+        self.wide_number(high=10, step=0.1)
+        for value in [0.3, 0.7, 0.1 * 3, 9.9]:
+            await self.assert_verified(self.request('input_number.synthetic', 'set_value', value),
+                                       f'{float(value):.15}')
+        self.wide_number(low=-5, high=5, step=0.25, state='0.0')
+        await self.assert_verified(self.request('input_number.synthetic', 'set_value', 1.75), '1.75')
+        self.wide_number(low=0.05, high=1, step=0.1, state='0.05')
+        await self.assert_verified(self.request('input_number.synthetic', 'set_value', 0.35), '0.35')
+        for low, step, value in [(0, 0.1, 0.35), (-5, 0.25, 1.8), (0.05, 0.1, 0.3)]:
+            self.wide_number(low=low, high=10, step=step, state=f'{float(low):.15}')
+            with self.subTest(value=value), self.assertRaisesRegex(HelperRefusal, 'not_on_step'):
+                await self.call(self.request('input_number.synthetic', 'set_value', value))
+        self.assertEqual(self.transport.writes, 6)
+
     async def test_transitions_always_dispatch(self):
         # Press, increment and timer actions are never already reached.
         self.transport.states['timer.synthetic'].update(state='active', attributes={
@@ -583,6 +687,18 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('synthetic-private-index-text', json.dumps(result))
             self.assertEqual(request_summary(self.telemetry)['safety_gate'], 'evidence_unavailable')
         self.assertEqual(self.transport.writes, 2)
+
+    async def test_guest_shaped_call_without_ack_dispatches_when_evidence_unavailable(self):
+        # Why installed acceptance never makes a changing guest_mode call (Codex
+        # H1): the owner rule proceeds with a note when evidence is unavailable,
+        # so an unacknowledged call is not a no-dispatch guarantee.
+        self.evidence['input_boolean.guest_mode'] = RuntimeError('synthetic-index-down')
+        result = await self.call(self.request('input_boolean.guest_mode', 'turn_on'))
+        self.assertEqual(result['status'], 'succeeded_verified', result)
+        self.assertEqual(result['safety']['evidence'], 'unavailable')
+        self.assertFalse(result['safety']['safety_critical'])
+        self.assertEqual(len(self.dispatches()), 1)
+        self.assertEqual(self.transport.states['input_boolean.guest_mode']['state'], 'on')
 
     async def test_binding_withdrawn_during_evidence_read_refuses_before_declaration(self):
         original = self.service.dependency_reader
@@ -865,6 +981,44 @@ class HelperBoundaryTests(unittest.TestCase):
             self.assertIn('Superseded for value changes by control_helper', tools[name].description)
         self.assertIn('create_helper_options_plan', tools)
         self.assertNotIn('Superseded', tools['create_helper_options_plan'].description)
+
+
+class HelperAcceptancePlanTests(unittest.TestCase):
+    """Installed acceptance never changes the live guest_mode helper (Codex H1).
+
+    Without the acknowledgement a call still dispatches when dependency
+    evidence is unavailable, so warning/no-dispatch is proven offline only.
+    """
+    GUEST = 'input_boolean.guest_mode'
+    CHANGING = re.compile(r'calls? `control_helper`|turn_on|turn_off|would change|'
+                          r'acknowledge_safety_critical(?:`?\s*[:=]\s*`?true)', re.IGNORECASE)
+
+    def installed(self):
+        text = (ROOT/'docs'/'V2_4_2_BETA3_ACCEPTANCE.md').read_text(encoding='utf-8')
+        section = text.split('\n## 4. Installed acceptance', 1)[1].split('\n## ', 1)[0]
+        return section, re.split(r'\n(?=\d+\. \*\*)', section)[1:]
+
+    def test_no_changing_call_on_live_guest_mode(self):
+        section, steps = self.installed()
+        self.assertGreaterEqual(len(steps), 5)
+        guest_steps = [step for step in steps if self.GUEST in step]
+        self.assertTrue(guest_steps)
+        for step in guest_steps:
+            with self.subTest(step=step.split('\n', 1)[0]):
+                self.assertIsNone(self.CHANGING.search(step))
+                self.assertNotRegex(step, r'[Ee]xpect[^.]*confirmation_required')
+        for step in steps:
+            if re.search(r'calls? `control_helper`', step, re.IGNORECASE):
+                self.assertEqual(set(re.findall(r'input_boolean\.[a-z0-9_]+', step)),
+                                 {'input_boolean.engineering_acceptance'})
+        flat = ' '.join(section.split())
+        self.assertIn('is **not** an unconditional no-dispatch guarantee', flat)
+        self.assertIn('make no changing call on it, with or without `acknowledge_safety_critical`', flat)
+
+    def test_offline_evidence_names_the_synthetic_guest_fixture(self):
+        text = ' '.join((ROOT/'docs'/'V2_4_2_BETA3_ACCEPTANCE.md').read_text(encoding='utf-8').split())
+        self.assertIn('A synthetic guest_mode-shaped fixture (never the live helper)', text)
+        self.assertIn('a call without the acknowledgement is not an unconditional no-dispatch guarantee', text)
 
 
 class HelperGatewayTests(unittest.TestCase):

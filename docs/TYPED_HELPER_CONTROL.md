@@ -52,15 +52,31 @@ operation ID works as for `control_power`:
 
 Before any durable declaration, Engineering reads the exact entity's state, its
 revision (`last_updated`) and only the attributes the action needs. It refuses
-an unavailable or unknown entity, and missing or malformed attributes. It also
-refuses any value that Home Assistant would reject, or would silently ignore or
-clamp:
+an `unavailable`, `unknown` or missing state, and missing or malformed
+attributes. An empty state is valid only where the domain and the live
+configuration allow it:
+- an `input_text` whose live `min`, `max` and `pattern` accept the empty
+  string;
+- an `input_select` whose live `options` include the empty string.
 
-- **input_select:** the value must be one of the live `options`.
+Every other empty state refuses (`helper_target_state_unavailable`). The same
+rule applies to the baseline, the no-op check and the readback, so clearing a
+text helper verifies and an already-empty value is `no_change`.
+
+It also refuses any value that Home Assistant would reject, or would silently
+ignore or clamp:
+
+- **input_select:** the value must be one of the live `options`, including
+  an empty option.
 - **input_number:** `min <= value <= max`, and `(value - min)` is a multiple of
   `step`.
+  - The check uses exact decimal arithmetic on each number's shortest
+    round-trip form. It accepts an error of at most 1e-9 of one step, at any
+    magnitude, to absorb binary noise such as `0.1 * 3`.
+  - A half step refuses however large the value is: with step 1,
+    `1000000000.5` refuses (`helper_value_not_on_step`).
 - **input_text:** `min <= len(value) <= max`, and the full value matches the
-  live `pattern`.
+  live `pattern`. An empty value is checked the same way.
   - Home Assistant does not enforce `pattern`, and it silently ignores an
     out-of-range length, so Engineering checks both.
   - The pattern runs with Python `re`. A pattern over 255 characters, or one

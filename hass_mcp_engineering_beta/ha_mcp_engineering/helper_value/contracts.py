@@ -9,6 +9,7 @@ state and attributes before dispatch. Semantics follow Home Assistant Core
 from __future__ import annotations
 
 from datetime import date, datetime, time as dtime
+from decimal import Decimal, InvalidOperation, localcontext
 import math
 import re
 from typing import Literal
@@ -74,6 +75,11 @@ MAX_TEXT = 255  # Core MAX_LENGTH_STATE_STATE
 MAX_OPTIONS = 256
 MAX_PATTERN = 255
 COUNTER_LIMIT = 2 ** 53
+# The largest off-step error accepted, as a fraction of ONE step: it absorbs
+# binary float noise (0.1 * 3) and never scales with the value's magnitude.
+STEP_ALLOWANCE = Decimal("1e-9")
+# Core's STATE_UNKNOWN and STATE_UNAVAILABLE: no helper value is provable.
+UNPROVABLE_STATES = frozenset({"unknown", "unavailable"})
 DATE_RE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 TIME_RE = r"[0-9]{2}:[0-9]{2}:[0-9]{2}"
 DURATION_RE = re.compile(r"([0-9]{1,3}):([0-5][0-9]):([0-5][0-9])")
@@ -127,9 +133,9 @@ class HelperRequest(BaseModel):
             raise HelperRefusal("helper_value_not_allowed")
         value = self.value
         if self.domain in {"input_select", "input_text"}:
+            # An empty value is checked against the live options or length
+            # and pattern, never refused here.
             if not isinstance(value, str) or len(value) > MAX_TEXT:
-                raise HelperRefusal("helper_value_invalid")
-            if self.domain == "input_select" and not value:
                 raise HelperRefusal("helper_value_invalid")
         elif self.domain == "input_number":
             if isinstance(value, str) or not math.isfinite(value):
@@ -221,7 +227,11 @@ def checked_state(raw, entity_id):
         raise HelperRefusal("helper_target_identity_unproven")
     domain = entity_id.split(".", 1)[0]
     state = raw.get("state")
-    if not isinstance(state, str) or not state or len(state) > MAX_TEXT or state in {"unavailable"}:
+    if not isinstance(state, str) or len(state) > MAX_TEXT or state in UNPROVABLE_STATES:
+        raise HelperRefusal("helper_target_state_unavailable")
+    # Only input_text and input_select can hold an empty value, and only when
+    # the live configuration allows it (``_check_domain_state``).
+    if not state and domain not in {"input_text", "input_select"}:
         raise HelperRefusal("helper_target_state_unavailable")
     stamp = raw.get("last_updated")
     if not isinstance(stamp, str) or not 1 <= len(stamp) <= 64:
@@ -256,6 +266,8 @@ def _check_domain_state(domain, state):
         raise HelperRefusal("helper_target_state_unavailable")
     if domain == "input_select" and not isinstance(attrs.get("options"), list):
         raise HelperRefusal("helper_attributes_unproven")
+    if domain == "input_select" and not value and "" not in attrs["options"]:
+        raise HelperRefusal("helper_target_state_unavailable")
     if domain == "input_number":
         if any(_number(attrs.get(key)) is None for key in ("min", "max", "step")):
             raise HelperRefusal("helper_attributes_unproven")
@@ -266,6 +278,11 @@ def _check_domain_state(domain, state):
             raise HelperRefusal("helper_attributes_unproven")
         if attrs.get("pattern") is not None and not isinstance(attrs["pattern"], str):
             raise HelperRefusal("helper_attributes_unproven")
+        if not value:
+            try:
+                check_text(attrs, value)
+            except HelperRefusal:
+                raise HelperRefusal("helper_target_state_unavailable") from None
     if domain == "input_datetime":
         if type(attrs.get("has_date")) is not bool or type(attrs.get("has_time")) is not bool:
             raise HelperRefusal("helper_attributes_unproven")
@@ -293,6 +310,44 @@ def _counter_next(state, delta=None, absolute=None):
     return value
 
 
+def check_text(attrs, value) -> None:
+    """Live input_text length and full-match pattern, empty values included."""
+    if not attrs["min"] <= len(value) <= attrs["max"]:
+        raise HelperRefusal("helper_value_length_out_of_range")
+    pattern = attrs.get("pattern")
+    if pattern:
+        if len(pattern) > MAX_PATTERN:
+            raise HelperRefusal("helper_pattern_unsupported")
+        try:
+            compiled = re.compile(pattern)
+        except (re.error, RecursionError):
+            raise HelperRefusal("helper_pattern_unsupported") from None
+        if compiled.fullmatch(value) is None:
+            raise HelperRefusal("helper_value_pattern_mismatch")
+
+
+def _decimal(value) -> Decimal:
+    # repr() is the shortest decimal that round-trips the float: the value the
+    # client or Home Assistant wrote, not its binary approximation.
+    return Decimal(value) if isinstance(value, int) else Decimal(repr(value))
+
+
+def on_step(value, low, step) -> bool:
+    """Exact decimal check that ``value - low`` is a whole number of steps.
+
+    The accepted error is at most ``STEP_ALLOWANCE`` of one step at every
+    magnitude, so a half step is refused however large the value is.
+    """
+    with localcontext() as context:
+        context.prec = 1000  # exact for any finite float operands
+        try:
+            unit = _decimal(step)
+            remainder = (_decimal(value) - _decimal(low)) % unit
+        except InvalidOperation:
+            return False
+        return min(abs(remainder), unit - abs(remainder)) <= unit * STEP_ALLOWANCE
+
+
 def check_live(request: HelperRequest, state: dict) -> None:
     """Refuse a value or action the live helper configuration cannot accept."""
     domain, action, value = request.domain, request.action, request.value
@@ -304,22 +359,10 @@ def check_live(request: HelperRequest, state: dict) -> None:
         low, high, step = attrs["min"], attrs["max"], attrs["step"]
         if not low <= value <= high:
             raise HelperRefusal("helper_value_out_of_range")
-        steps = (value - low) / step
-        if abs(steps - round(steps)) > 1e-9 * max(1.0, abs(steps)):
+        if not on_step(value, low, step):
             raise HelperRefusal("helper_value_not_on_step")
     elif domain == "input_text":
-        if not attrs["min"] <= len(value) <= attrs["max"]:
-            raise HelperRefusal("helper_value_length_out_of_range")
-        pattern = attrs.get("pattern")
-        if pattern:
-            if len(pattern) > MAX_PATTERN:
-                raise HelperRefusal("helper_pattern_unsupported")
-            try:
-                compiled = re.compile(pattern)
-            except (re.error, RecursionError):
-                raise HelperRefusal("helper_pattern_unsupported") from None
-            if compiled.fullmatch(value) is None:
-                raise HelperRefusal("helper_value_pattern_mismatch")
+        check_text(attrs, value)
     elif domain == "input_datetime":
         day, clock = datetime_parts(value)
         if bool(day) != attrs["has_date"] or bool(clock) != attrs["has_time"]:

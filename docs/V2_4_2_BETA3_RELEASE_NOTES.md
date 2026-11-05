@@ -27,9 +27,9 @@ dispatch.
 | Helper | Actions |
 | --- | --- |
 | `input_boolean` | `turn_on`, `turn_off` |
-| `input_select` | `select_option` (a live option) |
-| `input_number` | `set_value` (within the live min, max and step) |
-| `input_text` | `set_value` (within the live length and pattern) |
+| `input_select` | `select_option` (a live option, including an empty one) |
+| `input_number` | `set_value` (within the live min, max and step; exact decimal step check) |
+| `input_text` | `set_value` (within the live length and pattern; empty when they allow it) |
 | `input_datetime` | `set_datetime` (fields per `has_date` and `has_time`) |
 | `input_button` | `press` |
 | `counter` | `increment`, `decrement`, `reset`, `set_value` |
@@ -62,7 +62,8 @@ it adds no new analysis.
   approval.
 - **Never warns.** Opaque or template readers are listed as information,
   for example "may read via templates: N, including …".
-- **Evidence unavailable.** The call proceeds and says so.
+- **Evidence unavailable.** The call proceeds and says so. So a call
+  without the acknowledgement is not a guarantee that nothing is sent.
 
 **Results.** Each result lists:
 - the known exact consumers, up to 20;
