@@ -171,7 +171,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(runtime, "configure", side_effect=synthetic_transport):
                     await configure_with_test_authority(runtime, settings(), cache_path=self.cache.with_name(version + ".json"),
                                                        expected_image=image, core_version=version)
-                self.assert_admitted(runtime, 19)
+                self.assert_admitted(runtime, 20)  # + HAMCP-311: the disposable lane signs every compiled typed profile
                 self.assertIsNone(runtime.acquire(("core.integration_inspection_metadata_read",)))
         # Controls generated to be absent from the reviewed list (HAMCP-159 R2).
         for version in (*core_bindings.unreviewed_versions(), "latest", "../core", None):
@@ -212,7 +212,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
                     await configure_with_test_authority(
                         runtime, settings(), cache_path=self.cache.with_name(version + ".json"),
                         expected_image=image, core_version=version)
-                self.assert_admitted(runtime, 19)
+                self.assert_admitted(runtime, 20)  # + HAMCP-311: the disposable lane signs every compiled typed profile
                 probe = seen["registry"].probe_profile_for(version)
                 self.assertEqual(probe, CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE)
                 self.assertNotEqual(probe, CHILD_DEVICE_PROBE_PROFILE)
@@ -552,7 +552,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
         self.assertEqual(len(tools), 28)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 108)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 109)
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])

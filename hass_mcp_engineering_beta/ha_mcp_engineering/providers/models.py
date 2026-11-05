@@ -16,6 +16,7 @@ class ProviderCapability(str, Enum):
     SERVICE_DISCOVERY = "service_discovery"
     TYPED_FAN_EXECUTION = "typed_fan_execution"
     TYPED_POWER_EXECUTION = "typed_power_execution"
+    TYPED_HELPER_VALUE_EXECUTION = "typed_helper_value_execution"
     ORDINARY_SERVICE_EXECUTION = "ordinary_service_execution"
     TEMPLATE_RENDER = "template_render"
     HISTORY_READ = "history_read"

@@ -54,7 +54,7 @@ class CoreRegistryPreparationTests(unittest.TestCase):
         candidate = self.candidate()
         self.assertNotIn(b'"signature"', candidate)
         parsed = prepare.parse_journal(self.sign(candidate), self.signer.private_key.public_key())
-        self.assertEqual(len(parsed.accepted.entries[0].capabilities), 19)
+        self.assertEqual(len(parsed.accepted.entries[0].capabilities), 20)  # + HAMCP-311: synthetic typed entries sign every compiled typed profile
         invalid = deepcopy(entry)
         invalid['capabilities'][-1]['adapter_id'] = 'unknown-adapter'
         with self.assertRaisesRegex(ValueError, 'exact capability'):
@@ -267,12 +267,12 @@ class CoreCapabilityExtensionTests(unittest.TestCase):
             registry = CoreReleaseRegistry(**kwargs, fetcher=fetch)
             self.assertTrue(asyncio.run(registry.refresh()))
             for current in (registry, CoreReleaseRegistry(**kwargs)):
-                self.assertEqual(len(current.selections("2026.9.4")), 20)
-                self.assertEqual(len(current.selections("2026.9.3")), 19)
+                self.assertEqual(len(current.selections("2026.9.4")), 21)  # + HAMCP-311: synthetic typed entries sign every compiled typed profile
+                self.assertEqual(len(current.selections("2026.9.3")), 20)
                 # Same selector with the prior executable's compiled reference set.
                 with patch("ha_mcp_engineering.ha_core_readmission.registry.CORE_RUNTIME_CAPABILITY_PROFILES",
                            CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES):
-                    self.assertEqual(len(current.selections("2026.9.4")), 19)
+                    self.assertEqual(len(current.selections("2026.9.4")), 20)
                     self.assertNotIn("core.integration_inspection_metadata_read",
                                      {x.capability_ids[0] for x in current.selections("2026.9.4")})
 
@@ -290,7 +290,7 @@ class CoreCapabilityExtensionTests(unittest.TestCase):
             payload = extended
             self.assertTrue(asyncio.run(registry.refresh()))
             self.assertNotEqual(registry.selection_token("2026.9.4"), old_token)
-            self.assertEqual(len(registry.selections("2026.9.4")), 20)
+            self.assertEqual(len(registry.selections("2026.9.4")), 21)  # + HAMCP-311: synthetic typed entries sign every compiled typed profile
 
     def test_all_signing_labels_refuse_hand_edited_extension_and_recomputed_hash(self):
         previous, old, sibling, new, evidence = self.extension()

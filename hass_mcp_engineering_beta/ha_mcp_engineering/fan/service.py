@@ -250,6 +250,13 @@ class FanService:
             telemetry.audit_context[self.outcome_key] = result["state"]
         return result
 
+    async def before_declaration(self, prepared, check):
+        """Specialization hook before the durable declaration; no-op here.
+
+        It runs after live preparation and before ``save``, so a refusal here
+        leaves no task and proves no dispatch.
+        """
+
     def failure_guidance(self, request):
         """Point to a task only when durable state says one exists.
 
@@ -282,6 +289,7 @@ class FanService:
         try:
             prepared = await self.adapter.prepare(request)
             check()
+            await self.before_declaration(prepared, check)
         finally:
             self.preparing -= 1
         prepared = self.save(prepared)

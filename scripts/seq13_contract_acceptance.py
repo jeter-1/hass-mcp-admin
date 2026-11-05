@@ -51,6 +51,8 @@ NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
                               "core.dashboard_metadata_operation",
                               # HAMCP-071 scene configuration (seq 16 signing batch).
                               "core.scene_configuration_operation"})
+# HAMCP-311: compiled and signed-only, in no predecessor and no signing batch yet.
+SIGNED_ONLY_DORMANT = frozenset({"core.typed_helper_value_operation"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"
@@ -130,7 +132,7 @@ def shipped_references():
     """The predecessor: every compiled profile except the seq-13 dormant set."""
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     refs = [{k: p.to_mapping()[k] for k in REFERENCE_KEYS} for p in CORE_RUNTIME_CAPABILITY_PROFILES
-            if p.capability_id not in SEQ13_DORMANT | NOVEMBER_DORMANT]
+            if p.capability_id not in SEQ13_DORMANT | NOVEMBER_DORMANT | SIGNED_ONLY_DORMANT]
     assert len(refs) == SHIPPED_SIGNED_COUNT and len({r["capability_id"] for r in refs}) == len(refs)
     assert METADATA in {r["capability_id"] for r in refs}
     return refs

@@ -165,7 +165,7 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_transition": list(lane["authority_transition"]),
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
-        "batch_health": {"compatible_count": 31, "withheld_count": 0},
+        "batch_health": {"compatible_count": 31, "withheld_count": 1},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
@@ -260,8 +260,9 @@ class LaneDefinitionTests(unittest.TestCase):
         refs = seq15.predecessor_references()
         ids = {r["capability_id"] for r in refs}
         self.assertEqual(len(refs), 26)
-        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT))
-        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT,
+        self.assertFalse(ids & (seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT | seq15.SIGNED_ONLY_DORMANT))
+        self.assertEqual(ids | seq15.SEQ15_DORMANT | seq15.SEQ16_DORMANT
+                         | seq15.SIGNED_ONLY_DORMANT,  # + HAMCP-311
                          {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
         # HAMCP-269 includes the scene profile in this five-capability batch.
         self.assertEqual(seq15.SEQ16_DORMANT, set())
@@ -435,7 +436,8 @@ class ReceiptTests(unittest.TestCase):
             lambda v: v["fixture_absence"].pop("script"),
             lambda v: v["fixture_absence"].update(unverified=True),
             lambda v: v.update(provider_identity="supervisor"),
-            lambda v: v["batch_health"].update(withheld_count=1),
+            lambda v: v["batch_health"].update(withheld_count=0),
+            lambda v: v["batch_health"].update(withheld_count=2),
             lambda v: v["batch_health"].update(compatible_count=30),
             lambda v: v.update(predecessor_capabilities_sha256="2" * 64),
             lambda v: v["predecessor_admission"].update(route_acquired=True),

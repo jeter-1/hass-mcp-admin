@@ -457,7 +457,8 @@ class FixtureTests(unittest.TestCase):
                                          'core.typed_input_select_option_operation',
                                          'core.script_trace_read',
                                          'core.dashboard_metadata_operation',
-                                         'core.scene_configuration_operation'}]
+                                         'core.scene_configuration_operation',
+                                         'core.typed_helper_value_operation'}]  # + HAMCP-311 (signed-only)
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)
 

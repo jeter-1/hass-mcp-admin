@@ -8,6 +8,7 @@ import hashlib
 import json
 
 from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
+from .helper_value.contracts import HELPER_CONTRACTS
 
 from typing import Any
 
@@ -225,6 +226,15 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "authenticated_exact_light_switch_operation",
         "external_approval_required": False, "direct_write_allowed": False,
         "verification": "exact_ha_on_off_state",
+    },
+    {
+        "tool": "control_helper", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_helper_value", "routing": "engineering_native",
+        "provider": "upstream_typed_helper_value", "fallback": "none",
+        "policy": "authenticated_exact_helper_value_operation",
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_helper_value_or_documented_transition",
     },
     {
         "tool": "control_fan", "category": "ordinary_runtime_action",
@@ -962,6 +972,17 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": ", ".join((*POWER_CONTRACTS, *POWER_SEMANTIC_CONTRACTS.values())),
         "core_applicability": "explicit_signed_core.typed_power_operation_or_exact_legacy_core_2026.9.2",
+    },
+    {
+        "tool": "control_helper", "capability": "typed_helper_value_execution",
+        "required_semantics": "One exact helper value change or transition (input_boolean, input_select, input_number, input_text, input_datetime, input_button, counter, timer) validated against live attributes, under connector authority, durable ownership and independent readback.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_typed_helper_value", "fallback_policy": "none",
+        "completeness": "reported_state_only_consumer_coverage_incomplete",
+        "security_justification": "A closed per-domain service allowlist fixes target, service and data keys. No generic services, arbitrary data or uncertain-action replay. Exact safety-critical dependency evidence requires a model-conveyed chat confirmation before any declaration.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": ", ".join(HELPER_CONTRACTS),
+        "core_applicability": "explicit_signed_core.typed_helper_value_operation_only",
     },
     {
         "tool": "control_fan",
