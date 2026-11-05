@@ -262,6 +262,13 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.telemetry.ordinary_helper_value_binding = digest(request.model_dump())
         return await self.service.control(request)
 
+    async def call_ok(self, request):
+        # A positive path that refuses is an assertion failure, not an error.
+        try:
+            return await self.call(request)
+        except HelperRefusal as refusal:
+            self.fail(f'unexpected refusal: {refusal!r}')
+
     def dispatches(self):
         return [args for tool, args in self.transport.calls if tool == 'ha_call_service']
 
@@ -271,7 +278,7 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.health()['fallback_count'], 0)
 
     async def assert_verified(self, request, expected_state):
-        result = await self.call(request)
+        result = await self.call_ok(request)
         self.assertEqual(result['status'], 'succeeded_verified', result)
         self.assertEqual(result['state'], 'succeeded_verified')
         self.assertEqual(result['provider'], 'upstream_typed_helper_value')
@@ -392,7 +399,7 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_empty_input_text_already_empty_is_no_change(self):
         self.optional_text('')
-        result = await self.call(self.request('input_text.synthetic', 'set_value', ''))
+        result = await self.call_ok(self.request('input_text.synthetic', 'set_value', ''))
         self.assertEqual(result['status'], 'no_change', result)
         self.assertEqual(result['provider_attempt_count'], 0)
         self.assertFalse(result['dispatch_intent_recorded'])
@@ -403,7 +410,7 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.transport.states['input_select.synthetic']['attributes']['options'] = ['', 'Home', 'Away']
         await self.assert_verified(self.request('input_select.synthetic', 'select_option', ''), '')
         self.assertEqual(self.dispatches()[0]['data'], {'option': ''})
-        result = await self.call(self.request('input_select.synthetic', 'select_option', ''))
+        result = await self.call_ok(self.request('input_select.synthetic', 'select_option', ''))
         self.assertEqual(result['status'], 'no_change', result)
         self.assertEqual(self.transport.writes, 1)
         await self.assert_verified(self.request('input_select.synthetic', 'select_option', 'Away'), 'Away')
@@ -449,9 +456,10 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
     async def test_half_step_at_large_magnitude_refuses_without_dispatch(self):
         self.wide_number()
         for value in [1000000000.5, 1999999999.5, 1000000000.25, 1000000000.000001]:
-            with self.subTest(value=value), self.assertRaisesRegex(HelperRefusal, 'not_on_step') as caught:
-                await self.call(self.request('input_number.synthetic', 'set_value', value))
-            self.assertEqual(caught.exception.details['status'], 'refused')
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(HelperRefusal, 'not_on_step') as caught:
+                    await self.call(self.request('input_number.synthetic', 'set_value', value))
+                self.assertEqual(caught.exception.details['status'], 'refused')
         self.assertEqual(self.dispatches(), []); self.assertEqual(self.transport.writes, 0)
         self.settled()
 
