@@ -49,6 +49,54 @@
   },
   {
     "id": 7,
+    "name": "accept naive timestamps",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_naive_timestamps_alone_or_uniformly_naive_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 8,
+    "name": "accept naive timestamps (fallback)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_invalid_published_at_fallback_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 9,
+    "name": "fall back on a falsy created_at",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_present_invalid_created_at_never_falls_back",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 10,
+    "name": "fall back on an unparseable created_at",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_present_invalid_created_at_never_falls_back",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 11,
+    "name": "skip parsing published_at",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_invalid_published_at_fallback_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 12,
+    "name": "separate published_at parser",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_one_parser_reads_both_fields",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 13,
     "name": "restore the 10-page raise",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -56,7 +104,7 @@
     "exit_code": 1
   },
   {
-    "id": 8,
+    "id": 14,
     "name": "restore the 10-page raise (prepare)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
@@ -64,7 +112,7 @@
     "exit_code": 1
   },
   {
-    "id": 9,
+    "id": 15,
     "name": "drop the early stop",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -72,7 +120,7 @@
     "exit_code": 1
   },
   {
-    "id": 10,
+    "id": 16,
     "name": "drop the early stop (prepare)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
@@ -80,7 +128,7 @@
     "exit_code": 1
   },
   {
-    "id": 11,
+    "id": 17,
     "name": "accept a prerelease (selection)",
     "file": "scripts/core_release_evidence.py",
     "test": "ReleaseDiscovery.test_exact_tag_prerelease_or_draft_refused_before_sources",
@@ -88,7 +136,7 @@
     "exit_code": 1
   },
   {
-    "id": 12,
+    "id": 18,
     "name": "accept a prerelease (scheduled selection)",
     "file": "scripts/core_release_evidence.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -96,7 +144,7 @@
     "exit_code": 1
   },
   {
-    "id": 13,
+    "id": 19,
     "name": "accept a prerelease (discovery boundary)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_prereleases_and_drafts_never_end_discovery",
@@ -104,7 +152,7 @@
     "exit_code": 1
   },
   {
-    "id": 14,
+    "id": 20,
     "name": "exact tag identity unchecked",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_exact_tag_identity_and_shape_refused",
@@ -112,7 +160,7 @@
     "exit_code": 1
   },
   {
-    "id": 15,
+    "id": 21,
     "name": "request shapes the path unchecked",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_malformed_request_refused_before_any_read",

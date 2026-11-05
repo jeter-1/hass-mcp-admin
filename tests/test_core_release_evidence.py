@@ -121,7 +121,7 @@ class RefusalLifecycle(unittest.TestCase):
         history=[] if prior is None else [{'id':278,'created_at':'2026-11-02','status':'completed','conclusion':'failure'}]
         def api(endpoint, **kwargs):
             if error == 'api':raise ValueError('API unavailable')
-            if '/releases?' in endpoint:return [{'tag_name':'2026.10.4','published_at':'2026-11-01'}]
+            if '/releases?' in endpoint:return [{'tag_name':'2026.10.4','published_at':'2026-11-01T00:00:00Z'}]
             if endpoint.endswith('/releases/tags/2026.10.4'):return {'tag_name':'2026.10.4','published_at':'2026-11-01'}
             if '/git/ref/heads/' in endpoint:return None
             if '/workflows/' in endpoint:return {'workflow_runs':history}
@@ -209,6 +209,9 @@ def stamp(index):
     return (datetime(2026, 11, 4, tzinfo=timezone.utc) - timedelta(minutes=index)).isoformat().replace('+00:00', 'Z')
 
 
+ABSENT = object()  # A record value that removes the listing key entirely.
+
+
 class ReleaseDiscovery(unittest.TestCase):
     """HAMCP-309: exact-tag dispatch and early-stop scheduled discovery."""
     @classmethod
@@ -235,7 +238,7 @@ class ReleaseDiscovery(unittest.TestCase):
             if match is None:
                 raise AssertionError(endpoint)
             page = int(match.group(1))
-            return [{'created_at': stamp(i), 'published_at': stamp(i), **r}
+            return [{k: v for k, v in {'created_at': stamp(i), 'published_at': stamp(i), **r}.items() if v is not ABSENT}
                     for i, r in enumerate(history[(page - 1) * 100:page * 100], (page - 1) * 100)]
         return answer
 
@@ -361,6 +364,45 @@ class ReleaseDiscovery(unittest.TestCase):
             with self.subTest(record=record):
                 history = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.4', **record}, {'tag_name': '2026.10.3'}]
                 self.refused('release listing (order cannot be established|is not newest-first)', history)
+
+    # Round 2 (Codex focused re-review): its eight failing probes, then the explicit contract cases.
+    def test_naive_timestamps_alone_or_uniformly_naive_refused(self):
+        for history in ([{'tag_name': '2026.11.0', 'created_at': '2026-11-04T00:00:00'}],
+                        [{'tag_name': '2026.11.0', 'created_at': '2026-11-04'},
+                         {'tag_name': '2026.10.3', 'created_at': '2026-11-03'}],
+                        [{'tag_name': '2026.11.0', 'created_at': ABSENT, 'published_at': '2026-11-04T00:00:00'}]):
+            with self.subTest(history=history):
+                self.refused('release listing order cannot be established', history)
+
+    def test_present_invalid_created_at_never_falls_back(self):
+        for bad in ('', 0, False, [], {}, 'yesterday', 7, '2026-11-04T00:00:00', '2026-11-04'):
+            with self.subTest(created_at=bad):
+                history = [{'tag_name': '2026.11.0', 'created_at': bad, 'published_at': '2026-11-04T00:00:00Z'}]
+                self.refused('release listing order cannot be established', history)
+
+    def test_invalid_published_at_fallback_refused(self):
+        for absent in (None, ABSENT):
+            for bad in ('2026-11-04T00:00:00', '2026-11-04', 'yesterday', '', 7, False, ABSENT, None):
+                with self.subTest(created_at=absent, published_at=bad):
+                    history = [{'tag_name': '2026.11.0', 'created_at': absent, 'published_at': bad}]
+                    self.refused('release listing order cannot be established', history)
+
+    def test_absent_created_at_falls_back_to_valid_published_at(self):
+        for absent in (None, ABSENT):
+            with self.subTest(created_at=absent):
+                history = [{'tag_name': '2026.11.0', 'created_at': absent, 'published_at': '2026-11-04T06:00:00+06:00'},
+                           {'tag_name': '2026.10.3', 'created_at': '2026-11-04T00:00:00Z', 'published_at': ABSENT}]
+                releases, calls = self.discover(history)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+
+    def test_one_parser_reads_both_fields(self):
+        import core_evidence_workflow as w
+        history = [{'tag_name': '2026.11.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                   {'tag_name': '2026.10.3', 'created_at': '2026-11-02T00:00:00Z'}]
+        with patch.object(w, 'listing_timestamp', wraps=w.listing_timestamp) as parser:
+            self.discover(history)
+        self.assertEqual([c.args for c in parser.call_args_list], [('2026-11-03T00:00:00Z',), ('2026-11-02T00:00:00Z',)])
 
     def test_complete_short_listing_is_unchanged(self):
         releases, calls = self.discover([{'tag_name': '2026.10.4'}])

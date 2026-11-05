@@ -30,7 +30,10 @@ OLD_LOOP = '''        if len(batch) < 100:
 RECORD = 'r["tag_name"] == predecessor for r in batch'
 SENTINEL = 'version_key(r["tag_name"]) <= version_key(predecessor) for r in batch'
 SHORT = STOP.replace('return releases', 'return releases[:len(releases) - len(batch)]')
-GUARD = '            if not ordered:'
+GUARD = '            if previous is not None and stamp > previous:'
+AWARE = 'if stamp is None or stamp.utcoffset() is None:'
+FIELD = 'field = "published_at" if release.get("created_at") is None else "created_at"'
+PARSE = '    return listing_timestamp(release.get(field))'
 D = 'ReleaseDiscovery.'
 mutants = [
     # Round 1 (Codex M1): the stop is the predecessor's own record, never a version comparison.
@@ -43,8 +46,24 @@ mutants = [
      D + 'test_lower_backport_before_higher_release_is_not_a_boundary'),
     ('stop before the predecessor page (orders)', WORKFLOW, STOP, SHORT,
      D + 'test_both_publication_orders_select_numeric_maximum'),
-    ('published_at preferred over created_at', WORKFLOW, 'release.get("created_at") or release.get("published_at")',
-     'release.get("published_at") or release.get("created_at")', D + 'test_published_at_used_only_without_created_at'),
+    ('published_at preferred over created_at', WORKFLOW, FIELD,
+     'field = "created_at" if release.get("published_at") is None else "published_at"',
+     D + 'test_published_at_used_only_without_created_at'),
+    # Round 2 (Codex focused re-review): aware stamps only; fallback only when created_at is absent.
+    ('accept naive timestamps', WORKFLOW, AWARE, 'if stamp is None:', D + 'test_naive_timestamps_alone_or_uniformly_naive_refused'),
+    ('accept naive timestamps (fallback)', WORKFLOW, AWARE, 'if stamp is None:', D + 'test_invalid_published_at_fallback_refused'),
+    ('fall back on a falsy created_at', WORKFLOW, FIELD, 'field = "created_at" if release.get("created_at") else "published_at"',
+     D + 'test_present_invalid_created_at_never_falls_back'),
+    ('fall back on an unparseable created_at', WORKFLOW, PARSE, '''    try:
+        return listing_timestamp(release.get(field))
+    except ValueError:
+        return listing_timestamp(release.get("published_at"))''', D + 'test_present_invalid_created_at_never_falls_back'),
+    ('skip parsing published_at', WORKFLOW, PARSE,
+     '    return listing_timestamp(release.get(field)) if field == "created_at" else release.get(field)',
+     D + 'test_invalid_published_at_fallback_refused'),
+    ('separate published_at parser', WORKFLOW, PARSE,
+     '    return listing_timestamp(release.get(field)) if field == "created_at" else datetime.fromisoformat(release.get(field))',
+     D + 'test_one_parser_reads_both_fields'),
     # Original round: page cap and early stop, re-targeted at the round-1 loop.
     ('restore the 10-page raise', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP, D + 'test_target_on_page_one_of_over_1000_releases'),
     ('restore the 10-page raise (prepare)', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP,

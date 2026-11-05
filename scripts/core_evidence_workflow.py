@@ -157,12 +157,22 @@ def official(release):
             and stable_version(release.get("tag_name")))
 
 
-def listed_at(release):
-    # created_at orders GitHub's listing; published_at is used only when it is absent.
+def listing_timestamp(value):
+    # The one parser for both fields: an ISO 8601 string carrying a UTC offset.
     try:
-        return datetime.fromisoformat(release.get("created_at") or release.get("published_at"))
-    except (TypeError, ValueError):
-        raise ValueError("release listing order cannot be established") from None
+        stamp = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.utcoffset() is None:
+        raise ValueError("release listing order cannot be established")
+    return stamp
+
+
+def listed_at(release):
+    # created_at orders GitHub's listing. published_at is used only when created_at is
+    # absent (missing or null); a present but invalid created_at refuses, never falls back.
+    field = "published_at" if release.get("created_at") is None else "created_at"
+    return listing_timestamp(release.get(field))
 
 
 def discover_releases(entries, requested):
@@ -182,11 +192,7 @@ def discover_releases(entries, requested):
         batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
         for release in batch:
             stamp = listed_at(release)
-            try:
-                ordered = previous is None or stamp <= previous
-            except TypeError:
-                ordered = False
-            if not ordered:
+            if previous is not None and stamp > previous:
                 raise ValueError("release listing is not newest-first")
             previous = stamp
         if any(official(r) and r["tag_name"] == predecessor for r in batch):
