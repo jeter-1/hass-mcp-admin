@@ -3,6 +3,7 @@ import argparse
 import base64
 import copy
 from dataclasses import asdict
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -144,15 +145,24 @@ def fail_refusal(directory):
     raise SystemExit(message)
 
 
-# Scheduled discovery reads newest-first only until a page holds an official
-# stable release at or below the newest signed version. The bound therefore
-# limits releases newer than that predecessor (100 per page), not Core's history.
+# Scheduled discovery reads newest-first and stops only after the page holding the
+# newest signed version's own release record. Version comparison never ends the scan:
+# a lower backport can be listed before a higher release. The bound therefore limits
+# releases created after that predecessor (100 per page), not Core's history.
 RELEASE_PAGE_BOUND = 10
 
 
 def official(release):
     return (not release.get("draft") and not release.get("prerelease")
             and stable_version(release.get("tag_name")))
+
+
+def listed_at(release):
+    # created_at orders GitHub's listing; published_at is used only when it is absent.
+    try:
+        return datetime.fromisoformat(release.get("created_at") or release.get("published_at"))
+    except (TypeError, ValueError):
+        raise ValueError("release listing order cannot be established") from None
 
 
 def discover_releases(entries, requested):
@@ -166,11 +176,23 @@ def discover_releases(entries, requested):
         return [release]
     if not entries:
         raise ValueError("binding PR required: no signed predecessor")
-    floor = max(version_key(e["version"]) for e in entries)
-    releases = []
+    predecessor = max((e["version"] for e in entries), key=version_key)
+    releases = []; previous = None
     for page in range(1, RELEASE_PAGE_BOUND + 1):
         batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
-        if len(batch) < 100 or any(official(r) and version_key(r["tag_name"]) <= floor for r in batch):
+        for release in batch:
+            stamp = listed_at(release)
+            try:
+                ordered = previous is None or stamp <= previous
+            except TypeError:
+                ordered = False
+            if not ordered:
+                raise ValueError("release listing is not newest-first")
+            previous = stamp
+        if any(official(r) and r["tag_name"] == predecessor for r in batch):
+            return releases
+        if len(batch) < 100:
+            # Exhausted: the listing is the complete candidate set.
             return releases
     raise ValueError("release discovery did not reach the signed predecessor within the page bound")
 

@@ -1,6 +1,54 @@
 [
   {
     "id": 1,
+    "name": "restore the version-sentinel stop",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_lower_backport_before_higher_release_is_not_a_boundary",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 2,
+    "name": "restore the version-sentinel stop (no record)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_records_below_predecessor_without_its_record_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 3,
+    "name": "drop the ordering guard",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_listing_order_violation_refused",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 4,
+    "name": "stop before the predecessor page",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_lower_backport_before_higher_release_is_not_a_boundary",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 5,
+    "name": "stop before the predecessor page (orders)",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_both_publication_orders_select_numeric_maximum",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 6,
+    "name": "published_at preferred over created_at",
+    "file": "scripts/core_evidence_workflow.py",
+    "test": "ReleaseDiscovery.test_published_at_used_only_without_created_at",
+    "classification": "assertion",
+    "exit_code": 1
+  },
+  {
+    "id": 7,
     "name": "restore the 10-page raise",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -8,7 +56,7 @@
     "exit_code": 1
   },
   {
-    "id": 2,
+    "id": 8,
     "name": "restore the 10-page raise (prepare)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
@@ -16,7 +64,7 @@
     "exit_code": 1
   },
   {
-    "id": 3,
+    "id": 9,
     "name": "drop the early stop",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -24,7 +72,7 @@
     "exit_code": 1
   },
   {
-    "id": 4,
+    "id": 10,
     "name": "drop the early stop (prepare)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_scheduled_prepare_over_1000_releases_reaches_o3",
@@ -32,7 +80,7 @@
     "exit_code": 1
   },
   {
-    "id": 5,
+    "id": 11,
     "name": "accept a prerelease (selection)",
     "file": "scripts/core_release_evidence.py",
     "test": "ReleaseDiscovery.test_exact_tag_prerelease_or_draft_refused_before_sources",
@@ -40,7 +88,7 @@
     "exit_code": 1
   },
   {
-    "id": 6,
+    "id": 12,
     "name": "accept a prerelease (scheduled selection)",
     "file": "scripts/core_release_evidence.py",
     "test": "ReleaseDiscovery.test_target_on_page_one_of_over_1000_releases",
@@ -48,7 +96,7 @@
     "exit_code": 1
   },
   {
-    "id": 7,
+    "id": 13,
     "name": "accept a prerelease (discovery boundary)",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_prereleases_and_drafts_never_end_discovery",
@@ -56,7 +104,7 @@
     "exit_code": 1
   },
   {
-    "id": 8,
+    "id": 14,
     "name": "exact tag identity unchecked",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_exact_tag_identity_and_shape_refused",
@@ -64,7 +112,7 @@
     "exit_code": 1
   },
   {
-    "id": 9,
+    "id": 15,
     "name": "request shapes the path unchecked",
     "file": "scripts/core_evidence_workflow.py",
     "test": "ReleaseDiscovery.test_malformed_request_refused_before_any_read",

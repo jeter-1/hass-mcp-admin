@@ -2,6 +2,7 @@
 import ast
 import copy
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -203,6 +204,11 @@ def tags(newer_than, count):
     return [v for v in values if (e.version_key(v) > key) == (count > 0)][:abs(count)]
 
 
+def stamp(index):
+    # Newest first: each later listing position was created one minute earlier.
+    return (datetime(2026, 11, 4, tzinfo=timezone.utc) - timedelta(minutes=index)).isoformat().replace('+00:00', 'Z')
+
+
 class ReleaseDiscovery(unittest.TestCase):
     """HAMCP-309: exact-tag dispatch and early-stop scheduled discovery."""
     @classmethod
@@ -229,7 +235,8 @@ class ReleaseDiscovery(unittest.TestCase):
             if match is None:
                 raise AssertionError(endpoint)
             page = int(match.group(1))
-            return [{**r, 'published_at': '2026-11-01'} for r in history[(page - 1) * 100:page * 100]]
+            return [{'created_at': stamp(i), 'published_at': stamp(i), **r}
+                    for i, r in enumerate(history[(page - 1) * 100:page * 100], (page - 1) * 100)]
         return answer
 
     def discover(self, history, requested=None, tag=None, entries=None):
@@ -291,7 +298,7 @@ class ReleaseDiscovery(unittest.TestCase):
 
     def test_prereleases_and_drafts_never_end_discovery(self):
         decoys = [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(97)]
-        decoys += [{'tag_name': '2026.10.1', 'prerelease': True}, {'tag_name': '2026.10.2', 'draft': True},
+        decoys += [{'tag_name': '2026.10.3', 'prerelease': True}, {'tag_name': '2026.10.3', 'draft': True},
                    {'tag_name': 'not-a-version'}]
         history = decoys + [{'tag_name': '2026.10.4'}, {'tag_name': '2026.10.3'}] + [{'tag_name': v} for v in tags('2026.10.3', -300)]
         releases, calls = self.discover(history)
@@ -305,6 +312,55 @@ class ReleaseDiscovery(unittest.TestCase):
         self.assertEqual([c[0] for c in calls],
                          [f'repos/home-assistant/core/releases?per_page=100&page={n}' for n in range(1, w.RELEASE_PAGE_BOUND + 1)])
         self.assertEqual(w.RELEASE_PAGE_BOUND, 10)
+
+    def test_lower_backport_before_higher_release_is_not_a_boundary(self):
+        # Codex M1 counterexample: page 1 ends nothing although 2026.9.9 <= 2026.10.3.
+        history = ([{'tag_name': '2026.9.9'}, {'tag_name': '2026.10.4'}]
+                   + [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(98)]
+                   + [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'}])
+        releases, calls = self.discover(history)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+
+    def test_both_publication_orders_select_numeric_maximum(self):
+        betas = [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(99)]
+        for first, second in (('2026.10.4', '2026.11.0'), ('2026.11.0', '2026.10.4')):
+            with self.subTest(first=first):
+                history = betas + [{'tag_name': first}, {'tag_name': second}, {'tag_name': '2026.10.3'}]
+                releases, calls = self.discover(history)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+
+    def test_records_below_predecessor_without_its_record_refused(self):
+        import core_evidence_workflow as w
+        history = [{'tag_name': v} for v in tags('2026.10.3', -1101) if v != '2026.10.3']
+        self.assertEqual((len(history), any(r['tag_name'] == '2026.10.3' for r in history)), (1100, False))
+        calls = self.refused('did not reach the signed predecessor', history)
+        self.assertEqual(len(calls), w.RELEASE_PAGE_BOUND)
+
+    def test_listing_order_violation_refused(self):
+        newer = '2026-11-05T00:00:00Z'
+        within = [{'tag_name': '2026.10.4'}, {'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}]
+        across = ([{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(100)]
+                  + [{'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}])
+        fallback = [{'tag_name': '2026.10.4', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                    {'tag_name': '2026.11.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.10.3'}]
+        for name, history in (('within', within), ('across', across), ('fallback', fallback)):
+            with self.subTest(name=name):
+                self.refused('release listing is not newest-first', history)
+
+    def test_published_at_used_only_without_created_at(self):
+        history = [{'tag_name': '2026.11.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                   {'tag_name': '2026.10.3', 'created_at': '2026-11-02T00:00:00Z', 'published_at': '2026-11-05T00:00:00Z'}]
+        releases, _ = self.discover(history)
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+
+    def test_unorderable_listing_refused(self):
+        for record in ({'created_at': None, 'published_at': None}, {'created_at': 'yesterday'},
+                       {'created_at': 7}, {'created_at': '2026-11-03'}):
+            with self.subTest(record=record):
+                history = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.4', **record}, {'tag_name': '2026.10.3'}]
+                self.refused('release listing (order cannot be established|is not newest-first)', history)
 
     def test_complete_short_listing_is_unchanged(self):
         releases, calls = self.discover([{'tag_name': '2026.10.4'}])

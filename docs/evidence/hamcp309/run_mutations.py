@@ -15,7 +15,11 @@ for name in sorted((set(listed()) | set(listed('--others', '--exclude-standard')
         target = COPY / name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(path, target)
 
 WORKFLOW = 'scripts/core_evidence_workflow.py'
-NEW_LOOP = '''        if len(batch) < 100 or any(official(r) and version_key(r["tag_name"]) <= floor for r in batch):
+STOP = '''        if any(official(r) and r["tag_name"] == predecessor for r in batch):
+            return releases
+'''
+EXHAUSTED = '''        if len(batch) < 100:
+            # Exhausted: the listing is the complete candidate set.
             return releases
     raise ValueError("release discovery did not reach the signed predecessor within the page bound")'''
 OLD_LOOP = '''        if len(batch) < 100:
@@ -23,14 +27,30 @@ OLD_LOOP = '''        if len(batch) < 100:
     else:
         raise ValueError("release discovery exceeds pagination bound")
     return releases'''
+RECORD = 'r["tag_name"] == predecessor for r in batch'
+SENTINEL = 'version_key(r["tag_name"]) <= version_key(predecessor) for r in batch'
+SHORT = STOP.replace('return releases', 'return releases[:len(releases) - len(batch)]')
+GUARD = '            if not ordered:'
 D = 'ReleaseDiscovery.'
 mutants = [
-    ('restore the 10-page raise', WORKFLOW, NEW_LOOP, OLD_LOOP, D + 'test_target_on_page_one_of_over_1000_releases'),
-    ('restore the 10-page raise (prepare)', WORKFLOW, NEW_LOOP, OLD_LOOP, D + 'test_scheduled_prepare_over_1000_releases_reaches_o3'),
-    ('drop the early stop', WORKFLOW, 'if len(batch) < 100 or any(official(r) and version_key(r["tag_name"]) <= floor for r in batch):',
-     'if len(batch) < 100:', D + 'test_target_on_page_one_of_over_1000_releases'),
-    ('drop the early stop (prepare)', WORKFLOW, 'if len(batch) < 100 or any(official(r) and version_key(r["tag_name"]) <= floor for r in batch):',
-     'if len(batch) < 100:', D + 'test_scheduled_prepare_over_1000_releases_reaches_o3'),
+    # Round 1 (Codex M1): the stop is the predecessor's own record, never a version comparison.
+    ('restore the version-sentinel stop', WORKFLOW, RECORD, SENTINEL,
+     D + 'test_lower_backport_before_higher_release_is_not_a_boundary'),
+    ('restore the version-sentinel stop (no record)', WORKFLOW, RECORD, SENTINEL,
+     D + 'test_records_below_predecessor_without_its_record_refused'),
+    ('drop the ordering guard', WORKFLOW, GUARD, '            if False:', D + 'test_listing_order_violation_refused'),
+    ('stop before the predecessor page', WORKFLOW, STOP, SHORT,
+     D + 'test_lower_backport_before_higher_release_is_not_a_boundary'),
+    ('stop before the predecessor page (orders)', WORKFLOW, STOP, SHORT,
+     D + 'test_both_publication_orders_select_numeric_maximum'),
+    ('published_at preferred over created_at', WORKFLOW, 'release.get("created_at") or release.get("published_at")',
+     'release.get("published_at") or release.get("created_at")', D + 'test_published_at_used_only_without_created_at'),
+    # Original round: page cap and early stop, re-targeted at the round-1 loop.
+    ('restore the 10-page raise', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP, D + 'test_target_on_page_one_of_over_1000_releases'),
+    ('restore the 10-page raise (prepare)', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP,
+     D + 'test_scheduled_prepare_over_1000_releases_reaches_o3'),
+    ('drop the early stop', WORKFLOW, STOP, '', D + 'test_target_on_page_one_of_over_1000_releases'),
+    ('drop the early stop (prepare)', WORKFLOW, STOP, '', D + 'test_scheduled_prepare_over_1000_releases_reaches_o3'),
     ('accept a prerelease (selection)', 'scripts/core_release_evidence.py', 'if not r.get("draft") and not r.get("prerelease")',
      'if not r.get("draft")', D + 'test_exact_tag_prerelease_or_draft_refused_before_sources'),
     ('accept a prerelease (scheduled selection)', 'scripts/core_release_evidence.py', 'if not r.get("draft") and not r.get("prerelease")',
