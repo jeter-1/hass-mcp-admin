@@ -375,6 +375,11 @@ the [runbook](CORE_REGISTRY_ONE_TAP_RUNBOOK.md#0-stop-no-home-assistant-core-upg
    `revoke`) against the current `registry` journal, as described above.
 2. Push `core-candidate.json` and `core-review-evidence.json` (regular files,
    at the branch root) to a new branch `registry-candidates/<version>`.
+   For an extension of an already published version, use the new permanent
+   branch `registry-candidates/<version>-seq<sequence>` instead (for example,
+   `registry-candidates/2026.11.0-seq17`). Never reuse, force-push or delete the
+   original branch. An explicit task-specific byte-review gate must be completed
+   before this push; the seq-17 contract requires approval of both SHA-256 values.
 3. Review those exact bytes and record both SHA-256 values.
 4. Dispatch **Core registry one-tap signing and publication** from `main` with
    `core_version`, `candidate_ref`, `candidate_sha256` and `evidence_sha256`.
