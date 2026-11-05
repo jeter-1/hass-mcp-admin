@@ -78,8 +78,6 @@ COUNTER_LIMIT = 2 ** 53
 # The largest off-step error accepted, as a fraction of ONE step: it absorbs
 # binary float noise (0.1 * 3) and never scales with the value's magnitude.
 STEP_ALLOWANCE = Decimal("1e-9")
-# Core's STATE_UNKNOWN and STATE_UNAVAILABLE: no helper value is provable.
-UNPROVABLE_STATES = frozenset({"unknown", "unavailable"})
 DATE_RE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 TIME_RE = r"[0-9]{2}:[0-9]{2}:[0-9]{2}"
 DURATION_RE = re.compile(r"([0-9]{1,3}):([0-5][0-9]):([0-5][0-9])")
@@ -227,10 +225,12 @@ def checked_state(raw, entity_id):
         raise HelperRefusal("helper_target_identity_unproven")
     domain = entity_id.split(".", 1)[0]
     state = raw.get("state")
-    if not isinstance(state, str) or len(state) > MAX_TEXT or state in UNPROVABLE_STATES:
+    if not isinstance(state, str) or len(state) > MAX_TEXT or state in {"unavailable"}:
         raise HelperRefusal("helper_target_state_unavailable")
     # Only input_text and input_select can hold an empty value, and only when
-    # the live configuration allows it (``_check_domain_state``).
+    # the live configuration allows it (``_check_domain_state``). ``unknown``
+    # refuses per domain where it is not a value (boolean, counter, timer); a
+    # never-pressed input_button is ``unknown`` and may be pressed.
     if not state and domain not in {"input_text", "input_select"}:
         raise HelperRefusal("helper_target_state_unavailable")
     stamp = raw.get("last_updated")

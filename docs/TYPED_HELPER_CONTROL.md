@@ -52,7 +52,8 @@ operation ID works as for `control_power`:
 
 Before any durable declaration, Engineering reads the exact entity's state, its
 revision (`last_updated`) and only the attributes the action needs. It refuses
-an `unavailable`, `unknown` or missing state, and missing or malformed
+an `unavailable` or missing state, an `unknown` state where the domain has no
+such value (`input_boolean`, `counter`, `timer`), and missing or malformed
 attributes. An empty state is valid only where the domain and the live
 configuration allow it:
 - an `input_text` whose live `min`, `max` and `pattern` accept the empty

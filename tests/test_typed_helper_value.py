@@ -414,18 +414,18 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
                                   (self.request('input_text.synthetic', 'set_value', ''), 'length_out_of_range')]:
             with self.subTest(request=request.entity_id), self.assertRaisesRegex(HelperRefusal, category):
                 await self.call(request)
-        # Empty, unknown, unavailable or missing states that the domain or the
-        # live configuration cannot hold stay unprovable.
+        # Empty states the domain or live configuration cannot hold, and
+        # missing or unknown states the domain cannot hold, stay unprovable.
         cases = [('input_text.synthetic', '', {'min': 1, 'max': 8, 'pattern': None}, 'hello'),
                  ('input_text.synthetic', '', {'min': 0, 'max': 8, 'pattern': '[a-z]+'}, 'hello'),
                  ('input_text.synthetic', '', {'min': 0, 'max': 8, 'pattern': '['}, 'hello'),
-                 ('input_text.synthetic', 'unknown', {'min': 0, 'max': 8, 'pattern': None}, 'hello'),
                  ('input_text.synthetic', None, {'min': 0, 'max': 8, 'pattern': None}, 'hello'),
                  ('input_select.synthetic', '', {'options': ['Home', 'Away']}, 'Away'),
-                 ('input_select.synthetic', 'unknown', {'options': ['unknown', 'Away']}, 'Away'),
                  ('input_number.synthetic', '', {'min': 10, 'max': 30, 'step': 0.5}, 22.5),
                  ('input_datetime.synthetic', '', {'has_date': True, 'has_time': True}, '2026-12-24 18:00:00'),
                  ('counter.synthetic', '', {'initial': 0, 'step': 1, 'minimum': 0, 'maximum': 6}, 2),
+                 ('input_button.synthetic', '', {}, None),
+                 ('input_boolean.synthetic', None, {}, None),
                  ('timer.synthetic', 'unknown', {'duration': '0:05:00'}, None)]
         for entity, state, attributes, value in cases:
             with self.subTest(entity=entity, state=state, attributes=attributes):
@@ -434,6 +434,11 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(HelperRefusal, 'target_state_unavailable'):
                     await self.call(self.request(entity, action, value))
         self.assertEqual(self.dispatches(), []); self.settled()
+
+    async def test_never_pressed_button_with_unknown_state_can_be_pressed(self):
+        self.transport.states['input_button.synthetic']['state'] = 'unknown'
+        await self.assert_verified(self.request('input_button.synthetic', 'press'),
+                                   '2026-09-16T12:00:01.000000+00:00')
 
     # The on-step check is bounded to a tiny fraction of ONE step (Codex M2).
 

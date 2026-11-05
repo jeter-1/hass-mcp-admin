@@ -92,8 +92,8 @@ against ha-mcp 8.4.3, 8.5.0 and 8.6.0 catalogs:
 - **Empty values.** An empty `input_text` value within the live length and
   pattern, and an empty `input_select` option in the live options, pass
   preparation, no-op detection and readback. Empty states that the live
-  configuration does not allow, and `unknown`, `unavailable` or missing
-  states, refuse.
+  configuration does not allow, and `unavailable` or missing states,
+  refuse.
 - **Number steps.** The on-step check is exact decimal arithmetic with an
   allowance of at most 1e-9 of one step at any magnitude. A half-step value
   near 1e9 with step 1 refuses without dispatch; large on-step values and
