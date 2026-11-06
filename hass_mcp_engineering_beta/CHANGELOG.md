@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.2-beta.4 - Mid-sequence condition steps are causal helper reads (HAMCP-310)
+
+Builds on 2.4.2-beta.3 (HAMCP-311, #366). No tool, input schema, route,
+provider, signed profile, contract fingerprint, persisted format, dependency,
+add-on option or Home Assistant write change.
+
+- A step carrying `condition`, `and`, `or` or `not` inside an action
+  sequence (Home Assistant's check-condition action) now gives its entity
+  reads the condition relation of its position (`condition`,
+  `choose_condition` or `repeat_condition`) instead of the non-causal
+  `action_target`. This applies at any depth: top-level and legacy `action`,
+  choose sequences and `default`, if `then`/`else`, `parallel`, nested
+  `sequence`, repeat sequences, scripts and blueprint inputs.
+- A helper read only by such a step is now `exact_dependency`, its
+  automation is a `referenced` consumer, F3 plans take its exact helper lock
+  and `control_helper` returns `confirmation_required` when that consumer is
+  safety-critical. Before, it was `proven_dependency_neutral`.
+- Literal `target`, `data`, legacy step-level `entity_id` and device action
+  entities stay non-causal. The change is stricter only.
+- Evidence IDs and expression fingerprints of affected references change, so
+  bindings captured on 2.4.2-beta.3 for those automations are refreshed or
+  refused.
+- Other gating constructs are assessed in the release notes and unchanged.
+- New exact `V2_4_2_BETA4` release notes and read-only acceptance contract.
+- Rollback to 2.4.2-beta.3 is safe (same storage contracts).
+
 ## 2.4.2-beta.2 - Dashboard read size check uses the response limit's measure (HAMCP-306)
 
 Builds on 2.4.2-beta.1 (HAMCP-301, #362). No tool, input schema, route,
