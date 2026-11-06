@@ -1,10 +1,13 @@
 """HAMCP-310: a condition step inside an action sequence is a causal read.
 
-Home Assistant Core's ``ACTIONS_MAP`` (2026.7.2 through 2026.9.1) treats an
-action step carrying ``condition``, ``and``, ``or`` or ``not`` as a
-check-condition action that gates every later step. Its entity reads must be
-causal helper evidence exactly like top-level, choose and if conditions, while
-literal action targets and service data stay non-causal. All configurations,
+Home Assistant Core's ``ACTIONS_MAP`` (2026.7.2 through 2026.9.1 and
+2026.11.0 at 74cf5a49, ``helpers/config_validation.py`` ``ACTIONS_MAP`` and
+``determine_script_action``) treats an action step carrying ``condition``,
+``and``, ``or`` or ``not`` as a check-condition action that gates every later
+step. Its entity reads must be causal helper evidence exactly like top-level,
+choose and if conditions, in automations and scripts alike, while literal
+action targets and service data stay non-causal even when that literal
+payload carries condition- or sequence-shaped keys. All configurations,
 transports and dependency evidence are synthetic and offline.
 """
 
@@ -31,6 +34,7 @@ from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
     DependencyIndexSnapshot,
+    evidence_id,
 )
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
@@ -74,6 +78,7 @@ from tests import test_typed_helper_value as typed  # noqa: E402
 
 GUEST_MODE = "input_boolean.guest_mode"
 LITERAL_HELPER = "input_boolean.synthetic"
+PAYLOAD_HELPER = "input_boolean.synthetic_payload"
 SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
 NON_CAUSAL = frozenset({"action_data", "action_target", "service_target"})
 CONDITION_RELATIONS = frozenset(
@@ -169,6 +174,71 @@ SEQUENCE_PLACEMENTS = {
         ]
     },
 }
+
+
+#: Round 1 (Codex M1): literal service payload and target subtrees whose keys
+#: merely look like action structure. ``container`` is the step member holding
+#: the literal subtree and its pre-existing relation.
+PAYLOAD_CONTAINERS = {
+    "data": "action_data",
+    "data_template": "action_target",
+    "service_data": "action_target",
+    "target": "service_target",
+}
+#: Payload keys ``_relation_for`` already maps to ``action_target``.
+PAYLOAD_RESET_KEYS = frozenset(
+    {"sequence", "then", "else", "parallel", "actions", "repeat", "choose"}
+)
+
+
+def _payload_shapes(entity_id: str = GUEST_MODE) -> dict[str, dict]:
+    """Return every reviewed structure-shaped literal payload value."""
+
+    shapes = {
+        key: {key: [_gate(entity_id)]}
+        for key in ("sequence", "then", "else", "parallel", "actions", "repeat")
+    }
+    shapes["default"] = {"default": [_gate(entity_id)]}
+    shapes["repeat_options"] = {
+        "repeat": {"count": 2, "sequence": [_gate(entity_id)]}
+    }
+    shapes["choose_options"] = {
+        "choose": [{"conditions": [], "sequence": [_gate(entity_id)]}]
+    }
+    shapes["shorthand_and"] = {"sequence": [{"and": [_gate(entity_id)]}]}
+    return shapes
+
+
+def _payload_cases(entity_id: str = GUEST_MODE):
+    """Yield (label, config, expected relation) for literal payload nests."""
+
+    for container, container_relation in PAYLOAD_CONTAINERS.items():
+        for shape_name, shape in _payload_shapes(entity_id).items():
+            first_key = next(iter(shape))
+            for depth, value in (
+                ("direct", deepcopy(shape)),
+                # Codex's exact reproduction nests the shape one level deeper
+                # inside a payload ``data`` member.
+                ("nested_data", {"message": "Synthetic", "data": deepcopy(shape)}),
+            ):
+                inherited = (
+                    container_relation if depth == "direct" else "action_data"
+                )
+                expected = (
+                    "action_target"
+                    if first_key in PAYLOAD_RESET_KEYS
+                    else inherited
+                )
+                yield (
+                    f"{container}.{depth}.{shape_name}",
+                    {
+                        "actions": [
+                            {"action": "notify.notify", container: value},
+                            UNLOCK,
+                        ]
+                    },
+                    expected,
+                )
 
 
 def _structured(config: dict, entity_id: str = GUEST_MODE, **kwargs):
@@ -488,6 +558,192 @@ class Hamcp310ExtractionRelationTests(unittest.TestCase):
                 ),
             )
 
+    def test_nested_literal_service_payload_stays_non_causal(self):
+        """Codex M1: payload keys never make a literal mapping a step."""
+
+        cases = list(_payload_cases())
+        self.assertEqual(len(PAYLOAD_CONTAINERS) * 10 * 2, len(cases))
+        for label, config, expected in cases:
+            with self.subTest(case=label):
+                findings, obligations = _structured(config)
+                self.assertEqual(1, len(findings), label)
+                self.assertEqual(1, len(obligations), label)
+                for item in [*findings, *obligations]:
+                    self.assertEqual(expected, item.relation, label)
+                self.assertEqual(
+                    "proven_dependency_neutral",
+                    helper_dependency_module._obligation_targets_helper(
+                        obligations[0], GUEST_MODE
+                    ),
+                )
+
+    def test_nested_literal_payload_template_reads_stay_causal(self):
+        template = "{{ is_state('input_boolean.guest_mode', 'on') }}"
+        for key in ("sequence", "then", "else", "parallel", "actions", "repeat"):
+            config = {
+                "actions": [
+                    {
+                        "action": "notify.notify",
+                        "data": {
+                            key: [
+                                {
+                                    "condition": "template",
+                                    "value_template": template,
+                                }
+                            ],
+                            "message": template,
+                        },
+                    }
+                ]
+            }
+            with self.subTest(payload_key=key):
+                _f, _d, obligations = extract_document_with_obligations(
+                    source_type="automation",
+                    source_id="hamcp310",
+                    source_entity_id="automation.hamcp310",
+                    source_name="HAMCP-310 synthetic",
+                    source_state="on",
+                    config=config,
+                    secret="",
+                )
+                reads = [
+                    item
+                    for item in obligations
+                    if GUEST_MODE in item.exact_entity_ids
+                ]
+                self.assertEqual(2, len(reads))
+                for item in reads:
+                    self.assertEqual(
+                        "exact_dependency",
+                        helper_dependency_module._obligation_targets_helper(
+                            item, GUEST_MODE
+                        ),
+                    )
+
+    def test_script_sequence_conditions_use_the_condition_relation(self):
+        """Codex L1: script steps get the automation condition family."""
+
+        cases = {
+            "plain": ({"sequence": [_gate()]}, "condition"),
+            "nested_sequence": (
+                {"sequence": [{"sequence": [_gate()]}]},
+                "condition",
+            ),
+            "shorthand_and": ({"sequence": [{"and": [_gate()]}]}, "condition"),
+            "shorthand_or": ({"sequence": [{"or": [_gate()]}]}, "condition"),
+            "shorthand_not": ({"sequence": [{"not": _gate()}]}, "condition"),
+            "parallel_branch": (
+                {"sequence": [{"parallel": [{"sequence": [_gate()]}]}]},
+                "condition",
+            ),
+            "if_then": (
+                {"sequence": [{"if": [], "then": [_gate()]}]},
+                "condition",
+            ),
+            "choose_sequence": (
+                {
+                    "sequence": [
+                        {"choose": [{"conditions": [], "sequence": [_gate()]}]}
+                    ]
+                },
+                "choose_condition",
+            ),
+            "repeat_sequence": (
+                {"sequence": [{"repeat": {"count": 2, "sequence": [_gate()]}}]},
+                "repeat_condition",
+            ),
+        }
+        for name, (config, relation) in cases.items():
+            with self.subTest(placement=name):
+                findings, obligations = _structured(
+                    config, source_type="script"
+                )
+                self.assertEqual(1, len(findings), name)
+                self.assertEqual(1, len(obligations), name)
+                for item in [*findings, *obligations]:
+                    self.assertEqual(relation, item.relation, name)
+                self.assertEqual("exact_dependency", obligations[0].outcome)
+                # The relation participates in evidence identity, so these
+                # fingerprints move from the prior script_reference form.
+                path = findings[0].config_path
+                self.assertEqual(
+                    evidence_id(
+                        "script", "hamcp310", GUEST_MODE, relation, path, None
+                    ),
+                    findings[0].evidence_id,
+                )
+                self.assertNotEqual(
+                    evidence_id(
+                        "script",
+                        "hamcp310",
+                        GUEST_MODE,
+                        "script_reference",
+                        path,
+                        None,
+                    ),
+                    findings[0].evidence_id,
+                )
+
+    def test_unrelated_script_references_and_payloads_are_unchanged(self):
+        config = {
+            "sequence": [
+                {"action": "input_boolean.turn_on", "entity_id": GUEST_MODE},
+                {"action": "lock.unlock", "target": {"entity_id": GUEST_MODE}},
+                {
+                    "action": "notify.notify",
+                    "data": {"sequence": [_gate()], "then": [_gate()]},
+                },
+                {"delay": 1},
+            ]
+        }
+        findings, obligations = _structured(config, source_type="script")
+        self.assertEqual(
+            [
+                ("script_reference", "$.sequence[0].entity_id"),
+                ("service_target", "$.sequence[1].target.entity_id"),
+                ("script_reference", "$.sequence[2].data.sequence[0].entity_id"),
+                ("action_target", "$.sequence[2].data.then[0].entity_id"),
+            ],
+            sorted(
+                ((item.relation, item.config_path) for item in findings),
+                key=lambda value: value[1],
+            ),
+        )
+        for item in obligations:
+            self.assertNotIn(item.relation, CONDITION_RELATIONS)
+
+    def test_blueprint_payload_input_keeps_its_literal_role(self):
+        gate = {
+            "condition": "state",
+            "entity_id": {"__blueprint_input__": "gate"},
+            "state": "on",
+        }
+        findings, _dynamic = extract_document(
+            source_type="automation",
+            source_id="hamcp310_blueprint",
+            config={
+                "use_blueprint": {
+                    "path": "synthetic.yaml",
+                    "input": {"gate": GUEST_MODE},
+                }
+            },
+        )
+        for key in ("sequence", "then", "else", "parallel", "actions", "repeat"):
+            blueprint = {
+                "actions": [
+                    {"action": "notify.notify", "data": {key: [gate]}},
+                    UNLOCK,
+                ]
+            }
+            with self.subTest(payload_key=key):
+                resolved = resolve_blueprint_roles(
+                    findings, blueprint, source_id="hamcp310_blueprint"
+                )
+                self.assertEqual(
+                    ["use_blueprint.input.gate -> action_target"],
+                    [item.config_path for item in resolved],
+                )
+
     def test_blueprint_input_in_a_sequence_condition_resolves_causally(self):
         blueprint = {
             "actions": [
@@ -646,6 +902,116 @@ class Hamcp310F3LockTests(unittest.TestCase):
         keys = self._keys(config)
         self.assertNotIn(helper_dependency_lock_key(GUEST_MODE), keys)
         self.assertNotIn(unconstrained_helper_dependency_lock_key(), keys)
+
+
+    def test_nested_literal_payloads_receive_no_helper_lock(self):
+        for label, config, _relation in _payload_cases():
+            with self.subTest(case=label):
+                keys = self._keys(config)
+                self.assertNotIn(helper_dependency_lock_key(GUEST_MODE), keys)
+                self.assertNotIn(unconstrained_helper_dependency_lock_key(), keys)
+
+    def test_script_shaped_sequence_conditions_receive_exact_locks(self):
+        # A genuine condition step beside a structure-shaped literal payload.
+        config = {
+            "actions": [
+                {
+                    "action": "notify.notify",
+                    "data": {"sequence": [_gate("input_boolean.payload")]},
+                },
+                {"sequence": [{"and": [_gate()]}]},
+                UNLOCK,
+            ]
+        }
+        keys = self._keys(config)
+        self.assertIn(helper_dependency_lock_key(GUEST_MODE), keys)
+        self.assertNotIn(
+            helper_dependency_lock_key("input_boolean.payload"), keys
+        )
+
+
+class PayloadRest(SyntheticRest):
+    """Adds a helper read only inside structure-shaped literal payloads."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.configs["payload_only"] = {
+            "alias": "Structure-shaped literal payload",
+            "triggers": [
+                {
+                    "trigger": "state",
+                    "entity_id": "person.synthetic_resident",
+                    "to": "home",
+                }
+            ],
+            "conditions": [],
+            "actions": [
+                *(
+                    config["actions"][0]
+                    for _label, config, _relation in _payload_cases(
+                        PAYLOAD_HELPER
+                    )
+                ),
+                {
+                    "action": "lock.unlock",
+                    "target": {"entity_id": "lock.synthetic_side"},
+                },
+            ],
+            "mode": "single",
+        }
+
+    async def request(self, method, path):
+        result = await super().request(method, path)
+        if path == "/states":
+            result.append(
+                {"entity_id": PAYLOAD_HELPER, "state": "off", "attributes": {}}
+            )
+        return result
+
+
+class Hamcp310PayloadProjectionTests(unittest.IsolatedAsyncioTestCase):
+    """Codex M1 through a full synthetic provider/index projection."""
+
+    async def asyncSetUp(self) -> None:
+        provider = DirectHaDependencyProvider(
+            PayloadRest(), SyntheticWebSocket(), concurrency=2
+        )
+        self.snapshot = _snapshot(await provider.scan())
+
+    def test_payload_only_helper_projects_dependency_neutral(self):
+        binding = _binding(self.snapshot, PAYLOAD_HELPER)
+        self.assertEqual(0, binding["exact_dependency_obligation_count"])
+        self.assertEqual([], binding["downstream_profiles"])
+        self.assertEqual("none", binding["potential_physical_consequence"])
+        self.assertNotEqual("safety_critical", binding["physical_consequence"])
+        self.assertEqual(0, binding["relevant_obligation_count"])
+        self.assertEqual(0, binding["relevant_consumer_count"])
+        self.assertEqual([], binding["obligation_evidence"])
+        payload = [
+            item
+            for item in self.snapshot.obligations
+            if PAYLOAD_HELPER in item.exact_entity_ids
+        ]
+        self.assertEqual(len(list(_payload_cases())), len(payload))
+        for item in payload:
+            self.assertIn(item.relation, NON_CAUSAL)
+            self.assertEqual(
+                "proven_dependency_neutral",
+                helper_dependency_module._obligation_targets_helper(
+                    item, PAYLOAD_HELPER
+                ),
+            )
+        self.assertEqual(
+            {},
+            helper_dependency_module._causal_automation_sources(
+                self.snapshot, PAYLOAD_HELPER
+            ),
+        )
+
+    def test_genuine_sequence_condition_is_still_exact(self):
+        binding = _binding(self.snapshot, GUEST_MODE)
+        self.assertEqual(1, binding["exact_dependency_obligation_count"])
+        self.assertEqual("safety_critical", binding["physical_consequence"])
 
 
 class Hamcp310ControlHelperTests(unittest.IsolatedAsyncioTestCase):

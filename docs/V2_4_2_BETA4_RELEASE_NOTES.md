@@ -44,16 +44,30 @@ sequence step, was handled correctly.
 
 ## The change
 
-A mapping inside an action sequence that carries `condition`, `and`, `or` or
-`not` now gives its entity reads the same relation as a condition in that
-position: `condition`, `choose_condition` inside a choose option, or
-`repeat_condition` inside a repeat. This holds at any depth, including:
+Home Assistant Core decides a step's type from its keys (`ACTIONS_MAP` and
+`determine_script_action` in `homeassistant/helpers/config_validation.py`,
+verified identical at 2026.7.2 `f9122fb`, 2026.9.1 `fc03457` and 2026.11.0
+`74cf5a49`, lines 2125 and 2152).
+
+A step in an executable action position that carries `condition`, `and`,
+`or` or `not` now gives its entity reads the same relation as a condition in
+that position: `condition`, `choose_condition` inside a choose option, or
+`repeat_condition` inside a repeat. The extractor tracks the action position
+explicitly while it walks the configuration. A position is executable only
+when it is reached through action structure:
+- automation `actions` and the legacy `action` key, and a script's
+  `sequence`;
+- inside a step: `sequence`, `then`, `else`, `default` and `parallel`, and
+  the `sequence` of a `choose` option or of a `repeat`.
+
+This holds at any depth, including:
 - top-level actions and the legacy `action` key;
 - choose option sequences and `default`;
 - if `then` and `else`;
 - `parallel` branches and nested `sequence` steps;
 - repeat sequences;
-- script sequences;
+- script sequences, plain, nested and in the shorthand `and`/`or`/`not`
+  forms, the same as automations;
 - blueprint inputs used in such a step.
 
 For such a helper:
@@ -63,17 +77,29 @@ For such a helper:
 - `control_helper` returns `confirmation_required` before changing it when
   that consumer is safety-critical.
 
-Only the relation an action step inherits from its path changes. A helper
-named as a service call's `target`, in its `data`, as a legacy step-level
-`entity_id` on a service call or as a device action entity is still the
-thing the action acts on, and stays non-causal. The change can only add
-evidence, consumers, locks and warnings.
+Nothing else is reclassified. A helper named as a service call's `target`,
+in its `data` (or `data_template`), as a legacy step-level `entity_id` on a
+service call or as a device action entity is still the thing the action
+acts on, and keeps its relation (`service_target`, `action_data` or
+`action_target`) and its `proven_dependency_neutral` projection. That holds
+even when the literal payload contains keys named `sequence`, `then`,
+`else`, `default`, `parallel`, `actions`, `repeat` or `choose`: a payload is
+data passed to the service, not an action sequence Home Assistant runs.
+Template reads inside such a payload stay `exact_dependency`, as before.
+Script entity references outside a condition step keep `script_reference`.
+The change can only add evidence, consumers, locks and warnings.
 
 The relation is part of each structured obligation's evidence ID and
-expression fingerprint. For automations and scripts with a condition step
-in a sequence, those values change. A plan or binding captured on
-2.4.2-beta.3 that covers such an automation no longer matches and is
-refreshed or refused, as for any changed dependency evidence.
+expression fingerprint, so those values change for the affected references:
+- an automation condition step in a sequence (previously `action_target`);
+- a script condition step: previously `script_reference` at the top of the
+  sequence, in nested `sequence` steps and in choose, `default` and repeat
+  sequences, which was already `exact_dependency`, and `action_target` in
+  `then`, `else` and directly in `parallel`, which was not.
+
+A plan or binding captured on 2.4.2-beta.3 that covers such an automation or
+script no longer matches and is refreshed or refused, as for any changed
+dependency evidence.
 
 ## Other gating constructs (not changed)
 
@@ -93,7 +119,9 @@ These were checked offline at the base and are recorded for follow-up:
 
 - The obligation ledger, policy classes, semantic registry and every other
   relation.
-- Literal `target` and `data` relations.
+- Literal `target` and `data` relations, including structure-shaped keys
+  inside a literal payload.
+- Script references outside a condition step (`script_reference`).
 - Tool and input schemas, routes, providers, signed profiles, contract
   fingerprints, persisted formats and add-on options.
 

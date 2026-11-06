@@ -802,6 +802,7 @@ def extract_document_obligation_evidence(
         path: str,
         relation: str,
         depth: int = 0,
+        action_position: str = _NOT_ACTION_POSITION,
     ) -> None:
         nonlocal document_limit_exceeded, document_limit_reason
         nonlocal event_scan_nodes
@@ -814,7 +815,9 @@ def extract_document_obligation_evidence(
             document_limit_reason = "configuration_structure_limit_exceeded"
             return
         if isinstance(value, dict):
-            relation = _step_relation(value, path, relation, source_type)
+            relation = _step_relation(
+                value, path, relation, source_type, action_position
+            )
             add_state_changed_event_obligation(
                 value, path=path, relation=relation
             )
@@ -838,6 +841,9 @@ def extract_document_obligation_evidence(
                         path, key, relation, source_type
                     ),
                     depth=depth + 1,
+                    action_position=_child_action_position(
+                        action_position, key
+                    ),
                 )
         elif isinstance(value, list):
             for index, item in enumerate(value):
@@ -855,6 +861,7 @@ def extract_document_obligation_evidence(
                     path=f"{path}[{index}]",
                     relation=relation,
                     depth=depth + 1,
+                    action_position=action_position,
                 )
 
     def walk(
@@ -866,6 +873,7 @@ def extract_document_obligation_evidence(
         template_context: TemplateContextEvidence = context,
         structured_entity_roles: bool = True,
         entity_output_roles: bool = True,
+        action_position: str = _NOT_ACTION_POSITION,
     ) -> None:
         nonlocal document_limit_exceeded
         nonlocal configuration_walk_nodes
@@ -882,7 +890,9 @@ def extract_document_obligation_evidence(
             document_limit_exceeded = True
             return
         if isinstance(value, dict):
-            relation = _step_relation(value, path, relation, source_type)
+            relation = _step_relation(
+                value, path, relation, source_type, action_position
+            )
             if set(value) == {"__blueprint_input__"}:
                 input_name = _bounded(
                     value.get("__blueprint_input__"), 128, secret
@@ -1076,6 +1086,7 @@ def extract_document_obligation_evidence(
                     child_context,
                     structured_entity_roles,
                     entity_output_roles,
+                    _child_action_position(action_position, key),
                 )
             return
         if isinstance(value, list):
@@ -1189,6 +1200,7 @@ def extract_document_obligation_evidence(
                     sequence_context,
                     structured_entity_roles,
                     entity_output_roles,
+                    action_position,
                 )
                 if parent_key in ACTION_SEQUENCE_KEYS:
                     variable_actions, variable_scan_limit = (
@@ -1250,9 +1262,17 @@ def extract_document_obligation_evidence(
 
     configuration_walk_nodes = 0
     scan_event_triggers(
-        config, path="$", relation="other_structured_reference"
+        config,
+        path="$",
+        relation="other_structured_reference",
+        action_position=_ROOT_ACTION_POSITION,
     )
-    walk(config, "$", "other_structured_reference")
+    walk(
+        config,
+        "$",
+        "other_structured_reference",
+        action_position=_ROOT_ACTION_POSITION,
+    )
     if document_limit_exceeded:
         obligations.append(
             make_coverage_failure_obligation(
@@ -3201,9 +3221,17 @@ def extract_document(
             )
         )
 
-    def walk(value: Any, path: str, relation: str, parent_key: str = ""):
+    def walk(
+        value: Any,
+        path: str,
+        relation: str,
+        parent_key: str = "",
+        action_position: str = _NOT_ACTION_POSITION,
+    ):
         if isinstance(value, dict):
-            relation = _step_relation(value, path, relation, source_type)
+            relation = _step_relation(
+                value, path, relation, source_type, action_position
+            )
             if source_type == "scene" and path in {"$", "$.entities"}:
                 entities = value.get("entities") if path == "$" else value
                 if isinstance(entities, dict):
@@ -3222,10 +3250,22 @@ def extract_document(
                     if not any(term in key.lower() for term in ("secret", "token", "password", "webhook", "api_key", "url")):
                         for entity in _literal_entities_deep(item):
                             add(entity, "blueprint_input", child_path, blueprint_input=key)
-                walk(item, child_path, child_relation, key)
+                walk(
+                    item,
+                    child_path,
+                    child_relation,
+                    key,
+                    _child_action_position(action_position, key),
+                )
         elif isinstance(value, list):
             for index, item in enumerate(value):
-                walk(item, f"{path}[{index}]", relation, parent_key)
+                walk(
+                    item,
+                    f"{path}[{index}]",
+                    relation,
+                    parent_key,
+                    action_position,
+                )
         elif isinstance(value, str):
             if parent_key in FREE_TEXT_KEYS and not (
                 "{{" in value or "{%" in value or "{#" in value
@@ -3240,7 +3280,12 @@ def extract_document(
                 if unresolved:
                     add_dynamic(path, value, resolution)
 
-    walk(config, "$", "other_structured_reference")
+    walk(
+        config,
+        "$",
+        "other_structured_reference",
+        action_position=_ROOT_ACTION_POSITION,
+    )
     return _deduplicate(findings), _deduplicate_dynamic(dynamic)
 
 
@@ -3253,19 +3298,36 @@ def resolve_blueprint_roles(
     """Map !input markers to structural blueprint roles without exposing source."""
     roles: dict[str, set[str]] = {}
 
-    def walk(value: Any, path: str, relation: str):
+    def walk(
+        value: Any,
+        path: str,
+        relation: str,
+        action_position: str = _NOT_ACTION_POSITION,
+    ):
         if isinstance(value, dict):
-            relation = _step_relation(value, path, relation, "blueprint")
+            relation = _step_relation(
+                value, path, relation, "blueprint", action_position
+            )
             if set(value) == {"__blueprint_input__"}:
                 roles.setdefault(str(value["__blueprint_input__"]), set()).add(relation)
                 return
             for key, item in value.items():
-                walk(item, f"{path}.{key}", _relation_for(path, key, relation, "blueprint"))
+                walk(
+                    item,
+                    f"{path}.{key}",
+                    _relation_for(path, key, relation, "blueprint"),
+                    _child_action_position(action_position, key),
+                )
         elif isinstance(value, list):
             for index, item in enumerate(value):
-                walk(item, f"{path}[{index}]", relation)
+                walk(item, f"{path}[{index}]", relation, action_position)
 
-    walk(blueprint_config, "$", "other_structured_reference")
+    walk(
+        blueprint_config,
+        "$",
+        "other_structured_reference",
+        _ROOT_ACTION_POSITION,
+    )
     resolved = []
     for finding in findings:
         if finding.relation != "blueprint_input" or not finding.blueprint_input:
@@ -3315,25 +3377,84 @@ def _relation_for(path: str, key: str, current: str, source_type: str) -> str:
     return current
 
 
-#: HAMCP-310: Home Assistant Core's ``ACTIONS_MAP`` (2026.7.2 through 2026.9.1)
-#: classifies an action step carrying any of these keys as a check-condition
-#: action; ``and``/``or``/``not`` are the shorthand condition forms.
+#: HAMCP-310: Home Assistant Core's ``ACTIONS_MAP`` classifies an action step
+#: carrying any of these keys as a check-condition action; ``and``/``or``/
+#: ``not`` are the shorthand condition forms.  Verified identical at Core
+#: 2026.7.2 (f9122fb), 2026.9.1 (fc03457) and 2026.11.0 (74cf5a49,
+#: ``helpers/config_validation.py`` ``ACTIONS_MAP`` line 2125 and
+#: ``determine_script_action`` line 2152).
 _CONDITION_STEP_KEYS = frozenset({"condition", "and", "or", "not"})
+
+#: HAMCP-310 action-position context, tracked explicitly by every walker.
+#: Only a mapping reached through Home Assistant's action structure is an
+#: executable step; service ``data``/``target`` payloads and every other
+#: subtree are not, whatever keys they carry.
+_NOT_ACTION_POSITION = ""
+_ROOT_ACTION_POSITION = "root"
+#: The value is a sequence of action steps (a list, or a single step).
+_ACTION_STEPS_POSITION = "steps"
+#: The value holds ``choose`` options or a ``repeat`` mapping, whose own
+#: ``sequence`` member is a sequence of action steps.
+_ACTION_OPTIONS_POSITION = "options"
+#: Configuration roots whose member is an action sequence: automation
+#: ``actions``/legacy ``action`` and script ``sequence``.
+_ROOT_STEP_KEYS = frozenset({"action", "actions", "sequence"})
+#: Members of an action step that are themselves action sequences (Core
+#: 2026.11.0 ``_SCRIPT_CHOOSE_SCHEMA`` ``default``, ``_SCRIPT_IF_SCHEMA``
+#: ``then``/``else``, ``_SCRIPT_SEQUENCE_SCHEMA`` ``sequence`` and
+#: ``_SCRIPT_PARALLEL_SCHEMA`` ``parallel`` branches).
+_STEP_SEQUENCE_KEYS = frozenset({"sequence", "then", "else", "default", "parallel"})
+#: Members of an action step holding ``choose`` options or ``repeat`` options.
+_STEP_OPTION_KEYS = frozenset({"choose", "repeat"})
+#: Relations an action step inherits from its sequence.  Only these are
+#: upgraded, so an existing causal relation is never relabelled.
+_STEP_RELATIONS = frozenset({"action_target", "script_reference"})
+
+
+def _child_action_position(position: str, key: Any) -> str:
+    """Return the action-position context of one mapping member.
+
+    ``position`` describes the mapping holding ``key``: the configuration
+    root, an action step (a mapping in a step sequence), or a choose/repeat
+    option.  Every other mapping, including service data and targets, has
+    no action-position members.
+    """
+
+    if position == _ROOT_ACTION_POSITION:
+        return _ACTION_STEPS_POSITION if key in _ROOT_STEP_KEYS else _NOT_ACTION_POSITION
+    if position == _ACTION_STEPS_POSITION:
+        if key in _STEP_SEQUENCE_KEYS:
+            return _ACTION_STEPS_POSITION
+        if key in _STEP_OPTION_KEYS:
+            return _ACTION_OPTIONS_POSITION
+        return _NOT_ACTION_POSITION
+    if position == _ACTION_OPTIONS_POSITION and key == "sequence":
+        return _ACTION_STEPS_POSITION
+    return _NOT_ACTION_POSITION
 
 
 def _step_relation(
-    value: dict[str, Any], path: str, current: str, source_type: str
+    value: dict[str, Any],
+    path: str,
+    current: str,
+    source_type: str,
+    action_position: str,
 ) -> str:
     """Return the relation for the members of one configuration mapping.
 
-    HAMCP-310: a condition step inside an action sequence gates every later
+    HAMCP-310: a condition step in an action sequence gates every later
     action, so its entity reads are causal exactly like a top-level, choose
-    or if condition.  Only the step-level ``action_target`` inherited from an
-    action path is reclassified; literal ``target`` and ``data`` values keep
-    their own non-causal relations.
+    or if condition, in automations, scripts and blueprints alike.  Only a
+    mapping in an executable action position is reclassified; a literal
+    service ``data`` or ``target`` subtree keeps its own non-causal relation
+    even when it carries condition- or sequence-shaped keys.
     """
 
-    if current == "action_target" and _CONDITION_STEP_KEYS.intersection(value):
+    if (
+        action_position == _ACTION_STEPS_POSITION
+        and current in _STEP_RELATIONS
+        and _CONDITION_STEP_KEYS.intersection(value)
+    ):
         return _relation_for(path, "condition", current, source_type)
     return current
 
