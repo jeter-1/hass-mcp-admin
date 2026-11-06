@@ -99,6 +99,10 @@ def load_inputs(root: Path) -> dict:
     expected = {name: version for name, (version, _) in parse_lock(lock).items()}
     if value["runtime"] != expected or "pip" in expected:
         fail("BUILD_RUNTIME_LOCK_MISMATCH")
+    # The base installer is replaced from one exact hashed wheel; it never joins the runtime lock.
+    installer = parse_lock(read_bytes(root / "installer.lock"))
+    if set(installer) != {"pip"} or installer["pip"][0] != value["installer_version"] or len(installer["pip"][1]) != 1:
+        fail("BUILD_INSTALLER_LOCK_MISMATCH")
     for line in requirements.decode().splitlines():
         if not line or line.startswith("#"):
             continue

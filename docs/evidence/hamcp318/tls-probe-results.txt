@@ -1,0 +1,21 @@
+# HAMCP-318 TLS probe, 2026-11-05 21:16:38 CST, scriptbox amd64, public network
+# new: local build hamcp318-local:amd64 (worktree source, base 4840d514); python -I /probe/tls_probe.py --aiohttp
+stdlib  dv-g3b-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+aiohttp dv-g3b-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+stdlib  dv-g3b-noct-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+aiohttp dv-g3b-noct-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+stdlib  dv-g3b-aaa-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+aiohttp dv-g3b-aaa-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+stdlib  dv-g3b-aaa-noct-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+aiohttp dv-g3b-aaa-noct-emudhra.we-have-a-problem.com: REJECTED unable to get local issuer certificate
+stdlib  api.github.com: CONNECTED TLSv1.3
+aiohttp api.github.com: CONNECTED http=200
+stdlib  raw.githubusercontent.com: CONNECTED TLSv1.3
+aiohttp raw.githubusercontent.com: CONNECTED http=200
+# control: python:3.12-slim@sha256:78387bc3 (previous base); python -I /probe/tls_probe.py
+stdlib  dv-g3b-emudhra.we-have-a-problem.com: CONNECTED TLSv1.3
+stdlib  dv-g3b-noct-emudhra.we-have-a-problem.com: CONNECTED TLSv1.3
+stdlib  dv-g3b-aaa-emudhra.we-have-a-problem.com: CONNECTED TLSv1.3
+stdlib  dv-g3b-aaa-noct-emudhra.we-have-a-problem.com: CONNECTED TLSv1.3
+stdlib  api.github.com: CONNECTED TLSv1.3
+stdlib  raw.githubusercontent.com: CONNECTED TLSv1.3

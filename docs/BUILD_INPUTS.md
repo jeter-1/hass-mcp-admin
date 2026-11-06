@@ -9,13 +9,29 @@ hardware/OS. Removing an architecture here does not perform that migration.
 
 ## Controlled inputs
 
-Both Docker stages use the Python 3.12.14 multi-platform base index recorded for
-the accepted 2.2.0 image:
-`sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea`.
-Child manifest and configuration digests are in
-[`build-inputs.json`](../hass_mcp_engineering_beta/build-inputs.json).
-The pinned base fixes inherited OS packages and pip 25.0.1. There is no
-additional apt resolution. Future vulnerability fixes require deliberate updates.
+Both Docker stages use one pinned Python 3.12 multi-platform base index. HAMCP-318
+moved it from the Python 3.12.14 index recorded for the accepted 2.2.0 image
+(`sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea`) to
+the Python 3.12.16 / Debian 13.7 index
+`sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54`, whose
+`ca-certificates` 20250419+deb13u1 removes the two roots implicated in
+GHSA-6q48-6c7w-9gw2 (emSign ECC Root CA - G3 and Comodo AAA Certificate
+Services). Child manifest and configuration digests are in
+[`build-inputs.json`](../hass_mcp_engineering_beta/build-inputs.json); the
+package-level review of the refresh is in
+[`evidence/hamcp318/`](evidence/hamcp318/base-image-review.json).
+The pinned base fixes inherited OS packages. There is no additional apt
+resolution. Future vulnerability fixes require deliberate updates.
+
+The base still bundles pip 25.0.1, whose vendored certifi is affected. The
+final stage therefore replaces it, before any runtime wheel is installed, from
+[`installer.lock`](../hass_mcp_engineering_beta/installer.lock): exactly one
+hash-pinned pip wheel (26.2.2) downloaded by the builder stage and installed
+index-free. `build_inputs.py source` refuses an installer lock that names any
+other package, more than one hash or a version other than the contract's
+`installer_version`; pip never joins the runtime lock. The smoke and the
+publication SBOM check keep requiring the runtime closure plus exactly
+`pip == installer_version`.
 
 [`requirements.txt`](../hass_mcp_engineering_beta/requirements.txt) retains eight
 direct requirements. [`requirements.lock`](../hass_mcp_engineering_beta/requirements.lock)
@@ -39,7 +55,8 @@ amd64 Python 3.12 test closure and includes identical runtime pins and hashes.
 The existing direct test pins remain in
 [`tests/requirements.txt`](../tests/requirements.txt). The test environment also
 contains audit/test tools and is not the final runtime inventory. CI selects
-Python 3.12.14, installs locked wheels and audits the complete runtime lock.
+Python 3.12.14 for the test runner (unchanged by HAMCP-318; it is not the
+image runtime), installs locked wheels and audits the complete runtime lock.
 The publisher obtains its validation lock from the protected workflow commit,
 including during guarded recovery of older artifacts that predate locks.
 The ordinary GitHub runner and Actions environment is not an immutable replica
@@ -90,6 +107,9 @@ relevant differences.
 
 Use disposable Python 3.12.14 with pip 25.0.1; keep preparation reports outside
 the checkout. Never update locks as a side effect of building or publication.
+HAMCP-318 changed no runtime or test lock, so the lock-preparation tooling below
+still targets pip 25.0.1 reports; moving it to the image's installer version is
+a tooling review for the next lock regeneration.
 
 1. Identify the exact proposed base index, both manifests/configurations, Python
    and pip versions. Retrieve and hash raw public artifacts. Review OS changes,
@@ -118,7 +138,9 @@ the checkout. Never update locks as a side effect of building or publication.
    hash. Both architecture hashes remain in the test lock. Review test-only
    changes too; report generation alone is not artifact approval.
 4. Update the declaration's direct-requirements/runtime-lock SHA256 values,
-   distribution map and base identities with both Docker references. Download
+   distribution map and base identities with both Docker references. A new
+   `installer_version` needs a matching single-hash `installer.lock` entry from
+   PyPI's JSON metadata, reviewed for its vendored certifi. Download
    and hash-check both wheel sets, install from locks, run dependency checks,
    focused tests, full Evidence and both architecture builds. Retain actual image
    inventories. Missing compatible wheels fail; do not silently permit source

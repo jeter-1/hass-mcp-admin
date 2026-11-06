@@ -42,7 +42,7 @@ class BuildInputsTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for name in ("build-inputs.json", "requirements.lock", "requirements.txt", "Dockerfile"):
+        for name in ("build-inputs.json", "requirements.lock", "requirements.txt", "installer.lock", "Dockerfile"):
             shutil.copyfile(BETA / name, self.root / name)
         self.contract = json.loads((self.root / "build-inputs.json").read_text())
 
@@ -91,6 +91,53 @@ class BuildInputsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE"):
             BUILD.load_inputs(self.root)
 
+    def test_installer_lock_pins_exactly_the_declared_pip_with_one_hash(self):
+        # HAMCP-318: the base pip is replaced from one reviewed wheel and never joins the runtime lock.
+        installer = BUILD.parse_lock((BETA / "installer.lock").read_bytes())
+        self.assertEqual(installer, {"pip": (self.contract["installer_version"], (
+            "fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70",))})
+        path = self.root / "installer.lock"
+        digest = "--hash=sha256:" + "b" * 64
+        for bad in (f"pip==25.0.1 {digest}", f"pip==26.2.2 {digest} --hash=sha256:{'c' * 64}",
+                    f"pip==26.2.2 {digest}\nsetuptools==80.0 --hash=sha256:{'c' * 64}",
+                    f"setuptools==80.0 {digest}", "pip==26.2.2", f"pip>=26.2.2 {digest}", ""):
+            path.write_text(bad)
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                BUILD.load_inputs(self.root)
+        path.unlink()
+        with self.assertRaises(OSError):
+            BUILD.load_inputs(self.root)
+        lock = self.root / "requirements.lock"
+        lock.write_bytes(lock.read_bytes() + f"pip==26.2.2 {digest}\n".encode())
+        value = copy.deepcopy(self.contract)
+        value["runtime_lock_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
+        value["runtime"]["pip"] = "26.2.2"
+        (self.root / "build-inputs.json").write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError, "RUNTIME_LOCK"):
+            BUILD.load_inputs(self.root)
+
+    def test_contract_declares_the_hamcp318_trust_store_floor(self):
+        # A revert to the 3.12.14 / pip 25.0.1 / ca-certificates 20250419 base fails here.
+        def release(value):
+            return tuple(int(part) for part in value.split("."))
+        review = json.loads((ROOT / "docs/evidence/hamcp318/base-image-review.json").read_text())
+        self.assertGreaterEqual(release(self.contract["installer_version"]), (26, 2, 2))
+        self.assertGreaterEqual(release(self.contract["python_version"]), (3, 12, 16))
+        self.assertEqual(self.contract["base_image"].split("@")[1], review["base"]["index"])
+        self.assertEqual(self.contract["python_version"], review["base"]["python"])
+        self.assertEqual(self.contract["installer_version"], review["installer"]["version"])
+        self.assertEqual(self.contract["base_platforms"], {
+            platform: {key: item[key] for key in ("manifest_digest", "configuration_digest")}
+            for platform, item in review["base"]["platforms"].items()})
+        for platform in ("linux/amd64", "linux/arm64"):
+            self.assertEqual(review["debian_version_changes"][platform]["ca-certificates"],
+                             ["20250419", "20250419+deb13u1"])
+        self.assertEqual({item["subject"].split(",")[0] for item in review["ca_bundle"]["removed"]},
+                         {"CN=emSign ECC Root CA - G3", "CN=AAA Certificate Services"})
+        self.assertEqual(review["ca_bundle"]["added"], [])
+        runtime = BUILD.parse_lock((BETA / "requirements.lock").read_bytes())
+        self.assertGreaterEqual(release(runtime["certifi"][0]), (2026, 10, 19))
+
     def test_lock_refuses_unpinned_inputs_options_sources_and_duplicate_hashes(self):
         valid = "synthetic==1.0 --hash=sha256:" + "a" * 64
         self.assertEqual(BUILD.parse_lock(valid.encode())["synthetic"][0], "1.0")
@@ -103,7 +150,7 @@ class BuildInputsTests(unittest.TestCase):
 
     def test_installed_inventory_checks_exact_set_versions_python_and_platform(self):
         expected = {**self.contract["runtime"], "pip": self.contract["installer_version"]}
-        with mock.patch.object(BUILD.platform, "python_version", return_value="3.12.14"), \
+        with mock.patch.object(BUILD.platform, "python_version", return_value=self.contract["python_version"]), \
                 mock.patch.object(BUILD.platform, "machine", return_value="x86_64"), \
                 mock.patch.object(BUILD, "installed_inventory", return_value=expected) as installed:
             self.assertEqual(BUILD.verify_installed(self.root, "linux/amd64")["distributions"], expected)
@@ -144,12 +191,18 @@ class BuildInputsTests(unittest.TestCase):
     def test_build_uses_wheels_only_offline_install_and_networkless_smoke(self):
         dockerfile = (BETA / "Dockerfile").read_text()
         for required in ("--require-hashes", "--only-binary=:all:", "--no-index",
-                         "--find-links=/wheels", "python -m pip check",
+                         "--find-links=/wheels", "--find-links=/installer", "python -m pip check",
+                         "--dest /installer -r installer.lock", "rm -rf /installer /wheels",
                          "RUN --network=none python /app/build_inputs.py smoke"):
             self.assertIn(required, dockerfile)
-        for forbidden in ("apt-get", "pip wheel", "pip install --upgrade", "curl "):
+        for forbidden in ("apt-get", "pip wheel", "pip install --upgrade", "--upgrade", "curl ",
+                          "ensurepip", "get-pip"):
             self.assertNotIn(forbidden, dockerfile)
         self.assertLess(dockerfile.index("COPY ha_mcp_engineering"), dockerfile.index("RUN --network=none"))
+        # The reviewed installer replaces base pip before it installs the runtime closure.
+        final = dockerfile[dockerfile.rindex("FROM "):]
+        self.assertLess(final.index("-r installer.lock"), final.index("-r requirements.lock"))
+        self.assertEqual(dockerfile.count("installer.lock"), 4)
 
     def test_real_pip_accepts_exact_local_wheel_and_refuses_tampering_before_install(self):
         # Real pip, no network/index/build backend. Synthetic package only.
