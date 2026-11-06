@@ -54,7 +54,47 @@ def manifest():
     if (not paths or paths != sorted(set(paths))
             or any(not p.startswith("homeassistant/") or ".." in p or p.endswith("/") for p in paths)):
         raise ValueError("invalid contract-read manifest")
+    validate_manifest_coverage(paths)
     return value
+
+
+def validate_manifest_coverage(paths):
+    """Union inventory guard: every path must be witnessed in a bound release.
+
+    The committed records are generated from hash-pinned source archives, not
+    path guesses. Bind their provenance to the existing reviewed release fixtures.
+    This validation runs in CI's source tests and every evidence preparation.
+    """
+    from core_lane_bindings import REVIEWED_CORE_BINDINGS, provenance_name
+    records = sorted((ROOT / "docs/evidence/hamcp315/core-sources").glob("*.json"))
+    present, versions = set(), set()
+    for path in records:
+        record = read_json(path)
+        version = record.get("version")
+        if version not in REVIEWED_CORE_BINDINGS or version in versions:
+            raise ValueError("source-hash record requires a distinct bound Core release")
+        fixture = read_json(ROOT / "tests/fixtures" / provenance_name(version))
+        if (record.get("commit") != fixture["source_commit"]
+                or record.get("tag_commit") != fixture["source_commit"]
+                or record.get("archive_sha256") != fixture["source_archive_sha256"]
+                or fixture["image_index_digest"] != REVIEWED_CORE_BINDINGS[version].image_index_digest):
+            raise ValueError("source-hash record provenance mismatch")
+        hashes = record.get("hashes")
+        if not isinstance(hashes, dict) or any(
+                not isinstance(value, str) or not HASH.fullmatch(value) for value in hashes.values()):
+            raise ValueError("source-hash record contains invalid hashes")
+        present.update(hashes)
+        versions.add(version)
+    missing = sorted(set(paths) - present)
+    if missing:
+        raise ValueError("manifest paths absent from every bound source record: " + ", ".join(missing))
+
+
+def equal_source_hashes(left, right):
+    """O3: two explicit absences are equal; all present bytes stay exact."""
+    if left is None and right is None:
+        return True
+    return isinstance(left, str) and HASH.fullmatch(left) is not None and left == right
 
 
 def groups():
@@ -95,7 +135,7 @@ def select_release(releases, published, runs, requested=None, *, retry_refused=F
 
 
 def compare_sources(predecessor, target, paths=None):
-    """Closed complete comparison. Unknown/missing/mismatched identity never inherits."""
+    """Complete union comparison; one-sided absence and changed bytes differ."""
     paths = manifest()["paths"] if paths is None else paths
     for source in (predecessor, target):
         if (not stable_version(source.get("version")) or not SHA.fullmatch(source.get("commit", ""))
@@ -103,9 +143,8 @@ def compare_sources(predecessor, target, paths=None):
             raise ValueError("tag SHA mismatch")
     rows = [{"path": p, "predecessor_sha256": predecessor["hashes"].get(p),
              "release_sha256": target["hashes"].get(p)} for p in paths]
-    differing = [r["path"] for r in rows if not HASH.fullmatch(r["predecessor_sha256"] or "")
-                 or not HASH.fullmatch(r["release_sha256"] or "")
-                 or r["predecessor_sha256"] != r["release_sha256"]]
+    differing = [r["path"] for r in rows
+                 if not equal_source_hashes(r["predecessor_sha256"], r["release_sha256"])]
     return {"model": "core-o3-comparison-v1", "predecessor": predecessor["version"],
             "release": target["version"], "predecessor_commit": predecessor["commit"],
             "release_commit": target["commit"], "files": rows, "differing_files": differing,
@@ -121,8 +160,8 @@ def verify_proof(proof, predecessor, release, source_commit):
     rows = proof.get("files", [])
     if [r.get("path") for r in rows] != paths:
         raise ValueError("O3 proof file coverage mismatch")
-    if any(not HASH.fullmatch(r.get("predecessor_sha256", ""))
-           or r.get("predecessor_sha256") != r.get("release_sha256") for r in rows):
+    if any("predecessor_sha256" not in r or "release_sha256" not in r
+           or not equal_source_hashes(r["predecessor_sha256"], r["release_sha256"]) for r in rows):
         raise ValueError("O3 proof does not establish byte identity")
     if proof.get("inherited") is not True or proof.get("differing_files") != []:
         raise ValueError("O3 proof refused")

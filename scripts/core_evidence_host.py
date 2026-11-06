@@ -42,6 +42,7 @@ LANE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 MODE = re.compile(r"[0-7]{3}")
 DOCKER_TIMEOUT = 600
 RECEIPT_BOUND = 4096
+FIXTURE_MEMORY = "128m"
 
 STAGE_CODE = r"""import hashlib,json,os,pathlib,stat,sys
 expected,relative,mode=sys.argv[1],sys.argv[2],int(sys.argv[3],8)
@@ -121,14 +122,40 @@ def require_local_image(run):
                       "local mode never pulls, so load that exact digest first")
 
 
-def docker_argv(owned, code, *extra, source=None):
+def memory_bytes(value):
+    """Explicit positive Docker m/g values; no unlimited or environment default."""
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]*[mg]", value):
+        raise Refusal("explicit_positive_container_memory_required")
+    return int(value[:-1]) * (1024 ** (2 if value[-1] == "m" else 3))
+
+
+def require_memory(argv):
+    """Fail before Docker if a local run has lost its explicit memory argument."""
+    if list(argv[:2]) != ["docker", "run"]:
+        return
+    if argv.count("--memory") != 1:
+        raise Refusal("explicit_positive_container_memory_required")
+    index = argv.index("--memory")
+    if index + 1 >= len(argv):
+        raise Refusal("explicit_positive_container_memory_required")
+    memory_bytes(argv[index + 1])
+
+
+def docker_argv(owned, code, *extra, source=None, memory=FIXTURE_MEMORY, owner=None):
     argv = ["docker", "run", "--rm", "--pull", "never", "--network", "none",
             "--user", "0:0", "--security-opt", "no-new-privileges", "--read-only",
+            "--memory", memory,
             "--entrypoint", "python",
             "--mount", f"type=bind,source={owned},target=/owned"]
+    if owner is not None:
+        if not re.fullmatch(r"[a-f0-9]{32}", owner):
+            raise Refusal("invalid_lane_owner")
+        argv += ["--label", "org.hamcp.helper-evidence-run=" + owner]
     if source is not None:
         argv += ["--mount", f"type=bind,source={source},target=/source,readonly"]
-    return argv + [FIXTURE_IMAGE, "-c", code, *extra]
+    argv += [FIXTURE_IMAGE, "-c", code, *extra]
+    require_memory(argv)
+    return argv
 
 
 def local_stage(args, environ, run):
@@ -146,7 +173,9 @@ def local_stage(args, environ, run):
     relative = PurePosixPath(destination.relative_to(owned).as_posix())
     expected = hashlib.sha256(source.read_bytes()).hexdigest()
     require_local_image(run)
-    result = run(docker_argv(owned, STAGE_CODE, expected, str(relative), args.mode, source=source),
+    result = run(docker_argv(owned, STAGE_CODE, expected, str(relative), args.mode, source=source,
+                            memory=getattr(args, "memory", FIXTURE_MEMORY),
+                            owner=getattr(args, "owner", None)),
                  check=False, capture_output=True, timeout=DOCKER_TIMEOUT)
     if result.returncode != 0 or len(result.stdout) > RECEIPT_BOUND:
         raise Refusal("pinned fixture image staging failed")
@@ -171,7 +200,8 @@ def local_remove(args, environ, run):
         return {"removed": False, "reason": "owned directory already absent"}
     require_canonical_directory(owned)
     require_local_image(run)
-    result = run(docker_argv(owned, REMOVE_CODE), check=False, capture_output=True,
+    result = run(docker_argv(owned, REMOVE_CODE, memory=getattr(args, "memory", FIXTURE_MEMORY),
+                            owner=getattr(args, "owner", None)), check=False, capture_output=True,
                  timeout=DOCKER_TIMEOUT)
     if result.returncode != 0:
         raise Refusal("pinned fixture image cleanup failed")
@@ -195,6 +225,8 @@ def main(argv=None, environ=os.environ, run=subprocess.run, execvp=os.execvp,
     stage.add_argument("--destination", required=True)
     remove = commands.add_parser("remove-owned-dir")
     remove.add_argument("--directory", required=True)
+    for subparser in (stage, remove):
+        subparser.add_argument("--memory", default=FIXTURE_MEMORY, help="local helper limit (default: 128m)")
     args = parser.parse_args(argv)
     try:
         mode = select_mode(environ)

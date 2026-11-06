@@ -10,7 +10,8 @@ The aggregator re-discovers the suite itself and refuses unless every shard
 manifest comes from this run attempt and commit, the shards are exactly
 0..N-1, each shard executed exactly its assigned tests once, the union of the
 shards equals the full discovered set with no duplicates, and every executed
-test succeeded (skips and expected failures are successes, as in unittest).
+test has an acceptable unittest outcome. Skips and expected failures permit
+the gate to succeed but are reported separately and never counted as passes.
 Only then may the same-run full-discovery receipt be recorded.
 
 Skips are accounted as unittest accounts them. A test unittest never starts
@@ -441,7 +442,10 @@ def verify(root, manifests, env):
     union = [row[0] for shard in range(count) for row in by_shard[shard]["executed"]]
     require(len(union) == len(set(union)), "test_executed_in_multiple_shards")
     require(sorted(union) == ids, "shard_union_differs_from_discovery")
-    return {"result": "success", "source_sha": commit, "run_id": run_id, "run_attempt": attempt, **bound}
+    outcomes = {outcome: sum(row[1] == outcome for manifest in manifests for row in manifest["executed"])
+                for outcome in sorted(SUCCESS_OUTCOMES)}
+    return {"result": "success", "source_sha": commit, "run_id": run_id, "run_attempt": attempt,
+            "outcomes": outcomes, **bound}
 
 
 def load_manifests(directory):
@@ -468,8 +472,14 @@ def main():
     describe = commands.add_parser("describe", help="print the module plan for review")
     for command in (ceilings, count, run, aggregate, describe):
         command.add_argument("--repo-root", type=Path, default=Path.cwd())
+    for command in (count, run, aggregate):
+        command.add_argument("--expected-source-sha", help="require the exact release checkout, independent of GITHUB_SHA")
     args = parser.parse_args()
     try:
+        expected = getattr(args, "expected_source_sha", None)
+        if expected is not None:
+            require(re.fullmatch(r"[0-9a-f]{40}", expected) and head(args.repo_root) == expected,
+                    "exact_release_checkout_mismatch")
         if args.operation == "ceilings":
             print(scratch_git_ceilings(args.repo_root, os.environ))
         elif args.operation == "count":

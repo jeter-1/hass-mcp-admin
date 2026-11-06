@@ -2469,6 +2469,9 @@ def _decode_tool_result(result: Any) -> dict[str, Any]:
 async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
     """Run one bounded Docker command without exposing arguments or stderr."""
 
+    if os.environ.get("CORE_EVIDENCE_HOST_MODE") == "local":
+        from core_evidence_host import require_memory
+        require_memory(("docker", *arguments))
     process = await asyncio.create_subprocess_exec(
         "docker",
         *arguments,
@@ -2486,11 +2489,16 @@ async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
     return stdout.decode("utf-8", errors="replace")[:256]
 
 
-async def _start_exact_upstream(token: str) -> None:
+async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), environment_directory=None, memory=None) -> None:
     """Start the exact reviewed ha-mcp release against disposable HA only."""
 
     if not UPSTREAM_IMAGE:
         raise RuntimeError("The exact upstream image identity is required")
+    if pull_policy not in (None, "never"):
+        raise ValueError("Unsupported disposable pull policy")
+    if pull_policy == "never" or memory is not None:
+        from core_evidence_host import memory_bytes
+        memory_bytes(memory)
     network = os.environ.get("HA_CONTRACT_NETWORK", "").strip()
     upstream_home_assistant_url = HA_URL
     upstream_host = "127.0.0.1"
@@ -2509,6 +2517,7 @@ async def _start_exact_upstream(token: str) -> None:
         encoding="utf-8",
         prefix="beta23-real-ha-upstream-",
         suffix=".env",
+        dir=environment_directory,
         delete=False,
     ) as handle:
         environment_path = Path(handle.name)
@@ -2528,7 +2537,10 @@ async def _start_exact_upstream(token: str) -> None:
         await _docker_command(
             "run",
             "--detach",
+            *(["--pull", "never"] if pull_policy == "never" else []),
+            *(argument for label in labels for argument in ("--label", label)),
             *network_arguments,
+            *(["--memory", memory] if memory is not None else []),
             "--name",
             UPSTREAM_CONTAINER,
             "--read-only",
