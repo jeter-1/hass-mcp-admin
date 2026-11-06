@@ -333,12 +333,17 @@ def verify_sbom_inventory(packages: list, contract: dict) -> None:
     # the BuildKit scanner reports as pkg:pypi entries although none of them is an
     # installed distribution (HAMCP-323). Only that exact file's entries, for
     # exactly the contracted installer and within a fixed bound, are left out;
-    # otherwise the complete inventory is checked as before.
+    # otherwise the complete inventory is checked as before. Deciding eligibility
+    # never fails by itself: malformed input means no exemption, so the original
+    # check reports its own first failure.
     expected = {**contract["runtime"], "pip": contract["installer_version"]}
-    installed = [package for package in packages if not _installer_vendored(package)]
-    if (len(packages) - len(installed) <= INSTALLER_VENDORED_SBOM_LIMIT
-            and _python_inventory(installed).get("pip") == contract["installer_version"]):
-        packages = installed
+    try:
+        installed = [package for package in packages if not _installer_vendored(package)]
+        if (len(packages) - len(installed) <= INSTALLER_VENDORED_SBOM_LIMIT
+                and _python_inventory(installed).get("pip") == contract["installer_version"]):
+            packages = installed
+    except VerificationError:
+        pass
     if _python_inventory(packages) != expected:
         _fail("SOURCE_SBOM_RUNTIME_MISMATCH")
 

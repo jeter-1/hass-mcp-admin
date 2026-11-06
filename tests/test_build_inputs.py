@@ -556,5 +556,56 @@ class PublicationInstallerVendoredSbomTests(unittest.TestCase):
                 with self.subTest(change=change.__name__, platform=platform):
                     self.assertRefused(code, packages, contract)
 
+    def test_malformed_input_keeps_the_original_first_failure(self):
+        # Every expected code is the one the pre-change verifier (main 76e3c3d4)
+        # returns for the same input: deciding the exemption must never fail first.
+        _, contract = self.release()
+        self.assertRefused("SOURCE_SBOM_PACKAGE_INVALID",
+                           [None, {"sourceInfo": self.VENDORED, "externalRefs": None}], contract)
+        self.assertRefused("SOURCE_SBOM_REFS_INVALID",
+                           [{"sourceInfo": self.VENDORED, "externalRefs": None}, None], contract)
+
+        def unchanged(packages, contract):
+            pass
+
+        def missing_pip(packages, contract):
+            packages.remove(self.installed(packages, "pip"))
+
+        def changed_pip(packages, contract):
+            pip = self.installed(packages, "pip")
+            pip.update(versionInfo="26.2.1")
+            pip["externalRefs"][0]["referenceLocator"] = "pkg:pypi/pip@26.2.1"
+
+        def changed_installer(packages, contract):
+            contract["installer_version"] = "25.0.1"
+
+        def over_cap(packages, contract):
+            for index in range(33 - len(self.vendored(packages))):
+                packages.append({"name": f"vendored-{index}", "versionInfo": "1.0", "sourceInfo": self.VENDORED,
+                                 "externalRefs": [{"referenceType": "purl",
+                                                   "referenceLocator": f"pkg:pypi/vendored-{index}@1.0"}]})
+
+        malformed = {"package": None,
+                     "vendored-refs-null": {"sourceInfo": self.VENDORED, "externalRefs": None},
+                     "vendored-refs-object": {"sourceInfo": self.VENDORED, "externalRefs": {}},
+                     "vendored-refs-string": {"sourceInfo": self.VENDORED, "externalRefs": "pkg:pypi/x@1"},
+                     "vendored-refs-integer": {"sourceInfo": self.VENDORED, "externalRefs": 1},
+                     "installed-refs-string": {"name": "x", "externalRefs": "pkg:pypi/x@1"}}
+        for change in (unchanged, missing_pip, changed_pip, changed_installer, over_cap):
+            for kind, item in malformed.items():
+                for first in (True, False):
+                    if not first:
+                        code = "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"
+                    elif item is None:
+                        code = "SOURCE_SBOM_PACKAGE_INVALID"
+                    else:
+                        code = "SOURCE_SBOM_REFS_INVALID"
+                    for platform in ("linux/amd64", "linux/arm64"):
+                        packages, contract = self.release(platform=platform)
+                        change(packages, contract)
+                        packages.insert(0 if first else len(packages), copy.deepcopy(item))
+                        with self.subTest(change=change.__name__, kind=kind, first=first, platform=platform):
+                            self.assertRefused(code, packages, contract)
+
 if __name__ == "__main__":
     unittest.main()
