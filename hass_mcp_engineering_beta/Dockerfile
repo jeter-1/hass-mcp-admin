@@ -1,13 +1,16 @@
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS dependency-builder
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54 AS dependency-builder
 
 WORKDIR /build
-COPY requirements.txt requirements.lock build-inputs.json build_inputs.py Dockerfile ./
+COPY requirements.txt requirements.lock installer.lock build-inputs.json build_inputs.py Dockerfile ./
 RUN python build_inputs.py source \
+    && python -m pip --isolated download --no-cache-dir --only-binary=:all: \
+       --require-hashes --index-url https://pypi.org/simple \
+       --dest /installer -r installer.lock \
     && python -m pip --isolated download --no-cache-dir --only-binary=:all: \
        --require-hashes --index-url https://pypi.org/simple \
        --dest /wheels -r requirements.lock
 
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
 
 ARG BUILD_VERSION=unknown
 ARG HAMCP_BUILD_SHA=unknown
@@ -27,12 +30,15 @@ LABEL org.opencontainers.image.version="${BUILD_VERSION}" \
 LABEL io.hass-mcp.build.dirty="${HAMCP_BUILD_DIRTY}"
 
 WORKDIR /app
-COPY requirements.txt requirements.lock build-inputs.json build_inputs.py ./
+COPY requirements.txt requirements.lock installer.lock build-inputs.json build_inputs.py ./
+COPY --from=dependency-builder /installer /installer
 COPY --from=dependency-builder /wheels /wheels
-RUN python -m pip --isolated install --no-cache-dir --no-index --find-links=/wheels \
+RUN python -m pip --isolated install --no-cache-dir --no-index --find-links=/installer \
+       --only-binary=:all: --require-hashes -r installer.lock \
+    && python -m pip --isolated install --no-cache-dir --no-index --find-links=/wheels \
        --only-binary=:all: --require-hashes -r requirements.lock \
     && python -m pip check \
-    && rm -rf /wheels
+    && rm -rf /installer /wheels
 COPY ha_mcp_engineering ./ha_mcp_engineering
 RUN --network=none python /app/build_inputs.py smoke
 
