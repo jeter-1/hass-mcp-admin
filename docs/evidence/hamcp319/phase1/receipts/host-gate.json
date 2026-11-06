@@ -1,0 +1,19 @@
+{
+  "utc": "2026-11-06T01:20:46.612451+00:00",
+  "mem_available_bytes": 3701215232,
+  "load1": 7.1435546875,
+  "running_services": [
+    "claude-rc-hamcp.service",
+    "claude-rc.service",
+    "dbus.service",
+    "hamcp-lows-evidence.service",
+    "hamcp315-o3-load-a1.service"
+  ],
+  "other_evidence_units": [
+    "hamcp-lows-evidence.service"
+  ],
+  "evidence_process_count": 1,
+  "other_containers": [],
+  "other_heavy_jobs": 1,
+  "eligible": true
+}
