@@ -1,0 +1,43 @@
+{
+  "start_utc": "2026-11-06T01:20:46.792689+00:00",
+  "container_memory_bytes": {
+    "core": 2147483648,
+    "app": 805306368,
+    "facade": 134217728
+  },
+  "images": {
+    "app": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:dad67faa3ffeaf0e7bb24285f7122dc7f5221820c6fadb51b3fa82630d61adb9",
+    "core": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e"
+  },
+  "pull_policy": "never",
+  "clean": true,
+  "ready_utc": "2026-11-06T01:21:00.559915+00:00",
+  "outcome": "probes_finished",
+  "containers": [
+    {
+      "name": "hamcp319-app",
+      "Status": "running",
+      "OOMKilled": false,
+      "ExitCode": 0,
+      "StartedAt": "2026-11-06T01:33:05.294612298Z",
+      "FinishedAt": "2026-11-06T01:33:04.925888924Z"
+    },
+    {
+      "name": "hamcp319-facade",
+      "Status": "running",
+      "OOMKilled": false,
+      "ExitCode": 0,
+      "StartedAt": "2026-11-06T01:31:59.995895934Z",
+      "FinishedAt": "2026-11-06T01:31:59.701227785Z"
+    },
+    {
+      "name": "hamcp319-core",
+      "Status": "running",
+      "OOMKilled": false,
+      "ExitCode": 0,
+      "StartedAt": "2026-11-06T01:28:05.780062733Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "end_utc": "2026-11-06T01:36:43.104026+00:00"
+}

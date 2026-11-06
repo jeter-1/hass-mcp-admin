@@ -68,6 +68,8 @@ class FakeDocker:
             return subprocess.CompletedProcess(argv, 0, b"sha256:" + b"1" * 64 + b"\n", b"")
         assert argv[:2] == ["docker", "run"], argv
         self.calls.append(argv)
+        assert "--memory" in argv, argv
+        assert host.memory_bytes(argv[argv.index("--memory") + 1]) > 0, argv
         # --pull never: an absent image fails the run rather than being fetched.
         assert argv[argv.index("--pull") + 1] == "never", argv
         if not self.present:

@@ -16,10 +16,10 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.4**. It refreshes the image trust
-store for the certifi/eMudhra incident (GHSA-6q48-6c7w-9gw2): Python 3.12.16,
-Debian `ca-certificates` 20250419+deb13u1 and pip 26.2.2, with no application
-change (HAMCP-318). Read the
+The current source version is **2.4.2-beta.4**. It treats a condition step
+in the middle of an action sequence as a causal helper read, so the helper's
+dependency evidence, F3 locks and `control_helper` safety warning include that
+automation (HAMCP-310). Read the
 [2.4.2-beta.4 release notes](docs/V2_4_2_BETA4_RELEASE_NOTES.md) and the
 [2.4.2-beta.4 acceptance contract](docs/V2_4_2_BETA4_ACCEPTANCE.md).
 

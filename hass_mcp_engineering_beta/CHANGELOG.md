@@ -1,21 +1,28 @@
 # Changelog
 
-## 2.4.2-beta.4 - Image trust store refresh for GHSA-6q48-6c7w-9gw2 (HAMCP-318)
+## 2.4.2-beta.4 - Mid-sequence condition steps are causal helper reads (HAMCP-310)
 
-Builds on 2.4.2-beta.3 (HAMCP-311, #366). No application source, tool, input
-schema, route, provider, signed profile, contract fingerprint, persisted
-format, Python lock, add-on option or Home Assistant write change.
+Builds on 2.4.2-beta.3 (HAMCP-311, #366). No tool, input schema, route,
+provider, signed profile, contract fingerprint, persisted format, dependency,
+add-on option or Home Assistant write change.
 
-- Both Docker stages move to `python:3.12-slim` index `4840d514` (Python
-  3.12.16, Debian 13.7). Its `ca-certificates` 20250419+deb13u1 removes
-  `emSign ECC Root CA - G3` and Comodo `AAA Certificate Services`, the roots
-  above the compromised eMudhra intermediates; aiohttp uses this system store.
-- New `installer.lock` replaces the base's pip 25.0.1 with one hash-pinned
-  pip 26.2.2 wheel, installed index-free before the runtime lock;
-  `installer_version` is 26.2.2 and pip stays out of the runtime lock.
-- The base's Debian 13.7 point updates are carried and disclosed per platform
-  in `docs/evidence/hamcp318/`, with the CA bundle diff and a TLS probe: the
-  incident test chains are rejected and GitHub still connects.
+- A step carrying `condition`, `and`, `or` or `not` inside an action
+  sequence (Home Assistant's check-condition action) now gives its entity
+  reads the condition relation of its position (`condition`,
+  `choose_condition` or `repeat_condition`) instead of the non-causal
+  `action_target`. This applies at any depth: top-level and legacy `action`,
+  choose sequences and `default`, if `then`/`else`, `parallel`, nested
+  `sequence`, repeat sequences, scripts and blueprint inputs.
+- A helper read only by such a step is now `exact_dependency`, its
+  automation is a `referenced` consumer, F3 plans take its exact helper lock
+  and `control_helper` returns `confirmation_required` when that consumer is
+  safety-critical. Before, it was `proven_dependency_neutral`.
+- Literal `target`, `data`, legacy step-level `entity_id` and device action
+  entities stay non-causal. The change is stricter only.
+- Evidence IDs and expression fingerprints of affected references change, so
+  bindings captured on 2.4.2-beta.3 for those automations are refreshed or
+  refused.
+- Other gating constructs are assessed in the release notes and unchanged.
 - New exact `V2_4_2_BETA4` release notes and read-only acceptance contract.
 - Rollback to 2.4.2-beta.3 is safe (same storage contracts).
 

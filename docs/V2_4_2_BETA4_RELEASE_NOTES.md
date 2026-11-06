@@ -1,97 +1,144 @@
 # Engineering 2.4.2-beta.4 release notes
 
-Engineering 2.4.2-beta.4 (HAMCP-318) refreshes the image trust store for the
-certifi/eMudhra incident (GHSA-6q48-6c7w-9gw2). It builds on 2.4.2-beta.3
-(HAMCP-311, #366). The application code and the runtime Python lock are
-identical to it.
+Engineering 2.4.2-beta.4 (HAMCP-310) treats a condition step in the middle
+of an action sequence as a causal helper read. It builds on 2.4.2-beta.3
+(HAMCP-311, #366), and its runtime is otherwise identical to it.
 
 Acceptance: [`V2_4_2_BETA4_ACCEPTANCE.md`](V2_4_2_BETA4_ACCEPTANCE.md).
 Per-release records: [release index](RELEASES.md).
 
-## The exposure
+## The defect
 
-The runtime lock already pins certifi 2026.10.19 (2.4.1-beta.26), which is
-fixed. Engineering's outbound HTTPS does not use certifi, though: aiohttp
-builds its context with `ssl.create_default_context()`, which reads the
-Debian system store, and no Engineering call passes its own SSL context. The
-2.4.2-beta.3 image SBOM shows:
-- Debian `ca-certificates` 20250419, which still trusts the two roots above
-  the compromised eMudhra intermediates;
-- pip 25.0.1 from the base image, whose vendored certifi is affected;
-- Python 3.12.14.
+Home Assistant runs a step that carries `condition`, `and`, `or` or `not` as
+a check-condition action: if it fails, the rest of the sequence does not
+run. In this automation, `input_boolean.guest_mode` decides whether the door
+unlocks:
 
-In the supported topology the Home Assistant and `ha-mcp` hops are local
-plain HTTP, so no CA validation is involved there. The external TLS path is
-the GitHub fetch of the signed Core and `ha-mcp` registries. Their Ed25519
-signatures, sequence and freshness checks still refuse forged authority, but
-an on-path interceptor with a forged certificate could block or delay
-delivery. Practical risk is moderate to low; the fix is small.
+```yaml
+triggers:
+  - trigger: state
+    entity_id: person.resident
+    to: home
+actions:
+  - condition: state
+    entity_id: input_boolean.guest_mode
+    state: "on"
+  - action: lock.unlock
+    target:
+      entity_id: lock.front_door
+```
+
+The dependency extractor labelled every entity under an action path as
+`action_target`, the relation for an entity an action acts on. The helper
+projection and the F3 configuration locks treat that relation as non-causal,
+so a helper read only by such a step was reported as
+`proven_dependency_neutral`:
+- the automation was not listed as a consumer of the helper;
+- an F3 plan that changed the automation took no lock on the helper;
+- `control_helper` could not warn before a change to that helper, because its
+  safety-critical warning needs exact dependency evidence.
+
+Top-level `conditions`, choose `conditions`, `if` and repeat `while`/`until`
+were already causal. A helper read in one of those places, as well as in a
+sequence step, was handled correctly.
 
 ## The change
 
-- **Base image.** Both Docker stages move from `python:3.12-slim` index
-  `78387bc3` to index `4840d514` (Python 3.12.16, Debian 13.7). Its
-  `ca-certificates` 20250419+deb13u1 (trixie-security, 2026-10-20) removes
-  `emSign ECC Root CA - G3` and `AAA Certificate Services` (Comodo) and adds
-  nothing: the bundle goes from 150 to 148 roots, identically on amd64 and
-  arm64. `build-inputs.json` records the new index, both platform manifests
-  and configurations, and `python_version` 3.12.16.
-- **Installer.** The new base still bundles pip 25.0.1. A new
-  `installer.lock` pins exactly one pip 26.2.2 wheel by hash (vendored
-  certifi 2026.10.19). The builder stage downloads it with the runtime
-  wheels; the final stage installs it index-free before the runtime lock, and
-  removes both wheel directories. `installer_version` is 26.2.2.
-  `build_inputs.py source` refuses an installer lock with another package,
-  more than one hash, no hash or a different version, and pip in the runtime
-  lock is still refused. The in-image smoke and the publication SBOM check
-  keep requiring exactly the runtime closure plus `pip == installer_version`,
-  so the contract schema and the publication verifier are unchanged.
-- **OS packages.** The digest refresh carries the Debian 13.7 point updates
-  in the base. The package set is unchanged; the version changes, identical
-  on both platforms, are recorded in
-  [`evidence/hamcp318/base-image-review.json`](evidence/hamcp318/base-image-review.json)
-  (among them `libssl3t64`/`openssl` deb13u3, `libc6` deb13u4, `tzdata`
-  2026f and `apt` 3.0.4). The host-journal library `libsystemd0`
-  257.13-1~deb13u1 is unchanged.
+Home Assistant Core decides a step's type from its keys (`ACTIONS_MAP` and
+`determine_script_action` in `homeassistant/helpers/config_validation.py`,
+verified identical at 2026.7.2 `f9122fb`, 2026.9.1 `fc03457` and 2026.11.0
+`74cf5a49`, lines 2125 and 2152).
 
-## Offline evidence
+A step in an executable action position that carries `condition`, `and`,
+`or` or `not` now gives its entity reads the same relation as a condition in
+that position: `condition`, `choose_condition` inside a choose option, or
+`repeat_condition` inside a repeat. The extractor tracks the action position
+explicitly while it walks the configuration. A position is executable only
+when it is reached through action structure:
+- automation `actions` and the legacy `action` key, and a script's
+  `sequence`;
+- inside a step: `sequence`, `then`, `else`, `default` and `parallel`, and
+  the `sequence` of a `choose` option or of a `repeat`.
 
-On a local amd64 build, with no network, a read-only root, all
-capabilities dropped and no new privileges, the smoke reports Python 3.12.16,
-pip 26.2.2, certifi 2026.10.19, 40 distributions with one pip, no leftover
-wheel directories and `ca-certificates` 20250419+deb13u1.
+This holds at any depth, including:
+- top-level actions and the legacy `action` key;
+- choose option sequences and `default`;
+- if `then` and `else`;
+- `parallel` branches and nested `sequence` steps;
+- repeat sequences;
+- script sequences, plain, nested and in the shorthand `and`/`or`/`not`
+  forms, the same as automations;
+- blueprint inputs used in such a step.
 
-The TLS probe ([`evidence/hamcp318/`](evidence/hamcp318/tls-probe-results.txt))
-connects from the built image to the four public incident test hosts
-(`dv-g3b-*-emudhra.we-have-a-problem.com`): Python `ssl` and aiohttp reject
-all four with `unable to get local issuer certificate`, and both still
-connect to `api.github.com` and `raw.githubusercontent.com` (HTTP 200). The
-previous base accepts all six.
+For such a helper:
+- the dependency evidence is `exact_dependency`;
+- the automation is a `referenced` consumer, with its physical consequence;
+- an F3 plan touching the automation takes the exact helper lock;
+- `control_helper` returns `confirmation_required` before changing it when
+  that consumer is safety-critical.
+
+Nothing else is reclassified. A helper named as a service call's `target`,
+in its `data` (or `data_template`), as a legacy step-level `entity_id` on a
+service call or as a device action entity is still the thing the action
+acts on, and keeps its relation (`service_target`, `action_data` or
+`action_target`) and its `proven_dependency_neutral` projection. That holds
+even when the literal payload contains keys named `sequence`, `then`,
+`else`, `default`, `parallel`, `actions`, `repeat` or `choose`: a payload is
+data passed to the service, not an action sequence Home Assistant runs.
+Template reads inside such a payload stay `exact_dependency`, as before.
+Script entity references outside a condition step keep `script_reference`.
+The change can only add evidence, consumers, locks and warnings.
+
+The relation is part of each structured obligation's evidence ID and
+expression fingerprint, so those values change for the affected references:
+- an automation condition step in a sequence (previously `action_target`);
+- a script condition step: previously `script_reference` at the top of the
+  sequence, in nested `sequence` steps and in choose, `default` and repeat
+  sequences, which was already `exact_dependency`, and `action_target` in
+  `then`, `else` and directly in `parallel`, which was not.
+
+A plan or binding captured on 2.4.2-beta.3 that covers such an automation or
+script no longer matches and is refreshed or refused, as for any changed
+dependency evidence.
+
+## Other gating constructs (not changed)
+
+These were checked offline at the base and are recorded for follow-up:
+
+| Construct | Current classification | Assessment |
+| --- | --- | --- |
+| `wait_for_trigger` with an entity trigger | Own `wait_for_trigger` relation, causal | No gap. |
+| repeat `while` / `until` | `repeat_condition`, causal | No gap. |
+| `if` / `stop` inside an `if` | `if_condition`, causal | No gap. |
+| `condition: template` step | `condition`, template obligation | No gap. |
+| `wait_template`, a template shorthand step, `variables`, a templated `enabled`, a templated target | Labelled `action_target` (`service_target` for a templated target), but template obligations are `exact_dependency` | Causal in both the projection and the locks: only structured references are neutralized. The label is misleading in disclosed evidence. Low, cosmetic. |
+| An entity in `above`/`below` (numeric_state) or `zone` (zone condition) | Not extracted, in any position | Real gap: such a helper read is invisible to the dependency index, including in top-level conditions. Follow-up candidate, Medium. |
+| A step carrying both `delay` and `condition` | Classified as a condition | Home Assistant runs it as a delay. Stricter only; no action. |
 
 ## Unchanged by design
 
-- Application source, the runtime and test Python locks, tools, input
-  schemas, routes, providers, signed profiles, contract fingerprints,
-  persisted formats and add-on options.
-- The build-inputs contract schema (version 1) and
-  `verify_publication_source_image.py`.
-- The CI test runner's Python (3.12.14 in the workflows); it is not the
-  image runtime.
+- The obligation ledger, policy classes, semantic registry and every other
+  relation.
+- Literal `target` and `data` relations, including structure-shaped keys
+  inside a literal payload.
+- Script references outside a condition step (`script_reference`).
+- Tool and input schemas, routes, providers, signed profiles, contract
+  fingerprints, persisted formats and add-on options.
 
 Static tools stay at 81. The advertised catalog stays at 109, or 110 with
 the optional YAML reader.
 
 ## Known limitations
 
-- An external TLS peer that still chains only to one of the two removed
-  roots is no longer trusted. GitHub is unaffected.
-- The arm64 image is built and smoked in CI only; the local TLS probe ran on
-  amd64.
-- The lock-preparation tool still targets pip 25.0.1 reports; that is a
-  tooling review for the next lock regeneration.
-- The known issues carried by 2.4.2-beta.3 are not addressed here.
+- The gating constructs above are unchanged; entity references in
+  numeric_state `above`/`below` and zone `zone` remain unextracted.
+- The known issues carried by 2.4.2-beta.3 are not addressed here, apart
+  from this defect.
 
 ## Rollback
 
 Reinstall 2.4.2-beta.3. It has the same storage, plan and task formats.
-Rolling back restores the affected trust store and installer.
+Helpers read only by a mid-sequence condition step are again reported as
+dependency-neutral, and plans captured on 2.4.2-beta.4 for affected
+automations are refreshed or refused. An image rollback does not restore
+household configuration or physical state.
