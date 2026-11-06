@@ -584,7 +584,9 @@ function Test-SecretPatterns {
         # HAMCP-305: a key's lowercase sk- prefix starts a token, and its
         # random body has a digit or capital. Neither the ADR-012 filename's
         # RISK-AND-ELEVATED-APPROVAL nor a lowercase kebab-case anchor matches.
-        '(?-i)(?<![A-Za-z0-9])sk-(?=[A-Za-z0-9_-]*[0-9A-Z])[A-Za-z0-9_-]{20,}',
+        # The scoped (?-i:...) group also parses in Python re, which the
+        # committed-file scan tests compile these patterns with.
+        '(?-i:(?<![A-Za-z0-9])sk-(?=[A-Za-z0-9_-]*[0-9A-Z])[A-Za-z0-9_-]{20,})',
         ('-----BEGIN ' + '(?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----')
     )
     $matchedFiles = New-Object System.Collections.Generic.List[string]

@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -1447,9 +1448,7 @@ class CheckScriptExecutionTests(unittest.TestCase):
         self.assertNotIn(synthetic_key, output)
         self.assertNotIn("Full validation passed", output)
 
-    def test_sk_pattern_table(self):
-        # The exact pattern from check.ps1 under PowerShell's own -match,
-        # which is case-insensitive unless the pattern says otherwise.
+    def sk_pattern(self):
         text = CHECK_SCRIPT.read_text(encoding="utf-8")
         block = text[text.index("function Test-SecretPatterns"):]
         block = block[:block.index("$matchedFiles")]
@@ -1459,8 +1458,12 @@ class CheckScriptExecutionTests(unittest.TestCase):
             if line.strip().startswith("'") and "sk-" in line
         ]
         self.assertEqual(len(patterns), 1, block)
+        return patterns[0]
+
+    @staticmethod
+    def sk_pattern_table():
         key = "sk-" + "HAMCP305" + "fixture" + "0123456789"
-        matches = {
+        return {
             # A key at a token boundary, in the shapes keys are issued in.
             key: True,
             f"token={key}": True,
@@ -1480,8 +1483,13 @@ class CheckScriptExecutionTests(unittest.TestCase):
             "sk-" + "and-elevated-approval-policy": False,
             "sk-" + "a1" * 9 + "a": False,
         }
+
+    def test_sk_pattern_table(self):
+        # The exact pattern from check.ps1 under PowerShell's own -match,
+        # which is case-insensitive unless the pattern says otherwise.
+        matches = self.sk_pattern_table()
         samples = list(matches)
-        payload = json.dumps({"pattern": patterns[0], "samples": samples})
+        payload = json.dumps({"pattern": self.sk_pattern(), "samples": samples})
         script = (
             "$in = [Console]::In.ReadToEnd() | ConvertFrom-Json; "
             "foreach ($s in $in.samples) { "
@@ -1501,6 +1509,15 @@ class CheckScriptExecutionTests(unittest.TestCase):
         for sample, outcome in zip(samples, observed):
             with self.subTest(sample=sample):
                 self.assertEqual(outcome == "True", matches[sample])
+
+    def test_sk_pattern_table_in_python_re(self):
+        # The committed-file scan tests (tests/hamcp162_synthetic.py) compile
+        # the check.ps1 patterns with Python re.IGNORECASE. A .NET-only
+        # construct such as a global (?-i) does not parse there.
+        pattern = re.compile(self.sk_pattern(), re.IGNORECASE)
+        for sample, expected in self.sk_pattern_table().items():
+            with self.subTest(sample=sample):
+                self.assertEqual(bool(pattern.search(sample)), expected)
 
     def test_evidence_rejects_a_dirty_worktree_before_repository_code(self):
         self.fixture.write("docs/change.md", "uncommitted change\n")
