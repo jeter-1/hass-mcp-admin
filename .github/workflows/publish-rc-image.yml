@@ -331,13 +331,14 @@ jobs:
       - recovery-source
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 15
     permissions:
       contents: read
     outputs:
       build_platforms: ${{ steps.platforms.outputs.build_platforms }}
       build_time: ${{ steps.prepare.outputs.build_time }}
       full_suite_validation: ${{ steps.prepare.outputs.full_suite_validation }}
+      release_shards: ${{ steps.prepare.outputs.release_shards }}
       release_notes_path: ${{ steps.prepare.outputs.release_notes_path }}
       release_sha: ${{ steps.prepare.outputs.release_sha }}
       release_tag: ${{ steps.prepare.outputs.release_tag }}
@@ -605,11 +606,17 @@ jobs:
           validation_mode="$(python "$validation_verifier" decide \
             --repo-root . --installed-lock "$RUNNER_TEMP/release-validation.lock")"
           if [[ "$validation_mode" == "validate_release_source" ]]; then
-            # Historical stable-v1 behavior modules intentionally do not match
-            # the Engineering test*.py discovery pattern.
-            python -m unittest discover -s tests -v
+            # Derive the matrix from the exact release's normal CI plan using
+            # the protected runner. No result from the trigger commit is reused.
+            shard_runner="$RUNNER_TEMP/release-unit-test-shards.py"
+            git show "${TRIGGER_SHA}:scripts/unit_test_shards.py" > "$shard_runner"
+            release_shards="$(python "$shard_runner" count --repo-root . --expected-source-sha "$release_sha")"
+            echo "release_shards=$release_shards" >> "$GITHUB_OUTPUT"
           elif [[ "$validation_mode" == "reuse_same_run" ]]; then
             echo "Reusing exact-source full discovery from this run's successful complete CI."
+            # A successful no-op matrix row preserves the existing downstream
+            # success guards without introducing a skipped job into their chain.
+            echo 'release_shards=[0]' >> "$GITHUB_OUTPUT"
           else
             echo "::error::Unknown source-validation disposition."
             exit 1
@@ -645,6 +652,130 @@ jobs:
             --release-repo . --expected-release-sha "$RELEASE_SHA" \
             --github-output "$GITHUB_OUTPUT"
 
+  verify-release-shards:
+    name: Exact release unit tests shard ${{ matrix.shard }}
+    needs: verify-release
+    runs-on: ubuntu-24.04
+    # Run 42090788400: normal CI's 11 shards took 5m27s–17m00s including
+    # setup; 30m bounds each exact-release shard with 13m above that maximum.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.verify-release.outputs.release_shards) }}
+    steps:
+      - name: Report verified same-source reuse
+        if: needs.verify-release.outputs.full_suite_validation == 'reuse_same_run'
+        run: echo "Exact-source same-run CI receipt already verified; no release tests need repeating."
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        with:
+          ref: ${{ needs.verify-release.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        with:
+          python-version: "3.12.14"
+      - name: Materialize protected shard runner and locked dependencies
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        shell: bash
+        env:
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git show "${WORKFLOW_AUTHORITY_SHA}:scripts/unit_test_shards.py" > "$RUNNER_TEMP/release-unit-test-shards.py"
+          git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock" > "$RUNNER_TEMP/release-validation.lock"
+          python -m pip --isolated install --require-hashes --only-binary=:all: \
+            --index-url https://pypi.org/simple -r "$RUNNER_TEMP/release-validation.lock"
+      - name: Run exact release unit test shard
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        env:
+          UNIT_TEST_SHARD: ${{ matrix.shard }}
+          RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+        run: >-
+          python "$RUNNER_TEMP/release-unit-test-shards.py" run
+          --repo-root . --expected-source-sha "$RELEASE_SHA"
+          --shard "$UNIT_TEST_SHARD" --output "$RUNNER_TEMP/release-unit-test-shard/manifest.json"
+      - name: Retain exact release shard manifest
+        if: ${{ always() && needs.verify-release.outputs.full_suite_validation == 'validate_release_source' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-unit-test-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-unit-test-shard/manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-release-aggregate:
+    name: Require complete exact release verification
+    needs:
+      - verify-release
+      - verify-release-shards
+    # Same-source reuse runs one successful no-op row. A failed or missing
+    # exact-release shard must fail this gate, never become a partial pass.
+    if: ${{ always() && !cancelled() && needs.verify-release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require the selected verification path to succeed
+        shell: bash
+        env:
+          VALIDATION_MODE: ${{ needs.verify-release.outputs.full_suite_validation }}
+          SHARD_RESULT: ${{ needs.verify-release-shards.result }}
+        run: |
+          set -euo pipefail
+          case "$VALIDATION_MODE:$SHARD_RESULT" in
+            reuse_same_run:success) echo "Exact-source same-run CI receipt already verified." ;;
+            validate_release_source:success) echo "Every exact-release shard succeeded; completeness proof follows." ;;
+            *) echo "::error::Exact release validation path did not succeed."; exit 1 ;;
+          esac
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        with:
+          ref: ${{ needs.verify-release.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        with:
+          python-version: "3.12.14"
+      - name: Materialize protected shard runner and locked dependencies
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        shell: bash
+        env:
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git show "${WORKFLOW_AUTHORITY_SHA}:scripts/unit_test_shards.py" > "$RUNNER_TEMP/release-unit-test-shards.py"
+          git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock" > "$RUNNER_TEMP/release-validation.lock"
+          python -m pip --isolated install --require-hashes --only-binary=:all: \
+            --index-url https://pypi.org/simple -r "$RUNNER_TEMP/release-validation.lock"
+      - name: Download this attempt's exact release shard manifests
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: release-unit-test-shard-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-unit-test-shards
+      - name: Prove exact release discovery completeness
+        if: needs.verify-release.outputs.full_suite_validation == 'validate_release_source'
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          python "$RUNNER_TEMP/release-unit-test-shards.py" aggregate \
+            --repo-root . --expected-source-sha "$RELEASE_SHA" \
+            --manifests "$RUNNER_TEMP/release-unit-test-shards" > "$RUNNER_TEMP/release-unit-test-summary.json"
+          # Outcome counts distinguish passes, skips and expected failures.
+          cat "$RUNNER_TEMP/release-unit-test-summary.json"
+          cat "$RUNNER_TEMP/release-unit-test-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
   claim:
     name: Consume create-only publication attempt authority
     needs:
@@ -652,6 +783,7 @@ jobs:
       - detect-release
       - recovery-source
       - verify-release
+      - verify-release-aggregate
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -809,6 +941,7 @@ jobs:
       - detect-release
       - recovery-source
       - verify-release
+      - verify-release-aggregate
       - claim
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-24.04
@@ -1015,6 +1148,7 @@ jobs:
       - detect-release
       - recovery-source
       - verify-release
+      - verify-release-aggregate
       - claim
       - build
     if: needs.detect-release.outputs.release_action == 'publish'
@@ -1194,6 +1328,7 @@ jobs:
       - detect-release
       - recovery-source
       - verify-release
+      - verify-release-aggregate
       - claim
       - build
       - verify-image

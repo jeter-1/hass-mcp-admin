@@ -16,17 +16,17 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.3**. It adds `control_helper`,
-which makes helper value changes ordinary runtime control with no plan or
-approval panel (HAMCP-311). The tool ships dormant until an owner-signed Core
-registry sequence names its profile. Read the
-[2.4.2-beta.3 release notes](docs/V2_4_2_BETA3_RELEASE_NOTES.md) and the
-[2.4.2-beta.3 acceptance contract](docs/V2_4_2_BETA3_ACCEPTANCE.md).
+The current source version is **2.4.2-beta.4**. It treats a condition step
+in the middle of an action sequence as a causal helper read, so the helper's
+dependency evidence, F3 locks and `control_helper` safety warning include that
+automation (HAMCP-310). Read the
+[2.4.2-beta.4 release notes](docs/V2_4_2_BETA4_RELEASE_NOTES.md) and the
+[2.4.2-beta.4 acceptance contract](docs/V2_4_2_BETA4_ACCEPTANCE.md).
 
 This version's delegated catalog is reviewed against ha-mcp 8.6.0. Its source
 baseline is 109 expected connector tools (81 native/static plus 28 automatic
 delegated reads), or 110 (81 + 29) with the optional reader. Rolling back to
-2.4.2-beta.2 is safe.
+2.4.2-beta.3 is safe.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on

@@ -167,8 +167,11 @@ class PublicationEligibilityTests(unittest.TestCase):
                         results[failed] = status
                         self.assertFalse(job_runs(job, results, context), (failed, status))
             upstream.append(name)
-        # summary is the only always() job: it reports any upstream outcome of
-        # an eligible publication, never runs otherwise, and holds no token.
+            if name == "verify-release":
+                upstream.append("verify-release-aggregate")
+        # The permissionless summary reports upstream outcomes. The read-only
+        # exact-release aggregate also uses always(), bounded by a successful
+        # verify-release job, so it can explicitly refuse failed shard jobs.
         summary = self.jobs["summary"]
         self.assertEqual(summary["permissions"], {})
         self.assertEqual([step.get("uses") for step in summary["steps"] if "uses" in step], [])
@@ -180,7 +183,7 @@ class PublicationEligibilityTests(unittest.TestCase):
                 self.assertEqual(job_runs(summary, results, context), eligible, (name, status))
         always_jobs = {name for name, job in self.jobs.items()
                        if any(function in str(job.get("if", "")) for function in STATUS_FUNCTIONS)}
-        self.assertEqual(always_jobs, {"summary"})
+        self.assertEqual(always_jobs, {"summary", "verify-release-aggregate"})
 
     def test_ordinary_merge_skips_complete_ci_and_all_publication(self):
         verified, outputs, _ = self.compose()
