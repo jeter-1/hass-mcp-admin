@@ -109,7 +109,7 @@ judgments are a basis for execution, not a substitute for the exact-image lane.
 
 Use a clean checkout of the merged prerequisite and its task Python environment.
 The exact Core, ha-mcp and fixture-writer digest images must already be cached.
-The runner never pulls. Missing images, occupied names/ports, a busy host,
+The runner never pulls. Missing images, occupied names/ports, unavailable host resources,
 incorrect input hashes or a dirty checkout refuse before starting the lane.
 The existing `core_evidence_host.py` local mode handles owned root-created
 configuration cleanup using its cached pinned image, `--pull never` and no
@@ -120,14 +120,48 @@ Example (paths are task-owned; choose a **new** run directory):
 ```bash
 CORE_EVIDENCE_HOST_MODE=local .artifacts/venv/bin/python scripts/core_helper_value_local.py \
   --mode local --pull never \
+  --core-memory 2g --upstream-memory 768m --fixture-memory 128m \
   --journal .artifacts/inputs/seq16-journal.json \
   --source-archive .artifacts/inputs/core-2026.11.0.tar.gz \
   --run-dir "$PWD/.artifacts/seq17-helper-run-1"
 ```
 
-Run under the task's user `systemd-run` unit with a 60-minute outer cap if needed;
-the runner bounds its acceptance body to 30 minutes and performs cleanup on
-failure/interruption. It records UTC start/end, host-idle CPU sample, source
+Josh's 2026-11-05 host rule replaces the old zero-container/10%-CPU idle gate.
+The committed guard admits at **at most one other heavy job**, **MemAvailable
+>= 3,500,000,000 bytes (3.5 GB)** and **one-minute load < 8**. Otherwise it checks
+at ten-minute intervals for at most sixty minutes, then refuses. The independent
+`resource-admission.json` records every concurrency/memory/load sample, refusal
+reason and UTC start/end, including when acceptance never starts. Observation
+failures refuse immediately. Unknown or ambiguous container ownership refuses;
+it is never assumed idle. Known ownership labels are `org.hamcp.helper-evidence-run`,
+`io.hass-mcp.assessment`, `org.hass-mcp.dashboard-acceptance`, and `org.hamcp.lane`.
+All containers with the same label/value count as **one lane**. Evidence jobs are discovered from active
+`check.ps1 -Tier Evidence` processes and deduplicated by their systemd service
+identity (PID fallback for an unsupervised gate); the current service is excluded.
+A container-lane service merely named "evidence" is not counted a second time. This is a start-time observation, not a host
+reservation; it does not stop competing work or guarantee future headroom.
+
+Every local container gets an explicit Docker `--memory` limit. Defaults:
+
+| Container | Default | Rationale |
+| --- | --- | --- |
+| Core | `2g` (2 GiB) | Phase 1 Core budget; allows normal disposable Core startup. |
+| Upstream ha-mcp | `768m` (768 MiB) | Phase 1 app budget for the Python MCP server. |
+| Fixture staging/cleanup | `128m` (128 MiB) | Phase 1 small-process budget; this runs a short standard-library file operation, not Core. |
+
+There is no facade container in this lane. These are resource budgets, not new
+measured peak claims; an OOM remains WITHHELD. Override only with the three
+explicit arguments shown above; no environment override. The shared local host
+helper accepts `--memory` for its staging/cleanup commands. Values must be
+positive integer `m`/`g` sizes. Missing, zero or malformed limits refuse before
+Docker dispatch; Core/upstream runtime inspection must match the requested limit.
+Actions startup/staging semantics and image pins are unchanged.
+
+Run under the task's user `systemd-run` unit. Allow up to sixty minutes of
+admission waiting separately from execution/cleanup; a sixty-minute outer cap
+including the full wait can interrupt before acceptance. The runner still bounds
+its acceptance body to thirty minutes and performs cleanup on failure/interruption.
+It records execution UTC start/end, admitted host metrics, memory limits, source
 commit, manifest/journal hashes, exact running image config digests and the
 group result in `helper_value.json`. No other evidence group runs. The fresh
 Core uses a committed synthetic YAML fixture on a new internal Docker network;
@@ -169,3 +203,14 @@ No live Home Assistant, deployment, publication, Ready action or main merge is
 authorized by this evidence prerequisite. Recovery for this unmerged PR is to
 leave it draft; reverting it later removes the new lane and source mapping, not
 any signed registry authority. Main must not move during publication.
+
+## Resource-guard validation (2026-11-06 amendment)
+
+Offline tests cover each admission threshold, exact ten-minute waits/sixty-minute
+refusal, one lane counted once, service deduplication, observation refusal, every
+local Docker-run memory argument, explicit overrides, missing-limit refusal and
+cleanup after failure. `run_resource_mutations.py` copies the source tree and
+counts only assertion failures (zero test errors) for per-container counting,
+dropped `--memory`, and skipped available-memory checking. This validation does
+not run helper_value or authorize a seq-17 candidate. Run the lane only from the
+merged prerequisite; the candidate still stops for architect byte review.

@@ -17,12 +17,12 @@ import signal
 import socket
 import subprocess
 import sys
-import time
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_evidence_host as host
+import core_local_resources as resources
 from core_lane_bindings import REVIEWED_CORE_BINDINGS
 from core_release_evidence import canonical, read_json
 
@@ -34,6 +34,8 @@ UPSTREAM = "beta25-real-ha-upstream-" + LANE
 NETWORK = "beta-rc2-contract-" + LANE
 LABEL = "org.hamcp.helper-evidence-run"
 PORTS = (18123, 18086)
+CORE_MEMORY = "2g"
+UPSTREAM_MEMORY = "768m"
 CONFIG = """default_config:
 homeassistant:
   name: HAMCP disposable helper evidence
@@ -89,6 +91,7 @@ def utc():
 
 
 def command(*args, check=True):
+    host.require_memory(args)
     result = subprocess.run(args, cwd=ROOT, capture_output=True, timeout=120)
     if check and result.returncode:
         # Never include Docker output, synthetic credentials or arbitrary upstream text.
@@ -151,28 +154,10 @@ def cached_image(image):
     return value["Id"]
 
 
-def cpu_sample():
-    values = [int(v) for v in Path("/proc/stat").read_text().splitlines()[0].split()[1:9]]
-    return sum(values), values[3] + values[4]
-
-
 def require_free_ports():
     for port in PORTS:
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", port))
-
-
-def idle():
-    if command("docker", "ps", "-q").stdout.strip():
-        raise Refusal("host_has_running_containers")
-    a, ai = cpu_sample()
-    time.sleep(1)
-    b, bi = cpu_sample()
-    busy = 1 - (bi - ai) / max(1, b - a)
-    if busy > 0.10:
-        raise Refusal("host_not_idle")
-    return {"utc": utc(), "cpu_busy_fraction": round(busy, 4), "running_containers": 0,
-            "load_average": list(os.getloadavg())}
 
 
 def inspect_owned(kind, name, run_id):
@@ -191,7 +176,7 @@ def inspect_owned(kind, name, run_id):
     return data
 
 
-async def exercise(run_dir, entry, core_image, upstream_image, run_id):
+async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memory, upstream_memory):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     from helper_value_contract_acceptance import run
@@ -202,13 +187,16 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id):
     if observed.get("version") != VERSION:
         raise Refusal("running_core_version_mismatch")
     await harness._start_exact_upstream(token, pull_policy="never", labels=(LABEL + "=" + run_id,),
-                                        environment_directory=run_dir)
+                                        environment_directory=run_dir, memory=upstream_memory)
     identities = {}
-    for name, image in ((CORE, core_image), (UPSTREAM, upstream_image)):
+    for name, image, memory in ((CORE, core_image, core_memory), (UPSTREAM, upstream_image, upstream_memory)):
         data = inspect_owned("container", name, run_id)
         if data is None or data["Image"] != cached_image(image) or data["Config"]["Image"] != image:
             raise Refusal("running_image_mismatch")
-        identities[name] = {"image": image, "config_digest": data["Image"]}
+        if data.get("HostConfig", {}).get("Memory") != host.memory_bytes(memory):
+            raise Refusal("running_container_memory_mismatch")
+        identities[name] = {"image": image, "config_digest": data["Image"],
+                            "memory_bytes": data["HostConfig"]["Memory"]}
     return {**await run(configured, entry, run_dir), "images": identities}
 
 
@@ -221,7 +209,13 @@ def main(argv=None):
     parser.add_argument("--journal", type=Path, required=True)
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--core-memory", default=CORE_MEMORY, help="Core Docker limit (default: 2g)")
+    parser.add_argument("--upstream-memory", default=UPSTREAM_MEMORY, help="upstream Docker limit (default: 768m)")
+    parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY, help="cleanup Docker limit (default: 128m)")
     args = parser.parse_args(argv)
+    limits = {"core": args.core_memory, "upstream": args.upstream_memory, "fixture": args.fixture_memory}
+    for memory in limits.values():
+        host.memory_bytes(memory)
     if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
         raise Refusal("local_only_closed_lane")
     # No ignored inputs may supply code/config; only committed files plus hash-bound inputs.
@@ -232,7 +226,6 @@ def main(argv=None):
     core_image, upstream_image, fixture_image = images()
     for image in (core_image, upstream_image, fixture_image):
         cached_image(image)
-    host_idle = idle()
     # Refuse names or occupied ports before claiming anything; never remove prior runs.
     for kind, names in (("container", (CORE, UPSTREAM)), ("network", (NETWORK,))):
         for name in names:
@@ -243,6 +236,23 @@ def main(argv=None):
     if run_dir.resolve() != run_dir or ROOT / ".artifacts" not in run_dir.parents:
         raise Refusal("new_task_artifact_directory_required")
     run_dir.mkdir(mode=0o700)  # Exclusive: never overwrite evidence or reuse a prior fixture.
+    try:
+        admission = resources.wait_for_admission(run_dir / "resource-admission.json")
+    except resources.Refusal as exc:
+        result = {"result": "WITHHELD", "reason": str(exc), "source_commit": revision,
+                  "execution_started": False, "cleanup": {"clean": True, "resources_created": False}}
+        (run_dir / "helper_value.json").write_bytes(canonical(result))
+        print(json.dumps(result))
+        return 1
+    # Recheck identity/names/ports after a potentially hour-long wait.
+    if command("git", "rev-parse", "HEAD").stdout.decode().strip() != revision or command(
+            "git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
+        raise Refusal("checkout_changed_during_admission")
+    for kind, names in (("container", (CORE, UPSTREAM)), ("network", (NETWORK,))):
+        for name in names:
+            if command("docker", kind, "inspect", name, check=False).returncode == 0:
+                raise Refusal("disposable_name_already_exists")
+    require_free_ports()
     run_id = uuid4().hex
     owned = run_dir / CORE
     owned.mkdir(mode=0o700)
@@ -256,19 +266,20 @@ def main(argv=None):
     result = {"model": "core-helper-value-local-evidence-v1", "group": "helper_value",
               "result": "WITHHELD", "started_utc": utc(), "source_commit": revision,
               "journal_sha256": JOURNAL_SHA256, "manifest_sha256": sha256(ROOT / "ci/core-contract-read-files.json"),
-              "host_idle": host_idle, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+              "host_admission": admission, "container_memory": limits, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
     def interrupted(_signum, _frame):
         raise Refusal("lane_interrupted")
     previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
         command("docker", "network", "create", "--internal", "--label", LABEL + "=" + run_id, NETWORK)
         command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
-                "--label", LABEL + "=" + run_id, "--network", NETWORK,
+                "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
                 "--publish", "127.0.0.1:18123:8123", "--security-opt", "no-new-privileges",
                 "--mount", f"type=bind,source={owned},target=/config", core_image)
         async def bounded():
             async with asyncio.timeout(1800):
-                return await exercise(run_dir, entry, core_image, upstream_image, run_id)
+                return await exercise(run_dir, entry, core_image, upstream_image, run_id,
+                                      args.core_memory, args.upstream_memory)
         result.update(asyncio.run(bounded()))
     except BaseException as exc:
         result.update(result="WITHHELD", failure_type=type(exc).__name__)
@@ -279,7 +290,7 @@ def main(argv=None):
                     command("docker", "rm", "-f", name)
             if inspect_owned("network", NETWORK, run_id) is not None:
                 command("docker", "network", "rm", NETWORK)
-            host.local_remove(argparse.Namespace(directory=str(owned)), os.environ, subprocess.run)
+            host.local_remove(argparse.Namespace(directory=str(owned), memory=args.fixture_memory, owner=run_id), os.environ, subprocess.run)
             assert not owned.exists()
             assert all(inspect_owned("container", name, run_id) is None for name in (CORE, UPSTREAM))
             assert inspect_owned("network", NETWORK, run_id) is None

@@ -1,0 +1,52 @@
+{
+  "model": "hamcp315-resource-mutations-v1",
+  "copied_tree": true,
+  "source_sha256": {
+    "scripts/core_local_resources.py": "0e499ec2384ea97ebf22e34619a21a4a05fd7e04edcf8ffb2f8eaaa101366648",
+    "scripts/core_evidence_host.py": "25393b11ca8d315075cbe3d0d08e5a080d6b16e7bff00d4814a3fa8cd84b8eba"
+  },
+  "results": [
+    {
+      "name": "control",
+      "test_target": "tests.test_core_local_resources",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "failed_tests": [],
+      "accepted": true
+    },
+    {
+      "name": "containers_individually",
+      "test_target": "tests.test_core_local_resources.Guard.test_lane_counted_once",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_local_resources.Guard.test_lane_counted_once"
+      ],
+      "accepted": true
+    },
+    {
+      "name": "memory_argument_dropped",
+      "test_target": "tests.test_core_local_resources.Memory.test_fixture_run_has_memory",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_local_resources.Memory.test_fixture_run_has_memory"
+      ],
+      "accepted": true
+    },
+    {
+      "name": "available_memory_check_skipped",
+      "test_target": "tests.test_core_local_resources.Guard.test_refuse_each_condition",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_local_resources.Guard.test_refuse_each_condition (values={'mem_available_bytes': 3499999999})"
+      ],
+      "accepted": true
+    }
+  ]
+}
