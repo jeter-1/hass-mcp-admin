@@ -41,15 +41,23 @@ class ReviewerTests(unittest.TestCase):
             listener=socket.socket(); listener.bind(('127.0.0.1',0)); listener.listen(1)
         except PermissionError:
             self.skipTest('sandbox denies loopback sockets')
-        listener.settimeout(5)
+        listener.settimeout(0.1)
         proxy=f'http://127.0.0.1:{listener.getsockname()[1]}'
+        stopped = threading.Event()
         def serve():
             with listener:
-                conn,_=listener.accept()
-                with conn:
-                    conn.settimeout(3)
-                    conn.recv(8192)
-                    conn.sendall(b'HTTP/1.1 200 Connection established\r\n\r\nnot a TLS record\r\n')
+                # Keep the same TLS failure available for gh's own connection
+                # attempts. Closing after one CONNECT can turn its final
+                # diagnostic into connection-refused, a different failure.
+                while not stopped.is_set():
+                    try:
+                        conn,_=listener.accept()
+                    except socket.timeout:
+                        continue
+                    with conn:
+                        conn.settimeout(3)
+                        conn.recv(8192)
+                        conn.sendall(b'HTTP/1.1 200 Connection established\r\n\r\nnot a TLS record\r\n')
         thread=threading.Thread(target=serve,daemon=True); thread.start()
         calls=[]
         with tempfile.TemporaryDirectory() as cfg:
@@ -64,9 +72,13 @@ class ReviewerTests(unittest.TestCase):
                 self.assertEqual(result.returncode,1)
                 self.assertEqual(kwargs['stdout'].tell(),0)
                 return result
-            with self.assertRaises(retry.GitHubReadError):
-                retry.bounded_gh_read('repos/o/r/pulls/1',4000,run,**Clock().bounds())
-        thread.join(5)
+            try:
+                with self.assertRaises(retry.GitHubReadError):
+                    retry.bounded_gh_read('repos/o/r/pulls/1',4000,run,**Clock().bounds())
+                self.assertEqual(len(calls), 1)
+            finally:
+                stopped.set()
+                thread.join(5)
 
     def test_pagination_rejects_more_than_5000_events(self):
         fake=FakeGh((included(200,json.dumps([{'id':n} for n in range(5001)]).encode()),0),

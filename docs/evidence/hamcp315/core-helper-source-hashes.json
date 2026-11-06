@@ -1,0 +1,599 @@
+{
+  "core_version": "2026.11.0",
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "source_archive_sha256": "85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1",
+  "files": [
+    {
+      "path": "homeassistant/components/api/__init__.py",
+      "sha256": "ed3e5b3ac91a3bcf2e87d27b7e26579a420477747123b846c5cd019649045673"
+    },
+    {
+      "path": "homeassistant/components/button/__init__.py",
+      "sha256": "3a83de976dde1e079e757e8bd3666a816c397c523bbde76979d9d5b322c1e931"
+    },
+    {
+      "path": "homeassistant/components/button/const.py",
+      "sha256": "0c253815948cd391c9f060f1ee8a9cda73db861c99dabc618453bb2e24f9742d"
+    },
+    {
+      "path": "homeassistant/components/button/device_action.py",
+      "sha256": "2286b8005823ff4e6f6d10723b76f7740968b82159fad36f913b8e5aa6bcbeb0"
+    },
+    {
+      "path": "homeassistant/components/button/device_trigger.py",
+      "sha256": "f9065c92ea2d5396591d6faf5c5f1fd6033c24d46297c65088863f63ac4b5c7a"
+    },
+    {
+      "path": "homeassistant/components/button/entity.py",
+      "sha256": "19872790897a820b35504f134343ce138b97aa55f321260cc232d9070897db70"
+    },
+    {
+      "path": "homeassistant/components/button/icons.json",
+      "sha256": "73a32f480480107b8ec8ddd92c6c62e144f34d07a65f9346932f07951ad7c7a9"
+    },
+    {
+      "path": "homeassistant/components/button/manifest.json",
+      "sha256": "abe3e3845243e03b65a83000486e0b1d6861e57b3de622d25b383fe06a0d84dd"
+    },
+    {
+      "path": "homeassistant/components/button/services.py",
+      "sha256": "4f388a4c39ff7ebc5d1f3448c23554a0aa176e26dac0df2a5947926ab38c1f94"
+    },
+    {
+      "path": "homeassistant/components/button/services.yaml",
+      "sha256": "d8e04a68e7f61c7cf3c6959c56f91e2af4728bb58837da22e48fdec8f64439f8"
+    },
+    {
+      "path": "homeassistant/components/button/strings.json",
+      "sha256": "cbc3a0306a16260847f931829a42d526def796c8dcec63211bd7de9ac4fe158c"
+    },
+    {
+      "path": "homeassistant/components/button/trigger.py",
+      "sha256": "85c8a0d677cb0d7daa030d85c423906edc57a906809e1cbbf752399c451aab51"
+    },
+    {
+      "path": "homeassistant/components/button/triggers.yaml",
+      "sha256": "3bfa122db4e9f9af887a9f3fde6243b77f7724dc0f040cc5a117239a1eedcb76"
+    },
+    {
+      "path": "homeassistant/components/counter/__init__.py",
+      "sha256": "ed4fe309ec3185b088f606a3011e61af6b6ba8aaa1c979f9ce06f9b381c1c673"
+    },
+    {
+      "path": "homeassistant/components/counter/condition.py",
+      "sha256": "b2eb2b19f2ca9d52d4ed36e14bd82eb8c97d4516f051193e0355133b0387fd37"
+    },
+    {
+      "path": "homeassistant/components/counter/conditions.yaml",
+      "sha256": "d6bdec8ef0bf7f4b950852ed274f2a9c4ef406f33fd5ec6832ea40a0f7052db9"
+    },
+    {
+      "path": "homeassistant/components/counter/const.py",
+      "sha256": "c2da9856134bcf7939636264141c5550eb83cc5165da85f859d78f80cb142559"
+    },
+    {
+      "path": "homeassistant/components/counter/entity.py",
+      "sha256": "992994d2ebb362b305e608a17d16fd9d59cf277c5809dbd76b7aa3b1ffd5c7c7"
+    },
+    {
+      "path": "homeassistant/components/counter/icons.json",
+      "sha256": "0b0e11921d713ab3b88a17c47da0c18f816b19adbc09c0091d855c3c42f9cd0d"
+    },
+    {
+      "path": "homeassistant/components/counter/manifest.json",
+      "sha256": "f70570029dabafa8ceecbe43c77d828277de0796ad6d7f2a13e653d7232171e8"
+    },
+    {
+      "path": "homeassistant/components/counter/reproduce_state.py",
+      "sha256": "317b638f2c63732004a538130cc9cf3ad7f4838de1cd301e9a981ba33391a7dd"
+    },
+    {
+      "path": "homeassistant/components/counter/services.py",
+      "sha256": "72e1cbbd3c4321dd971252f4030dfdbdf29aa94553cba4172e4187741da3c6a1"
+    },
+    {
+      "path": "homeassistant/components/counter/services.yaml",
+      "sha256": "d3a110fc504c7b4b5153133717aa46b126d73cdb87989850b2a9c2da72835992"
+    },
+    {
+      "path": "homeassistant/components/counter/strings.json",
+      "sha256": "ae6457de5873dccd39e2d2e7ba7faa9c6233fa2ded31fe8082f0995694b3055b"
+    },
+    {
+      "path": "homeassistant/components/counter/trigger.py",
+      "sha256": "7464fec637b9cc78bbd6632edf8fed00e61945ce91d974f1dc43c148b55997fc"
+    },
+    {
+      "path": "homeassistant/components/counter/triggers.yaml",
+      "sha256": "29b905c86a7fd93b9d6e493c56bae67b8283d53c5d1e0c9d3204fb99ce8977b8"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/__init__.py",
+      "sha256": "689c520e8c820b1849f2f7df1a457b951ca9e95a62d3e36d1bff9dfd9807abe8"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/const.py",
+      "sha256": "5deac78b867b3ad083cc0b61c9d945ca204a74e4dd07a80e8639319468c63139"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/entity.py",
+      "sha256": "e9ae1397aed919c3ac75a5876c84096dbacc95ec292d9f417f976c31f518ce80"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/icons.json",
+      "sha256": "83692892a8945efa0ba104e5e533667cc0f24568443f235c2cf90b4711658f59"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/manifest.json",
+      "sha256": "faa774feb71a9ae3bd0daa35b520f8363f229598b61d8cbb9656949444cbcccd"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/reproduce_state.py",
+      "sha256": "1ef1837e88e6e57e3986dc34ddce4631aa2844bd1db5ce596f285385b279de91"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/services.py",
+      "sha256": "999e90842934e88e6841a1dc877c3e2c9320fa9f4d819f3bbb26d96d9d98d2f6"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/services.yaml",
+      "sha256": "037c317aed36518ad74959a27fc1d22000c6df6efb03026353a821e6bcda391e"
+    },
+    {
+      "path": "homeassistant/components/input_boolean/strings.json",
+      "sha256": "00c740f8567f2d8c67bc1ca2060bc7c72c231889bc21b33026f4ee7da1476d4b"
+    },
+    {
+      "path": "homeassistant/components/input_button/__init__.py",
+      "sha256": "c5b447320eb0d6719658bdef9c8af70ebcf1bfaed7c2e0a0c9b25eec5ab05f3b"
+    },
+    {
+      "path": "homeassistant/components/input_button/const.py",
+      "sha256": "cb867cb6293a7537e950f67449d897cfff7048e47e8baa316c0d94b3ebb2ed01"
+    },
+    {
+      "path": "homeassistant/components/input_button/entity.py",
+      "sha256": "9dd7f5cd12f07614efa5d4b804bfb5749b674babc86c5e18de58670d0582eb06"
+    },
+    {
+      "path": "homeassistant/components/input_button/icons.json",
+      "sha256": "aa2a666aa0490c068ad13f8cc921528a13185a038c7ce9710d3a3b6a799426e5"
+    },
+    {
+      "path": "homeassistant/components/input_button/manifest.json",
+      "sha256": "f46d001e582be61f7115b0daa34f5ad86b74a9b31d9a9bfb432ba7b94f104304"
+    },
+    {
+      "path": "homeassistant/components/input_button/services.py",
+      "sha256": "50abd41a71325e5fc5ad92379ee551a3a6d8a6cb0d7882cde42dd000d95b131f"
+    },
+    {
+      "path": "homeassistant/components/input_button/services.yaml",
+      "sha256": "54dc1d9c16ae1fb2604f2f7cf25447b91a74840176c737de39616216586ca4a8"
+    },
+    {
+      "path": "homeassistant/components/input_button/strings.json",
+      "sha256": "271273a7c85afca4d9c8613a661e4d727ca201dadb99f119e1e99776223b8e1f"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/__init__.py",
+      "sha256": "f068ac85c5d3df7da31d74cc9bd7e0afc23cb324dab8e0f94d14761eb415c7a6"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/const.py",
+      "sha256": "699f455154059c8d05cf952c6c6dfc97461be59ffc41328d899344e71ce56745"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/entity.py",
+      "sha256": "d34dd57baacc98ee76c8b32eef4a4a5b1d08d5ed994054d3c19714296f99d5ab"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/icons.json",
+      "sha256": "8edc590a6730e73b68dfb715e69cddfe7a130c0e3e4029dd987557cf9b8434ee"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/manifest.json",
+      "sha256": "9d55387f48d82754d528f0759760aa3ebffec6d7720042083e8b44977b642295"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/reproduce_state.py",
+      "sha256": "46258312d7d4c7d3acd9c913ce9fc30a2a1dc556671daa91ce6738beda7afa32"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/services.py",
+      "sha256": "8aadeefbbf37da9e9809ca231305af137c8cf087412c13d177f0d9a6071bffaa"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/services.yaml",
+      "sha256": "5a4478c6aedb013e6db967e3fc2fcee65fcbb356bfdfa7e490eea2d89b41e5b6"
+    },
+    {
+      "path": "homeassistant/components/input_datetime/strings.json",
+      "sha256": "a2a6a8e9b73293bda78f1db90c6f781cf9501668fae74b3e56fe9d3f8af75388"
+    },
+    {
+      "path": "homeassistant/components/input_number/__init__.py",
+      "sha256": "ebda904c539246953a214baa97d91921138772adc618c6f9b952f2dcdda749d8"
+    },
+    {
+      "path": "homeassistant/components/input_number/const.py",
+      "sha256": "7bd88827847d8209faff58c3ccec3091b846e1d6fdfb2612c57b328310751939"
+    },
+    {
+      "path": "homeassistant/components/input_number/entity.py",
+      "sha256": "003497e230e6f5fdaedc6594b04847f66fd2d0ad074c405b093d67975e28d95d"
+    },
+    {
+      "path": "homeassistant/components/input_number/icons.json",
+      "sha256": "185f58afb7aa94f33cf1bebcceec2d202c0dac5f95789bbcc734dce4e1c1b71b"
+    },
+    {
+      "path": "homeassistant/components/input_number/manifest.json",
+      "sha256": "1ee0d42c64411fdaa6e348aaccef2add736d744c3ba26dcc6b3d3792c9e54487"
+    },
+    {
+      "path": "homeassistant/components/input_number/reproduce_state.py",
+      "sha256": "41941d0dbddeb46b69e9d05e993052440fac8e65fd105ba706946f98e1e1968d"
+    },
+    {
+      "path": "homeassistant/components/input_number/services.py",
+      "sha256": "a4bc1dba21b302c4a7ea432602ff8b3659d0594316e564f955dcb2f96f1f20ad"
+    },
+    {
+      "path": "homeassistant/components/input_number/services.yaml",
+      "sha256": "e99fec1379f10a6429d47f41950457e62f04206b283908b0af0c866c5a794b87"
+    },
+    {
+      "path": "homeassistant/components/input_number/strings.json",
+      "sha256": "c3805d59f7dc3cd50820144af1ed37d93fac5208518ce096c50e395f5c98457f"
+    },
+    {
+      "path": "homeassistant/components/input_select/__init__.py",
+      "sha256": "3d20591af72e462abbbb9ded688fe907f61b3267483a61983b5f21dd9f0cae2f"
+    },
+    {
+      "path": "homeassistant/components/input_select/const.py",
+      "sha256": "0b8674c259daf7aa4877ad9121f6de6a4be61c3aadea3d7b70f11c98e65a8716"
+    },
+    {
+      "path": "homeassistant/components/input_select/entity.py",
+      "sha256": "92bbdbdf15dd401974bd934580567bff73b796c04758813be457e41457e9cb06"
+    },
+    {
+      "path": "homeassistant/components/input_select/icons.json",
+      "sha256": "50708aa760693948ff1c312052f230635f95ea93e033990de9fa9141cb5f4d8f"
+    },
+    {
+      "path": "homeassistant/components/input_select/manifest.json",
+      "sha256": "e2bb29b8c286faba3b5f20d450f3d902e68c181dd3256cdcfe52110886633bcf"
+    },
+    {
+      "path": "homeassistant/components/input_select/reproduce_state.py",
+      "sha256": "1767230bc8bb444e452ad0665eb7563b64cbb8b55b70d9ea5891f586393193d5"
+    },
+    {
+      "path": "homeassistant/components/input_select/services.py",
+      "sha256": "b7ee2a6b675c6d5ba2308fcbe73229d4f9c708009c4c290906cda57acf915064"
+    },
+    {
+      "path": "homeassistant/components/input_select/services.yaml",
+      "sha256": "04b7524b13483177d4c36b58c040a071caecd5f1379b29f99c467403b3d8337b"
+    },
+    {
+      "path": "homeassistant/components/input_select/strings.json",
+      "sha256": "af67f0f2480e64a7a1d050d11af130d984d3710e457a27bc42a62da8851e9ace"
+    },
+    {
+      "path": "homeassistant/components/input_text/__init__.py",
+      "sha256": "7938f0badbbe9af4a2fdd9d268b1ee049aaad26f189e3e46dd7a2b5935d93530"
+    },
+    {
+      "path": "homeassistant/components/input_text/const.py",
+      "sha256": "df1a58721f4d4a3d9b4be6c0405a4274d3c62b1d51e7b48539f7ab4a54e1edf6"
+    },
+    {
+      "path": "homeassistant/components/input_text/entity.py",
+      "sha256": "bc843b38b3348104b5051491475ef11f5094725cfe2b1f96a1244a1475b253eb"
+    },
+    {
+      "path": "homeassistant/components/input_text/icons.json",
+      "sha256": "eb57cb9c2aeae3d767b6d8ad7ebed6fd408bc94fbd11416d5cadd2b552ef7ddd"
+    },
+    {
+      "path": "homeassistant/components/input_text/manifest.json",
+      "sha256": "fd24f306ac9fba3c4c8edf9691d0d9da8a0304b9bcb57e7b6d7e5299a36a9fe4"
+    },
+    {
+      "path": "homeassistant/components/input_text/reproduce_state.py",
+      "sha256": "cc62c646c9ec05b57d604c8322ccf9d92f8032cfeadc9bf9c67dac01b93aa47f"
+    },
+    {
+      "path": "homeassistant/components/input_text/services.py",
+      "sha256": "24fedb93c5e6faa6e91d779c19d69b988f7839674806e3289461eea4d37d601d"
+    },
+    {
+      "path": "homeassistant/components/input_text/services.yaml",
+      "sha256": "30a68d0e006e48fb4f0f8f3b20fb1a83aeed2615f2e14fcc13d7f24226d27a95"
+    },
+    {
+      "path": "homeassistant/components/input_text/strings.json",
+      "sha256": "9e57b46b1a5408c3350b039615259a5b040230356f3972bdda8d36494571a585"
+    },
+    {
+      "path": "homeassistant/components/number/__init__.py",
+      "sha256": "bb8a45644508773724543221fe963ce11e3f9b806d177a59798e6007b5852dfc"
+    },
+    {
+      "path": "homeassistant/components/number/const.py",
+      "sha256": "a1a5abef1496ff8c1c75089d0541aefac2437aef72de30adf7182e56d1c75019"
+    },
+    {
+      "path": "homeassistant/components/number/device_action.py",
+      "sha256": "f38b52918e4f5b08d22cb9cd26e9b2f00d95e9ae2ac78c8d277c767305e9c4b0"
+    },
+    {
+      "path": "homeassistant/components/number/entity.py",
+      "sha256": "7a9f23b6fccfa63117470384c5fad3ba3f5b859b23aada5b6b029f555fc01d0d"
+    },
+    {
+      "path": "homeassistant/components/number/icons.json",
+      "sha256": "8f0478819d09dc7d4064bcd142829ec384e17bc353bba898a31f7b1286636800"
+    },
+    {
+      "path": "homeassistant/components/number/manifest.json",
+      "sha256": "5a33299b7ac8dfb9ef603fb2d36d63ad71f2f64760fbe85cdcc73a3d6f06d769"
+    },
+    {
+      "path": "homeassistant/components/number/reproduce_state.py",
+      "sha256": "acd23bda1b6458c12045cf3d18eb096185342cf1617a766ba34481e44c481189"
+    },
+    {
+      "path": "homeassistant/components/number/services.py",
+      "sha256": "436164bf7e5a56d7be31cfe2e1b71afa2cf265f32319a16077cde0caad31702c"
+    },
+    {
+      "path": "homeassistant/components/number/services.yaml",
+      "sha256": "86e7277bb35ef094f32529fe7cdb9acc3cd5c6c7149064d0f5296729384cec21"
+    },
+    {
+      "path": "homeassistant/components/number/significant_change.py",
+      "sha256": "7d8d0f02cc97714e37f9061aab05a9a83f3c0516b4fd5179e3c463aa5b6bb9c1"
+    },
+    {
+      "path": "homeassistant/components/number/strings.json",
+      "sha256": "f4b980be22a681553a271b0336dd9e17b46e08e6e891ed12444676b30e7162c2"
+    },
+    {
+      "path": "homeassistant/components/number/websocket_api.py",
+      "sha256": "077899433adfc5f7ef56807bd7115c90078b10f03d5eef1774f9b92baed9b55c"
+    },
+    {
+      "path": "homeassistant/components/select/__init__.py",
+      "sha256": "a7294637cef8c4a5c309b3d4d2468164384dc47f212beb3c1c842f66f446ed60"
+    },
+    {
+      "path": "homeassistant/components/select/condition.py",
+      "sha256": "3573e487a0d7168ad465ab76e9e9aa7829bebf0ebe06df1806f2ce0f0bfe1c7f"
+    },
+    {
+      "path": "homeassistant/components/select/conditions.yaml",
+      "sha256": "4e29a241bf6818472e90fcc7d9820f761ab18effc91bdde24b460e69b1479dac"
+    },
+    {
+      "path": "homeassistant/components/select/const.py",
+      "sha256": "37c7bb07e5b32448518342d04515c81664cf9cddb1ad7bd2a33869b8a198c65d"
+    },
+    {
+      "path": "homeassistant/components/select/device_action.py",
+      "sha256": "796599f74c37a66a5d048990147196bfa033c581623d8b97639007b4de32a1ef"
+    },
+    {
+      "path": "homeassistant/components/select/device_condition.py",
+      "sha256": "58e91d195451b0da36b20e8e01505214a4e604918fadd5043d3fc45bbc1130bf"
+    },
+    {
+      "path": "homeassistant/components/select/device_trigger.py",
+      "sha256": "0f9a8f06d4769d4074b95f1a117da61ac87b7d9edd58178a2d34454cf978a123"
+    },
+    {
+      "path": "homeassistant/components/select/entity.py",
+      "sha256": "8f349eab34e4855872e23e28e06b3ee92b6c9f54a89a7a62fe91ddedc5851076"
+    },
+    {
+      "path": "homeassistant/components/select/icons.json",
+      "sha256": "0fe286fa0a194350c135fcf07242bf7076edb5e0a98707dd25beab611f5d1aa4"
+    },
+    {
+      "path": "homeassistant/components/select/manifest.json",
+      "sha256": "3dd5e095a86c364217fbd5bd14e49b3b2405c448e3ed425acd755c2907cf1451"
+    },
+    {
+      "path": "homeassistant/components/select/reproduce_state.py",
+      "sha256": "06d26861c2c8464e605b5abe2ea836054848afb8042f62f4029667a87d7675d9"
+    },
+    {
+      "path": "homeassistant/components/select/services.py",
+      "sha256": "698886388fe2104faae92e679b51eeedcd6de8b7a47db7d2d998f2479f3c78b2"
+    },
+    {
+      "path": "homeassistant/components/select/services.yaml",
+      "sha256": "21f45bed831e26dfafcda9640bd93c99f41b02e6864d7ab89974cac89847e693"
+    },
+    {
+      "path": "homeassistant/components/select/significant_change.py",
+      "sha256": "3bfd587bba31702283995490b3503803725a0d366ad3629e01d5c0f90d387f07"
+    },
+    {
+      "path": "homeassistant/components/select/strings.json",
+      "sha256": "9d48c6e53ebde9c46e6c50e305332ef529d39aaf5430984d22168e9fde1c6632"
+    },
+    {
+      "path": "homeassistant/components/select/trigger.py",
+      "sha256": "fa97309b2a41642e618df6c4f12571de9bb59a67bed51f23d46c30f9889b1f3e"
+    },
+    {
+      "path": "homeassistant/components/select/triggers.yaml",
+      "sha256": "e3cf87f96b9cc6d026bd9417bed91eacac550f0eeba3df114ab0ee9a9ebb414f"
+    },
+    {
+      "path": "homeassistant/components/text/__init__.py",
+      "sha256": "f18f86be6b8434981d17960786902d9b78a14d6da5eb5bf7b8e1e71fd90d8d6f"
+    },
+    {
+      "path": "homeassistant/components/text/condition.py",
+      "sha256": "68790e0b9a6a2466a9be9bf7187c5fb6e3471558da2651729e35e210d25016d7"
+    },
+    {
+      "path": "homeassistant/components/text/conditions.yaml",
+      "sha256": "bbd9d8c67dd7c6ca1d096f305d1eb94c35ca4f2082907aa66837d722904421ac"
+    },
+    {
+      "path": "homeassistant/components/text/const.py",
+      "sha256": "37761a4e365493f96d18454ca42fff9ec39002e739108c0e0b54f09ff434057d"
+    },
+    {
+      "path": "homeassistant/components/text/device_action.py",
+      "sha256": "1c28a4b6e0432330cd22271d36ef9a63ddb546bb046c406fd8eb0bfc4ffbcf9a"
+    },
+    {
+      "path": "homeassistant/components/text/entity.py",
+      "sha256": "555099dccc3268c9a95fff441e03590025cbbd75b551998587e5137ae1632fd7"
+    },
+    {
+      "path": "homeassistant/components/text/icons.json",
+      "sha256": "26fc078c0a5232e7dc71d786d223e1d15724394fa751a3cf32242dddcddc2a19"
+    },
+    {
+      "path": "homeassistant/components/text/manifest.json",
+      "sha256": "2ea6ccd00774cb09db4020cd3c52bbd5554cb69bf0788d723815a98fc2d668ef"
+    },
+    {
+      "path": "homeassistant/components/text/reproduce_state.py",
+      "sha256": "cb50870eca1ecd6bd64f044e468f88a628ef78c9a1aa4e2f2e05b4919fb012e0"
+    },
+    {
+      "path": "homeassistant/components/text/services.py",
+      "sha256": "696becf2b5184106733aa7763aa66b0c8b1d0a2c4d7aba4a1b59c6a877762282"
+    },
+    {
+      "path": "homeassistant/components/text/services.yaml",
+      "sha256": "82c4a2a2accf75928693a3701d59ec18c19442817990d73ea5680a170644f20f"
+    },
+    {
+      "path": "homeassistant/components/text/strings.json",
+      "sha256": "84449a6a0404beb42479b49d9eb0ae5f649fa093f244e3f0757090c64b4fd46d"
+    },
+    {
+      "path": "homeassistant/components/text/trigger.py",
+      "sha256": "e14fef9d085f2c9a2ec827c36910ccc5ba02317903943ff897b53f5f51f41694"
+    },
+    {
+      "path": "homeassistant/components/text/triggers.yaml",
+      "sha256": "bf48ac21454d24dad2ba61c346c003ab524f2edcf9675df1ff445539431d75c9"
+    },
+    {
+      "path": "homeassistant/components/timer/__init__.py",
+      "sha256": "7b9bae16216b478826adebd0439ae6a441c060dde6c9e8f5c53c5e2feb1d5828"
+    },
+    {
+      "path": "homeassistant/components/timer/condition.py",
+      "sha256": "3849c027b79fbb27512c1a584b8658e61ac468b6803ba587a346ca90dff3d0ec"
+    },
+    {
+      "path": "homeassistant/components/timer/conditions.yaml",
+      "sha256": "657ba5a7a410b6d44d3451a7c2e1472f28bf4b8a82ccb1cd10d2985d9ac18b81"
+    },
+    {
+      "path": "homeassistant/components/timer/const.py",
+      "sha256": "21e98a1b8e2f0382280517bed873d3e5b392b6b335e2a414cc963bcc012419f4"
+    },
+    {
+      "path": "homeassistant/components/timer/entity.py",
+      "sha256": "452183909a6e38ebf015e7f589336d3c5645ab48c1c35a6e5a026e2ba7fa3742"
+    },
+    {
+      "path": "homeassistant/components/timer/icons.json",
+      "sha256": "5cbc0ac72a65a711cdaf9de07d52a9f8ec868bfd7e6c44e008416064c15e7a52"
+    },
+    {
+      "path": "homeassistant/components/timer/manifest.json",
+      "sha256": "814e444c7956a662364e9a9b4e955386389a68d5680079d1a0c960795cc5d293"
+    },
+    {
+      "path": "homeassistant/components/timer/reproduce_state.py",
+      "sha256": "696393fe69d15d2ddc8bad633349ec4c4a3beff3ee450767bf357f80950e4361"
+    },
+    {
+      "path": "homeassistant/components/timer/services.py",
+      "sha256": "5bf675fe2a21eba1ee0590c06bb63ee0b918b3e2a4ff9e5b609f093cb3f5108f"
+    },
+    {
+      "path": "homeassistant/components/timer/services.yaml",
+      "sha256": "77e91d6b6f7b6a93a31cd7449dd637467fafb97585a4ebc6fa56096ded1f2e07"
+    },
+    {
+      "path": "homeassistant/components/timer/strings.json",
+      "sha256": "a945a0b41f5cb2abd2f8209d7239222095c042ef040b830940f88fed827e76f0"
+    },
+    {
+      "path": "homeassistant/components/timer/trigger.py",
+      "sha256": "b472d6abdf59aabecd3af2a0cf6c6af66d7e321c1096758e0a8dada8fdcf3856"
+    },
+    {
+      "path": "homeassistant/components/timer/triggers.yaml",
+      "sha256": "7d9db3e583a6ff1eef585acef24c6978fe2bc89698ad393ad57e0e5e0da8d14e"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/commands.py",
+      "sha256": "e161f3e2f75cfcc25e0ad66871a6d9c1740111f65cb194791926cf6f8494d443"
+    },
+    {
+      "path": "homeassistant/const.py",
+      "sha256": "d063d49145f0b0f3abf7bca7439e803c04c7f3873484a7f85cdad88cfd6abf02"
+    },
+    {
+      "path": "homeassistant/core.py",
+      "sha256": "5671149ec3405c4ec81eed05f58e3c392dafe0af141ec6ac7ea1a2b4b658d038"
+    },
+    {
+      "path": "homeassistant/helpers/collection.py",
+      "sha256": "7a4a242cd7f80c6139393fcc282f3bcd4788d1590e2f81f9f5bed4172bb277b1"
+    },
+    {
+      "path": "homeassistant/helpers/config_validation.py",
+      "sha256": "ab472221aaac1bb03652ec48f47591580f8f14d0bd0f1e4bc9926bc39b6a6f08"
+    },
+    {
+      "path": "homeassistant/helpers/entity.py",
+      "sha256": "d1f254d6eeabc2d88b5327151a2cee9ee465d420da3fda61d720e8561b2d9ac3"
+    },
+    {
+      "path": "homeassistant/helpers/entity_component.py",
+      "sha256": "93586d2486e33b6f2f987f5cf163caeda700bf00a42f91b9dd3134c7a7efd9bf"
+    },
+    {
+      "path": "homeassistant/helpers/entity_platform.py",
+      "sha256": "18014aa32bd7b1f0a80044166d9a88d7250a96120d9a62116de6f13a318121c8"
+    },
+    {
+      "path": "homeassistant/helpers/event.py",
+      "sha256": "35a453cdc015a58ce9e49f2dec4da042babd261930a758eac97a7c2138ba0960"
+    },
+    {
+      "path": "homeassistant/helpers/restore_state.py",
+      "sha256": "230c1d0568097fdf650142e9a12b631b091083b9a157a9912e8ea9164c94c3ba"
+    },
+    {
+      "path": "homeassistant/helpers/service.py",
+      "sha256": "6f3c685060ce79d6b4579b3d63d24d50cbdf69441557ab667b805f523d9cdb5e"
+    },
+    {
+      "path": "homeassistant/helpers/storage.py",
+      "sha256": "f004ea812a9840a7aae8a1269e482be9361e303424a4a47d2b6bab5c40201064"
+    },
+    {
+      "path": "homeassistant/util/dt.py",
+      "sha256": "c2778af0ab54aca33eff22dc97bdacdd0d307142b8ab186967adf853d572ed2d"
+    }
+  ]
+}
