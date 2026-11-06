@@ -581,7 +581,10 @@ function Test-SecretPatterns {
     $patterns = @(
         'github_pat_[A-Za-z0-9_]{20,}',
         'gh[pousr]_[A-Za-z0-9]{36,}',
-        'sk-[A-Za-z0-9_-]{20,}',
+        # HAMCP-305: a key's lowercase sk- prefix starts a token, and its
+        # random body has a digit or capital. Neither the ADR-012 filename's
+        # RISK-AND-ELEVATED-APPROVAL nor a lowercase kebab-case anchor matches.
+        '(?-i)(?<![A-Za-z0-9])sk-(?=[A-Za-z0-9_-]*[0-9A-Z])[A-Za-z0-9_-]{20,}',
         ('-----BEGIN ' + '(?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----')
     )
     $matchedFiles = New-Object System.Collections.Generic.List[string]
