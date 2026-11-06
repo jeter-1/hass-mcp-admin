@@ -7,7 +7,12 @@ Each version JSON records the immutable tar.gz archive SHA-256 and selected full
 SHA-256 hashes; the archive PAX commit was checked before reading. The October .1
 and .3 archive hashes also match the previously committed lane provenance.
 `scope-inputs.json` maps the historical HAMCP-222 scopes and five seq15 additions.
-The exact 337-file inventory is `ci/core-contract-read-files.json`.
+The historical 337-file inventory is the sorted `hashes` keys in `2026.10.3.json`.
+It matched `ci/core-contract-read-files.json` when this measurement ran. HAMCP-315
+expands the current manifest; these historical measurements do not establish
+inheritance under that larger inventory. Josh's 2026-11-05 amendment permits
+shared absence with an existence guard; the measurements below retain the
+original rule and do not describe current union-manifest outcomes.
 `results.json` records all 11 adjacent comparisons, missing files and the real
 .1→.3 negative. No cross-minor pair is counted; .0→.1 is included.
 

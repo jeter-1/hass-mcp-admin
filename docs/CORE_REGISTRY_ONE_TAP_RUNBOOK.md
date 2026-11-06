@@ -246,6 +246,11 @@ signing run separately. This mechanism never authorizes deployment or a Core upg
 
 `registry-candidates/*` branches are permanent provenance records. Never delete
 them, including after publication or in cleanup sweeps, and never force-push them.
+An extension of an existing version uses a new flat name
+`registry-candidates/<version>-seq<sequence>`; seq 17 uses
+`registry-candidates/2026.11.0-seq17`. The original `<version>` branch stays
+unchanged. This convention fits the existing publication workflow's ref
+validation; it grants no permission to push, dispatch, sign or publish.
 Later inheritance reads `core-review-evidence.json` from the predecessor's branch
 and authenticates it against the signed entry's `evidence_sha256`. Removing that
 branch forces the next release to a binding PR; publication does not replace it.
@@ -256,6 +261,11 @@ new candidate branches. Do not prohibit creation or require a PR for these new
 branches. Check that the workflow has no bypass of the deletion/force-push rules.
 This is an owner setup action: Codex does not change repository settings. Cleanup
 sweeps (including HAMCP-284) must exclude `registry-candidates/*` permanently.
+
+For the helper-value extension, see
+[HAMCP-315 source review and local lane](evidence/hamcp315/README.md).
+Its prerequisite PR must merge before the lane is executed. A failed group or
+cleanup without `clean: true` withholds seq 17; neither permits a substitute lane.
 
 ### O3 refusal notification and recovery
 
