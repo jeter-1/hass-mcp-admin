@@ -442,5 +442,119 @@ class PublicationBuildInputsTests(unittest.TestCase):
             VERIFY.release_build_inputs(self.root, sha)
 
 
+
+class PublicationInstallerVendoredSbomTests(unittest.TestCase):
+    """Real BuildKit SPDX Python entries; provenance is recorded in the fixture."""
+
+    FIXTURE = ROOT / "tests/fixtures/publication_sbom_python_inventory.json"
+    VENDORED = ("acquired package info from SBOM: "
+                "/usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.releases = json.loads(cls.FIXTURE.read_text(encoding="utf-8"))["releases"]
+
+    def release(self, version="2.4.2-beta.5", platform="linux/amd64"):
+        release = self.releases[version]
+        return (copy.deepcopy(release["platforms"][platform]["packages"]),
+                copy.deepcopy(release["contract"]))
+
+    def vendored(self, packages):
+        return [package for package in packages if package.get("sourceInfo") == self.VENDORED
+                and any(ref["referenceLocator"].startswith("pkg:pypi/") for ref in package["externalRefs"])]
+
+    def installed(self, packages, name):
+        return next(package for package in packages if package["name"] == name
+                    and package.get("sourceInfo") != self.VENDORED)
+
+    def assertRefused(self, code, packages, contract):
+        with self.assertRaises(VERIFY.VerificationError) as caught:
+            VERIFY.verify_sbom_inventory(packages, contract)
+        self.assertEqual(str(caught.exception), code)
+
+    def test_real_published_sbom_python_entries_pass_on_every_platform(self):
+        for version, vendored in (("2.4.2-beta.5", 18), ("2.4.2-beta.4", 0)):
+            for platform in ("linux/amd64", "linux/arm64"):
+                packages, contract = self.release(version, platform)
+                with self.subTest(version=version, platform=platform):
+                    self.assertEqual(len(self.vendored(packages)), vendored)
+                    VERIFY.verify_sbom_inventory(packages, contract)
+
+    def test_vendored_entries_are_ignored_only_from_the_exact_installer_sbom(self):
+        for source in (
+            "acquired package info from SBOM: /usr/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pkg/_vendor/bom.cdx.json",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json.bak",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json ",
+            "acquired package info from SBOM: /usr/local/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json",
+            None,
+        ):
+            packages, contract = self.release()
+            for package in self.vendored(packages):
+                if source is None:
+                    package.pop("sourceInfo")
+                else:
+                    package["sourceInfo"] = source
+            with self.subTest(source=source):
+                self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+
+    def test_vendored_entries_require_the_contracted_installed_pip(self):
+        packages, contract = self.release()
+        pip = self.installed(packages, "pip")
+        pip.update(versionInfo="26.2.1")
+        pip["externalRefs"][0]["referenceLocator"] = "pkg:pypi/pip@26.2.1"
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+        packages, contract = self.release()
+        packages.remove(self.installed(packages, "pip"))
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+        packages, contract = self.release()
+        contract["installer_version"] = "25.0.1"
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+
+    def test_ignored_vendored_entries_are_bounded(self):
+        self.assertEqual(VERIFY.INSTALLER_VENDORED_SBOM_LIMIT, 32)
+        for total, refused in ((32, False), (33, True)):
+            packages, contract = self.release()
+            for index in range(total - len(self.vendored(packages))):
+                packages.append({"name": f"vendored-{index}", "versionInfo": "1.0", "sourceInfo": self.VENDORED,
+                                 "externalRefs": [{"referenceType": "purl",
+                                                   "referenceLocator": f"pkg:pypi/vendored-{index}@1.0"}]})
+            self.assertEqual(len(self.vendored(packages)), total)
+            with self.subTest(total=total):
+                if refused:
+                    self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+                else:
+                    VERIFY.verify_sbom_inventory(packages, contract)
+
+    def test_installed_inventory_stays_exact_beside_vendored_entries(self):
+        def duplicate(packages):
+            packages.append(copy.deepcopy(self.installed(packages, "certifi")))
+
+        def missing(packages):
+            packages.remove(self.installed(packages, "idna"))
+
+        def changed_version(packages):
+            idna = self.installed(packages, "idna")
+            idna.update(versionInfo="3.18")
+            idna["externalRefs"][0]["referenceLocator"] = "pkg:pypi/idna@3.18"
+
+        def inconsistent_identity(packages):
+            self.installed(packages, "idna").update(versionInfo="3.18")
+
+        def extra(packages):
+            packages.append({"name": "unknown", "versionInfo": "1", "externalRefs": [
+                {"referenceType": "purl", "referenceLocator": "pkg:pypi/unknown@1"}]})
+
+        for change, code in ((duplicate, "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"),
+                             (missing, "SOURCE_SBOM_RUNTIME_MISMATCH"),
+                             (changed_version, "SOURCE_SBOM_RUNTIME_MISMATCH"),
+                             (inconsistent_identity, "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"),
+                             (extra, "SOURCE_SBOM_RUNTIME_MISMATCH")):
+            for platform in ("linux/amd64", "linux/arm64"):
+                packages, contract = self.release(platform=platform)
+                change(packages)
+                with self.subTest(change=change.__name__, platform=platform):
+                    self.assertRefused(code, packages, contract)
+
 if __name__ == "__main__":
     unittest.main()

@@ -71,6 +71,11 @@ MAX_MANIFEST_BYTES = 1_048_576
 MAX_IMAGE_METADATA_BYTES = 4_194_304
 MAX_PROVENANCE_BYTES = 16_777_216
 MAX_SBOM_BYTES = 16_777_216
+INSTALLER_VENDORED_SBOM_SOURCE = (
+    "acquired package info from SBOM: "
+    "/usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json"
+)
+INSTALLER_VENDORED_SBOM_LIMIT = 32
 MAX_RUN_METADATA_BYTES = 1_048_576
 MAX_TOKEN_RESPONSE_BYTES = 16_384
 MAX_TOKEN_LENGTH = 8_192
@@ -314,7 +319,31 @@ def release_build_inputs(repo: Path, release_sha: str) -> dict | None:
     return contract
 
 
+def _installer_vendored(package: object) -> bool:
+    return (isinstance(package, dict)
+            and package.get("sourceInfo") == INSTALLER_VENDORED_SBOM_SOURCE
+            and any(isinstance(ref, dict) and ref.get("referenceType") == "purl"
+                    and str(ref.get("referenceLocator", "")).startswith("pkg:pypi/")
+                    for ref in _sequence(package.get("externalRefs", []),
+                                         "SOURCE_SBOM_REFS_INVALID")))
+
+
 def verify_sbom_inventory(packages: list, contract: dict) -> None:
+    # The contracted pip ships its own CycloneDX SBOM of vendored packages, which
+    # the BuildKit scanner reports as pkg:pypi entries although none of them is an
+    # installed distribution (HAMCP-323). Only that exact file's entries, for
+    # exactly the contracted installer and within a fixed bound, are left out;
+    # otherwise the complete inventory is checked as before.
+    expected = {**contract["runtime"], "pip": contract["installer_version"]}
+    installed = [package for package in packages if not _installer_vendored(package)]
+    if (len(packages) - len(installed) <= INSTALLER_VENDORED_SBOM_LIMIT
+            and _python_inventory(installed).get("pip") == contract["installer_version"]):
+        packages = installed
+    if _python_inventory(packages) != expected:
+        _fail("SOURCE_SBOM_RUNTIME_MISMATCH")
+
+
+def _python_inventory(packages: list) -> dict:
     actual = {}
     for package in packages:
         package = _mapping(package, "SOURCE_SBOM_PACKAGE_INVALID")
@@ -332,8 +361,7 @@ def verify_sbom_inventory(packages: list, contract: dict) -> None:
         if name in actual or purl != f"pkg:pypi/{name}@{version}":
             _fail("SOURCE_SBOM_PYTHON_IDENTITY_INVALID")
         actual[name] = version
-    if actual != {**contract["runtime"], "pip": contract["installer_version"]}:
-        _fail("SOURCE_SBOM_RUNTIME_MISMATCH")
+    return actual
 
 
 def verify_base_dependency(definition: dict, contract: dict, platform: str) -> None:
