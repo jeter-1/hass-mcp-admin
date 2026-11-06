@@ -122,7 +122,8 @@ Required offline evidence:
 - **HAMCP-305,** in `tests/test_codex_workflow.py`:
   - the Full secret scan accepts the ADR-012 filename and still rejects a
     synthetic `sk-` key without echoing it;
-  - a pattern table runs through PowerShell `-match`.
+  - a pattern table runs through PowerShell `-match`, and through Python
+    `re.IGNORECASE` as the committed-file scan tests compile the pattern.
 
   Five scanner variants were each killed by assertion failures: the
   original pattern, no case sensitivity, no token boundary, no key-like
