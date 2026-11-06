@@ -272,7 +272,8 @@ the "Fail-closed consequences" note where they differ.
   The shared screen itself still refuses raw escapes. The reviewer's
   `test_original_control_text_is_screened_before_ansi_removal` expects a
   coloured ordinary line to be withheld; it is superseded by this owner
-  decision and runs as a registered expected failure. Review 3 narrowed
+  decision and ran as a registered expected failure until HAMCP-312
+  rewrote it to assert that the coloured line is shown. Review 3 narrowed
   this decision to SGR colour codes (below).
 - **Level-filtered withholding (M1 residual).** `min_level` filters on the
   level from the structured journal `PRIORITY` field
@@ -311,9 +312,9 @@ owner-approved).** This supersedes the M4 bullet above where it differs.
   secret less those characters, and neither form matches it. This was
   already so with the review 2 CSI rule, needs a writer that knows the
   secret, shows no complete secret, and is outside the H3 direction.
-- **The superseded reviewer method.** It uses only `ESC[31m` and `ESC[0m`,
-  still fails only because coloured ordinary lines are shown, and stays the
-  single registered expected failure across the three reviewer suites
+- **The superseded reviewer method.** It uses only `ESC[31m` and `ESC[0m`.
+  HAMCP-312 rewrote it to assert that coloured ordinary lines are shown, so
+  none of the three reviewer suites registers an expected failure
   (`tests/test_hamcp224_review3_corrections.py` checks both).
 
 Base: `main` at `5030982fe681737c47e52a7c01d1808fca52468b` (Engineering
