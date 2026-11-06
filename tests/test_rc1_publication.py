@@ -242,7 +242,8 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             with self.subTest(job=name):
                 self.assertEqual(
                     self.jobs[name]["needs"],
-                    validated + list(chain[:index]),
+                    validated + (["verify-release", "verify-release-aggregate"] + list(chain[1:index])
+                                 if index else []),
                 )
                 self.assertEqual(
                     self.jobs[name]["if"],
@@ -1875,7 +1876,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "scripts/assert_protected_release_ancestor.sh",
             "scripts/assert_registry_tags_absent.sh",
             "python scripts/validate_addon_metadata.py",
-            "python -m unittest discover -s tests -v",
+            'count --repo-root . --expected-source-sha "$release_sha"',
             "git diff --check",
         ):
             self.assertIn(value, prepare)

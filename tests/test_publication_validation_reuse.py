@@ -296,13 +296,17 @@ class PublicationValidationWiringTests(unittest.TestCase):
                                                        ("unexpected", 0, 1)):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 log = Path(directory) / "calls"
-                wrapper = 'python() { printf "%s\\n" "$*" >> "$CALL_LOG"; };\n'
+                wrapper = ('python() { printf "%s\\n" "$*" >> "$CALL_LOG"; printf "[0,1,2]"; };\n'
+                           'git() { :; };\n')
                 result = subprocess.run(["bash", "-e", "-c", wrapper + script[start:end]],
-                                        env=dict(os.environ, validation_mode=mode, CALL_LOG=str(log)),
+                                        env=dict(os.environ, validation_mode=mode, CALL_LOG=str(log),
+                                                 RUNNER_TEMP=directory, GITHUB_OUTPUT=str(Path(directory) / "output"),
+                                                 release_sha="a" * 40),
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, expected_status)
                 calls = log.read_text().splitlines() if log.exists() else []
-                self.assertEqual(calls, ["-m unittest discover -s tests -v"] * expected_calls)
+                self.assertEqual(calls, [f"{directory}/release-unit-test-shards.py count --repo-root . "
+                                         f"--expected-source-sha {'a' * 40}"] * expected_calls)
 
 
 if __name__ == "__main__":
