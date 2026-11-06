@@ -27,7 +27,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual({(d, a) for d, a, _, _ in acceptance.CASES},
                          {(d, a) for d, actions in HELPER_ACTIONS.items() for a in actions})
         for domain, action, value, _ in acceptance.CASES:
-            args = acceptance.request(domain, action, value).arguments()
+            args = acceptance.helper_request(domain, action, value).arguments()
             self.assertFalse(args['wait']); self.assertFalse(args['return_response']); self.assertFalse(args['verbose'])
 
     def test_mapping_never_adds_unsigned_capability_or_lends_another_group(self):
@@ -57,16 +57,16 @@ class Contracts(unittest.TestCase):
         with patch.object(lane, 'command', return_value=reply(['repo@sha256:exact'])):
             self.assertEqual(lane.cached_image('repo:tag@sha256:exact'), 'config')
 
-    def test_layout_conflict_stays_withheld_even_for_identical_sources(self):
+    def test_layout_absences_compare_equal_under_owner_amendment(self):
         proof = json.loads((ROOT / 'docs/evidence/hamcp315/manifest-compatibility.json').read_text())
         for item in proof['sources']:
-            # Synthetic identical hashes test the refusal logic, not source provenance.
+            # Synthetic identical hashes test the comparison logic, not source provenance.
             source = {'version': item['version'], 'commit': item['source_commit'],
                       'tag_commit': item['source_commit'],
                       'hashes': {p: 'a' * 64 for p in manifest()['paths'] if p not in item['missing_paths']}}
             compared = compare_sources(source, source)
-            self.assertFalse(compared['inherited'])
-            self.assertEqual(compared['differing_files'], item['missing_paths'])
+            self.assertTrue(compared['inherited'])
+            self.assertEqual(compared['differing_files'], [])
 
     def test_inspection_error_is_not_absence_and_wrong_owner_is_refused(self):
         failed = subprocess.CompletedProcess([], 1, b'')

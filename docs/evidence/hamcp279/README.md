@@ -10,7 +10,9 @@ and .3 archive hashes also match the previously committed lane provenance.
 The historical 337-file inventory is the sorted `hashes` keys in `2026.10.3.json`.
 It matched `ci/core-contract-read-files.json` when this measurement ran. HAMCP-315
 expands the current manifest; these historical measurements do not establish
-inheritance under that larger inventory. Missing new paths fail closed.
+inheritance under that larger inventory. Josh's 2026-11-05 amendment permits
+shared absence with an existence guard; the measurements below retain the
+original rule and do not describe current union-manifest outcomes.
 `results.json` records all 11 adjacent comparisons, missing files and the real
 .1→.3 negative. No cross-minor pair is counted; .0→.1 is included.
 

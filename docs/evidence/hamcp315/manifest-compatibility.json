@@ -6,7 +6,7 @@
       "version": "2026.10.3",
       "source_commit": "1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
       "source_archive_sha256": "57a15d2dcabb8703c9b9d08e8c243e8a7130db8cb8618e1c799ae46e1c75e4e9",
-      "identical_source_inherits": false,
+      "identical_source_inherits": true,
       "missing_paths": [
         "homeassistant/components/button/entity.py",
         "homeassistant/components/counter/entity.py",
@@ -35,11 +35,11 @@
       "version": "2026.11.0",
       "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
       "source_archive_sha256": "85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1",
-      "identical_source_inherits": false,
+      "identical_source_inherits": true,
       "missing_paths": [
         "homeassistant/helpers/condition.py"
       ]
     }
   ],
-  "judgment": "Missing paths must continue to refuse; existing October positive derived acceptance needs architect decision before merge."
+  "judgment": "Josh 2026-11-05: shared absence is equal; one-sided absence or modified bytes requires a source judgment. Every path must exist in at least one bound committed source record."
 }

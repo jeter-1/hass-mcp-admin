@@ -462,11 +462,11 @@ class O3(unittest.TestCase):
         proof=e.compare_sources(a,b)
         self.assertFalse(proof['inherited']); self.assertEqual(proof['differing_files'],[p]); self.assertEqual(proof['outcome'],'binding PR required')
         with self.assertRaises(ValueError): e.verify_proof(proof,a['version'],b['version'],b['commit'])
-    def test_missing_file_refuses_even_both_missing(self):
+    def test_missing_file_differs_only_when_one_side_is_present(self):
         for both in (False,True):
             a,b=sources(); p=next(iter(a['hashes'])); del b['hashes'][p]
             if both: del a['hashes'][p]
-            self.assertEqual(e.compare_sources(a,b)['differing_files'],[p])
+            self.assertEqual(e.compare_sources(a,b)['differing_files'],[] if both else [p])
     def test_tag_sha_mismatch(self):
         a,b=sources(); b['tag_commit']='d'*40
         with self.assertRaises(ValueError): e.compare_sources(a,b)
@@ -499,8 +499,12 @@ class O3(unittest.TestCase):
             a['tag_commit']=a['commit'];b['tag_commit']=b['commit']
             historical=sorted(e.read_json(p/'2026.10.3.json')['hashes']); self.assertEqual(len(historical),337)
             self.assertTrue(set(historical)<=set(e.manifest()['paths']))
-            actual=e.compare_sources(a,b,paths=historical);self.assertEqual(actual['inherited'],pair['inherited']); passed+=actual['inherited']
-        self.assertEqual((passed,len(r['pairs'])),(2,11))
+            actual=e.compare_sources(a,b,paths=historical); passed+=actual['inherited']
+            # Retain the recorded pre-amendment result; only shared absence can
+            # improve it under Josh's 2026-11-05 rule, never changed content.
+            self.assertFalse(pair['changed'] and actual['inherited'])
+        self.assertEqual(sum(pair['inherited'] for pair in r['pairs']),2)
+        self.assertEqual((passed,len(r['pairs'])),(4,11))
 
 
 class ProofAdmission(unittest.TestCase):

@@ -572,12 +572,24 @@ September-only disposable receipt cannot be relabeled as October acceptance.
 
 ## Automated release evidence (HAMCP-279)
 
-Josh's 2026-11-02 **O3** decision permits binding inheritance only when **every
-contract-read Core source file is byte-identical** at the predecessor and new
-stable tag commits. Semantic compatibility is insufficient. A changed or missing
-file, moved tag, unreviewed predecessor binding or unknown profile produces no
+Josh's 2026-11-02 **O3** decision, amended by Josh on **2026-11-05** (HAMCP-315),
+compares one union manifest across Core source layouts. A path **absent in both
+releases compares equal**; present on exactly one side is a **difference requiring
+a source judgment**, just like modified content. Files present in both must be
+**byte-identical**. Semantic compatibility is insufficient. A changed or one-sided
+missing file, moved tag, unreviewed predecessor binding or unknown profile produces no
 candidate and reports **binding PR required**. Main bindings remain deliberate
 review decisions. The existing preparation utility and journal format are unchanged.
+
+The accompanying **existence guard** requires every path in
+`ci/core-contract-read-files.json` to exist in **at least one bound Core release**,
+as witnessed by the committed per-release source-hash records under
+`docs/evidence/hamcp315/core-sources/`. Record versions, commits and archive hashes
+are checked against committed reviewed release bindings/provenance. CI fails and
+names each unwitnessed path, so a typo cannot disappear through two absences.
+`manifest()` runs this validation in evidence preparation and proof verification;
+the existing complete CI test discovery also exercises the committed manifest and
+the typo failure case. No workflow permission or signing boundary changes.
 
 `core-release-evidence.yml` detects a single new stable release on protected main
 (daily or manual). It excludes prereleases, already published releases and prior
@@ -594,7 +606,7 @@ existing HAMCP-222 provenance method. The disposable execution remains amd64;
 arm64 provenance verification does not claim arm64 execution.
 
 The exact list lives in `ci/core-contract-read-files.json`; profiles map to lane
-groups in `ci/core-evidence-groups.json`. Its 337 files expand the historical
+groups in `ci/core-evidence-groups.json`. Its 456 paths expand the historical
 HAMCP-222 relied-on scopes and the later helper/options, input-select, trace,
 dashboard and scene source reviews. Maintain this list whenever a contract,
 source read, or binding judgment changes. The literal-path AST guard detects
@@ -605,11 +617,15 @@ Review must close those gaps; the guard is not authority to narrow the list.
 
 Measured on 2026-11-02, 14 immutable stable tags form 11 adjacent patch pairs
 (including .0→.1): August **0/3**, September **0/4**, October **2/4**, total
-**2/11 (18.2%)**. Passing pairs: 2026.10.2→10.3 and 10.3→10.4. The current fixed
-list contains nine files absent in August and eight absent in September; missing
-files refuse even when absent at both tags. Period-available scopes would yield
+**2/11 (18.2%)**. Passing pairs: 2026.10.2→10.3 and 10.3→10.4. That historical fixed
+list contained nine files absent in August and eight absent in September; the
+then-current rule refused missing files even when absent at both tags. Period-available scopes would yield
 4/11, a sensitivity measurement only. Excluding .0→.1 yields 2/8. Full hashes and
-results are retained in `docs/evidence/hamcp279/`. A proposed removal of the
+results are retained in `docs/evidence/hamcp279/`. These are historical measurements
+of the original 337-path inventory and the pre-amendment absence rule, not the
+current union-manifest result. Re-evaluating that original inventory under the
+2026-11-05 rule yields 4/11; this is not a measurement of the expanded 456 paths.
+A proposed removal of the
 uncalled `config/auth_provider_homeassistant.py` endpoint yields the same 2/11;
 **the narrower 336-file proposal is not adopted** and requires architect review.
 

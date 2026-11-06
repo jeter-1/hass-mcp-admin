@@ -63,7 +63,7 @@ def reference():
     return {key: value[key] for key in REFERENCE_KEYS}
 
 
-def request(domain, action, value=None):
+def helper_request(domain, action, value=None):
     return HelperRequest(entity_id=domain + ".hamcp_seq17", action=action, value=value,
         operation_id=f"{int(datetime.now(timezone.utc).timestamp())}-{uuid4().hex}")
 
@@ -158,7 +158,7 @@ async def run(configured, entry, directory):
         withheld, withheld_provider = await compose(before, "withheld")
         baseline = await state("input_boolean.hamcp_seq17")
         try:
-            result = await call(withheld, request("input_boolean", "turn_on"))
+            result = await call(withheld, helper_request("input_boolean", "turn_on"))
         except HelperRefusal as exc:
             assert exc.details["category"] == "helper_core_authority_unavailable"
         else:
@@ -172,7 +172,7 @@ async def run(configured, entry, directory):
         service, provider = await compose(after, "admitted")
         outcomes = []
         for domain, action, value, expected in CASES:
-            req = request(domain, action, value)
+            req = helper_request(domain, action, value)
             previous = await state(req.entity_id)
             count = len(provider.writes)
             if expected == "refused_at_limit":
@@ -211,7 +211,7 @@ async def run(configured, entry, directory):
 
         # Lost acknowledgement: independently observed effect can settle, never replay.
         provider.lose_response = True
-        req = request("input_boolean", "turn_on")
+        req = helper_request("input_boolean", "turn_on")
         count = len(provider.writes)
         receipt = await call(service, req)
         assert receipt["status"] == "succeeded_verified" and not receipt["provider_response_received"]
@@ -222,7 +222,7 @@ async def run(configured, entry, directory):
         # A real mutation with unavailable readback stays unverified. Reopen the
         # durable store and recover with real reads only, never another dispatch.
         provider.block_after_write = True
-        req = request("input_boolean", "turn_off")
+        req = helper_request("input_boolean", "turn_off")
         count = len(provider.writes)
         receipt = await call(service, req)
         assert receipt["status"] == "changed_unverified" and not receipt["terminal"]
@@ -243,10 +243,10 @@ async def run(configured, entry, directory):
         assert durable(await call(service, req)) == durable(receipt) and len(provider.writes) == count + 1
 
         # Invalid live values and unavailable targets must preserve state without a write.
-        for req in (request("input_number", "set_value", 999),
-                    request("input_select", "select_option", "Missing"),
-                    request("input_text", "set_value", "TOO-LONG-AND-INVALID"),
-                    request("input_boolean", "turn_on").model_copy(update={"entity_id": "input_boolean.absent_seq17"})):
+        for req in (helper_request("input_number", "set_value", 999),
+                    helper_request("input_select", "select_option", "Missing"),
+                    helper_request("input_text", "set_value", "TOO-LONG-AND-INVALID"),
+                    helper_request("input_boolean", "turn_on").model_copy(update={"entity_id": "input_boolean.absent_seq17"})):
             count = len(provider.writes)
             try:
                 result = await call(service, req)
