@@ -1,0 +1,49 @@
+{
+  "model": "hamcp315-o3-mutations-v1",
+  "copied_tree": true,
+  "source_sha256": "2af78d3dfa0a78664d882ed17ffe07ea0053614ed8e841b07a8f0fde81f38f49",
+  "results": [
+    {
+      "name": "control",
+      "test_target": "tests.test_core_o3_union_manifest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "failed_tests": [],
+      "accepted": true
+    },
+    {
+      "name": "one_sided_absence_equal",
+      "test_target": "tests.test_core_o3_union_manifest.UnionComparison.test_cross_layout_additions_and_removal_require_judgments",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_o3_union_manifest.UnionComparison.test_cross_layout_additions_and_removal_require_judgments"
+      ],
+      "accepted": true
+    },
+    {
+      "name": "guard_dropped",
+      "test_target": "tests.test_core_o3_union_manifest.ExistenceGuard.test_typo_absent_from_every_bound_release_fails_naming_path",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_o3_union_manifest.ExistenceGuard.test_typo_absent_from_every_bound_release_fails_naming_path"
+      ],
+      "accepted": true
+    },
+    {
+      "name": "both_absent_refused",
+      "test_target": "tests.test_core_o3_union_manifest.UnionComparison.test_october_self_accepts_21_shared_absences",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_core_o3_union_manifest.UnionComparison.test_october_self_accepts_21_shared_absences"
+      ],
+      "accepted": true
+    }
+  ]
+}

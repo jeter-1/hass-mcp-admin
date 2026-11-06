@@ -111,6 +111,9 @@ class RefusalLifecycle(unittest.TestCase):
     def prepare_case(self, directory, *, missing=False, error=None, prior=None, event='schedule', requested=None):
         import core_evidence_workflow as w
         before=e.read_json(ROOT/'docs/evidence/hamcp279/2026.10.3.json')
+        # Synthetic workflow fixture covers the current expanded inventory;
+        # historical measurements below remain tied to their original 337 paths.
+        before['hashes']={p:before['hashes'].get(p,'b'*64) for p in e.manifest()['paths']}
         before['tag_commit']=before['commit']
         after=copy.deepcopy(before);after.update(version='2026.10.4',commit='f'*40,tag_commit='f'*40)
         path=next(iter(after['hashes']))
@@ -459,11 +462,11 @@ class O3(unittest.TestCase):
         proof=e.compare_sources(a,b)
         self.assertFalse(proof['inherited']); self.assertEqual(proof['differing_files'],[p]); self.assertEqual(proof['outcome'],'binding PR required')
         with self.assertRaises(ValueError): e.verify_proof(proof,a['version'],b['version'],b['commit'])
-    def test_missing_file_refuses_even_both_missing(self):
+    def test_missing_file_differs_only_when_one_side_is_present(self):
         for both in (False,True):
             a,b=sources(); p=next(iter(a['hashes'])); del b['hashes'][p]
             if both: del a['hashes'][p]
-            self.assertEqual(e.compare_sources(a,b)['differing_files'],[p])
+            self.assertEqual(e.compare_sources(a,b)['differing_files'],[] if both else [p])
     def test_tag_sha_mismatch(self):
         a,b=sources(); b['tag_commit']='d'*40
         with self.assertRaises(ValueError): e.compare_sources(a,b)
@@ -484,7 +487,7 @@ class O3(unittest.TestCase):
     def test_real_pair_negative_four_paths(self):
         p=ROOT/'docs/evidence/hamcp279'; a=e.read_json(p/'2026.10.1.json');b=e.read_json(p/'2026.10.3.json')
         a['tag_commit']=a['commit'];b['tag_commit']=b['commit']
-        result=e.compare_sources(a,b)
+        result=e.compare_sources(a,b,paths=sorted(a['hashes']))
         self.assertEqual(result['differing_files'],[
             'homeassistant/auth/__init__.py','homeassistant/components/cloud/alexa_config.py',
             'homeassistant/components/config/auth_provider_homeassistant.py','homeassistant/helpers/config_validation.py'])
@@ -494,8 +497,14 @@ class O3(unittest.TestCase):
         for pair in r['pairs']:
             a=e.read_json(p/(pair['predecessor']+'.json')); b=e.read_json(p/(pair['release']+'.json'))
             a['tag_commit']=a['commit'];b['tag_commit']=b['commit']
-            actual=e.compare_sources(a,b);self.assertEqual(actual['inherited'],pair['inherited']); passed+=actual['inherited']
-        self.assertEqual((passed,len(r['pairs'])),(2,11))
+            historical=sorted(e.read_json(p/'2026.10.3.json')['hashes']); self.assertEqual(len(historical),337)
+            self.assertTrue(set(historical)<=set(e.manifest()['paths']))
+            actual=e.compare_sources(a,b,paths=historical); passed+=actual['inherited']
+            # Retain the recorded pre-amendment result; only shared absence can
+            # improve it under Josh's 2026-11-05 rule, never changed content.
+            self.assertFalse(pair['changed'] and actual['inherited'])
+        self.assertEqual(sum(pair['inherited'] for pair in r['pairs']),2)
+        self.assertEqual((passed,len(r['pairs'])),(4,11))
 
 
 class ProofAdmission(unittest.TestCase):
@@ -679,8 +688,9 @@ class UnsignedAssembly(unittest.TestCase):
 
 class ManifestAndWorkflow(unittest.TestCase):
     def test_every_signed_profile_has_source_mapping(self):
-        m=e.manifest();self.assertEqual({r['capability_id'] for r in refs()},set(m['profiles'])-{'binding_judgments'})
-        self.assertEqual(len(m['paths']),337)
+        m=e.manifest();self.assertEqual({r['capability_id'] for r in refs()} | {'core.typed_helper_value_operation'},
+                                       set(m['profiles'])-{'binding_judgments'})
+        self.assertEqual(len(m['paths']),456)
     def test_mechanical_literal_core_paths_covered(self):
         paths=set(e.manifest()['paths'])
         files=list((ROOT/'scripts').glob('*contract*.py'))+[ROOT/'scripts/generate_core_2026_10_device_fixture.py']
