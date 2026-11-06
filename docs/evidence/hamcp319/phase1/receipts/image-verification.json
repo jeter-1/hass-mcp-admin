@@ -1,0 +1,47 @@
+{
+  "app": {
+    "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:dad67faa3ffeaf0e7bb24285f7122dc7f5221820c6fadb51b3fa82630d61adb9",
+    "index": "sha256:dad67faa3ffeaf0e7bb24285f7122dc7f5221820c6fadb51b3fa82630d61adb9",
+    "manifest": "sha256:8952aef8ee3863e04a8a2d9d55eff301b484fa9fbb872860001c488f8e16ee9c",
+    "config": "sha256:f34f81e2bcd792c967941db091d3606780354e2178555dd699d52b1f6da4b3f5",
+    "platform": "linux/amd64",
+    "labels": {
+      "io.hass.arch": "amd64",
+      "io.hass.description": "AI assistant integration via Model Context Protocol",
+      "io.hass.name": "Home Assistant MCP Server",
+      "io.hass.type": "addon",
+      "io.hass.version": "9.1.0"
+    },
+    "verified_from_local_export": true,
+    "start_utc": "2026-11-06T01:19:40.639347+00:00",
+    "end_utc": "2026-11-06T01:19:42.792140+00:00"
+  },
+  "core": {
+    "image": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+    "index": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+    "manifest": "sha256:078222f9ea47cf47b172a301c2c45a1d2344b9d666827729b71fc3f7d7a57592",
+    "config": "sha256:c0f062fa32399e6634896e396726287ed238589a7726ed247ac60ad4e76fdb2f",
+    "platform": "linux/amd64",
+    "labels": {
+      "io.hass.arch": "amd64",
+      "io.hass.base.arch": "amd64",
+      "io.hass.base.image": "ghcr.io/home-assistant/base:3.24",
+      "io.hass.base.name": "python",
+      "io.hass.base.version": "2026.10.3",
+      "io.hass.type": "core",
+      "io.hass.version": "2026.11.0",
+      "org.opencontainers.image.authors": "The Home Assistant Authors",
+      "org.opencontainers.image.created": "2026-11-04 17:37:33+00:00",
+      "org.opencontainers.image.description": "Open-source home automation platform running on Python 3",
+      "org.opencontainers.image.documentation": "https://www.home-assistant.io/docs/",
+      "org.opencontainers.image.licenses": "Apache-2.0",
+      "org.opencontainers.image.source": "https://github.com/home-assistant/core",
+      "org.opencontainers.image.title": "Home Assistant",
+      "org.opencontainers.image.url": "https://www.home-assistant.io/",
+      "org.opencontainers.image.version": "2026.11.0"
+    },
+    "verified_from_local_export": true,
+    "start_utc": "2026-11-06T01:19:43.210891+00:00",
+    "end_utc": "2026-11-06T01:19:56.743849+00:00"
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "hello": {
+    "ha_version": "2026.11.0",
+    "type": "auth_required"
+  },
+  "results": [
+    {
+      "command": {
+        "type": "marketplace/info"
+      },
+      "response": {
+        "id": 2,
+        "result": {
+          "categories": [
+            "template",
+            "theme",
+            "integration",
+            "plugin"
+          ],
+          "disabled_reason": null,
+          "github_connected": false,
+          "has_pending_tasks": false,
+          "lovelace_mode": "storage",
+          "stage": "running",
+          "startup": false,
+          "version": "2026.11.0",
+          "warning_accepted": false
+        },
+        "success": true,
+        "type": "result"
+      }
+    },
+    {
+      "command": {
+        "type": "marketplace/repositories/list"
+      },
+      "response_envelope": {
+        "id": 3,
+        "success": true,
+        "type": "result"
+      },
+      "result_count": 6194,
+      "result_schema_keys": [
+        "authors",
+        "available_version",
+        "can_install",
+        "category",
+        "config_flow",
+        "custom",
+        "description",
+        "domain",
+        "downloads",
+        "file_name",
+        "full_name",
+        "hide",
+        "homeassistant",
+        "id",
+        "installed",
+        "installed_version",
+        "integration_categories",
+        "last_updated",
+        "local_path",
+        "name",
+        "new",
+        "pending_upgrade",
+        "stars",
+        "status",
+        "topics"
+      ],
+      "examples": [
+        {
+          "authors": [],
+          "available_version": "v1.7.2",
+          "can_install": true,
+          "category": "integration",
+          "config_flow": false,
+          "custom": false,
+          "description": "Home Assistant integration for managing Docker container updates via Dockge",
+          "domain": "dockge",
+          "downloads": 0,
+          "file_name": "",
+          "full_name": "finder39/ha-dockge",
+          "hide": false,
+          "homeassistant": null,
+          "id": "1172915904",
+          "installed": false,
+          "installed_version": "",
+          "integration_categories": [],
+          "last_updated": "2026-03-23T04:21:29Z",
+          "local_path": "/config/custom_components/None",
+          "name": "Dockge",
+          "new": false,
+          "pending_upgrade": false,
+          "stars": 7,
+          "status": "default",
+          "topics": [
+            "docker",
+            "dockge"
+          ]
+        },
+        {
+          "authors": [],
+          "available_version": "2.0.8",
+          "can_install": true,
+          "category": "integration",
+          "config_flow": false,
+          "custom": false,
+          "description": "A custom component for Home Assistant to control and monitor your Juwel HeliaLux light.",
+          "domain": "juwel_helialux",
+          "downloads": 0,
+          "file_name": "",
+          "full_name": "MrSleeps/Juwel-HeliaLux-Home-Assistant-Custom-Component",
+          "hide": false,
+          "homeassistant": null,
+          "id": "453143227",
+          "installed": false,
+          "installed_version": "",
+          "integration_categories": [],
+          "last_updated": "2026-08-19T11:33:57Z",
+          "local_path": "/config/custom_components/None",
+          "name": "Juwel Helialux Smart Controller",
+          "new": false,
+          "pending_upgrade": false,
+          "stars": 19,
+          "status": "default",
+          "topics": [
+            "aquarium",
+            "aquatics",
+            "fishtank",
+            "home-assistant-component",
+            "juwel",
+            "juwel-helialux",
+            "lighting"
+          ]
+        }
+      ],
+      "raw_capture_sha256": "a90a550315e8ab7970d581594c9f32b481e2aeaa334f7330475bdbba0b2dc0e0",
+      "raw_capture_bytes": 4264900,
+      "retention": "complete public inventory retained only in task .artifacts; this summary is not the full inventory"
+    },
+    {
+      "command": {
+        "type": "hacs/info"
+      },
+      "response": {
+        "error": {
+          "code": "unknown_command",
+          "message": "Unknown command."
+        },
+        "id": 4,
+        "success": false,
+        "type": "result"
+      }
+    }
+  ]
+}

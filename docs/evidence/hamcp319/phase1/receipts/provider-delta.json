@@ -1,0 +1,2172 @@
+{
+  "base_commit": "468d027896f0f65554f4daed75902eff3f3efd98",
+  "baseline_capture": "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json",
+  "baseline_capture_sha256": "871955621e323a663c17a3b00d74dbf830b45448ce253a5b1962071020aac2ad",
+  "baseline_catalog_fingerprint": "0d7ecdb7f58b9b3f92fe05e0f3afbd213da6d5841263219d8c12c3dea1d77845",
+  "candidate_catalog_fingerprint": "aae387f7eac45347b4193a7d0d4f508a2b4c9b892910e5953881d3b07205fc82",
+  "fingerprint_model": "existing Engineering canonical JSON without final newline; full descriptor v1",
+  "baseline_provider_dispositions": {
+    "backup": "held",
+    "dashboard": "admitted",
+    "lifecycle": "held",
+    "read_gateway": "admitted"
+  },
+  "counts": {
+    "base": 77,
+    "candidate": 82,
+    "added": 5,
+    "removed": 0,
+    "unchanged_input_schema": 6,
+    "unchanged_descriptor": 0
+  },
+  "tools": [
+    {
+      "tool": "ha_bulk_control",
+      "baseline_classification": "physical_or_high_risk_action",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "91d681857f70f1eea9546af3ad5c362d4fd381ac9cce79ee1c922436ef66690b",
+      "base_input_schema_sha256": "40b171b8443d53b5a900f4e15d12c6cd864dd5004eb4a8960513723b498c5900",
+      "candidate_descriptor_sha256": "d61cd6875921fdbca5ea20b13d1c81e6300f5acfcf388db3f84a99d9f6896164",
+      "candidate_input_schema_sha256": "b4f0ab9656c5cc6762fdbc3abc77a72825d1bb624feacac8000253a88cd41324",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "dry_run",
+        "operations",
+        "parallel",
+        "timeout_seconds",
+        "validate_first"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_call_event",
+      "baseline_classification": "physical_or_high_risk_action",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "4e3added9ba37da972a79df20b08a66575ae327bb5b5de9456f9a4bc16565573",
+      "base_input_schema_sha256": "3778d67d7cbf1dbefa41bc7266f1d0140fb5bd1997da23506a9513b3b8f7d7d2",
+      "candidate_descriptor_sha256": "4a812ffba11362e0f64f0093d028b8d8f49f0648ad0d87e197fc7b6b3ae840c9",
+      "candidate_input_schema_sha256": "68baad0f6018fdf948c60f1bf6f8724221a515d4edf5cee9004ab6a49550a2b0",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "data",
+        "event_type"
+      ],
+      "required_before": [
+        "event_type"
+      ],
+      "required_after": [
+        "event_type"
+      ]
+    },
+    {
+      "tool": "ha_call_service",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "3d49a7dce6f042ffee1de5ae0ac2b3b15e5bedb47c3e4ad615f54829fe48c1f0",
+      "base_input_schema_sha256": "b5301ef287daaaa2cc00b07ffaa52ee283418b684f36c377403639ed7c83f1e7",
+      "candidate_descriptor_sha256": "e084036810159436b6330571916bcbc8e68b5314cf5f47210f047e4bef4a0280",
+      "candidate_input_schema_sha256": "e4b4f0696f00c1a21d6ce35e4e0a13b6503ff04baa83464241f689f845d9ce83",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "domain",
+        "entity_id",
+        "result_attribute_keys",
+        "result_fields",
+        "return_response",
+        "service",
+        "verbose",
+        "ws_command"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_delete_dashboard",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "295d8976374517c4d5fd7fd17d98a95db154ee1e6ac4e369b2762a0c0d210468",
+      "base_input_schema_sha256": "62a0eb257fca5094d1b564ec1dff92c8ce658fb95fd1659276360754332aafae",
+      "candidate_descriptor_sha256": "cf80677db6d85d67ed5553eec3e608c194c0c53394566795d112a554a3f0928a",
+      "candidate_input_schema_sha256": "62a0eb257fca5094d1b564ec1dff92c8ce658fb95fd1659276360754332aafae",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "url_path"
+      ],
+      "required_after": [
+        "url_path"
+      ]
+    },
+    {
+      "tool": "ha_config_delete_dashboard_resource",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "3f8d8e673105a3846921c0d7bc91696c05897ba0686a29e5665a88a1dada6e4d",
+      "base_input_schema_sha256": "932f5595c4321fd4e83ff3b4ecc83c4684f56d3a642a2b8bd4ade9ac589cabc3",
+      "candidate_descriptor_sha256": "6adc7c262c01edcbbc35a37148682cbfb770593a0641ec95a6f8f50f96d9d1fa",
+      "candidate_input_schema_sha256": "401bf9f52c01c461177a734bb5090e70d8403f22f223c0ddf81a1d4f706de9b2",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "resource_id"
+      ],
+      "required_before": [
+        "resource_id"
+      ],
+      "required_after": [
+        "resource_id"
+      ]
+    },
+    {
+      "tool": "ha_config_get_automation",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "0288c170cc438c99d07872e96ff0357fe62aee0344d5b16275c57f35fa2a11d4",
+      "base_input_schema_sha256": "bae748eb90c04a6f51aaa606d7b2b20afa76ede3bc0b40d4d8e0da847a581200",
+      "candidate_descriptor_sha256": "35b82f9a27d44002d3caf426aa53ed4d07d159532b8a4289dd08b7e350b24142",
+      "candidate_input_schema_sha256": "a4d7a28e64518ed0d8233a48310f08994bce5a39d3336684ea0ccb8f3269a7d0",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id",
+        "identifier"
+      ],
+      "required_before": [
+        "identifier"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_config_get_calendar_events",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "bdf36b9bb3bb5c4d74b7209441ab3076664c0fa0cb1bcb0571aad8ff91d4f5b3",
+      "base_input_schema_sha256": "7e118a769adceb342ce0c3c8acfe69a4bc9d014a80bee7a06c5cc1bf44f57ab6",
+      "candidate_descriptor_sha256": "c8f875d626f7a62521eb04a282768f3b246b735034609bc64ec5620d09dc043f",
+      "candidate_input_schema_sha256": "756f64f9ecfd7932522df435b7a152545c107aa7eed4b7c9146f1e7b681fc3b2",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "end",
+        "start"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_config_get_category",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "7c8d4ff3a67fcd690dd0704a01bd9c6cfda875d9cbd6edf9789d6ab717b327e5",
+      "base_input_schema_sha256": "7803bf3a347eb6d1247bc8b80a0953f6a56aef53371ded58f101dfbd41049b1e",
+      "candidate_descriptor_sha256": "2bb26a76c92c800ac303211ffb41b065e4e9d7f43b5c53e8cf0c5800339d9b4e",
+      "candidate_input_schema_sha256": "0ed4ad9eec4d162099f9ad7b80c5bb0d9bbc25912b4f6f19c553ff08ed3c377b",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "category_id"
+      ],
+      "required_before": [
+        "scope"
+      ],
+      "required_after": [
+        "scope"
+      ]
+    },
+    {
+      "tool": "ha_config_get_dashboard",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "e3a059730abc5f7599623a6449220c08c3fff0dc2a81acaf5ff2d47ec0ee99b6",
+      "base_input_schema_sha256": "35ee72479ad3ebe83e203ce3d7e8825d8fb526fa984dc808c055109040663c64",
+      "candidate_descriptor_sha256": "4b3ee50fa2fe7655309e5044ca264adccdc2af9f9a883338205b4d4602ec2d94",
+      "candidate_input_schema_sha256": "3d5eb7f07319fc0007f535ef316091a11c15863262f3cb6b03ae279474dfdca7",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "card_type",
+        "describe",
+        "entity_id",
+        "force_reload",
+        "heading",
+        "include_config",
+        "include_screenshot",
+        "list_only",
+        "mode",
+        "query",
+        "url_path",
+        "view_path"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_get_label",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "0dc0771f4dcacc75c5dba8c66efe3913f0f5afb9172d0a06bc730a777476a063",
+      "base_input_schema_sha256": "b1403f60dffbdbe90576b3a177e9f785f90cb07e5fb645078bc08e5441caf31b",
+      "candidate_descriptor_sha256": "09792c1308f08744a1ae38d332ebbc4e3451ee528e176fa22472dd31b35c4ad8",
+      "candidate_input_schema_sha256": "e9e05e1cd301936b4c7a7d5b609744602268f3ff19a7871678f7ea5fcb8ae7b5",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "label_id"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_get_scene",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "a0f0e11c62869efa0562e2b257c1d9b369f76faf07e0e0b2bde86e3223df74f0",
+      "base_input_schema_sha256": "ed1f21b6e0a872f3b889d9eb508158ebc7d9d01f9e17f8d63a465dd6e5cb6cbd",
+      "candidate_descriptor_sha256": "81d0cc81a7cc07d42f618e7d1b012b47624a15ac6b2772460d2688ab2bd547a5",
+      "candidate_input_schema_sha256": "e471799f1d1761b7112fbe6af84f2769497e1d4a3b6dc476a2ce268a467a00ef",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema",
+        "title"
+      ],
+      "changed_input_properties": [
+        "limit",
+        "offset",
+        "query",
+        "scene_id",
+        "search_in_config"
+      ],
+      "required_before": [
+        "scene_id"
+      ],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_get_script",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "9d05fc19307884bbdd3623a472f2edaa6fcb8280dea6bbea49521345483c252f",
+      "base_input_schema_sha256": "941d56128c6a1cfc9352c9f6f69db4248431149bb2458b6fd5d9c960886d6dc2",
+      "candidate_descriptor_sha256": "ad74e0f10fa4f9a0ed1bc24c633c79c1d04b813d6b9d8c94e78347ccb19f3340",
+      "candidate_input_schema_sha256": "941d56128c6a1cfc9352c9f6f69db4248431149bb2458b6fd5d9c960886d6dc2",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "script_id"
+      ],
+      "required_after": [
+        "script_id"
+      ]
+    },
+    {
+      "tool": "ha_config_get_yaml",
+      "baseline_classification": "not in base catalog",
+      "baseline_automatic_read": false,
+      "presence": "added",
+      "candidate_descriptor_sha256": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
+      "candidate_input_schema_sha256": "f9a740ddd827a47d33311ccb18decb948eb1d72ffc880e02782140ed1b0ddcc5"
+    },
+    {
+      "tool": "ha_config_list_dashboard_resources",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "2116e820859897d6cf8a9b6e8b233a48c72531cac97836c96c144e7abe7291f7",
+      "base_input_schema_sha256": "da3a8d837239803e621603df0d747dd57c2316f382249ac38aeb61d93a9531fa",
+      "candidate_descriptor_sha256": "211bde035a4fa2c99dbb17b4f543792305a2913c350c5fb09b1a601899fd6d75",
+      "candidate_input_schema_sha256": "044e1dce4b2d66dc95dee4166eb08de8b7bf3a5a54277359eb126bcf8b7437ad",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "include_content",
+        "include_hash",
+        "limit",
+        "offset"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_list_groups",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "48ea2efe426aa89bc8842f0fd5074969fcd8e30400d2b51f3e76380e1a754084",
+      "base_input_schema_sha256": "1d8a91c44ab8a1f0020a2e543379c5f3e684af8e964f6c83d401a4545ec0198e",
+      "candidate_descriptor_sha256": "abb72ad24a446260ea736a957c69c1b8c4c40f9cc0248e75a3b4614eb4d97911",
+      "candidate_input_schema_sha256": "329191e6416743be5cf024e6062f3f00cc858b0ce5ddef87771ea52af88c37e3",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "limit",
+        "offset"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_list_helpers",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "d9c3b3ac7a4e5b5cce0369a1995759b5c68a14178e74647280025a493bd59171",
+      "base_input_schema_sha256": "c25b0b38a8075cef5acd71ea00cdda26015a15efc7d58a16f6c44411cef5004e",
+      "candidate_descriptor_sha256": "1c6edb5d04454fbb3eccb9426f4348fdbf69b76cb10b78a390bf020a9a784ab4",
+      "candidate_input_schema_sha256": "7a122c1436813859e3a8306798beaeceeda3fe3eb032b379701fee50c75bd504",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "describe",
+        "helper_id",
+        "helper_type",
+        "limit",
+        "menu_choice",
+        "offset"
+      ],
+      "required_before": [
+        "helper_type"
+      ],
+      "required_after": [
+        "helper_type"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_automation",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "69bc1861a803a1843caeb63249739641823dbd28b16146b440549cbe615215f4",
+      "base_input_schema_sha256": "239a10c59c69242458e3f8ef41adead2b58cb5d59e65d9ffc1e6efe9097ce4ed",
+      "candidate_descriptor_sha256": "9af5eec79c13e941300b0aa79bc8f70432a8ed200f91c5503474a3f2427e777d",
+      "candidate_input_schema_sha256": "9754a21ad71294f61bcfe47c07080a6d554b64b1df0e0641ef929fd6c2376d8d",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id",
+        "identifier",
+        "wait"
+      ],
+      "required_before": [
+        "identifier"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_calendar_event",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "67f47801e568b6335499e7b933b7e7b779eaa8ae5b31dacd983dc8be78373427",
+      "base_input_schema_sha256": "3ac9ac0888b3fa6a819eed2e1ca68dc73686d7933bc80c7cb66a0f5bcb7980b3",
+      "candidate_descriptor_sha256": "183eb52219c0a1a3ff37a836d55dd015de305796098978ae55f478317833a527",
+      "candidate_input_schema_sha256": "e2e54ea1034a305654211c971e4bc0213276a704dc57a06218dfca1894a2798c",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "recurrence_id",
+        "recurrence_range"
+      ],
+      "required_before": [
+        "entity_id",
+        "uid"
+      ],
+      "required_after": [
+        "entity_id",
+        "uid"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_category",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "a12db528b430f71ca39a86a395708acb9cd5d6514f7040cfe58b6d4839f65cbb",
+      "base_input_schema_sha256": "bb9602b9c00fafd95cecc1af4fd11d42a906b7b6b4d0d7e1d5c4a23dbb1f9dec",
+      "candidate_descriptor_sha256": "ce1a0413f874ad296abe88e28ca56ef4f732ae968239af98c91f4889706444c8",
+      "candidate_input_schema_sha256": "bb9602b9c00fafd95cecc1af4fd11d42a906b7b6b4d0d7e1d5c4a23dbb1f9dec",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "scope",
+        "category_id"
+      ],
+      "required_after": [
+        "scope",
+        "category_id"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_group",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "d7344a78a545cb0f2aca5651322e3e32dee10d70b3f26ec5bde0ccadff173cf0",
+      "base_input_schema_sha256": "6664fee48c1facd868d1c5f004aac6ae9c346a21bf2bf51e064bf2d815d3b198",
+      "candidate_descriptor_sha256": "018c2e7721d278437d7721b51347f979854a206ad36d183cace668a14900af5b",
+      "candidate_input_schema_sha256": "c95d8acf9b79872226fe5e74bf33e55aca8d3156a84b874b3b2ec84e7fde8eed",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "object_id",
+        "wait"
+      ],
+      "required_before": [
+        "object_id"
+      ],
+      "required_after": [
+        "object_id"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_label",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "17a84f3baefa058b49a2efb2633ea416653bb9d667fe22012c2b6c8d0b59620b",
+      "base_input_schema_sha256": "39c761e40ef28146e3ad61ddddee9e9662e80016425bc2c2d2402229d54f14ef",
+      "candidate_descriptor_sha256": "65d3f26b38a2f812dc4b14b3742638123ffcabe98fbf8d43c032b68545636150",
+      "candidate_input_schema_sha256": "39c761e40ef28146e3ad61ddddee9e9662e80016425bc2c2d2402229d54f14ef",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "label_id"
+      ],
+      "required_after": [
+        "label_id"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_scene",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "800c5a4b3037193889a1d2910b02e896c491d3752a68d8ec45037a8b93363d25",
+      "base_input_schema_sha256": "bdd3699fbb0b74cbe75261b37dfb4204ebecd97b6702b2b12b16094c935b7670",
+      "candidate_descriptor_sha256": "37f69c4230fedcb41599f85cba10eed7e2b9b879fb5e602f82a32cdd074b6fbd",
+      "candidate_input_schema_sha256": "df8ed3017d8b7d7caf94b84ecc6fdd756de30919d1bf81c8fa339c6318a8c72a",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "wait"
+      ],
+      "required_before": [
+        "scene_id"
+      ],
+      "required_after": [
+        "scene_id"
+      ]
+    },
+    {
+      "tool": "ha_config_remove_script",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "427bdb486057ba659290d54c8d26e8bb96fca4a2aab26acc6f0612110780252a",
+      "base_input_schema_sha256": "177b6308f905a3c4bc84643f060ecfcd3b5a83299dcd1f42851813e5faa8841b",
+      "candidate_descriptor_sha256": "ba0206f812928b4b4cf7abb7eeae04c6cec244435cd3820ff718cb4ef6360487",
+      "candidate_input_schema_sha256": "543ba315573acc8a1e31c44f202296d0151da9058bc4b089be94ab8b0ca91407",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "wait"
+      ],
+      "required_before": [
+        "script_id"
+      ],
+      "required_after": [
+        "script_id"
+      ]
+    },
+    {
+      "tool": "ha_config_set_automation",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "6fea45173f3ec0101b7492822c776e3005cfda3c095e5277bdd676d0026967e8",
+      "base_input_schema_sha256": "acbe8deefe5ab71c4893b2b43ad4a19c0768d94e5bbaeb5fc480ab675494045a",
+      "candidate_descriptor_sha256": "10ddf885b4a1e4427155559ed47c7d92e2fdf076fff9cdceb237582b987f94a7",
+      "candidate_input_schema_sha256": "9657f85674224daf0d32b112f6711cc7d40a23cea5bccf90c938629b2989dd3c",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config",
+        "config_hash",
+        "enabled",
+        "entity_id",
+        "identifier",
+        "python_transform",
+        "run_actions",
+        "take_control_of_blueprint",
+        "wait"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_set_calendar_event",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "1b6906591a4bff2468f968d3a1fd26569cfac0850d8b7e78767217081d43d066",
+      "base_input_schema_sha256": "aa0b07124bde9b9438c1b4f62c8bf9fa8e3d89b7c500f7342d51e580eed13fd7",
+      "candidate_descriptor_sha256": "0edd6c7003aea3f6f49b3f73456876fb90c5aeba2dc6899c967273f0d87ecf4b",
+      "candidate_input_schema_sha256": "12d77fb5a1c300b605a2739ab2c57f9fe2de980678e7e0e0e12a7cf92c78ff06",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "description",
+        "location",
+        "recurrence_id",
+        "recurrence_range",
+        "rrule",
+        "uid"
+      ],
+      "required_before": [
+        "entity_id",
+        "summary",
+        "start",
+        "end"
+      ],
+      "required_after": [
+        "entity_id",
+        "summary",
+        "start",
+        "end"
+      ]
+    },
+    {
+      "tool": "ha_config_set_category",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "7d9c6fb445c170a13ecacafcf4f5a4770f29d3da25b91887ba660255e700530b",
+      "base_input_schema_sha256": "80036ac5e792a727c42562201e116bb493fbc7a731f981445516043c7b43f690",
+      "candidate_descriptor_sha256": "32ccb2ebf6df55ed8546889f08eec64cada004d69a01937c13d162d1fe61e9fc",
+      "candidate_input_schema_sha256": "80c7a9f8ca89f1292b19438968d94900685a79b23e906a56a4961546f38df677",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "category_id"
+      ],
+      "required_before": [
+        "name",
+        "scope"
+      ],
+      "required_after": [
+        "name",
+        "scope"
+      ]
+    },
+    {
+      "tool": "ha_config_set_dashboard",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "b89c0fc3259d863dd32b4b1c90f886b053e1326ae80388486826815c4be2d802",
+      "base_input_schema_sha256": "7cba72259a49d468cd8454e57734a31bb90a6115468172784ac1a202334be0b0",
+      "candidate_descriptor_sha256": "049c7956b00eb3584d5db4fecb9318cf5220dda810c926bcf317b362d5e23dd2",
+      "candidate_input_schema_sha256": "5af7316dd1107d11b80f1ac193971a459b03ac5eef9eb9c8da0a4be77ce4cdc1",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "icon",
+        "patch",
+        "python_transform",
+        "return_screenshot",
+        "title",
+        "url_path"
+      ],
+      "required_before": [
+        "url_path"
+      ],
+      "required_after": [
+        "url_path"
+      ]
+    },
+    {
+      "tool": "ha_config_set_dashboard_resource",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "4c5f355b26c2dea37ec05b0e7e3f436753420ad1ed9f335d4c746f429766fde6",
+      "base_input_schema_sha256": "62a2b3540d3ff4c03865ae1bb5cb7daf6dae34f3bc04e2fd418dcc8d25eb17c0",
+      "candidate_descriptor_sha256": "ceaa8033373788622c1579f3d8b7eb2872e773fdbbf8d2702807c6ba8ed4ee3f",
+      "candidate_input_schema_sha256": "cc132e50196f106fee3dce01c1d9ad70fb4a3b3995e537a217abffe6967744d4",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config_hash",
+        "content",
+        "edits",
+        "resource_type",
+        "url"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_config_set_group",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "b7983ed5c426adb0ce1ece20e9a2e8da5e47a38a8368c22aa480ef23922db30d",
+      "base_input_schema_sha256": "aa0028931b78a03c36b57962a48ddd24613ea01ee6d8a0943e102c593f03136b",
+      "candidate_descriptor_sha256": "c0d835b80072e47da16966ca5bad74f6b7015168ba789fe5f8f7bd89f5639bd1",
+      "candidate_input_schema_sha256": "f6aa9be7f539129045cde0d388aa709d46d20860cfe668d58378f005a5752ee6",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "add_entities",
+        "all_on",
+        "entities",
+        "name",
+        "object_id",
+        "remove_entities",
+        "wait"
+      ],
+      "required_before": [
+        "object_id"
+      ],
+      "required_after": [
+        "object_id"
+      ]
+    },
+    {
+      "tool": "ha_config_set_helper",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "2b1165d5d1a2aa46a152fa3f401002e9d8ada69888423b028e5ae4f2a2ca4f59",
+      "base_input_schema_sha256": "6a48b39fd2c1e55711cd78d1e7a02cd7cd0802978e3d92909164eb08458b44a4",
+      "candidate_descriptor_sha256": "ed86eb5b211b3f6f41715e471c4ff4f57093ed1b1d688f6c5288eaf6fd54168b",
+      "candidate_input_schema_sha256": "d771b85a3d2f03d49e86e5e717ac73a211ef2db6616035bb702b2cc4e3446e8b",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "action",
+        "area_id",
+        "category",
+        "config",
+        "description",
+        "device_trackers",
+        "duration",
+        "friday",
+        "has_date",
+        "has_time",
+        "helper_id",
+        "helper_type",
+        "icon",
+        "initial",
+        "latitude",
+        "longitude",
+        "max_value",
+        "min_value",
+        "mode",
+        "monday",
+        "name",
+        "options",
+        "passive",
+        "picture",
+        "radius",
+        "restore",
+        "saturday",
+        "step",
+        "subentry_id",
+        "sunday",
+        "tag_id",
+        "thursday",
+        "tuesday",
+        "unit_of_measurement",
+        "user_id",
+        "wait",
+        "wednesday"
+      ],
+      "required_before": [
+        "helper_type"
+      ],
+      "required_after": [
+        "helper_type"
+      ]
+    },
+    {
+      "tool": "ha_config_set_label",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "c3e388a144929ffdf11b5db6926af69ed0856297c1524ffd5bd1811df5228a02",
+      "base_input_schema_sha256": "14b97258f77732f083554d906eb73742ffa1921ee90dd65ae8120fedab657ab0",
+      "candidate_descriptor_sha256": "050b1598aacc2c91087c705b46051ed0d11f631ce6bb08f9f9b5c3d7172a97b0",
+      "candidate_input_schema_sha256": "cca07f4dfe64bce5b26f5559ce45574d64fd59ff1a085e20138e4ac115fe5afc",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "areas",
+        "label_id"
+      ],
+      "required_before": [
+        "name"
+      ],
+      "required_after": [
+        "name"
+      ]
+    },
+    {
+      "tool": "ha_config_set_scene",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "f311bb51fb3889a26eb8bd6b550bb8d53f153042f8a393ed413cda56f7a190f1",
+      "base_input_schema_sha256": "2e521451cb9fbcc863e2cd9708dadc56d297f6c5243107d1485b4513fc0e8222",
+      "candidate_descriptor_sha256": "f5c338f534f1c50c50cfe4cc4ea8d0387d2bd0a610a3154b60330824d3966720",
+      "candidate_input_schema_sha256": "3f33b855e33e50e0ceaa67695132d3fe9afaa494be0cfe2ad972edf43ae7a508",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "activate",
+        "python_transform",
+        "wait"
+      ],
+      "required_before": [
+        "scene_id"
+      ],
+      "required_after": [
+        "scene_id"
+      ]
+    },
+    {
+      "tool": "ha_config_set_script",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "510502ff84657b85535b47c9ba6fb92a5a972db145f24761ff5ceee0442fdb7e",
+      "base_input_schema_sha256": "ac28796562ac24496b497bd42c92cc23d127dd7ab4fc07ebdd0dca884ba57b66",
+      "candidate_descriptor_sha256": "72e2d0ca77e06e8bf179f60d76242ba3f9903275e1da7fd9535c26452f2b5abf",
+      "candidate_input_schema_sha256": "c9a4591efe1765682d7a2557fce530c205dc06465b9fe793c40dff5b3083c6cc",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config",
+        "config_hash",
+        "python_transform",
+        "run",
+        "take_control_of_blueprint",
+        "variables",
+        "wait"
+      ],
+      "required_before": [
+        "script_id"
+      ],
+      "required_after": [
+        "script_id"
+      ]
+    },
+    {
+      "tool": "ha_delete_file",
+      "baseline_classification": "not in base catalog",
+      "baseline_automatic_read": false,
+      "presence": "added",
+      "candidate_descriptor_sha256": "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
+      "candidate_input_schema_sha256": "639017ccbe57b906519501ca3b79079bdd10259975cb9014b94ceab6d1b4ff3e"
+    },
+    {
+      "tool": "ha_eval_template",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "733a491c9c9732938c4adc393a6ebebf5c5c5f0ae3b58530b5f33480398f1f9f",
+      "base_input_schema_sha256": "5f3dce93b84642975b75803d96fa6084ef31a2fc7c4ffa4a4f54a5717693219c",
+      "candidate_descriptor_sha256": "fc4cc9482df5d21b0366b7780dea5150569c3f4136f5e1cc9fa44a83148e6d53",
+      "candidate_input_schema_sha256": "1cd46b20bfefc8bd2489de654de78bdb225f7efb42a210f3cfcf7e97040c9a86",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "condition",
+        "report_errors",
+        "strict",
+        "template",
+        "timeout",
+        "variables"
+      ],
+      "required_before": [
+        "template"
+      ],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_app",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "ba74041ae6c5ce929f4f1ffdbddfc79bbe0b155ccacbc652ecbb250e5079b35f",
+      "base_input_schema_sha256": "c76674086c0d6f48e85ec8d6f4ef4ee9eff5b582c2795e76e43327cdc2b8f7fe",
+      "candidate_descriptor_sha256": "86c72d591365acc048cfdaccd8d4b10762d823def1084e26e74ab244e82d5251",
+      "candidate_input_schema_sha256": "7c1fba1746d03398144231b4e1fa133291a0182eb01b38ff7f66ef4121298a60",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "slug",
+        "source"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_automation_traces",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "44761dc2bab679b1f824aa1876bba081e6bfa6e93ce20ffb56d8d378e0ee105a",
+      "base_input_schema_sha256": "41114fdc007101f5670f729bab062ab7627b737e13eea3d28da0fdfa8c000d06",
+      "candidate_descriptor_sha256": "68dc429c3a2837366fd1338a2ba7da2bfbc4d8bd9aee6b7e1f28c57cd7f547a5",
+      "candidate_input_schema_sha256": "f22754974ac6f44022b7bee3ece027b02e8edb47db76531431adb148f76b68e9",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "deduplicate",
+        "detailed",
+        "order",
+        "run_id"
+      ],
+      "required_before": [
+        "automation_id"
+      ],
+      "required_after": [
+        "automation_id"
+      ]
+    },
+    {
+      "tool": "ha_get_camera_image",
+      "baseline_classification": "unsupported",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "a88b0a3f6f357b4dd7bbae33fecd8dc6a14cd87e4051a224b63d7a731c2be2b0",
+      "base_input_schema_sha256": "e0242fb224885fb74395e61c21a7dcb764342225c44079a7b76d899a9092ede2",
+      "candidate_descriptor_sha256": "9331d658235064df97821220ef531978aece80690c5596593ee7189d20f2c3f7",
+      "candidate_input_schema_sha256": "7e2ffab4e94cf1d011ca97395bdf9b5e655b209a235f266c1ab08afd9d65008d",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id",
+        "height",
+        "width"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_get_device",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "bc968d71d453d41b866a57fb8596f3df4596906985d8860e78a108d260ca795b",
+      "base_input_schema_sha256": "0cec4531a1543b2a1ff7ff4e65a3bbd076675f95be077f02567eb86fe6cf7dc7",
+      "candidate_descriptor_sha256": "390109e4c3352c893e79a2e7447ed3c9ccd4ac040683a1c22c70ffe87ce04559",
+      "candidate_input_schema_sha256": "c6700885a55d150e6a7286189c9f00be611fb3bf82b9d37ef103d14b13f4b2f1",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "detail_level",
+        "device_id",
+        "limit",
+        "offset"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_entity",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "9485825005292c45a2c9360738d80b6ecfa13e670861497a321e53a805489516",
+      "base_input_schema_sha256": "3c7fae1584e239667a76e91a51dd37f0dd505e6f2f46235db2e033e81aae19de",
+      "candidate_descriptor_sha256": "e283e27f27403fd7f65f1ecd3d5a20a0917af7dc429761bfc392ba732d71fb0d",
+      "candidate_input_schema_sha256": "503e365334782564ae14bf9672c683033e8a27c6706ba52c559a5882abbe0cbb",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id",
+        "unique_id"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_entity_exposure",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "e643515d4b19229a45d4a073569643c2149c2ee9355e3336a3d91359ff4c2184",
+      "base_input_schema_sha256": "1d3e5f96c24a0703fc75279504aa13b023b947c77cb0a824fd6d0dd4cc848e37",
+      "candidate_descriptor_sha256": "9ebd0036725b611b4736366c6df7d184449c6b44c49b8861e461b912ea134b9f",
+      "candidate_input_schema_sha256": "596b9a5acf1ba8028ffe67c56c8de52245c63269e3cedb67dde8f7e43eb2c047",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "assistant",
+        "entity_id"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_hacs_info",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "765c2e4a48b0acff40e819b4d93a9b53b78feddd4b5ff57f57998dfd1efe5f44",
+      "base_input_schema_sha256": "e5273ed6ac6ef9e1f6942c28d56b762074e9c4787b58f11fe35e88a57557776b",
+      "candidate_descriptor_sha256": "0455104db7c26470339a0fff9c92f732b24916537a4e52501e06277c5b887614",
+      "candidate_input_schema_sha256": "3c7e1536b56d4c0e2d8127bf5cf676b4d7ab8cf41306a58ef87384b878ada0e7",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "category",
+        "include_releases",
+        "installed_only",
+        "max_results",
+        "offset"
+      ],
+      "required_before": [
+        "action"
+      ],
+      "required_after": [
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_get_history",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "df9e0359a832584b54e2f48ade95bfe40a7241912e5cf0a300d3030ba7abfb5b",
+      "base_input_schema_sha256": "bb8276887ba10132e7d59fd99b41f564c18ead1f42fd9bb466c1b56c22416d36",
+      "candidate_descriptor_sha256": "f5d17eb380d91268114d93a4e061460a24a88e217b547443811dff38708d9d3b",
+      "candidate_input_schema_sha256": "b5b22eccdb18eb05151a30fff736fe85cc682a385b7922f58d39848f4bb415fa",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "core_options",
+        "end_time",
+        "fields",
+        "include_schema",
+        "limit",
+        "minimal_response",
+        "offset",
+        "order",
+        "period",
+        "significant_changes_only",
+        "source",
+        "start_time",
+        "statistic_types",
+        "summary"
+      ],
+      "required_before": [
+        "entity_ids"
+      ],
+      "required_after": [
+        "entity_ids"
+      ]
+    },
+    {
+      "tool": "ha_get_integration",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "53504122a35df5abf80a43985b5b27fc717fdbad445e58d83598344ff265c6a7",
+      "base_input_schema_sha256": "5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686",
+      "candidate_descriptor_sha256": "0105efdfb09d2b312cb6b88b25659e75375265bacef271dbbb8c6b1ee772f195",
+      "candidate_input_schema_sha256": "798a5110a0e7717c3db87c8ff231103cdba9e887c35001164f850cf13887cacf",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "device_id",
+        "diagnostics_data_limit",
+        "diagnostics_data_offset",
+        "diagnostics_data_path",
+        "diagnostics_fields",
+        "diagnostics_truncate_at_bytes",
+        "entry_id",
+        "exact_match",
+        "include_diagnostics",
+        "include_knx_project",
+        "include_schema",
+        "include_subentries",
+        "limit",
+        "offset",
+        "query"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_logs",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "017d54b1568976a7e9cbf3da716e9ad9b2264adb1b7453e404cad44e779a35d9",
+      "base_input_schema_sha256": "3449c6ba3bb29daf060a1e905d669583f6953aab1ae209b5b955e1829cfc9246",
+      "candidate_descriptor_sha256": "17b147d5620d1dfd947128d518e7692e30573d30c9b67ec25cbde55e7e43e48b",
+      "candidate_input_schema_sha256": "2778fa5ca7a930f397858ae3b4d3d5e2584bb2e76981b6cb847f0f8b9a5bb842",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "compact",
+        "context_id",
+        "device_id",
+        "end_time",
+        "entity_id",
+        "hours_back",
+        "level",
+        "limit",
+        "offset",
+        "order",
+        "search",
+        "slug",
+        "source",
+        "structured",
+        "top_n"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_operation_status",
+      "baseline_classification": "held_for_canary",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "7060ebf800b763e27d284170d439b264bc1c3bcee634e51eca1492f96eb7e4da",
+      "base_input_schema_sha256": "3cb59e264ec039b5f32f2a22a9933eb305e88309ebbf454e15ee83d415a3d46e",
+      "candidate_descriptor_sha256": "91c86d81d794bf014c73d0a3d865f4c4479fd02ed6074bab43b93092b500d2a2",
+      "candidate_input_schema_sha256": "081ffbdb8daaef961ca53f6ddb9a709586df516f95f1e2f5476aad1f49113e7b",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "operation_id",
+        "timeout_seconds"
+      ],
+      "required_before": [
+        "operation_id"
+      ],
+      "required_after": [
+        "operation_id"
+      ]
+    },
+    {
+      "tool": "ha_get_overview",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "83638d6253696d063bc437a460c56c979dff347eaf83416a993693fa875ffebd",
+      "base_input_schema_sha256": "2623c1ff0b2739ce7bc7ac360dfb0a0f17c5379b79e92a4a1a2d0fe0bbb7c408",
+      "candidate_descriptor_sha256": "2d18473cf13f4e4bf480eaa880ce045a3d6f7ef1f6732bc00c2c7c96ed6b29b7",
+      "candidate_input_schema_sha256": "d287494e2dcacb47275acc04905cf63568ad5eee7576285a998be506d36149e3",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "detail_level",
+        "domains",
+        "fields",
+        "include_dismissed_repairs",
+        "include_notifications",
+        "limit",
+        "offset"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_skill_guide",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "7b460f165b00949166166c01f5e0ba6aebaeda521ad9a767a7da173a0baf887d",
+      "base_input_schema_sha256": "23273e157468cbcf4f9fadcffb25498bb5238f8fff63f8ea2c6b49f964b3fded",
+      "candidate_descriptor_sha256": "7bec4a41219000fda1e0181c085e424acc167692196c35dd177a778a75db3597",
+      "candidate_input_schema_sha256": "b9088e1e95822b05f2d1205f2979e9756d9fc303db1e1023597cfb56c0ae1133",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "file",
+        "skill"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_state",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "c9301754066f5d7c8cf0576ad3fe7039a897e777e48b839014fc2bbd72591ba8",
+      "base_input_schema_sha256": "bd1f2d5a94013f975b8aa5f0328cdcbe076dde11d99837876c03594580c5b78e",
+      "candidate_descriptor_sha256": "59292d5c4ac27405c5b4d2c92a206dee08b23be16ccd2a620b0d9d48196a25c8",
+      "candidate_input_schema_sha256": "079c4fa378e1f5c2b19f8c46bea46d5f572bc5b3724cb605794ff59edb942226",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "attribute_keys",
+        "fields"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_get_system_health",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "fdbd5889a779b92dce7906f8f834dc6930c3a876dcd5e1d359067380297e4e4a",
+      "base_input_schema_sha256": "0c51da5b9c5251dd16d134658f38a65feadb18801791865c736cea1ffc0cd623",
+      "candidate_descriptor_sha256": "4ee2d590c5a978460d0d8b43ed18de18c5596ab6c15368a328ee1f18f93fc777",
+      "candidate_input_schema_sha256": "569e6a4dc9c6e7b18d53b2704f2c8db0d2cbd2036e64514774021b0b75e4cd76",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config_entry_id",
+        "device_id",
+        "diagnostics_data_limit",
+        "diagnostics_data_offset",
+        "diagnostics_data_path",
+        "diagnostics_fields",
+        "diagnostics_truncate_at_bytes",
+        "include",
+        "include_dismissed_repairs"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_todo",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "1fc7e849282826fb62cca2c4fd63979edb1f8210d0996337f13caa5d57ca90eb",
+      "base_input_schema_sha256": "d5b701116d891710025c6d6674e494012663b31012745a1280e84a8a1289f43f",
+      "candidate_descriptor_sha256": "9f844f27d87d41d49440d5ac8d65bc568c8b91cb537d7e36ccd100d8c9f5972a",
+      "candidate_input_schema_sha256": "12e8313054860017feb901c9b96fceb00cae71c2dbd78afb90d50aaa933f8a70",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id",
+        "status"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_get_zone",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "abaaf02407389aa77218fb78646d362f90b618a07247f9e865456b8dc6fc5bc6",
+      "base_input_schema_sha256": "e201e1de2eac658f5a20b9369650f70e8f5e8c175f62f14fef4b4715a69425d1",
+      "candidate_descriptor_sha256": "84319c1c07da41639b87dbbd5ec15c280bb8c95d6ded00c883933f7625813124",
+      "candidate_input_schema_sha256": "70fdd40ad93278a5685654e046bb3cbac27c15cf8a6eba30b166c6f1d89470b2",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "zone_id"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_list_files",
+      "baseline_classification": "not in base catalog",
+      "baseline_automatic_read": false,
+      "presence": "added",
+      "candidate_descriptor_sha256": "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
+      "candidate_input_schema_sha256": "f73ece3674050fa7368b236782dae43b412b1575460a6d50cef8debe31e636b0"
+    },
+    {
+      "tool": "ha_list_floors_areas",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "f9ee7e147b624da138e10a04ef274e5322e7860b8378d5737448bc72c771b394",
+      "base_input_schema_sha256": "f8125c2a6b41b698bc110dc5ee2953b320ed914c66d2bffbe2a9ebec52a4c90f",
+      "candidate_descriptor_sha256": "b57de6f06c9276190bf1e1ab03ab18094c7be4a609833ac10145458cd1a51022",
+      "candidate_input_schema_sha256": "b81375d58db7ba1a03224194d3e054d4124e4261b99d76e54b7dda41cb38b55a",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "area_fields",
+        "fields"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_list_services",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "ee53c1110c57867d00b4c940302afaa03af144352ab16262cf8682a5eaf72113",
+      "base_input_schema_sha256": "95f2155e569c1fd77f1bd1fbd77413b151deb4d8acd300ad743be4a90e9dfdcc",
+      "candidate_descriptor_sha256": "8e9fb41afeb0ac82f51e4204c474a862c5a12b310ac80b2dc4a5da4e8acaf80f",
+      "candidate_input_schema_sha256": "da65206809eafce40f77be1ef87045a4155fd4c085b149b85a41c7d5db280ce1",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "detail_level",
+        "fields",
+        "limit",
+        "offset",
+        "service_fields"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_manage_app",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "8541fd5d1976e001b46768f127d504c88a191533cb8ca06bd18559c158fad1c1",
+      "base_input_schema_sha256": "ec3368b03c3bf6eef3840463ed368861b24516e350263e1832633b5c50c14330",
+      "candidate_descriptor_sha256": "d83b66277e56908ab093e99b2ba2cc2a637e1d7356a76d318bc802843bf0a8c3",
+      "candidate_input_schema_sha256": "d61129eed82d0aa0e841dc363189f6e9c1ed5a40041727bbf629ab2f06f498e7",
+      "changed_descriptor_fields": [
+        "_meta",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "action",
+        "debug",
+        "message_limit",
+        "message_offset",
+        "method",
+        "offset",
+        "path",
+        "port",
+        "python_transform",
+        "slug",
+        "summarize",
+        "wait_for_close",
+        "websocket"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_manage_backup",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "e737dd8c4c2cafaae9f9e34ff25ffb698985bb2083cd5e574a42c67592a8aa35",
+      "base_input_schema_sha256": "129925cdbe62a780a99e71725f8d36f7294c9b9e62ed773c4d2d903ce56c0d08",
+      "candidate_descriptor_sha256": "6a799079344a725227466ed7757de64a8cb784b77b927880c78406bbb75f135a",
+      "candidate_input_schema_sha256": "6d859e42f35256c77b7ff36b65986834dcdd46898532b7a5ba0e1fdad9384d04",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "confirm",
+        "include_addons",
+        "include_all_addons",
+        "include_database",
+        "include_folders",
+        "include_homeassistant",
+        "name",
+        "restore_addons",
+        "restore_database",
+        "restore_folders",
+        "safety_backup"
+      ],
+      "required_before": [
+        "scope",
+        "action"
+      ],
+      "required_after": [
+        "scope",
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_blueprints",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "273f75995b24d641be889b948e023f2f778a15e754d957bde5374c64fdc6c735",
+      "base_input_schema_sha256": "6a71b650a3286f3fd5cf80e71b7f96735b1fac98c45ffeb839519988c5ae71d9",
+      "candidate_descriptor_sha256": "1a9882dcad9b8daf98cf00a0e869fad2904963903e98c718396de0c5ec810b4b",
+      "candidate_input_schema_sha256": "6a09a0f2e070835f0c93ba40c643069f15168d36dfd1d76815775190a194388f",
+      "changed_descriptor_fields": [
+        "_meta",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "action"
+      ],
+      "required_before": [
+        "action"
+      ],
+      "required_after": [
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_energy_prefs",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "99fdfe3a3b1c25a364f1f975658b9e457b30212b80e88348abe55f8e1a55a188",
+      "base_input_schema_sha256": "5d64919e502ccc3f49ca2d756da8e145de14a9e73e43860ad179674cd56d3429",
+      "candidate_descriptor_sha256": "9231fdcf184e93342d178cb39c57bba72b1e5c72117b7af4c5d83214fa32e89a",
+      "candidate_input_schema_sha256": "cad51248a2a766e8f29eda27ae04234545e7c9884834149ae8926749264f7f8c",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config",
+        "config_hash",
+        "dry_run",
+        "include_schema",
+        "include_statistics",
+        "included_in_stat",
+        "mode",
+        "name",
+        "source",
+        "water"
+      ],
+      "required_before": [
+        "mode"
+      ],
+      "required_after": [
+        "mode"
+      ]
+    },
+    {
+      "tool": "ha_manage_hacs",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "161bd3434d6c7b901b99998a581e81503db9fac80240b8b86ac34fef168237fd",
+      "base_input_schema_sha256": "11ea5ac4b66be9fc3d142f19a9fa2aceeeb383e789ebd03a9674413097e78c3d",
+      "candidate_descriptor_sha256": "c3afad497c06aa5d87b5f4af6550e2b04b2946c711e47c2eaff71c5d1f131d78",
+      "candidate_input_schema_sha256": "abd7756255b16648b26f15f456ea7449bed042ae8083647a11485f41aa3a25d8",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "category",
+        "confirm_replace_built_in"
+      ],
+      "required_before": [
+        "action"
+      ],
+      "required_after": [
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_pipeline",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "50e61e4b705511d1b9f86df78e7aef4dea570c7ba621e229aee586c6166bc36c",
+      "base_input_schema_sha256": "9979863f422f1819df57adae8ef2d5ba27b69b8f531ba5e15ce06528b00aa2a9",
+      "candidate_descriptor_sha256": "7c15bbb8d04a1ed09d500b5aeaf9dbb2855a9c4a47edc5c36c18af9cbf0bb18f",
+      "candidate_input_schema_sha256": "26e62a2fcf5b9380c056916d31a5f6ce9564f21d2cf2b73c65fc08a6e5eef783",
+      "changed_descriptor_fields": [
+        "_meta",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "make_preferred",
+        "sentence"
+      ],
+      "required_before": [
+        "action"
+      ],
+      "required_after": [
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_radio",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "f8ead68bcd8f1186ce438e82176297ef0f7c0efe057d47f39b2f6180a8702180",
+      "base_input_schema_sha256": "e2c0d70bcafe313f34387dacadd335947f1e665e8c5ada2ecfabb2ab19e6c1bb",
+      "candidate_descriptor_sha256": "1589eeba8af06bace37c02300417929722205a8e5140bcf09b25fbd19ab04e41",
+      "candidate_input_schema_sha256": "e354d0c22d28de8597a6cca625631faf1eef176963bd6cf3cb271e1b270887ea",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "confirm",
+        "params"
+      ],
+      "required_before": [
+        "radio",
+        "action"
+      ],
+      "required_after": [
+        "radio",
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_theme",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "463916bcc9a586c2910a7ad09e3e8dbf2e87965b1d410cae770e37aed044010b",
+      "base_input_schema_sha256": "e0e84370e2a684da6c8d40ce2a6cfa8ab375a49438b7da34eb39cd8d7fa028d6",
+      "candidate_descriptor_sha256": "29661abd7bbcf9e157415268fce72c96cdac446ae5ca96c39f1ac9f14b996ef9",
+      "candidate_input_schema_sha256": "df81688be0edf468ae95607579aa99d3bad7df157c577a97afeead6203352197",
+      "changed_descriptor_fields": [
+        "_meta",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "action",
+        "expected_current",
+        "force",
+        "value"
+      ],
+      "required_before": [
+        "action"
+      ],
+      "required_after": [
+        "action"
+      ]
+    },
+    {
+      "tool": "ha_manage_updates",
+      "baseline_classification": "mixed_or_requires_wrapper",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "6bad28985596f2fe125989cdab903a2e2ef28d1e47d0d3b361e2ff3f23e2ae1f",
+      "base_input_schema_sha256": "ec325fb6beaae838848e85be6adc4a10a186fdd9d976da0e02471b7a50850ead",
+      "candidate_descriptor_sha256": "56aac667a36ed5d6f346b225430c6d8e3767d5ce8d9988331a2f2644d223582a",
+      "candidate_input_schema_sha256": "f4ef6524a497172563e5fa516eaea8b45baabc0a9cffe2fceabf7286cc6e5323",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "action",
+        "backup",
+        "categories",
+        "include_release_notes",
+        "include_skipped",
+        "repairs"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_read_file",
+      "baseline_classification": "not in base catalog",
+      "baseline_automatic_read": false,
+      "presence": "added",
+      "candidate_descriptor_sha256": "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
+      "candidate_input_schema_sha256": "543c645d9b128527cd182ec1e540e0118ce813fe8d76cc8c3ad6617db08308a5"
+    },
+    {
+      "tool": "ha_reload_core",
+      "baseline_classification": "physical_or_high_risk_action",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "1d57dead6854318ee2599512779f160096413eb906a01be905b16b03ccfe4c58",
+      "base_input_schema_sha256": "da77efa29e753982cfaaa2689dd9a91b3abe88652c628384ae4f11c55a5fad8a",
+      "candidate_descriptor_sha256": "e87ed65c1eba4216dbb53148f1097a45c4a2c59b535dfd3de53dd10631cda70c",
+      "candidate_input_schema_sha256": "2dcd5f2d55d3baa5231c3820c922c04793fde0fedbdf5b354adcc7b03c41b8b9",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entry_id",
+        "target"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_remove_area_or_floor",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "b23298d3e0cc29558e4cc158cf2a9b71c9715abc5cd03f94b0af4e8230ea383a",
+      "base_input_schema_sha256": "66761990cdc8eaa13cb15728962983132357920cae2d9837d60688f384d60dcf",
+      "candidate_descriptor_sha256": "8c76adb78ad944abef34c206b6398029f17cb37e412acefa19cfada2b4e4b78f",
+      "candidate_input_schema_sha256": "66761990cdc8eaa13cb15728962983132357920cae2d9837d60688f384d60dcf",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "kind",
+        "id"
+      ],
+      "required_after": [
+        "kind",
+        "id"
+      ]
+    },
+    {
+      "tool": "ha_remove_device",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "dfe821a3bfebeef53642ab2f65d3a4e7b95124bd5b425bf14435134138289ab5",
+      "base_input_schema_sha256": "08e36d4bc5071d719b72e57f83fa27bd8b212eea24b1671cab85953e52fe8a1a",
+      "candidate_descriptor_sha256": "ee5327784088db0e937078b5e2cf6a044d87e454d8f02a8539285da36cdc2233",
+      "candidate_input_schema_sha256": "08e36d4bc5071d719b72e57f83fa27bd8b212eea24b1671cab85953e52fe8a1a",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description"
+      ],
+      "changed_input_properties": [],
+      "required_before": [
+        "device_id"
+      ],
+      "required_after": [
+        "device_id"
+      ]
+    },
+    {
+      "tool": "ha_remove_entity",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "8857a7f17bea551f6ee7b0a08acf7993b8841120f48ffe30632877a0b3e027ee",
+      "base_input_schema_sha256": "4ba157e6a41148aff53c8eb251ba41517490c0014c24d73157a7a0b2940b7395",
+      "candidate_descriptor_sha256": "5bdd98c9becd09b9c7fd7106f10e258ea26983c57ccac9d5b24c4e78ebaa2cda",
+      "candidate_input_schema_sha256": "45f41638cfb7ad184d270aa96d5edfe9874438b529bdbb82b89dada18e09b081",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "entity_id"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_remove_helpers_integrations",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "524545ccb1f4e89589ab48da2a47c355dd777653f6e19b2fde6d09c4044375fc",
+      "base_input_schema_sha256": "cfc8b2d5fd720bb40945090c5b35d4079862c0cbd3c9a1f306ea4dd42af466af",
+      "candidate_descriptor_sha256": "b2b84f639d927e9a4e9bc74f2856a0dc52e16448463a5edbd7231cce90288f70",
+      "candidate_input_schema_sha256": "8ad730f9b98737d7f64c24d3eb0c4d0290066291ad948ffe5c06b64ee2122ea6",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "helper_type",
+        "target",
+        "wait"
+      ],
+      "required_before": [
+        "target"
+      ],
+      "required_after": [
+        "target"
+      ]
+    },
+    {
+      "tool": "ha_remove_todo_item",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "8893ff9c9f849a1a8e00c52e90f97942ddcc2c4a750724eafd35e5f2f0aafd1d",
+      "base_input_schema_sha256": "2317a1345355528079a413cf19cfb254b33598b9f7fd91a631a08acb4101c01f",
+      "candidate_descriptor_sha256": "07b7ed8a1425aff25a812f27128704abc79b0e2d2c2c2476519a006bc122fda2",
+      "candidate_input_schema_sha256": "0b90bff9c3f18244065809bef22a0ada5cdc1d0b24fd4a1e5865128b4e9361b8",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "item",
+        "remove_completed"
+      ],
+      "required_before": [
+        "entity_id",
+        "item"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_remove_zone",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "fb433ac044beb96ce18f594a7b8f7a5a998f7eb92b4c64305a956525a2e68b01",
+      "base_input_schema_sha256": "c4e571564a0ab430d10edce723c21b4bbe12e74106cbb3e80b3f42bf4a48b8d4",
+      "candidate_descriptor_sha256": "2ecef2edec35afe8a177c0751bb316ef8c36c148173790750ee244f16a986108",
+      "candidate_input_schema_sha256": "1e34bcf163a5baa5f163487ad9e9f3aeb7681310ef918df765813b2a2834066a",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "wait",
+        "zone_id"
+      ],
+      "required_before": [
+        "zone_id"
+      ],
+      "required_after": [
+        "zone_id"
+      ]
+    },
+    {
+      "tool": "ha_report_issue",
+      "baseline_classification": "prohibited",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "9726306ccfef041715ce2cfcbaf52c5c37a190d75238796697f6a018891d4ace",
+      "base_input_schema_sha256": "6837b90a0d82fa5db0fec8b28fcc33a9119caee71bfd15bcae48a8443b6e7c5c",
+      "candidate_descriptor_sha256": "29f41f1f674b0f41b3e8575e4e24ab252df6fb6d29921ad613b57ad7614537ee",
+      "candidate_input_schema_sha256": "990d1a38b9b14600a2faab9124512f0606893112e5acab63cd45a401b8575859",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "ai_model",
+        "client_app",
+        "description",
+        "fields",
+        "report_type",
+        "title",
+        "tool_call_count",
+        "tool_calls",
+        "user_comment",
+        "user_prompt"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_restart",
+      "baseline_classification": "physical_or_high_risk_action",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "6f445f6ba5ca37de5933ce13c0d523be9834f828b5fb457a0fdf700378c664ca",
+      "base_input_schema_sha256": "d926b42fa673c32978d3d0de151dc2c945daf165c4328d14cad20ed10d992eaf",
+      "candidate_descriptor_sha256": "0b000454f1faf2f9f49cbee8d0ba94446702c09dfe605450f355d63168297f57",
+      "candidate_input_schema_sha256": "389e5022980d435c76488094b21e85f2bf77403fe62073a8be365d3609ea0acc",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "confirm",
+        "safe_mode"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_search",
+      "baseline_classification": "automatic_read",
+      "baseline_automatic_read": true,
+      "presence": "both",
+      "base_descriptor_sha256": "05584820f96f51682412560a162cbe09cb16c3f00ed60edbbccdb55decdfe955",
+      "base_input_schema_sha256": "c6bd01c71eea48b7fbe75c8d86f762b2336ab685e99b3e16acd91bed73e3d5bf",
+      "candidate_descriptor_sha256": "f077c0535708e89c7023ca39a13f29ee375263c7555449b5df839c50c32f7edf",
+      "candidate_input_schema_sha256": "58ed5cc91f928d9dc33437a97ad0ae46641b17891dfed2f7657f2658c83276c5",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "area_filter",
+        "config_time_budget",
+        "domain_filter",
+        "exact_match",
+        "include_config",
+        "limit",
+        "query",
+        "result_fields",
+        "search_types"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_set_area_or_floor",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "6e22a3931d0fab6331d0db22c437f70c6d55dca26840d8dc3136824927fd6f67",
+      "base_input_schema_sha256": "f9348b7ca169dc6d237177c70343b8db7918fa4216922262f02f614504440601",
+      "candidate_descriptor_sha256": "5f34f886354150b369c4e3f561ba51ea9a8439f4de8c1698f8cd02eb30fc4ee7",
+      "candidate_input_schema_sha256": "d996015010ff93a590fabd93549de694599a2b633f28107fb0630da9d254055e",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "floor_id",
+        "humidity_entity_id",
+        "icon",
+        "id",
+        "labels",
+        "level",
+        "picture",
+        "temperature_entity_id"
+      ],
+      "required_before": [
+        "kind"
+      ],
+      "required_after": [
+        "kind"
+      ]
+    },
+    {
+      "tool": "ha_set_device",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "49cf5af8c81c082b14b184ac4df9758a892f84c2253248486d5990a0edf6d569",
+      "base_input_schema_sha256": "8ed2e7db59647cf965e2c6e5687b8f7964218ee1f0f9630809ad6d18a7a61421",
+      "candidate_descriptor_sha256": "8c497c325d38c1be52891ad720b1027f9ea4162d6c550b8390cfa28ab625bcc5",
+      "candidate_input_schema_sha256": "60381c7959311c05c67d88184e1f325145c70e2fce6bae182b7787cf9694e2b5",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "area_id",
+        "disabled_by",
+        "name"
+      ],
+      "required_before": [
+        "device_id"
+      ],
+      "required_after": [
+        "device_id"
+      ]
+    },
+    {
+      "tool": "ha_set_entity",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "d995123b36b9f1008f5b75fd9555dbd3cfe76bbe91b785b9fedab70fc0c07c86",
+      "base_input_schema_sha256": "5ad85c5f851aa3d4014761b69779fd2930f6b1f79e863af840942e6f76b9dca9",
+      "candidate_descriptor_sha256": "897634979f488a79779f7a8dc762fbdb113db0720aab7c7bb2f4d7a7d36ab94a",
+      "candidate_input_schema_sha256": "bdd931b6df3677fd58e90de29633e98f5b5750b1d508e10514a650b491936141",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "aliases",
+        "area_id",
+        "categories",
+        "device_class",
+        "enabled",
+        "entity_id",
+        "expose_to",
+        "hidden",
+        "icon",
+        "labels",
+        "name",
+        "new_device_name",
+        "new_entity_id",
+        "options",
+        "use_device_name",
+        "use_entity_name_alias"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_set_integration",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "a7b3d9920e9e247e099a2febf6e652f6317b49d6d2538cba60f6217a1b02d94b",
+      "base_input_schema_sha256": "bf8b798421b7d60db15ac753243739617a4edd635a855fb650d25fd44ba77c4f",
+      "candidate_descriptor_sha256": "eb70e02d28f5749cca46bcd2f7d041ec5746dd4e1fcd479fa1352349a4bb3c88",
+      "candidate_input_schema_sha256": "451919094d8a14c8ca950315f22f42b1787d21c6ec9f1566adaa723037a45a0c",
+      "changed_descriptor_fields": [
+        "_meta",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "config",
+        "confirm_token",
+        "domain",
+        "enabled",
+        "entry_id",
+        "log_level"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_set_todo_item",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "235b398dc873a9a5bd36960e515d0266521cd5720a01010c9c9d47dd0b7183d4",
+      "base_input_schema_sha256": "2353aa48077095d8e0965f9ea839dcddb291f65c3d19ab61cdf9bd963ead226d",
+      "candidate_descriptor_sha256": "4ee6ad6c1d01a172f31c0f683b3351cef0eb9733baf91b18167916c24fc98a8e",
+      "candidate_input_schema_sha256": "e380e82228e5310c5ee3e854c9cd0ad657e4c6e53ac8e1d36eb247680d127ab7",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "description",
+        "due_date",
+        "due_datetime",
+        "item",
+        "move_after",
+        "rename",
+        "status",
+        "summary"
+      ],
+      "required_before": [
+        "entity_id"
+      ],
+      "required_after": [
+        "entity_id"
+      ]
+    },
+    {
+      "tool": "ha_set_zone",
+      "baseline_classification": "persistent_write",
+      "baseline_automatic_read": false,
+      "presence": "both",
+      "base_descriptor_sha256": "548a362a68bf24fc7d3e851d0a569579c60e133420c3385031699776e538a776",
+      "base_input_schema_sha256": "1e362d990c9813075cef3001435b74b9ddbcf266f26c1537fc3f9127ee33a22f",
+      "candidate_descriptor_sha256": "e212e358da774cba4b716a69319a5703e2a13e03af4ea64520425cb721f7fd78",
+      "candidate_input_schema_sha256": "e747612372a7aca5d02daf88c64791249b4164981a50676b93e8260e9b92ad60",
+      "changed_descriptor_fields": [
+        "_meta",
+        "annotations",
+        "description",
+        "inputSchema"
+      ],
+      "changed_input_properties": [
+        "icon",
+        "latitude",
+        "longitude",
+        "name",
+        "passive",
+        "radius",
+        "wait",
+        "zone_id"
+      ],
+      "required_before": [],
+      "required_after": []
+    },
+    {
+      "tool": "ha_write_file",
+      "baseline_classification": "not in base catalog",
+      "baseline_automatic_read": false,
+      "presence": "added",
+      "candidate_descriptor_sha256": "0f638d1b0f3795e12ebada76456605192c28704a3222060c6d121842ab5bdffe",
+      "candidate_input_schema_sha256": "363bb5fd8f8da6ab17823c7e9f63150eaa0ffffcc9722c04ef9b80e32b59c16d"
+    }
+  ]
+}
