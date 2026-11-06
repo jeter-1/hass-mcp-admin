@@ -1053,8 +1053,17 @@ class PublishingJobGuardTests(unittest.TestCase):
         self.assertEqual(jobs["verify-release"]["permissions"], {"contents": "read"})
         self.assertEqual(jobs["verify-image"]["permissions"], {"contents": "read"})
         self.assertEqual(jobs["summary"]["permissions"], {})
-        # The validation stack still runs, in a job that cannot publish.
-        self.assertIn("unittest", json.dumps(jobs["verify-release"]))
+        # HAMCP-314: the exact-release stack runs and aggregates in read-only
+        # jobs; every publishing phase waits for that complete proof.
+        for name in ("verify-release-shards", "verify-release-aggregate"):
+            self.assertEqual(jobs[name]["permissions"], {"contents": "read"})
+            self.assertIn("tests/requirements.lock", json.dumps(jobs[name]))
+        self.assertIn('release-unit-test-shards.py" run',
+                      "\n".join(step.get("run", "") for step in jobs["verify-release-shards"]["steps"]))
+        self.assertIn('release-unit-test-shards.py" aggregate',
+                      "\n".join(step.get("run", "") for step in jobs["verify-release-aggregate"]["steps"]))
+        for name in self.PUBLISHING_JOBS:
+            self.assertIn("verify-release-aggregate", jobs[name]["needs"])
 
     def test_pre_split_promote_pattern_fails(self) -> None:
         # The old single promote job: persisted checkout credentials, a pip
