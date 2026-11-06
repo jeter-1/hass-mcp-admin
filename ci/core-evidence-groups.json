@@ -53,5 +53,8 @@
   ],
   "scene_configuration": [
     "core.scene_configuration_operation"
+  ],
+  "helper_value": [
+    "core.typed_helper_value_operation"
   ]
 }

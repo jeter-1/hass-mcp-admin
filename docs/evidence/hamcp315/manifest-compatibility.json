@@ -1,0 +1,45 @@
+{
+  "model": "helper-manifest-compatibility-v1",
+  "manifest_paths": 456,
+  "sources": [
+    {
+      "version": "2026.10.3",
+      "source_commit": "1f214b8461dd1fbbd66e10765c6905f49d3c1d86",
+      "source_archive_sha256": "57a15d2dcabb8703c9b9d08e8c243e8a7130db8cb8618e1c799ae46e1c75e4e9",
+      "identical_source_inherits": true,
+      "missing_paths": [
+        "homeassistant/components/button/entity.py",
+        "homeassistant/components/counter/entity.py",
+        "homeassistant/components/counter/services.py",
+        "homeassistant/components/input_boolean/entity.py",
+        "homeassistant/components/input_boolean/services.py",
+        "homeassistant/components/input_button/const.py",
+        "homeassistant/components/input_button/entity.py",
+        "homeassistant/components/input_button/services.py",
+        "homeassistant/components/input_datetime/entity.py",
+        "homeassistant/components/input_datetime/services.py",
+        "homeassistant/components/input_number/entity.py",
+        "homeassistant/components/input_number/services.py",
+        "homeassistant/components/input_select/entity.py",
+        "homeassistant/components/input_select/services.py",
+        "homeassistant/components/input_text/entity.py",
+        "homeassistant/components/input_text/services.py",
+        "homeassistant/components/number/entity.py",
+        "homeassistant/components/select/entity.py",
+        "homeassistant/components/text/entity.py",
+        "homeassistant/components/timer/entity.py",
+        "homeassistant/components/timer/services.py"
+      ]
+    },
+    {
+      "version": "2026.11.0",
+      "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+      "source_archive_sha256": "85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1",
+      "identical_source_inherits": true,
+      "missing_paths": [
+        "homeassistant/helpers/condition.py"
+      ]
+    }
+  ],
+  "judgment": "Josh 2026-11-05: shared absence is equal; one-sided absence or modified bytes requires a source judgment. Every path must exist in at least one bound committed source record."
+}
