@@ -767,5 +767,14 @@ class RawArgumentGatewayTests(RawArgumentAssertions, unittest.TestCase):
         self.assertEqual([call["lookback_hours"] for call in provider.calls], [1, 1])
 
 
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic gateway does not redact
+    # another module's data in the same test process.
+    from ha_mcp_engineering import secret_paths
+
+    secret_paths.reset()
+
+
 if __name__ == "__main__":
     unittest.main()
