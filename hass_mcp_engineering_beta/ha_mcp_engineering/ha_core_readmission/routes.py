@@ -624,6 +624,16 @@ def delegated_provider_compatibility(
         return True, None
     if adapter_version in probe_profile.delegated_device_adapters:
         return True, None
+    # HAMCP-319 section 5: the exact 9.1.0 adapter receives the same
+    # binary-owned binding as 8.5.0 (both strict profiles). Its device-row
+    # fetch, effective-area annotation, child-row config-entry selection and
+    # device builder are byte-identical to 8.5.0 apart from the enrichment
+    # helpers' module; signed Core profiles and fingerprints are unchanged.
+    if adapter_version == "9.1.0" and probe_profile in (
+        CHILD_DEVICE_PROBE_PROFILE,
+        CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
+    ):
+        return True, None
     return False, "ha_mcp_child_device_contract_unproven"
 
 
