@@ -11,9 +11,11 @@ reads configuration, logs or a real secret path, and no network is used.
 
 1. Regressions: the corrected test module, run against each reviewed head
    (7d8f2158 for F1-F3, fe48d80f for the round-3 F1 residual R1, 2524b2f7
-   for the round-3 Low L1, a separator-only decoded secret path, and
-   d4e37618 for L1R, a route-word-only decoded secret path, Josh decision
-   2026-11-07), must fail each named regression test by an assertion.
+   for the round-3 Low L1, a separator-only decoded secret path, d4e37618
+   for L1R, a percent-encoded route-word-only secret path, Josh decision
+   2026-11-07, and b1f38fbe for L1E, the same refusal applied to unencoded
+   route-word paths, which Josh's refining decision 2026-11-07 accepts as
+   before), must fail each named regression test by an assertion.
 2. Mutants: each mutant reopens one reviewed defect in the corrected source
    and is killed only by an assertion failure in its named test; an error,
    import failure or survival is not a kill.
@@ -35,6 +37,9 @@ REVIEWED_R4 = "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed"
 # Round 4 follow-up: the pushed round-4 head before the route-word refusal
 # (Josh decision 2026-11-07).
 REVIEWED_R4B = "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358"
+# Round 4 refinement: the head that refused unencoded route-word paths too,
+# before Josh limited the refusal to percent-encoded spans (2026-11-07).
+REVIEWED_R4C = "b1f38fbef2a76c90b3e92d899de688c448346a45"
 MODULE = "tests.test_hamcp288_secret_path_containment"
 TEST_FILE = "tests/test_hamcp288_secret_path_containment.py"
 SECRET_PATHS = "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py"
@@ -101,9 +106,14 @@ regressions_r4b = [
     ("L1R", R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
     ("L1R", R + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
     ("L1R", R + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
-    ("L1R", G + "test_every_accepted_custom_path_is_configured_and_contained_on_every_surface"),
-    ("L1R", G + "test_selector_words_are_credentials_only_in_credential_position"),
 ]
+regressions_r4c = [
+    ("L1E", R + "test_unencoded_route_word_paths_are_accepted_as_before"),
+    ("L1E", G + "test_every_accepted_custom_path_is_configured_and_contained_on_every_surface"),
+    ("L1E", G + "test_selector_words_are_credentials_only_in_credential_position"),
+    ("L1E", G + "test_the_process_streams_contain_each_edge_value"),
+]
+ENCODED = "    if unquote(span) == span:\n        return False\n"
 ROUTE_REFUSAL = "        raise RouteOnlySecretPathError(ROUTE_ONLY_SECRET_PATH_REASON)\n"
 GUARD = "    unanchorable = _separator_only(raw_parts) or _route_only(raw_parts)\n"
 ROUTE_WORD = "    return part in SELECTOR_WORDS or part.lower() in ROUTE_SEGMENTS\n"
@@ -178,15 +188,23 @@ mutants = [
     ("L1R", "the reason carries the configured value", CONFIGURATION, ROUTE_REFUSAL,
      '        raise RouteOnlySecretPathError(f"{ROUTE_ONLY_SECRET_PATH_REASON}: {candidate}")\n',
      R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1E", "unencoded route-word paths refused again (no encoded-span check)", SECRET_PATHS, ENCODED,
+     "    if False:\n        return False\n",
+     R + "test_unencoded_route_word_paths_are_accepted_as_before"),
+    ("L1E", "the derive guard drops the decoded base of an unencoded route-word span", SECRET_PATHS, GUARD,
+     "    unanchorable = _separator_only(raw_parts) or _route_only(raw_parts) or (\n"
+     "        bool(_decoded_span(raw_parts)) and all(_route_word(part) for part in _decoded_span(raw_parts)))\n",
+     R + "test_unencoded_route_word_paths_are_accepted_as_before"),
 ]
 
 results = {"head": HEAD, "reviewed_head": REVIEWED, "reviewed_head_r3": REVIEWED_R3,
            "reviewed_head_r4": REVIEWED_R4, "reviewed_head_r4b": REVIEWED_R4B,
+           "reviewed_head_r4c": REVIEWED_R4C,
            "python": sys.version.split()[0], "regressions": [], "mutants": [], "control": None}
 corrected_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
 index = 0
 for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3), (REVIEWED_R4, regressions_r4),
-                         (REVIEWED_R4B, regressions_r4b)):
+                         (REVIEWED_R4B, regressions_r4b), (REVIEWED_R4C, regressions_r4c)):
     checkout(revision)
     (COPY / TEST_FILE).write_bytes(corrected_tests)
     for finding, test in tests:
