@@ -23,6 +23,23 @@ behaviour, schema, tool, workflow, version, or release declaration.
   `f77b7ae946a0902136faadb3cfe45d17aca24fa639c43189295e101f5e47f425`) are
   byte-identical across all three tags. Upstream line numbers are quoted at
   `2026.10.1` and hold for all three tags.
+- Upstream authority, Core `2026.11.0` (`74cf5a49c63ed8d4d87717844bf14f79c28c9cea`;
+  the tag resolves to this commit, and the base already binds this version in
+  `scripts/core_lane_bindings.py` L61-L63, HAMCP-280). At this tag the two
+  rename files differ from 2026.10.x: `config/entity_registry.py` has sha256
+  `269e4b5123f3613f46c81a04fa2057d8e5461a14bde065fc5318434db53bee9f` and
+  `helpers/entity_registry.py` has sha256
+  `a16d82bb68ceb680875c9fd8905d7c6f30d0cd39ed7ee7a12ded2c4a9d565088`. The
+  rename path through `config/entity_registry/update` (with only
+  `{entity_id, new_entity_id}`) and `config/entity_registry/get` is unchanged
+  (section 2.4 gives the 2026.11.0 line numbers). The handler changes at this
+  tag concern `disabled_by` only. The running-entity side
+  (`helpers/entity.py`) changed: section 2.4 describes that difference.
+- Signed admission: the canonical signed Core registry journal is the
+  `registry` branch (tip `e486028ed0b06b8a5a737824c829705b403b34d8`, seq 17;
+  seq 16 is `cf415e29`). Seq 16 and seq 17 both include Core 2026.11.0. The
+  `upstream-trust/ha-core-release-registry.json` copy on the base is frozen at
+  seq 15 and is not the authority for currently signed versions.
 
 ## 1. Register outcome and binding decisions
 
@@ -136,10 +153,11 @@ loop `break`s on the first child whose terminal outcome is not
    dashboard setter ([`F3_DASHBOARD_WRITE_CONTRACT.md`](F3_DASHBOARD_WRITE_CONTRACT.md)),
    not through a configuration-plan child.
 
-### 2.4 Exact Home Assistant behaviour of a rename (upstream, Core 2026.10.x)
+### 2.4 Exact Home Assistant behaviour of a rename (upstream, Core 2026.10.x and 2026.11.0)
 
 Each claim below is grounded in exact-tag source. URLs are given at
 `2026.10.1`; the files are byte-identical at `2026.10.0` and `2026.10.3`.
+Core `2026.11.0` (`74cf5a49`) is covered by the note at the end of this list.
 
 - **Command.** `config/entity_registry/update` is `@require_admin`
   ([config/entity_registry.py#L153-L197](https://github.com/home-assistant/core/blob/2026.10.1/homeassistant/components/config/entity_registry.py#L153-L197)).
@@ -192,6 +210,50 @@ Each claim below is grounded in exact-tag source. URLs are given at
 - **Automatic path.** `config/entity_registry/...` also offers
   `async_regenerate_entity_id` (L362). That is an automatic id path and is
   out of scope.
+- **Core 2026.11.0 (`74cf5a49`).** Checked against exact-tag source only.
+  - `config/entity_registry/get`
+    ([L99-L122](https://github.com/home-assistant/core/blob/2026.11.0/homeassistant/components/config/entity_registry.py#L99-L122))
+    is unchanged: it returns `ERR_NOT_FOUND` for an unknown id (L117) and
+    `entry.extended_dict` otherwise (L122).
+  - `config/entity_registry/update`
+    ([L153-L283](https://github.com/home-assistant/core/blob/2026.11.0/homeassistant/components/config/entity_registry.py#L153-L283))
+    keeps `@require_admin` (L153), `Optional("new_entity_id"): str` (L177),
+    `ERR_NOT_FOUND` (L213), `new_entity_id` in `changes` (L226), `invalid_info`
+    on `ValueError` (L265), the switch to the new id (L269-L270), and the
+    `{"entity_entry": entity_entry.extended_dict}` response (L283). The only
+    handler changes at this tag concern `disabled_by`: the "Device is disabled"
+    refusal on enable is removed, and the reload hint now keys on a
+    disabled-to-enabled transition. A rename-only request does not reach
+    either change.
+  - Validation in `_async_update_entity` (L2022) is identical to 2026.10.1
+    ("already registered" L2136, "Invalid entity ID" L2139, "same domain"
+    L2142). `_entity_id_available` (L1435-L1447) is identical, so the
+    deleted-id caveat still holds. The entities map pops the old key at L2218,
+    and the event carries `old_entity_id` at L2233. The event's `changes` now
+    also drops `compat_name` (a new registry field). Other registry changes at
+    this tag (`compat_name`, minor storage version 24, the derived
+    `disabled_by` path, and the area or child-device checks) are not triggered
+    by a rename-only update. Readback compares preflight with post-apply on the
+    same Core, so a different field set on 2026.11.0 does not affect the
+    "every other field equals preflight" check (section 3.1).
+  - Recorder `entity_registry.py` changed only its imports. The migration
+    listener (L24-L44) and the "already in use" warning (L73) are unchanged.
+    `helpers/helper_integration.py` is byte-identical
+    (`eedfca79e0ac213fcf45cd4bcab6fa82ddd0a511e3723485388ab55657fb8972`).
+  - **Running entity changed.** In `helpers/entity.py` at 2026.11.0
+    ([L1712-L1810](https://github.com/home-assistant/core/blob/2026.11.0/homeassistant/helpers/entity.py#L1712-L1810))
+    an entity of a Core integration is renamed **in place**. Core removes the
+    old state, moves the entity's registrations to the new id, and writes the
+    new state (L1773-L1788) without removing and re-adding the entity. Only
+    custom-integration classes that define add or remove hooks without
+    `async_entity_id_changed` still take the force-remove and re-add path
+    (`_entity_class_requires_readd`, L115; `_async_readd_on_entity_id_change`,
+    L1790-L1810; removal planned for Core 2027.11). A disabled entity is still
+    only removed. This changes nothing in the design. The state-machine
+    outcome stays a bounded observation and is not a verification gate
+    (section 3.1). Engineering does not rely on its timing relative to the
+    websocket result. The disclosure names the outcome as "re-add or in-place
+    move", depending on Core version and integration.
 
 ## 3. Proposed design
 
@@ -239,7 +301,7 @@ plus the following:
 - `steps`, each with its compensation (section 3.2).
 - `breaks`: the statement of what will break.
 - `consequences`: recorder migration, helper config-entry follow/reload,
-  deleted-id caveat, and asynchronous re-add.
+  deleted-id caveat, and asynchronous re-add or in-place move (section 2.4).
 
 **Routing and provider.** The step is Engineering-native, direct Home
 Assistant, following the 069A pattern:
@@ -257,7 +319,7 @@ Assistant, following the 069A pattern:
 - The static tool target lease (069A V11, `routes.py:803`) returns
   `{"target_type": "entity_registry_rename", "target_id": <old entity_id>}`.
 
-**Core commands** (all `@require_admin`, Core 2026.10.x):
+**Core commands** (Core 2026.10.0, 2026.10.1, 2026.10.3 and 2026.11.0; `config/entity_registry/update` is `@require_admin`, while `config/entity_registry/get` carries no admin decorator):
 
 | Phase | Command | Purpose |
 | --- | --- | --- |
@@ -309,9 +371,10 @@ found, the outcome is `already_present`, with no dispatch.
 2. Every other field equals preflight, except `entity_id` and `modified_at`.
 3. `get(<old>)` returns `ERR_NOT_FOUND`.
 
-The re-add in the state machine is asynchronous (section 2.4) and is reported
-as a bounded **observation**, not a verification gate. A disabled entity never
-re-adds. Recorder migration and helper config-entry follow-up cannot be
+The state-machine outcome (an asynchronous re-add on 2026.10.x, or on
+2026.11.0 an in-place move for Core integrations and a re-add for unmigrated
+custom integrations; section 2.4) is reported as a bounded **observation**,
+not a verification gate. A disabled entity never re-adds. Recorder migration and helper config-entry follow-up cannot be
 verified through any admitted read. They are disclosed as unverified Core
 consequences and are never reported as verified.
 
@@ -334,7 +397,7 @@ projection show the following:
   - helper config-entry follow and reload;
   - the deleted-entity-id caveat (an id held by a deleted registry entry
     counts as free);
-  - asynchronous re-add.
+  - asynchronous re-add, or in-place move on Core 2026.11.0 (section 2.4).
 
 Disclosure never downgrades risk and is not fingerprinted beyond the existing
 HAMCP-270 rules. Consequence labels stay decision support (HAMCP-109 Notes).
@@ -519,9 +582,9 @@ are not built.
 
 | Holder | Write adapter | Signed for | Eligible as a dependent step |
 | --- | --- | --- | --- |
-| Automation | Existing governed configuration adapter | `core_governed_configuration_operation_v1` on 2026.10.0/10.1/10.3 | Yes |
+| Automation | Existing governed configuration adapter | `core_governed_configuration_operation_v1` on 2026.10.0/10.1/10.3/11.0 | Yes |
 | Script | Same | Same | Yes |
-| Scene | HAMCP-071 `scene_configuration` | `core_scene_configuration_operation_v1` on **2026.10.3 only** (registry seq 15) | Only on Core versions where signed; otherwise listed as not rewritten |
+| Scene | HAMCP-071 `scene_configuration` | `core_scene_configuration_operation_v1` on **2026.10.3 and 2026.11.0 only** (canonical registry seq 16 and 17; not 2026.10.0 or 2026.10.1) | Only on Core versions where signed; otherwise listed as not rewritten |
 | Dashboard | Delegated ha-mcp dashboard setter under `ChangeOperation.UPDATE_DASHBOARD`, not a configuration-plan child | n/a | **Not without new scope.** Making it a child would put a delegated provider write inside a configuration plan. That is a new provider-dispatch path and a security architecture change (root AGENTS.md). Listed in Q1 as option B2 |
 | Group | None | n/a | No: disclose only |
 | Template | No read path (HAMCP-264) and no write adapter | n/a | No: disclose as `unavailable` |
@@ -594,10 +657,10 @@ profile of its own. This follows HAMCP-222 ("no Core signing by itself").
 
 | Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Can it batch with other 2.6 profiles |
 | --- | --- | --- | --- | --- | --- |
-| `core.entity_registry_rename_operation` (profile_id `core_entity_registry_rename_operation_v1`) | **New** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the compensation step | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes.** Needs owner-signed registry entries for every supported Core version (2026.10.0, 2026.10.1, 2026.10.3, and 2026.11.0 if registry seq 16 is signed first). These fit in one envelope with the other 2.6 profiles. The profile stays dormant (the tool refuses) until signed |
+| `core.entity_registry_rename_operation` (profile_id `core_entity_registry_rename_operation_v1`) | **New** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the compensation step | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes.** Requires owner-signed registry entries for each of Core 2026.10.0, 2026.10.1, 2026.10.3 and 2026.11.0. These are the Core versions the base binds (`scripts/core_lane_bindings.py`) and the canonical journal signs (seq 17 includes 2026.11.0). These fit in one envelope with the other 2.6 profiles. The profile stays dormant (the tool refuses) until signed |
 | `core.entity_registry_metadata_operation` (`core_entity_registry_metadata_operation_v1`) | Unchanged | None | `new_entity_id` is deliberately **not** added to the metadata closed fields | None: stays `sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767` | n/a |
 | `core.governed_configuration_operation` (`core_governed_configuration_operation_v1`) | Unchanged (reused only under Q1 option B or C) | None | Automation and script rewrite and compensation steps use the existing adapters | None | n/a |
-| `core.scene_configuration_operation` (`core_scene_configuration_operation_v1`) | Unchanged (reused only under Q1 option B); signed today for 2026.10.3 only | None | Scene rewrite steps are admitted only where this profile is signed | None. Extending to other Core versions would add signed entries, not a contract change | Yes, if Josh wants scene rewrites on more Core versions |
+| `core.scene_configuration_operation` (`core_scene_configuration_operation_v1`) | Unchanged (reused only under Q1 option B); signed today for 2026.10.3 and 2026.11.0 only (canonical registry seq 16 and 17) | None | Scene rewrite steps are admitted only where this profile is signed | None. Extending to other Core versions would add signed entries, not a contract change | Yes, if Josh wants scene rewrites on more Core versions |
 
 No signing happens in this PR or in any agent PR. Signing is Josh's owner
 action, outside the repository workflow.
@@ -637,8 +700,8 @@ as well as the refusal code.
 an entity without hand-editing:
 
 - A1. An owner-approved rename of an actuator entity with known references
-  applies once, verifies by exact readback, and reports the async re-add
-  observation. This includes the 069A E1-style case where the policy class is
+  applies once, verifies by exact readback, and reports the re-add or
+  in-place move observation. This includes the 069A E1-style case where the policy class is
   elevated: an exact owner-authorized operation stays actionable despite a
   high consequence label (`hass_mcp_engineering_beta/AGENTS.md`).
 - A2. Under option B or C: rename plus rewrites of two automations and one
@@ -731,7 +794,7 @@ The build target release depends on Q4. HAMCP-109 is recorded as "IN 3.0".
 | S1 | Rename resource, planner, tool `create_entity_rename_plan` (81 → 82), F3 identity, dormant runtime-only profile, provider contract, preflight, readback, V9, `rollback_change` support; single-step plans only (`ordered_stop_on_failure` is enough for one step) | S0; 2.5.0 landed | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | S2 | Generic `dependency_bound_compensating_v1` in F3: persisted compensation, lock-union transfer, compensation phase, outcomes, restart rules, downgrade proof; tests use the rename step as the forward/compensation pair | S1 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | S3 | Dependent rewrite steps per Q1 (skipped under option A) | S2; Q1(b)/(c); for scenes, signing coverage | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
-| S4 | Owner signing: registry envelope adding `core_entity_registry_rename_operation_v1` for each supported Core version, batched with other 2.6 profiles | S1 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
+| S4 | Owner signing: registry envelope adding `core_entity_registry_rename_operation_v1` for each of Core 2026.10.0, 2026.10.1, 2026.10.3 and 2026.11.0, batched with other 2.6 profiles | S1 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
 | S5 | Version transition and release documents | Josh's release decision | `.release/`, `config.yaml` |
 
 **Overlap with in-flight 2.5.0 work.** 2.5.0 wins shared files, and S1-S3 will
