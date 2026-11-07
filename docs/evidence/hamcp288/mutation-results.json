@@ -1,0 +1,374 @@
+{
+  "head": "42f97fcc8c55ce3342e2e8f1ff32ead309e2ee21",
+  "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+  "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+  "reviewed_head_r4": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+  "reviewed_head_r4b": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+  "python": "3.13.5",
+  "regressions": [
+    {
+      "id": 1,
+      "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "GrammarContainmentTests.test_the_process_streams_contain_each_edge_value",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "GrammarContainmentTests.test_refused_values_never_reach_an_output_and_unparseable_ones_fail_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "SerializedEscapeTests.test_every_serialization_depth_is_recognized",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "SerializedEscapeTests.test_responses_streams_and_listeners_never_reconstruct_the_path",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "SerializedEscapeTests.test_the_renderer_screens_values_before_serialization",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F3",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "StreamOverflowTests.test_the_reviewed_alignment_is_redacted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "F3",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+      "test": "StreamOverflowTests.test_every_split_across_the_bound_in_every_write_pattern",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_the_complete_decoded_path_is_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_split_writes_never_reassemble_the_decoded_path",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_the_process_streams_contain_the_decoded_path",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "finding": "F1",
+      "name": "an accepted value without a long credential installs no guard",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1",
+      "name": "selector words dropped from credential position",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F2",
+      "name": "single-backslash Unicode escape only",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "SerializedEscapeTests.test_every_serialization_depth_is_recognized",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F2",
+      "name": "renderer screens only on a serialized match",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py",
+      "test": "SerializedEscapeTests.test_the_renderer_screens_values_before_serialization",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F3",
+      "name": "overflow flushes the whole buffer and forgets the cut",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "StreamOverflowTests.test_the_reviewed_alignment_is_redacted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F3",
+      "name": "no held window at the bound",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "StreamOverflowTests.test_every_split_across_the_bound_in_every_write_pattern",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F3",
+      "name": "the stream's own cut is not evidence",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "StreamOverflowTests.test_a_held_tail_after_a_bounded_write_keeps_its_cut_evidence",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "R1",
+      "name": "the complete decoded path filtered by the fragment threshold again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "DecodedShortPathTests.test_the_complete_decoded_path_is_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "R1",
+      "name": "the short whole path matched without its end boundary",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "DecodedShortPathTests.test_ordinary_text_hosts_and_bare_words_are_kept",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "L1",
+      "name": "a separator-only secret path accepted by validation again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "L1",
+      "name": "the endpoint suffix installed as an anchor when configured anyway",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "SeparatorOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "L1",
+      "name": "the operator sees only the generic reason",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+      "test": "SeparatorOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "L1",
+      "name": "the reason carries the configured value",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "L1R",
+      "name": "a route-word-only secret path accepted by validation again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "L1R",
+      "name": "the guard not symmetric: a route-only span installs its decoded base",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "L1R",
+      "name": "selector words are not route words (route set hard-coded to mcp/sse)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "L1R",
+      "name": "route segments compared in exact case",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "L1R",
+      "name": "a route word with other content refused (substring match)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_paths_with_other_content_are_accepted_and_unchanged",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "finding": "L1R",
+      "name": "the operator sees only the generic reason",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+      "test": "RouteOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "finding": "L1R",
+      "name": "the reason carries the configured value",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated corrected copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 55 tests in 31.280s"
+  }
+}

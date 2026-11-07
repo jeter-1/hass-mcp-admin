@@ -65,6 +65,7 @@ import test_hamcp225_trace_snapshots as traces  # noqa: E402
 import test_hamcp234_journal_usability as step1  # noqa: E402
 
 from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.trace_normalization import IDENTITY_KEYS, screen_trace_value  # noqa: E402
 
 hj = author.hj
@@ -807,6 +808,13 @@ class UnicodeWhitespaceMatrixTests(unittest.TestCase):
         rendered, _record, _wire = journal_call(self, entries)
         self.assertEqual([row["message"] for row in rendered["data"]["entries"]],
                          [whitespace_proxy(point, NEEDLE) for point in ASCII_WHITESPACE])
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

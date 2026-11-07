@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     replace_dynamic_upstream_capabilities,
 )
@@ -685,6 +686,14 @@ class ProductionCompositionTests(unittest.TestCase):
         # mapped acquisition and unmapped refusal both apply in deployment.
         self.assertIsInstance(gateway, AuthenticatedMcpGateway)
         self.assertIs(gateway._core_runtime, CORE_READMISSION)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
+
 
 if __name__ == "__main__":
     unittest.main()
