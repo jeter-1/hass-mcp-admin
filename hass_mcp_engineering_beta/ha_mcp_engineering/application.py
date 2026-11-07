@@ -18,6 +18,7 @@ from .helper_value.service import HELPER_VALUE_OPERATIONS
 from .configuration import (
     MAX_TRUSTED_PROXY_CIDRS,
     MIN_ACCESS_SECRET_LENGTH,
+    SeparatorOnlySecretPathError,
     Settings,
     load_settings,
     parse_upstream_dashboard_endpoint,
@@ -123,6 +124,10 @@ def validate_settings(settings: Settings) -> None:
             errors.append("trusted_proxy_cidrs contains an invalid IP address or CIDR")
     try:
         parse_upstream_dashboard_endpoint(settings.upstream_dashboard_mcp_url)
+    except SeparatorOnlySecretPathError as exc:
+        # HAMCP-288 round 4: the specific reason; it names the option and
+        # carries no part of the value.
+        errors.append(str(exc))
     except ValueError:
         errors.append(
             "upstream_dashboard_mcp_url is malformed or lacks a secret-bearing credential"

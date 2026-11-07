@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
+from . import secret_paths
 from .errors import ConfigurationError
 from .inbound_security import option_list
 
@@ -82,6 +83,19 @@ class Settings:
         return urlunsplit((scheme, parsed.netloc, path, "", ""))
 
 
+# HAMCP-288 round 4 (architect ruling 2026-11-07). The reason names the
+# option to fix and carries no part of the configured value.
+SEPARATOR_ONLY_SECRET_PATH_REASON = (
+    "upstream_dashboard_mcp_url: the secret path decodes to nothing but path "
+    "separators; configure a secret path that still contains at least one other "
+    "character after percent-decoding"
+)
+
+
+class SeparatorOnlySecretPathError(ValueError):
+    """The configured secret path span percent-decodes to nothing but ``/``."""
+
+
 @dataclass(frozen=True)
 class UpstreamDashboardEndpoint:
     """Validated secret-bearing upstream MCP endpoint.
@@ -116,6 +130,10 @@ def parse_upstream_dashboard_endpoint(
         raise ValueError("The upstream dashboard MCP URL must not include a fragment.")
     if port is not None and not 1 <= port <= 65535:
         raise ValueError("The upstream dashboard MCP URL contains an invalid port.")
+    if secret_paths.separator_only_secret_path(candidate):
+        # Refused, not redacted: after decoding only the endpoint suffix
+        # would remain to anchor the redaction on.
+        raise SeparatorOnlySecretPathError(SEPARATOR_ONLY_SECRET_PATH_REASON)
 
     generic_segments = {"mcp", "sse"}
     path_segments = tuple(

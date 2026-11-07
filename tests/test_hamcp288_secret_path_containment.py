@@ -1166,6 +1166,190 @@ class DecodedShortPathTests(unittest.TestCase):
         self.assertEqual(SP.derive_fragments(url(token)), (token,))
 
 
+class SeparatorOnlySecretPathTests(unittest.TestCase):
+    """Round 4 (Codex round-3 Low; architect ruling 2026-11-07): a secret path
+    span that percent-decodes to nothing but ``/`` is refused at configuration
+    validation with a reason that names ``upstream_dashboard_mcp_url`` and
+    carries no part of the value; if the redaction is configured with one
+    anyway, the endpoint suffix left after decoding is never an anchor.
+
+    ``/`` is the only separator: ``secret_paths._derive`` decodes the path
+    once and splits it on ``/`` alone (``\\`` and a doubly encoded ``%252F``
+    are ordinary characters there). An empty decoding is the same case: a
+    non-empty span never decodes to the empty string, so "empty" means
+    nothing remains once the separators are removed."""
+
+    ROUTE_TEXTS = ("GET /mcp", "POST /sse 200", "GET /MCP", "/readonly/catalog/full", "/readonly/catalog/search",
+                   "/catalog/full", "mode readonly", "catalog/search", f"connect to {HOST}/mcp",
+                   f"connect to {HOST}/readonly/catalog/full", "/readonly", "/mcp")
+    ROUTE_WORDS = frozenset({"mcp", "sse", "readonly", "catalog", "full", "search"})
+
+    def setUp(self) -> None:
+        self.addCleanup(SP.reset)
+
+    def bodies(self) -> dict[str, str]:
+        many = "/" + "".join(secrets.choice(("%2F", "%2f")) for _ in range(3 + secrets.randbelow(6)))
+        return {
+            "upper_three": "/%2F%2F%2F",
+            "lower_three": "/%2f%2f%2f",
+            "mixed_case": "/%2F%2f%2F%2f",
+            "raw_then_encoded": "/%2F/%2F%2F%2F",
+            "encoded_then_raw": "/%2F%2F%2F//%2F",
+            "double_raw_slash": "//%2F%2F%2F",
+            "random_count_and_case": many,
+            # Below the credential bound as written: refused by the specific
+            # reason too, with or without another credential.
+            "two_escapes": "/%2F%2F",
+            "one_escape": "/%2F",
+        }
+
+    def values(self) -> list[tuple[str, str, str]]:
+        """``(label, url, body)`` for every body, endpoint and credential form."""
+
+        found = []
+        for name, body in self.bodies().items():
+            for endpoint in ENDPOINTS:
+                for form, (userinfo, query) in (("path_only", ("", "")),
+                                                ("query", ("", "?token=SYNTH%s")),
+                                                ("userinfo", ("synthuser:pw-SYNTH%s@", ""))):
+                    nonce = secrets.token_hex(5)
+                    value = (f"http://{userinfo.replace('%s', nonce)}local-ha-mcp:9583{body}{endpoint}"
+                             f"{query.replace('%s', nonce)}")
+                    found.append((f"{name}{endpoint or '/'}[{form}]", value, body))
+        return found
+
+    def settings(self, value: str) -> Settings:
+        return Settings(
+            ha_url="http://supervisor/core", ha_token="synthetic-hamcp288-token",
+            access_secret="synthetic-hamcp288-access-secret", port=8100,
+            audit_path="unused-synthetic-audit.jsonl", rate_limit_per_minute=120, rate_limit_burst=20,
+            destructive_services=frozenset(), upstream_dashboard_mcp_url=value,
+        )
+
+    def assert_no_value_text(self, message: str, value: str, body: str) -> None:
+        # Messages name the case, never a value.
+        for name, text in (("url", value), ("body", body), ("decoded_body", unquote(body)),
+                           ("path", urlsplit(value).path), ("escape", "%2")):
+            self.assertNotIn(text.lower(), message.lower(), name)
+
+    def test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option(self):
+        from ha_mcp_engineering import configuration as C
+        from ha_mcp_engineering.application import validate_settings
+        from ha_mcp_engineering.errors import ConfigurationError
+
+        reason = getattr(C, "SEPARATOR_ONLY_SECRET_PATH_REASON", None)
+        cases = self.values()
+        self.assertGreaterEqual(len(cases), 200)
+        for label, value, body in cases:
+            with self.subTest(case=label):
+                self.assertFalse(accepted(value))
+                with self.assertRaises(ValueError) as parsed:
+                    parse_upstream_dashboard_endpoint(value)
+                self.assertEqual(type(parsed.exception).__name__, "SeparatorOnlySecretPathError")
+                self.assertEqual(str(parsed.exception), reason)
+                with self.assertRaises(ConfigurationError) as raised:
+                    validate_settings(self.settings(value))
+                self.assertIn(reason, raised.exception.details["issues"])
+                message = json.dumps([str(raised.exception), raised.exception.details], default=str)
+                self.assertIn("upstream_dashboard_mcp_url", message)
+                self.assertNotIn("lacks a secret-bearing credential", message)
+                self.assert_no_value_text(message, value, body)
+        # The reason names the option to fix and holds no path text at all;
+        # the redaction module recognizes every refused value the same way.
+        self.assertIsInstance(reason, str)
+        self.assertTrue(reason.startswith("upstream_dashboard_mcp_url: "))
+        self.assertNotIn("/", reason)
+        self.assertNotIn("%", reason)
+        self.assertTrue(hasattr(SP, "separator_only_secret_path"))
+        self.assertTrue(all(SP.separator_only_secret_path(value) for _label, value, _body in cases))
+
+    def test_the_operator_sees_the_reason_at_startup_and_nothing_starts(self):
+        from ha_mcp_engineering import application, configuration as C
+
+        reason = getattr(C, "SEPARATOR_ONLY_SECRET_PATH_REASON", None)
+
+        value = f"{HOST}/%2F%2F%2F/mcp"
+        logged = []
+        with patch.object(application, "load_settings", return_value=self.settings(value)), \
+                patch.object(SP, "install_stream_guard"), patch.object(application, "configure_logging"), \
+                patch.object(application, "log_event", side_effect=lambda *a, **k: logged.append((a, k))), \
+                patch.object(application, "_serve") as serve, patch.object(application, "create_application") as built:
+            with self.assertRaises(SystemExit) as stopped:
+                application.main()
+        self.assertEqual(str(stopped.exception), "FATAL: beta configuration validation failed; review structured logs")
+        serve.assert_not_called()
+        built.assert_not_called()
+        events = [(args[2], kwargs.get("context")) for args, kwargs in logged]
+        self.assertEqual(events[-1][0], "startup_validation_failed")
+        self.assertIn(reason, events[-1][1]["issues"])
+        self.assert_no_value_text(json.dumps(events, default=str), value, "/%2F%2F%2F")
+
+    def test_configured_anyway_the_endpoint_suffix_is_never_an_anchor(self):
+        for label, value, body in self.values():
+            with self.subTest(case=label):
+                SP.configure(value)
+                # The guard stays on: the value as written is still redacted
+                # (a body below the bound with no other credential has no
+                # fragment, as before; the parser never accepted it either).
+                if not (len(body) < SP.MIN_FRAGMENT and label.endswith("[path_only]")):
+                    self.assertTrue(SP.configured())
+                    self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
+                for segment in body.split("/"):
+                    if len(segment) >= SP.MIN_FRAGMENT:
+                        self.assertNotIn(segment, SP.redact("retry " + value))
+                # Nothing decoded is derived: no whole path, and no fragment
+                # or credential is a route word, a route or a bare run of
+                # ``/`` (the escapes as written are the raw spelling).
+                fragments, credentials, whole_paths = SP._derive(value)
+                self.assertEqual(whole_paths, ())
+                for item in fragments + credentials:
+                    self.assertNotIn(item.strip("/").lower(), self.ROUTE_WORDS)
+                    self.assertFalse(set(item.lower().split("/")) <= self.ROUTE_WORDS | {""})
+                # Ordinary route text is kept on every surface.
+                for text in self.ROUTE_TEXTS:
+                    self.assertEqual(SP.redact(text), text)
+                self.assertEqual(json.loads(dump_json({"route": "GET /mcp"}))["route"], "GET /mcp")
+                sink = io.StringIO()
+                stream = SP.RedactingStream(sink)
+                stream.write("GET /mcp\nmode readonly\n")
+                stream.drain()
+                self.assertEqual(sink.getvalue(), "GET /mcp\nmode readonly\n")
+                header, response = guard_response(f"{HOST}/mcp".encode(), b"GET /mcp readonly")
+                self.assertEqual((header, response), (f"{HOST}/mcp".encode(), b"GET /mcp readonly"))
+
+    def test_paths_with_other_content_are_accepted_and_unchanged(self):
+        # Positive controls: only a span of separators is refused. ``\\`` and
+        # a doubly encoded slash are not separators in one decoding; a URL
+        # whose path has no span before the endpoint suffix has no secret
+        # path to refuse; the round-3 encoded short paths keep their anchors.
+        letters = synthetic_letters(2)
+        token = canary()
+        nonce = secrets.token_hex(5)
+        kept = {
+            "default_shape": (url(token), None),
+            "encoded_default": (url(quote(token, safe="")), None),
+            "abc": (f"{HOST}/%41%42%43/mcp", "/ABC"),
+            "slashes_then_letters": (f"{HOST}/%2F%2F{letters}/mcp", "/" + letters),
+            "letters_then_slashes": (f"{HOST}/{letters}%2F%2F%2F/mcp", "/" + letters),
+            "backslashes": (f"{HOST}/%5C%5C%5C/mcp", "/\\\\\\"),
+            "double_encoded_slashes": (f"{HOST}/%252F%252F/mcp", "/%2F%2F"),
+            "no_span_query": (f"{HOST}/mcp?token=SYNTH{nonce}", None),
+            "raw_slashes_no_span_query": (f"{HOST}//mcp?token=SYNTH{nonce}", None),
+        }
+        for name, (value, whole) in kept.items():
+            with self.subTest(case=name):
+                self.assertTrue(accepted(value))
+                SP.configure(value)
+                self.assertEqual(SP._derive(value)[2], (whole,) if whole else ())
+                if whole:
+                    self.assertEqual(SP.redact(f"secret_path {whole} in use"), f"secret_path {TOKEN} in use")
+                self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
+                for text in self.ROUTE_TEXTS:
+                    self.assertEqual(SP.redact(text), text)
+        # The original three-letter value still configures its whole path.
+        self.assertEqual(SP.derive_fragments(f"{HOST}/%41%42%43/mcp"), ("%41%42%43", "/ABC/mcp"))
+
+
 class SerializedEscapeTests(Canary):
     """F2: a ``\\uXXXX``-escaped path survives no JSON wrapping."""
 

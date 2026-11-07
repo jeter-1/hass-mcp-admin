@@ -24,6 +24,11 @@ the path can plausibly take on the way to that output:
   leading ``/``, however short its decoding (``/ABC`` of ``/%41%42%43``),
   matched only as a whole path: not where a word character or ``-``
   continues it, and never as a cut piece or a bare word;
+* a secret path span that percent-decodes to nothing but ``/`` (``/%2F%2F%2F``)
+  is refused by configuration validation (architect ruling 2026-11-07); if
+  it reaches this module anyway, only its spelling as written is matched and
+  nothing decoded is derived from it, so the endpoint suffix left after
+  decoding (``/mcp``) never becomes a redaction anchor;
 * a fragment cut at a string or line boundary (a wrapped or truncated log
   line, a bounded upstream error), when at least ``MIN_BOUNDARY`` characters
   of a fragment remain at that edge and the text shows a cut (other text
@@ -176,6 +181,35 @@ def _bases(parts: list[str]) -> list[list[str]]:
     return found
 
 
+def _separator_only(raw_parts: list[str]) -> bool:
+    """Whether the secret path span of the raw (not yet decoded) non-empty
+    path components ``raw_parts`` (the path as written, without the endpoint
+    suffix ``_bases`` allows) percent-decodes to nothing but ``/``.
+
+    ``/`` is the only separator: ``_derive`` decodes the path once with
+    ``unquote`` and splits it on ``/`` alone, dropping empty components, so
+    such a span leaves no component of its own. A raw path with no
+    component at all has no span and is not separator-only.
+    """
+
+    return bool(raw_parts) and not unquote("/".join(min(_bases(raw_parts), key=len))).strip("/")
+
+
+def separator_only_secret_path(value: str | None) -> bool:
+    """HAMCP-288 round 4 (architect ruling 2026-11-07): whether the path of
+    the configured upstream URL ``value`` carries a secret path span that
+    percent-decodes to nothing but ``/`` separators (``/%2F%2F%2F/mcp``, any
+    hex case, with or without raw ``/`` between the escapes). Configuration
+    validation refuses such a value. A value ``urlsplit`` rejects is not
+    separator-only (it is refused as malformed)."""
+
+    try:
+        path = urlsplit((value or "").strip()).path
+    except ValueError:
+        return False
+    return _separator_only([part for part in path.split("/") if part])
+
+
 def _longest_first(values) -> tuple[str, ...]:
     return tuple(sorted(set(values), key=lambda fragment: (-len(fragment), fragment)))
 
@@ -211,6 +245,11 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
     never as a known literal (``fragments`` does not hold it). The
     slash-prefixed raw spelling of such a path is a whole-match anchor too.
 
+    A secret path span that decodes to nothing but ``/`` (refused by
+    configuration validation, ``separator_only_secret_path``) derives nothing
+    from its decoding: what decoding leaves is the endpoint suffix, never
+    credential text or a whole path. Its raw spelling is still matched.
+
     A value that cannot be parsed is itself the fragment (fail closed).
     """
 
@@ -227,7 +266,10 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
     # A segment whose ``/`` was percent-encoded decodes into several parts;
     # each part is a segment of its own as well as part of the whole path.
     parts = [part for part in unquote(parsed.path).split("/") if part]
-    bases = _bases(parts) if parts else []
+    raw_parts = [part for part in parsed.path.split("/") if part]
+    # Round 4: a span that decodes to nothing but ``/`` keeps no decoded
+    # base, so the endpoint suffix is never installed as an anchor.
+    bases = _bases(parts) if parts and not _separator_only(raw_parts) else []
     credential: list[str] = []
     if bases:
         base = min(bases, key=len)
@@ -252,7 +294,6 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
             if segment and unquote(segment) != segment
         )
     whole_paths: list[str] = []
-    raw_parts = [part for part in parsed.path.split("/") if part]
     if bases and raw_parts and unquote(parsed.path) != parsed.path:
         # The configured spelling of the secret path, without its endpoint
         # suffix, and its complete decoding (HAMCP-288 round 3).
