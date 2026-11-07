@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering import inbound_topology_observer as observer
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.inbound_topology_observer import (
     BoundaryObserver, MAX_EXPORT_BYTES, MAX_HEADERS, MAX_RECORDS, MARKER_HEADER, REQUEST_HEADER,
     ObservedConfig, Recorder, WINDOW_SECONDS, encoded, project_value,
@@ -668,6 +669,13 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
             acquire.assert_not_called()
         self.assertEqual([r["request_index"] for r in session.recorder.records], [1, 2])
         self.assertEqual(session.recorder.records[0]["immediate_peer"], "127.0.0.1")
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

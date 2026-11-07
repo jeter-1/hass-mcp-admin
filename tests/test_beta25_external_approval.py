@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from approval_identity_support import admin_verifier  # noqa: E402
 import hamcp162_synthetic as syn  # noqa: E402
 from ha_mcp_engineering.approval_web import create_approval_application  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.application import _serve, validate_settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
@@ -37,6 +38,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from ha_mcp_engineering.secret_paths import ResponseGuard  # noqa: E402
 from tests.test_dev14_configuration_plans import plant_stored_record  # noqa: E402
 
 
@@ -684,7 +686,10 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
             await _serve(self.configured())
         self.assertEqual({item.config.port for item in instances}, {8100, 8110})
         self.assertTrue(all(item.started for item in instances))
-        self.assertEqual({item.config.app for item in instances}, {mcp_app, approval_app})
+        # HAMCP-288: each listener serves its application behind the
+        # secret-path response guard.
+        self.assertTrue(all(type(item.config.app) is ResponseGuard for item in instances))
+        self.assertEqual({item.config.app.app for item in instances}, {mcp_app, approval_app})
 
     async def test_upstream_reconciliation_is_cancelled_with_listener_shutdown(self):
         class FakeConfig:
@@ -795,3 +800,10 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
     def test_listener_ports_cannot_collide(self):
         with self.assertRaises(Exception):
             validate_settings(self.configured(ingress_port=8100))
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()

@@ -17,6 +17,7 @@ sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.application import (  # noqa: E402
     _supervise_upstream_reconciliation,
 )
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
@@ -450,6 +451,13 @@ class ExactImageAuthorityFixtureTests(unittest.IsolatedAsyncioTestCase):
             ErrorCode.APPROVAL_SEQUENCE_FAILURE,
         )
         self.assertEqual(self.lifecycle.dispatch_count, 0)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

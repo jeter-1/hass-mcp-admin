@@ -33,6 +33,7 @@ assert production_spec.loader is not None
 production_spec.loader.exec_module(production_server)
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.logging_config import JsonFormatter  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
@@ -2359,6 +2360,13 @@ class BetaApplicationTests(unittest.TestCase):
             main()
         self.assertNotIn(SECRET, output.getvalue())
         self.assertIn('"event": "server_starting"', output.getvalue())
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":
