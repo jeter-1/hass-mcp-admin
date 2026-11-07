@@ -325,6 +325,11 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "core.automation_trace_read",
         "core.dependency_helper_planning",
     ),
+    # HAMCP-229: exactly the single tool's profiles; no new Core command.
+    "automation_reliability_batch_analysis": (
+        "core.automation_trace_read",
+        "core.dependency_helper_planning",
+    ),
     "change_impact_analysis": (
         "core.automation_trace_read",
         "core.dependency_helper_planning",
