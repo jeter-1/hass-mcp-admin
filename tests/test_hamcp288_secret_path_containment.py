@@ -1179,6 +1179,15 @@ class DecodedShortPathTests(unittest.TestCase):
         self.assertEqual(SP.derive_fragments(url(token)), (token,))
 
 
+def endpoint_words() -> list[str]:
+    """The words of the code's own endpoint suffix set: the selector words
+    (exact case) and the route segments. Read at test time so that the
+    module still imports on reviewed heads that predate the names."""
+
+    selectors = getattr(SP, "SELECTOR_SUFFIXES", ())
+    return sorted({word for suffix in selectors for word in suffix} | set(getattr(SP, "ROUTE_SEGMENTS", ())))
+
+
 class SeparatorOnlySecretPathTests(unittest.TestCase):
     """Round 4 (Codex round-3 Low; architect ruling 2026-11-07): a secret path
     span that percent-decodes to nothing but ``/`` is refused at configuration
@@ -1197,7 +1206,7 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
                    f"connect to {HOST}/readonly/catalog/full", "/readonly", "/mcp")
     # Derived from the code's endpoint suffix set, never hard-coded; the
     # pinned set is the 9.1 selectors plus Engineering's routes.
-    ROUTE_WORDS = frozenset(word.lower() for suffix in SP.SELECTOR_SUFFIXES for word in suffix) | SP.ROUTE_SEGMENTS
+    ROUTE_WORDS = frozenset(word.lower() for word in endpoint_words())
     REASON = "SEPARATOR_ONLY_SECRET_PATH_REASON"
     ERROR = "SeparatorOnlySecretPathError"
     PREDICATE = "separator_only_secret_path"
@@ -1398,12 +1407,11 @@ class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
 
     def bodies(self) -> dict[str, str]:
         found = {}
-        words = sorted({word for suffix in SP.SELECTOR_SUFFIXES for word in suffix} | SP.ROUTE_SEGMENTS)
-        for word in words:
+        for word in endpoint_words():
             found[f"slashes_{word}"] = f"/%2F%2F{word}"
             found[f"encoded_upper_{word}"] = f"/%2F%2F%2F/%{ord(word[0]):02X}{word[1:]}"
             found[f"encoded_lower_{word}"] = f"/%2F%2F%2F/%{ord(word[0]):02x}{word[1:]}"
-        for word in sorted(SP.ROUTE_SEGMENTS):
+        for word in sorted(getattr(SP, "ROUTE_SEGMENTS", ())):
             # Route segments compare without case, as the parser does.
             found[f"upper_{word}"] = "/%2F%2F" + word.upper()
             found[f"escaped_upper_{word}"] = f"/%2F%2F%{ord(word[0].upper()):02X}{word[1:]}"
@@ -1413,8 +1421,7 @@ class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
         return found
 
     def unencoded(self) -> dict[str, str]:
-        words = sorted({word for suffix in SP.SELECTOR_SUFFIXES for word in suffix} | SP.ROUTE_SEGMENTS)
-        return {f"plain_{word}": f"/{word}" for word in words}
+        return {f"plain_{word}": f"/{word}" for word in endpoint_words()}
 
     def values(self) -> list[tuple[str, str, str]]:
         found = super().values()
