@@ -38,12 +38,15 @@ class FailureReceipts(unittest.TestCase):
                 self.assertEqual(receipt['exception_chain'][0]['type'], 'RuntimeError')
 
     def test_untrusted_messages_are_wholly_redacted(self):
+        # Build the synthetic key marker at runtime so the source credential
+        # scanner stays effective without mistaking this canary for a key.
+        key_canary = '-----BEGIN ' + 'PRIVATE KEY-----CANARY'
         canaries = ['Bearer eyJhbGciOiJIUzI1NiJ9.canary.signature',
                     'password=CANARY_PASSWORD', 'token: CANARY_TOKEN',
                     'https://user:CANARY_CREDENTIAL@private.invalid/internal',
                     '/mcp/CANARY_SECRET_PATH', '/home/person/CANARY_PRIVATE_PATH',
                     'postgres://user:CANARY_DB_PASSWORD@192.168.1.4/db',
-                    'ghp_CANARY_ACCESS_TOKEN', '-----BEGIN PRIVATE KEY-----CANARY']
+                    'ghp_CANARY_ACCESS_TOKEN', key_canary]
         for canary in canaries:
             for prefix in ('', next(iter(diagnostics.SAFE_MESSAGES)) + ' '):
                 with self.subTest(canary=canary), patch.object(diagnostics, '_raw_log', return_value=False):
