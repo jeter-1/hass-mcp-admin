@@ -1,8 +1,16 @@
 # HAMCP-319 Phase 2 design: ha-mcp 9.1.0 admission side by side with 8.5.0
 
-Status: **round-3 design delta for Codex focused closure.** It carries the
-corrections DCL1 and DCL2 to the reviewed head `622c5603`, which itself carried
-DC1–DC4 against `3c06f7b1` and the verbatim R1–R5 record in section 2.
+Status: **round-4 design delta for Codex focused closure.** It carries the
+corrections R3-C1 and R3-C2 to the reviewed head `b08b2d6f`. That head carried
+DCL1 and DCL2 to `622c5603`, which itself carried DC1–DC4 against `3c06f7b1`
+and the verbatim R1–R5 record in section 2.
+
+- **R3-C1.** `connections` and `identifiers` pass only through a positive
+  per-discriminator allowlist with bounded value formats. Anything else is
+  withheld with a fixed code and no echo (section 6.5; tests in section 8.3).
+- **R3-C2.** The dashboard-analysis fence's 3xx branch calls the shared
+  refusal latch before it raises, and analysis classification is latch-first
+  (section 3.3, "The analysis fence and the latch"; tests in section 8.1).
 
 - **DCL1.** Every ha-mcp MCP connection refuses redirects, on every version
   (section 2, "JOSH DECIDED 2026-11-07"; section 3.3).
@@ -24,7 +32,7 @@ Codex closes this design.
 | Optional component | 2.2.1 tools-only [`fc54437a804858732e4bc927add98e202d879a09`][c221]. Component 9.1 is **not** in scope without Josh. |
 | SDK / protocol | `mcp==1.30.0` (httpx 0.28.1, httpcore 1.0.9, httpx-sse 0.4.3); protocol `2025-03-26`. Any other negotiated revision fails closed. |
 | 9.1 runtime evidence | [Phase 1 evidence](evidence/hamcp319/phase1/README.md): app amd64 `sha256:dad67faa…`, manifest `8952aef8…`, config `f34f81e2…`, Core 2026.11 `74cf5a49…`. Standalone `bef7cfc9…` and arm64 identities are retained Step 1 OCI metadata, **not** executable evidence. Standalone, app and architecture claims stay separate. |
-| Inputs answered | Codex design review F1–F8 with positions on A1–A7 (`~/handoffs/hass-mcp-admin-agent-codex-hamcp-319-phase2-design-review.md`); D3 addendum rules 1–9 (`~/handoffs/hass-mcp-admin-agent-hamcp-319-phase2.md`); the exact-source review (`.artifacts/hamcp319-91-source-review.md`, untracked); Codex round-2 delta review of `622c5603` (PR #385 comment 6708781521), High findings DCL1 and DCL2 |
+| Inputs answered | Codex design review F1–F8 with positions on A1–A7 (`~/handoffs/hass-mcp-admin-agent-codex-hamcp-319-phase2-design-review.md`); D3 addendum rules 1–9 (`~/handoffs/hass-mcp-admin-agent-hamcp-319-phase2.md`); the exact-source review (`.artifacts/hamcp319-91-source-review.md`, untracked); Codex round-2 delta review of `622c5603` (PR #385 comment 6708781521), High findings DCL1 and DCL2; Codex round-3 delta review of `b08b2d6f` (PR #385 comment 6710155324), findings R3-C1 (High) and R3-C2 (Medium) |
 
 Every decision below is tagged with its authority:
 
@@ -359,7 +367,7 @@ consumer has today:
 |---|---|---|
 | Read gateway (`_run_isolated`, `_run_worker`) and every client built on `McpReadGatewayTransport` | the SDK default factory's settings ([`_httpx_utils.py:33-60`][sdk-factory]): `httpx.Timeout(30, read=300)` unless the SDK passes a timeout, the SDK headers, `trust_env` default | request hook, response hook, `follow_redirects=False`, `max_redirects=0` |
 | Dashboard transport (`McpDashboardTransport._run`) | the same SDK defaults | the same |
-| Dashboard analysis | its existing fence transport `_AnalysisMcpHttp` ([`dashboard_analysis.py:257-380`][e-da257c]), `trust_env=False`, refusal of `auth` ([`:448-452`][e-da448]) | the same hooks and `max_redirects=0`; its own 3xx branch ([`:334-335`][e-da334]) changes its code from `endpoint_rejected` to `upstream_redirect_refused` |
+| Dashboard analysis | its existing fence transport `_AnalysisMcpHttp` ([`dashboard_analysis.py:257-380`][e-da257c]), `trust_env=False`, refusal of `auth` ([`:448-452`][e-da448]) | the same hooks and `max_redirects=0`; its own 3xx branch ([`:334-335`][e-da334]) calls the shared latch setter `binding.refuse_redirect()` before it raises, so the code becomes `upstream_redirect_refused` through the latch, not by a local rename (see "The analysis fence and the latch" below) [closes R3-C2] |
 
 **What the factory adds:**
 
@@ -373,9 +381,17 @@ consumer has today:
     one DELETE to the bound URL is still allowed, so the SDK can end the server
     session; a 3xx on that DELETE is refused like any other.
 - **Response hook (before the SDK sees the response).** Any status
-  `300 ≤ s < 400` sets the latch and raises
-  `UpstreamEndpointRefused("upstream_redirect_refused")`. httpx closes the
-  response unread. Engineering never reads the body or the `Location` header.
+  `300 ≤ s < 400` calls `binding.refuse_redirect()` and raises the exception
+  it returns, `UpstreamEndpointRefused("upstream_redirect_refused")`. httpx
+  closes the response unread. Engineering never reads the body or the
+  `Location` header.
+- **One latch setter.** `binding.refuse_redirect()` is the only code that
+  records a redirect refusal. It sets the per-session latch (first write
+  wins: the code `upstream_redirect_refused` and the phase, `operation` or
+  `cleanup`), sets the latch event the session runner waits on, and returns
+  the exception for its caller to raise. The response hook and the analysis
+  fence (below) both call it. A later failure, including a cleanup failure,
+  never overwrites a latch that is already set.
 - **Client settings.** `follow_redirects=False` and `max_redirects=0`.
 
 **How the 3xx is refused before any second request.** In `mcp==1.30.0` every
@@ -434,10 +450,81 @@ refusal would be misreported as `timeout`. So:
   - the backup and lifecycle maps
     ([`operational_backup.py:530`][e-ob530],
     [`operational_lifecycle.py:1786`][e-ol1786]).
+- The dashboard-analysis session (S-d) is included. Its latch-first rule
+  and its fence wiring are specified in the next paragraph.
 - `upstream_redirect_refused` is a terminal configuration failure. It is
   **not** added to `_STARTUP_ORDERING_FAILURES`
   ([`upstream_read_gateway.py:194`][e-g194]), which holds only
   `endpoint_rejected` with its 600-second startup grace. It is never retried.
+
+**The analysis fence and the latch [IC, closes R3-C2].** The response hook
+cannot see a 3xx on the analysis session:
+
+- In httpx 0.28.1, `_send_handling_redirects` runs the response hooks only
+  after `_send_single_request` has returned a response
+  ([`_client.py:1691-1697`][httpx-hooks]).
+- `_AnalysisMcpHttp` is the client's transport. Its 3xx branch
+  ([`dashboard_analysis.py:334-335`][e-da334]) raises inside
+  `handle_async_request` ([`:278-283`][e-da278]), so no response reaches
+  httpx and the hook never runs. Codex verified this on `initialize` and
+  `notifications/initialized` (round 3: 2/2 fence raises, zero hook calls).
+- On `notifications/initialized`, the SDK's `post_writer` catches the
+  exception, logs it and closes its streams
+  ([SDK `streamable_http.py:585-595`][sdk-postwriter]). Renaming the fence's
+  exception alone would leave the latch unset. The failure would then surface
+  as a stream closure or a deadline, without the fixed operator text.
+
+The design therefore wires the fence into the same latch:
+
+1. **One binding per analysis session.** `_bounded_mcp_read` builds the
+   session's `binding` (bound URL, snapshot generation, fresh latch) before
+   the fence. It passes the same object to `_AnalysisMcpHttp` and to the
+   analysis client factory ([`:448-452`][e-da448]). That factory adds the
+   shared hooks and `max_redirects=0` and keeps `transport=fence`,
+   `trust_env=False`, `follow_redirects=False` and its `auth` refusal.
+2. **The fence's 3xx branch.** For `300 ≤ status < 400` it calls
+   `binding.refuse_redirect()` **before** raising, then raises the returned
+   exception. The phase is `cleanup` for the DELETE and `operation` for
+   every other request. Nothing else in the fence changes:
+   - the bound-URL check ([`:288-289`][e-da288]) and the synthetic local 405
+     for GET ([`:290-292`][e-da288]);
+   - the deadline, cancellation, method and operation allowlist, per-operation
+     counts, `authorize`, budget and `_McpBytes` byte bound;
+   - the `retries=0` delegate;
+   - closing the response in `finally` ([`:378-379`][e-da378]). The 3xx
+     branch comes before any body read, so the body and `Location` are never
+     read.
+3. **After the latch.** The request hook refuses every later POST and GET
+   before the fence sees it. The one DELETE to the bound URL is still
+   allowed. No `tools/list` or `tools/call` follows a latched
+   `initialize` or `notifications/initialized`.
+4. **Latch-first classification in `_bounded_mcp_read`.**
+   - The session body races the latch event, as in the other session
+     runners. When the latch is set, the body is cancelled at once and the
+     deadline is never the classifier.
+   - The latch is checked **first**: before the post-exit `fence.failure`
+     re-raise ([`:476-477`][e-da476]), before the `AnalysisError` leaf scan
+     in the `except BaseException` handler ([`:480-488`][e-da476]), and
+     before `_classified_transport_error`. If it is set, the read raises
+     `DashboardTransportError("upstream_redirect_refused", retryable=False)`.
+     `fence.failure` is overwritten by every later fence exception
+     ([`:279-283`][e-da278]), so it is never used to classify a redirect.
+   - A cancellation caused by the latch race maps to the latched code. A
+     cancellation of the caller's own task, and `KeyboardInterrupt` and
+     `SystemExit`, still propagate unchanged.
+   - Through C5, the code reaches the dashboard `FAILURE_CATEGORIES` and
+     `ErrorCode` map listed above. The operator sees the fixed message below.
+5. **Cleanup.** The analysis read records no outcome before its session
+   exits. It returns its result only after the SDK context, including the
+   DELETE, has closed and the post-exit checks pass
+   ([`:476-479`][e-da476], [`:495-496`][e-da476]). So a cleanup failure has
+   no recorded outcome to rewrite. A 3xx on the analysis DELETE is refused
+   with no second request. It sets the latch in phase `cleanup`, and the read
+   fails closed as `upstream_redirect_refused`. This keeps the fence's
+   existing rule that a recorded fence failure fails the read. The
+   telemetry attempt is still balanced in `finally` ([`:489-494`][e-da476]).
+   For S-a…S-c the DELETE row below is unchanged: a cleanup refusal never
+   changes a read or write outcome already recorded.
 
 **Every Engineering client of ha-mcp (verified at the base).** The SDK is
 called at exactly four sites; `git grep "streamablehttp_client("` over the
@@ -518,7 +605,7 @@ every row; the SDK site shows where `mcp==1.30.0` issues the request.
 | GET stream | `handle_get_stream` ([`:273`][sdk-get]), started at [`:569`][sdk-getstart] | Same. A 3xx is refused by the hook, so the SDK's URL-bearing warning is never reached; the logger silencing is kept anyway. The analysis session never sends GET today, and its test asserts that. |
 | GET resumption and SSE reconnection (`Last-Event-ID`) | `_handle_resumption_request` ([`:326`][sdk-resume]), `_handle_reconnection` ([`:460`][sdk-reconnect]) | Same client and bound URL; a 3xx is refused on every attempt, and no attempt targets another URL. |
 | Retained worker / new session (reconnect at the Engineering level) | Engineering `_run_worker` ([`upstream_read.py:292`][e-ur292]) | Each new SDK session builds a new client and latch from the *current* snapshot. A retained worker whose snapshot generation differs from the current configuration is closed before reuse. The existing authority and revocation checks are unchanged. |
-| DELETE session cleanup | `terminate_session` ([`:597-604`][sdk-delete]) | Same client and bound URL; allowed once after a latch. A 3xx is refused and logged by bounded reason only. Cleanup failure never changes a read or write outcome already recorded. |
+| DELETE session cleanup | `terminate_session` ([`:597-604`][sdk-delete]) | Same client and bound URL; allowed once after a latch. A 3xx is refused and logged by bounded reason only. Cleanup failure never changes a read or write outcome already recorded. The analysis read (S-d) records no outcome before its session exits, so a DELETE 3xx there sets the latch in phase `cleanup` and fails the read closed ("The analysis fence and the latch", item 5). |
 
 **Operator message (fixed constant, no interpolation) [IC].** Where
 `upstream_redirect_refused` is surfaced to an operator (the bounded error of the
@@ -916,7 +1003,8 @@ passed through.
   - integration hints: `ieee_address`, `friendly_name`, `mqtt_topic_hint`,
     `zha_trigger_hint`, `node_id`;
   - registry: `name_by_user`, `default_name`, `disabled_by`, `labels`;
-  - `connections` and `identifiers`: bounded `[type, value]` string pairs;
+  - `connections` and `identifiers`: only pairs that pass the positive
+    pair allowlist below;
   - `entities`: rows of `entity_id`, `name` and `platform`;
   - `radio_metrics`: `lqi`, `rssi`;
   - `node_status`: `node_id`, `status`, `is_routing`, `is_secure`,
@@ -949,9 +1037,93 @@ passed through.
   ([`upstream_read_gateway.py:324-325`][e-g324], [`:358-361`][e-g358]) is
   kept. Error payloads are reduced to their closed code and never carry
   upstream detail.
+- **Registry pairs: positive allowlist [IC, closes R3-C1].** Core types
+  `connections` and `identifiers` as sets of string pairs and places no limit
+  on the first element ([`device_registry.py:287-289`][core-dr287]). MQTT
+  discovery copies arbitrary pairs from a device payload into the registry
+  ([`mqtt/entity.py:1450-1455`][core-mqtt1450]). ha-mcp copies both arrays
+  verbatim ([9.1 `tools_registry.py:459-460`][u91-reg459],
+  [8.5 `:580-581`][u85-reg580]). So a pair is never trusted by its shape,
+  and the named-key sanitizer is not the authority here. A pair is emitted
+  only if every check below passes:
+  1. **Container.** The field must be a JSON array. Any other value is
+     emitted as `[]` and counted as one withheld pair. At most 64 entries per
+     array are examined. Entries beyond 64 are withheld uninspected and
+     counted.
+  2. **Arity and type.** An entry must be a JSON array of exactly two JSON
+     strings. Arity 1 or 3+, numbers, booleans, null, objects and nested
+     arrays are withheld. Values are never coerced with `str()`.
+  3. **Discriminator.** The first string must equal a discriminator in that
+     array's table below, by exact, case-sensitive string equality. There is
+     no prefix, suffix, substring, case-fold or Unicode normalization, so
+     `MAC`, `mac_key` and `zha_network_key` are not `mac` or `zha`.
+  4. **Value.** The second string must be 1-64 characters and match that
+     discriminator's format as an anchored full match (`re.fullmatch`, ASCII
+     classes). Values are never trimmed, repaired or normalized. A value
+     Core would store unnormalized (for example a `mac` that `format_mac`
+     leaves unchanged, [`device_registry.py:505-523`][core-dr505]) is
+     withheld, not rewritten.
+  5. **Output.** Passing pairs keep upstream order. An exact duplicate is
+     emitted once.
+
+  **`connections` allowlist:**
+
+  | Discriminator | Value format | Evidence |
+  |---|---|---|
+  | `mac` | `[0-9a-f]{2}(:[0-9a-f]{2}){5}` | Core constant ([`device_registry.py:88-91`][core-dr88]); the lowercase colon form `format_mac` produces |
+  | `bluetooth` | `[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}` | Core constant; adapter address ([`bluetooth/__init__.py:327-328`][core-bt327]). Non-MAC addresses are withheld |
+  | `zigbee` | `[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){7}` (EUI-64) | Core constant; ZHA `str(ieee)` ([`zha/helpers.py:1108-1109`][core-zha1108]); Hue 8-octet migration ([`hue/__init__.py:40-50`][core-hue40]) |
+  | `upnp` | `uuid:` + `[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}` | Core constant; SSDP UDN ([`upnp/__init__.py:130`][core-upnp130]). The UUID grammar is the UPnP UDN convention, not Core-enforced, so any other UDN is withheld |
+  | `ieee` | EUI-64 colon form as for `zigbee`, or `0x[0-9A-Fa-f]{16}` | read by ha-mcp ([9.1 `:101-114`][u91-reg101], [8.5 `:97-110`][u85-reg97]); no Core emitter |
+
+  Every other `connections` discriminator is withheld, for example
+  `sleep_as_android`'s `(domain, entry_id)` pair.
+
+  **`identifiers` allowlist:**
+
+  | Discriminator | Value format | Evidence |
+  |---|---|---|
+  | `zha` | EUI-64 colon form as for `zigbee` | [`zha/helpers.py:1108-1109`][core-zha1108]. ZHA group identifiers (entry-id based) are withheld |
+  | `zwave_js` | `\d{1,10}-\d{1,4}`, or `\d{1,10}-\d{1,4}-\d{1,3}` (endpoint), or `\d{1,10}-\d{1,4}-\d{1,5}:\d{1,5}:\d{1,5}` (extended) | [`zwave_js/helpers.py:243-245`][core-zw243], [`:256-259`][core-zw256], [`:352-361`][core-zw352]. The `-g<id>` group form is withheld |
+  | `matter` | `deviceid_[0-9A-F]{16}-[0-9A-F]{16}-(MatterNodeDevice\|\d{1,5})` | [`matter/helpers.py:59-68`][core-mt59], [`:81-94`][core-mt81], [`matter/entity.py:131`][core-mt131]. `serial_*` identifiers are withheld; the serial stays visible as `serial_number` |
+  | `mqtt` | `zigbee2mqtt_(bridge_)?0x[0-9A-Fa-f]{16}` | the Zigbee2MQTT form ha-mcp parses ([9.1 `:50-72`][u91-reg50], [8.5 `:46-69`][u85-reg46]). Other MQTT identifiers are arbitrary payload strings and are withheld |
+  | `hassio` | exactly `core`, `supervisor`, `host` or `OS` | [`hassio/entity.py:145-214`][core-hio145]. Add-on slug and `mount_*` identifiers are withheld (their grammar is not in the pinned sources) |
+
+  Every other `identifiers` discriminator is withheld.
+
+  **Disclosure.** Any withholding adds the closed warning code
+  `registry_pair_withheld` and the field
+  `registry_pairs_withheld: {"connections": <n>, "identifiers": <m>}`, each
+  count capped at 999. The disclosure never carries a discriminator, a value,
+  an index, a length or a reason subtype. The rule applies to every device,
+  in single mode and in each list-mode `devices[]` row.
+
+- **Derived identity fields.** ha-mcp derives these from the raw pairs before
+  Engineering sees them ([9.1 `:132-168`][u91-reg132],
+  [8.5 `:128-162`][u85-reg128]), so each one is checked on its own:
+  - `ieee_address` passes only as EUI-64 (colon form, or `0x` plus 16 hex).
+  - `zha_trigger_hint` passes only if `ieee_address` passed and the hint is
+    exactly `Use ieee '<ieee_address>' for zha_event triggers`.
+  - `node_id` passes only as `[0-9]{1,4}`.
+  - Each `integration_sources` element, and `integration_type`, must be a
+    member of the compiled set of Core 2026.11.0 integration domains. That
+    set has 1562 manifest domains at `74cf5a49`, each equal to its directory
+    name (SHA-256 of the sorted, newline-terminated list:
+    `5a77c4c12f8727e59d35b54ca40744de4590c3ce5cb2cba76d4f9a6642da7743`).
+    `integration_type` may also be `zigbee2mqtt` or `unknown`. Membership is
+    exact; the `VALID_DOMAIN` grammar ([`core.py:182-184`][core-vd182]) alone
+    is not enough, because a canary such as `network_key` fits it.
+  - A failing field is omitted and adds the closed code
+    `registry_identity_withheld` with a bounded count, with no echo.
+    `friendly_name` and `mqtt_topic_hint` come from the device name, not from
+    a pair, and keep the existing name handling.
 - **Useful results kept.** Identity, child-device `config_entries`, effective
   `area_id`, entities, ZHA LQI and RSSI, Z-Wave node status, and Matter
-  network type, availability and fabrics all still pass. The Core
+  network type, availability and fabrics all still pass. So do the useful
+  registry pairs: network and Bluetooth MACs, Zigbee and IEEE addresses,
+  UPnP UDNs, ZHA, Z-Wave, Matter and Zigbee2MQTT identifiers, and the
+  Supervisor identifiers, together with `ieee_address`, `zha_trigger_hint`
+  and `node_id`. The pair allowlist reads no area or child-device field. The Core
   child-device binding (section 5, [`routes.py:205`][e-cr205]) is unchanged.
 
 **Disclosed deltas on 8.5.0 (release notes).** These are 8.5-visible changes,
@@ -959,7 +1131,18 @@ made deliberately because the rule is version-independent:
 
 - Thread `ip_addresses` are withheld;
 - unknown nested keys are dropped;
-- enrichment warnings become closed codes.
+- enrichment warnings become closed codes;
+- `connections` and `identifiers` pairs outside the allowlist, and failing
+  derived identity fields, are withheld with `registry_pair_withheld` or
+  `registry_identity_withheld` (identifiers from other integration domains
+  included).
+
+> **Open for Josh (non-blocking).** The identifier allowlist covers the
+> integrations whose identifier grammar is derivable from the pinned
+> sources. Other domains' identifiers are withheld and counted. Whether to
+> add further domains is a product choice; each would be a reviewed one-row
+> change with a derived format and a positive and negative test. This design
+> makes no such choice.
 
 **`ha_manage_radio` stays unavailable.** Every reviewed policy classifies it
 `mixed_or_requires_wrapper`, so it is not exposed (`tools[58]` in the 8.5.0
@@ -1176,8 +1359,52 @@ negatives Codex required.
      operation still ends with `upstream_redirect_refused` well before its
      deadline, with zero list POSTs. After the latch, POST and GET are
      refused before send, and one DELETE to the bound URL is allowed.
+   - **Analysis fence latch [closes R3-C2]**
+     (`test_no_redirect_analysis_initialized_latch_307` and `_308`). A C5
+     dashboard-analysis session (S-d) gets a 307, then in the second test a
+     308, on `notifications/initialized`.
+     - **Real path.** The test drives the real `_bounded_mcp_read`, the real
+       `_AnalysisMcpHttp` fence, the analysis factory and its hooks, the
+       pinned SDK and `ReviewedProtocolClientSession`. The origin and the
+       destination are loopback peers with separate counters. If loopback
+       sockets are unavailable, only the fence's inner `delegate` may be
+       replaced by a counting `MockTransport`. Replacing the factory, the
+       fence, or the client-boundary transport with a raw `MockTransport`
+       is not allowed; that would skip the fence's 3xx branch, which is the
+       subject of the test.
+     - **Latch.** The latch is set exactly once, with code
+       `upstream_redirect_refused` and phase `operation`. It is set by the
+       fence's call to `binding.refuse_redirect()`; the response hook's
+       call count is zero, which proves the fence path, not the hook.
+     - **Prompt refusal.** The read raises
+       `DashboardTransportError("upstream_redirect_refused")`, non-retryable,
+       well before the analysis deadline. It is not `timeout`,
+       `protocol_error` or `endpoint_rejected`. The dashboard result carries
+       the fixed operator text exactly.
+     - **Counts.** At the origin: `initialize` 1,
+       `notifications/initialized` 1, `tools/list` 0, `tools/call` 0, GET 0,
+       DELETE at most 1. At the destination: zero requests of any method.
+     - **Sinks.** No canary from the bound URL or the `Location` appears in
+       any sink listed above. The telemetry attempt is balanced.
+   - **Analysis rows.** The S-d family keeps every other request row with
+     the same real-path rule:
+     - `initialize`, the first `tools/list` page and a cursor page: latch set
+       by the fence, prompt `upstream_redirect_refused`, no later list or
+       call;
+     - `tools/call`: the call is not executed;
+     - GET: the fence answers the synthetic local 405, the origin receives
+       zero GETs, and no latch is set;
+     - DELETE after a successful call: the latch is set in phase `cleanup`,
+       no second request is sent, the destination gets zero requests, and
+       the read fails closed as `upstream_redirect_refused` (section 3.3,
+       "The analysis fence and the latch", item 5).
 
    **Positives (useful behavior kept on peers that do not redirect):**
+   - `test_analysis_useful_no_redirect`. On an 8.5.0 peer and a 9.1.0 peer
+     that do not redirect, the same real analysis path returns its useful
+     result. The latch stays unset, and the origin counts are `initialize` 1,
+     `notifications/initialized` 1, the catalog pages, `tools/call` 1 and
+     DELETE 1.
    - `test_85_no_redirect_useful_both_forms`. An 8.5.0 peer that answers
      without a redirect, on a `legacy` value and on a strict-form value,
      returns useful results on every client: a delegated read, a governed
@@ -1299,8 +1526,8 @@ negatives Codex required.
     fields (section 6.5 table). They are nested at every level the upstream
     could return: top level, `device`, `node_diagnostics`, inside each
     `active_fabrics` entry, inside `radio_metrics` and `node_status`, inside
-    `connections` and `identifiers`, and inside list-mode `devices[]`. Each
-    canary is placed in **both** the upstream `content` text and
+    `connections` and `identifiers` (as the next test specifies), and inside
+    list-mode `devices[]`. Each canary is placed in **both** the upstream `content` text and
     `structuredContent`, and once each in only one of them.
     - Inputs also cover malformed shapes (a string where an object is
       expected, a list of mixed types, oversize values, duplicate JSON keys,
@@ -1315,6 +1542,57 @@ negatives Codex required.
     LQI and RSSI, Z-Wave node status, and Matter network type, availability,
     network name, MAC address and the five fabric fields are returned exactly.
     The Core child-device binding (section 5) still resolves.
+  - `test_device_registry_pairs_<version>` [closes R3-C1]. Runs on an 8.5.0
+    peer and a 9.1.0 peer, on both `connections` and `identifiers`, for a
+    single-device read and for each list-mode `devices[]` row. Every pair is
+    placed in **both** the upstream `content` text and `structuredContent`,
+    and once each in only one of them.
+    - **Positives, returned exactly and in order:** one valid pair per
+      allowlist row in section 6.5 (`mac`, `bluetooth`, `zigbee`, `upnp`,
+      `ieee` connections; `zha`, the three `zwave_js` forms, both `matter`
+      forms, `mqtt` Zigbee2MQTT with and without `bridge_`, and the four
+      `hassio` identifiers). An exact duplicate is emitted once. The
+      derived `ieee_address`, `zha_trigger_hint` and `node_id` are returned
+      for the ZHA, Zigbee2MQTT and Z-Wave devices.
+    - **Negatives, each carrying its own canary in the discriminator, the
+      value, or both:**
+      - Thread credential discriminators: `network_key`, `pskc`,
+        `active_dataset_tlvs`, `dataset`;
+      - unknown credential-labelled discriminators: `zha_network_key`,
+        `mac_key`, `api_key`, `thread_credential`, `password`;
+      - case and prefix variants of allowlisted discriminators: `MAC`,
+        `Zha`, `mac_`, `zha_group`;
+      - an allowlisted discriminator with an out-of-format value: `mac` with
+        a canary string, an unnormalized `mac`, `zha` with 7 octets,
+        `mqtt` with a non-Zigbee2MQTT payload, `matter` `serial_<canary>`,
+        `zwave_js` `-g` group form, `hassio` add-on slug, a 65-character
+        value and an empty value;
+      - malformed pairs: arity 1, arity 3, a number or null in either
+        position, a nested array or object in either position, and a
+        non-array `connections` or `identifiers` field;
+      - a 65th entry after 64 valid ones.
+    - **Asserts:**
+      - every positive pair and derived field is present and unchanged;
+      - no negative canary appears in any result, rendered text channel,
+        error, warning, audit record, log line (all loggers captured at
+        DEBUG) or server-health block;
+      - the disclosure is exactly the code `registry_pair_withheld` and the
+        correct `registry_pairs_withheld` counts, with no discriminator,
+        value or index;
+      - effective `area_id` and child-device `config_entries` are unchanged
+        by the pair rule;
+      - the mock upstream, the Core mock and the radio mocks record no
+        request beyond the one `ha_get_device` call (zero new upstream,
+        Core or radio calls);
+      - none of the negative discriminators is in the compiled Core domain
+        set (guards the derived-field rule).
+  - `test_device_registry_derived_fields_<version>`. On both versions,
+    `ieee_address` carrying a canary or a non-EUI-64 value,
+    `zha_trigger_hint` that differs from the exact template, a non-numeric
+    or 5-digit `node_id`, and an `integration_sources` element or
+    `integration_type` outside the compiled domain set (for example
+    `network_key`) are each omitted with `registry_identity_withheld`, with
+    no echo. Valid values on the same device still pass.
   - `test_device_projection_thread_ip_withheld`. `ip_addresses` pass for
     `network_type` `"wifi"` and `"ethernet"`, and are withheld as
     `thread_mesh_local_withheld` for `"thread"`, a missing type and an
@@ -1363,6 +1641,16 @@ negatives Codex required.
   | Remove the URL binding from the request hook | the URL-drift test (section 8.2) |
   | Interpolate the URL or `Location` into the refusal message | the no-private-URL canaries (8.1 item 1) and `test_redirect_refusal_operator_message_fixed` |
   | Replace the `ha_get_device` allowlist with pass-through plus sanitizer | `test_device_projection_credential_canaries_<version>` |
+  | Pass `connections` or `identifiers` through, or check only the pair shape or the discriminator grammar | `test_device_registry_pairs_<version>` (credential discriminators) |
+  | Check the discriminator but skip the value format | `test_device_registry_pairs_<version>` (out-of-format values) |
+  | Accept arity 2 or more, or coerce values with `str()` | `test_device_registry_pairs_<version>` (malformed pairs) |
+  | Match discriminators case-insensitively or by prefix | `test_device_registry_pairs_<version>` (`MAC`, `mac_key`, `zha_network_key`) |
+  | Name the discriminator, value or index in the disclosure | `test_device_registry_pairs_<version>` (sink scan) |
+  | Withhold every pair | `test_device_registry_pairs_<version>` (positives) |
+  | Pass `ieee_address`, `zha_trigger_hint`, `node_id` or `integration_sources` unchecked | `test_device_registry_derived_fields_<version>` |
+  | The analysis fence's 3xx branch raises without calling `binding.refuse_redirect()` | `test_no_redirect_analysis_initialized_latch_307` and `_308` |
+  | `_bounded_mcp_read` classifies from `fence.failure` or the leaf scan before the latch | `test_no_redirect_analysis_initialized_latch_307` and `_308` |
+  | Only rename the fence's code to `upstream_redirect_refused`, with no latch | `test_no_redirect_analysis_initialized_latch_307` and `_308` (latch count and prompt refusal) |
   | Pass `ip_addresses` for every network type | `test_device_projection_thread_ip_withheld` |
   | Pass upstream warning text | `test_device_projection_warnings_closed_codes` |
 
@@ -1641,4 +1929,34 @@ None of these was run for this design revision.
 [u85-reg430]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L430
 [u85-sys1381]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_system.py#L1381
 [u85-reg505]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L505-L525
+[u91-reg50]: https://github.com/homeassistant-ai/ha-mcp/blob/d2e3f4b0647d815fb32d530fed15a6a99b1d4b33/src/ha_mcp/tools/tools_registry.py#L50-L72
+[u91-reg101]: https://github.com/homeassistant-ai/ha-mcp/blob/d2e3f4b0647d815fb32d530fed15a6a99b1d4b33/src/ha_mcp/tools/tools_registry.py#L101-L114
+[u91-reg132]: https://github.com/homeassistant-ai/ha-mcp/blob/d2e3f4b0647d815fb32d530fed15a6a99b1d4b33/src/ha_mcp/tools/tools_registry.py#L132-L168
+[u91-reg459]: https://github.com/homeassistant-ai/ha-mcp/blob/d2e3f4b0647d815fb32d530fed15a6a99b1d4b33/src/ha_mcp/tools/tools_registry.py#L459-L460
+[u85-reg46]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L46-L69
+[u85-reg97]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L97-L110
+[u85-reg128]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L128-L162
+[u85-reg580]: https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_registry.py#L580-L581
+[core-dr88]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/device_registry.py#L88-L91
+[core-dr287]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/device_registry.py#L287-L289
+[core-dr505]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/device_registry.py#L505-L523
+[core-mqtt1450]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/mqtt/entity.py#L1450-L1455
+[core-bt327]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/bluetooth/__init__.py#L327-L328
+[core-zha1108]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/zha/helpers.py#L1108-L1109
+[core-hue40]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/hue/__init__.py#L40-L50
+[core-upnp130]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/upnp/__init__.py#L130
+[core-zw243]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/zwave_js/helpers.py#L243-L245
+[core-zw256]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/zwave_js/helpers.py#L256-L259
+[core-zw352]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/zwave_js/helpers.py#L352-L361
+[core-mt59]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/helpers.py#L59-L68
+[core-mt81]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/helpers.py#L81-L94
+[core-mt131]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/entity.py#L131
+[core-hio145]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/hassio/entity.py#L145-L214
+[core-vd182]: https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/core.py#L182-L184
 [e-da257c]: ../hass_mcp_engineering_beta/ha_mcp_engineering/clients/dashboard_analysis.py#L257-L380
+[e-da278]: ../hass_mcp_engineering_beta/ha_mcp_engineering/clients/dashboard_analysis.py#L278-L283
+[e-da288]: ../hass_mcp_engineering_beta/ha_mcp_engineering/clients/dashboard_analysis.py#L288-L292
+[e-da378]: ../hass_mcp_engineering_beta/ha_mcp_engineering/clients/dashboard_analysis.py#L378-L379
+[e-da476]: ../hass_mcp_engineering_beta/ha_mcp_engineering/clients/dashboard_analysis.py#L476-L496
+[httpx-hooks]: https://github.com/encode/httpx/blob/0.28.1/httpx/_client.py#L1691-L1697
+[sdk-postwriter]: https://github.com/modelcontextprotocol/python-sdk/blob/v1.30.0/src/mcp/client/streamable_http.py#L585-L595
