@@ -206,6 +206,28 @@ class MatcherTests(Canary):
         self.assert_no_leak(lines)
         self.assertNotEqual(first_line, lines)
 
+    def test_the_boundary_short_segments_and_mapping_keys_are_pinned(self):
+        # The documented bound is eight characters, not whatever the module says.
+        self.assertEqual(SP.MIN_BOUNDARY, 8)
+        self.assertEqual(SP.redact(self.secret[-8:] + " tail"), TOKEN + " tail")
+        self.assertEqual(SP.redact("head " + self.secret[:9]), "head " + TOKEN)
+        self.assertEqual(SP.redact(self.secret[-7:] + " tail"), self.secret[-7:] + " tail")
+        # A custom path of short segments is secret only as a whole, so its
+        # JSON-escaped ``\/`` form (nested any depth) must still match.
+        short = "/".join(secrets.token_hex(3) for _ in range(4))
+        SP.configure(f"{HOST}/{short}/mcp")
+        self.assertEqual(SP.derive_fragments(f"{HOST}/{short}/mcp"), (short,))
+        for depth in (1, 2, 3):
+            with self.subTest(depth=depth):
+                escaped = short.replace("/", "\\" * depth + "/")
+                self.assertEqual(SP.redact("u=" + escaped + " end"), "u=" + TOKEN + " end")
+        SP.configure(url(self.secret))
+        # Mapping keys are redacted by the tree pass itself.
+        tree = SP.redact_tree({url(self.secret): [{"k": self.secret}], 7: "seven", "plain": "kept"})
+        self.assertEqual(sorted(map(str, tree)), sorted([f"{HOST}/{TOKEN}/mcp", "7", "plain"]))
+        self.assertEqual(tree[7], "seven")
+        self.assert_no_leak(json.dumps({str(key): value for key, value in tree.items()}))
+
     def test_ordinary_text_is_kept_and_nothing_changes_unconfigured(self):
         for text in ORDINARY:
             with self.subTest(text=text):
