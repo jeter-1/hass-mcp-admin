@@ -670,6 +670,10 @@ class ToolParityTests(unittest.TestCase):
             )
             self.assertNotIn(name, listing.get("required", []))
         beta_schemas["list_capabilities"] = listing
+        # HAMCP-294 adds exactly four optional get_logbook inputs; hours keeps
+        # its v1.1.2 default and type (asserted by the helper).
+        from tests.hamcp294_descriptor_changes import without_hamcp294_inputs
+        beta_schemas["get_logbook"] = without_hamcp294_inputs(self, beta_schemas["get_logbook"])
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_preserves_phase3c_provider_truth(self):
