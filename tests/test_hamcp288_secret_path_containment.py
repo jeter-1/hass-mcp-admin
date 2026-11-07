@@ -876,15 +876,22 @@ class GrammarContainmentTests(unittest.TestCase):
     def test_every_accepted_custom_path_is_configured_and_contained_on_every_surface(self):
         cases = grammar_cases()
         # Not vacuous: the sweep reaches every body and the edge values the
-        # review named (``/readonly/mcp``, ``/%41%42%43/mcp``).
+        # review named (``/%41%42%43/mcp``; ``/readonly/mcp`` is refused since
+        # round 4, below, and its exact-case variant stays accepted).
         self.assertGreaterEqual(len(cases), 400)
         labels = {label for label, _value, _forbidden in cases}
-        for required in ("selector_word_readonly/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
+        for required in ("selector_word_upper/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
                          "encoded_short_decoding/[path_only]", "encoded_one_character/mcp[path_only]",
                          "encoded_slashes_short/[path_only]", "encoded_seven_as_written/mcp[query]",
-                         "selector_route_as_path/[path_only]", "seven_character_body/[query]",
+                         "selector_word_readonly/[path_only]", "seven_character_body/[query]",
                          "seven_character_body/mcp[short_userinfo]", "short_segments_only/[short_query]"):
             self.assertIn(required, labels)
+        # Round 4 (Josh decision 2026-11-07): a secret path that is nothing
+        # but endpoint route words is refused, not configured
+        # (``RouteOnlySecretPathTests``).
+        for refused in ("selector_word_readonly/mcp[path_only]", "selector_route_as_path/[path_only]",
+                        "selector_catalog_as_path/mcp[query]", "selector_full_chain_as_path/sse[userinfo]"):
+            self.assertNotIn(refused, labels)
         for label, value, forbidden in cases:
             with self.subTest(case=label):
                 SP.configure(value)
@@ -916,7 +923,7 @@ class GrammarContainmentTests(unittest.TestCase):
                     self.assertIn("local-ha-mcp:9583", SP.redact(line))
 
     def test_the_process_streams_contain_each_edge_value(self):
-        for name in ("selector_word_readonly", "selector_route_as_path", "encoded_short_decoding",
+        for name in ("selector_word_upper", "selector_before_secret", "encoded_short_decoding",
                      "default_shape", "unicode_encoded"):
             body = secret_path_bodies()[name]
             value = f"http://local-ha-mcp:9583{body}" + ("" if body.endswith("/mcp") else "/mcp")
@@ -936,10 +943,15 @@ class GrammarContainmentTests(unittest.TestCase):
                 self.assertIn("retry http://local-ha-mcp:9583", out.getvalue())
 
     def test_selector_words_are_credentials_only_in_credential_position(self):
-        # The review's two accepted values: each keeps a fragment.
-        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/readonly/mcp"), ("readonly",))
+        # The review's two values: the encoded one keeps its fragments; the
+        # one made only of endpoint route words is refused since round 4
+        # (Josh decision 2026-11-07) and, configured anyway, installs no
+        # route as an anchor, while its exact-case variant keeps a fragment.
         self.assertEqual(SP.derive_fragments("http://synthetic.invalid/%41%42%43/mcp"),
                          ("%41%42%43", "/ABC/mcp"))
+        self.assertFalse(accepted("http://synthetic.invalid/readonly/mcp"))
+        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/readonly/mcp"), ())
+        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/READONLY/mcp"), ("READONLY",))
         token = canary()
         # After a secret path, every supported endpoint suffix is not secret.
         for endpoint in ENDPOINTS:
@@ -955,10 +967,11 @@ class GrammarContainmentTests(unittest.TestCase):
         # A selector word that IS the configured credential is redacted
         # wherever it appears (a disclosed over-redaction of that one word,
         # never a disabled guard), while other selector text stays.
-        SP.configure("http://synthetic.invalid/readonly/mcp")
-        self.assertEqual(SP.redact("mode readonly"), "mode " + TOKEN)
+        SP.configure("http://synthetic.invalid/READONLY/mcp")
+        self.assertEqual(SP.redact("mode READONLY"), "mode " + TOKEN)
+        self.assertEqual(SP.redact("mode readonly"), "mode readonly")
         self.assertEqual(SP.redact("catalog/full and /mcp"), "catalog/full and /mcp")
-        self.assertEqual(SP.redact("http://synthetic.invalid/readonly/mcp"),
+        self.assertEqual(SP.redact("http://synthetic.invalid/READONLY/mcp"),
                          "http://synthetic.invalid/" + TOKEN + "/mcp")
         # The complete decoded path of a percent-encoded secret path is
         # matched whole with its ``/`` even when shorter than the bound (an
@@ -1182,10 +1195,18 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
     ROUTE_TEXTS = ("GET /mcp", "POST /sse 200", "GET /MCP", "/readonly/catalog/full", "/readonly/catalog/search",
                    "/catalog/full", "mode readonly", "catalog/search", f"connect to {HOST}/mcp",
                    f"connect to {HOST}/readonly/catalog/full", "/readonly", "/mcp")
-    ROUTE_WORDS = frozenset({"mcp", "sse", "readonly", "catalog", "full", "search"})
+    # Derived from the code's endpoint suffix set, never hard-coded; the
+    # pinned set is the 9.1 selectors plus Engineering's routes.
+    ROUTE_WORDS = frozenset(word.lower() for suffix in SP.SELECTOR_SUFFIXES for word in suffix) | SP.ROUTE_SEGMENTS
+    REASON = "SEPARATOR_ONLY_SECRET_PATH_REASON"
+    ERROR = "SeparatorOnlySecretPathError"
+    PREDICATE = "separator_only_secret_path"
+    STARTUP_BODY = "/%2F%2F%2F"
+    MINIMUM_CASES = 200
 
     def setUp(self) -> None:
         self.addCleanup(SP.reset)
+        self.assertGreaterEqual(self.ROUTE_WORDS, {"mcp", "sse", "readonly", "catalog", "full", "search"})
 
     def bodies(self) -> dict[str, str]:
         many = "/" + "".join(secrets.choice(("%2F", "%2f")) for _ in range(3 + secrets.randbelow(6)))
@@ -1227,25 +1248,31 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
         )
 
     def assert_no_value_text(self, message: str, value: str, body: str) -> None:
-        # Messages name the case, never a value.
+        # Messages name the case, never a value: no part of the URL, no
+        # escape and no decoded word (the option name aside, which holds
+        # ``mcp``).
+        message = message.lower().replace("upstream_dashboard_mcp_url", "")
         for name, text in (("url", value), ("body", body), ("decoded_body", unquote(body)),
-                           ("path", urlsplit(value).path), ("escape", "%2")):
-            self.assertNotIn(text.lower(), message.lower(), name)
+                           ("path", urlsplit(value).path), ("escape", "%")):
+            self.assertNotIn(text.lower(), message, name)
+        for word in unquote(body).split("/"):
+            if word:
+                self.assertNotIn(word.lower(), message, "decoded word")
 
-    def test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option(self):
+    def test_the_secret_path_is_refused_with_a_reason_naming_the_option(self):
         from ha_mcp_engineering import configuration as C
         from ha_mcp_engineering.application import validate_settings
         from ha_mcp_engineering.errors import ConfigurationError
 
-        reason = getattr(C, "SEPARATOR_ONLY_SECRET_PATH_REASON", None)
+        reason = getattr(C, self.REASON, None)
         cases = self.values()
-        self.assertGreaterEqual(len(cases), 200)
+        self.assertGreaterEqual(len(cases), self.MINIMUM_CASES)
         for label, value, body in cases:
             with self.subTest(case=label):
                 self.assertFalse(accepted(value))
                 with self.assertRaises(ValueError) as parsed:
                     parse_upstream_dashboard_endpoint(value)
-                self.assertEqual(type(parsed.exception).__name__, "SeparatorOnlySecretPathError")
+                self.assertEqual(type(parsed.exception).__name__, self.ERROR)
                 self.assertEqual(str(parsed.exception), reason)
                 with self.assertRaises(ConfigurationError) as raised:
                     validate_settings(self.settings(value))
@@ -1260,15 +1287,16 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
         self.assertTrue(reason.startswith("upstream_dashboard_mcp_url: "))
         self.assertNotIn("/", reason)
         self.assertNotIn("%", reason)
-        self.assertTrue(hasattr(SP, "separator_only_secret_path"))
-        self.assertTrue(all(SP.separator_only_secret_path(value) for _label, value, _body in cases))
+        predicate = getattr(SP, self.PREDICATE, None)
+        self.assertTrue(callable(predicate))
+        self.assertTrue(all(predicate(value) for _label, value, _body in cases))
 
     def test_the_operator_sees_the_reason_at_startup_and_nothing_starts(self):
         from ha_mcp_engineering import application, configuration as C
 
-        reason = getattr(C, "SEPARATOR_ONLY_SECRET_PATH_REASON", None)
+        reason = getattr(C, self.REASON, None)
 
-        value = f"{HOST}/%2F%2F%2F/mcp"
+        value = f"{HOST}{self.STARTUP_BODY}/mcp"
         logged = []
         with patch.object(application, "load_settings", return_value=self.settings(value)), \
                 patch.object(SP, "install_stream_guard"), patch.object(application, "configure_logging"), \
@@ -1282,21 +1310,22 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
         events = [(args[2], kwargs.get("context")) for args, kwargs in logged]
         self.assertEqual(events[-1][0], "startup_validation_failed")
         self.assertIn(reason, events[-1][1]["issues"])
-        self.assert_no_value_text(json.dumps(events, default=str), value, "/%2F%2F%2F")
+        self.assert_no_value_text(json.dumps(events, default=str), value, self.STARTUP_BODY)
 
     def test_configured_anyway_the_endpoint_suffix_is_never_an_anchor(self):
         for label, value, body in self.values():
             with self.subTest(case=label):
                 SP.configure(value)
-                # The guard stays on: the value as written is still redacted
-                # (a body below the bound with no other credential has no
-                # fragment, as before; the parser never accepted it either).
-                if not (len(body) < SP.MIN_FRAGMENT and label.endswith("[path_only]")):
+                # The guard stays on: an encoded spelling as written is still
+                # redacted (a body with no encoded segment at the bound and no
+                # other credential has no fragment; the parser refuses it).
+                encoded = [segment for segment in body.split("/")
+                           if len(segment) >= SP.MIN_FRAGMENT and unquote(segment) != segment]
+                if encoded or not label.endswith("[path_only]"):
                     self.assertTrue(SP.configured())
                     self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
-                for segment in body.split("/"):
-                    if len(segment) >= SP.MIN_FRAGMENT:
-                        self.assertNotIn(segment, SP.redact("retry " + value))
+                for segment in encoded:
+                    self.assertNotIn(segment, SP.redact("retry " + value))
                 # Nothing decoded is derived: no whole path, and no fragment
                 # or credential is a route word, a route or a bare run of
                 # ``/`` (the escapes as written are the raw spelling).
@@ -1348,6 +1377,100 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
                     self.assertEqual(SP.redact(text), text)
         # The original three-letter value still configures its whole path.
         self.assertEqual(SP.derive_fragments(f"{HOST}/%41%42%43/mcp"), ("%41%42%43", "/ABC/mcp"))
+
+
+class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
+    """Round 4 follow-up (Josh decision 2026-11-07): a secret path span that,
+    after percent-decoding once and dropping ``/`` separators, holds nothing
+    but endpoint route words (``/%2F%2Fmcp`` or ``/%2F%2F%2F/%6Dcp`` before
+    ``/mcp``) is refused the same way, and configured anyway it never makes
+    an endpoint route an anchor. A route word is a word of the code's own
+    endpoint suffix set (``SP.SELECTOR_SUFFIXES`` in exact case,
+    ``SP.ROUTE_SEGMENTS`` without case). Runs every inherited test with these
+    bodies; the positive controls are its own."""
+
+    REASON = "ROUTE_ONLY_SECRET_PATH_REASON"
+    ERROR = "RouteOnlySecretPathError"
+    PREDICATE = "route_only_secret_path"
+    STARTUP_BODY = "/%2F%2Fmcp"
+    MINIMUM_CASES = 500
+    ROUTE_ENDPOINTS = ("/mcp", "/sse", "/MCP")
+
+    def bodies(self) -> dict[str, str]:
+        found = {}
+        words = sorted({word for suffix in SP.SELECTOR_SUFFIXES for word in suffix} | SP.ROUTE_SEGMENTS)
+        for word in words:
+            found[f"slashes_{word}"] = f"/%2F%2F{word}"
+            found[f"encoded_upper_{word}"] = f"/%2F%2F%2F/%{ord(word[0]):02X}{word[1:]}"
+            found[f"encoded_lower_{word}"] = f"/%2F%2F%2F/%{ord(word[0]):02x}{word[1:]}"
+        for word in sorted(SP.ROUTE_SEGMENTS):
+            # Route segments compare without case, as the parser does.
+            found[f"upper_{word}"] = "/%2F%2F" + word.upper()
+            found[f"escaped_upper_{word}"] = f"/%2F%2F%{ord(word[0].upper()):02X}{word[1:]}"
+        found["selector_chain"] = "/%2Freadonly%2Fcatalog%2Ffull"
+        found["encoded_words_raw_slash"] = "/%63atalog/%73earch"
+        found["repeated_route"] = "/%2Fmcp%2Fmcp%2Fsse"
+        return found
+
+    def unencoded(self) -> dict[str, str]:
+        words = sorted({word for suffix in SP.SELECTOR_SUFFIXES for word in suffix} | SP.ROUTE_SEGMENTS)
+        return {f"plain_{word}": f"/{word}" for word in words}
+
+    def values(self) -> list[tuple[str, str, str]]:
+        found = super().values()
+        # An unencoded body is a span only with an endpoint after it; a route
+        # segment endpoint is never part of a selector suffix.
+        for name, body in self.unencoded().items():
+            for endpoint in self.ROUTE_ENDPOINTS:
+                for form, (userinfo, query) in (("path_only", ("", "")),
+                                                ("query", ("", "?token=SYNTH%s")),
+                                                ("userinfo", ("synthuser:pw-SYNTH%s@", ""))):
+                    nonce = secrets.token_hex(5)
+                    value = (f"http://{userinfo.replace('%s', nonce)}local-ha-mcp:9583{body}{endpoint}"
+                             f"{query.replace('%s', nonce)}")
+                    found.append((f"{name}{endpoint}[{form}]", value, body))
+        return found
+
+    def test_paths_with_other_content_are_accepted_and_unchanged(self):
+        # Positive controls: a route word with other content, a word in a
+        # case the grammar does not route, and a path that is only an
+        # endpoint suffix (no span) are accepted as before.
+        token = canary()
+        nonce = secrets.token_hex(5)
+        kept = {
+            "default_shape": (url(token), None),
+            "route_word_then_letter": (f"{HOST}/%2F%2FmcpX/mcp", "/mcpX"),
+            "letter_then_route_word": (f"{HOST}/%2F%2Fxmcp/mcp", "/xmcp"),
+            "route_word_split": (f"{HOST}/%2F%2Fmc%2Fp/mcp", "/mc/p"),
+            "route_word_with_digit": (f"{HOST}/%2F%2F%2F/%6Dcp2/mcp", "/mcp2"),
+            "route_word_hyphenated": (f"{HOST}/mcp%2Dx%2F/mcp", "/mcp-x"),
+            "route_word_and_other": (f"{HOST}/%2F%2Fmcp%2Fx/mcp", "/mcp/x"),
+            "selector_word_other_case": (f"{HOST}/%2F%2FReadOnly/mcp", None),
+            "selector_word_upper_plain": (f"{HOST}/READONLY/mcp", None),
+            "long_route_prefixed": (f"{HOST}/%6Dcp-{token}/mcp", None),
+            "no_span_query": (f"{HOST}/mcp?token=SYNTH{nonce}", None),
+        }
+        for name, (value, whole) in kept.items():
+            with self.subTest(case=name):
+                self.assertTrue(accepted(value))
+                # Unchanged by the fix: these hold on the reviewed head too.
+                self.assertFalse(getattr(SP, "route_only_secret_path", lambda _value: False)(value))
+                SP.configure(value)
+                self.assertEqual(SP._derive(value)[2], (whole,) if whole else ())
+                if whole:
+                    self.assertEqual(SP.redact(f"secret_path {whole} in use"), f"secret_path {TOKEN} in use")
+                self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
+                for text in self.ROUTE_TEXTS:
+                    self.assertEqual(SP.redact(text), text)
+        # A path that is only an endpoint suffix has no secret path span to
+        # refuse; its whole path stays the fail-safe credential, as before.
+        for value in (f"{HOST}/readonly?token=SYNTH{nonce}", f"{HOST}/readonly/catalog/full?token=SYNTH{nonce}",
+                      f"{HOST}/readonly"):
+            with self.subTest(no_span=value):
+                self.assertTrue(accepted(value))
+                SP.configure(value)
+                self.assertTrue(SP.configured())
+                self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
 
 
 class SerializedEscapeTests(Canary):
