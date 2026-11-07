@@ -11,8 +11,9 @@ reads configuration, logs or a real secret path, and no network is used.
 
 1. Regressions: the corrected test module, run against each reviewed head
    (7d8f2158 for F1-F3, fe48d80f for the round-3 F1 residual R1, 2524b2f7
-   for the round-3 Low L1, a separator-only decoded secret path), must fail
-   each named regression test by an assertion.
+   for the round-3 Low L1, a separator-only decoded secret path, and
+   d4e37618 for L1R, a route-word-only decoded secret path, Josh decision
+   2026-11-07), must fail each named regression test by an assertion.
 2. Mutants: each mutant reopens one reviewed defect in the corrected source
    and is killed only by an assertion failure in its named test; an error,
    import failure or survival is not a kill.
@@ -31,6 +32,9 @@ REVIEWED = "7d8f21580a7d5677a3875d7c0e2f70b4073cb530"
 REVIEWED_R3 = "fe48d80fbb95f83283a604c0395d5494f0b81bb2"
 # Round 4: the head whose review left the Low L1 (separator-only decoded path).
 REVIEWED_R4 = "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed"
+# Round 4 follow-up: the pushed round-4 head before the route-word refusal
+# (Josh decision 2026-11-07).
+REVIEWED_R4B = "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358"
 MODULE = "tests.test_hamcp288_secret_path_containment"
 TEST_FILE = "tests/test_hamcp288_secret_path_containment.py"
 SECRET_PATHS = "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py"
@@ -42,6 +46,7 @@ E = "SerializedEscapeTests."
 O = "StreamOverflowTests."
 D = "DecodedShortPathTests."
 S = "SeparatorOnlySecretPathTests."
+R = "RouteOnlySecretPathTests."
 
 shutil.rmtree(OUT, ignore_errors=True)
 OUT.mkdir(parents=True)
@@ -88,10 +93,21 @@ regressions_r3 = [
     ("R1", D + "test_the_process_streams_contain_the_decoded_path"),
 ]
 regressions_r4 = [
-    ("L1", S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1", S + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
     ("L1", S + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
     ("L1", S + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
 ]
+regressions_r4b = [
+    ("L1R", R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1R", R + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
+    ("L1R", R + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
+    ("L1R", G + "test_every_accepted_custom_path_is_configured_and_contained_on_every_surface"),
+    ("L1R", G + "test_selector_words_are_credentials_only_in_credential_position"),
+]
+ROUTE_REFUSAL = "        raise RouteOnlySecretPathError(ROUTE_ONLY_SECRET_PATH_REASON)\n"
+GUARD = "    unanchorable = _separator_only(raw_parts) or _route_only(raw_parts)\n"
+ROUTE_WORD = "    return part in SELECTOR_WORDS or part.lower() in ROUTE_SEGMENTS\n"
+EXCEPT = "    except (SeparatorOnlySecretPathError, RouteOnlySecretPathError) as exc:\n"
 REFUSAL = "        raise SeparatorOnlySecretPathError(SEPARATOR_ONLY_SECRET_PATH_REASON)\n"
 DERIVED = "    return _longest_first(kept + added), credentials, tuple(whole_paths)\n"
 WHOLE = "            + [_sequence(path) + _WHOLE_PATH_END for path in whole_paths]\n"
@@ -131,26 +147,46 @@ mutants = [
      D + "test_ordinary_text_hosts_and_bare_words_are_kept"),
     ("L1", "a separator-only secret path accepted by validation again", CONFIGURATION,
      "    if secret_paths.separator_only_secret_path(candidate):\n", "    if False:\n",
-     S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
-    ("L1", "the endpoint suffix installed as an anchor when configured anyway", SECRET_PATHS,
-     "    bases = _bases(parts) if parts and not _separator_only(raw_parts) else []\n",
-     "    bases = _bases(parts) if parts else []\n",
+     S + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1", "the endpoint suffix installed as an anchor when configured anyway", SECRET_PATHS, GUARD,
+     "    unanchorable = _route_only(raw_parts)\n",
      S + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
-    ("L1", "the operator sees only the generic reason", APPLICATION,
-     "    except SeparatorOnlySecretPathError as exc:\n",
-     "    except () as exc:\n",
+    ("L1", "the operator sees only the generic reason", APPLICATION, EXCEPT,
+     "    except RouteOnlySecretPathError as exc:\n",
      S + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
     ("L1", "the reason carries the configured value", CONFIGURATION, REFUSAL,
      '        raise SeparatorOnlySecretPathError(f"{SEPARATOR_ONLY_SECRET_PATH_REASON}: {candidate}")\n',
-     S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
+     S + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1R", "a route-word-only secret path accepted by validation again", CONFIGURATION,
+     "    if secret_paths.route_only_secret_path(candidate):\n", "    if False:\n",
+     R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1R", "the guard not symmetric: a route-only span installs its decoded base", SECRET_PATHS, GUARD,
+     "    unanchorable = _separator_only(raw_parts)\n",
+     R + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
+    ("L1R", "selector words are not route words (route set hard-coded to mcp/sse)", SECRET_PATHS, ROUTE_WORD,
+     "    return part.lower() in ROUTE_SEGMENTS\n",
+     R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1R", "route segments compared in exact case", SECRET_PATHS, ROUTE_WORD,
+     "    return part in SELECTOR_WORDS or part in ROUTE_SEGMENTS\n",
+     R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1R", "a route word with other content refused (substring match)", SECRET_PATHS, ROUTE_WORD,
+     "    return any(word in part.lower() for word in SELECTOR_WORDS | ROUTE_SEGMENTS)\n",
+     R + "test_paths_with_other_content_are_accepted_and_unchanged"),
+    ("L1R", "the operator sees only the generic reason", APPLICATION, EXCEPT,
+     "    except SeparatorOnlySecretPathError as exc:\n",
+     R + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
+    ("L1R", "the reason carries the configured value", CONFIGURATION, ROUTE_REFUSAL,
+     '        raise RouteOnlySecretPathError(f"{ROUTE_ONLY_SECRET_PATH_REASON}: {candidate}")\n',
+     R + "test_the_secret_path_is_refused_with_a_reason_naming_the_option"),
 ]
 
 results = {"head": HEAD, "reviewed_head": REVIEWED, "reviewed_head_r3": REVIEWED_R3,
-           "reviewed_head_r4": REVIEWED_R4,
+           "reviewed_head_r4": REVIEWED_R4, "reviewed_head_r4b": REVIEWED_R4B,
            "python": sys.version.split()[0], "regressions": [], "mutants": [], "control": None}
 corrected_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
 index = 0
-for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3), (REVIEWED_R4, regressions_r4)):
+for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3), (REVIEWED_R4, regressions_r4),
+                         (REVIEWED_R4B, regressions_r4b)):
     checkout(revision)
     (COPY / TEST_FILE).write_bytes(corrected_tests)
     for finding, test in tests:
