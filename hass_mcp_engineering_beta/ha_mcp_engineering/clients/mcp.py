@@ -28,6 +28,24 @@ ALLOWED_DASHBOARD_ARGUMENTS = frozenset(
 MAX_TOOL_CATALOG_SIZE = 500
 MAX_TOOL_CATALOG_PAGES = 20
 MAX_UPSTREAM_CONTENT_CHARS = 2_000_000
+# The one fixed internal guide read (strict BPS / governed dashboard writes).
+BEST_PRACTICES_GUIDE_ARGUMENTS = (
+    ("skill", "home-assistant-best-practices"),
+    ("file", "references/dashboard-guide.md"),
+)
+# Compiled, version-bound rewrites of that read for releases whose exact
+# ha_get_skill_guide is file-only (8.6.0; 9.1.0 per HAMCP-319 section 7.1).
+# Keyed by (exact upstream version, tool). Only the exact fixed arguments are
+# accepted and rewritten; any other internal argument set is refused before
+# dispatch. A release without a row keeps its reviewed pass-through (8.5.0).
+_BEST_PRACTICES_ARGUMENT_REWRITES = {
+    ("8.6.0", REQUIRED_BEST_PRACTICES_TOOL): (
+        ("file", "references/dashboard-guide.md"),
+    ),
+    ("9.1.0", REQUIRED_BEST_PRACTICES_TOOL): (
+        ("file", "references/dashboard-guide.md"),
+    ),
+}
 MAX_GROUPED_ERROR_CATEGORIES = 8
 TRANSPORT_FAILURE_KINDS = frozenset(
     {
@@ -321,10 +339,7 @@ class McpDashboardTransport:
     ) -> McpDashboardRead:
         """Fetch only the reviewed dashboard guide used by strict BPS."""
 
-        arguments = {
-            "skill": "home-assistant-best-practices",
-            "file": "references/dashboard-guide.md",
-        }
+        arguments = dict(BEST_PRACTICES_GUIDE_ARGUMENTS)
         result = await self._run(
             tool_name=REQUIRED_BEST_PRACTICES_TOOL,
             arguments=arguments,
@@ -426,19 +441,16 @@ class McpDashboardTransport:
         if tool_name is None:
             raise DashboardTransportError("internal_error")
         capability_validator(handshake)
-        if (
-            tool_name == REQUIRED_BEST_PRACTICES_TOOL
-            and handshake.server_version == "8.6.0"
-        ):
-            # The validated exact 8.6 guide dropped the skill selector.
-            # Keep this one internal read fixed; caller data cannot
+        rewrite = _BEST_PRACTICES_ARGUMENT_REWRITES.get(
+            (handshake.server_version, tool_name)
+        )
+        if rewrite is not None:
+            # The validated exact 8.6 and 9.1 guides dropped the skill
+            # selector. Keep this one internal read fixed; caller data cannot
             # select another file or manufacture an acknowledgement.
-            if arguments != {
-                "skill": "home-assistant-best-practices",
-                "file": "references/dashboard-guide.md",
-            }:
+            if arguments != dict(BEST_PRACTICES_GUIDE_ARGUMENTS):
                 raise DashboardTransportError("prohibited_argument")
-            arguments = {"file": "references/dashboard-guide.md"}
+            arguments = dict(rewrite)
         telemetry = current_telemetry()
         if (
             telemetry is not None

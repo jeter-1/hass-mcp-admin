@@ -5,7 +5,10 @@ import hashlib
 import json
 import re
 
+from ..clients.ha_mcp_endpoint import OPERATOR_MESSAGES as _ENDPOINT_OPERATOR_MESSAGES
 from ..errors import ErrorCode, GovernanceError
+
+_OPERATOR_TEXTS = frozenset(_ENDPOINT_OPERATOR_MESSAGES.values())
 
 MODEL = "dashboard-integrity-v1"
 REQUIREMENTS = ("core.dashboard_configuration_read", "core.basic_rest_read",
@@ -42,13 +45,18 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired",
 class AnalysisError(GovernanceError):
     """A fixed reason, never provider text, argument values or exception details."""
 
-    def __init__(self, reason):
+    def __init__(self, reason, *, operator_remediation=None):
         reason = reason if reason in REASONS else "source_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
                 ErrorCode.INVALID_CURSOR if reason in {"invalid_cursor", "snapshot_expired"} else
                 ErrorCode.PROVIDER_UNAVAILABLE if reason.startswith("authority_") else
                 ErrorCode.ANALYSIS_UNAVAILABLE)
-        super().__init__(code, details={"reason": reason})
+        details = {"reason": reason}
+        # HAMCP-319 section 3.3: only a fixed ha-mcp endpoint operator constant
+        # may ride along (never interpolated, never provider text).
+        if operator_remediation is not None and operator_remediation in _OPERATOR_TEXTS:
+            details["operator_remediation"] = operator_remediation
+        super().__init__(code, details=details)
         self.reason = reason
 
     @property

@@ -179,6 +179,15 @@ MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SAFE_UPSTREAM_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 RESPONSE_ENVELOPE_RESERVE = 16_000
+# HAMCP-319 section 6.3 (F4): exact releases whose get mode always reports
+# whether Home Assistant holds a saved config (9.1.0 _finalize_get_result).
+# On these releases anything but ``stored_config: true`` never yields a
+# readable configuration, and no hash is derived first.
+STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0"})
+# HAMCP-319 section 6.3 (F4): exact releases whose list mode is decoded here
+# and whose ``[]`` cannot prove absence (9.1.0 ``fetch_dashboards_list(...) or
+# []``). An empty inventory from them is reported as not complete.
+COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0"})
 # HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
 # provider result in. The size estimate serializes this exact wrapper.
 CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"
@@ -548,9 +557,23 @@ class UpstreamDashboardProvider:
                     "Sensitive dashboard metadata was redacted; the inventory "
                     "is not complete."
                 )
+            # HAMCP-319 section 6.3 (F4): a collapsed registry read and an
+            # empty registry are the same ``[]`` on these releases, so
+            # absence is never decided from it.
+            collapsed_empty = (
+                not dashboards
+                and exchange.handshake.server_version
+                in COLLAPSIBLE_EMPTY_LIST_RELEASES
+            )
+            if collapsed_empty:
+                warnings.append(
+                    "The dashboard registry list is empty; this upstream "
+                    "release reports a failed registry read as an empty list, "
+                    "so dashboard absence is unavailable."
+                )
             completeness = (
                 "partial"
-                if truncated or malformed or redactions.applied
+                if truncated or malformed or redactions.applied or collapsed_empty
                 else "complete"
             )
             metadata["completeness"] = completeness
@@ -600,6 +623,39 @@ class UpstreamDashboardProvider:
         def normalize(
             payload: dict[str, Any], exchange: McpDashboardRead
         ) -> DashboardProviderResult:
+            # HAMCP-319 section 6.3 (F4): ``stored_config: false`` (no saved
+            # config, missing YAML file or recovery mode) means the dashboard
+            # exists and its saved config is unavailable. It is never an empty
+            # config and never absence, and no hash is derived from it.
+            stored_config_present = "stored_config" in payload
+            stored_config = payload.get("stored_config")
+            if stored_config is False:
+                details: dict[str, Any] = {
+                    "provider_response_received": True,
+                    "provider_failure_kind": "saved_configuration_unavailable",
+                    "upstream_action": "get",
+                    "saved_configuration": "unavailable",
+                }
+                if (
+                    payload.get("url_path") == url_path
+                    and "resolved_from" not in payload
+                ):
+                    details["dashboard_identity"] = "exists"
+                self._raise("upstream_error", dispatched=True, details=details)
+            if (
+                stored_config_present and stored_config is not True
+            ) or (
+                exchange.handshake.server_version in STORED_CONFIG_REQUIRED_RELEASES
+                and stored_config is not True
+            ):
+                self._raise(
+                    "invalid_response",
+                    dispatched=True,
+                    details={
+                        "provider_response_received": True,
+                        "saved_configuration": "unavailable",
+                    },
+                )
             config = payload.get("config")
             if not isinstance(config, dict):
                 self._raise("invalid_response", dispatched=True)
@@ -779,7 +835,13 @@ class UpstreamDashboardProvider:
                       "timeout": "timeout", "invalid_response": "malformed_response",
                       "connection_failed": "source_unavailable", "upstream_error": "source_rejected"}.get(
                           error.category, "authority_unavailable")
-            raise c.AnalysisError(reason) from None
+            # HAMCP-319 section 3.3: a refused redirect (or catalog-mode
+            # refusal) keeps its closed analysis reason and carries the fixed
+            # operator text so the dashboard result names the fix.
+            raise c.AnalysisError(
+                reason,
+                operator_remediation=HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(error.category),
+            ) from None
 
     def _validate_write_handshake(
         self,
@@ -2338,6 +2400,9 @@ def _analysis_configuration(result, url_path):
         raise c.AnalysisError("source_rejected")
     if payload.get("url_path") != url_path:
         raise c.AnalysisError("identity_mismatch")
+    # HAMCP-319 section 6.3 (F4): no saved config is not an analyzable source.
+    if "stored_config" in payload and payload["stored_config"] is not True:
+        raise c.AnalysisError("source_rejected")
     configuration = payload.get("config")
     if (type(configuration) is not dict or not (
             type(configuration.get("views")) is list or type(configuration.get("strategy")) is dict)):
