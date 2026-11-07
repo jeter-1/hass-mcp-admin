@@ -477,6 +477,7 @@ class CaseRunnerTests(unittest.TestCase):
         observed = LANES.evaluate_initialize(200, "application/json", json.dumps(message),
                                              expect="served", expected_version="8.5.0")
         self.assertEqual(observed["upstream_protocol"], "2025-03-26")
+        self.assertEqual(observed["negotiated_protocol"], "2025-03-26")
         sse = "event: message\ndata: " + json.dumps(message) + "\n\n"
         LANES.evaluate_initialize(200, "text/event-stream", sse, expect="served", expected_version="8.5.0")
         with self.assertRaises(LANES.LaneFailure):
@@ -521,6 +522,13 @@ class CaseRunnerTests(unittest.TestCase):
             LANES.evaluate_fail_closed([(503, '{"code":"upstream_redirect_refused"}')], (503, ""), None)
         with self.assertRaises(LANES.LaneFailure):
             LANES.evaluate_fail_closed([], (503, ""), None)
+        # Not listening yet (0) then answering 503 is the startup race: accepted.
+        observed = LANES.evaluate_fail_closed([(0, ""), (0, ""), (503, "{}")], (503, "{}"), None)
+        self.assertEqual(observed["ready_statuses"], [0, 503])
+        # Engineering never answered at all: refused, whatever the session probe says.
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            LANES.evaluate_fail_closed([(0, "")] * 5, (503, "{}"), None)
+        self.assertEqual(str(caught.exception), "fail_closed_engineering_never_answered")
         ready = [(503, "{}"), (200, "{}")]
         observed = LANES.evaluate_fail_closed(ready, None, {"names": ["get_server_health"],
                                                             "health_text": '{"admission_status":"unavailable"}'})

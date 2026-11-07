@@ -283,6 +283,8 @@ def evaluate_initialize(status: int, content_type: str, body: str, *, expect: st
     require(isinstance(result, dict), "initialize_without_result")
     server = result.get("serverInfo") if isinstance(result.get("serverInfo"), dict) else {}
     observed["upstream_protocol"] = result.get("protocolVersion")
+    # Counts toward the manifest's single negotiated protocol (section 5.1).
+    observed["negotiated_protocol"] = result.get("protocolVersion")
     observed["server_version"] = server.get("version")
     require(result.get("protocolVersion") == EXPECTED_PROTOCOL, "initialize_protocol_mismatch")
     require(expected_version is None or server.get("version") == expected_version, "initialize_server_version_mismatch")
@@ -318,11 +320,16 @@ def command_initialize(args: argparse.Namespace, post: Callable[[str], tuple[int
 # --------------------------------------------------------------------------
 
 def http_get(url: str) -> tuple[int, str]:
+    """Return ``(status, body)``; ``(0, "")`` while nothing is listening yet."""
+
     import httpx
 
-    with httpx.Client(follow_redirects=False, timeout=5.0) as client:
-        response = client.get(url)
-        return response.status_code, response.text[:MAX_BODY]
+    try:
+        with httpx.Client(follow_redirects=False, timeout=5.0) as client:
+            response = client.get(url)
+            return response.status_code, response.text[:MAX_BODY]
+    except httpx.TransportError:
+        return 0, ""
 
 
 def http_post_initialize(url: str) -> tuple[int, str]:
@@ -360,6 +367,9 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
     texts += [catalog["health_text"]] if catalog else []
     require(not any(REDIRECT_CATEGORY in text for text in texts), "fail_closed_redirect_category_present")
     ready = [status for status, _ in samples]
+    # Status 0 means nothing was listening yet. Engineering must have answered
+    # readiness at least once, so a container that never started cannot pass.
+    require(any(status != 0 for status in ready), "fail_closed_engineering_never_answered")
     if all(status != 200 for status in ready):
         require(mcp_attempt is not None and mcp_attempt[0] >= 400 and not 300 <= mcp_attempt[0] < 400,
                 "fail_closed_session_not_refused")
