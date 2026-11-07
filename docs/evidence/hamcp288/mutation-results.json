@@ -1,11 +1,13 @@
 {
-  "head": "d63df267e4952e3509adc605c392e136217bbc8d",
+  "head": "8f7f3ad0e75d7245f5558e0e01345aa194e74da6",
   "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
+  "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
   "python": "3.13.5",
   "regressions": [
     {
       "id": 1,
       "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
       "classification": "assertion",
       "exit_code": 1
@@ -13,6 +15,7 @@
     {
       "id": 2,
       "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
       "classification": "assertion",
       "exit_code": 1
@@ -20,6 +23,7 @@
     {
       "id": 3,
       "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "GrammarContainmentTests.test_the_process_streams_contain_each_edge_value",
       "classification": "assertion",
       "exit_code": 1
@@ -27,6 +31,7 @@
     {
       "id": 4,
       "finding": "F1",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "GrammarContainmentTests.test_refused_values_never_reach_an_output_and_unparseable_ones_fail_closed",
       "classification": "assertion",
       "exit_code": 1
@@ -34,6 +39,7 @@
     {
       "id": 5,
       "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "SerializedEscapeTests.test_every_serialization_depth_is_recognized",
       "classification": "assertion",
       "exit_code": 1
@@ -41,6 +47,7 @@
     {
       "id": 6,
       "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "SerializedEscapeTests.test_responses_streams_and_listeners_never_reconstruct_the_path",
       "classification": "assertion",
       "exit_code": 1
@@ -48,6 +55,7 @@
     {
       "id": 7,
       "finding": "F2",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "SerializedEscapeTests.test_the_renderer_screens_values_before_serialization",
       "classification": "assertion",
       "exit_code": 1
@@ -55,6 +63,7 @@
     {
       "id": 8,
       "finding": "F3",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "StreamOverflowTests.test_the_reviewed_alignment_is_redacted",
       "classification": "assertion",
       "exit_code": 1
@@ -62,7 +71,48 @@
     {
       "id": 9,
       "finding": "F3",
+      "revision": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
       "test": "StreamOverflowTests.test_every_split_across_the_bound_in_every_write_pattern",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_the_complete_decoded_path_is_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_split_writes_never_reassemble_the_decoded_path",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "R1",
+      "revision": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+      "test": "DecodedShortPathTests.test_the_process_streams_contain_the_decoded_path",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -130,12 +180,30 @@
       "test": "StreamOverflowTests.test_a_held_tail_after_a_bounded_write_keeps_its_cut_evidence",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "R1",
+      "name": "the complete decoded path filtered by the fragment threshold again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "DecodedShortPathTests.test_the_complete_decoded_path_is_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "R1",
+      "name": "the short whole path matched without its end boundary",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "DecodedShortPathTests.test_ordinary_text_hosts_and_bare_words_are_kept",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "control": {
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 42 tests in 24.988s"
+    "ran": "Ran 47 tests in 28.158s"
   }
 }
