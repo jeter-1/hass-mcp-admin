@@ -1,5 +1,5 @@
 {
-  "head": "f4db112e3770393b40430668e06d1f3e99b862a3",
+  "head": "b1d8bf2eb9c160d6126b39238086cb6cccab48c0",
   "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
   "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
   "reviewed_head_r4": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
@@ -404,6 +404,6 @@
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 56 tests in 35.879s"
+    "ran": "Ran 56 tests in 33.746s"
   }
 }
