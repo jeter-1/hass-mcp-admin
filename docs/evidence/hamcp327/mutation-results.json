@@ -1,0 +1,252 @@
+{
+  "reviewed_head": "4943cdcd543008b53a25a7c30c092ff451c25153",
+  "fixed_commit": "64a1bf2fa7b6139e9677f54343bd006cd6787cdd",
+  "python": "3.13.5",
+  "baseline": [
+    {
+      "id": 1,
+      "finding": "H1",
+      "test": "tests.test_hamcp327_fail_to_ask.UnattributedGapTests.test_fixture_reproduces_the_unattributed_gap_shape",
+      "expected": "pass",
+      "classification": "pass",
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "finding": "H1",
+      "test": "tests.test_hamcp327_fail_to_ask.UnattributedGapTests.test_literal_critical_consumer_asks_despite_unrelated_gap",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "H1",
+      "test": "tests.test_typed_helper_value.HelperBoundaryTests.test_assess_only_exact_evidence_warns",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "M1",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_no_change_lists_known_consumers_from_real_index",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "M1",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_reconciliation_discloses_and_never_replays",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "M1",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_reconciliation_with_unavailable_evidence_is_unchanged",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "M1",
+      "test": "tests.test_hamcp327_fail_to_ask.FailurePreservationTests.test_already_current_value_with_failing_reader_is_still_no_change",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "M1",
+      "test": "tests.test_typed_helper_value.HelperTests.test_value_already_current_is_no_change_without_dispatch",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "M1",
+      "test": "tests.test_typed_helper_value.HelperTests.test_safety_critical_noop_does_not_warn",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "M1",
+      "test": "tests.test_typed_helper_value.HelperTests.test_repeated_request_and_detail_reads_never_mutate",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "L1",
+      "test": "tests.test_hamcp327_fail_to_ask.FailurePreservationTests.test_unacknowledged_guest_mode_never_dispatches_in_any_evidence_state",
+      "expected": "pass",
+      "classification": "pass",
+      "exit_code": 0
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "finding": "H1",
+      "name": "conservative scope is not an inexact-analysis marker",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_hamcp327_fail_to_ask.UnattributedGapTests.test_literal_critical_consumer_asks_despite_unrelated_gap",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "H1",
+      "name": "conservative scope is not an inexact-analysis marker (assess)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_typed_helper_value.HelperBoundaryTests.test_assess_only_exact_evidence_warns",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "H1",
+      "name": "zero exact obligations never warn",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_hamcp327_fail_to_ask.UnattributedGapTests.test_literal_critical_consumer_asks_despite_unrelated_gap",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "H1",
+      "name": "a scope marker alone warns (no literal check)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_typed_helper_value.HelperBoundaryTests.test_assess_only_exact_evidence_warns",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "M1",
+      "name": "no-change result carries no disclosure",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_no_change_lists_known_consumers_from_real_index",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "M1",
+      "name": "no-change result carries no disclosure (typed)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_typed_helper_value.HelperTests.test_value_already_current_is_no_change_without_dispatch",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "M1",
+      "name": "reconciliation carries no disclosure",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_reconciliation_discloses_and_never_replays",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "M1",
+      "name": "reconciliation carries no disclosure (typed)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_typed_helper_value.HelperTests.test_repeated_request_and_detail_reads_never_mutate",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "M1",
+      "name": "a disclosure read failure fails the no-op",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_hamcp327_fail_to_ask.FailurePreservationTests.test_already_current_value_with_failing_reader_is_still_no_change",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "M1",
+      "name": "disclosure carries gate fields",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_no_change_lists_known_consumers_from_real_index",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "M1",
+      "name": "disclosure claims an evaluated gate",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/service.py",
+      "test": "tests.test_hamcp327_fail_to_ask.ResultDisclosureTests.test_reconciliation_discloses_and_never_replays",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "L1",
+      "name": "available evidence never warns (reviewed-head test)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_hamcp327_fail_to_ask.FailurePreservationTests.test_unacknowledged_guest_mode_never_dispatches_in_any_evidence_state",
+      "test_version": "reviewed",
+      "expected": "survived",
+      "classification": "survived",
+      "exit_code": 0
+    },
+    {
+      "id": 13,
+      "finding": "L1",
+      "name": "available evidence never warns (repaired test)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/safety.py",
+      "test": "tests.test_hamcp327_fail_to_ask.FailurePreservationTests.test_unacknowledged_guest_mode_never_dispatches_in_any_evidence_state",
+      "test_version": "fixed",
+      "expected": "assertion",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": [
+    {
+      "module": "tests.test_hamcp327_fail_to_ask",
+      "classification": "pass",
+      "exit_code": 0
+    },
+    {
+      "module": "tests.test_typed_helper_value",
+      "classification": "pass",
+      "exit_code": 0
+    }
+  ]
+}

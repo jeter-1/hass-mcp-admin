@@ -149,6 +149,8 @@ def fail_refusal(directory):
 # newest signed version's own release record. Version comparison never ends the scan:
 # a lower backport can be listed before a higher release. The bound therefore limits
 # releases created after that predecessor (100 per page), not Core's history.
+# Created-at order is enforced only across official stable records: GitHub's listing
+# does not keep prereleases in created_at order (2026.4.0b10 follows 2026.4.0b9).
 RELEASE_PAGE_BOUND = 10
 
 
@@ -169,7 +171,7 @@ def listing_timestamp(value):
 
 
 def listed_at(release):
-    # created_at orders GitHub's listing. published_at is used only when created_at is
+    # created_at is the order checked. published_at is used only when created_at is
     # absent (missing or null); a present but invalid created_at refuses, never falls back.
     field = "published_at" if release.get("created_at") is None else "created_at"
     return listing_timestamp(release.get(field))
@@ -191,7 +193,11 @@ def discover_releases(entries, requested):
     for page in range(1, RELEASE_PAGE_BOUND + 1):
         batch = github(f"{CORE}/releases?per_page=100&page={page}"); releases.extend(batch)
         for release in batch:
-            stamp = listed_at(release)
+            stamp = listed_at(release)  # Every record read must carry a valid timestamp.
+            if not official(release):
+                # Never selectable and never the stop record: its position changes neither
+                # the pages read nor the version selected, so it is not order-compared.
+                continue
             if previous is not None and stamp > previous:
                 raise ValueError("release listing is not newest-first")
             previous = stamp

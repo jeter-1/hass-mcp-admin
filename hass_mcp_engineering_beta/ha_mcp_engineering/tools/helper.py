@@ -37,10 +37,10 @@ async def control_helper(
     An already-current value returns status no_change without dispatch. Statuses:
     succeeded_verified, changed_unverified, verification_failed, no_change,
     confirmation_required, refused, provider_unavailable. If status is
-    confirmation_required, nothing was sent: tell the user the listed
-    safety-critical automations and ask; call again with
-    acknowledge_safety_critical=true ONLY after the user confirms in chat. Never
-    set it pre-emptively. The result lists known automation consumers and
+    confirmation_required, nothing was sent: tell the user its reason (the listed
+    safety-critical automations, or that consumers could not be checked) and
+    ask; call again with acknowledge_safety_critical=true ONLY after the user
+    confirms in chat. Never set it pre-emptively. The result lists known automation consumers and
     template readers as information; coverage may be incomplete.
     """
     metadata = {"provider": "upstream_typed_helper_value", "fallback": "none", "operation_id": operation_id}

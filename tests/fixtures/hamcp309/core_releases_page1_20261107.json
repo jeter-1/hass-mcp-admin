@@ -1,0 +1,717 @@
+{
+ "provenance": {
+  "source": "GET https://api.github.com/repos/home-assistant/core/releases?per_page=100&page=1 (public, read-only)",
+  "captured": "2026-11-07T07:52:30Z (01:52 CST)",
+  "capture": "gh api, jq projection to the five listed fields; record order and values unchanged",
+  "fields": [
+   "tag_name",
+   "draft",
+   "prerelease",
+   "created_at",
+   "published_at"
+  ],
+  "observed": "2026.4.0b10 (created 2026-04-01T10:23:39Z) is listed after 2026.4.0b9 (created 2026-04-01T06:35:41Z); this inversion made scheduled run 42256753191 refuse"
+ },
+ "releases": [
+  {
+   "tag_name": "2026.11.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-11-04T17:29:12Z",
+   "published_at": "2026-11-04T17:32:55Z"
+  },
+  {
+   "tag_name": "2026.11.0b6",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-11-04T16:25:28Z",
+   "published_at": "2026-11-04T16:27:17Z"
+  },
+  {
+   "tag_name": "2026.11.0b5",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-11-04T12:16:36Z",
+   "published_at": "2026-11-04T12:26:47Z"
+  },
+  {
+   "tag_name": "2026.11.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-11-03T13:47:17Z",
+   "published_at": "2026-11-03T13:48:24Z"
+  },
+  {
+   "tag_name": "2026.11.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-11-02T16:51:14Z",
+   "published_at": "2026-11-02T16:53:20Z"
+  },
+  {
+   "tag_name": "2026.11.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-30T23:06:29Z",
+   "published_at": "2026-10-30T23:07:21Z"
+  },
+  {
+   "tag_name": "2026.11.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-29T16:51:36Z",
+   "published_at": "2026-10-29T16:53:13Z"
+  },
+  {
+   "tag_name": "2026.11.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-28T15:47:19Z",
+   "published_at": "2026-10-28T16:06:22Z"
+  },
+  {
+   "tag_name": "2026.10.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-10-24T20:01:29Z",
+   "published_at": "2026-10-24T20:03:14Z"
+  },
+  {
+   "tag_name": "2026.10.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-10-23T18:49:07Z",
+   "published_at": "2026-10-23T18:50:09Z"
+  },
+  {
+   "tag_name": "2026.10.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-10-16T19:59:27Z",
+   "published_at": "2026-10-16T20:04:09Z"
+  },
+  {
+   "tag_name": "2026.10.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-10-10T16:13:13Z",
+   "published_at": "2026-10-10T16:14:23Z"
+  },
+  {
+   "tag_name": "2026.10.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-10-07T16:51:12Z",
+   "published_at": "2026-10-07T17:22:28Z"
+  },
+  {
+   "tag_name": "2026.10.0b7",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-07T15:06:07Z",
+   "published_at": "2026-10-07T15:30:27Z"
+  },
+  {
+   "tag_name": "2026.10.0b6",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-07T13:52:15Z",
+   "published_at": "2026-10-07T13:53:22Z"
+  },
+  {
+   "tag_name": "2026.10.0b5",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-07T11:31:11Z",
+   "published_at": "2026-10-07T11:34:47Z"
+  },
+  {
+   "tag_name": "2026.10.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-07T05:52:33Z",
+   "published_at": "2026-10-07T05:53:22Z"
+  },
+  {
+   "tag_name": "2026.10.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-06T22:47:07Z",
+   "published_at": "2026-10-06T22:47:56Z"
+  },
+  {
+   "tag_name": "2026.10.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-06T06:00:43Z",
+   "published_at": "2026-10-06T06:01:29Z"
+  },
+  {
+   "tag_name": "2026.10.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-10-05T16:33:16Z",
+   "published_at": "2026-10-05T16:34:08Z"
+  },
+  {
+   "tag_name": "2026.10.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-09-30T17:04:09Z",
+   "published_at": "2026-09-30T17:37:54Z"
+  },
+  {
+   "tag_name": "2026.9.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-09-27T09:45:19Z",
+   "published_at": "2026-09-27T09:51:05Z"
+  },
+  {
+   "tag_name": "2026.9.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-09-18T12:09:50Z",
+   "published_at": "2026-09-18T12:11:05Z"
+  },
+  {
+   "tag_name": "2026.9.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-09-11T19:39:45Z",
+   "published_at": "2026-09-11T19:40:36Z"
+  },
+  {
+   "tag_name": "2026.9.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-09-05T12:53:30Z",
+   "published_at": "2026-09-05T12:54:55Z"
+  },
+  {
+   "tag_name": "2026.9.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-09-02T15:50:09Z",
+   "published_at": "2026-09-02T16:08:56Z"
+  },
+  {
+   "tag_name": "2026.9.0b9",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-09-02T12:18:19Z",
+   "published_at": "2026-09-02T12:19:02Z"
+  },
+  {
+   "tag_name": "2026.9.0b8",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-09-02T11:07:08Z",
+   "published_at": "2026-09-02T11:07:58Z"
+  },
+  {
+   "tag_name": "2026.9.0b7",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-09-02T10:02:17Z",
+   "published_at": "2026-09-02T10:03:01Z"
+  },
+  {
+   "tag_name": "2026.9.0b6",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-09-01T09:34:11Z",
+   "published_at": "2026-09-01T09:35:02Z"
+  },
+  {
+   "tag_name": "2026.9.0b5",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-31T13:40:57Z",
+   "published_at": "2026-08-31T13:42:24Z"
+  },
+  {
+   "tag_name": "2026.9.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-29T20:54:28Z",
+   "published_at": "2026-08-29T20:55:06Z"
+  },
+  {
+   "tag_name": "2026.9.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-29T08:45:42Z",
+   "published_at": "2026-08-29T08:46:22Z"
+  },
+  {
+   "tag_name": "2026.9.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-28T20:12:03Z",
+   "published_at": "2026-08-28T20:12:59Z"
+  },
+  {
+   "tag_name": "2026.9.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-27T16:34:18Z",
+   "published_at": "2026-08-27T16:35:10Z"
+  },
+  {
+   "tag_name": "2026.9.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-26T18:40:12Z",
+   "published_at": "2026-08-26T19:15:42Z"
+  },
+  {
+   "tag_name": "2026.8.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-08-21T20:44:07Z",
+   "published_at": "2026-08-21T20:45:05Z"
+  },
+  {
+   "tag_name": "2026.8.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-08-14T16:37:54Z",
+   "published_at": "2026-08-14T16:39:39Z"
+  },
+  {
+   "tag_name": "2026.8.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-08-07T18:07:11Z",
+   "published_at": "2026-08-07T18:09:05Z"
+  },
+  {
+   "tag_name": "2026.8.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-08-05T15:21:46Z",
+   "published_at": "2026-08-05T15:23:11Z"
+  },
+  {
+   "tag_name": "2026.8.0b6",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-05T09:56:51Z",
+   "published_at": "2026-08-05T09:59:47Z"
+  },
+  {
+   "tag_name": "2026.8.0b5",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-04T12:34:27Z",
+   "published_at": "2026-08-04T12:36:39Z"
+  },
+  {
+   "tag_name": "2026.8.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-08-03T09:04:41Z",
+   "published_at": "2026-08-03T09:05:58Z"
+  },
+  {
+   "tag_name": "2026.8.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-07-31T15:26:22Z",
+   "published_at": "2026-07-31T15:27:58Z"
+  },
+  {
+   "tag_name": "2026.8.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-07-30T21:45:03Z",
+   "published_at": "2026-07-30T21:46:51Z"
+  },
+  {
+   "tag_name": "2026.8.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-07-30T09:30:37Z",
+   "published_at": "2026-07-30T09:31:28Z"
+  },
+  {
+   "tag_name": "2026.8.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-07-29T14:30:14Z",
+   "published_at": "2026-07-29T14:33:03Z"
+  },
+  {
+   "tag_name": "2026.7.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-07-24T07:31:32Z",
+   "published_at": "2026-07-24T07:32:30Z"
+  },
+  {
+   "tag_name": "2026.7.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-07-21T18:39:39Z",
+   "published_at": "2026-07-21T18:40:38Z"
+  },
+  {
+   "tag_name": "2026.7.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-07-10T21:12:31Z",
+   "published_at": "2026-07-10T21:15:27Z"
+  },
+  {
+   "tag_name": "2026.7.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-07-03T18:57:39Z",
+   "published_at": "2026-07-03T18:58:50Z"
+  },
+  {
+   "tag_name": "2026.7.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-07-01T17:47:15Z",
+   "published_at": "2026-07-01T17:50:22Z"
+  },
+  {
+   "tag_name": "2026.7.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-07-01T12:32:57Z",
+   "published_at": "2026-07-01T12:33:41Z"
+  },
+  {
+   "tag_name": "2026.7.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-30T13:28:27Z",
+   "published_at": "2026-06-30T13:29:36Z"
+  },
+  {
+   "tag_name": "2026.7.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-27T11:31:01Z",
+   "published_at": "2026-06-27T11:31:40Z"
+  },
+  {
+   "tag_name": "2026.7.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-24T21:29:59Z",
+   "published_at": "2026-06-24T21:30:33Z"
+  },
+  {
+   "tag_name": "2026.7.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-24T16:36:39Z",
+   "published_at": "2026-06-24T16:41:28Z"
+  },
+  {
+   "tag_name": "2026.6.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-06-19T20:57:25Z",
+   "published_at": "2026-06-19T20:58:50Z"
+  },
+  {
+   "tag_name": "2026.6.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-06-12T19:49:56Z",
+   "published_at": "2026-06-12T19:51:07Z"
+  },
+  {
+   "tag_name": "2026.6.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-06-09T20:13:22Z",
+   "published_at": "2026-06-09T20:14:36Z"
+  },
+  {
+   "tag_name": "2026.6.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-06-05T20:25:21Z",
+   "published_at": "2026-06-05T20:26:48Z"
+  },
+  {
+   "tag_name": "2026.6.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-06-03T17:43:19Z",
+   "published_at": "2026-06-03T18:00:08Z"
+  },
+  {
+   "tag_name": "2026.6.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-03T15:09:31Z",
+   "published_at": "2026-06-03T15:10:10Z"
+  },
+  {
+   "tag_name": "2026.6.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-03T10:03:15Z",
+   "published_at": "2026-06-03T10:06:13Z"
+  },
+  {
+   "tag_name": "2026.6.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-01T21:05:58Z",
+   "published_at": "2026-06-01T21:07:39Z"
+  },
+  {
+   "tag_name": "2026.6.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-06-01T16:54:56Z",
+   "published_at": "2026-06-01T16:56:33Z"
+  },
+  {
+   "tag_name": "2026.6.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-05-27T16:07:37Z",
+   "published_at": "2026-05-27T16:44:49Z"
+  },
+  {
+   "tag_name": "2026.5.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-05-22T17:26:21Z",
+   "published_at": "2026-05-22T17:26:58Z"
+  },
+  {
+   "tag_name": "2026.5.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-05-19T09:49:12Z",
+   "published_at": "2026-05-19T09:54:59Z"
+  },
+  {
+   "tag_name": "2026.5.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-05-15T20:55:45Z",
+   "published_at": "2026-05-15T20:56:53Z"
+  },
+  {
+   "tag_name": "2026.5.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-05-08T20:07:51Z",
+   "published_at": "2026-05-08T20:08:55Z"
+  },
+  {
+   "tag_name": "2026.5.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-05-06T15:22:09Z",
+   "published_at": "2026-05-06T15:31:21Z"
+  },
+  {
+   "tag_name": "2026.5.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-05-06T13:27:18Z",
+   "published_at": "2026-05-06T13:28:41Z"
+  },
+  {
+   "tag_name": "2026.5.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-05-06T11:16:10Z",
+   "published_at": "2026-05-06T11:17:10Z"
+  },
+  {
+   "tag_name": "2026.5.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-05-05T14:29:37Z",
+   "published_at": "2026-05-05T14:30:07Z"
+  },
+  {
+   "tag_name": "2026.5.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-05-04T16:44:42Z",
+   "published_at": "2026-05-04T16:45:20Z"
+  },
+  {
+   "tag_name": "2026.5.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-04-29T16:40:46Z",
+   "published_at": "2026-04-29T16:42:38Z"
+  },
+  {
+   "tag_name": "2026.4.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-04-24T18:37:21Z",
+   "published_at": "2026-04-24T18:38:39Z"
+  },
+  {
+   "tag_name": "2026.4.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-04-17T20:08:45Z",
+   "published_at": "2026-04-17T20:09:49Z"
+  },
+  {
+   "tag_name": "2026.4.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-04-11T18:41:23Z",
+   "published_at": "2026-04-11T18:42:44Z"
+  },
+  {
+   "tag_name": "2026.4.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-04-03T20:58:54Z",
+   "published_at": "2026-04-03T20:59:59Z"
+  },
+  {
+   "tag_name": "2026.4.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-04-01T12:32:20Z",
+   "published_at": "2026-04-01T12:36:25Z"
+  },
+  {
+   "tag_name": "2026.4.0b9",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-04-01T06:35:41Z",
+   "published_at": "2026-04-01T06:36:33Z"
+  },
+  {
+   "tag_name": "2026.4.0b10",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-04-01T10:23:39Z",
+   "published_at": "2026-04-01T10:24:53Z"
+  },
+  {
+   "tag_name": "2026.4.0b8",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-31T18:00:43Z",
+   "published_at": "2026-03-31T18:02:03Z"
+  },
+  {
+   "tag_name": "2026.4.0b7",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-31T08:25:00Z",
+   "published_at": "2026-03-31T08:26:55Z"
+  },
+  {
+   "tag_name": "2026.4.0b6",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-31T07:37:18Z",
+   "published_at": "2026-03-31T07:38:01Z"
+  },
+  {
+   "tag_name": "2026.4.0b5",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-30T08:56:27Z",
+   "published_at": "2026-03-30T08:57:15Z"
+  },
+  {
+   "tag_name": "2026.4.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-27T21:46:53Z",
+   "published_at": "2026-03-27T21:48:00Z"
+  },
+  {
+   "tag_name": "2026.4.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-26T19:51:36Z",
+   "published_at": "2026-03-26T19:52:28Z"
+  },
+  {
+   "tag_name": "2026.4.0b2",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-26T10:59:11Z",
+   "published_at": "2026-03-26T10:59:53Z"
+  },
+  {
+   "tag_name": "2026.4.0b1",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-26T00:01:26Z",
+   "published_at": "2026-03-26T00:02:25Z"
+  },
+  {
+   "tag_name": "2026.4.0b0",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-25T18:48:08Z",
+   "published_at": "2026-03-25T19:29:08Z"
+  },
+  {
+   "tag_name": "2026.3.4",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-03-24T07:11:42Z",
+   "published_at": "2026-03-24T07:13:07Z"
+  },
+  {
+   "tag_name": "2026.3.3",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-03-20T22:01:26Z",
+   "published_at": "2026-03-20T22:02:15Z"
+  },
+  {
+   "tag_name": "2026.3.2",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-03-16T12:23:27Z",
+   "published_at": "2026-03-16T12:24:10Z"
+  },
+  {
+   "tag_name": "2026.3.1",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-03-06T21:10:34Z",
+   "published_at": "2026-03-06T21:11:10Z"
+  },
+  {
+   "tag_name": "2026.3.0",
+   "draft": false,
+   "prerelease": false,
+   "created_at": "2026-03-04T19:17:05Z",
+   "published_at": "2026-03-04T19:18:03Z"
+  },
+  {
+   "tag_name": "2026.3.0b4",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-04T17:09:32Z",
+   "published_at": "2026-03-04T17:11:27Z"
+  },
+  {
+   "tag_name": "2026.3.0b3",
+   "draft": false,
+   "prerelease": true,
+   "created_at": "2026-03-04T14:30:26Z",
+   "published_at": "2026-03-04T14:31:01Z"
+  }
+ ]
+}
