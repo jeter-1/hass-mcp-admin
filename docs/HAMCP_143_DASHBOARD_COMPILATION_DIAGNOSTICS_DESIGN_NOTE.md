@@ -1,0 +1,222 @@
+# HAMCP-143 dashboard patch compilation diagnostics (2.6.0 design note)
+
+Design only. No runtime, test, schema, version or protected-path change is made
+by this note. Base: `origin/release/2.6.0` =
+`7246f2d21693f039504542574569f03b71476489`. All `file:line` references are at
+that base; runtime paths are under `hass_mcp_engineering_beta/ha_mcp_engineering/`.
+
+## 1. Register outcome and binding decisions
+
+> A dashboard change that exceeds compiler limits returns a bounded, actionable
+> diagnostic that distinguishes capacity from malformed input or another
+> compilation failure without weakening approval, readback, or provider
+> protections. (HAMCP-143 Outcome)
+
+Binding constraints (HAMCP-143 Notes and the 2026-11-07 2.6.0 wave-1 brief): no
+capacity change; no weakening of shifted-array accounting, approval projection,
+stale-state refusal, readback or one-dispatch behavior.
+
+**Stale premise (stop condition, reported).** The row (updated 2026-09-23) and
+the task prompt describe a 16-leaf capacity and say the four-operation fixture
+(54 leaves) gets only `dashboard_patch_compilation_failed`. Current source
+differs. On 2026-09-25 Josh chose **256 leaves plus diagnostics**. That decision
+is recorded in
+[F3_DASHBOARD_WRITE_CONTRACT.md](F3_DASHBOARD_WRITE_CONTRACT.md#semantic-capacity-and-safe-diagnostics)
+and [2_1_ROADMAP.md](2_1_ROADMAP.md), and was implemented in `d861d9f9`
+(PR #213, merged 2026-09-25):
+- `MAX_SEMANTIC_LEAF_CHANGES = 256` (`f3_dashboard/constants.py:56`).
+- The 54-leaf fixture now compiles and applies (`tests/test_f3_dashboard_patch.py:389-403`,
+  `tests/test_dashboard_update_mvp.py:704`).
+- An over-capacity proposal already returns `constraint`/`stage`/`observed`/`limit`
+  (`governance/service.py:5604-5605`, `tests/test_dashboard_update_mvp.py:781-812`).
+
+This note binds to the **current 256 capacity** and changes it in neither
+direction. It designs only the remaining part of the Outcome: malformed input and
+other compilation failures are still not told apart. Whether that remainder is
+still wanted is listed in section 9.
+
+## 2. Current state at base
+
+- **Pipeline.** `create_dashboard_update_plan` (`governance/service.py:5583-5609`)
+  calls `f3_dashboard/planning.py:143`, which calls `compile_dashboard_patch`
+  (`f3_dashboard/patch.py:373-423`). The compiler is the only caller of
+  `canonicalize_patch` (`patch.py:138-161`). All of this runs before any plan,
+  artifact, task, lock or provider call. Refusal creates no work
+  (`tests/test_dashboard_update_mvp.py:804-807`).
+- **Error model.** `DashboardFoundationError` (`f3_dashboard/errors.py:11-66`)
+  already carries optional `constraint` and `stage` tokens (`^[a-z][a-z0-9_]{0,63}$`)
+  and non-negative `observed`/`limit` integers. Its `diagnostic_details()`
+  returns only those fields.
+  - `PatchValidationError` has code `invalid_dashboard_patch` (`errors.py:77-78`).
+  - `PatchCompilationError` has code `dashboard_patch_compilation_failed`
+    (`errors.py:81-82`).
+- **Public projection.** `service.py:5602-5609` maps every
+  `DashboardFoundationError` to `CONFIGURATION_VALIDATION_FAILED` with
+  `{"reason": exc.code}`. The single exception is `semantic_leaf_changes` at stage
+  `compilation`, which gets the full `diagnostic_details()`.
+  `tests/test_dashboard_update_mvp.py:814-823` pins this legacy shape for any other
+  compiler error. The contract doc says "Other compilation failures retain their
+  prior error details" (`F3_DASHBOARD_WRITE_CONTRACT.md:134-135`).
+- **Leaf accounting.** `_leaf_weight` (`patch.py:224-238`) and
+  `semantic_leaf_difference` (`patch.py:241-280`) do the counting. An array
+  insert or remove that is not at the end counts the whole displaced suffix
+  (`patch.py:300-312`, `345-358`). That is why one insert can cost 40 leaves.
+  The capacity check runs only after every operation applies (`patch.py:391-399`).
+- **Failure exits with no sub-category today.** Each reaches the client only as a
+  bare `reason`:
+
+| Stage | Exits (patch.py unless noted) | Today's `reason` |
+| --- | --- | --- |
+| validation | list shape 142; op count 145; unknown/incomplete fields 103/105; op id 110; op kind 114; value presence 119/121; value bytes 126; value JSON `json_codec.py:32-56`; duplicate id/path 149/152; parent/child conflict 157; patch bytes 160; pointer 51/67/69/72/75/81/94/97 | `invalid_dashboard_patch` |
+| compilation | list index 180/182/184/187; parent missing 198; parent not collection 204/221; append misuse 208/213; add-on-present 294; array add without list 314; replace/remove absent 329; traversal bound 229/254 | `dashboard_patch_compilation_failed` |
+| compilation (as validation class) | equality traversal bound `json_codec.py:95/97`, raised from inside the compiler | `invalid_dashboard_patch` |
+| compilation | config not object 380; input mutated 390; result bytes 404; growth bytes 406 | `dashboard_patch_compilation_failed` |
+| compilation | semantic leaves 392 | full details (already shipped) |
+
+- **What the client can and cannot do.** A malformed pointer looks the same as a
+  path that no longer exists in the current dashboard, and the same as a
+  growth-bound overrun. The client cannot tell which of its 16 operations failed.
+
+## 3. Proposed change
+
+Every change is additive and pre-dispatch. Exception classes, `code`, `reason`,
+`ErrorCode`, check order and every bound stay exactly as they are.
+
+1. **Error model** (`f3_dashboard/errors.py`). Add three optional fields to
+   `DashboardFoundationError`, each emitted by `diagnostic_details()` only when set:
+   - `category`: a token from a fixed enum.
+   - `operation_index`: an int, 0-based, in caller order.
+   - `token_index`: an int, a 0-based pointer segment.
+
+   Validation reuses `_token`/`_count`. Add a closed allow-list for `category`
+   and `constraint`; an unknown value raises at construction (fail closed).
+2. **Category enum** (stable). Each compiler exit gets one fixed `constraint` token:
+
+| `category` | Meaning / client action | `constraint` tokens (exits) |
+| --- | --- | --- |
+| `capacity_exceeded` | Input is well-formed but over a reviewed bound. Narrow the change. Do not silently split or reorder it (contract line 143-144). | `semantic_leaf_changes`, `operation_count`, `operation_value_bytes`, `patch_bytes`, `pointer_length`, `pointer_depth`, `value_json_nodes`, `value_json_depth`, `result_config_bytes`, `config_growth_bytes`, `traversal_bound` |
+| `malformed_operation` | The operation is syntactically invalid. Fix that operation. | `operations_not_list`, `operation_fields_unknown`, `operation_fields_incomplete`, `operation_id_not_canonical`, `operation_value_presence`, `operation_id_duplicate`, `path_duplicate`, `path_parent_child_conflict`, `pointer_not_absolute`, `pointer_escape_malformed`, `pointer_empty_token`, `pointer_not_canonical`, `list_index_not_canonical` |
+| `unsupported_operation` | Well-formed, but outside the reviewed subset. | `operation_kind_unsupported`, `pointer_selector_prohibited`, `pointer_append_misplaced`, `append_requires_add`, `value_not_json` |
+| `target_mismatch` | Well-formed, but does not fit the current pre-read dashboard. Re-read and re-plan. | `target_parent_missing`, `target_parent_not_collection`, `append_requires_list`, `list_index_out_of_range`, `add_target_present`, `target_absent` |
+| `internal_failure` | Invariant failure. Nothing the client can act on. | `configuration_not_object`, `input_mutated` |
+
+3. **Attribution** (`patch.py`).
+   - `canonicalize_patch` and the `_apply_one` loop catch a
+     `DashboardFoundationError` for operation *i* and re-raise the same class with
+     `operation_index=i`.
+   - `parse_pointer`/`_resolve_parent` add `token_index` where a segment is known.
+   - `path_parent_child_conflict` reports the later index.
+   - Bound exits set `observed`/`limit`. The traversal and equality bounds set
+     `limit` only, because their `observed` count is not truthful once the walk aborts.
+   - The `json_codec.py:95/97` bound keeps its `PatchValidationError` class and adds
+     `stage="compilation"`, so the stage tells the truth without changing the class.
+4. **Capacity enrichment** (`patch.py:392`). Keep the existing five fields and add:
+   - `operation_leaf_changes`: per-operation counts, length at most 16, taken from
+     `effect.leaf_change_count`.
+   - `shifted_array_operations`: an int count of effects that used suffix accounting.
+
+   Together these tell the caller *why* the count is high without changing how it
+   is counted. `diagnostic_details` is widened to allow this one bounded integer list.
+5. **Projection** (`service.py:5602-5609`). For `PatchValidationError` and
+   `PatchCompilationError` emit `{**exc.diagnostic_details(), "reason": exc.code}`.
+   Every other `DashboardFoundationError` keeps `{"reason": exc.code}`. This
+   supersedes the contract sentence "Other compilation failures retain their prior
+   error details". The contract doc and `test_unrelated_compiler_error_keeps_legacy_details`
+   change in the same PR.
+6. **Safe-detail rule.** Only fixed tokens and non-negative integers are returned.
+   Never returned: pointer strings, `operation_id` strings (caller tokens; their
+   charset also differs from `_DIAGNOSTIC_TOKEN`), keys, values, list lengths or
+   exception text. The caller maps `operation_index` and `token_index` back to its
+   own request. `result_config_bytes` reveals only a byte count, which the contract
+   already allows (`F3_DASHBOARD_WRITE_CONTRACT.md:98-100`). Echoing the path is
+   section 9 Q2.
+7. **Observability.** `planning.patch_validation_failures` records
+   `codes=(exc.code, category)`, bounded by `MAX_EVENT_CODES`
+   (`constants.py:65`). The `broad_subtree_rejections` trigger stays the same
+   (`planning.py:148-149`).
+8. **Provider routing.** Unchanged. The compiler is Engineering-native and runs
+   before ha-mcp `ha_config_set_dashboard` admission (`planning.py:158-195`). No
+   delegated call, fallback or Core command is added.
+
+## 4. Public schema / tool-registration impact
+
+- No tool is added or removed, and the tool count is unchanged.
+- The `create_dashboard_update_plan` input schema (`tools/governance.py:197-212`,
+  `459-498`) is unchanged.
+- Output: the error `details` of `CONFIGURATION_VALIDATION_FAILED` gain additive
+  keys on dashboard patch failures only. `reason` values are unchanged.
+- This is a security-sensitive compatibility surface: the error output contract
+  changes. It needs the contract-doc update and review.
+
+## 5. Signing impact
+
+None. Dashboard update planning is Engineering-native compilation followed by
+dispatch through the attested ha-mcp provider. It uses no signed Core profile
+(`docs/CORE_RELEASE_REGISTRY.md:23-25`). The only dashboard Core profiles,
+`core.dashboard_configuration_read` and `core.dashboard_metadata_operation`
+(`capabilities.py:504-505`), are not touched. No Core command, contract or
+fingerprint changes, and nothing joins a signing batch.
+
+## 6. Negative reachability and refusal tests
+
+The change adds no write, service, reload or fallback path. Tests:
+- **One row per exit.** A table-driven test asserts the exact `details` for every
+  exit in section 2, including `category`, `constraint`, `stage` and indices.
+  Each case uses a synthetic private marker in its path, key and value, and
+  asserts that marker is absent from `details` and from `audit.jsonl` (the
+  pattern at `test_dashboard_update_mvp.py:809-812`).
+- **Same work refused.** For every category: no plan, no task, `write_count == 0`,
+  `best_practice_count == 0`, configuration unchanged
+  (`test_dashboard_update_mvp.py:804-808`).
+- **Order unchanged.** Validation runs before compilation, compilation stops at
+  the first failing operation in caller order, and the capacity check comes before
+  the size and growth checks. A patch with both a bad operation 3 and an
+  over-capacity total reports operation 3.
+- **Fail closed.** Building a diagnostic with an unknown `category`/`constraint`,
+  a negative index or a bool raises an error.
+- **Other errors unchanged.** Non-patch `DashboardFoundationError` subclasses
+  still project only `{"reason": code}`. `ProviderAuthorityUnavailableError` still
+  maps to `PROVIDER_UNAVAILABLE`.
+
+## 7. Acceptance
+
+- **Success.** The 54-leaf Home fixture still plans, approves, applies once,
+  verifies and restores (`test_dashboard_update_mvp.py:704`). Exactly 256 leaves
+  still reaches `succeeded_verified` (`:762-779`). Leaf counts stay
+  `[8, 2, 4, 40]` (`test_f3_dashboard_patch.py:401-403`).
+- **Capacity refusal.** 257 and 300 leaves return the existing five fields plus
+  `category="capacity_exceeded"`, `operation_leaf_changes` and
+  `shifted_array_operations`. `observed` is the actual total.
+- **Other refusals.** Malformed, unsupported and target-mismatch inputs each
+  return their own category and the failing `operation_index`.
+- **Failure preservation.** Every `ErrorCode`, `reason`, exception class, bound
+  and check order is unchanged. Stale-state refusal, approval-projection binding,
+  one-dispatch and exact readback tests pass unmodified.
+- **Recovery.** Nothing changes for recovery: refusal is pre-plan, so the client
+  corrects the request and plans again.
+
+## 8. Build slice and dependencies
+
+- One PR against `release/2.6.0`. It changes `f3_dashboard/errors.py`,
+  `patch.py`, `json_codec.py` (stage only), `planning.py` (metric codes) and
+  `governance/service.py` (projection), plus tests and
+  `F3_DASHBOARD_WRITE_CONTRACT.md`. Its 2.6.0 notes and acceptance go in the
+  release PR.
+- These are protected runtime paths, so the PR must authorize them by name.
+- No dependency on signing or on a live HA. As of 2026-11-07 the heads of
+  #384-#387 do not touch these files. If a 2.5.0 change touches `service.py`,
+  2.5.0 wins and this PR merges `main`.
+- Rollback: revert the PR. It changes no persisted record or artifact schema,
+  because diagnostics are never stored in plans.
+
+## 9. Open questions — pending Josh
+
+1. **Is the remaining scope still wanted?** PR #213 already delivered the capacity
+   diagnostic. Should HAMCP-143 proceed with only the non-capacity categorization
+   in section 3, or close as delivered and have its row corrected (it still says
+   16 leaves)?
+2. **Path echo.** Should details include the caller's own (already screened)
+   `path` for the failing operation? This note defaults to indices only, matching
+   the existing test that the path is never echoed.
+3. **Capacity enrichment.** Is the per-operation `operation_leaf_changes` list
+   acceptable public detail, or should capacity keep only `observed`/`limit`?
