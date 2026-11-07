@@ -70,6 +70,41 @@ custom-integration configuration, external systems, and runtime history are
 reported honestly when unsupported. The server never turns absent evidence
 from an unsupported source into a clean conclusion.
 
+### Scene, group and dashboard references (HAMCP-267)
+
+Scene, group and dashboard references come from the HAMCP-227 diagnostic
+partition that the dependency index build already read
+(`snapshot.global_sources`, after its authority check). The analysis makes no
+request of its own for them. Scene and group references are loaded
+membership from state attributes (`$.attributes.entity_id[n]`), not stored
+configuration, and keep that label. Dashboard references carry the exact
+card path and the `upstream_dashboard` provider. Membership state never
+raises a finding's severity: an `on` group is not an enabled consumer.
+
+- Each partition row maps to the source row: `complete` stays complete,
+  `partial` stays partial with its counted warnings, and `unavailable`
+  becomes `failed` with its reason (for example
+  `dashboard_scan_budget_exhausted: 1`, a list failure, or a missing
+  reader). Template stays `not_supported` (HAMCP-264).
+- When dashboard provider authority changes, cached dashboard evidence is
+  withheld and the dashboard row is `failed`; the cached reader is not
+  re-read.
+- At most 10,000 partition references are evaluated; any overflow is counted
+  as `integrity_partition_reference_limit: N` and makes the affected row
+  partial.
+- Orphan candidates are suppressed by any partition reference. While a
+  requested partition source is incomplete, the response warns that orphan
+  candidates may include entities that source references.
+- `source_types` scoping applies: an excluded source contributes nothing.
+- A cursor is bound to the partition's visible fingerprint. A partition
+  change, an authority change or a failed identity read makes a
+  continuation `STALE_CURSOR` (`diagnostic_evidence_changed`).
+- When no partition exists (an older snapshot), the rows stay
+  `not_supported` as before.
+
+The partition is outside the snapshot fingerprint and the helper obligation
+ledger, so none of this changes a governance binding.
+
 ## Entity-reference classification
 
 Dotted syntax alone is not evidence of an entity reference. Beta 17 scanned

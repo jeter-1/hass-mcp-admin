@@ -86,8 +86,22 @@ Partial coverage is not automatically a provider failure. Unsupported source
 types never produce `provider_upstream_error`. A successfully built partial
 dependency index remains usable evidence and reports `completeness=partial`,
 `assessment_complete=false`, `failed_items=0`, and `failure_category=null`.
-Scripts, scenes, groups, templates, and dashboards remain bounded warnings and the
-stable limitation `dependency_index_unsupported_source_types`.
+Scripts and templates remain bounded warnings and the stable limitation
+`dependency_index_unsupported_source_types`. Since HAMCP-267, scene, group and
+dashboard references come from the HAMCP-227 diagnostic partition the index
+build already read; no extra request is made. Scoped references appear as
+`dependency_relationship` events (scene and group membership is labeled as
+loaded state attributes), and partition findings join the integrity context.
+An incomplete partition source adds `dependency_index_<source>_partial` or
+`dependency_index_<source>_unavailable` to the dependency row, and
+`configuration_integrity_<source>_partial` or `_unavailable` to the
+configuration-integrity row, which then reports `partial`. As an
+implementation default pending Josh, that row inherits partiality only from
+the partition and stays not required for the assessment. These are coverage
+limitations, not failures: `failed_items` stays 0. Withheld dashboard
+authority removes cached dashboard evidence. Cursors are bound to the
+partition's visible fingerprint and become `STALE_CURSOR`
+(`diagnostic_evidence_changed`) when it changes.
 
 `missing_evidence` means evidence was actually absent or failed. A partial source
 with usable evidence instead appears under `coverage_limitations`. Actual item
