@@ -492,7 +492,7 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
     return {"path": "ready_without_delegated_reads", "ready_statuses": sorted(set(ready)),
             "engineering_tool_count": sum(len(page) for page in catalog["pages"]),
             "catalog_pages": len(catalog["pages"]), "delegated_read_count": len(delegated),
-            "admission_status": gateway["admission_status"]}
+            "admission_status": gateway.get("admission_status")}
 
 
 def command_fail_closed(args: argparse.Namespace) -> int:
