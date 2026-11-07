@@ -39,7 +39,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 618,
+       "line": 639,
        "anchor": "async def list_automations"
       },
       {
@@ -64,7 +64,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 648,
+       "line": 669,
        "anchor": "async def get_automation_config"
       },
       {
@@ -173,7 +173,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 5376,
+       "line": 5406,
        "anchor": "def create_plan"
       },
       {
@@ -200,12 +200,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -291,7 +291,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 713,
+       "line": 734,
        "anchor": "async def upsert_automation"
       }
      ]
@@ -312,7 +312,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 730,
+       "line": 751,
        "anchor": "async def delete_automation"
       }
      ]
@@ -438,12 +438,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -883,12 +883,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -980,7 +980,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 683,
+       "line": 704,
        "anchor": "async def get_blueprint"
       },
       {
@@ -990,7 +990,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 708,
+       "line": 729,
        "anchor": "text = text[:MAX_CHARS] + \"\\n... [truncated]\""
       }
      ]
@@ -1010,7 +1010,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 672,
+       "line": 693,
        "anchor": "async def list_blueprints"
       },
       {
@@ -1085,7 +1085,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 739,
+       "line": 760,
        "anchor": "async def check_config"
       },
       {
@@ -1290,7 +1290,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1428,7 +1428,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -2811,7 +2811,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
-       "line": 42,
+       "line": 43,
        "anchor": "response_size_limit: int = 60_000"
       }
      ]
@@ -3318,7 +3318,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 802,
+       "line": 823,
        "anchor": "async def list_entity_registry"
       },
       {
@@ -3453,7 +3453,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 802,
+       "line": 823,
        "anchor": "async def list_entity_registry"
       }
      ]
@@ -3496,7 +3496,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 773,
+       "line": 794,
        "anchor": "async def list_devices"
       },
       {
@@ -3572,7 +3572,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 773,
+       "line": 794,
        "anchor": "async def list_devices"
       }
      ]
@@ -3601,7 +3601,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 767,
+       "line": 788,
        "anchor": "async def list_areas"
       },
       {
@@ -4190,7 +4190,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 556,
+       "line": 577,
        "anchor": "async def render_template"
       },
       {
@@ -4330,12 +4330,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 879,
+       "line": 900,
        "anchor": "async def list_services"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 886,
+       "line": 907,
        "anchor": "maximum_services = 50"
       },
       {
@@ -4360,7 +4360,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 830,
+       "line": 851,
        "anchor": "async def search_services"
       },
       {
@@ -4402,7 +4402,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 886,
+       "line": 907,
        "anchor": "maximum_services = 50"
       }
      ]
@@ -4527,7 +4527,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 431,
+       "line": 452,
        "anchor": "async def get_error_log"
       }
      ]
@@ -4627,7 +4627,7 @@
       },
       {
        "path": "tests/test_readonly_upstream_gateway.py",
-       "line": 1636,
+       "line": 1637,
        "anchor": "self.assertNotIn(\"ha_get_logs\", automatic)"
       }
      ]
@@ -4651,12 +4651,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 114,
+       "line": 115,
        "anchor": "SUPERVISOR_IDENTIFIER = \"hassio_supervisor\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 64,
+       "line": 65,
        "anchor": "MOUNT_POINTS"
       },
       {
@@ -4741,12 +4741,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 180,
+       "line": 183,
        "anchor": "addon_"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 64,
+       "line": 65,
        "anchor": "MOUNT_POINTS"
       }
      ]
@@ -4787,7 +4787,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 129,
+       "line": 130,
        "anchor": "HOST_MATCHES"
       },
       {
@@ -4809,7 +4809,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 129,
+       "line": 130,
        "anchor": "HOST_MATCHES"
       }
      ]
@@ -4852,7 +4852,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 563,
+       "line": 584,
        "anchor": "async def list_automation_traces"
       }
      ]
@@ -4872,7 +4872,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 577,
+       "line": 598,
        "anchor": "async def get_automation_trace"
       }
      ]
@@ -5187,7 +5187,7 @@
      "purpose_binding": "bounded_logbook_read",
      "admission": "native; core.basic_rest_read compiled-active",
      "completeness": "partial",
-     "detail": "REST /logbook via LogbookReader; 1 MiB, 10000 records, 168 h, 30 s caps.",
+     "detail": "REST /logbook via LogbookReader; 1 MiB, 10000 records, 168 h, 30 s caps. HAMCP-294: optional explicit start_time/end_time window, entity_ids (1-10) or name (resolved to 1-10 IDs from GET /states before the one logbook GET); truncated windowed results name a continuation window.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -5196,7 +5196,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
-       "line": 175,
+       "line": 403,
        "anchor": "class LogbookReader"
       },
       {
@@ -5213,7 +5213,7 @@
      "id": "RCG-077",
      "missing": "Logbook beyond 168 h or 10000 records",
      "requirement_type": "feature_work",
-     "requirement": "Raise caps with review or add pagination; recorder retention still applies.",
+     "requirement": "Raise caps with review; HAMCP-294 adds a caller-driven continuation window, not automatic pagination; recorder retention still applies.",
      "register": [],
      "refs": [
       {
@@ -5760,7 +5760,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 739,
+       "line": 760,
        "anchor": "async def check_config"
       }
      ]
@@ -6345,7 +6345,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-     "line": 933,
+     "line": 954,
      "anchor": "async def get_audit_log"
     }
    ]

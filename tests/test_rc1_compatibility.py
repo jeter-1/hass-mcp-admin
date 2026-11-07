@@ -167,6 +167,8 @@ class RC1PublicContractTests(unittest.TestCase):
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
         schemas["list_capabilities"] = without_hamcp247_detail_section(
             self, schemas["list_capabilities"])
+        from hamcp294_descriptor_changes import without_hamcp294_inputs  # + HAMCP-294
+        schemas["get_logbook"] = without_hamcp294_inputs(self, schemas["get_logbook"])
         beta26_schemas = {
             name: schemas[name]
             for name in BETA26_TOOL_NAMES

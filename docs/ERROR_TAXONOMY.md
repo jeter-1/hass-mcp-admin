@@ -14,7 +14,13 @@ Invalid logbook arguments use non-retryable `invalid_request`. A concurrent read
 uses retryable `logbook_busy` (HTTP classification 409), preserving the instruction
 to wait for the active read to finish. Neither refusal makes an HTTP request or
 counts as a provider attempt. Retryability permits a later client request; the
-server adds no queue or automatic retry. Invalid, unexpectedly
+server adds no queue or automatic retry. HAMCP-294 `name` filters are the one
+exception: name resolution reads current states first, so a name matching no
+entity, more than 10 entities, or IDs joining past 512 characters returns
+non-retryable `invalid_request` after that one states read and before any
+logbook request, with safe `details.reason` `name_matched_no_entity`,
+`name_matched_too_many` or `name_matches_exceed_filter_bound`, a numeric
+`match_count` and at most 10 `matched_entity_ids`. Pass `entity_ids` instead. Invalid, unexpectedly
 encoded or malformed Core responses use `home_assistant_api_error` with fixed
 safe prose. Connection, HTTP and timeout failures retain their established
 categories. No raw upstream body or exception text is reflected.

@@ -136,6 +136,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current["list_capabilities"] = without_hamcp247_descriptor_change(self, current["list_capabilities"])
         from hamcp311_descriptor_changes import without_hamcp311_descriptor_changes  # + HAMCP-311
         current = without_hamcp311_descriptor_changes(self, current)
+        from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
+        current = without_hamcp294_descriptor_changes(self, current)
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):
