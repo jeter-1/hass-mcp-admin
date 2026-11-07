@@ -114,6 +114,7 @@ class RedirectPeer:
         page_size: int | None = None,
         call_handler: Callable[[str, dict], dict] | None = None,
         delete_status: int = 200,
+        unbound_status: int = 500,
     ):
         # ``tools``: serve these raw descriptors verbatim (in this order) in
         # pages of ``page_size`` (one page when None) instead of the synthetic
@@ -125,6 +126,9 @@ class RedirectPeer:
         self.calls: list[tuple[str, dict]] = []
         # Status of a non-redirected DELETE (500 makes cleanup fail).
         self.delete_status = delete_status
+        # Status of a request to an origin path other than the bound one (404
+        # models an 8.5.0 app asked for a ``/catalog/full`` path it lacks).
+        self.unbound_status = unbound_status
         # ``raw_suffix``: serve an arbitrary configured value (path, query and
         # anything after the authority) verbatim; every origin request then
         # counts as an origin request whatever path the client normalized it
@@ -264,7 +268,7 @@ class RedirectPeer:
                     else:
                         peer.counters.destination[f"{method}:{request_type}"] += 1
                 if not bound:
-                    self._send(500)
+                    self._send(peer.unbound_status)
                     return
                 if peer._should_inject(request_type):
                     if request_type == "get_stream":

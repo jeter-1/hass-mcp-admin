@@ -595,6 +595,10 @@ class Parity85Tests(ParityBase):
         # Same shared-sanitizer treatment of the acknowledgement line as 9.1.
         self.assertEqual(result['warnings'], [REDACTION_WARNING])
 
+    async def test_85_skill_guide_three_tiers(self):
+        # Design section 8 name for the row 18 three-tier positive.
+        await self.test_85_skill_guide_three_tier_positive()
+
     async def test_85_parity_row_18_skill_guide(self):
         await self.assert_unknown_key_refused('ha_get_skill_guide', {})
         await self.assert_upstream_error_fails('ha_get_skill_guide', {'skill': 'synthetic-other-skill'},
