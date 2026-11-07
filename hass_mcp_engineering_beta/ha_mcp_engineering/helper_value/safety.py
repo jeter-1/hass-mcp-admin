@@ -4,7 +4,8 @@ No new analysis: this reads the shipped target-scoped helper dependency binding
 and projects it. Only EXACT evidence warns: the binding's positive
 ``physical_consequence`` is ``safety_critical`` and at least one consumer that
 references the helper carries that consequence (with an exact obligation, or a
-literal reference whose own analysis failed). Opaque or template readers and
+literal reference whose own analysis was not exact, whatever an unrelated
+coverage gap does to its scope marker). Opaque or template readers and
 conservative-scope consumers never warn; they are disclosed as information.
 
 HAMCP-327 (fail to ask, never act blind): partial coverage is disclosed
@@ -31,7 +32,15 @@ CONFIRMATION = "model_conveyed_chat_confirmation"
 CONFIRMATION_SAFETY_CRITICAL = "safety_critical_consumers"
 CONFIRMATION_EVIDENCE_UNAVAILABLE = "evidence_unavailable"
 CONFIRMATION_REASONS = frozenset({CONFIRMATION_SAFETY_CRITICAL, CONFIRMATION_EVIDENCE_UNAVAILABLE})
-_COVERAGE_FAILURE_SCOPES = frozenset({"coverage_failure_consequence_scope", "unreadable_consequence_scope"})
+# Scope markers that say a consumer's own analysis did not yield an exact
+# obligation for this helper: its own coverage failure or unreadable
+# configuration, or (HAMCP-327 R1-H1) the conservative scope an unrelated,
+# unattributable coverage gap gives every automation. None of them erases a
+# literal reference the consumer carries alongside the marker.
+_INEXACT_ANALYSIS_SCOPES = frozenset({"coverage_failure_consequence_scope", "unreadable_consequence_scope",
+                                      "conservative_consequence_scope"})
+# Relationships that put a consumer in scope without referencing the helper.
+_SCOPE_ONLY_RELATIONSHIPS = frozenset({"bounded_semantic_opaque"}) | _INEXACT_ANALYSIS_SCOPES
 
 
 def _builder(domain):
@@ -132,6 +141,20 @@ def _consumer(profile, names):
             "physical_consequence": str(profile.get("physical_consequence"))}
 
 
+def _literal_inexact(profile):
+    """A literal reference to the helper whose own analysis was not exact (C-iv).
+
+    Decided from this consumer's own relationships only, so neither an
+    unrelated coverage gap nor the binding-wide exact-obligation count can
+    hide it.
+    """
+    relationships = profile.get("relationships")
+    if not isinstance(relationships, (list, tuple)):
+        return False
+    names = {item for item in relationships if isinstance(item, str)}
+    return bool(names - _SCOPE_ONLY_RELATIONSHIPS) and bool(names & _INEXACT_ANALYSIS_SCOPES)
+
+
 def assess(evidence: dict) -> dict:
     """Project evidence to the warning decision and bounded consumer information."""
     if not evidence.get("available"):
@@ -154,11 +177,11 @@ def assess(evidence: dict) -> dict:
     exact_count = binding.get("exact_dependency_obligation_count")
     exact = not (type(exact_count) is int and exact_count == 0)
     # HAMCP-327 / HAMCP-301 C-iv: a consumer that names the helper literally but
-    # whose obligation analysis failed contributes no exact obligation. Its
-    # literal reference cannot be ruled out, so it warns like exact evidence.
-    exact = exact or any(set(item.get("relationships") or ()) & _COVERAGE_FAILURE_SCOPES
-                         for item in critical)
-    safety_critical = bool(binding.get("physical_consequence") == SAFETY_CRITICAL and critical and exact)
+    # whose obligation analysis was not exact contributes no exact obligation.
+    # Its literal reference cannot be ruled out, so it warns like exact
+    # evidence, whatever scope marker an unrelated gap gives it (R1-H1).
+    warning = critical if exact else [item for item in critical if _literal_inexact(item)]
+    safety_critical = bool(binding.get("physical_consequence") == SAFETY_CRITICAL and warning)
     counts = binding.get("relevant_consumer_counts_by_class")
     counts = counts if isinstance(counts, dict) else {}
     template_count = counts.get("opaque", len(templates))
@@ -183,8 +206,8 @@ def assess(evidence: dict) -> dict:
         "confirmation_reason": CONFIRMATION_SAFETY_CRITICAL if safety_critical else None,
     }
     if safety_critical:
-        result["consequential_automations"] = [_consumer(item, names) for item in critical[:MAX_LISTED]]
-        result["consequence"] = (f"{len(critical)} automation(s) that reference this helper have "
+        result["consequential_automations"] = [_consumer(item, names) for item in warning[:MAX_LISTED]]
+        result["consequence"] = (f"{len(warning)} automation(s) that reference this helper have "
                                  "safety-critical physical consequences.")
     elif known_count:
         result["consequence"] = (f"{known_count} automation(s) reference this helper and may react; "

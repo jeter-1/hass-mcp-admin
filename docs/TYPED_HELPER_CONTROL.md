@@ -160,9 +160,14 @@ It warns only on EXACT evidence. Both of these must hold:
   helper exactly) carries `safety_critical`.
 
 A binding with zero exact dependency obligations never warns, unless that
-safety-critical referenced consumer is itself a coverage failure: it names the
-helper literally, but its own obligation analysis failed (HAMCP-327, the
-HAMCP-301 C-iv class). That literal reference cannot be ruled out, so it warns.
+safety-critical referenced consumer names the helper literally but its own
+obligation analysis was not exact (HAMCP-327, the HAMCP-301 C-iv class): its
+own coverage failure, an unreadable configuration, or the conservative scope
+that an unrelated, unattributable coverage gap gives every automation. That
+literal reference cannot be ruled out, so it warns. The decision uses that
+consumer's own relationships, so neither an unrelated gap nor the binding-wide
+exact-obligation count can hide it. A consumer in scope only through such a
+marker, with no literal reference, never warns.
 
 **Evidence is established whenever the shared dependency index is valid**
 (HAMCP-327). Partial coverage is not a failure: bounded, opaque or unreadable
@@ -210,14 +215,23 @@ Every non-warning result includes `safety`:
 - `coverage_complete`, the bounded `coverage_reason_codes` and
   `potential_physical_consequence`.
 
-An already-current value (`no_change`) does not read the evidence; nothing is
-dispatched, and `safety` says `evaluated: false`.
+A result that evaluates no confirmation gate still lists the known consumers
+(HAMCP-327). An already-current value (`no_change`) and a repeated request that
+reconciles an existing task read the same evidence after the result is
+determined: `safety` says `evaluated: false` with its `reason`
+(`value_already_current` or `reconciliation_of_existing_task`),
+`disclosure: informational_read_after_result`, and the same bounded consumer,
+template-reader and coverage fields. That read never asks, never dispatches
+and never changes the result's status. If the evidence cannot be established,
+`evidence: unavailable` with a bounded `failure_category` and null (unknown,
+not empty) consumer fields; the no-op or reconciliation is unchanged.
 
 Coverage is incomplete by design, and the result says so.
 
 **Safety notes are per call.** They are not persisted with the task. A
-repeated request that reconciles an existing task reports
-`safety: {evaluated: false, reason: reconciliation_of_existing_task}`.
+repeated request that reconciles an existing task never replays the gate or
+the dispatch; it reports the informational disclosure above with
+`reason: reconciliation_of_existing_task`.
 
 ## Closed provider authority
 

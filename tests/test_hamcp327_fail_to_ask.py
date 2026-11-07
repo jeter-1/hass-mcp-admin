@@ -30,7 +30,10 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 from ha_mcp_engineering import dependency as dependency_package  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.models import MAX_OBLIGATION_VALUE_BYTES  # noqa: E402
-from ha_mcp_engineering.dependency.provider import DirectHaDependencyProvider  # noqa: E402
+from ha_mcp_engineering.dependency.provider import (  # noqa: E402
+    MAX_PENDING_AUTOMATION_WRITES,
+    DirectHaDependencyProvider,
+)
 from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
     supported_home_assistant_versions,
 )
@@ -283,6 +286,68 @@ class IntactIdBoundedTests(Hamcp327Base):
         self.settled()
 
 
+class UnattributedGapTests(Hamcp327Base):
+    """HAMCP-327 R1-H1: an unrelated, unattributable gap must not hide C-iv.
+
+    Overflowing the provider's bounded pending-write journal (a synthetic
+    governed-write count, no other change) is a coverage gap no named
+    automation owns. Every automation then carries
+    ``conservative_consequence_scope`` instead of its own coverage-failure
+    marker; the literal consumer's evidence is otherwise identical.
+    """
+
+    shapes = ("bounded_guest", "noise")
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        provider = self.runtime.require().index.provider
+        for number in range(MAX_PENDING_AUTOMATION_WRITES + 1):
+            provider.note_automation_write(f"synthetic_unrelated_{number}")
+
+    async def test_fixture_reproduces_the_unattributed_gap_shape(self):
+        evidence = await read_helper_dependency_evidence(GUEST)
+        self.assertTrue(evidence["available"], evidence)
+        binding = evidence["binding"]
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertEqual(binding["physical_consequence"], "safety_critical")
+        self.assertEqual(binding["exact_dependency_obligation_count"], 0)
+        consumer = next(item for item in binding["downstream_profiles"]
+                        if item["automation_id"] == "automation.front_door_lock_bedtime")
+        self.assertEqual(consumer["evidence_class"], "referenced")
+        self.assertEqual(consumer["physical_consequence"], "safety_critical")
+        self.assertIn("choose_condition", consumer["relationships"])
+        self.assertIn("conservative_consequence_scope", consumer["relationships"])
+        self.assertNotIn("coverage_failure_consequence_scope", consumer["relationships"])
+
+    async def test_literal_critical_consumer_asks_despite_unrelated_gap(self):
+        request = self.request(GUEST, "turn_on")
+        result = await self.assert_asks(request, "safety_critical_consumers")
+        self.assertEqual(result["consequential_automations"], [
+            {"automation_id": "automation.front_door_lock_bedtime", "name": "Front door lock bedtime",
+             "physical_consequence": "safety_critical"}])
+        self.assertEqual(self.transport.states[GUEST]["state"], "off")
+        self.settled()
+        result = await self.call(request.model_copy(update={"acknowledge_safety_critical": True}))
+        self.assertEqual(result["status"], "succeeded_verified", result)
+        self.assertTrue(result["safety"]["safety_critical"])
+        self.assertEqual(request_summary(self.telemetry)["safety_gate"], "acknowledged")
+        self.assertEqual(len(self.dispatches()), 1)
+        self.assertEqual(self.transport.states[GUEST]["state"], "on")
+        self.settled()
+
+    async def test_conservative_only_consumer_of_another_helper_stays_informational(self):
+        # The same gap puts the lock automation in scope for every helper; for
+        # one it does not reference, it stays information only (HAMCP-311).
+        result = await self.call(self.request(ACCEPTANCE, "turn_on"))
+        self.assertEqual(result["status"], "succeeded_verified", result)
+        self.assertFalse(result["safety"]["safety_critical"])
+        self.assertIsNone(result["safety"]["confirmation_reason"])
+        self.assertEqual(result["safety"]["known_consumers"], [])
+        self.assertEqual(request_summary(self.telemetry)["safety_gate"], "not_safety_critical")
+        self.assertEqual(len(self.dispatches()), 1)
+        self.settled()
+
+
 class UnreferencedHelperTests(Hamcp327Base):
     shapes = ("exact", "noise")
 
@@ -404,25 +469,115 @@ class FailurePreservationTests(Hamcp327Base):
         self.assertEqual(self.transport.writes, 0)
         self.settled()
 
-    async def test_already_current_value_reads_no_evidence_and_never_dispatches(self):
+    async def test_already_current_value_with_failing_reader_is_still_no_change(self):
+        # R1-M1: the no-op reads evidence only to disclose it; a reader
+        # failure is reported as unknown and never changes the no-op.
         reads = []
-        async def counting(entity_id):
+        async def failing(entity_id):
             reads.append(entity_id)
-            raise AssertionError("evidence must not be read for a no-op")
-        self.service.dependency_reader = counting
-        result = await self.call(self.request(GUEST, "turn_off"))
+            raise RuntimeError("synthetic-private-reader-text")
+        self.service.dependency_reader = failing
+        request = self.request(GUEST, "turn_off")
+        try:
+            result = await self.call(request)
+        except Exception as exc:
+            self.fail(f"a disclosure failure must not fail the no-op: {type(exc).__name__}")
         self.assertEqual(result["status"], "no_change", result)
-        self.assertEqual(reads, [])
+        self.assertEqual(reads, [GUEST])
+        safety = result["safety"]
+        self.assertEqual((safety.get("evaluated"), safety.get("reason"), safety.get("evidence"),
+                          safety.get("failure_category")),
+                         (False, "value_already_current", "unavailable", "RuntimeError"))
+        self.assertEqual({key: safety[key] for key in NO_CONSUMERS}, NO_CONSUMERS)
+        self.assertNotIn("synthetic-private-reader-text", json.dumps(result))
+        self.assertEqual(request_summary(self.telemetry)["safety_gate"], "not_evaluated_value_already_current")
         self.assertEqual(self.dispatches(), [])
+        self.assertEqual(self.transport.writes, 0)
 
     async def test_unacknowledged_guest_mode_never_dispatches_in_any_evidence_state(self):
-        for require in (lambda: SimpleNamespace(index=self.runtime.require().index),
-                        lambda: (_ for _ in ()).throw(RuntimeError("synthetic"))):
-            self.runtime.require = require
-            result = await self.call(self.request(GUEST, "turn_on"))
-            self.assertEqual(result["status"], "confirmation_required", result)
-        self.assertEqual(self.dispatches(), [])
+        # R1-L1: capture the index before replacing ``require``, so the first
+        # state really reads available evidence.
+        index = self.runtime.require().index
+        def unavailable():
+            raise RuntimeError("synthetic")
+        for require, reason in ((lambda: SimpleNamespace(index=index), "safety_critical_consumers"),
+                                (unavailable, "evidence_unavailable")):
+            with self.subTest(reason=reason):
+                self.runtime.require = require
+                result = await self.call(self.request(GUEST, "turn_on"))
+                self.assertEqual(result["status"], "confirmation_required", result)
+                self.assertEqual(result["reason"], reason)
+                self.assertEqual(result.get("evidence"),
+                                 "unavailable" if reason == "evidence_unavailable" else None)
+                self.assertEqual(self.dispatches(), [])
+                self.assertEqual(self.transport.writes, 0)
         self.assertEqual(self.transport.states[GUEST]["state"], "off")
+
+
+class ResultDisclosureTests(Hamcp327Base):
+    """HAMCP-327 R1-M1: every result lists the known consumers."""
+
+    async def test_no_change_lists_known_consumers_from_real_index(self):
+        result = await self.call(self.request(GUEST, "turn_off"))
+        self.assertEqual(result["status"], "no_change", result)
+        safety = result["safety"]
+        self.assertEqual((safety.get("evaluated"), safety.get("reason"), safety.get("disclosure")),
+                         (False, "value_already_current", "informational_read_after_result"))
+        self.assertEqual(safety["evidence"], "available")
+        self.assertEqual(safety["known_consumer_count"], 2)
+        self.assertEqual({item["automation_id"] for item in safety["known_consumers"]},
+                         {"automation.guest_unlock", "automation.guest_lights"})
+        self.assertEqual([item["automation_id"] for item in safety["consequential_automations"]],
+                         ["automation.guest_unlock"])
+        self.assertEqual(safety["template_reader_count"], 1)
+        self.assertFalse(safety["coverage_complete"])
+        # No gate was evaluated: the no-op never asks.
+        self.assertNotIn("confirmation_reason", safety)
+        self.assertNotIn("safety_critical", safety)
+        summary = request_summary(self.telemetry)
+        self.assertEqual(summary["safety_gate"], "not_evaluated_value_already_current")
+        self.assertNotIn("safety_confirmation_reason", summary)
+        self.assertEqual(self.dispatches(), [])
+        self.assertEqual(self.transport.writes, 0)
+
+    async def test_reconciliation_discloses_and_never_replays(self):
+        request = self.request(GUEST, "turn_on")
+        await self.assert_asks(request, "safety_critical_consumers")
+        confirmed = request.model_copy(update={"acknowledge_safety_critical": True})
+        first = await self.call(confirmed)
+        self.assertEqual(first["status"], "succeeded_verified", first)
+        for _ in range(2):
+            again = await self.call(confirmed)
+            self.assertEqual(again["status"], "succeeded_verified", again)
+            safety = again["safety"]
+            self.assertEqual((safety.get("evaluated"), safety.get("reason"), safety.get("disclosure")),
+                             (False, "reconciliation_of_existing_task", "informational_read_after_result"))
+            self.assertEqual(safety["known_consumer_count"], 2)
+            self.assertEqual([item["automation_id"] for item in safety["consequential_automations"]],
+                             ["automation.guest_unlock"])
+            self.assertNotIn("confirmation_reason", safety)
+        # The unacknowledged original is now rebound, never a second dispatch.
+        with self.assertRaisesRegex(typed.HelperRefusal, "rebound"):
+            await self.call(request)
+        self.assertEqual(len(self.dispatches()), 1)
+        self.assertEqual(self.transport.writes, 1)
+        self.settled()
+
+    async def test_reconciliation_with_unavailable_evidence_is_unchanged(self):
+        request = self.request(ACCEPTANCE, "turn_on")
+        first = await self.call(request)
+        self.assertEqual(first["status"], "succeeded_verified", first)
+        self.runtime.require = lambda: (_ for _ in ()).throw(RuntimeError("synthetic"))
+        again = await self.call(request)
+        self.assertEqual(again["status"], "succeeded_verified", again)
+        self.assertEqual({key: again[key] for key in ("task_id", "provider_attempt_count")},
+                         {key: first[key] for key in ("task_id", "provider_attempt_count")})
+        safety = again["safety"]
+        self.assertEqual((safety.get("reason"), safety.get("evidence"), safety.get("failure_category")),
+                         ("reconciliation_of_existing_task", "unavailable", "RuntimeError"))
+        self.assertEqual({key: safety[key] for key in NO_CONSUMERS}, NO_CONSUMERS)
+        self.assertEqual(len(self.dispatches()), 1)
+        self.settled()
 
 
 if __name__ == "__main__":

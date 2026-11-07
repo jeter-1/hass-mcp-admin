@@ -367,9 +367,17 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['status'], 'no_change', result)
                 self.assertEqual(result['provider_attempt_count'], 0)
                 self.assertFalse(result['dispatch_intent_recorded'])
-                self.assertEqual(result['safety'], {'evaluated': False, 'reason': 'value_already_current'})
+                safety = result['safety']
+                # HAMCP-327 R1-M1: no gate is evaluated, but consumers are disclosed.
+                self.assertEqual((safety.get('evaluated'), safety.get('reason'), safety.get('disclosure')),
+                                 (False, 'value_already_current', 'informational_read_after_result'))
+                self.assertEqual(safety['evidence'], 'available')
+                self.assertEqual(safety['known_consumer_count'], 0)
+                self.assertEqual(safety['template_reader_count'], 1)
+                self.assertNotIn('confirmation_reason', safety)
+                self.assertNotIn('safety_critical', safety)
         self.assertEqual(self.transport.writes, 0)
-        self.assertEqual(self.reads, [])
+        self.assertEqual(self.reads, [request.entity_id for request in cases])
         self.assertEqual(request_summary(self.telemetry)['safety_gate'], 'not_evaluated_value_already_current')
         self.settled()
 
@@ -666,7 +674,18 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.evidence['input_boolean.guest_mode'] = GUEST_MODE
         result = await self.call(self.request('input_boolean.guest_mode', 'turn_off'))
         self.assertEqual(result['status'], 'no_change')
-        self.assertEqual(self.reads, [])
+        # HAMCP-327 R1-M1: the no-op never asks, but lists the known consumers.
+        self.assertEqual(self.reads, ['input_boolean.guest_mode'])
+        safety = result['safety']
+        self.assertIs(safety['evaluated'], False)
+        self.assertEqual(safety.get('known_consumer_count'), 2)
+        self.assertEqual({item['automation_id'] for item in safety['known_consumers']},
+                         {'automation.unlock_for_guests', 'automation.guest_lights'})
+        self.assertEqual([item['automation_id'] for item in safety['consequential_automations']],
+                         ['automation.unlock_for_guests'])
+        self.assertEqual(self.transport.writes, 0)
+        self.assertEqual(self.dispatches(), [])
+        self.assertEqual(request_summary(self.telemetry)['safety_gate'], 'not_evaluated_value_already_current')
 
     async def test_engineering_acceptance_opaque_only_never_warns(self):
         self.evidence['input_boolean.engineering_acceptance'] = OPAQUE_ONLY
@@ -782,7 +801,9 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(3):
             again = await self.call(request)
             self.assertEqual(again['status'], 'succeeded_verified')
-            self.assertEqual(again['safety'], {'evaluated': False, 'reason': 'reconciliation_of_existing_task'})
+            self.assertEqual((again['safety'].get('evaluated'), again['safety'].get('reason'), again['safety'].get('disclosure')),
+                             (False, 'reconciliation_of_existing_task', 'informational_read_after_result'))
+            self.assertEqual(again['safety']['known_consumer_count'], 0)
             with patch.object(HELPER_VALUE_OPERATIONS, 'service', self.service):
                 detail = json.loads(await get_execution_task(request.task_id))
             self.assertIn('succeeded_verified', json.dumps(detail))
@@ -978,6 +999,23 @@ class HelperBoundaryTests(unittest.TestCase):
             intact['binding']['downstream_profiles'][0]['relationships'] = ['choose_condition', scope]
             self.assertTrue(assess(intact)['safety_critical'], scope)
             self.assertEqual(assess(intact)['confirmation_reason'], 'safety_critical_consumers')
+        # HAMCP-327 R1-H1: an unrelated, unattributable gap gives the same
+        # literal consumer a conservative scope marker; it still warns, and
+        # lists only that consumer.
+        conservative = deepcopy(zero)
+        conservative['binding']['downstream_profiles'][0]['relationships'] = [
+            'choose_condition', 'conservative_consequence_scope']
+        self.assertTrue(assess(conservative)['safety_critical'])
+        self.assertEqual(assess(conservative)['confirmation_reason'], 'safety_critical_consumers')
+        self.assertEqual([item['automation_id'] for item in assess(conservative)['consequential_automations']],
+                         ['automation.unlock_for_guests'])
+        # A scope marker without a literal reference never warns.
+        for markers in (['conservative_consequence_scope'], ['coverage_failure_consequence_scope'],
+                        ['bounded_semantic_opaque', 'unreadable_consequence_scope'], ['choose_condition']):
+            scoped = deepcopy(zero)
+            scoped['binding']['downstream_profiles'][0]['relationships'] = markers
+            self.assertFalse(assess(scoped)['safety_critical'], markers)
+            self.assertIsNone(assess(scoped)['confirmation_reason'], markers)
         # The intact-id rule never lifts an opaque consumer.
         opaque = deepcopy(OPAQUE_ONLY); opaque['binding']['physical_consequence'] = 'safety_critical'
         opaque['binding']['downstream_profiles'][0]['relationships'] = ['coverage_failure_consequence_scope']

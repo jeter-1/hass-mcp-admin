@@ -85,6 +85,9 @@ def request_summary(telemetry):
 
 
 _CONSUMER_KEYS = ("known_consumer_count", "known_consumers", "template_reader_count", "template_readers")
+# Gate fields: a disclosure-only result evaluated no confirmation gate.
+_GATE_KEYS = frozenset({"safety_critical", "confirmation_reason"})
+DISCLOSURE = "informational_read_after_result"
 
 
 def _confirmation_payload(request, baseline, safety):
@@ -227,9 +230,28 @@ class HelperService(FanService):
             if notes.get("confirmation_reason") and notes["gate"] in _ACKNOWLEDGED:
                 telemetry.audit_context["helper_value_confirmation_reason"] = notes["confirmation_reason"]
         result = dict(result)
-        result["safety"] = notes.get("safety") or {
-            "evaluated": False, "reason": "reconciliation_of_existing_task"}
+        safety = notes.get("safety")
+        if safety is None or safety.get("evaluated") is not True:
+            # HAMCP-327 R1-M1: a no-op or a reconciliation evaluates no gate,
+            # but still discloses the known consumers. Read after the result,
+            # so it can neither ask nor change what was (not) dispatched.
+            reason = safety["reason"] if safety else "reconciliation_of_existing_task"
+            safety = await self._disclosure(request.entity_id, reason)
+        result["safety"] = safety
         return result
+
+    async def _disclosure(self, entity_id, reason):
+        """Bounded consumer information for a result that evaluated no gate.
+
+        Read-only and informational: it never raises, never asks and never
+        dispatches. Unavailable evidence is reported as unknown (null fields).
+        """
+        try:
+            safety = assess(await self.dependency_reader(entity_id))
+        except Exception as exc:
+            safety = assess({"available": False, "failure_category": type(exc).__name__[:64]})
+        return {"evaluated": False, "reason": reason, "disclosure": DISCLOSURE} | {
+            key: value for key, value in safety.items() if key not in _GATE_KEYS}
 
     async def _fresh_readback(self, prepared):
         inner = self.adapter.inner
