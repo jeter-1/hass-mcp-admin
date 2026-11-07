@@ -415,7 +415,6 @@ class TraceSnapshotService:
             "lapsed_dropped": lifecycle["lapsed_dropped"],
             "warning_window_hours": c.EXPIRY_WARNING_HOURS,
             "lifecycle_store": "reset" if self.store.lifecycle_reset else "ok",
-            "overflow_store": "reset" if self.store.overflow_reset else "ok",
         }
 
     @staticmethod
@@ -538,8 +537,10 @@ class TraceSnapshotService:
         only its own oldest snapshot past the watch quota (E2, 20 per watch);
         the global bounds (500 snapshots, 128 MiB) and the watch-origin
         reservation (400 snapshots, 100 MiB) still refuse, never evict. Where
-        the entries live on disk (``index.json`` or the overflow sidecar) is
-        the store's concern (``store.write_index``). ``update_watch(watch)`` applies poll state to
+        the entries live on disk (``index.json`` or the watch sidecar) is
+        the store's concern (``store.write_index``); a failed write leaves
+        the prior index and sidecar pair, so the watch's poll state is not
+        advanced for records this commit then removes. ``update_watch(watch)`` applies poll state to
         the current watch row, which may have been replaced or removed since
         the poll began.
 

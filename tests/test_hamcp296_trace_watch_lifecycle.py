@@ -39,6 +39,7 @@ HOUR = 3600
 AUTHORITY = (7, VERSION)
 FULL = c.SNAPSHOT_BYTES
 ENDED_WATCH = "b" * 32
+E2_DEPTH = 20  # Decision E2 (2026-10-26), kept by Josh on 2026-11-07: 20 per watch.
 
 
 class LifecycleCase(ServiceCase):
@@ -54,9 +55,40 @@ class LifecycleCase(ServiceCase):
         value, _ = await self.service.watch(action="list")
         return value
 
+    def committed_slot(self):
+        """``(path, value)`` of the sidecar slot committed with ``index.json``, or ``None``.
+
+        Read independently of the store: the valid slot naming the sha256 of
+        the index bytes on disk, highest generation first.
+        """
+
+        index_path = self.root / c.MODEL / "index.json"
+        digest = c.sha256(index_path.read_bytes() if index_path.exists() else b"")
+        best = None
+        # ``getattr``: the mutation runner also runs this module against
+        # the reviewed head, which had no slot files.
+        for name in getattr(store_module, "SIDECAR_SLOTS", ()):
+            path = self.root / c.MODEL / name
+            try:
+                value = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if (isinstance(value, dict) and value.get("index_sha256") == digest
+                    and (best is None or value["generation"] > best[1]["generation"])):
+                best = (path, value)
+        return best
+
     def sidecar(self):
-        path = self.root / c.MODEL / "watch-lifecycle.json"
-        return json.loads(path.read_text()) if path.exists() else None
+        best = self.committed_slot()
+        return best[1] if best else None
+
+    def write_committed(self, value):
+        """Replace the committed slot's content, keeping its index binding."""
+
+        path, held = self.committed_slot()
+        path.write_text(json.dumps({**value, "index_sha256": held["index_sha256"],
+                                    "generation": held["generation"]}))
+        return path
 
     def store_files(self):
         found = {}
@@ -71,8 +103,7 @@ class LifecycleCase(ServiceCase):
             await self.add(f"{prefix}{i}", **kwargs)
 
     def overflow(self):
-        path = self.root / c.MODEL / "snapshot-overflow.json"
-        return json.loads(path.read_text()) if path.exists() else None
+        return self.sidecar()
 
     def seed(self, count, *, origin="trace_watch", size=1, start=0, age_ms=0, sizes=None):
         """Store ``count`` synthetic entries (ended watch or manual) with record files.
@@ -360,7 +391,7 @@ class PriorityTests(LifecycleCase):
 
 
 class WorstCaseSizeTests(unittest.TestCase):
-    """INDEX_BYTES (unchanged), OVERFLOW_BYTES and LIFECYCLE_BYTES hold at the worst case."""
+    """INDEX_BYTES (unchanged) and SIDECAR_BYTES hold at the worst case."""
 
     WIDE = "\U0001F600"  # 12 canonical bytes when escaped
 
@@ -396,26 +427,27 @@ class WorstCaseSizeTests(unittest.TestCase):
         self.assertLess(len(raw), 1_500_000)
         self.assertLessEqual(len(raw), c.INDEX_BYTES)
 
-    def test_a_full_overflow_sidecar_fits_overflow_bytes(self):
-        spill = {"model": c.OVERFLOW_MODEL,
-                 "snapshots": [self.snapshot(i, FULL) for i in range(c.MAX_SNAPSHOTS)]}
-        raw = c.canonical(store_module.validate_overflow(spill))
-        self.assertLessEqual(len(raw), c.OVERFLOW_BYTES)
+    def test_a_full_sidecar_slot_fits_sidecar_bytes(self):
+        # Every list at its bound and every entry at its widest: all 500
+        # snapshot entries (the most the merged set can hold), 20 watch rows
+        # (more than the 10 overflow rows the store ever writes), 20 meta
+        # rows and LAPSED_MAX lapsed records.
+        slot = {"model": c.SIDECAR_MODEL, "generation": 10**15, "index_sha256": "a" * 64,
+                "snapshots": [self.snapshot(i, FULL) for i in range(c.MAX_SNAPSHOTS)],
+                "overflow": [self.watch(i) for i in range(c.MAX_WATCHES)],
+                "watch_meta": [{"watch_id": f"{i + 1:032x}", "priority": "normal",
+                                "renewed_at_ms": 10**15} for i in range(c.MAX_WATCHES)],
+                "lapsed": [{"watch_id": f"{i + 100:032x}", "automation_id": "l" * 250 + f"{i:06d}",
+                            "mode": "failures", "priority": "normal", "created_at_ms": 10**15,
+                            "expired_at_ms": 10**15, "reason": "displaced",
+                            "captured_count": 10**15} for i in range(c.LAPSED_MAX)],
+                "lapsed_dropped": 10**15}
+        raw = c.canonical(store_module.validate_sidecar(slot))
+        self.assertEqual(len(c.canonical(self.watch(0))), 15_346)
+        self.assertLess(len(raw), 3_700_000)
+        self.assertLessEqual(len(raw), c.SIDECAR_BYTES)
         # The same 500 entries in one index would not fit INDEX_BYTES.
         self.assertGreater(len(raw), c.INDEX_BYTES)
-
-    def test_a_full_lifecycle_sidecar_fits_lifecycle_bytes(self):
-        sidecar = {"model": c.LIFECYCLE_MODEL,
-                   "overflow": [self.watch(i) for i in range(c.MAX_WATCHES)],
-                   "watch_meta": [{"watch_id": f"{i + 1:032x}", "priority": "normal",
-                                   "renewed_at_ms": 10**15} for i in range(c.MAX_WATCHES)],
-                   "lapsed": [{"watch_id": f"{i + 100:032x}", "automation_id": "l" * 250 + f"{i:06d}",
-                               "mode": "failures", "priority": "normal", "created_at_ms": 10**15,
-                               "expired_at_ms": 10**15, "reason": "displaced",
-                               "captured_count": 10**15} for i in range(c.LAPSED_MAX)],
-                   "lapsed_dropped": 10**15}
-        raw = c.canonical(store_module.validate_lifecycle(sidecar))
-        self.assertLessEqual(len(raw), c.LIFECYCLE_BYTES)
 
 
 class BudgetTests(LifecycleCase):
@@ -445,6 +477,46 @@ class BudgetTests(LifecycleCase):
                    and r["watch_id"] == rows["a1"]["watch_id"] for i in r["evicted_snapshot_ids"]]
         self.assertEqual(evicted, [oldest["snapshot_id"]])
         self.assertFalse((self.root / c.MODEL / "records" / (oldest["snapshot_id"] + ".json")).exists())
+
+    def record_ids(self):
+        return {p.name[:-5] for p in (self.root / c.MODEL / "records").iterdir()}
+
+    async def test_a_full_watch_split_across_index_and_sidecar_evicts_exactly_one(self):
+        # Codex review F1: 20 retained captures; one more evicts exactly one
+        # and keeps 20, and placing entries in index.json or the sidecar
+        # never removes a retained record.
+        self.seed(c.V1_INDEX_MAX_SNAPSHOTS - 5, origin="manual", start=1000)
+        await self.add("a1", mode="executed")
+        await self.service.poll_once(authority=AUTHORITY)  # baseline
+        await self.poll_rounds(E2_DEPTH // c.MAX_CAPTURES)
+        watch_id = self.service.store.load_index()["watches"][0]["watch_id"]
+        own = [e for e in self.watch_origin() if e["watch_id"] == watch_id]
+        self.assertEqual(len(own), E2_DEPTH)
+        # Manual first: only the five newest are in index.json, 15 are in the sidecar.
+        self.assertEqual(sum(e["watch_id"] == watch_id for e in self.index()["snapshots"]), 5)
+        self.assertEqual(sum(e["watch_id"] == watch_id for e in self.sidecar()["snapshots"]), 15)
+        merged = {e["snapshot_id"] for e in self.service.store.load_index()["snapshots"]}
+        self.assertEqual(self.record_ids(), merged)
+        oldest = min(own, key=lambda e: (e["captured_at_ms"], e["snapshot_id"]))["snapshot_id"]
+        before = self.record_ids()
+        self.clock.now += 1
+        self.core.add("late", minute=59)
+        await self.service.poll_once(authority=AUTHORITY)
+        after = self.record_ids()
+        self.assertEqual(before - after, {oldest})
+        self.assertEqual(len(after - before), 1)
+        fresh = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                     known_secrets=(KNOWN,), clock=self.clock)
+        await fresh.list()
+        held = fresh.store.load_index()
+        own = [e for e in held["snapshots"] if e["watch_id"] == watch_id]
+        self.assertEqual(len(own), E2_DEPTH)
+        self.assertIn("late", {e["run_id"] for e in own})
+        self.assertEqual(held["watches"][0]["captured_count"], E2_DEPTH + 1)
+        self.assertEqual(held["watches"][0]["evicted_count"], 1)
+        self.assertEqual(self.record_ids(), {e["snapshot_id"] for e in held["snapshots"]})
+        self.assertEqual(sum(e["origin"] == "manual" for e in held["snapshots"]),
+                         c.V1_INDEX_MAX_SNAPSHOTS - 5)
 
     async def test_twenty_full_watches_fill_the_reservation_and_leave_manual_room(self):
         await self.fill(mode="executed")
@@ -602,7 +674,7 @@ class OverflowStoreTests(LifecycleCase):
         self.core.add("m1", minute=1)
 
         def fail(stage):
-            if stage == "before_overflow":
+            if stage == "before_sidecar":
                 raise OSError("synthetic")
         self.service.store.fault_hook = fail
         error = await self.refused(self.service.capture(automation_id="a1", run_id="m1"))
@@ -624,8 +696,8 @@ class OverflowStoreTests(LifecycleCase):
         self.service.store.fault_hook = None
         self.assertEqual(error.reason, "store_unavailable")
         self.assertEqual((self.root / c.MODEL / "index.json").read_bytes(), index_before)
-        # The sidecar moved ahead (it now also holds the entry the manual
-        # capture would have pushed out); the index wins and nothing is lost.
+        # The new slot was written but names index bytes that never landed:
+        # the prior index and slot pair is what loads, and nothing is lost.
         raw, merged = self.assert_v1_bounds()
         self.assertEqual({e["snapshot_id"] for e in merged}, held)
         # Reload in a new process: the same set, and the next write settles it.
@@ -636,14 +708,15 @@ class OverflowStoreTests(LifecycleCase):
         raw, merged = self.assert_v1_bounds()
         self.assertEqual(len(merged), len(held) + 1)
 
-    async def test_a_damaged_overflow_sidecar_resets_and_never_blocks(self):
+    async def test_a_damaged_sidecar_slot_resets_and_never_blocks(self):
         self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 5)
-        path = self.root / c.MODEL / "snapshot-overflow.json"
+        path, held = self.committed_slot()
         good = path.read_bytes()
         index = self.index()
-        duplicate = json.dumps({"model": c.OVERFLOW_MODEL,
-                                "snapshots": [index["snapshots"][0], index["snapshots"][0]]})
-        for damage in ("not json", "symlink", "oversize", "wrong model", "duplicate", "extra key"):
+        duplicate = json.dumps({**held, "snapshots": [index["snapshots"][0]] * 2})
+        damages = ("not json", "symlink", "oversize", "wrong model", "duplicate", "extra key",
+                   "unbound", "bad generation")
+        for damage in damages:
             with self.subTest(damage=damage):
                 path.unlink(missing_ok=True)
                 if damage == "symlink":
@@ -651,41 +724,51 @@ class OverflowStoreTests(LifecycleCase):
                     target.write_bytes(good)
                     path.symlink_to(target)
                 elif damage == "oversize":
-                    path.write_text(" " * (c.OVERFLOW_BYTES + 1))
+                    path.write_text(" " * (c.SIDECAR_BYTES + 1))
                 elif damage == "wrong model":
-                    path.write_text(json.dumps({"model": "other", "snapshots": []}))
+                    path.write_text(json.dumps({**held, "model": "other"}))
                 elif damage == "duplicate":
                     path.write_text(duplicate)
                 elif damage == "extra key":
-                    path.write_text(json.dumps({**json.loads(good), "more": 1}))
+                    path.write_text(json.dumps({**held, "more": 1}))
+                elif damage == "unbound":
+                    # Valid, but bound to other index bytes (a downgraded
+                    # server rewrote index.json): never combined with it.
+                    path.write_text(json.dumps({**held, "index_sha256": "0" * 64}))
+                elif damage == "bad generation":
+                    path.write_text(json.dumps({**held, "generation": True}))
                 else:
                     path.write_text(damage)
                 service = TraceSnapshotService(self.root, self.core.command, self.runtime,
                                                self.audit, clock=self.clock)
                 value, _ = await service.watch(action="list")
-                self.assertEqual(value["lifecycle"]["overflow_store"], "reset")
+                self.assertEqual(value["lifecycle"]["lifecycle_store"], "reset")
                 listed, _ = await service.list()
                 self.assertEqual(listed["store"]["snapshots"], c.V1_INDEX_MAX_SNAPSHOTS)
         self.assertEqual((self.root / "elsewhere.json").read_bytes(), good)
         # The disclosed loss: the reset entries' record files are orphan-swept.
         records = {p.name[:-5] for p in (self.root / c.MODEL / "records").iterdir()}
         self.assertEqual(records, {e["snapshot_id"] for e in self.index()["snapshots"]})
-        # The damaged file is reset on every load until the next write
-        # replaces it (rename over it; a symlink is replaced, not followed).
+        # Damage resets on every load until the next write replaces it
+        # (rename over it; a symlink is replaced, not followed).
+        path.unlink()
+        target = self.root / "elsewhere.json"
+        path.symlink_to(target)
         self.core.add("m1", minute=1)
         self.core.add("m2", minute=2)
         for run_id in ("m1", "m2"):
             value, _ = await self.service.capture(automation_id="a1", run_id=run_id)
             self.assertEqual(value["runs"][0]["outcome"], "captured")
-        self.assertFalse(path.is_symlink())
-        store_module.validate_overflow(self.overflow())
+        for name in store_module.SIDECAR_SLOTS:
+            self.assertFalse((self.root / c.MODEL / name).is_symlink())
+        store_module.validate_sidecar(self.sidecar())
         self.assertEqual(len(self.overflow()["snapshots"]), 2)
         self.assertEqual((self.root / "elsewhere.json").read_bytes(), good)
         # The flag reports a reset this process saw; a fresh load is clean.
         service = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
                                        clock=self.clock)
         value, _ = await service.watch(action="list")
-        self.assertEqual(value["lifecycle"]["overflow_store"], "ok")
+        self.assertEqual(value["lifecycle"]["lifecycle_store"], "ok")
         self.assert_v1_bounds()
 
     async def test_sidecar_entries_without_a_record_file_are_dropped(self):
@@ -697,7 +780,7 @@ class OverflowStoreTests(LifecycleCase):
         # Rewritten without the dropped entry at that maintenance commit.
         self.assertNotIn(gone, {e["snapshot_id"] for e in self.overflow()["snapshots"]})
         self.assertEqual(self.service._lifecycle(self.service.store.load_index(),
-                                                 0)["overflow_store"], "ok")
+                                                 0)["lifecycle_store"], "ok")
 
     async def test_the_v1_index_wins_over_a_sidecar_copy(self):
         self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 1)
@@ -707,7 +790,7 @@ class OverflowStoreTests(LifecycleCase):
         same_run = dict(index["snapshots"][1], snapshot_id="f" * 32)
         spill["snapshots"] += [twin, same_run]
         (self.root / c.MODEL / "records" / ("f" * 32 + ".json")).write_bytes(b"{}")
-        (self.root / c.MODEL / "snapshot-overflow.json").write_text(json.dumps(spill))
+        self.write_committed(spill)
         merged = self.service.store.load_index()["snapshots"]
         self.assertEqual(len(merged), c.V1_INDEX_MAX_SNAPSHOTS + 1)
         first = next(e for e in merged if e["snapshot_id"] == twin["snapshot_id"])
@@ -722,7 +805,7 @@ class OverflowStoreTests(LifecycleCase):
                          captured_at_ms=spill["snapshots"][-1]["captured_at_ms"] - 1)
             spill["snapshots"].append(extra)
             (self.root / c.MODEL / "records" / ("e" * 32 + ".json")).write_bytes(b"{}")
-            (self.root / c.MODEL / "snapshot-overflow.json").write_text(json.dumps(spill))
+            self.write_committed(spill)
             merged = self.service.store.load_index()["snapshots"]
             self.assertEqual(len(merged), 30)
             self.assertNotIn("e" * 32, {e["snapshot_id"] for e in merged})
@@ -751,6 +834,235 @@ class OverflowStoreTests(LifecycleCase):
                         store.write_index(trial)
                     self.assertEqual(raised.exception.reason, "store_invalid")
         self.assertEqual(self.store_files(), before)
+
+
+class CoherentCommitTests(LifecycleCase):
+    """Codex review F2: index.json and its sidecar state commit or fail as one.
+
+    Each operation is run once without a fault to record the write stages it
+    reaches and its committed result. It is then rebuilt from scratch and run
+    with an OSError at each stage. A fresh service must load either the exact
+    prior store (and the operation must then succeed on retry) or the
+    committed result, and never a lost trace, a false capture count, a
+    duplicate capture, a reset or a silently lost watch.
+    """
+
+    def new_service(self):
+        return TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                    known_secrets=(KNOWN,), clock=self.clock)
+
+    async def ten_and_overflow(self, extra=0):
+        """Ten primary watches, then "ov" (the eleventh: overflow), with baselines."""
+
+        await self.fill(c.V1_INDEX_MAX_WATCHES, mode="failures")
+        self.clock.now += 1
+        await self.add("ov", mode="executed")
+        await self.fill(extra, prefix="e", mode="failures", duration_hours=48)
+        await self.poll("ov")  # baseline, no runs yet
+        self.assertNotIn("ov", [w["automation_id"] for w in self.index()["watches"]])
+        self.assertIn("ov", [w["automation_id"]
+                             for w in self.service.store.load_index()["watches"]])
+
+    async def ten_and_overflow_with_spill(self):
+        self.seed(c.V1_INDEX_MAX_SNAPSHOTS, origin="manual", start=1000)
+        await self.ten_and_overflow()
+
+    async def ten(self):
+        await self.fill(c.V1_INDEX_MAX_WATCHES, mode="failures")
+        self.assertIsNone(self.sidecar())
+        self.clock.now += 1  # the next add is the newest watch
+
+    async def poll(self, automation_id):
+        watch = next(w for w in self.service.store.load_index()["watches"]
+                     if w["automation_id"] == automation_id)
+        await self.service._poll_watch(watch, AUTHORITY)
+
+    async def capture(self):
+        self.core.runs = [r for r in self.core.runs if r["run_id"] != "x1"]
+        self.core.add("x1", minute=59)
+        await self.poll("ov")
+
+    async def remove_ov(self):
+        await self.service.watch(action="remove", automation_id="ov")
+
+    async def renew_ov(self):
+        await self.renew("ov", duration_hours=96)
+
+    async def displace(self):
+        await self.add("new", displace=True)
+
+    async def add_high(self):
+        await self.add("hi", priority="high")
+
+    async def promote(self):
+        await self.service.watch(action="remove", automation_id="w0")
+
+    async def eleventh(self):
+        await self.add("ov", mode="executed")
+
+    CASES = {
+        # name: (setup, operation, stages the operation must reach)
+        "overflow capture": ("ten_and_overflow", "capture", {"sidecar", "index"}),
+        # index.json does not change: the slot rename is the commit point.
+        "overflow capture into the sidecar": ("ten_and_overflow_with_spill", "capture",
+                                              {"sidecar"}),
+        "overflow remove": ("ten_and_overflow", "remove_ov", {"sidecar"}),
+        "overflow renew": ("ten_and_overflow", "renew_ov", {"sidecar"}),
+        "displace (overflow to primary)": ("ten_and_overflow_full", "displace",
+                                           {"sidecar", "index"}),
+        "high add (primary to overflow)": ("ten_and_overflow", "add_high", {"sidecar", "index"}),
+        "remove a primary (overflow to primary)": ("ten_and_overflow", "promote",
+                                                   {"sidecar", "index"}),
+        # No slot yet: an empty base state bound to the current index first.
+        "first sidecar write": ("ten", "eleventh", {"sidecar_base", "sidecar"}),
+        "first sidecar write moving a primary": ("ten", "add_high",
+                                                 {"sidecar_base", "sidecar", "index"}),
+    }
+
+    async def ten_and_overflow_full(self):
+        await self.ten_and_overflow(extra=c.MAX_WATCHES - c.V1_INDEX_MAX_WATCHES - 1)
+
+    async def rebuild(self, setup):
+        shutil.rmtree(self.root / c.MODEL, ignore_errors=True)
+        self.core.runs = []
+        self.clock.now = NOW
+        self.service = self.new_service()
+        await getattr(self, setup)()
+        self.service = self.new_service()
+
+    @staticmethod
+    def projection(index):
+        """The store's meaning without random IDs, for comparing two runs."""
+
+        priority = {m["watch_id"]: m["priority"] for m in index["lifecycle"]["watch_meta"]}
+        return {
+            "watches": sorted((w["automation_id"], w["mode"], w["expires_at_ms"],
+                               w["captured_count"], w["evicted_count"], w["baseline_done"],
+                               tuple(w["seen_run_ids"]), priority.get(w["watch_id"], "normal"))
+                              for w in index["watches"]),
+            "snapshots": sorted((e["automation_id"], e["run_id"], e["origin"])
+                                for e in index["snapshots"]),
+            "lapsed": sorted((r["automation_id"], r["reason"])
+                             for r in index["lifecycle"]["lapsed"]),
+        }
+
+    def coherent(self, service):
+        """Invariants every committed store holds; returns the loaded index."""
+
+        loaded = service.store.load_index()
+        self.assertFalse(getattr(service.store, "lifecycle_reset", False))
+        store_module.validate_index(self.index())
+        files, _ = service.store.record_files()
+        ids = {e["snapshot_id"] for e in loaded["snapshots"]}
+        self.assertLessEqual(ids, files)  # no lost trace
+        runs = [(e["automation_id"], e["run_id"]) for e in loaded["snapshots"]]
+        self.assertEqual(len(runs), len(set(runs)))  # no duplicate capture
+        for watch in loaded["watches"]:  # no false capture count
+            held = sum(e["watch_id"] == watch["watch_id"] for e in loaded["snapshots"])
+            self.assertEqual(watch["captured_count"], held)
+        return loaded
+
+    async def attempt(self, operation):
+        try:
+            await getattr(self, operation)()
+        except c.TraceSnapshotError as exc:
+            return exc.reason
+        return None
+
+    async def test_every_fault_point_leaves_the_prior_or_the_committed_store(self):
+        reached_by = {}
+        for name, (setup, operation, stages) in self.CASES.items():
+            await self.rebuild(setup)
+            seen = []
+            self.service.store.fault_hook = seen.append
+            self.assertIsNone(await self.attempt(operation))
+            reached = [stage for stage in seen if stage.startswith(("before_", "after_"))]
+            # Each stage is reached once, so a fault position is unambiguous.
+            self.assertEqual(len(reached), len(set(reached)), name)
+            reference = self.projection(self.coherent(self.new_service()))
+            # The last rename is the commit point: the index rename, or the
+            # slot rename when index.json does not change.
+            commit = [stage for stage in reached if stage.startswith("after_")][-1]
+            reached_by[name] = reached
+            for stage in reached:
+                with self.subTest(case=name, stage=stage):
+                    await self.rebuild(setup)
+                    prior = self.new_service().store.load_index()
+
+                    def fail(seen_stage, stage=stage):
+                        if seen_stage == stage:
+                            raise OSError("synthetic")
+                    self.service.store.fault_hook = fail
+                    self.assertEqual(await self.attempt(operation), "store_unavailable")
+                    self.service = self.new_service()
+                    loaded = self.coherent(self.service)
+                    if stage == commit:
+                        # Past the commit point: the committed result.
+                        self.assertEqual(self.projection(loaded), reference)
+                    else:
+                        # The exact prior store: nothing marked handled, no
+                        # watch moved or lost, and the operation retries.
+                        self.assertEqual(loaded, prior)
+                        self.assertIsNone(await self.attempt(operation))
+                        self.assertEqual(self.projection(self.coherent(self.new_service())),
+                                         reference)
+                    if operation == "capture":
+                        # A repeated poll never stores the run twice.
+                        self.service = self.new_service()
+                        await self.capture()
+                        self.assertEqual(self.projection(self.coherent(self.new_service())),
+                                         reference)
+                    await self.new_service().list()
+                    held = self.new_service().store.load_index()
+                    self.assertEqual(self.record_ids(),
+                                     {e["snapshot_id"] for e in held["snapshots"]})
+        # Checked last, so a fault-point failure is reported first. Record
+        # files are written first (a capture); they are faulted too.
+        for name, (_, _, stages) in self.CASES.items():
+            self.assertEqual({stage.split("_", 1)[1] for stage in reached_by[name]} - {"record"},
+                             stages, name)
+        self.assertEqual(sum(len(reached) for reached in reached_by.values()), 36)
+
+    def record_ids(self):
+        return {p.name[:-5] for p in (self.root / c.MODEL / "records").iterdir()}
+
+    async def test_the_movement_controls_move_the_watch_they_name(self):
+        await self.rebuild("ten_and_overflow")
+        await self.add_high()
+        self.assertIn("w9", [w["automation_id"] for w in self.sidecar()["overflow"]])
+        self.assertIn("hi", [w["automation_id"] for w in self.index()["watches"]])
+        await self.rebuild("ten_and_overflow")
+        await self.promote()
+        self.assertIn("ov", [w["automation_id"] for w in self.index()["watches"]])
+        self.assertIsNotNone(self.sidecar())
+        self.assertEqual(self.sidecar()["overflow"], [])
+        await self.rebuild("ten_and_overflow_full")
+        await self.displace()
+        index = self.service.store.load_index()
+        self.assertIn("ov", [w["automation_id"] for w in self.index()["watches"]])
+        self.assertIn("new", [w["automation_id"] for w in self.sidecar()["overflow"]])
+        self.assertEqual([(r["automation_id"], r["reason"]) for r in index["lifecycle"]["lapsed"]],
+                         [("w0", "displaced")])
+
+    async def test_a_slot_from_a_failed_write_is_never_combined_with_the_prior_index(self):
+        await self.rebuild("ten_and_overflow")
+
+        def fail(stage):
+            if stage == "before_index":
+                raise OSError("synthetic")
+        self.service.store.fault_hook = fail
+        self.assertEqual(await self.attempt("capture"), "store_unavailable")
+        # Both slots are valid; the newer one names index bytes that never landed.
+        slots = [json.loads((self.root / c.MODEL / n).read_text())
+                 for n in store_module.SIDECAR_SLOTS]
+        newest = max(slots, key=lambda s: s["generation"])
+        self.assertIn("x1", {e["run_id"] for e in newest["snapshots"]}
+                      | {r for w in newest["overflow"] for r in w["seen_run_ids"]})
+        self.assertNotEqual(newest["index_sha256"],
+                            c.sha256((self.root / c.MODEL / "index.json").read_bytes()))
+        loaded = self.coherent(self.new_service())
+        ov = next(w for w in loaded["watches"] if w["automation_id"] == "ov")
+        self.assertEqual((ov["captured_count"], ov["seen_run_ids"]), (0, []))
 
 
 class StoreTests(LifecycleCase):
@@ -800,16 +1112,29 @@ class StoreTests(LifecycleCase):
 
     async def test_a_failed_sidecar_write_leaves_the_index_unchanged(self):
         await self.fill(c.V1_INDEX_MAX_WATCHES)
+        self.assertIsNone(self.sidecar())  # ten normal watches need no sidecar state
         before = self.store_files()
-
-        def fail(stage):
-            if stage == "before_lifecycle":
-                raise OSError("synthetic")
-        self.service.store.fault_hook = fail
-        error = await self.refused(self.service.watch(action="add", automation_id="w_extra"))
-        self.service.store.fault_hook = None
-        self.assertEqual(error.reason, "store_unavailable")
-        self.assertEqual(self.store_files(), before)
+        prior = self.service.store.load_index()
+        for stage in ("before_sidecar_base", "before_sidecar"):
+            with self.subTest(stage=stage):
+                def fail(seen, stage=stage):
+                    if seen == stage:
+                        raise OSError("synthetic")
+                self.service.store.fault_hook = fail
+                error = await self.refused(self.service.watch(action="add",
+                                                              automation_id="w_extra"))
+                self.service.store.fault_hook = None
+                self.assertEqual(error.reason, "store_unavailable")
+                self.assertEqual(self.index(), json.loads(before[
+                    f"{c.MODEL}/index.json"]))
+                if stage == "before_sidecar_base":
+                    self.assertEqual(self.store_files(), before)
+                # Past the base write only an empty state bound to the
+                # unchanged index exists: the same store, never a reset.
+                fresh = TraceSnapshotService(self.root, self.core.command, self.runtime,
+                                             self.audit, clock=self.clock)
+                self.assertEqual(fresh.store.load_index(), prior)
+                self.assertFalse(fresh.store.lifecycle_reset)
 
     async def test_a_failed_index_write_after_the_sidecar_loses_no_watch(self):
         await self.fill(c.MAX_WATCHES)
@@ -828,7 +1153,7 @@ class StoreTests(LifecycleCase):
         self.core.add("r1")
         await self.service.capture(automation_id="a1")
         await self.add("a1", priority="high")
-        path = self.root / c.MODEL / "watch-lifecycle.json"
+        path, _ = self.committed_slot()
         for damage in ("not json", "symlink", "oversize"):
             with self.subTest(damage=damage):
                 path.unlink(missing_ok=True)
@@ -837,7 +1162,7 @@ class StoreTests(LifecycleCase):
                     target.write_text("{}")
                     path.symlink_to(target)
                 elif damage == "oversize":
-                    path.write_text(" " * (c.LIFECYCLE_BYTES + 1))
+                    path.write_text(" " * (c.SIDECAR_BYTES + 1))
                 else:
                     path.write_text(damage)
                 service = TraceSnapshotService(self.root, self.core.command, self.runtime,
@@ -877,7 +1202,6 @@ class Beta6FixtureTests(LifecycleCase):
         self.assertEqual(len(value["watches"]), 10)
         self.assertEqual({w["priority"] for w in value["watches"]}, {"normal"})
         self.assertEqual(value["lifecycle"]["lifecycle_store"], "ok")
-        self.assertEqual(value["lifecycle"]["overflow_store"], "ok")
         listed, _ = await self.service.list()
         self.assertEqual(len(listed["snapshots"]), 2)
         self.assertIsNone(self.sidecar())

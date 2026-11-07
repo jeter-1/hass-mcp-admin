@@ -31,7 +31,7 @@ STORE_BYTES = 128 * 1024 * 1024
 # HAMCP-296 beta.6 fixture provenance records both verdicts). ``index.json``
 # therefore never exceeds the shipped bounds: manual captures first, then
 # the newest watch captures, stay in it and the rest live in the
-# ``snapshot-overflow.json`` sidecar, which shipped code ignores.
+# watch sidecar, which shipped code ignores.
 V1_INDEX_MAX_SNAPSHOTS = 200
 V1_INDEX_MAX_BYTES = 32 * 1024 * 1024
 # ``index.json`` size bound (unchanged; the shipped reader uses the same).
@@ -62,7 +62,7 @@ QUARANTINE_MAX = 20
 MAX_WATCHES = 20
 # The shipped (2.4.x/2.5.0) v1 index reader rejects more than 10 watches and
 # would mark the whole store ``store_invalid``. ``index.json`` therefore
-# never holds more than 10: the rest live in the lifecycle sidecar, which
+# never holds more than 10: the rest live in the watch sidecar, which
 # shipped code ignores, so a downgrade keeps the 10 highest-priority watches.
 V1_INDEX_MAX_WATCHES = 10
 # Decision E2 (Josh, 2026-10-26), kept by Josh on 2026-11-07: each watch
@@ -87,16 +87,18 @@ WATCH_PRIORITIES = ("high", "normal")
 # HAMCP-296 lifecycle (implementation defaults pending Josh, Q2): a watch
 # warns when its time left is at most min(24 h, half its current term);
 # at most 20 lapsed records are kept, each for at most 7 days.
-LIFECYCLE_MODEL = "trace-watch-lifecycle-v1"
-# 20 overflow watch rows of at most about 14 KB each (100 seen run IDs), plus
-# 20 lapsed records and 20 metadata rows, stay well under this bound.
-LIFECYCLE_BYTES = 512 * 1024
-# HAMCP-296 snapshot overflow sidecar (``snapshot-overflow.json``): the
-# entries past the v1 index bounds, plus, for one write, any entry moving
-# from it into the index, so at most MAX_SNAPSHOTS entries. 500 worst-case
-# entries take about 3.29 MB of the 4,194,304 (see INDEX_BYTES).
-OVERFLOW_MODEL = "trace-snapshot-overflow-v1"
-OVERFLOW_BYTES = 4 * 1024 * 1024
+#
+# HAMCP-296 watch sidecar: everything past the v1 index bounds (watches
+# 11-20, priority and renewal rows, lapsed records and the snapshot entries
+# index.json does not keep) is ONE state, written to one of two slot files
+# (``watch-sidecar-a.json`` / ``-b.json``) and bound to the exact index.json
+# bytes it was written with (sha256) and a generation. A load uses only the
+# slot bound to the index on disk, so a sidecar and an index from different
+# transactions are never combined (Codex review F2). Worst case: 500 entries
+# of 6,575 bytes plus 20 watch rows of 15,346 bytes, 20 metadata rows and 20
+# lapsed records is about 3.61 MB of the 4,194,304 (``WorstCaseSizeTests``).
+SIDECAR_MODEL = "trace-watch-sidecar-v1"
+SIDECAR_BYTES = 4 * 1024 * 1024
 EXPIRY_WARNING_HOURS = 24
 LAPSED_MAX = 20
 LAPSED_RETENTION_SECONDS = 7 * 24 * 3600

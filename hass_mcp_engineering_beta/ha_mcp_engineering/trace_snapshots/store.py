@@ -9,12 +9,15 @@ Hashes detect accidental damage, not an attacker able to rewrite both a
 record and the index.
 
 HAMCP-296 keeps ``index.json`` inside the shipped v1 reader's bounds (10
-watches, 200 snapshots, 32 MiB of entry bytes) and keeps the rest in two
-closed-schema sidecars that shipped code never reads: ``watch-lifecycle.json``
-(watches 11-20, priority, renewal and lapsed records) and
-``snapshot-overflow.json`` (snapshot entries past the v1 bounds). Both are
-written before the index, under the same lock and discipline; damage to
-either resets only that file.
+watches, 200 snapshots, 32 MiB of entry bytes) and keeps the rest (watches
+11-20, priority, renewal and lapsed records, snapshot entries past the v1
+bounds) in ONE closed-schema sidecar state that shipped code never reads.
+The state is written to one of two slot files, never the committed one, and
+names the sha256 of the exact ``index.json`` bytes written with it and a
+generation; a load uses only the newest slot bound to the index on disk.
+The index and its sidecar state therefore commit, or fail, as one
+transaction (Codex review F2): a failed write leaves the prior pair, and the
+new slot is ignored. Damage to a slot resets the sidecar state only.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import uuid
 
@@ -48,11 +52,14 @@ QUARANTINE_KEYS = frozenset({
     "observed_bytes", "observed_sha256",
 })
 DAMAGE_REASONS = frozenset({"missing", "unreadable", "digest_mismatch", "invalid_record"})
-# HAMCP-296 lifecycle sidecar (``watch-lifecycle.json``). Shipped 2.4.x and
-# 2.5.0 code never reads it, so nothing in it can make their v1 reader fail.
-LIFECYCLE_KEYS = frozenset({"model", "overflow", "watch_meta", "lapsed", "lapsed_dropped"})
+# HAMCP-296 watch sidecar slots. Shipped 2.4.x and 2.5.0 code opens only
+# ``index.json``, ``records/`` and the lock file, so nothing in a slot can
+# make their v1 reader fail.
+SIDECAR_SLOTS = ("watch-sidecar-a.json", "watch-sidecar-b.json")
+STATE_KEYS = frozenset({"overflow", "watch_meta", "lapsed", "lapsed_dropped", "snapshots"})
+SIDECAR_KEYS = STATE_KEYS | {"model", "generation", "index_sha256"}
 META_KEYS = frozenset({"watch_id", "priority", "renewed_at_ms"})
-OVERFLOW_KEYS = frozenset({"model", "snapshots"})
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 LAPSED_KEYS = frozenset({
     "watch_id", "automation_id", "mode", "priority", "created_at_ms", "expired_at_ms",
     "reason", "captured_count",
@@ -72,13 +79,12 @@ def empty_index():
             "quarantine": {"entries": [], "dropped": 0}}
 
 
-def empty_overflow():
-    return {"model": c.OVERFLOW_MODEL, "snapshots": []}
+def empty_state():
+    return {"overflow": [], "watch_meta": [], "lapsed": [], "lapsed_dropped": 0, "snapshots": []}
 
 
 def empty_lifecycle():
-    return {"model": c.LIFECYCLE_MODEL, "overflow": [], "watch_meta": [], "lapsed": [],
-            "lapsed_dropped": 0}
+    return {"watch_meta": [], "lapsed": [], "lapsed_dropped": 0}
 
 
 def _text(value, limit, *, optional=False):
@@ -167,20 +173,6 @@ def _unique_snapshots(entries):
     return len(set(ids)) == len(ids) and len(set(runs)) == len(runs)
 
 
-def validate_overflow(value):
-    """The closed snapshot sidecar shape; any other value is damage (reset)."""
-
-    if (type(value) is not dict or set(value) != OVERFLOW_KEYS
-            or value["model"] != c.OVERFLOW_MODEL
-            or type(value["snapshots"]) is not list
-            or len(value["snapshots"]) > c.MAX_SNAPSHOTS
-            or not all(_valid_snapshot(e) for e in value["snapshots"])
-            or not _unique_snapshots(value["snapshots"])
-            or sum(e["bytes"] for e in value["snapshots"]) > c.STORE_BYTES):
-        raise StoreError("store_invalid")
-    return value
-
-
 def keep_order(entries):
     """Most valuable first: manual captures, then newest; ties by snapshot id."""
 
@@ -205,11 +197,19 @@ def v1_snapshot_ids(entries):
     return kept
 
 
-def validate_lifecycle(value):
-    """The closed sidecar shape; any other value is damage (reset, never trusted)."""
+def validate_sidecar(value):
+    """The closed slot shape; any other value is damage (reset, never trusted)."""
 
-    if (type(value) is not dict or set(value) != LIFECYCLE_KEYS
-            or value["model"] != c.LIFECYCLE_MODEL
+    if (type(value) is not dict or set(value) != SIDECAR_KEYS
+            or value["model"] != c.SIDECAR_MODEL
+            or type(value["generation"]) is not int or not 0 < value["generation"] <= 10**15
+            or type(value["index_sha256"]) is not str
+            or _SHA256.fullmatch(value["index_sha256"]) is None
+            or type(value["snapshots"]) is not list
+            or len(value["snapshots"]) > c.MAX_SNAPSHOTS
+            or not all(_valid_snapshot(e) for e in value["snapshots"])
+            or not _unique_snapshots(value["snapshots"])
+            or sum(e["bytes"] for e in value["snapshots"]) > c.STORE_BYTES
             or type(value["overflow"]) is not list or len(value["overflow"]) > c.MAX_WATCHES
             or not all(_valid_watch(w) for w in value["overflow"])
             or type(value["watch_meta"]) is not list or len(value["watch_meta"]) > c.MAX_WATCHES
@@ -268,20 +268,16 @@ class TraceSnapshotStore:
         self.records = self.root / "records"
         self.quarantine_root = self.root / "quarantine"
         self.index_path = self.root / "index.json"
-        self.lifecycle_path = self.root / "watch-lifecycle.json"
-        self.overflow_path = self.root / "snapshot-overflow.json"
+        self.slot_paths = tuple(self.root / name for name in SIDECAR_SLOTS)
         self.fault_hook = None
         self.commit_unknown = False
-        # The sidecar bytes last read or written; an unchanged sidecar is not rewritten.
-        self._lifecycle_raw = None
-        # Watch ids merged from the sidecar at the last load.
-        self._loaded_overflow = set()
-        # Set when a damaged sidecar was replaced by an empty one (process life).
+        # What the last load or successful write left on disk: the index
+        # bytes, the committed slot, the highest generation and the
+        # committed state. ``None`` after a failed write: reread before
+        # the next one.
+        self._disk = None
+        # Set when a damaged or unbound sidecar slot was ignored (process life).
         self.lifecycle_reset = False
-        # The same for the snapshot overflow sidecar.
-        self._overflow_raw = None
-        self._loaded_overflow_snapshots = set()
-        self.overflow_reset = False
 
     def _inject(self, stage):
         if self.fault_hook is not None:
@@ -320,6 +316,8 @@ class TraceSnapshotStore:
             if fd is not None:
                 os.close(fd)
             raise StoreError("store_unavailable") from None
+        # Another owner may have written since: reread under the lock.
+        self._disk = None
         try:
             yield self
         finally:
@@ -344,11 +342,13 @@ class TraceSnapshotStore:
         return raw
 
     def _load_v1_index(self):
+        """``(index, raw)``; ``raw`` is ``None`` when there is no index file."""
+
         try:
             raw = self._read_regular(self.index_path, c.INDEX_BYTES)
             if raw is None:
-                return empty_index()
-            return validate_index(json.loads(raw))
+                return empty_index(), None
+            return validate_index(json.loads(raw)), raw
         except StoreError:
             raise
         except (ValueError, TypeError, RecursionError, OverflowError):
@@ -356,67 +356,71 @@ class TraceSnapshotStore:
         except OSError:
             raise StoreError("store_unavailable") from None
 
-    def _load_lifecycle(self):
-        """The sidecar, or an empty one when missing; damage resets it, I/O errors refuse."""
+    def _read_slots(self, index_raw):
+        """The committed sidecar slot for ``index_raw``, or none.
 
-        try:
-            raw = self._read_regular(self.lifecycle_path, c.LIFECYCLE_BYTES)
+        A slot counts only when it is valid and names the sha256 of the
+        index bytes on disk; of two such slots the higher generation wins. A
+        slot written by a transaction whose index write never happened names
+        other bytes and is ignored, so its state is never combined with the
+        prior index. Damage, or slots none of which is bound to the index
+        (a downgraded server rewrote it), resets the sidecar state, never
+        blocks the store; an I/O error refuses.
+        """
+
+        digest = c.sha256(index_raw or b"")
+        valid, present, damaged = {}, False, False
+        for slot, path in enumerate(self.slot_paths):
+            try:
+                raw = self._read_regular(path, c.SIDECAR_BYTES)
+            except StoreError:
+                present = damaged = True
+                continue
+            except OSError:
+                raise StoreError("store_unavailable") from None
             if raw is None:
-                self._lifecycle_raw = None
-                return empty_lifecycle()
-            value = validate_lifecycle(json.loads(raw))
-            self._lifecycle_raw = raw
-            return value
-        except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
-            # Damage (symlink, oversize, bad JSON or shape) never blocks the
-            # snapshot store: the sidecar is replaced at the next write.
+                continue
+            present = True
+            try:
+                valid[slot] = validate_sidecar(json.loads(raw))
+            except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
+                damaged = True
+        bound = [(value["generation"], slot) for slot, value in valid.items()
+                 if value["index_sha256"] == digest]
+        committed = max(bound)[1] if bound else None
+        if damaged or (present and committed is None):
             self.lifecycle_reset = True
-            self._lifecycle_raw = b""
-            return empty_lifecycle()
-        except OSError:
-            raise StoreError("store_unavailable") from None
+        state = empty_state()
+        if committed is not None:
+            state = {key: valid[committed][key] for key in STATE_KEYS}
+        return state, {
+            "index_raw": index_raw, "committed": committed, "present": present,
+            "generation": max((value["generation"] for value in valid.values()), default=0),
+            "state_raw": c.canonical(state) if committed is not None else None,
+        }
 
-    def _load_overflow(self):
-        """The snapshot sidecar, or an empty one; damage resets it, I/O errors refuse."""
-
-        try:
-            raw = self._read_regular(self.overflow_path, c.OVERFLOW_BYTES)
-            if raw is None:
-                self._overflow_raw = None
-                return empty_overflow()
-            value = validate_overflow(json.loads(raw))
-            self._overflow_raw = raw
-            return value
-        except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
-            self.overflow_reset = True
-            self._overflow_raw = b""
-            return empty_overflow()
-        except OSError:
-            raise StoreError("store_unavailable") from None
-
-    def _merge_overflow(self, index):
+    def _merge_overflow(self, index, entries):
         """Append sidecar snapshot entries the v1 index does not name; True if any was dropped.
 
         The v1 entries win over a sidecar entry with the same snapshot or
-        run. A sidecar entry whose record file is absent is dropped: its
-        capture never committed, or a downgraded (shipped) server's orphan
-        sweep deleted the file. Past the overall caps (only possible after a
-        downgrade or a failed index write) the least valuable sidecar entries
-        in ``keep_order`` are dropped; their files go at the next tidy.
+        run (only possible after outside damage). A sidecar entry whose
+        record file is absent is dropped; past the overall caps the least
+        valuable sidecar entries in ``keep_order`` are dropped and their
+        files go at the next tidy.
         """
 
         snapshots = index["snapshots"]
         ids = {e["snapshot_id"] for e in snapshots}
         ids.update(q["snapshot_id"] for q in index["quarantine"]["entries"])
         runs = {(e["automation_id"], e["run_id"]) for e in snapshots}
-        candidates = [e for e in self._load_overflow()["snapshots"]
+        candidates = [e for e in entries
                       if e["snapshot_id"] not in ids and (e["automation_id"], e["run_id"]) not in runs]
-        self._loaded_overflow_snapshots = set()
+        dropped = len(candidates) != len(entries)
         if not candidates:
-            return False
+            return dropped
         committed, _ = self.record_files()
         present = [e for e in candidates if e["snapshot_id"] in committed]
-        dropped = len(present) != len(candidates)
+        dropped = dropped or len(present) != len(candidates)
         count, size = len(snapshots), sum(e["bytes"] for e in snapshots)
         kept = set()
         for entry in keep_order(present):
@@ -427,48 +431,54 @@ class TraceSnapshotStore:
             else:
                 dropped = True
         snapshots.extend(e for e in present if e["snapshot_id"] in kept)
-        self._loaded_overflow_snapshots = kept
         return dropped
 
     def load_index(self):
         """The merged in-memory index: v1 watches, then sidecar overflow watches.
 
         ``index["lifecycle"]`` carries priority, renewal and lapsed records.
-        The v1 rows win over a sidecar copy of the same watch or automation:
-        the sidecar is written first, so after a failed index write it can
-        hold a newer copy of a watch the index no longer names, never an
-        older one of a watch it does (``write_index``). Rows past the cap
-        (only possible after such a failure) are recorded as lapsed.
+        The sidecar state is the one committed with the index on disk
+        (``_read_slots``), so the two always come from one transaction. The
+        v1 rows still win over a sidecar copy of the same watch, automation
+        or snapshot, and rows past the cap are recorded as lapsed; both are
+        only possible after outside damage.
         """
 
-        index = self._load_v1_index()
-        overflow_dropped = self._merge_overflow(index)
-        lifecycle = self._load_lifecycle()
+        index, raw = self._load_v1_index()
+        state, self._disk = self._read_slots(raw)
+        dropped = self._merge_overflow(index, state["snapshots"])
         watches = list(index["watches"])
         ids = {w["watch_id"] for w in watches}
         automations = {w["automation_id"] for w in watches}
         recovered = []
-        self._loaded_overflow = set()
-        for row in lifecycle.pop("overflow"):
+        for row in state["overflow"]:
             if row["watch_id"] in ids or row["automation_id"] in automations:
+                dropped = True
                 continue
             if len(watches) >= c.MAX_WATCHES:
                 recovered.append(row)
                 continue
             watches.append(row)
-            self._loaded_overflow.add(row["watch_id"])
             ids.add(row["watch_id"])
             automations.add(row["automation_id"])
         index["watches"] = watches
+        lifecycle = {key: state[key] for key in ("watch_meta", "lapsed", "lapsed_dropped")}
         lifecycle["watch_meta"] = [m for m in lifecycle["watch_meta"] if m["watch_id"] in ids]
         lifecycle["recovered"] = recovered
-        if overflow_dropped:
-            # Rewrite the snapshot sidecar without the dropped entries.
+        if dropped:
+            # Rewrite the sidecar without the dropped entries.
             lifecycle["dirty"] = True
         index["lifecycle"] = lifecycle
         return index
 
-    def _replace(self, raw, target, stage):
+    def _replace(self, raw, target, stage, *, commit_point=False):
+        """Write ``raw`` to ``target`` atomically.
+
+        Past the rename of a commit point (``commit_point``) a failure
+        leaves the outcome unknown: the store refuses every later
+        transaction (``commit_unknown``) until a restart reloads it.
+        """
+
         temporary = target.parent / (".pending-" + uuid.uuid4().hex)
         replaced = False
         try:
@@ -487,7 +497,7 @@ class TraceSnapshotStore:
             finally:
                 os.close(directory)
         except (OSError, ValueError, RecursionError):
-            if replaced and stage in {"index", "lifecycle", "overflow"}:
+            if replaced and commit_point:
                 self.commit_unknown = True
             raise StoreError("store_unavailable") from None
         finally:
@@ -496,14 +506,27 @@ class TraceSnapshotStore:
             except OSError:
                 pass
 
+    def _slot_raw(self, generation, index_raw, state):
+        value = validate_sidecar({"model": c.SIDECAR_MODEL, "generation": generation,
+                                  "index_sha256": c.sha256(index_raw or b""), **state})
+        raw = c.canonical(value)
+        if len(raw) > c.SIDECAR_BYTES:
+            raise StoreError("store_invalid")
+        return raw
+
     def write_index(self, index):
-        """Write the sidecars (when changed), then the v1 index.
+        """Commit the index and its sidecar state as one transaction.
 
         ``index.json`` gets the ten first watches in ``watch_order`` and the
-        snapshot entries ``v1_snapshot_ids`` selects (at most 200 and 32 MiB).
-        Each sidecar gets every other row plus any row that was in that
-        sidecar as loaded and now moves to the index, so a failed index write
-        after a sidecar write loses no row (``load_index`` deduplicates).
+        snapshot entries ``v1_snapshot_ids`` selects (at most 200 and 32 MiB);
+        the sidecar state gets everything else. The state goes to the slot
+        that does not hold the committed state, bound to the new index
+        bytes, and then the index is replaced: the index rename is the
+        commit point. Before it, a load still pairs the old index with the
+        old slot; after it, the new index with the new slot. When the index
+        bytes do not change, the slot rename is the commit point. With no
+        committed slot yet, an empty state bound to the current index is
+        written first, so a failed first write never reads as a reset.
         """
 
         lifecycle = index.get("lifecycle") or empty_lifecycle()
@@ -518,41 +541,43 @@ class TraceSnapshotStore:
         ids = {w["watch_id"] for w in watches}
         meta = [m for m in lifecycle.get("watch_meta", []) if m["watch_id"] in ids]
         ordered = watch_order(watches, meta)
-        primary = ordered[:c.V1_INDEX_MAX_WATCHES]
-        moving = self._loaded_overflow
-        overflow = ordered[c.V1_INDEX_MAX_WATCHES:] + [w for w in primary if w["watch_id"] in moving]
         keep = v1_snapshot_ids(snapshots)
-        moving_snapshots = self._loaded_overflow_snapshots
         v1 = {key: index[key] for key in ("model", "quarantine")}
         v1["snapshots"] = [e for e in snapshots if e["snapshot_id"] in keep]
-        v1["watches"] = primary
+        v1["watches"] = ordered[:c.V1_INDEX_MAX_WATCHES]
         raw = c.canonical(validate_index(v1))
         if len(raw) > c.INDEX_BYTES:
             raise StoreError("store_invalid")
-        spill = validate_overflow({
-            "model": c.OVERFLOW_MODEL,
-            "snapshots": [e for e in snapshots
-                          if e["snapshot_id"] not in keep or e["snapshot_id"] in moving_snapshots]})
-        spill_raw = c.canonical(spill)
-        if len(spill_raw) > c.OVERFLOW_BYTES:
-            raise StoreError("store_invalid")
-        sidecar = validate_lifecycle({
-            "model": c.LIFECYCLE_MODEL, "overflow": overflow, "watch_meta": meta,
-            "lapsed": list(lifecycle.get("lapsed", [])),
-            "lapsed_dropped": lifecycle.get("lapsed_dropped", 0)})
-        side_raw = c.canonical(sidecar)
-        if len(side_raw) > c.LIFECYCLE_BYTES:
-            raise StoreError("store_invalid")
-        if spill_raw != self._overflow_raw and (self._overflow_raw is not None
-                                                or spill["snapshots"]):
-            self._replace(spill_raw, self.overflow_path, "overflow")
-            self._overflow_raw = spill_raw
-        if side_raw != self._lifecycle_raw and (self._lifecycle_raw is not None or overflow
-                                                or meta or sidecar["lapsed"]
-                                                or sidecar["lapsed_dropped"]):
-            self._replace(side_raw, self.lifecycle_path, "lifecycle")
-            self._lifecycle_raw = side_raw
-        self._replace(raw, self.index_path, "index")
+        state = {"overflow": ordered[c.V1_INDEX_MAX_WATCHES:], "watch_meta": meta,
+                 "lapsed": list(lifecycle.get("lapsed", [])),
+                 "lapsed_dropped": lifecycle.get("lapsed_dropped", 0),
+                 "snapshots": [e for e in snapshots if e["snapshot_id"] not in keep]}
+        state_raw = c.canonical(state)
+        disk = self._disk
+        if disk is None:
+            _, disk = self._read_slots(self._load_v1_index()[1])
+        self._disk = None
+        committed, generation = disk["committed"], disk["generation"]
+        index_changed = raw != disk["index_raw"]
+        if (disk["present"] or state_raw != c.canonical(empty_state())) and (
+                index_changed or state_raw != disk["state_raw"]):
+            base = None
+            if committed is None:
+                base, generation = 0, generation + 1
+                base_raw = self._slot_raw(generation, disk["index_raw"], empty_state())
+            target, generation = 1 - (base if committed is None else committed), generation + 1
+            slot_raw = self._slot_raw(generation, raw, state)
+            if base is not None:
+                self._replace(base_raw, self.slot_paths[base], "sidecar_base")
+            self._replace(slot_raw, self.slot_paths[target], "sidecar",
+                          commit_point=not index_changed)
+            disk = {**disk, "committed": target, "generation": generation,
+                    "present": True, "state_raw": state_raw}
+            if not index_changed:
+                self._disk = disk
+                return
+        self._replace(raw, self.index_path, "index", commit_point=True)
+        self._disk = {**disk, "index_raw": raw}
 
     def write_record(self, snapshot_id, raw):
         if not c.SNAPSHOT_ID.fullmatch(snapshot_id) or len(raw) > c.SNAPSHOT_BYTES:
