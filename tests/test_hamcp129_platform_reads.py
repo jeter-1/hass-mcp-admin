@@ -43,6 +43,9 @@ from test_upstream_8_5_compatibility import capture  # noqa: E402
 HEALTH, APP, INTEGRATION = platform.HEALTH, platform.APP, platform.INTEGRATION
 TOOLS = (HEALTH, APP, INTEGRATION)
 VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
+# 9.1.0 bindings are checked here; 9.1.0 gateway behavior is covered by the
+# HAMCP-319 parity ledger tests (ledger rows 26-28).
+BINDING_VERSIONS = VERSIONS + ("9.1.0",)
 CANARY = "CANARY"
 REFUSED = {"argument_validation", "invalid_arguments"}
 POLICY = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering"
@@ -50,6 +53,7 @@ SOURCES = {
     "8.4.3": ("v8.4.3", "eac7a3aa7063432e9af17e7d7726040e909c7b8f"),
     "8.5.0": ("v8.5.0", "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"),
     "8.6.0": ("v8.6.0", "fc54437a804858732e4bc927add98e202d879a09"),
+    "9.1.0": ("v9.1.0", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"),
 }
 TOKEN_KIND = {HEALTH: "health", APP: "apps", INTEGRATION: "integrations"}
 
@@ -420,8 +424,8 @@ ARGUMENT_TABLE = {
 class ModuleTests(unittest.TestCase):
     """Adapter module behaviour, independent of the published JSON schema."""
 
-    def test_bindings_cover_exactly_three_tools_at_three_versions(self):
-        self.assertEqual(len(platform.ADAPTER_BINDINGS), 9)
+    def test_bindings_cover_exactly_three_tools_at_each_version(self):
+        self.assertEqual(len(platform.ADAPTER_BINDINGS), 3 * len(BINDING_VERSIONS))
         for token, (tool, version, source, fingerprint) in platform.ADAPTER_BINDINGS.items():
             with self.subTest(token=token):
                 self.assertEqual(token, f"ha-mcp-{version}-platform-{TOKEN_KIND[tool].replace('health', 'health')}-v1")

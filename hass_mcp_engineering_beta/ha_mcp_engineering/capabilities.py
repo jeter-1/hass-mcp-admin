@@ -811,7 +811,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 def _platform_read_profile(kind: str) -> str:
     # Mirrors providers.upstream_platform_reads.ADAPTER_BINDINGS (test-bound);
     # importing it here would be circular through providers/__init__.
-    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0"))
+    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0", "9.1.0"))
 
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (

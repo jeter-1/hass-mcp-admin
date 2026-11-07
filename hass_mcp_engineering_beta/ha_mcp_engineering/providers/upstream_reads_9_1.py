@@ -167,24 +167,53 @@ def read_arguments(entry, arguments: dict) -> dict:
     return dict(arguments)
 
 
+def _projector_tables():
+    # Per-area compiled projection modules (disjoint ledger rows). Each maps
+    # upstream tool name -> (project(payload, arguments), completeness(payload)).
+    from . import upstream_history_9_1, upstream_reads_9_1_config, upstream_reads_9_1_entities
+    tables = {}
+    for module in (upstream_reads_9_1_config, upstream_reads_9_1_entities, upstream_history_9_1):
+        for name, pair in module.PROJECTIONS.items():
+            if name in tables or name not in INPUT_FINGERPRINTS:
+                raise RuntimeError("upstream_reads_9_1_projection_table_invalid")
+            tables[name] = pair
+    return tables
+
+
+# Section 6.5: ha_get_device is projected by the compiled device allowlist
+# after the composite adapter (upstream_device_projection), not here.
+_DEVICE = "ha_get_device"
+
+
 def project_result(entry, payload, arguments: dict):
     """Compiled 9.1 -> shipped 8.5 public result projection (design section 7).
 
-    Raises ``ValueError`` (``invalid_response``) on an unrecognized shape.
+    Raises ``ValueError`` (``invalid_response``) on an unrecognized shape and
+    for any adapter row without a compiled projection (fail closed).
     """
 
     if not is_adapter(entry):
         return payload
-    # Fail closed until each compiled ledger projection is implemented.
-    raise ValueError("invalid_response")
+    if entry.upstream_name == _DEVICE:
+        return payload
+    pair = _projector_tables().get(entry.upstream_name)
+    if pair is None:
+        raise ValueError("invalid_response")
+    return pair[0](payload, arguments)
 
 
 def completeness(entry, payload) -> tuple[bool, list[str]]:
     """Compiled 9.1 completeness and availability (design F3).
 
-    Returns ``(partial, bounded fixed warnings)``; never upstream text.
+    Returns ``(partial, bounded fixed warnings)``; never upstream text. An
+    adapter row without a compiled rule reports partial (fail closed).
     """
 
     if not is_adapter(entry):
         return False, []
-    return True, ["The upstream result completeness could not be verified."]
+    if entry.upstream_name == _DEVICE:
+        return False, []
+    pair = _projector_tables().get(entry.upstream_name)
+    if pair is None:
+        return True, ["The upstream result completeness could not be verified."]
+    return pair[1](payload)
