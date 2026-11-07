@@ -450,6 +450,44 @@ class AuditAndLoggingTests(Canary):
         self.assertEqual(first[1], "secret_paths.configure(settings.upstream_dashboard_mcp_url)")
         self.assertEqual(calls("_serve").count("secret_paths.ResponseGuard"), 2)
 
+    def test_every_test_module_that_builds_the_application_resets_the_redaction(self):
+        # Test isolation: the redaction is process-wide, and the shard runner
+        # runs many modules in one process, so a module whose tests (or the
+        # test-module helpers they call) build the application must reset it.
+        targets = {"create_application", "_serve"}
+        trees = {path.stem: ast.parse(path.read_text(encoding="utf-8")) for path in (ROOT / "tests").glob("test_*.py")}
+
+        def builds(node, names):
+            for item in ast.walk(node):
+                if isinstance(item, ast.Call):
+                    func = item.func
+                    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+                    if name in names or (name == "main" and ast.unparse(func) == "application.main"):
+                        return True
+            return False
+
+        helpers: set[str] = set()
+        building: set[str] = set()
+        grew = True
+        while grew:
+            grew = False
+            for module, tree in trees.items():
+                for node in tree.body:
+                    if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                            and node.name not in helpers | {"tearDownModule"}
+                            and builds(node, targets | helpers)):
+                        helpers.add(node.name)
+                        building.add(module)
+                        grew = True
+        building.discard(Path(__file__).stem)
+        self.assertGreaterEqual(len(building), 14)
+        for module in sorted(building):
+            with self.subTest(module=module):
+                teardown = [node for node in trees[module].body
+                            if isinstance(node, ast.FunctionDef) and node.name == "tearDownModule"]
+                self.assertEqual(len(teardown), 1)
+                self.assertIn("secret_paths.reset()", ast.unparse(teardown[0]))
+
 
 class ListenerGuardTests(Canary):
     def run_app(self, app, scope=None):
