@@ -1,8 +1,9 @@
 {
-  "head": "38e06ee5ec48e305484791523f6f7b5e47d37ddf",
+  "head": "42f97fcc8c55ce3342e2e8f1ff32ead309e2ee21",
   "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
   "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
   "reviewed_head_r4": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+  "reviewed_head_r4b": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
   "python": "3.13.5",
   "regressions": [
     {
@@ -121,7 +122,7 @@
       "id": 15,
       "finding": "L1",
       "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
-      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
       "classification": "assertion",
       "exit_code": 1
     },
@@ -138,6 +139,46 @@
       "finding": "L1",
       "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
       "test": "SeparatorOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "RouteOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "finding": "L1R",
+      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -229,7 +270,7 @@
       "finding": "L1",
       "name": "a separator-only secret path accepted by validation again",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
-      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
       "classification": "assertion",
       "exit_code": 1
     },
@@ -256,7 +297,70 @@
       "finding": "L1",
       "name": "the reason carries the configured value",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
-      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "test": "SeparatorOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "L1R",
+      "name": "a route-word-only secret path accepted by validation again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "L1R",
+      "name": "the guard not symmetric: a route-only span installs its decoded base",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "L1R",
+      "name": "selector words are not route words (route set hard-coded to mcp/sse)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "L1R",
+      "name": "route segments compared in exact case",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "L1R",
+      "name": "a route word with other content refused (substring match)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_paths_with_other_content_are_accepted_and_unchanged",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "finding": "L1R",
+      "name": "the operator sees only the generic reason",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+      "test": "RouteOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "finding": "L1R",
+      "name": "the reason carries the configured value",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -265,6 +369,6 @@
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 51 tests in 27.805s"
+    "ran": "Ran 55 tests in 31.280s"
   }
 }
