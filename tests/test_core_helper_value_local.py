@@ -381,6 +381,9 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['reopened_recovery_read_only'])
         self.assertTrue(result['unverifiable_effect_not_success'])
         self.assertEqual(result['duplicate_writes'], 0)
+        # HAMCP-327: the lane has no dependency analysis, so every dispatching
+        # call first asked (no dispatch) and proceeded only once confirmed.
+        self.assertGreater(result['evidence_unavailable_confirmations'], 0)
 
 
 if __name__ == '__main__': unittest.main()

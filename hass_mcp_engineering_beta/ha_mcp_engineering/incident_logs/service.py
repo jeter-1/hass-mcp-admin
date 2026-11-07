@@ -30,6 +30,7 @@ import os
 import re
 from typing import Any, Callable
 
+from .. import secret_paths
 from ..configuration_definitions import credentials
 from ..request_context import current_caller_id, current_telemetry
 from ..sanitization import ReferenceMarkerRegistry, sanitize_log_lines, sanitize_untrusted_data
@@ -229,9 +230,13 @@ class IncidentLogService:
 
     @property
     def known_secrets(self) -> tuple[str, ...]:
-        # The credential the transport sends is always a known secret.
+        # The credential the transport sends is always a known secret, and so
+        # is every fragment of the configured ha-mcp secret path (HAMCP-288):
+        # a journal message holding one is withheld whole.
         token = self.transport.token_source()
-        return tuple(dict.fromkeys(secret for secret in (token, *self.static_secrets) if secret))
+        return tuple(dict.fromkeys(
+            secret for secret in (token, *self.static_secrets, *secret_paths.fragments()) if secret
+        ))
 
     def _digest(self, entry: RawEntry) -> str:
         return self.codec.digest("entry", entry.raw)
@@ -310,6 +315,15 @@ class IncidentLogService:
             scan = Scan(key=key, position=position, journal=c.is_journal_source(key))
             scans.append(scan)
             state = states.get(key) if states else None
+            if scan.journal and key.startswith("addon:") and secret_paths.is_withheld_addon_slug(
+                key[len("addon:"):]
+            ):
+                # HAMCP-288: the ha-mcp app's own log prints its secret path,
+                # which may be one Engineering was never given or one split
+                # across lines; the source is withheld whole, on every page.
+                scan.failure = secret_paths.WITHHELD_SOURCE_REASON
+                scan.continued = state is not None
+                continue
             if state == {"u": 1}:
                 # Deferred on an earlier page: located afresh now.
                 state = None

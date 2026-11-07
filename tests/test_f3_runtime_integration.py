@@ -94,6 +94,7 @@ from tests.test_2_1a_operational_backup import (  # noqa: E402
 
 
 from ha_mcp_engineering import application
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from tests import test_beta24_pre_rc_hardening as gateway_fixtures
 from tests.test_catalog_readiness import application_gateway
 
@@ -2075,6 +2076,14 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.runtime.children.get(declaration['child_id']).normalized_outcome, 'cancelled_pre_dispatch')
         self.assertFalse(self.runtime.reconciliation_items())
         self.assertEqual(self._writes(), 0)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
+
 
 if __name__ == "__main__":
     unittest.main()

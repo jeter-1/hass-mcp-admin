@@ -20,6 +20,7 @@ sys.path.insert(0, str(BETA_DIR))
 sys.path.insert(0, str(PRODUCTION_DIR))
 
 from ha_mcp_engineering.application import create_application, validate_settings  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger, AuditRecord  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
@@ -1242,6 +1243,13 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertIn("issues", details)
         self.assertNotIn("test-ha-token", details)
         self.assertNotIn(SECRET, details)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

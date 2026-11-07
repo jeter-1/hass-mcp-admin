@@ -24,6 +24,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
     capability_for_tool,
     replace_dynamic_upstream_capabilities,
 )
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.application import _serve  # noqa: E402
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
@@ -5794,6 +5795,13 @@ class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(telemetry.upstream_duration_ms, 0)
             self.assertEqual(result['success'], raw is None)
         self.assertEqual(len(transport.sent), 2)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":
