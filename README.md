@@ -16,17 +16,17 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.6**. It makes never-approvable
-prohibited operational plans and stored approval kinds project correctly in
-governance inspection and health (HAMCP-304). It also bundles two
-development-only fixes (HAMCP-305, HAMCP-312). Read the
-[2.4.2-beta.6 release notes](docs/V2_4_2_BETA6_RELEASE_NOTES.md) and the
-[2.4.2-beta.6 acceptance contract](docs/V2_4_2_BETA6_ACCEPTANCE.md).
+The current source version is **2.4.2-beta.7**, the 2.5.0 build. It is in
+progress: its items land through reviewed pull requests into the
+`release/2.5.0` integration branch, and none has landed yet (HAMCP-331).
+Read the
+[2.4.2-beta.7 release notes](docs/V2_4_2_BETA7_RELEASE_NOTES.md) and the
+[2.4.2-beta.7 acceptance contract](docs/V2_4_2_BETA7_ACCEPTANCE.md).
 
-This version's delegated catalog is reviewed against ha-mcp 8.6.0. Its source
-baseline is 109 expected connector tools (81 native/static plus 28 automatic
-delegated reads), or 110 (81 + 29) with the optional reader, unchanged from
-2.4.2-beta.5. Rolling back to 2.4.2-beta.5 is safe.
+The most recent completed release is 2.4.2-beta.6; read its
+[release notes](docs/V2_4_2_BETA6_RELEASE_NOTES.md) for the reviewed
+delegated catalog and tool counts. The final 2.4.2-beta.7 release pull
+request states this version's catalog and rollback.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on
