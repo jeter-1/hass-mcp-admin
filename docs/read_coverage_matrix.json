@@ -173,7 +173,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 5376,
+       "line": 5406,
        "anchor": "def create_plan"
       },
       {
@@ -200,12 +200,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -233,7 +233,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 992,
+       "line": 1002,
        "anchor": "def f3_requirements"
       },
       {
@@ -330,12 +330,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3861,
+       "line": 3893,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -414,7 +414,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3834,
+       "line": 3866,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -438,12 +438,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -471,7 +471,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 992,
+       "line": 1002,
        "anchor": "def f3_requirements"
       },
       {
@@ -649,7 +649,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 992,
+       "line": 1002,
        "anchor": "def f3_requirements"
       },
       {
@@ -793,7 +793,7 @@
      "tool": "get_configuration_definitions",
      "provider": "engineering (admitted YAML reader + direct_ha_api)",
      "purpose_binding": "configuration_definitions_read_v1; READER_PURPOSE configuration_definitions -> YAML_READER_PURPOSES (configuration_definitions_yaml_read)",
-     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0 admitted, 8.6.0 held) + config/entity_registry/list, entity/source, config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
+     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0/9.1.0 admitted, 8.6.0 held) + config/entity_registry/list, entity/source, config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "Projects group: YAML definitions at the fixed configuration.yaml path group (and group config entries only as 'definition_not_readable_without_flow'); group is one of 12 INTEGRATIONS. UI group helper options unreadable (config_entries/get omits data/options).",
      "refs": [
@@ -804,7 +804,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 816,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -818,23 +818,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (special adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; ALLOWED_FILE=configuration.yaml",
-     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3 and 8.5.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
+     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3, 8.5.0 and 9.1.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
      "completeness": "partial",
      "detail": "Reads ONE dotted mapping-key path (<=8 segments, no list indices) of configuration.yaml only. All other files incl. secrets.yaml and packages/ refused before any upstream call. !include returned as text, never followed. !secret/!env_var -> {secret_ref/env_var_ref} markers, values never returned. Redaction is best-effort (capabilities matrix: best_effort_redaction_partial_disclosed).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
+       "line": 243,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -883,12 +883,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 463,
+       "line": 474,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -932,12 +932,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3861,
+       "line": 3893,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1133,7 +1133,7 @@
      "tool": "get_configuration_definitions",
      "provider": "engineering (admitted YAML reader + direct_ha_api)",
      "purpose_binding": "configuration_definitions_read_v1; READER_PURPOSE configuration_definitions -> YAML_READER_PURPOSES (configuration_definitions_yaml_read)",
-     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0 admitted, 8.6.0 held) + config/entity_registry/list, entity/source, config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
+     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0/9.1.0 admitted, 8.6.0 held) + config/entity_registry/list, entity/source, config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "template is one of 12 INTEGRATIONS: fixed configuration.yaml path 'template' (and sensor/binary_sensor platform lists) projected through a positive per-key allowlist: partial because credential text withheld, packages/includes not followed, UI template helpers reported as definition_not_readable_without_flow. UNCERTAIN: whether trigger-based template blocks are projected in full (schema allowlist not inspected).",
      "refs": [
@@ -1144,7 +1144,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 816,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1158,23 +1158,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (special adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; ALLOWED_FILE=configuration.yaml",
-     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3 and 8.5.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
+     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3, 8.5.0 and 9.1.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
      "completeness": "partial",
      "detail": "Reads ONE dotted mapping-key path (<=8 segments, no list indices) of configuration.yaml only. All other files incl. secrets.yaml and packages/ refused before any upstream call. !include returned as text, never followed. !secret/!env_var -> {secret_ref/env_var_ref} markers, values never returned. Redaction is best-effort (capabilities matrix: best_effort_redaction_partial_disclosed).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
+       "line": 243,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1271,12 +1271,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3861,
+       "line": 3893,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1290,7 +1290,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1308,23 +1308,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (special adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; ALLOWED_FILE=configuration.yaml",
-     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3 and 8.5.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
+     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3, 8.5.0 and 9.1.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
      "completeness": "partial",
      "detail": "Reads ONE dotted mapping-key path (<=8 segments, no list indices) of configuration.yaml only. All other files incl. secrets.yaml and packages/ refused before any upstream call. !include returned as text, never followed. !secret/!env_var -> {secret_ref/env_var_ref} markers, values never returned. Redaction is best-effort (capabilities matrix: best_effort_redaction_partial_disclosed).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
+       "line": 243,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1338,7 +1338,7 @@
      "tool": "get_configuration_definitions",
      "provider": "engineering (admitted YAML reader + direct_ha_api)",
      "purpose_binding": "configuration_definitions_read_v1; READER_PURPOSE configuration_definitions -> YAML_READER_PURPOSES (configuration_definitions_yaml_read)",
-     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0 admitted, 8.6.0 held) + config_entries/get, entity registry (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
+     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0/9.1.0 admitted, 8.6.0 held) + config_entries/get, entity registry (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "Reads homeassistant.packages and homeassistant only to classify: packages state absent|present|unreadable; present packages yield definitions_in_packages_not_read gap. Package contents are disclosed but never followed or read.",
      "refs": [
@@ -1349,7 +1349,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 816,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1369,12 +1369,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 804,
+       "line": 817,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 810,
+       "line": 823,
        "anchor": "class YamlConfigReader"
       }
      ]
@@ -1393,12 +1393,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3861,
+       "line": 3893,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1414,7 +1414,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1693,
+       "line": 1972,
        "anchor": "yaml-fragment-read"
       }
      ]
@@ -1428,7 +1428,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 461,
+       "line": 472,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1446,23 +1446,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (special adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; ALLOWED_FILE=configuration.yaml",
-     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3 and 8.5.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
+     "admission": "upstream:ha_config_get_yaml (optional tool; ha-mcp 8.4.3, 8.5.0 and 9.1.0 admitted, 8.6.0 held; needs ha_mcp_tools component + filesystem tools flag); core.basic_rest_read + core.basic_websocket_read",
      "completeness": "partial",
      "detail": "Reads ONE dotted mapping-key path (<=8 segments, no list indices) of configuration.yaml only. All other files incl. secrets.yaml and packages/ refused before any upstream call. !include returned as text, never followed. !secret/!env_var -> {secret_ref/env_var_ref} markers, values never returned. Redaction is best-effort (capabilities matrix: best_effort_redaction_partial_disclosed).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
+       "line": 243,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1476,7 +1476,7 @@
      "tool": "get_configuration_definitions",
      "provider": "engineering (admitted YAML reader + direct_ha_api)",
      "purpose_binding": "configuration_definitions_read_v1; READER_PURPOSE configuration_definitions -> YAML_READER_PURPOSES (configuration_definitions_yaml_read)",
-     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0 admitted, 8.6.0 held) + config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
+     "admission": "native (ENGINEERING_NATIVE) over upstream:ha_config_get_yaml (8.4.3/8.5.0/9.1.0 admitted, 8.6.0 held) + config_entries/get (signed core.basic_rest_read/basic_websocket_read/non_device_registry_read; compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "db_url withheld in every position (sql db_url fixed policy redaction); credential text withheld and the report marked partial. known_secrets passed in are used to scrub output.",
      "refs": [
@@ -1487,7 +1487,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 816,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1509,7 +1509,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 225,
+       "line": 249,
        "anchor": "_L2_BASENAMES ="
       }
      ]
@@ -1534,7 +1534,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 219,
+       "line": 243,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1597,23 +1597,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_boolean: any dotted path in configuration.yaml (e.g. input_boolean). Best-effort redaction (partial disclosed); packages and !include content are not covered. (Researched for: input_boolean, input_number.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1817,
+       "line": 2158,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1741,12 +1741,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1836,23 +1836,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_select. Best-effort redaction (partial disclosed); packages and !include content are not covered.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1817,
+       "line": 2158,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1985,12 +1985,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2070,23 +2070,23 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_text. Best-effort redaction (partial disclosed); packages and !include content are not covered. (Researched for: input_text, input_datetime, input_button, counter, timer, schedule.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 71,
+       "line": 95,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1817,
+       "line": 2158,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2166,12 +2166,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2257,12 +2257,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       },
       {
@@ -2508,7 +2508,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 281,
+       "line": 291,
        "anchor": "_UPSTREAM_CAPABILITY_CODES = frozenset"
       },
       {
@@ -2557,12 +2557,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1827,
+       "line": 2168,
        "anchor": "\"8.6.0\": \"held\""
       },
       {
@@ -2761,7 +2761,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 472,
+       "line": 500,
        "anchor": "async def list_dashboards"
       },
       {
@@ -2791,27 +2791,27 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 563,
+       "line": 605,
        "anchor": "async def get_dashboard_config"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 183,
+       "line": 200,
        "anchor": "CONFIGURATION_TOOL_GROWING_TIMING = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 2333,
+       "line": 2418,
        "anchor": "def _estimated_configuration_response_size"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 669,
+       "line": 744,
        "anchor": "\"response_too_large\","
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
-       "line": 42,
+       "line": 43,
        "anchor": "response_size_limit: int = 60_000"
       }
      ]
@@ -2831,7 +2831,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 724,
+       "line": 799,
        "anchor": "async def get_analysis_configuration"
       },
       {
@@ -2934,17 +2934,17 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py",
-       "line": 32,
+       "line": 33,
        "anchor": "MAX_RAW_CONFIG_BYTES = 40_000"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py",
-       "line": 55,
+       "line": 56,
        "anchor": "MAX_PATCH_OPERATIONS = 16"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/raw_evidence.py",
-       "line": 113,
+       "line": 114,
        "anchor": "exact_rows[0].mode != \"storage\""
       },
       {
@@ -2959,7 +2959,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 975,
+       "line": 1050,
        "anchor": "async def execute_governed_dashboard_update"
       }
      ]
@@ -2993,12 +2993,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 669,
+       "line": 744,
        "anchor": "\"response_too_large\","
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py",
-       "line": 32,
+       "line": 33,
        "anchor": "MAX_RAW_CONFIG_BYTES = 40_000"
       }
      ]
@@ -3241,22 +3241,22 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 60,
+       "line": 69,
        "anchor": "TOOL_NAME = \"ha_config_get_yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1796,
+       "line": 2136,
        "anchor": "OPTIONAL_TOOL_BINDINGS: dict"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1764,
+       "line": 2084,
        "anchor": "\"8.5.0\": ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 789,
+       "line": 802,
        "anchor": "YAML_CONFIG_PATHS"
       }
      ]
@@ -3273,7 +3273,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 63,
+       "line": 87,
        "anchor": "ALLOWED_FILE"
       }
      ]
@@ -3289,7 +3289,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1764,
+       "line": 2084,
        "anchor": "\"8.5.0\": ("
       }
      ]
@@ -3930,12 +3930,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 131,
+       "line": 135,
        "anchor": "UPSTREAM_INTEGRATION_WINDOW = 200"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 685,
+       "line": 689,
        "anchor": "upstream_window_exceeded"
       },
       {
@@ -3975,7 +3975,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 809,
        "anchor": "DEFINITION_YAML_PATHS"
       }
      ]
@@ -4046,7 +4046,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 131,
+       "line": 135,
        "anchor": "UPSTREAM_INTEGRATION_WINDOW = 200"
       }
      ]
@@ -4627,7 +4627,7 @@
       },
       {
        "path": "tests/test_readonly_upstream_gateway.py",
-       "line": 1636,
+       "line": 1637,
        "anchor": "self.assertNotIn(\"ha_get_logs\", automatic)"
       }
      ]
@@ -4651,12 +4651,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 114,
+       "line": 115,
        "anchor": "SUPERVISOR_IDENTIFIER = \"hassio_supervisor\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 64,
+       "line": 65,
        "anchor": "MOUNT_POINTS"
       },
       {
@@ -4697,7 +4697,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 408,
+       "line": 412,
        "anchor": "supervisor_version"
       }
      ]
@@ -4741,12 +4741,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 180,
+       "line": 183,
        "anchor": "addon_"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 64,
+       "line": 65,
        "anchor": "MOUNT_POINTS"
       }
      ]
@@ -4787,7 +4787,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 129,
+       "line": 130,
        "anchor": "HOST_MATCHES"
       },
       {
@@ -4809,7 +4809,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
-       "line": 129,
+       "line": 130,
        "anchor": "HOST_MATCHES"
       }
      ]
@@ -5100,7 +5100,7 @@
      "tool": "get_history_slices",
      "provider": "upstream_read_gateway history_reader",
      "purpose_binding": "history_slices_read_v1 [gateway_reader:history_reader]",
-     "admission": "upstream:ha_get_history 8.5.0/8.6.0 (REVIEWED_VERSIONS)",
+     "admission": "upstream:ha_get_history 8.5.0/8.6.0/9.1.0 (REVIEWED_VERSIONS)",
      "completeness": "partial",
      "detail": "Single entity, up to 7 days, 6 h slices, limit 1..100, max 12 upstream calls, cursor TTL 3600 s.",
      "refs": [
@@ -5116,7 +5116,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3934,
+       "line": 3966,
        "anchor": "def history_reader"
       }
      ]
@@ -5252,7 +5252,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 804,
+       "line": 817,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
@@ -5584,7 +5584,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 46,
+       "line": 50,
        "anchor": "_EXCLUDED_KEYS"
       },
       {
@@ -5636,7 +5636,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 46,
+       "line": 50,
        "anchor": "_EXCLUDED_KEYS"
       }
      ]
@@ -5660,12 +5660,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 420,
+       "line": 424,
        "anchor": "_REPAIR_ISSUE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 42,
+       "line": 46,
        "anchor": "SECTIONS"
       }
      ]
@@ -5682,7 +5682,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 420,
+       "line": 424,
        "anchor": "_REPAIR_ISSUE"
       }
      ]
@@ -5706,7 +5706,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 598,
+       "line": 602,
        "anchor": "_APP"
       }
      ]
@@ -6921,7 +6921,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "234ee9fba92fabbc00d698dee28d1f5765d8fed320d731590b6041a9b0374e10",
+   "fingerprint": "7801b4590c5086e46226648c9d950e5dfc43123b7926205fabfdeca0fe0b13b0",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -6936,6 +6936,10 @@
     "adapter:ha-mcp-8.6.0-platform-integrations-v1": "30f303064061935e",
     "adapter:ha-mcp-8.6.0-public-reads-v1": "e145fb0344f50043",
     "adapter:ha-mcp-8.6.0-search-descriptor-pair-v1": "840f011c36a98a04",
+    "adapter:ha-mcp-9.1.0-blueprint-list-get-v1": "e51864a7cefce544",
+    "adapter:ha-mcp-9.1.0-platform-apps-v1": "64568a024212c154",
+    "adapter:ha-mcp-9.1.0-platform-health-v1": "ed689bed6ceca58f",
+    "adapter:ha-mcp-9.1.0-platform-integrations-v1": "aa57762433076091",
     "adapter:ha_config_get_yaml": "6f132512e8ffe15f",
     "ha_mcp_7.14.1:ha_bulk_control": "8c7d2bf6015904b3",
     "ha_mcp_7.14.1:ha_call_event": "2c6f95b236dffbef",
@@ -7715,6 +7719,83 @@
     "ha_mcp_8.6.0:ha_set_integration": "061530d9c09dea42",
     "ha_mcp_8.6.0:ha_set_todo_item": "68174611d159f0d8",
     "ha_mcp_8.6.0:ha_set_zone": "c1c347204a300fe7",
+    "ha_mcp_9.1.0:ha_bulk_control": "b23076a3c92505ca",
+    "ha_mcp_9.1.0:ha_call_event": "8bd61d3484e9cf5b",
+    "ha_mcp_9.1.0:ha_call_service": "3479b8dd8d4a53e1",
+    "ha_mcp_9.1.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
+    "ha_mcp_9.1.0:ha_config_delete_dashboard_resource": "5e09e65d0299d81a",
+    "ha_mcp_9.1.0:ha_config_get_automation": "7e1ff0b270fce22c",
+    "ha_mcp_9.1.0:ha_config_get_calendar_events": "29086fba688dab59",
+    "ha_mcp_9.1.0:ha_config_get_category": "4491feff2fff5247",
+    "ha_mcp_9.1.0:ha_config_get_dashboard": "b15a800becf3b204",
+    "ha_mcp_9.1.0:ha_config_get_label": "c818b5f5c1aacaf0",
+    "ha_mcp_9.1.0:ha_config_get_scene": "a390544d7dbfe567",
+    "ha_mcp_9.1.0:ha_config_get_script": "f9d741c18b89e67b",
+    "ha_mcp_9.1.0:ha_config_list_dashboard_resources": "2f660ae1c1631978",
+    "ha_mcp_9.1.0:ha_config_list_groups": "f6d96a65cd52423d",
+    "ha_mcp_9.1.0:ha_config_list_helpers": "d540cfc8bb6f8c16",
+    "ha_mcp_9.1.0:ha_config_remove_automation": "61aa5be9666b1baf",
+    "ha_mcp_9.1.0:ha_config_remove_calendar_event": "f0c00494ad24c0cc",
+    "ha_mcp_9.1.0:ha_config_remove_category": "422ae33e586ac656",
+    "ha_mcp_9.1.0:ha_config_remove_group": "0d510d5fb562a441",
+    "ha_mcp_9.1.0:ha_config_remove_label": "79021cb249de86fc",
+    "ha_mcp_9.1.0:ha_config_remove_scene": "0c7f7f6c62d52b43",
+    "ha_mcp_9.1.0:ha_config_remove_script": "a3d7d43d4a079e1a",
+    "ha_mcp_9.1.0:ha_config_set_automation": "4aff6f2e3dcb5bfa",
+    "ha_mcp_9.1.0:ha_config_set_calendar_event": "0e98aa754d3112d7",
+    "ha_mcp_9.1.0:ha_config_set_category": "0c6d478d7e8e2e8a",
+    "ha_mcp_9.1.0:ha_config_set_dashboard": "ec41632a8689a13d",
+    "ha_mcp_9.1.0:ha_config_set_dashboard_resource": "2fda9aea0b01627b",
+    "ha_mcp_9.1.0:ha_config_set_group": "41792599a1ef68cd",
+    "ha_mcp_9.1.0:ha_config_set_helper": "b8270e49b433e805",
+    "ha_mcp_9.1.0:ha_config_set_label": "6a254b6664c4083a",
+    "ha_mcp_9.1.0:ha_config_set_scene": "3274b2a201a217b4",
+    "ha_mcp_9.1.0:ha_config_set_script": "9335b08acaab39b0",
+    "ha_mcp_9.1.0:ha_eval_template": "08343db1f50a2de5",
+    "ha_mcp_9.1.0:ha_get_app": "49898ca442580e35",
+    "ha_mcp_9.1.0:ha_get_automation_traces": "ffe3d3e65e0945fb",
+    "ha_mcp_9.1.0:ha_get_camera_image": "e15e28637fa727ca",
+    "ha_mcp_9.1.0:ha_get_device": "d000870b4e832e53",
+    "ha_mcp_9.1.0:ha_get_entity": "f5dd17936dd843ee",
+    "ha_mcp_9.1.0:ha_get_entity_exposure": "20124ff2893e7005",
+    "ha_mcp_9.1.0:ha_get_hacs_info": "cc7f3537efb571a8",
+    "ha_mcp_9.1.0:ha_get_history": "4fe77436c48cf20e",
+    "ha_mcp_9.1.0:ha_get_integration": "b3728afa53533c36",
+    "ha_mcp_9.1.0:ha_get_logs": "6474823c8a66451d",
+    "ha_mcp_9.1.0:ha_get_operation_status": "2b1347525cc2aecb",
+    "ha_mcp_9.1.0:ha_get_overview": "9b2ad6e30808bfb9",
+    "ha_mcp_9.1.0:ha_get_skill_guide": "b66b838db6bc47f1",
+    "ha_mcp_9.1.0:ha_get_state": "83e578092b146dc4",
+    "ha_mcp_9.1.0:ha_get_system_health": "32f3f4c88a2428fc",
+    "ha_mcp_9.1.0:ha_get_todo": "5a0338238fcec3bc",
+    "ha_mcp_9.1.0:ha_get_zone": "f5055c87ee14bdd4",
+    "ha_mcp_9.1.0:ha_list_floors_areas": "06e8c56fc95c25d9",
+    "ha_mcp_9.1.0:ha_list_services": "e6d83ab1823e8b6f",
+    "ha_mcp_9.1.0:ha_manage_app": "ef5114a956709cfe",
+    "ha_mcp_9.1.0:ha_manage_backup": "14839e432bf4c889",
+    "ha_mcp_9.1.0:ha_manage_blueprints": "342dff9dfec96e4d",
+    "ha_mcp_9.1.0:ha_manage_energy_prefs": "ea11f22a5415f4d2",
+    "ha_mcp_9.1.0:ha_manage_hacs": "18db7b36b77273c4",
+    "ha_mcp_9.1.0:ha_manage_pipeline": "e87a42dcf1e9cd1d",
+    "ha_mcp_9.1.0:ha_manage_radio": "6c8915e83180e0e9",
+    "ha_mcp_9.1.0:ha_manage_theme": "6b1bc8975d4a6240",
+    "ha_mcp_9.1.0:ha_manage_updates": "7f54f6a9a7245316",
+    "ha_mcp_9.1.0:ha_reload_core": "a7421f415081db49",
+    "ha_mcp_9.1.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
+    "ha_mcp_9.1.0:ha_remove_device": "447798ffcbcba46a",
+    "ha_mcp_9.1.0:ha_remove_entity": "626a6790eec71f26",
+    "ha_mcp_9.1.0:ha_remove_helpers_integrations": "0fab6da4e7919f26",
+    "ha_mcp_9.1.0:ha_remove_todo_item": "36b3738029bf2bac",
+    "ha_mcp_9.1.0:ha_remove_zone": "ee56ff52c1161944",
+    "ha_mcp_9.1.0:ha_report_issue": "34334d0e3a096c37",
+    "ha_mcp_9.1.0:ha_restart": "fa53839652546809",
+    "ha_mcp_9.1.0:ha_search": "573456a040b0f6f9",
+    "ha_mcp_9.1.0:ha_set_area_or_floor": "7ce9f9b5f35fee8a",
+    "ha_mcp_9.1.0:ha_set_device": "66fc7aa2e0372759",
+    "ha_mcp_9.1.0:ha_set_entity": "7d947e0ef2fa71e8",
+    "ha_mcp_9.1.0:ha_set_integration": "061530d9c09dea42",
+    "ha_mcp_9.1.0:ha_set_todo_item": "051e83a9c3147b4f",
+    "ha_mcp_9.1.0:ha_set_zone": "b5868bba1909f15a",
     "native:apply_change_plan": "4188caaf9dea47e6",
     "native:approve_change_plan": "76070feb4f3bcf43",
     "native:automation_reliability_analysis": "569207f7b97f4f7a",
@@ -7846,7 +7927,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "2429a39dadc4a4d6fd246e419d9869e0f656b37b471d60614aa3646210a33cbc",
+   "fingerprint": "c73bdd866813ea454d0e013ec6d9a2130abdd9d2291ae9ec31e80b4c49b56005",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:capture_automation_baseline": "7525e218a774d2a6",
@@ -7888,9 +7969,9 @@
     "provider_matrix:change_impact_analysis": "53d3639a1a62f082",
     "provider_matrix:compare_automation_baselines": "86e8c20eabd39f36",
     "provider_matrix:configuration_integrity_analysis": "402caf050426dd74",
-    "provider_matrix:control_fan": "e9e84ad8393e425d",
-    "provider_matrix:control_helper": "36efb538ff907b9f",
-    "provider_matrix:control_power": "d360a7ee9321a93a",
+    "provider_matrix:control_fan": "662d8d3869416029",
+    "provider_matrix:control_helper": "1b4bf920cbd17f18",
+    "provider_matrix:control_power": "12333afb8289758b",
     "provider_matrix:dashboard_integrity_analysis": "672e9d35dfc77afa",
     "provider_matrix:get_backup_inventory": "5f1b549a3648492a",
     "provider_matrix:get_configuration_definitions": "cf7bae4a78afe9d2",
@@ -7903,10 +7984,10 @@
     "provider_matrix:get_recorder_settings": "65cf21ccb99937ff",
     "provider_matrix:get_trace_snapshot": "e183257486d1b011",
     "provider_matrix:get_unregistered_entities": "8fe52b963d3faa93",
-    "provider_matrix:ha_config_get_yaml": "2908bde4f8ae930b",
-    "provider_matrix:ha_get_app": "f6716a3ff9ec14b3",
-    "provider_matrix:ha_get_integration": "45fa07a2c54cae9c",
-    "provider_matrix:ha_get_system_health": "bed820083d92b8a5",
+    "provider_matrix:ha_config_get_yaml": "a5bcf89ef4e52201",
+    "provider_matrix:ha_get_app": "41f04315394cd6bd",
+    "provider_matrix:ha_get_integration": "41b23be72219c636",
+    "provider_matrix:ha_get_system_health": "2e27b72349695c65",
     "provider_matrix:handoff_generation": "a09ba7747e029885",
     "provider_matrix:incident_correlation": "333171d6247e731f",
     "provider_matrix:list_areas": "8f0fa6b1d409eabd",

@@ -3076,10 +3076,12 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         counts = json.loads(result.stdout)["tool_counts"]
-        self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
+        # HAMCP-319: the newest reviewed registry row is ha-mcp 9.1.0, whose
+        # policy admits 27 automatic reads (ha_get_hacs_info is unsupported).
+        self.assertEqual(counts["reviewed_upstream_version"], "9.1.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
-        self.assertEqual(counts["expected_delegated_reads"], 28)
-        self.assertEqual(counts["expected_connector_total"], 109)
+        self.assertEqual(counts["expected_delegated_reads"], 27)
+        self.assertEqual(counts["expected_connector_total"], 108)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [

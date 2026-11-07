@@ -38,7 +38,7 @@ from unittest.mock import patch
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 
 from mcp import types  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
