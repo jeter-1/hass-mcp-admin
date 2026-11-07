@@ -1,12 +1,19 @@
-"""Safety-critical warning from existing helper dependency evidence (HAMCP-311).
+"""Safety-critical warning from existing helper dependency evidence (HAMCP-311, HAMCP-327).
 
 No new analysis: this reads the shipped target-scoped helper dependency binding
 and projects it. Only EXACT evidence warns: the binding's positive
 ``physical_consequence`` is ``safety_critical`` and at least one consumer that
-references the helper carries that consequence. Opaque or template readers,
-conservative-scope consumers and unavailable evidence never warn; they are
-disclosed as information. The warning is a chat confirmation conveyed by the
-model, never external approval.
+references the helper carries that consequence (with an exact obligation, or a
+literal reference whose own analysis failed). Opaque or template readers and
+conservative-scope consumers never warn; they are disclosed as information.
+
+HAMCP-327 (fail to ask, never act blind): partial coverage is disclosed
+evidence, not a failure. Evidence is established whenever the binding's
+execution contract is complete (fresh, untruncated index; admitted Home
+Assistant version). When it cannot be established, the change is never
+dispatched blind: ``assess`` reports ``confirmation_reason`` ``evidence_unavailable``
+and the caller must ask. Either confirmation is a chat confirmation conveyed by
+the model, never external approval.
 """
 from __future__ import annotations
 
@@ -17,8 +24,14 @@ MAX_LISTED = 20
 MAX_TEMPLATE_EXAMPLES = 3
 MAX_NAME = 80
 EVIDENCE_TIMEOUT_SECONDS = 30
+MAX_REASON_CODES = 8
 SAFETY_CRITICAL = "safety_critical"
 CONFIRMATION = "model_conveyed_chat_confirmation"
+# Closed set of reasons a change needs the chat confirmation before dispatch.
+CONFIRMATION_SAFETY_CRITICAL = "safety_critical_consumers"
+CONFIRMATION_EVIDENCE_UNAVAILABLE = "evidence_unavailable"
+CONFIRMATION_REASONS = frozenset({CONFIRMATION_SAFETY_CRITICAL, CONFIRMATION_EVIDENCE_UNAVAILABLE})
+_COVERAGE_FAILURE_SCOPES = frozenset({"coverage_failure_consequence_scope", "unreadable_consequence_scope"})
 
 
 def _builder(domain):
@@ -68,14 +81,48 @@ async def read_helper_dependency_evidence(entity_id: str) -> dict:
         return {"available": False, "failure_category": type(exc).__name__[:64]}
     binding = evidence.get("binding") if isinstance(evidence, dict) else None
     provenance = evidence.get("provenance") if isinstance(evidence, dict) else None
-    if (not isinstance(binding, dict) or (model is not None and binding.get("model") != model)
-            or binding.get("completeness") == "failed"
-            or (isinstance(provenance, dict) and provenance.get("completeness") == "failed")):
-        category = provenance.get("failure_category") if isinstance(provenance, dict) else None
-        return {"available": False,
-                "failure_category": category[:64] if isinstance(category, str) else "evidence_failed"}
+    failure = _unestablished(binding, provenance, model)
+    if failure is not None:
+        return {"available": False, "failure_category": failure}
     return {"available": True, "binding": binding,
             "names": automation_names(captured.get("snapshot"))}
+
+
+def _code(value):
+    return value[:64] if isinstance(value, str) and value else None
+
+
+def _unestablished(binding, provenance, model):
+    """Why evidence cannot be established, or ``None`` when it can.
+
+    Coverage reasons alone (bounded, opaque or unreadable automations; group
+    membership) leave ``completeness`` ``failed`` but are disclosed evidence:
+    the consumers they concern are still named and classified. Evidence is
+    unestablished only on a reader failure, a wrong model, or an incomplete
+    execution contract (index not fresh or truncated, Home Assistant version
+    not admitted, the service's own failed binding).
+    """
+    if not isinstance(binding, dict):
+        return "evidence_failed"
+    # The service's own failure binding uses the base model, so its reported
+    # failure category is surfaced before the model check.
+    category = provenance.get("failure_category") if isinstance(provenance, dict) else None
+    if _code(category):
+        return _code(category)
+    if model is not None and binding.get("model") != model:
+        return "evidence_model_mismatch"
+    if binding.get("execution_contract_complete") is not True:
+        codes = binding.get("execution_block_reason_codes")
+        first = codes[0] if isinstance(codes, list) and codes else None
+        return _code(first) or "evidence_incomplete"
+    return None
+
+
+def _reason_codes(binding):
+    codes = binding.get("coverage_failure_reason_codes")
+    if not isinstance(codes, list):
+        return []
+    return [code[:64] for code in codes if isinstance(code, str)][:MAX_REASON_CODES]
 
 
 def _consumer(profile, names):
@@ -90,10 +137,14 @@ def assess(evidence: dict) -> dict:
     if not evidence.get("available"):
         return {
             "evidence": "unavailable",
-            "failure_category": evidence.get("failure_category"),
+            "failure_category": _code(evidence.get("failure_category")) or "evidence_failed",
             "safety_critical": False,
-            "note": ("Helper dependency evidence was unavailable, so no safety-critical "
-                     "check could be made; the change proceeds without one."),
+            "confirmation_reason": CONFIRMATION_EVIDENCE_UNAVAILABLE,
+            "known_consumer_count": None, "known_consumers": None,
+            "template_reader_count": None, "template_readers": None,
+            "coverage_complete": False,
+            "consequence": ("Helper dependency evidence could not be established, so a "
+                            "safety-critical automation cannot be ruled out."),
         }
     binding, names = evidence["binding"], evidence.get("names") or {}
     profiles = [item for item in binding.get("downstream_profiles") or [] if isinstance(item, dict)]
@@ -102,6 +153,11 @@ def assess(evidence: dict) -> dict:
     critical = [item for item in referenced if item.get("physical_consequence") == SAFETY_CRITICAL]
     exact_count = binding.get("exact_dependency_obligation_count")
     exact = not (type(exact_count) is int and exact_count == 0)
+    # HAMCP-327 / HAMCP-301 C-iv: a consumer that names the helper literally but
+    # whose obligation analysis failed contributes no exact obligation. Its
+    # literal reference cannot be ruled out, so it warns like exact evidence.
+    exact = exact or any(set(item.get("relationships") or ()) & _COVERAGE_FAILURE_SCOPES
+                         for item in critical)
     safety_critical = bool(binding.get("physical_consequence") == SAFETY_CRITICAL and critical and exact)
     counts = binding.get("relevant_consumer_counts_by_class")
     counts = counts if isinstance(counts, dict) else {}
@@ -122,6 +178,9 @@ def assess(evidence: dict) -> dict:
                              + ", ".join(examples)) if template_count and examples else
                             (f"may read via templates: {template_count}" if template_count else None),
         "coverage_complete": binding.get("coverage_complete") is True,
+        "coverage_reason_codes": _reason_codes(binding),
+        "potential_physical_consequence": _code(binding.get("potential_physical_consequence")),
+        "confirmation_reason": CONFIRMATION_SAFETY_CRITICAL if safety_critical else None,
     }
     if safety_critical:
         result["consequential_automations"] = [_consumer(item, names) for item in critical[:MAX_LISTED]]
@@ -132,4 +191,10 @@ def assess(evidence: dict) -> dict:
                                  "none has exact safety-critical evidence.")
     else:
         result["consequence"] = "No automation with exact evidence references this helper."
+    if not safety_critical and result["potential_physical_consequence"] == SAFETY_CRITICAL:
+        # Disclosed, never a warning (HAMCP-311): the consumer is in scope only
+        # because its dependency on this helper could not be resolved.
+        result["consequence"] += (" An automation whose dependency on this helper could not be "
+                                  "resolved has a safety-critical action; it is not proven to "
+                                  "react to this helper.")
     return result

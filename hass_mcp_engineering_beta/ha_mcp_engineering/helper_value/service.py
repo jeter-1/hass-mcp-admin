@@ -2,7 +2,9 @@
 
 Helper value changes are ordinary runtime control (HAMCP-311): no plan and no
 approval panel. Before the declaration, existing dependency evidence may require
-a chat confirmation; that is model-conveyed, never external approval.
+a chat confirmation; that is model-conveyed, never external approval. When that
+evidence cannot be established the change is never dispatched blind (HAMCP-327):
+the first call asks instead.
 """
 from __future__ import annotations
 
@@ -17,13 +19,15 @@ from ..providers.upstream_helper_value import HelperProvider
 from ..request_context import current_telemetry
 from .adapter import EFFECTS, HelperAdapter, prepare_record
 from .contracts import FAMILY, PROVIDER, HelperRefusal, HelperRequest, desired, digest, verification_basis
-from .safety import CONFIRMATION, assess, read_helper_dependency_evidence
+from .safety import (CONFIRMATION, CONFIRMATION_EVIDENCE_UNAVAILABLE, CONFIRMATION_REASONS,
+                     CONFIRMATION_SAFETY_CRITICAL, assess, read_helper_dependency_evidence)
 
 _GATE = contextvars.ContextVar("helper_value_gate", default=None)
 SAFETY_GATE_VALUES = frozenset({
-    "not_evaluated_value_already_current", "not_safety_critical", "evidence_unavailable",
-    "confirmation_required", "acknowledged",
+    "not_evaluated_value_already_current", "not_safety_critical",
+    "confirmation_required", "acknowledged", "acknowledged_evidence_unavailable",
 })
+_ACKNOWLEDGED = frozenset({"acknowledged", "acknowledged_evidence_unavailable"})
 OUTCOMES = frozenset({"confirmation_required"})
 REDACTED = "redacted_password_mode"
 
@@ -70,11 +74,50 @@ def request_summary(telemetry):
     gate = context.get("helper_value_safety_gate")
     if isinstance(gate, str) and gate in SAFETY_GATE_VALUES:
         safe["safety_gate"] = gate
-        if gate == "acknowledged":
+        if gate in _ACKNOWLEDGED:
             # The user's confirmation reached Engineering only through the model.
             safe["safety_confirmation"] = CONFIRMATION
             safe["external_approval"] = False
+    reason = context.get("helper_value_confirmation_reason")
+    if isinstance(reason, str) and reason in CONFIRMATION_REASONS:
+        safe["safety_confirmation_reason"] = reason
     return safe
+
+
+_CONSUMER_KEYS = ("known_consumer_count", "known_consumers", "template_reader_count", "template_readers")
+
+
+def _confirmation_payload(request, baseline, safety):
+    """The no-dispatch confirmation result; nothing is saved or sent."""
+    reason = safety["confirmation_reason"]
+    payload = {
+        "status": "confirmation_required",
+        "reason": reason,
+        "entity_id": request.entity_id, "action": request.action,
+        "value": _public_value(request, baseline),
+        "operation_id": request.operation_id,
+        "dispatch": "no_dispatch", "task_created": False,
+    }
+    if reason == CONFIRMATION_SAFETY_CRITICAL:
+        payload["consequential_automations"] = safety["consequential_automations"]
+        ask = ("Tell the user which automations have safety-critical consequences and ask "
+               "whether to proceed.")
+    else:
+        payload["evidence"] = "unavailable"
+        payload["failure_category"] = safety["failure_category"]
+        ask = ("Tell the user that this helper's automation consumers could not be checked, so a "
+               "safety-critical automation cannot be ruled out, and ask whether to proceed "
+               "without that check.")
+    payload["consequence"] = safety["consequence"]
+    payload["consumers"] = {key: safety[key] for key in _CONSUMER_KEYS}
+    payload["coverage_complete"] = safety["coverage_complete"]
+    payload["next_step"] = (
+        ask + " Only if they confirm, call control_helper again with the same arguments and "
+        "acknowledge_safety_critical=true (a new operation_id if this one has expired). This "
+        "is a chat confirmation, not external approval.")
+    payload.update({"authorization": "authenticated_connector", "provider": PROVIDER,
+                    "fallback": "none"})
+    return payload
 
 
 def _public_value(request, baseline):
@@ -147,35 +190,22 @@ class HelperService(FanService):
         except Exception as exc:
             safety = assess({"available": False, "failure_category": type(exc).__name__[:64]})
         check()
-        if safety["safety_critical"] and not request.acknowledge_safety_critical:
-            raise _ConfirmationRequired({
-                "status": "confirmation_required",
-                "entity_id": request.entity_id, "action": request.action,
-                "value": _public_value(request, prepared.baseline),
-                "operation_id": request.operation_id,
-                "dispatch": "no_dispatch", "task_created": False,
-                "consequential_automations": safety["consequential_automations"],
-                "consequence": safety["consequence"],
-                "consumers": {key: safety[key] for key in (
-                    "known_consumer_count", "known_consumers", "template_reader_count", "template_readers")},
-                "next_step": (
-                    "Tell the user which automations have safety-critical consequences and ask "
-                    "whether to proceed. Only if they confirm, call control_helper again with the "
-                    "same arguments and acknowledge_safety_critical=true (a new operation_id if "
-                    "this one has expired). This is a chat confirmation, not external approval."),
-                "authorization": "authenticated_connector", "provider": PROVIDER, "fallback": "none",
-            })
+        reason = safety.get("confirmation_reason")
+        notes["confirmation_reason"] = reason if reason in CONFIRMATION_REASONS else None
+        if reason is not None and not request.acknowledge_safety_critical:
+            raise _ConfirmationRequired(_confirmation_payload(request, prepared.baseline, safety))
         notes["safety"] = {key: value for key, value in safety.items()
                            if key != "safety_critical"} | {"evaluated": True,
                                                            "safety_critical": safety["safety_critical"]}
-        if safety["evidence"] == "unavailable":
-            notes["gate"] = "evidence_unavailable"
-        elif safety["safety_critical"]:
+        if reason == CONFIRMATION_EVIDENCE_UNAVAILABLE:
+            notes["gate"] = "acknowledged_evidence_unavailable"
+        elif reason == CONFIRMATION_SAFETY_CRITICAL:
             notes["gate"] = "acknowledged"
-            notes["safety"]["confirmation"] = CONFIRMATION
-            notes["safety"]["external_approval"] = False
         else:
             notes["gate"] = "not_safety_critical"
+        if notes["gate"] in _ACKNOWLEDGED:
+            notes["safety"]["confirmation"] = CONFIRMATION
+            notes["safety"]["external_approval"] = False
 
     async def control(self, request):
         telemetry = current_telemetry()
@@ -188,11 +218,14 @@ class HelperService(FanService):
                 telemetry.audit_context.pop("task_id", None)
                 telemetry.audit_context[self.outcome_key] = "confirmation_required"
                 telemetry.audit_context["helper_value_safety_gate"] = "confirmation_required"
+                telemetry.audit_context["helper_value_confirmation_reason"] = gate.payload["reason"]
             return gate.payload
         finally:
             _GATE.reset(token)
         if telemetry and notes.get("gate"):
             telemetry.audit_context["helper_value_safety_gate"] = notes["gate"]
+            if notes.get("confirmation_reason") and notes["gate"] in _ACKNOWLEDGED:
+                telemetry.audit_context["helper_value_confirmation_reason"] = notes["confirmation_reason"]
         result = dict(result)
         result["safety"] = notes.get("safety") or {
             "evaluated": False, "reason": "reconciliation_of_existing_task"}

@@ -635,6 +635,8 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         summary = request_summary(self.telemetry)
         self.assertEqual(summary['helper_value_outcome'], 'confirmation_required')
         self.assertEqual(summary['safety_gate'], 'confirmation_required')
+        self.assertEqual(summary['safety_confirmation_reason'], 'safety_critical_consumers')
+        self.assertEqual(result['reason'], 'safety_critical_consumers')
         self.assertNotIn('task_id', summary)
         self.settled()
 
@@ -646,6 +648,7 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['safety']['safety_critical'])
         summary = request_summary(self.telemetry)
         self.assertEqual(summary['safety_gate'], 'acknowledged')
+        self.assertEqual(summary['safety_confirmation_reason'], 'safety_critical_consumers')
         self.assertEqual(summary['safety_confirmation'], 'model_conveyed_chat_confirmation')
         self.assertIs(summary['external_approval'], False)
         self.assertEqual(self.transport.writes, 1)
@@ -689,29 +692,64 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
                          ['Unlock front door for guests', 'Guest lights'])
         self.assertIn('2 automation(s) reference this helper', result['safety']['consequence'])
 
-    async def test_evidence_unavailable_proceeds_with_note(self):
+    async def test_evidence_unavailable_requires_confirmation_then_ack_proceeds(self):
+        # HAMCP-327: fail to ask, never act blind. Unestablished evidence is
+        # never a silent pass; the acknowledged re-call proceeds and says why.
         for failure in [UNAVAILABLE, RuntimeError('synthetic-private-index-text')]:
             self.evidence['input_boolean.synthetic'] = failure
             self.transport.states['input_boolean.synthetic']['state'] = 'off'
-            result = await self.call(self.request())
+            request, dispatched = self.request(), len(self.dispatches())
+            result = await self.call(request)
+            self.assertEqual(result['status'], 'confirmation_required', result)
+            self.assertEqual(result['reason'], 'evidence_unavailable')
+            self.assertEqual(result['evidence'], 'unavailable')
+            self.assertIn(result['failure_category'], {'DependencyIndexUnavailable', 'RuntimeError'})
+            self.assertEqual((result['dispatch'], result['task_created']), ('no_dispatch', False))
+            self.assertEqual(result['consumers'], {'known_consumer_count': None, 'known_consumers': None,
+                                                   'template_reader_count': None, 'template_readers': None})
+            self.assertIn('could not be checked', result['next_step'])
+            self.assertNotIn('consequential_automations', result)
+            self.assertNotIn('synthetic-private-index-text', json.dumps(result))
+            self.assertIsNone(self.service.load(request.task_id))
+            summary = request_summary(self.telemetry)
+            self.assertEqual(summary['safety_gate'], 'confirmation_required')
+            self.assertEqual(summary['safety_confirmation_reason'], 'evidence_unavailable')
+            self.assertEqual(len(self.dispatches()), dispatched)
+
+            result = await self.call(request.model_copy(update={'acknowledge_safety_critical': True}))
             self.assertEqual(result['status'], 'succeeded_verified', result)
             self.assertEqual(result['safety']['evidence'], 'unavailable')
-            self.assertIn('evidence was unavailable', result['safety']['note'])
+            self.assertEqual(result['safety']['confirmation'], CONFIRMATION)
+            self.assertEqual(result['safety']['confirmation_reason'], 'evidence_unavailable')
+            self.assertIs(result['safety']['external_approval'], False)
+            self.assertNotIn('note', result['safety'])
             self.assertNotIn('synthetic-private-index-text', json.dumps(result))
-            self.assertEqual(request_summary(self.telemetry)['safety_gate'], 'evidence_unavailable')
-        self.assertEqual(self.transport.writes, 2)
+            summary = request_summary(self.telemetry)
+            self.assertEqual(summary['safety_gate'], 'acknowledged_evidence_unavailable')
+            self.assertEqual(summary['safety_confirmation'], CONFIRMATION)
+            self.assertEqual(summary['safety_confirmation_reason'], 'evidence_unavailable')
+            self.assertIs(summary['external_approval'], False)
+        self.assertEqual(self.transport.writes, 2); self.settled()
 
-    async def test_guest_shaped_call_without_ack_dispatches_when_evidence_unavailable(self):
-        # Why installed acceptance never makes a changing guest_mode call (Codex
-        # H1): the owner rule proceeds with a note when evidence is unavailable,
-        # so an unacknowledged call is not a no-dispatch guarantee.
+    async def test_guest_shaped_call_without_ack_never_dispatches_when_evidence_unavailable(self):
+        # HAMCP-327 reverses the HAMCP-311 rule that proceeded with a note:
+        # with the reader down, an unacknowledged guest_mode-shaped call asks.
         self.evidence['input_boolean.guest_mode'] = RuntimeError('synthetic-index-down')
-        result = await self.call(self.request('input_boolean.guest_mode', 'turn_on'))
-        self.assertEqual(result['status'], 'succeeded_verified', result)
-        self.assertEqual(result['safety']['evidence'], 'unavailable')
-        self.assertFalse(result['safety']['safety_critical'])
-        self.assertEqual(len(self.dispatches()), 1)
-        self.assertEqual(self.transport.states['input_boolean.guest_mode']['state'], 'on')
+        for action in ['turn_on', 'turn_on']:
+            result = await self.call(self.request('input_boolean.guest_mode', action))
+            self.assertEqual(result['status'], 'confirmation_required', result)
+            self.assertEqual(result['reason'], 'evidence_unavailable')
+        self.assertEqual(self.dispatches(), [])
+        self.assertEqual(self.transport.writes, 0)
+        self.assertEqual(self.transport.states['input_boolean.guest_mode']['state'], 'off')
+        self.settled()
+
+    async def test_unknown_audit_confirmation_reason_is_never_recorded(self):
+        self.telemetry.audit_context['helper_value_safety_gate'] = 'evidence_unavailable'
+        self.telemetry.audit_context['helper_value_confirmation_reason'] = 'synthetic-open-text'
+        summary = request_summary(self.telemetry)
+        self.assertNotIn('safety_gate', summary)
+        self.assertNotIn('safety_confirmation_reason', summary)
 
     async def test_binding_withdrawn_during_evidence_read_refuses_before_declaration(self):
         original = self.service.dependency_reader
@@ -934,6 +972,34 @@ class HelperBoundaryTests(unittest.TestCase):
         # A referenced critical profile without the binding consequence does not warn.
         unbound = deepcopy(GUEST_MODE); unbound['binding']['physical_consequence'] = 'high'
         self.assertFalse(assess(unbound)['safety_critical'])
+        # HAMCP-327 / 301 C-iv: a literal reference whose own analysis failed warns.
+        for scope in ['coverage_failure_consequence_scope', 'unreadable_consequence_scope']:
+            intact = deepcopy(zero)
+            intact['binding']['downstream_profiles'][0]['relationships'] = ['choose_condition', scope]
+            self.assertTrue(assess(intact)['safety_critical'], scope)
+            self.assertEqual(assess(intact)['confirmation_reason'], 'safety_critical_consumers')
+        # The intact-id rule never lifts an opaque consumer.
+        opaque = deepcopy(OPAQUE_ONLY); opaque['binding']['physical_consequence'] = 'safety_critical'
+        opaque['binding']['downstream_profiles'][0]['relationships'] = ['coverage_failure_consequence_scope']
+        self.assertFalse(assess(opaque)['safety_critical'])
+        self.assertIsNone(assess(opaque)['confirmation_reason'])
+        self.assertEqual(assess(UNAVAILABLE)['confirmation_reason'], 'evidence_unavailable')
+        self.assertIsNone(assess(UNAVAILABLE)['known_consumers'])
+
+    def test_unresolved_safety_critical_consumer_is_disclosed_not_warned(self):
+        evidence = deepcopy(OPAQUE_ONLY)
+        evidence['binding']['potential_physical_consequence'] = 'safety_critical'
+        evidence['binding']['coverage_failure_reason_codes'] = [
+            'automation_inventory_incomplete', 'obligation_coverage_failure']
+        result = assess(evidence)
+        self.assertFalse(result['safety_critical'])
+        self.assertIsNone(result['confirmation_reason'])
+        self.assertEqual(result['potential_physical_consequence'], 'safety_critical')
+        self.assertEqual(result['coverage_reason_codes'],
+                         ['automation_inventory_incomplete', 'obligation_coverage_failure'])
+        self.assertIn('not proven to react to this helper', result['consequence'])
+        evidence['binding']['coverage_failure_reason_codes'] = [f'reason_{i}' for i in range(30)] + [7]
+        self.assertEqual(len(assess(evidence)['coverage_reason_codes']), 8)
 
     def test_consumer_listing_is_bounded(self):
         evidence = deepcopy(GUEST_MODE)

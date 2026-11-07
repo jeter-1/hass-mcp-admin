@@ -139,12 +139,34 @@ async def run(configured, entry, directory):
         services.append(service)
         return service, provider
 
-    @diagnostics.checked("operation", "operation_dispatch")
-    async def call(service, req):
+    async def control(service, req):
         telemetry, token = begin_request("seq17-disposable-helper")
         telemetry.ordinary_helper_value_binding = digest(req.model_dump())
         try:
-            receipt = await service.control(req)
+            return await service.control(req)
+        finally:
+            end_request(token)
+
+    confirmed = set()
+
+    @diagnostics.checked("operation", "operation_dispatch")
+    async def call(service, req):
+        if req.operation_id in confirmed:
+            # A duplicate repeats the exact confirmed request.
+            req = req.model_copy(update={"acknowledge_safety_critical": True})
+        receipt = await control(service, req)
+        if receipt.get("status") == "confirmation_required":
+            # HAMCP-327: this lane configures no dependency analysis, so helper
+            # evidence is unavailable. The service must ask without dispatch;
+            # only the confirmed call may proceed.
+            assert receipt["reason"] == "evidence_unavailable" and receipt["evidence"] == "unavailable"
+            assert receipt["dispatch"] == "no_dispatch" and receipt["task_created"] is False
+            assert req.acknowledge_safety_critical is False
+            confirmed.add(req.operation_id)
+            req = req.model_copy(update={"acknowledge_safety_critical": True})
+            receipt = await control(service, req)
+        telemetry, token = begin_request("seq17-disposable-helper")
+        try:
             for _ in range(12):
                 if receipt.get("terminal"):
                     break
@@ -275,6 +297,7 @@ async def run(configured, entry, directory):
                 "operations": outcomes, "invalid_requests": 4, "duplicate_writes": 0,
                 "lost_response_verified_without_replay": True,
                 "unverifiable_effect_not_success": True, "reopened_recovery_read_only": True,
+                "evidence_unavailable_confirmations": len(confirmed),
                 "fallback_count": 0, "production_authority": False}
     finally:
         with diagnostics.check("cleanup", "service_close"):

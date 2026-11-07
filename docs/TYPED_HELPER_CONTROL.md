@@ -138,7 +138,7 @@ Each result has a `status`, derived only from durable facts:
 | `changed_unverified` | dispatched or possibly dispatched; verification is still pending, or could not decide |
 | `verification_failed` | dispatched, and the terminal readback did not prove the transition |
 | `in_progress` | declared, with no dispatch intent recorded yet |
-| `confirmation_required` | the safety-critical warning; nothing was saved or sent |
+| `confirmation_required` | the safety-critical warning, or evidence that could not be established; nothing was saved or sent |
 | `refused` | a request, validation or authorization refusal; nothing was sent |
 | `provider_unavailable` | the provider, the service or Core authority was unavailable; nothing was sent, or the dispatch failure was confirmed |
 
@@ -159,9 +159,22 @@ It warns only on EXACT evidence. Both of these must hold:
 - at least one consumer whose evidence class is `referenced` (it names the
   helper exactly) carries `safety_critical`.
 
-A binding with zero exact dependency obligations never warns.
+A binding with zero exact dependency obligations never warns, unless that
+safety-critical referenced consumer is itself a coverage failure: it names the
+helper literally, but its own obligation analysis failed (HAMCP-327, the
+HAMCP-301 C-iv class). That literal reference cannot be ruled out, so it warns.
 
-- **Without the acknowledgement**, a warning returns `confirmation_required`.
+**Evidence is established whenever the shared dependency index is valid**
+(HAMCP-327). Partial coverage is not a failure: bounded, opaque or unreadable
+automations and unresolved group membership leave the binding's coverage
+incomplete, and the result discloses that (`coverage_complete: false`,
+`coverage_reason_codes`, `potential_physical_consequence`). Evidence cannot be
+established only when the reader fails, the binding has the wrong model, or
+the binding's execution contract is incomplete (index not fresh or truncated,
+Home Assistant version not admitted).
+
+- **Without the acknowledgement**, a warning returns `confirmation_required`
+  with `reason: safety_critical_consumers`.
   - It lists the exact consequential automations (IDs and names, at most 20).
   - It reports `dispatch: no_dispatch` and `task_created: false`.
   - Nothing is saved, so the same operation ID can be repeated with the
@@ -174,17 +187,31 @@ A binding with zero exact dependency obligations never warns.
   never to set it pre-emptively.
 - **Opaque or unresolved template readers never warn**, whatever their own
   action's consequence. They are listed as information: "may read via
-  templates: N, including …" (up to three names).
-- **Evidence unavailable.** If the index is unavailable, the reader raises, or
-  the evidence is incomplete, the change proceeds with
-  `safety.evidence: unavailable` and a note. The audit records
-  `safety_gate: evidence_unavailable`. No private failure text is returned.
+  templates: N, including …" (up to three names). When one of them has a
+  safety-critical action, the consequence line says so, and that it is not
+  proven to react to the helper.
+- **Evidence unavailable: fail to ask, never act blind.** If the index is
+  unavailable, the reader raises, or the evidence cannot be established, the
+  first call returns `confirmation_required` with
+  `reason: evidence_unavailable`, a bounded `failure_category`, null consumer
+  fields (unknown, not empty), `dispatch: no_dispatch` and
+  `task_created: false`. The model asks the user whether to proceed without the
+  check. Only after the user confirms does it call again with
+  `acknowledge_safety_critical=true`; the audit then records
+  `safety_gate: acknowledged_evidence_unavailable` with the same model-conveyed
+  confirmation and `external_approval: false`. No private failure text is
+  returned. The audit records `safety_confirmation_reason` for every
+  confirmation and acknowledgement.
 
 Every non-warning result includes `safety`:
 - the known exact consumers (bounded) with their count;
 - the template reader count and line;
 - a short consequence line;
-- `coverage_complete`.
+- `coverage_complete`, the bounded `coverage_reason_codes` and
+  `potential_physical_consequence`.
+
+An already-current value (`no_change`) does not read the evidence; nothing is
+dispatched, and `safety` says `evaluated: false`.
 
 Coverage is incomplete by design, and the result says so.
 
