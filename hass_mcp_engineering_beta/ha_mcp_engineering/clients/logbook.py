@@ -229,10 +229,13 @@ def _continuation(minimum, window):
     if minimum is False:
         return {"start_time": None, "end_time": None, "overlap_possible": True,
                 "reason": "omitted_when_unavailable"}
-    start = minimum - CONTINUATION_MARGIN
-    if not window["start"] <= start < window["end"]:
+    # Check the lower bound as a timedelta first: an aware-datetime difference
+    # cannot overflow, but minimum - CONTINUATION_MARGIN does at datetime.min.
+    if (minimum - window["start"] < CONTINUATION_MARGIN
+            or minimum - CONTINUATION_MARGIN >= window["end"]):
         return {"start_time": None, "end_time": None, "overlap_possible": True,
                 "reason": "omitted_when_outside_interval"}
+    start = minimum - CONTINUATION_MARGIN
     return {"start_time": start.isoformat(), "end_time": window["end"].isoformat(),
             "overlap_possible": True, "reason": None}
 

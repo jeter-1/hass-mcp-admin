@@ -939,7 +939,7 @@ Completeness: **partial**. Bounded window and record count.
 
 | Read path | Provider | Purpose binding | Admission | Completeness | Detail | Code |
 |---|---|---|---|---|---|---|
-| `get_logbook` | direct_ha_api | bounded_logbook_read | native; core.basic_rest_read compiled-active | partial | REST /logbook via LogbookReader; 1 MiB, 10000 records, 168 h, 30 s caps. HAMCP-294: optional explicit start_time/end_time window, entity_ids (1-10) or name (resolved to 1-10 IDs from GET /states before the one logbook GET); truncated windowed results name a continuation window. | `routing.py:412`<br>`logbook.py:409`<br>`logbook.py:20` |
+| `get_logbook` | direct_ha_api | bounded_logbook_read | native; core.basic_rest_read compiled-active | partial | REST /logbook via LogbookReader; 1 MiB, 10000 records, 168 h, 30 s caps. HAMCP-294: optional explicit start_time/end_time window, entity_ids (1-10) or name (resolved to 1-10 IDs from GET /states before the one logbook GET); truncated windowed results name a continuation window. | `routing.py:412`<br>`logbook.py:412`<br>`logbook.py:20` |
 
 Write paths: none.
 

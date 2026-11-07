@@ -932,6 +932,43 @@ class WindowProjectionTests(unittest.TestCase):
                 self.assertEqual(result["continuation"], {"start_time": None, "end_time": None,
                                                           "overlap_possible": True, "reason": reason})
 
+    def test_datetime_minimum_omitted_when_keeps_useful_partial(self):
+        # Codex L1: subtracting the overlap margin from datetime.min overflowed.
+        records = self.records(300, 2048, lambda i: i + 1)
+        records[-1]["when"] = "0001-01-01T00:00:00+00:00"
+        result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+        returned = result["returned"]
+        self.assertTrue(result["truncated"])
+        self.assertGreater(returned, 0)
+        self.assertEqual(result["entries"], records[:returned])
+        self.assertEqual(returned + result["omitted"], 300)
+        self.assertEqual(result["continuation"], {"start_time": None, "end_time": None,
+                                                  "overlap_possible": True,
+                                                  "reason": "omitted_when_outside_interval"})
+        self.assertEqual(result["required_action"], logbook.NARROW_WINDOW)
+        self.assertLessEqual(len(json.dumps(result, separators=(",", ":"))), logbook.logbook_data_limit(60000))
+
+    def test_continuation_interval_edges_are_unchanged(self):
+        # Control for the L1 guard: the microsecond overlap and both edges keep
+        # their semantics (start - margin must lie in [start, end)).
+        start = datetime(2026, 9, 29, tzinfo=timezone.utc)
+        margin = timedelta(microseconds=1)
+        for when, expected in (
+                (start + margin, start.isoformat()),
+                (NOW, (NOW - margin).isoformat()),
+                (start, None),
+                (NOW + margin, None)):
+            records = self.records(300, 2048, lambda i: i + 1)
+            for record in records:  # Every omitted row has this minimum.
+                record["when"] = when.isoformat()
+            with self.subTest(when=when):
+                result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+                self.assertTrue(result["truncated"])
+                self.assertEqual(result["continuation"], {
+                    "start_time": expected, "end_time": NOW.isoformat() if expected else None,
+                    "overlap_possible": True,
+                    "reason": None if expected else "omitted_when_outside_interval"})
+
     def test_complete_empty_limit_and_malformed(self):
         for records in ([], entries(3)):
             result = json.loads(logbook.project_window(json.dumps(records), window_context(), 2048, ()))

@@ -5196,7 +5196,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
-       "line": 409,
+       "line": 412,
        "anchor": "class LogbookReader"
       },
       {
