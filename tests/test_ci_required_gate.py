@@ -22,6 +22,8 @@ REQUIRED_JOBS = (
     "prepare_exact_image_matrix",
     "exact-image-read-gateway",
     "exact-addon-runtime-acceptance",
+    "exact-image-admission-lanes",
+    "exact-image-admission-manifest-gate",
     "dashboard-disposable",
 )
 
