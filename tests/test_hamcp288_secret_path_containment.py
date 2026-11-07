@@ -32,7 +32,7 @@ import tempfile
 import traceback
 import unittest
 from unittest.mock import AsyncMock, patch
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests"), str(ROOT)]
@@ -77,7 +77,8 @@ def url(secret: str, suffix: str = "/mcp", host: str = HOST) -> str:
 
 
 def _json_unescape(text: str) -> str:
-    text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda match: chr(int(match.group(1), 16)), text)
+    # Any number of backslashes: each JSON serialization doubles them (F2).
+    text = re.sub(r"\\+u([0-9a-fA-F]{4})", lambda match: chr(int(match.group(1), 16)), text)
     return re.sub(r"\\+([\"/\\])", r"\1", text)
 
 
@@ -157,7 +158,10 @@ class MatcherTests(Canary):
             with self.subTest(suffix=suffix):
                 self.assertEqual(SP.derive_fragments(url(self.secret, suffix)), (self.secret,))
         self.assertEqual(SP.derive_fragments(f"{HOST}/mcp"), ())
-        self.assertEqual(SP.derive_fragments(f"{HOST}/catalog/full"), ())
+        # A selector is an endpoint suffix only after a secret path: alone,
+        # ``/catalog/full`` is itself a valid ha-mcp 8.5 ``secret_path``
+        # (``/`` plus at least seven characters), so it is not dropped.
+        self.assertEqual(SP.derive_fragments(f"{HOST}/catalog/full"), ("catalog/full",))
         self.assertEqual(SP.derive_fragments(""), ())
         self.assertEqual(SP.derive_fragments(None), ())
         custom = "team-x/" + self.secret + "/vault"
@@ -718,6 +722,443 @@ class IncidentLogTests(Canary, unittest.IsolatedAsyncioTestCase):
         plain = await self.read(self.service(journal_reader), sources=[self.OTHER])
         self.assertEqual([entry["message"] for entry in configured["entries"]],
                          [entry["message"] for entry in plain["entries"]])
+
+
+# ---------------------------------------------------------------------------
+# Delta corrections of the independent review of 7d8f2158 (F1-F3).
+# ---------------------------------------------------------------------------
+
+# ha-mcp 8.5.0 ``start.py`` at 311d6dc273fb4e9a5b8cde0de15f69472a64fe44:
+# ``_SECRET_PATH_RE = re.compile(r"^/(?!.*://)\\S{7,}$")`` (``config.yaml``
+# ``secret_path: str?``; the path is served as given, no reserved words).
+SECRET_PATH_85 = re.compile(r"^/(?!.*://)\S{7,}$")
+# Endpoint shapes appended after a secret path: Engineering's ``/mcp`` (the
+# parser compares ``mcp``/``sse`` without case) and the exact-case ha-mcp
+# 9.1 ``EndpointSelectors`` suffixes, plus none (8.5 serves the path itself).
+ENDPOINTS = ("", "/mcp", "/sse", "/MCP", "/readonly", "/catalog/full", "/catalog/search",
+             "/readonly/catalog/full", "/readonly/catalog/search")
+
+
+def secret_path_bodies() -> dict[str, str]:
+    """Accepted-grammar ``secret_path`` values, ordinary and edge (synthetic)."""
+
+    token = canary()
+    hexed = secrets.token_hex(4)
+    unicode_body = "ключ-секрет-" + hexed
+    return {
+        "default_shape": "/" + token,
+        "selector_word_readonly": "/readonly",
+        "selector_word_upper": "/READONLY",
+        "selector_word_mixed": "/ReadOnly",
+        "selector_route_as_path": "/readonly/mcp",
+        "selector_catalog_as_path": "/catalog/full",
+        "selector_catalog_search_as_path": "/catalog/search",
+        "selector_full_chain_as_path": "/readonly/catalog/full",
+        "selector_before_secret": "/catalog/" + token,
+        "encoded_short_decoding": "/%41%42%43",
+        "encoded_short_decoding_4": "/%41%42%43%44",
+        "encoded_tilde_7": "/%7E" + hexed[:6],
+        "seven_character_body": "/" + hexed[:7],
+        "short_segments_only": "/" + "/".join(hexed),
+        "custom_multi_segment": "/team-x/" + token + "/vault",
+        "encoded_slash": "/" + quote(token) + "%2Fmore",
+        "trailing_slash": "/" + token + "/",
+        "double_slash": "//" + token,
+        "unicode_raw": "/" + unicode_body,
+        "unicode_encoded": "/" + quote(unicode_body),
+        "selector_suffix_in_body": "/" + token + "-readonly",
+    }
+
+
+CREDENTIAL_FORMS = {
+    "path_only": ("", ""),
+    "userinfo": ("synthuser:" + "pw-" + "SYNTH" + "%s" + "@", ""),
+    "short_userinfo": ("u@", ""),
+    "query": ("", "?token=SYNTH%s"),
+    "short_query": ("", "?k=v"),
+}
+
+
+def accepted(value: str) -> bool:
+    try:
+        return parse_upstream_dashboard_endpoint(value) is not None
+    except ValueError:
+        return False
+
+
+def grammar_cases() -> list[tuple[str, str, dict[str, str]]]:
+    """``(label, url, secrets)``: every combination the parser accepts."""
+
+    cases = []
+    for body_name, body in secret_path_bodies().items():
+        assert SECRET_PATH_85.match(body), body_name
+        for endpoint in ENDPOINTS:
+            for form, (userinfo, query) in CREDENTIAL_FORMS.items():
+                nonce = secrets.token_hex(5)
+                userinfo = userinfo.replace("%s", nonce)
+                query = query.replace("%s", nonce)
+                value = f"http://{userinfo}local-ha-mcp:9583{body}{endpoint}{query}"
+                if not accepted(value):
+                    continue
+                parsed = urlsplit(value)
+                forbidden = {"url": value, "path": parsed.path, "decoded_path": unquote(parsed.path),
+                             "secret_path": body, "decoded_secret_path": unquote(body)}
+                if parsed.password:
+                    forbidden["password"] = parsed.password
+                for _key, item in parse_qsl(parsed.query):
+                    forbidden["query_value"] = item
+                forbidden = {name: text for name, text in forbidden.items() if len(text) >= SP.MIN_FRAGMENT}
+                cases.append((f"{body_name}{endpoint or '/'}[{form}]", value, forbidden))
+    return cases
+
+
+def all_views(text: str) -> set[str]:
+    found = set(views(text))
+    for value in list(found):
+        try:
+            found.add(json.loads(value))
+        except (ValueError, TypeError):
+            pass
+    return {view for view in found if isinstance(view, str)}
+
+
+def guard_response(header: bytes, body: bytes) -> tuple[bytes, bytes]:
+    sent = []
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 302, "headers": [(b"location", header)]})
+        await send({"type": "http.response.body", "body": body})
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(SP.ResponseGuard(app)({"type": "http"}, receive, send))
+    start, message = sent
+    if len(start["headers"][0][1]) != len(header) or len(message["body"]) != len(body):
+        raise AssertionError("listener mask changed a length")
+    return start["headers"][0][1], message["body"]
+
+
+class GrammarContainmentTests(unittest.TestCase):
+    """F1: no accepted ``upstream_dashboard_mcp_url`` disables the guard."""
+
+    def setUp(self) -> None:
+        self.addCleanup(SP.reset)
+
+    def assert_contained(self, text: str, forbidden: dict[str, str], surface: str) -> None:
+        seen = all_views(text)
+        for name, secret in forbidden.items():
+            if any(secret in view for view in seen):
+                # The message names the surface and the field, never the value.
+                self.fail(f"{name} leaked through {surface}")
+
+    def test_every_accepted_custom_path_is_configured_and_contained_on_every_surface(self):
+        cases = grammar_cases()
+        # Not vacuous: the sweep reaches every body and the edge values the
+        # review named (``/readonly/mcp``, ``/%41%42%43/mcp``).
+        self.assertGreaterEqual(len(cases), 400)
+        labels = {label for label, _value, _forbidden in cases}
+        for required in ("selector_word_readonly/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
+                         "selector_route_as_path/[path_only]", "seven_character_body/[query]",
+                         "seven_character_body/mcp[short_userinfo]", "short_segments_only/[short_query]"):
+            self.assertIn(required, labels)
+        for label, value, forbidden in cases:
+            with self.subTest(case=label):
+                SP.configure(value)
+                self.assertTrue(SP.configured())
+                self.assertGreaterEqual(SP.fragment_count(), 1)
+                line = f"connect failed: All connection attempts failed for url '{value}' (retry 2)"
+                sentences = [line, quote(value, safe=""), json.dumps({"url": value}),
+                             "secret_path " + forbidden.get("secret_path", value) + " in use"]
+                for text in sentences:
+                    self.assertTrue(SP.contains(text) or SP.redact(text) != text)
+                    self.assert_contained(SP.redact(text), forbidden, "redact")
+                self.assert_contained(
+                    json.dumps(S.sanitize_untrusted_data({"error": line, value: sentences},
+                                                         max_string=4096).value), forbidden, "sanitizer")
+                self.assert_contained(dump_json({"url": value, "error": line, "nested": sentences}),
+                                      forbidden, "response renderer")
+                sink = io.StringIO()
+                stream = SP.RedactingStream(sink)
+                for text in sentences:
+                    stream.write(text + "\n")
+                stream.write("held " + value)
+                stream.drain()
+                self.assert_contained(sink.getvalue(), forbidden, "stream guard")
+                header, body = guard_response(value.encode(), json.dumps({"text": line}).encode())
+                self.assert_contained(header.decode() + body.decode(), forbidden, "listener guard")
+                if "@" not in value:
+                    # The host stays readable, so the error stays useful.
+                    self.assertIn("local-ha-mcp:9583", SP.redact(line))
+
+    def test_the_process_streams_contain_each_edge_value(self):
+        for name in ("selector_word_readonly", "selector_route_as_path", "encoded_short_decoding",
+                     "default_shape", "unicode_encoded"):
+            body = secret_path_bodies()[name]
+            value = f"http://local-ha-mcp:9583{body}" + ("" if body.endswith("/mcp") else "/mcp")
+            self.assertTrue(accepted(value), name)
+            with self.subTest(body=name):
+                SP.configure(value)
+                out, err = io.StringIO(), io.StringIO()
+                with patch.object(sys, "stdout", out), patch.object(sys, "stderr", err), \
+                        patch("atexit.register"):
+                    SP.install_stream_guard()
+                    print("retry " + value)
+                    print("retry " + quote(value, safe=""), file=sys.stderr)
+                    sys.stdout.drain()
+                    sys.stderr.drain()
+                self.assert_contained(out.getvalue() + err.getvalue(),
+                                      {"url": value, "path": urlsplit(value).path}, "process streams")
+                self.assertIn("retry http://local-ha-mcp:9583", out.getvalue())
+
+    def test_selector_words_are_credentials_only_in_credential_position(self):
+        # The review's two accepted values: each keeps a fragment.
+        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/readonly/mcp"), ("readonly",))
+        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/%41%42%43/mcp"),
+                         ("%41%42%43", "/ABC/mcp"))
+        token = canary()
+        # After a secret path, every supported endpoint suffix is not secret.
+        for endpoint in ENDPOINTS:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(SP.derive_fragments(url(token, endpoint)), (token,))
+                SP.configure(url(token, endpoint))
+                for text in ORDINARY:
+                    self.assertEqual(SP.redact(text), text)
+        # Selector matching is exact-case, as in 9.1: ``ReadOnly`` is text.
+        SP.configure(url(token, "/ReadOnly"))
+        self.assertIn("ReadOnly", SP.fragments())
+        self.assertEqual(SP.redact("readonly"), "readonly")
+        # A selector word that IS the configured credential is redacted
+        # wherever it appears (a disclosed over-redaction of that one word,
+        # never a disabled guard), while other selector text stays.
+        SP.configure("http://synthetic.invalid/readonly/mcp")
+        self.assertEqual(SP.redact("mode readonly"), "mode " + TOKEN)
+        self.assertEqual(SP.redact("catalog/full and /mcp"), "catalog/full and /mcp")
+        self.assertEqual(SP.redact("http://synthetic.invalid/readonly/mcp"),
+                         "http://synthetic.invalid/" + TOKEN + "/mcp")
+        # The decoded form of a percent-encoded path that is shorter than the
+        # bound is matched with its ``/`` (an 8.5 secret path is ``/`` plus
+        # at least seven characters); the bare three letters are text.
+        SP.configure("http://synthetic.invalid/%41%42%43/mcp")
+        self.assertEqual(SP.redact("GET /%41%42%43/mcp"), "GET " + TOKEN)
+        self.assertEqual(SP.redact("GET %41%42%43 only"), "GET " + TOKEN + " only")
+        self.assertEqual(SP.redact("GET /ABC/mcp"), "GET " + TOKEN)
+        self.assertEqual(SP.redact("ABC"), "ABC")
+
+    def test_refused_values_never_reach_an_output_and_unparseable_ones_fail_closed(self):
+        settings = Settings(
+            ha_url="http://supervisor/core", ha_token="synthetic-hamcp288-token",
+            access_secret="synthetic-hamcp288-access-secret", port=8100,
+            audit_path="unused-synthetic-audit.jsonl", rate_limit_per_minute=120, rate_limit_burst=20,
+            destructive_services=frozenset(),
+        )
+        from ha_mcp_engineering.application import validate_settings
+        from ha_mcp_engineering.errors import ConfigurationError
+
+        hexed = secrets.token_hex(4)
+        refused = [f"{HOST}/mcp", f"{HOST}/catalog/full", f"{HOST}/{hexed[:7]}/mcp",
+                   f"{HOST}/" + "/".join(hexed) + "/mcp", f"ftp://local-ha-mcp/{canary()}",
+                   f"{HOST}/{canary()}#fragment"]
+        for value in refused:
+            with self.subTest(value=refused.index(value)):
+                self.assertFalse(accepted(value))
+                with self.assertRaises(ConfigurationError) as raised:
+                    validate_settings(dataclasses.replace(settings, upstream_dashboard_mcp_url=value))
+                message = json.dumps([str(raised.exception), raised.exception.details], default=str)
+                self.assertIn("upstream_dashboard_mcp_url is malformed or lacks a secret-bearing credential",
+                              message)
+                self.assertNotIn(value, message)
+                self.assertNotIn(urlsplit(value).path, message.replace("/mcp", ""))
+        # A value urlsplit itself rejects is redacted whole (fail closed).
+        broken = "http://[synthetic-" + secrets.token_hex(6) + "/" + canary()
+        self.assertFalse(accepted(broken))
+        SP.configure(broken)
+        self.assertTrue(SP.configured())
+        self.assertEqual(SP.redact("x " + broken + " y"), "x " + TOKEN + " y")
+        # And an accepted value always configures: the guard is never off.
+        for _label, value, _forbidden in grammar_cases():
+            self.assertTrue(SP.derive_fragments(value))
+
+
+class SerializedEscapeTests(Canary):
+    """F2: a ``\\uXXXX``-escaped path survives no JSON wrapping."""
+
+    def escaped(self) -> str:
+        return "".join(f"\\u{ord(char):04x}" for char in self.secret)
+
+    def wrapped(self) -> dict[str, str]:
+        encoded = self.escaped()
+        upper = "".join(f"\\u{ord(char):04X}" for char in self.secret)
+        return {
+            "scalar": encoded,
+            "json_once": json.dumps({"error": encoded}),
+            "json_twice": json.dumps(json.dumps({"error": encoded})),
+            "json_three": json.dumps(json.dumps(json.dumps({"error": "url " + HOST + "/" + upper + "/mcp"}))),
+            "json_partial": json.dumps({"e": self.secret[:6] + encoded[6 * 6:]}),
+            "json_log_line": json.dumps({"level": "ERROR", "message": "upstream " + HOST + "/" + encoded}),
+        }
+
+    def assert_never_decodes_to_the_path(self, text: str) -> None:
+        self.assert_no_leak(text)
+        value = text
+        for _ in range(5):
+            # Decode one JSON layer at a time, as a consumer would.
+            try:
+                value = json.loads(value if value.startswith(("{", '"', "[")) else '"' + value + '"')
+            except ValueError:
+                break
+            value = value if isinstance(value, str) else json.dumps(value)
+            self.assert_no_leak(value)
+            self.assertNotIn(self.secret, value)
+
+    def test_every_serialization_depth_is_recognized(self):
+        for name, text in self.wrapped().items():
+            with self.subTest(form=name):
+                self.assertTrue(SP.contains(text))
+                self.assert_never_decodes_to_the_path(SP.redact(text))
+                self.assertTrue(SP.contains_bytes(text.encode()))
+                self.assert_never_decodes_to_the_path(SP.mask_bytes(text.encode()).decode())
+
+    def test_responses_streams_and_listeners_never_reconstruct_the_path(self):
+        for name, text in self.wrapped().items():
+            with self.subTest(form=name):
+                rendered = dump_json({"error": text, "nested": {"value": [text]}})
+                self.assert_never_decodes_to_the_path(rendered)
+                self.assert_never_decodes_to_the_path(json.loads(rendered)["error"])
+                sink = io.StringIO()
+                SP.RedactingStream(sink).write(json.dumps({"error": text}) + "\n")
+                self.assert_never_decodes_to_the_path(sink.getvalue().strip())
+                header, body = guard_response(text.encode(), json.dumps({"text": text}).encode())
+                self.assert_never_decodes_to_the_path(header.decode())
+                self.assert_never_decodes_to_the_path(body.decode())
+
+    def test_the_renderer_screens_values_before_serialization(self):
+        # A scalar holding only a cut piece of the path is redacted by its
+        # own edge rule; the serialized text alone carries no whole match.
+        data = {"error": "failed for " + HOST + "/" + self.secret[:14], "tail": self.secret[-10:] + " end"}
+        self.assertFalse(SP.contains(json.dumps(data, indent=2)))
+        rendered = json.loads(dump_json(data))
+        self.assertEqual(rendered["error"], "failed for " + HOST + "/" + TOKEN)
+        self.assertEqual(rendered["tail"], TOKEN + " end")
+
+    def test_ordinary_escapes_and_backslashes_are_kept(self):
+        ordinary = {"name": "caf\u00e9 \u2603", "escaped": "caf\\u00e9", "path": "C:\\Users\\readonly",
+                    "json": json.dumps({"a": "\u00e9\\u0041"}), "items": list(ORDINARY)}
+        SP.reset()
+        before = dump_json(ordinary)
+        SP.configure(url(self.secret))
+        self.assertEqual(dump_json(ordinary), before)
+        for text in ordinary.values():
+            if isinstance(text, str):
+                self.assertEqual(SP.redact(json.dumps(text)), json.dumps(text))
+                self.assertEqual(SP.mask_bytes(json.dumps(text).encode()), json.dumps(text).encode())
+        sink = io.StringIO()
+        SP.RedactingStream(sink).write(before + "\n")
+        self.assertEqual(sink.getvalue(), before + "\n")
+
+
+class StreamOverflowTests(Canary):
+    """F3: bounding a long line never reconstructs the path across the cut."""
+
+    MAX = SP.RedactingStream.MAX_PENDING
+
+    def written(self, pieces, drain: bool = False) -> tuple[str, list[int]]:
+        sink = io.StringIO()
+        stream = SP.RedactingStream(sink)
+        held = []
+        for piece in pieces:
+            stream.write(piece)
+            held.append(len(stream._pending))
+        if drain:
+            stream.drain()
+        return sink.getvalue(), held
+
+    def test_the_reviewed_alignment_is_redacted(self):
+        output, held = self.written(["x" * (self.MAX - 5) + self.secret[:6], self.secret[6:] + "\n"])
+        self.assertNotIn(self.secret, output)
+        self.assert_no_leak(output)
+        self.assertEqual(output, "x" * (self.MAX - 5) + TOKEN + "\n")
+
+    def test_every_split_across_the_bound_in_every_write_pattern(self):
+        # A smaller bound (the same code) keeps the exhaustive sweep fast.
+        class Small(SP.RedactingStream):
+            MAX_PENDING = 4096
+
+        def written(pieces, drain):
+            sink = io.StringIO()
+            stream = Small(sink)
+            held = []
+            for piece in pieces:
+                stream.write(piece)
+                held.append(len(stream._pending))
+            if drain:
+                stream.drain()
+            return sink.getvalue(), held
+
+        hold = SP._STATE.tail_window
+        self.assertLess(hold, Small.MAX_PENDING // 2)
+        bound = Small.MAX_PENDING
+        for form, target in (("url", url(self.secret)), ("quoted", quote(url(self.secret), safe="")),
+                             ("unicode", HOST + "/" + "".join(f"\\u{ord(c):04x}" for c in self.secret))):
+            line = "x" * (bound - 3) + " " + target + " end"
+            start = line.index(target)
+            for offset in range(-2, len(target) + 3):
+                cut = start + offset
+                patterns = {
+                    # The bound falls at every index of the path.
+                    "two_writes": [line[:cut], line[cut:] + "\n"],
+                    "three_writes": [line[:cut], line[cut:cut + 3], line[cut + 3:] + "\n"],
+                    "drained": [line[:cut], line[cut:]],
+                    # The held window's start falls at every index of a path
+                    # already written whole: the split moves before it.
+                    "split_inside_whole": ["x" * bound + " " + target + "y" * (hold - offset)],
+                }
+                for name, pieces in patterns.items():
+                    with self.subTest(form=form, offset=offset, pattern=name):
+                        output, held = written(pieces, drain=name in ("drained", "split_inside_whole"))
+                        for view in all_views(output):
+                            self.assertNotIn(self.secret, view)
+                        self.assert_no_leak(output)
+                        self.assertLessEqual(max(held), bound)
+                        self.assertTrue(output.startswith("x" * 1000))
+                        self.assertIn(TOKEN, output)
+                        self.assertEqual(output.count(TOKEN), 1)
+
+    def test_long_ordinary_output_still_progresses_and_is_unchanged(self):
+        chunk = "ordinary readonly catalog/full log text 0123456789 " * 20
+        pieces = [chunk] * (3 * self.MAX // len(chunk) + 2)
+        sink = io.StringIO()
+        stream = SP.RedactingStream(sink)
+        for piece in pieces:
+            stream.write(piece)
+            self.assertLessEqual(len(stream._pending), self.MAX)
+        # Bounded memory: most of a line with no break is already written.
+        self.assertGreater(len(sink.getvalue()), 2 * self.MAX)
+        stream.write("\n")
+        self.assertEqual(sink.getvalue(), "".join(pieces) + "\n")
+        # A huge single write is bounded in one pass too.
+        output, held = self.written(["z" * (5 * self.MAX)], drain=True)
+        self.assertEqual(output, "z" * (5 * self.MAX))
+        self.assertLessEqual(held[0], self.MAX)
+
+    def test_a_held_tail_after_a_bounded_write_keeps_its_cut_evidence(self):
+        # The stream's own cut is evidence of a cut: a fragment piece at the
+        # start of the held text is redacted by the edge rule even when the
+        # line then ends with nothing else beside it.
+        sink = io.StringIO()
+        stream = SP.RedactingStream(sink)
+        stream.write("x" * (self.MAX + 1))
+        self.assertTrue(stream._cut)
+        stream._pending = self.secret[-12:]
+        stream.write("\n")
+        self.assertEqual(sink.getvalue().split("\n")[0][-len(TOKEN):], TOKEN)
+        self.assertFalse(stream._cut)
+        self.assertEqual(SP.redact_lines(self.secret[-12:]), self.secret[-12:])
+        self.assertEqual(SP.redact_lines(self.secret[-12:], cut_before=True), TOKEN)
+        self.assertEqual(SP.redact_lines(self.secret[:12], cut_after=True), TOKEN)
 
 
 if __name__ == "__main__":

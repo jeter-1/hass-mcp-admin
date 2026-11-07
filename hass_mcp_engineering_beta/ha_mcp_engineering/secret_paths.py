@@ -13,8 +13,13 @@ the path can plausibly take on the way to that output:
 * URL percent-encoding of any character, with upper-, lower- or mixed-case
   hex digits, encoded any number of times (``%25`` repeated before the
   escape), which covers the encoded ``/`` forms ``%2F``, ``%2f``, ``%252F``;
-* JSON escapes: ``\\uXXXX`` (any case) and ``\\/``, ``\\"``, ``\\\\`` nested
-  to any depth;
+* JSON escapes: ``\\uXXXX`` (any case) and ``\\/``, ``\\"``, ``\\\\``, nested
+  to any depth (each serialization doubles the backslashes);
+* any custom path ha-mcp's ``secret_path`` grammar and Engineering's parser
+  accept, including a path spelled like an endpoint selector
+  (``/readonly/mcp``) or one whose percent-decoding is shorter than the
+  credential bound (``/%41%42%43/mcp``): every accepted value configures
+  the redaction, so it is never silently off;
 * a fragment cut at a string or line boundary (a wrapped or truncated log
   line, a bounded upstream error), when at least ``MIN_BOUNDARY`` characters
   of a fragment remain at that edge and the text shows a cut (other text
@@ -40,10 +45,22 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import parse_qsl, unquote, urlsplit
 
-# Path segments that name an endpoint, never a credential: the 8.5.0
-# streamable route (``mcp``), the legacy SSE route and the 9.1 endpoint
-# selectors (``/catalog/full``, ``/catalog/search``, ``/readonly``).
-GENERIC_SEGMENTS = frozenset({"mcp", "sse", "catalog", "full", "search", "readonly"})
+# The endpoint suffixes the supported upstream route grammar appends to the
+# secret path, matched only at the end of the path and only with something
+# left before them. ha-mcp 9.1 ``EndpointSelectors`` (``http_transport.py``,
+# exact case): ``/readonly``, ``/catalog/<mode>`` and
+# ``/readonly/catalog/<mode>`` for the modes ``full`` and ``search``.
+# Engineering's own endpoint convention appends ``/mcp`` (or the legacy
+# ``/sse``; the parser in configuration.py compares those without case).
+# The same words anywhere else (``/readonly/mcp``) are credential text.
+SELECTOR_SUFFIXES = (
+    ("readonly", "catalog", "full"),
+    ("readonly", "catalog", "search"),
+    ("catalog", "full"),
+    ("catalog", "search"),
+    ("readonly",),
+)
+ROUTE_SEGMENTS = frozenset({"mcp", "sse"})
 # The parser's own credential-segment bound (configuration.py).
 MIN_FRAGMENT = 8
 # A cut fragment is redacted when at least this many of its characters remain
@@ -102,7 +119,8 @@ def _hex(value: int) -> str:
 
 
 def _unicode_escape(code: int) -> str:
-    return r"\\u" + "".join(
+    # One backslash, or any number: each JSON serialization doubles it.
+    return r"\\+u" + "".join(
         f"[{digit.lower()}{digit.upper()}]" if digit.isalpha() else digit
         for digit in f"{code:04x}"
     )
@@ -132,47 +150,118 @@ def _sequence(text: str) -> str:
     return "".join(_char(char) for char in text)
 
 
-def derive_fragments(value: str | None) -> tuple[str, ...]:
-    """The secret parts of one configured upstream URL, longest first.
+def _bases(parts: list[str]) -> list[list[str]]:
+    """The candidate secret paths of decoded ``parts``: the whole path, and
+    the path without each endpoint suffix the route grammar allows, never
+    stripped down to nothing."""
 
-    The decoded path with its trailing endpoint selectors removed (so a
-    custom multi-segment path is redacted whole), each non-generic path
-    segment of at least ``MIN_FRAGMENT`` characters, the userinfo password
-    and each query value of that length. The hostname, port and scheme are
-    not secret and are kept, so ordinary text naming the host survives.
+    found = [parts]
+    for suffix in SELECTOR_SUFFIXES:
+        if len(parts) > len(suffix) and tuple(parts[-len(suffix):]) == suffix:
+            found.append(parts[: -len(suffix)])
+            break
+    for base in list(found):
+        if len(base) > 1 and base[-1].lower() in ROUTE_SEGMENTS:
+            found.append(base[:-1])
+    return found
+
+
+def _longest_first(values) -> tuple[str, ...]:
+    return tuple(sorted(set(values), key=lambda fragment: (-len(fragment), fragment)))
+
+
+def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``(fragments, credentials)`` of one configured upstream URL.
+
+    ``credentials`` are the credential-position values: the decoded path
+    without the endpoint suffix (so a custom multi-segment path is redacted
+    whole) and each of its segments, whatever their spelling, the userinfo
+    name and password and each query value, every one of at least
+    ``MIN_FRAGMENT`` characters. They are matched whole and, when cut, at a
+    string or line edge.
+
+    ``fragments`` adds, for whole matches only, every other form in which an
+    accepted value can be written: the decoded path with and without each
+    endpoint suffix, with and without its leading ``/`` (ha-mcp's own
+    ``secret_path`` literal is ``/`` plus at least seven characters, so a
+    short credential is still matched with its ``/``), the raw path and each
+    percent-encoded raw segment as configured (so a value whose decoding is
+    shorter than the bound is still matched as written), the userinfo
+    ``netloc``, the raw query and ``path?query``, and, when the URL carries
+    userinfo or a query, the whole URL. A form that already contains a
+    shorter fragment adds nothing and is dropped, so the host and the
+    endpoint suffix around a matched credential stay readable.
+
     A value that cannot be parsed is itself the fragment (fail closed).
     """
 
     candidate = (value or "").strip()
     if not candidate:
-        return ()
+        return (), ()
     try:
         parsed = urlsplit(candidate)
+        username = parsed.username
         password = parsed.password
     except ValueError:
-        return (candidate,) if len(candidate) >= MIN_FRAGMENT else ()
-    fragments: list[str] = []
+        whole = (candidate,) if len(candidate) >= MIN_FRAGMENT else ()
+        return whole, whole
     # A segment whose ``/`` was percent-encoded decodes into several parts;
     # each part is a segment of its own as well as part of the whole path.
-    segments = [part for segment in parsed.path.split("/") if segment
-                for part in unquote(segment).split("/") if part]
-    while segments and segments[-1].lower() in GENERIC_SEGMENTS:
-        segments.pop()
-    while segments and segments[0].lower() in GENERIC_SEGMENTS:
-        segments.pop(0)
-    if segments:
-        fragments.append("/".join(segments))
-    fragments.extend(
-        segment for segment in segments
-        if segment.lower() not in GENERIC_SEGMENTS
-    )
-    if password:
-        fragments.extend((password, unquote(password)))
+    parts = [part for part in unquote(parsed.path).split("/") if part]
+    bases = _bases(parts) if parts else []
+    credential: list[str] = []
+    if bases:
+        base = min(bases, key=len)
+        credential.append("/".join(base))
+        credential.extend(base)
+    for item in (username, password):
+        if item:
+            credential.extend((item, unquote(item)))
     if parsed.query:
-        for _key, item in parse_qsl(parsed.query, keep_blank_values=True):
-            fragments.append(item)
-    kept = {fragment for fragment in fragments if len(fragment) >= MIN_FRAGMENT}
-    return tuple(sorted(kept, key=lambda fragment: (-len(fragment), fragment)))
+        credential.extend(item for _key, item in parse_qsl(parsed.query, keep_blank_values=True))
+    credentials = _longest_first(item for item in credential if len(item) >= MIN_FRAGMENT)
+
+    anchors: list[str] = []
+    for base in bases:
+        joined = "/".join(base)
+        anchors.extend((joined, "/" + joined))
+    raw = parsed.path.strip("/")
+    if raw:
+        anchors.append(raw)
+        anchors.extend(
+            segment for segment in parsed.path.split("/")
+            if segment and unquote(segment) != segment
+        )
+    if username is not None or password is not None:
+        anchors.append(parsed.netloc)
+    if parsed.query:
+        anchors.extend((parsed.query, f"{parsed.path}?{parsed.query}"))
+    if username is not None or password is not None or parsed.query:
+        anchors.append(candidate)
+    covered = re.compile("|".join(_sequence(item) for item in credentials)) if credentials else None
+    kept = list(credentials)
+    added: list[str] = []
+    for anchor in sorted(set(anchors), key=lambda item: (len(item), item)):
+        if len(anchor) < MIN_FRAGMENT or anchor in kept:
+            continue
+        if covered is not None and covered.search(anchor):
+            continue
+        if any(other in anchor for other in added):
+            continue
+        added.append(anchor)
+    return _longest_first(kept + added), credentials
+
+
+def derive_fragments(value: str | None) -> tuple[str, ...]:
+    """The secret parts of one configured upstream URL, longest first.
+
+    Every value Engineering's parser and ha-mcp's ``secret_path`` grammar
+    accept yields at least one fragment (see ``_derive``). The hostname,
+    port and scheme of a path credential are not secret and are kept, so
+    ordinary text naming the host survives.
+    """
+
+    return _derive(value)[0]
 
 
 def _endpoint_slug(value: str | None) -> str | None:
@@ -189,21 +278,23 @@ def configure(value: str | None) -> None:
     """Install the redaction for ``value`` (the configured upstream URL)."""
 
     global _STATE
-    fragments = derive_fragments(value)
+    fragments, credentials = _derive(value)
     with _LOCK:
         generation = _STATE.generation + 1
         if not fragments:
             _STATE = _State(generation=generation, endpoint_slug=_endpoint_slug(value))
             return
         alternation = "|".join(_sequence(fragment) for fragment in fragments)
+        # The cut-edge rule applies to credential-position values only: a cut
+        # host or route word is not a cut credential.
         prefixes = sorted(
-            {fragment[:length] for fragment in fragments
+            {fragment[:length] for fragment in credentials
              for length in range(MIN_BOUNDARY, len(fragment))
              if fragment[:length] != _PUBLIC_PREFIX},
             key=lambda item: (-len(item), item),
         )
         suffixes = sorted(
-            {fragment[start:] for fragment in fragments
+            {fragment[start:] for fragment in credentials
              for start in range(1, len(fragment) - MIN_BOUNDARY + 1)},
             key=lambda item: (-len(item), item),
         )
@@ -217,7 +308,8 @@ def configure(value: str | None) -> None:
         ) if prefixes else None
         # A cut prefix in its longest encoded form (a doubly percent-encoded
         # four-byte character is twenty characters) plus its decoration; a
-        # deeper encoding at an edge is not recognized as cut.
+        # deeper encoding at an edge is not recognized as cut. The stream
+        # guard holds this much text back when it bounds a long line.
         window = 20 * max(len(fragment) for fragment in fragments) + _DECORATION_WINDOW
         _STATE = _State(fragments, text, data, head, tail, window, generation, _endpoint_slug(value))
 
@@ -257,7 +349,9 @@ def contains_bytes(value: bytes) -> bool:
     return bool(state.data is not None and value and state.data.search(value))
 
 
-def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
+def spans(
+    value: str, *, per_line: bool = False, cut_before: bool = False, cut_after: bool = False,
+) -> list[tuple[int, int]]:
     """The merged ``(start, end)`` spans of ``value`` to replace, in order.
 
     Every whole fragment in any recognized encoding, and a cut fragment of
@@ -271,6 +365,9 @@ def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
     only a short run of fragment characters (a trace trigger ``synthetic``
     beside a configured ``synthetic-...`` path) is ordinary text. A span
     never contains a line break, because no fragment contains whitespace.
+    ``cut_before`` and ``cut_after`` say the caller itself cut ``value`` from
+    text before or after it (the stream guard bounding a long line), which
+    is evidence of a cut at the first line's start or the last line's end.
     """
 
     state = _STATE
@@ -294,6 +391,7 @@ def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
             match = state.head.match(value, start, stop)
             if match and (
                 index > 0
+                or cut_before
                 or _CUT_MARK.search(value, start, match.start(1))
                 or value[match.end(1):stop].strip(_FRAME)
             ):
@@ -302,6 +400,7 @@ def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
             match = state.tail.search(value, max(start, stop - state.tail_window), stop)
             if match and (
                 index < last
+                or cut_after
                 or _CUT_MARK.search(value, match.end(1), stop)
                 or value[start:match.start(1)].strip(_FRAME)
             ):
@@ -334,10 +433,10 @@ def redact(value: str) -> str:
     return _replace(value, found) if found else value
 
 
-def redact_lines(value: str) -> str:
+def redact_lines(value: str, *, cut_before: bool = False, cut_after: bool = False) -> str:
     """``redact`` with the edge rule at every line edge; line breaks are kept."""
 
-    found = spans(value, per_line=True)
+    found = spans(value, per_line=True, cut_before=cut_before, cut_after=cut_after)
     return _replace(value, found) if found else value
 
 
@@ -407,8 +506,11 @@ class RedactingStream(io.TextIOBase):
     through ``sys.stdout``/``sys.stderr``; the add-on's container log (and so
     the host journal) receives only what this stream lets through. Text is
     held until its line ends, so a fragment written in pieces is still seen
-    whole; a line longer than ``MAX_PENDING`` is written redacted at that
-    bound with its edge rule applied.
+    whole. A line longer than ``MAX_PENDING`` is written in bounded pieces:
+    the last ``tail_window`` characters (enough for any whole fragment in
+    its recognized encodings) stay held, the split never falls inside a
+    matched fragment, and the stream remembers that it cut the line, so the
+    edge rule applies on both sides of its own cut.
     """
 
     MAX_PENDING = 64 * 1024
@@ -417,6 +519,8 @@ class RedactingStream(io.TextIOBase):
         super().__init__()
         self._target = target
         self._pending = ""
+        # True while the held text continues a line this stream already cut.
+        self._cut = False
         self._lock = threading.RLock()
 
     @property
@@ -448,11 +552,31 @@ class RedactingStream(io.TextIOBase):
             cut = self._pending.rfind("\n")
             if cut >= 0:
                 ready, self._pending = self._pending[: cut + 1], self._pending[cut + 1:]
-                self._target.write(redact_lines(ready))
-            if len(self._pending) > self.MAX_PENDING:
-                ready, self._pending = self._pending, ""
-                self._target.write(redact_lines(ready))
+                self._target.write(redact_lines(ready, cut_before=self._cut))
+                self._cut = False
+            while len(self._pending) > self.MAX_PENDING:
+                self._emit_bounded()
         return len(text)
+
+    def _emit_bounded(self) -> None:
+        """Write the start of an over-long held line, keeping its tail held."""
+
+        text = self._pending
+        state = _STATE
+        hold = min(state.tail_window, self.MAX_PENDING // 2) if state.text is not None else 0
+        split = len(text) - hold
+        if state.text is not None:
+            for match in state.text.finditer(text):
+                if match.start() < split < match.end():
+                    split = match.start()
+                    break
+                if match.start() >= split:
+                    break
+        if split <= 0:
+            split = len(text)
+        ready, self._pending = text[:split], text[split:]
+        self._target.write(redact_lines(ready, cut_before=self._cut, cut_after=bool(self._pending)))
+        self._cut = True
 
     def flush(self) -> None:
         # A partial line stays held: it may be the start of a fragment.
@@ -465,7 +589,10 @@ class RedactingStream(io.TextIOBase):
         with self._lock:
             ready, self._pending = self._pending, ""
             if ready:
-                self._target.write(redact_lines(ready))
+                # A held partial line written at exit may be the start of a
+                # fragment whose remainder never arrives.
+                self._target.write(redact_lines(ready, cut_before=self._cut, cut_after=True))
+            self._cut = False
             self.flush()
 
     def close(self) -> None:  # pragma: no cover - interpreter shutdown
