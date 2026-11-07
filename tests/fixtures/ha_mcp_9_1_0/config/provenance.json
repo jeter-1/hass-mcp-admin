@@ -1,0 +1,164 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "config",
+  "consumer": "tests/test_hamcp319_parity_config.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "generation": "Hand-written synthetic structuredContent and error envelopes transcribed from the pinned 9.1.0 source (read only, never executed). They are not captured records and carry no record hashes; the config_hash strings are opaque synthetic values reused from the 8.6.0 captured fixture and are not recomputed. The listed sha256 values identify the pinned source files the line citations refer to. Exact 9.1 error envelopes remain class S until the exact-image lane executes them (design open item).",
+  "eight_five_shaped_responses": {
+    "note": "The 8.5-side tests reuse the captured 8.6.0 standalone read results (8.5/8.6 pass-through rows) under their own provenance; nothing is copied into this directory.",
+    "path": "tests/fixtures/ha_mcp_8_6_0/read-results.json",
+    "provenance": "tests/fixtures/ha_mcp_8_6_0/provenance.json",
+    "read_results_sha256": "sha256:acbfe18c46a6f2fabafeb58421d024be5a85d187055472a62810ea78bb7634d8",
+    "pointers": "/standalone/0 .. /standalone/10"
+  },
+  "source_files": {
+    "src/ha_mcp/errors.py": "02877355134d059b5fe6698d6bb974248016ddc333e84d322c4c9a209a7647bb",
+    "src/ha_mcp/tools/helpers.py": "87a3c0a6464d52c8eba4457a83f7f940d39ad8239b5c439d7d69d326a979aede",
+    "src/ha_mcp/tools/tools_config_automations.py": "780dfff91144c01d3e7b0f67c3d6e976347e8660d8b9a559570eded0438332d1",
+    "src/ha_mcp/tools/tools_calendar.py": "cb3eda2d2204bc583b42bf228ef652e0794442fec97d792eb4c2c7992a614003",
+    "src/ha_mcp/tools/tools_categories.py": "617d36a965803b30e58060c5ad21e41b44457eff2dae60153016476011c9dd19",
+    "src/ha_mcp/tools/tools_labels.py": "6f9cd359d27bce2afc6ad9d351e239a6e8745e8667a65099b46d8a543a85c88e",
+    "src/ha_mcp/tools/tools_config_scenes.py": "5d6f5133436f9c05d37e61e083298f0a8e57eaf2cc93d932739b5b6675f8aa9e",
+    "src/ha_mcp/tools/tools_config_scripts.py": "488035ea31fdbd72759175c57aec1956c2006297ddf3552d893123c4172e305e",
+    "src/ha_mcp/tools/tools_resources.py": "e18e4c98a944bf0df032b1fb2aae7653a26acf805fc3a78c3258c96c8892be2b",
+    "src/ha_mcp/tools/resource_codec.py": "529f4dde017bf7929e24ca655c3bd7f3bc0f14ab726846860cd57151e4aa191a",
+    "src/ha_mcp/tools/response_helpers.py": "f7a2e6e3ec8602f58baade074c701e8c1712eb0cd0edd03adae95b34463b824a",
+    "src/ha_mcp/tools/tools_groups.py": "a4c1cf36d33b2e6785cb6084b9799e1039de439b1f68df4a2744364e8a6d8fc1",
+    "src/ha_mcp/tools/tools_config_helpers.py": "59c5720573c5006a0c55f379c42f05947441956a6710b7686cb7bc8e1d021295",
+    "src/ha_mcp/tools/config_helpers/listing.py": "0f61011c450f81dbfb5bbd219551f37d0c3873e20845e45c79915c6fcaa902b2",
+    "src/ha_mcp/tools/tools_utility.py": "c3e27335e18f27fb34ec3185a2a1a995e453ad7e8204a5d936a3da6b1a4e1055",
+    "src/ha_mcp/tools/tools_traces.py": "01fca982133e12c5f61e37d71bdd5a7820f93b127876ac0a0f6221d34664b039"
+  },
+  "fixtures": {
+    "/success/row_1_automation": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_automations.py:465-476 (success envelope; entity/validation/references always present)",
+        "src/ha_mcp/tools/tools_config_automations.py:355-369 (_registry_details: dict or None for each)"
+      ]
+    },
+    "/success/row_2_calendar": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_calendar.py:242-253 (success envelope; count=len(limited), total_available=len(all))",
+        "src/ha_mcp/tools/tools_calendar.py:218-224 (time_range start/end are always strings)"
+      ]
+    },
+    "/success/row_3_category_list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_categories.py:105-112 (list envelope)"
+      ]
+    },
+    "/success/row_3_category_get": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_categories.py:119-126 (get envelope)"
+      ]
+    },
+    "/success/row_4_label_list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_labels.py:631-637 (list envelope)"
+      ]
+    },
+    "/success/row_4_label_get": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_labels.py:643-649 (get envelope)"
+      ]
+    },
+    "/success/row_5_scene": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_scenes.py:447-458 (_legacy_get_scene envelope; category only when set)"
+      ]
+    },
+    "/success/row_6_script": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_scripts.py:212-220 (category injected into config after hashing)",
+        "src/ha_mcp/tools/tools_config_scripts.py:237-256 (_legacy_get_script envelope)"
+      ]
+    },
+    "/success/row_7_resources": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_resources.py:249-262 (list envelope)",
+        "src/ha_mcp/tools/response_helpers.py:271-291 (pagination metadata)",
+        "src/ha_mcp/tools/resource_codec.py:260-268 (by_type counts only present types)"
+      ]
+    },
+    "/success/row_8_groups": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_groups.py:149-163 (record: all/order only when present in attributes)",
+        "src/ha_mcp/tools/tools_groups.py:178-185 (envelope)",
+        "src/ha_mcp/tools/response_helpers.py:271-291 (pagination metadata)"
+      ]
+    },
+    "/success/row_9_helpers": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_helpers.py:249-258 (list envelope)",
+        "src/ha_mcp/tools/config_helpers/listing.py:186-192 (paginated: count is page size)",
+        "src/ha_mcp/tools/response_helpers.py:271-291 (pagination metadata)"
+      ]
+    },
+    "/success/row_10_template": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_utility.py:155-165 (_render_template envelope; no request_id or evaluation_time)"
+      ]
+    },
+    "/success/row_11_traces_list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_traces.py:577-595 (_format_trace_list envelope)"
+      ]
+    },
+    "/success/row_11_traces_detail": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_traces.py:612-618 (detail metadata)",
+        "src/ha_mcp/tools/tools_traces.py:641-642 (script_execution)"
+      ]
+    },
+    "/errors/row_1_missing_automation": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_automations.py:480-488 (context automation_id, action)",
+        "src/ha_mcp/errors.py:304-327 (envelope; context merged at top level)",
+        "src/ha_mcp/tools/helpers.py:45-74 (ToolError text is the JSON envelope)"
+      ]
+    },
+    "/errors/row_6_missing_script": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_scripts.py:258-281 (_raise_script_not_found context script_id, available_script_ids)",
+        "src/ha_mcp/errors.py:304-327"
+      ]
+    },
+    "/errors/row_10_template_validation_failed": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_utility.py:182 (context template)",
+        "src/ha_mcp/tools/tools_utility.py:219-231 (VALIDATION_FAILED when not timed out)",
+        "src/ha_mcp/errors.py:304-327"
+      ]
+    },
+    "/errors/row_10_template_timeout": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_utility.py:197-206 (render-timeout text gives TIMEOUT_OPERATION)",
+        "src/ha_mcp/errors.py:304-327"
+      ]
+    }
+  }
+}

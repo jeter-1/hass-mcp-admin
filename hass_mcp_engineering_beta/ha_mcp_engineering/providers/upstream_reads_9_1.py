@@ -147,11 +147,10 @@ def read_arguments(entry, arguments: dict) -> dict:
             "condition": None, "variables": None, "strict": False,
         }
     if name == "ha_get_history":
-        # Row 16 / rule 3: no summary, schema discovery or native Core options.
-        return {
-            **arguments, "summary": False, "include_schema": False,
-            "core_options": None,
-        }
+        # Row 16 / rule 3: no summary, schema discovery or native Core options;
+        # section 6.1 keeps 8.5's client-side period and statistic-type refusals.
+        from .upstream_history_9_1 import dispatch_arguments
+        return dispatch_arguments(arguments)
     if name == "ha_get_skill_guide":
         # Row 18 / R4: file-only; inventory and file-list tiers unavailable.
         skill, file = arguments.get("skill"), arguments.get("file")

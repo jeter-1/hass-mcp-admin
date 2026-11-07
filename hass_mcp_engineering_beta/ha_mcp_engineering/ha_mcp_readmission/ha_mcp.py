@@ -89,6 +89,10 @@ class _BinaryErrorContractAdapter:
     # None: legacy aggregate-selected adapter. A set: selected only for these
     # exact upstream versions, which no unversioned adapter may then serve.
     upstream_versions: frozenset[str] | None = None
+    # None: captured from the exact shipped image. "source_derived": derived
+    # from the exact pinned upstream source and proven only when the exact-image
+    # lane executes its probes (HAMCP-319 design rule 9).
+    evidence_class: str | None = None
 
     @property
     def probes_by_capability(
@@ -153,6 +157,7 @@ _ERROR_ADAPTERS = (
             _BinaryErrorProbeContract('missing_registry_entity', 'ha_get_entity', 'SERVICE_CALL_FAILED', '3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8'),
         ),
         upstream_versions=frozenset({"9.1.0"}),
+        evidence_class="source_derived",
     ),
     _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_8_5_0_v1",
