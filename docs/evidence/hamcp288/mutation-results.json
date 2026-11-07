@@ -1,9 +1,10 @@
 {
-  "head": "42f97fcc8c55ce3342e2e8f1ff32ead309e2ee21",
+  "head": "f4db112e3770393b40430668e06d1f3e99b862a3",
   "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
   "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
   "reviewed_head_r4": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
   "reviewed_head_r4b": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+  "reviewed_head_r4c": "b1f38fbef2a76c90b3e92d899de688c448346a45",
   "python": "3.13.5",
   "regressions": [
     {
@@ -168,17 +169,33 @@
     },
     {
       "id": 21,
-      "finding": "L1R",
-      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
-      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "finding": "L1E",
+      "revision": "b1f38fbef2a76c90b3e92d899de688c448346a45",
+      "test": "RouteOnlySecretPathTests.test_unencoded_route_word_paths_are_accepted_as_before",
       "classification": "assertion",
       "exit_code": 1
     },
     {
       "id": 22,
-      "finding": "L1R",
-      "revision": "d4e3761815d68afe8b4fe48cc0fe5cd1ee3c5358",
+      "finding": "L1E",
+      "revision": "b1f38fbef2a76c90b3e92d899de688c448346a45",
+      "test": "GrammarContainmentTests.test_every_accepted_custom_path_is_configured_and_contained_on_every_surface",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 23,
+      "finding": "L1E",
+      "revision": "b1f38fbef2a76c90b3e92d899de688c448346a45",
       "test": "GrammarContainmentTests.test_selector_words_are_credentials_only_in_credential_position",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 24,
+      "finding": "L1E",
+      "revision": "b1f38fbef2a76c90b3e92d899de688c448346a45",
+      "test": "GrammarContainmentTests.test_the_process_streams_contain_each_edge_value",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -363,12 +380,30 @@
       "test": "RouteOnlySecretPathTests.test_the_secret_path_is_refused_with_a_reason_naming_the_option",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 21,
+      "finding": "L1E",
+      "name": "unencoded route-word paths refused again (no encoded-span check)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_unencoded_route_word_paths_are_accepted_as_before",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "finding": "L1E",
+      "name": "the derive guard drops the decoded base of an unencoded route-word span",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "RouteOnlySecretPathTests.test_unencoded_route_word_paths_are_accepted_as_before",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "control": {
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 55 tests in 31.280s"
+    "ran": "Ran 56 tests in 35.879s"
   }
 }
