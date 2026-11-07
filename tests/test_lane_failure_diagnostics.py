@@ -148,12 +148,13 @@ class FailureReceipts(unittest.TestCase):
                 patch.object(lane.diagnostics, 'failure') as failure:
             code, receipt = orchestration.Orchestration().run_lane()
         self.assertEqual(code, 0); failure.assert_not_called()
-        # Original c877/0cc9a7b5 runner with the same mocked I/O/time yields these bytes.
+        # HAMCP-326 adds only the approved posture to the original frozen receipt.
         expected = {'model': 'core-helper-value-local-evidence-v1', 'group': 'helper_value',
                     'result': 'PASS', 'started_utc': '2026-11-06T00:00:00+00:00',
                     'ended_utc': '2026-11-06T00:00:00+00:00', 'source_commit': 'a' * 40,
                     'journal_sha256': lane.JOURNAL_SHA256, 'manifest_sha256': 'c' * 64,
                     'host_admission': {'other_heavy_jobs': 0},
+                    'network_posture': {'driver': 'bridge', 'host_bind_address': '127.0.0.1', 'egress_allowed': True},
                     'container_memory': {'core': '2g', 'upstream': '768m', 'fixture': '128m'},
                     'mode': 'local', 'pull': 'never', 'cleanup': {'clean': True,
                     'containers_absent': True, 'network_absent': True, 'configuration_absent': True}}

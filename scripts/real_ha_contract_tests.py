@@ -2495,7 +2495,8 @@ async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
 
 
 @lane_diagnostics.checked("container_start", "upstream_start")
-async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), environment_directory=None, memory=None) -> None:
+async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), environment_directory=None,
+                                memory=None, verify_started=None) -> None:
     """Start the exact reviewed ha-mcp release against disposable HA only."""
 
     if not UPSTREAM_IMAGE:
@@ -2561,6 +2562,11 @@ async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), envi
         )
     finally:
         environment_path.unlink(missing_ok=True)
+
+    # Local lanes verify actual published ports before any readiness request.
+    # Existing Actions callers retain their startup and readiness semantics.
+    if verify_started is not None:
+        verify_started()
 
     timeout = aiohttp.ClientTimeout(total=2)
     for _ in range(60):

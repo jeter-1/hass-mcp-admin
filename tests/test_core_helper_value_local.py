@@ -81,7 +81,8 @@ class Contracts(unittest.TestCase):
 
 class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
-                 admission_error=None, memory_args=(), command_failure=None):
+                 admission_error=None, memory_args=(), command_failure=None,
+                 network_override=None, ports_override=None):
         calls, resources = [], {}
         def command(*args, **kwargs):
             calls.append(args)
@@ -99,7 +100,12 @@ class Orchestration(unittest.TestCase):
                 resources.pop(args[-1], None)
             return subprocess.CompletedProcess(args, code, stdout)
         def inspect(kind, name, run_id):
-            return {} if name in resources else None
+            if name not in resources: return None
+            if kind == 'network':
+                return network_override if network_override is not None else {'Driver': 'bridge', 'Internal': False}
+            ports = {'8123/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18123'}]}
+            return {'NetworkSettings': {'Networks': {lane.NETWORK: {}},
+                    'Ports': ports if ports_override is None else ports_override}}
         def remove(args, *_):
             if cleanup_error: raise lane.Refusal('cleanup_failed')
             shutil.rmtree(args.directory)
@@ -121,13 +127,15 @@ class Orchestration(unittest.TestCase):
                  patch.object(lane, 'require_free_ports'), patch.object(lane.signal, 'signal'), \
                  patch.object(lane.diagnostics, '_raw_log', return_value=False), \
                  patch.object(lane, 'exercise', new=AsyncMock(side_effect=exercise_error,
-                     return_value={'result': 'PASS'})), patch('sys.stdout', new_callable=io.StringIO):
+                     return_value={'result': 'PASS'})) as exercise, patch('sys.stdout', new_callable=io.StringIO):
                 if dirty or existing:
                     with self.assertRaises(lane.Refusal): lane.main(argv)
                     self.assertFalse(out.exists())
                     self.assertFalse(any(c[:2] == ('docker', 'run') or c[:2] == ('docker', 'rm') for c in calls))
                     return
                 code = lane.main(argv)
+                if network_override is not None or ports_override is not None:
+                    exercise.assert_not_called()  # Before onboarding/auth or any other readiness check.
                 result = json.loads((out / 'helper_value.json').read_text())
                 if admission_error:
                     self.assertEqual(code, 1)
@@ -140,6 +148,9 @@ class Orchestration(unittest.TestCase):
             self.assertFalse(resources)
             self.assertIn('started_utc', result); self.assertIn('ended_utc', result)
             for call in calls:
+                if call[:3] == ('docker', 'network', 'create'):
+                    self.assertEqual(call[call.index('--driver') + 1], 'bridge')
+                    self.assertNotIn('--internal', call)
                 if call[:2] == ('docker', 'run'):
                     self.assertEqual(call[call.index('--pull') + 1], 'never')
                     self.assertIn('127.0.0.1:18123:8123', call)
@@ -160,6 +171,28 @@ class Orchestration(unittest.TestCase):
     def test_pass_requires_cleanup_true(self):
         code, result = self.run_lane()
         self.assertEqual(code, 0); self.assertTrue(result['cleanup']['clean'])
+        self.assertEqual(result['network_posture'],
+                         {'driver': 'bridge', 'host_bind_address': '127.0.0.1', 'egress_allowed': True})
+
+    def test_missing_or_wildcard_mapping_refuses_before_readiness_and_cleans(self):
+        for ports in ({}, {'8123/tcp': None},
+                      {'8123/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '18123'}]}):
+            with self.subTest(ports=ports):
+                code, result = self.run_lane(ports_override=ports)
+                self.assertEqual(code, 1)
+                self.assertEqual((result['failure']['stage'], result['failure']['check']),
+                                 ('container_start', 'port_mapping'))
+                self.assertTrue(result['cleanup']['clean'])
+                self.assertEqual(result['network_posture'],
+                                 {'driver': 'bridge', 'host_bind_address': '127.0.0.1', 'egress_allowed': True})
+
+    def test_wrong_network_posture_refuses_before_readiness(self):
+        for network in ({'Driver': 'bridge', 'Internal': True}, {'Driver': 'host', 'Internal': False}, {}):
+            with self.subTest(network=network):
+                code, result = self.run_lane(network_override=network)
+                self.assertEqual(code, 1)
+                self.assertEqual(result['failure']['check'], 'network_create')
+                self.assertTrue(result['cleanup']['clean'])
 
     def test_lane_failure_withholds_and_still_cleans(self):
         code, result = self.run_lane(exercise_error=AssertionError('synthetic-private-text'))
@@ -174,7 +207,98 @@ class Orchestration(unittest.TestCase):
     def test_prior_run_is_preserved(self): self.run_lane(existing=True)
 
 
+class PortMappings(unittest.TestCase):
+    def test_actual_mapping_for_both_containers(self):
+        for name, inner, outer in ((lane.CORE, 8123, 18123), (lane.UPSTREAM, 18086, 18086)):
+            data = {'NetworkSettings': {'Networks': {lane.NETWORK: {}},
+                    'Ports': {f'{inner}/tcp': [{'HostIp': '127.0.0.1', 'HostPort': str(outer)}]}}}
+            with self.subTest(name=name), patch.object(lane, 'inspect_owned', return_value=data) as inspect:
+                lane.verify_port_mapping(name, inner, outer, 'run')
+                inspect.assert_called_once_with('container', name, 'run')
+
+    def test_missing_wrong_extra_or_nonloopback_actual_bindings_refuse(self):
+        good = {'HostIp': '127.0.0.1', 'HostPort': '18086'}
+        invalid = [{}, {'18086/tcp': None}, {'18086/tcp': []},
+                   {'18086/udp': [good]}, {'18086/tcp': [good, good]},
+                   {'18086/tcp': [good], '9999/tcp': [good]}]
+        invalid += [{'18086/tcp': [{'HostIp': ip, 'HostPort': '18086'}]}
+                    for ip in ('0.0.0.0', '::', '', '192.0.2.1')]
+        invalid += [{'18086/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '9999'}]}]
+        for ports in invalid:
+            data = {'HostConfig': {'PortBindings': {'18086/tcp': [good]}},
+                    'NetworkSettings': {'Networks': {lane.NETWORK: {}}, 'Ports': ports}}
+            with self.subTest(ports=ports), lane.diagnostics.lane('helper_value'), \
+                    patch.object(lane, 'inspect_owned', return_value=data):
+                with self.assertRaises(lane.Refusal) as caught:
+                    lane.verify_port_mapping(lane.UPSTREAM, 18086, 18086, 'run')
+                self.assertEqual(caught.exception._local_lane_check, ('container_start', 'port_mapping'))
+
+    def test_missing_container_or_wrong_network_refuses(self):
+        for data in (None, {'NetworkSettings': {'Networks': {'unowned': {}},
+                     'Ports': {'8123/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18123'}]}}}):
+            with patch.object(lane, 'inspect_owned', return_value=data):
+                with self.assertRaises(lane.Refusal):
+                    lane.verify_port_mapping(lane.CORE, 8123, 18123, 'run')
+
+
 class UpstreamStartup(unittest.IsolatedAsyncioTestCase):
+    async def test_exercise_installs_upstream_mapping_guard_before_acceptance(self):
+        import real_ha_contract_tests as harness
+        async def started(token, **kwargs):
+            self.assertEqual(token, 'synthetic-token')
+            kwargs['verify_started']()
+        with tempfile.TemporaryDirectory() as directory, lane.diagnostics.lane('helper_value'), \
+                patch.object(harness, 'bootstrap_disposable_admin', new=AsyncMock(return_value='synthetic-token')), \
+                patch.object(harness, 'wait_for_runtime_ready', new=AsyncMock(return_value={'version': lane.VERSION})), \
+                patch.object(harness, '_start_exact_upstream', side_effect=started), \
+                patch.object(lane, 'inspect_owned', return_value=None) as inspect, \
+                patch.object(acceptance, 'run', new=AsyncMock()) as accept:
+            with self.assertRaises(lane.Refusal) as caught:
+                await lane.exercise(Path(directory), {}, 'core', 'upstream', 'run', '2g', '768m')
+            self.assertEqual(caught.exception._local_lane_check, ('container_start', 'port_mapping'))
+            inspect.assert_called_once_with('container', lane.UPSTREAM, 'run')
+            accept.assert_not_called()
+
+    async def test_mapping_verification_precedes_first_health_request(self):
+        import real_ha_contract_tests as harness
+        from unittest.mock import MagicMock
+        events = []
+        response = MagicMock(status=200)
+        response.content.read = AsyncMock(return_value=b'{"status":"ok","server":"ha-mcp"}')
+        request = MagicMock()
+        request.__aenter__ = AsyncMock(return_value=response)
+        session = MagicMock()
+        session.get.side_effect = lambda *a: (events.append('healthz') or request)
+        session.__aenter__ = AsyncMock(return_value=session)
+        def verify():
+            events.append('mapping')
+            self.assertFalse(environment_paths[0].exists())
+        environment_paths = []
+        async def docker(*args):
+            events.append('start')
+            environment_paths.append(Path(args[args.index('--env-file') + 1]))
+        with patch.object(harness, 'UPSTREAM_IMAGE', 'repo@sha256:synthetic'), \
+                patch.object(harness, '_docker_command', side_effect=docker), \
+                patch.object(harness.aiohttp, 'ClientSession', return_value=session):
+            await harness._start_exact_upstream('synthetic-token', pull_policy='never', memory='768m',
+                                                verify_started=verify)
+        self.assertEqual(events, ['start', 'mapping', 'healthz'])
+
+    async def test_upstream_bad_mapping_never_polls_readiness(self):
+        import real_ha_contract_tests as harness
+        for bindings in (None, [{'HostIp': '0.0.0.0', 'HostPort': '18086'}]):
+            data = {'NetworkSettings': {'Networks': {lane.NETWORK: {}}, 'Ports': {'18086/tcp': bindings}}}
+            with self.subTest(bindings=bindings), lane.diagnostics.lane('helper_value'), \
+                    patch.object(harness, 'UPSTREAM_IMAGE', 'repo@sha256:synthetic'), \
+                    patch.object(harness, '_docker_command', new=AsyncMock()), \
+                    patch.object(lane, 'inspect_owned', return_value=data), \
+                    patch.object(harness.aiohttp, 'ClientSession') as session:
+                with self.assertRaises(lane.Refusal) as caught:
+                    await harness._start_exact_upstream('synthetic-token', pull_policy='never', memory='768m',
+                        verify_started=lambda: lane.verify_port_mapping(lane.UPSTREAM, 18086, 18086, 'run'))
+                self.assertEqual(caught.exception._local_lane_check, ('container_start', 'port_mapping'))
+                session.assert_not_called()
+
     async def test_local_start_is_explicitly_no_pull_and_labelled(self):
         import real_ha_contract_tests as harness
         commands = []

@@ -1,7 +1,7 @@
-"""Committed, offline-host helper_value lane for the seq-16 -> seq-17 review.
+"""Committed, cached-image helper_value lane for the seq-16 -> seq-17 review.
 
 No Docker pulls, GitHub access, publication or production authority. Only cached
-exact images on a new internal Docker network; host ports bind loopback. A new
+exact images on a dedicated bridge with egress; host ports bind loopback. A new
 run directory and clean committed checkout are mandatory. Failure is WITHHELD.
 The production journal is verified read-only; synthetic test keys stay in memory.
 """
@@ -33,6 +33,7 @@ LANE = "ha-2026-11-0-helper"
 CORE = "beta25-real-ha-" + LANE
 UPSTREAM = "beta25-real-ha-upstream-" + LANE
 NETWORK = "beta-rc2-contract-" + LANE
+NETWORK_POSTURE = {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress_allowed": True}
 LABEL = "org.hamcp.helper-evidence-run"
 PORTS = (18123, 18086)
 CORE_MEMORY = "2g"
@@ -179,6 +180,19 @@ def inspect_owned(kind, name, run_id):
     return data
 
 
+@diagnostics.checked("container_start", "port_mapping")
+def verify_port_mapping(name, container_port, host_port, run_id):
+    """Require actual Docker bindings, not merely requested HostConfig bindings."""
+    data = inspect_owned("container", name, run_id)
+    settings = (data or {}).get("NetworkSettings", {})
+    ports = settings.get("Ports") or {}
+    expected = [{"HostIp": "127.0.0.1", "HostPort": str(host_port)}]
+    if (set(settings.get("Networks") or {}) != {NETWORK}
+            or ports.get(f"{container_port}/tcp") != expected
+            or any(bindings for port, bindings in ports.items() if port != f"{container_port}/tcp")):
+        raise Refusal("Local container loopback port mapping is missing or unsafe")
+
+
 @diagnostics.checked("helper_setup", "helper_contract")
 async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memory, upstream_memory):
     # Import only after the closed disposable endpoints have been set.
@@ -195,7 +209,8 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memo
             raise Refusal("running_core_version_mismatch")
     with diagnostics.check("container_start", "upstream_start"):
         await harness._start_exact_upstream(token, pull_policy="never", labels=(LABEL + "=" + run_id,),
-                                            environment_directory=run_dir, memory=upstream_memory)
+                                            environment_directory=run_dir, memory=upstream_memory,
+                                            verify_started=lambda: verify_port_mapping(UPSTREAM, 18086, 18086, run_id))
     identities = {}
     with diagnostics.check("image_verify", "running_identity"):
         for name, image, memory in ((CORE, core_image, core_memory), (UPSTREAM, upstream_image, upstream_memory)):
@@ -251,6 +266,7 @@ def _main(argv=None):
             admission = resources.wait_for_admission(run_dir / "resource-admission.json")
     except resources.Refusal as exc:
         result = {"result": "WITHHELD", "reason": str(exc), "source_commit": revision,
+                  "network_posture": NETWORK_POSTURE,
                   "execution_started": False, "cleanup": {"clean": True, "resources_created": False},
                   "failure": diagnostics.failure(exc)}
         (run_dir / "helper_value.json").write_bytes(canonical(result))
@@ -278,18 +294,23 @@ def _main(argv=None):
     result = {"model": "core-helper-value-local-evidence-v1", "group": "helper_value",
               "result": "WITHHELD", "started_utc": utc(), "source_commit": revision,
               "journal_sha256": JOURNAL_SHA256, "manifest_sha256": sha256(ROOT / "ci/core-contract-read-files.json"),
-              "host_admission": admission, "container_memory": limits, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+              "host_admission": admission, "container_memory": limits, "network_posture": NETWORK_POSTURE,
+              "mode": "local", "pull": "never", "cleanup": {"clean": False}}
     def interrupted(_signum, _frame):
         raise Refusal("lane_interrupted")
     previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
         with diagnostics.check("container_start", "network_create"):
-            command("docker", "network", "create", "--internal", "--label", LABEL + "=" + run_id, NETWORK)
+            command("docker", "network", "create", "--driver", "bridge", "--label", LABEL + "=" + run_id, NETWORK)
+            network = inspect_owned("network", NETWORK, run_id)
+            if network is None or network.get("Driver") != "bridge" or network.get("Internal") is not False:
+                raise Refusal("Local lane requires a dedicated non-internal bridge")
         with diagnostics.check("container_start", "core_start"):
             command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
                     "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
                     "--publish", "127.0.0.1:18123:8123", "--security-opt", "no-new-privileges",
                     "--mount", f"type=bind,source={owned},target=/config", core_image)
+        verify_port_mapping(CORE, 8123, 18123, run_id)
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id,

@@ -22,13 +22,15 @@ STAGES = frozenset(('image_verify', 'container_start', 'core_boot', 'auth',
                     'helper_setup', 'operation', 'readback', 'cleanup', 'admission'))
 # Code-owned identifiers only: callers cannot echo arbitrary exception metadata.
 CHECKS = frozenset(('preflight', 'journal_inputs', 'cached_image_digest', 'host_resources',
-    'network_create', 'core_start', 'bootstrap', 'onboarding_ready', 'bootstrap_http',
+    'network_create', 'core_start', 'port_mapping', 'bootstrap', 'onboarding_ready', 'bootstrap_http',
     'runtime_ready', 'upstream_start', 'running_identity', 'helper_contract',
     'authority_setup', 'provider_setup', 'operation_dispatch', 'duplicate_suppression',
     'state_readback', 'value_assertions', 'recovery', 'negative_controls',
     'service_close', 'container_remove', 'network_remove', 'configuration_remove',
     'cleanup_absence'))
 SAFE_MESSAGES = frozenset((
+    'Local container loopback port mapping is missing or unsafe',
+    'Local lane requires a dedicated non-internal bridge',
     'Disposable Home Assistant did not become ready within 120 seconds',
     'Disposable Home Assistant did not finish required integration setup',
     'Disposable Home Assistant configuration was not fresh',
