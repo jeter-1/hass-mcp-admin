@@ -202,11 +202,18 @@ def _trace_snapshot_audit_parameters(tool_name, parameters, known_secrets=()):
                      cursor_present=bool(parameters.get("cursor")))
     else:
         action, mode = parameters.get("action"), parameters.get("mode", "failures")
+        priority = parameters.get("priority")
+        displace = parameters.get("displace", False)
+        include_lapsed = parameters.get("include_lapsed", False)
         audit.update(
             action=action if type(action) is str and action in trace_contracts.WATCH_ACTIONS else None,
             automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
             mode=mode if type(mode) is str and mode in trace_contracts.WATCH_MODES else None,
             duration_hours=bounded_int("duration_hours", 24, 1, trace_contracts.WATCH_MAX_HOURS),
+            priority=(priority if type(priority) is str
+                      and priority in trace_contracts.WATCH_PRIORITIES else None),
+            displace=displace if type(displace) is bool else None,
+            include_lapsed=include_lapsed if type(include_lapsed) is bool else None,
         )
     audit["identifiers_withheld"] = withheld
     audit["argument_fields"] = sorted(str(key)[:64] for key in parameters
@@ -219,7 +226,8 @@ _TRACE_SNAPSHOT_FIELDS = {
     "capture_automation_trace": frozenset({"automation_id", "run_id", "include_condition_failures", "note"}),
     "list_trace_snapshots": frozenset({"automation_id", "limit", "cursor"}),
     "get_trace_snapshot": frozenset({"snapshot_id", "cursor"}),
-    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours"}),
+    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours",
+                                             "priority", "displace", "include_lapsed"}),
 }
 
 

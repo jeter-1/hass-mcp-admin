@@ -155,8 +155,9 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "provider": "engineering", "data_providers": [], "fallback": "none",
         "policy": "automation-trace-watch-v1", "external_approval_required": False,
         "direct_write_allowed": False, "dispatch_allowed": False, "durable_evidence_write": True,
-        "bounded_poller": {"max_watches": 10, "poll_seconds": 30, "max_hours": 168,
-                           "snapshot_quota": 20},
+        "bounded_poller": {"max_watches": 20, "poll_seconds": 30, "max_hours": 168,
+                           "snapshot_quota": 5, "watch_snapshot_reservation": 100,
+                           "priorities": ["high", "normal"], "lapsed_records": 20},
     },
     {
         "tool": "get_integration_inspection", "category": "evidence",
@@ -883,7 +884,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "standard_ha_mcp_coverage": "unavailable", "direct_ha_coverage": "not_used",
         "selected_provider": "engineering", "fallback_policy": "none",
         "completeness": "current_watch_list_in_every_response",
-        "security_justification": "Local watch list only; at most 10 watches and 168 hours; the poller holds its own signed Core read authority and pauses when unavailable; no Home Assistant write.",
+        "security_justification": "Local watch list only; at most 20 watches and 168 hours; renew and lapsed records are local; the poller holds its own signed Core read authority and pauses when unavailable; no Home Assistant write.",
         "trust_mode": "reviewed_native_read", "trust_profile": "automation-trace-watch-v1",
     },
     {

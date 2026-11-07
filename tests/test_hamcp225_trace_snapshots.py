@@ -549,7 +549,9 @@ class WatchTests(ServiceCase):
         error = await self.refused(self.service.watch(action="add", automation_id="w_extra"))
         self.assertEqual(error.reason, "watch_limit")
         self.assertEqual(len(error.details["watches"]), c.MAX_WATCHES)
-        self.assertEqual(len(self.index()["watches"]), c.MAX_WATCHES)
+        # HAMCP-296: index.json keeps the v1 bound; the rest are in the sidecar.
+        self.assertEqual(len(self.service.store.load_index()["watches"]), c.MAX_WATCHES)
+        self.assertEqual(len(self.index()["watches"]), c.V1_INDEX_MAX_WATCHES)
         error = await self.refused(self.service.watch(action="remove", automation_id="w_extra"))
         self.assertEqual(error.reason, "watch_not_found")
 

@@ -40,6 +40,14 @@ QUARANTINE_KEYS = frozenset({
     "observed_bytes", "observed_sha256",
 })
 DAMAGE_REASONS = frozenset({"missing", "unreadable", "digest_mismatch", "invalid_record"})
+# HAMCP-296 lifecycle sidecar (``watch-lifecycle.json``). Shipped 2.4.x and
+# 2.5.0 code never reads it, so nothing in it can make their v1 reader fail.
+LIFECYCLE_KEYS = frozenset({"model", "overflow", "watch_meta", "lapsed", "lapsed_dropped"})
+META_KEYS = frozenset({"watch_id", "priority", "renewed_at_ms"})
+LAPSED_KEYS = frozenset({
+    "watch_id", "automation_id", "mode", "priority", "created_at_ms", "expired_at_ms",
+    "reason", "captured_count",
+})
 
 
 class StoreError(RuntimeError):
@@ -53,6 +61,11 @@ class StoreError(RuntimeError):
 def empty_index():
     return {"model": c.MODEL, "snapshots": [], "watches": [],
             "quarantine": {"entries": [], "dropped": 0}}
+
+
+def empty_lifecycle():
+    return {"model": c.LIFECYCLE_MODEL, "overflow": [], "watch_meta": [], "lapsed": [],
+            "lapsed_dropped": 0}
 
 
 def _text(value, limit, *, optional=False):
@@ -120,11 +133,61 @@ def _valid_quarantine(value):
             and all(_valid_stub(stub) for stub in value["entries"]) and _count(value["dropped"]))
 
 
+def _valid_meta(meta):
+    return (type(meta) is dict and set(meta) == META_KEYS
+            and _match(c.WATCH_ID, meta["watch_id"]) and meta["priority"] in c.WATCH_PRIORITIES
+            and (meta["renewed_at_ms"] is None or _count(meta["renewed_at_ms"])))
+
+
+def _valid_lapsed(record):
+    return (type(record) is dict and set(record) == LAPSED_KEYS
+            and _match(c.WATCH_ID, record["watch_id"])
+            and _match(AUTOMATION_CONFIG_ID_PATTERN, record["automation_id"])
+            and record["mode"] in c.WATCH_MODES and record["priority"] in c.WATCH_PRIORITIES
+            and _count(record["created_at_ms"]) and _count(record["expired_at_ms"])
+            and record["reason"] in c.LAPSE_REASONS and _count(record["captured_count"]))
+
+
+def validate_lifecycle(value):
+    """The closed sidecar shape; any other value is damage (reset, never trusted)."""
+
+    if (type(value) is not dict or set(value) != LIFECYCLE_KEYS
+            or value["model"] != c.LIFECYCLE_MODEL
+            or type(value["overflow"]) is not list or len(value["overflow"]) > c.MAX_WATCHES
+            or not all(_valid_watch(w) for w in value["overflow"])
+            or type(value["watch_meta"]) is not list or len(value["watch_meta"]) > c.MAX_WATCHES
+            or not all(_valid_meta(m) for m in value["watch_meta"])
+            or type(value["lapsed"]) is not list or len(value["lapsed"]) > c.LAPSED_MAX
+            or not all(_valid_lapsed(r) for r in value["lapsed"])
+            or not _count(value["lapsed_dropped"])):
+        raise StoreError("store_invalid")
+    for key in ("overflow", "watch_meta", "lapsed"):
+        ids = [item["watch_id"] for item in value[key]]
+        if len(set(ids)) != len(ids):
+            raise StoreError("store_invalid")
+    return value
+
+
+def watch_order(watches, meta):
+    """High priority first, then oldest; the first ten stay in the v1 index."""
+
+    priority = {m["watch_id"]: m["priority"] for m in meta}
+    return sorted(watches, key=lambda w: (priority.get(w["watch_id"], "normal") != "high",
+                                          w["created_at_ms"], w["watch_id"]))
+
+
 def validate_index(value):
+    """The shipped v1 ``index.json`` rule, unchanged: at most 10 watches.
+
+    HAMCP-296 keeps this the on-disk rule so that every index the new code
+    writes is one the shipped reader accepts.
+    """
+
     if (type(value) is not dict or set(value) != {"model", "snapshots", "watches", "quarantine"}
             or value["model"] != c.MODEL or type(value["snapshots"]) is not list
             or type(value["watches"]) is not list
-            or len(value["snapshots"]) > c.MAX_SNAPSHOTS or len(value["watches"]) > c.MAX_WATCHES
+            or len(value["snapshots"]) > c.MAX_SNAPSHOTS
+            or len(value["watches"]) > c.V1_INDEX_MAX_WATCHES
             or not all(_valid_snapshot(e) for e in value["snapshots"])
             or not all(_valid_watch(w) for w in value["watches"])
             or not _valid_quarantine(value["quarantine"])):
@@ -147,8 +210,15 @@ class TraceSnapshotStore:
         self.records = self.root / "records"
         self.quarantine_root = self.root / "quarantine"
         self.index_path = self.root / "index.json"
+        self.lifecycle_path = self.root / "watch-lifecycle.json"
         self.fault_hook = None
         self.commit_unknown = False
+        # The sidecar bytes last read or written; an unchanged sidecar is not rewritten.
+        self._lifecycle_raw = None
+        # Watch ids merged from the sidecar at the last load.
+        self._loaded_overflow = set()
+        # Set when a damaged sidecar was replaced by an empty one (process life).
+        self.lifecycle_reset = False
 
     def _inject(self, stage):
         if self.fault_hook is not None:
@@ -210,7 +280,7 @@ class TraceSnapshotStore:
             raise StoreError("store_invalid")
         return raw
 
-    def load_index(self):
+    def _load_v1_index(self):
         try:
             raw = self._read_regular(self.index_path, c.INDEX_BYTES)
             if raw is None:
@@ -222,6 +292,60 @@ class TraceSnapshotStore:
             raise StoreError("store_invalid") from None
         except OSError:
             raise StoreError("store_unavailable") from None
+
+    def _load_lifecycle(self):
+        """The sidecar, or an empty one when missing; damage resets it, I/O errors refuse."""
+
+        try:
+            raw = self._read_regular(self.lifecycle_path, c.LIFECYCLE_BYTES)
+            if raw is None:
+                self._lifecycle_raw = None
+                return empty_lifecycle()
+            value = validate_lifecycle(json.loads(raw))
+            self._lifecycle_raw = raw
+            return value
+        except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
+            # Damage (symlink, oversize, bad JSON or shape) never blocks the
+            # snapshot store: the sidecar is replaced at the next write.
+            self.lifecycle_reset = True
+            self._lifecycle_raw = b""
+            return empty_lifecycle()
+        except OSError:
+            raise StoreError("store_unavailable") from None
+
+    def load_index(self):
+        """The merged in-memory index: v1 watches, then sidecar overflow watches.
+
+        ``index["lifecycle"]`` carries priority, renewal and lapsed records.
+        The v1 rows win over a sidecar copy of the same watch or automation:
+        the sidecar is written first, so after a failed index write it can
+        hold a newer copy of a watch the index no longer names, never an
+        older one of a watch it does (``write_index``). Rows past the cap
+        (only possible after such a failure) are recorded as lapsed.
+        """
+
+        index = self._load_v1_index()
+        lifecycle = self._load_lifecycle()
+        watches = list(index["watches"])
+        ids = {w["watch_id"] for w in watches}
+        automations = {w["automation_id"] for w in watches}
+        recovered = []
+        self._loaded_overflow = set()
+        for row in lifecycle.pop("overflow"):
+            if row["watch_id"] in ids or row["automation_id"] in automations:
+                continue
+            if len(watches) >= c.MAX_WATCHES:
+                recovered.append(row)
+                continue
+            watches.append(row)
+            self._loaded_overflow.add(row["watch_id"])
+            ids.add(row["watch_id"])
+            automations.add(row["automation_id"])
+        index["watches"] = watches
+        lifecycle["watch_meta"] = [m for m in lifecycle["watch_meta"] if m["watch_id"] in ids]
+        lifecycle["recovered"] = recovered
+        index["lifecycle"] = lifecycle
+        return index
 
     def _replace(self, raw, target, stage):
         temporary = target.parent / (".pending-" + uuid.uuid4().hex)
@@ -242,7 +366,7 @@ class TraceSnapshotStore:
             finally:
                 os.close(directory)
         except (OSError, ValueError, RecursionError):
-            if replaced and stage == "index":
+            if replaced and stage in {"index", "lifecycle"}:
                 self.commit_unknown = True
             raise StoreError("store_unavailable") from None
         finally:
@@ -252,9 +376,42 @@ class TraceSnapshotStore:
                 pass
 
     def write_index(self, index):
-        raw = c.canonical(validate_index(index))
+        """Write the sidecar (when changed), then the v1 index.
+
+        ``index.json`` gets the ten first watches in ``watch_order``; the
+        sidecar gets every other watch plus any watch that was in the sidecar
+        as loaded and now moves to the index, so a failed index write after
+        the sidecar write loses no watch (``load_index`` deduplicates).
+        """
+
+        lifecycle = index.get("lifecycle") or empty_lifecycle()
+        watches = index["watches"]
+        if (len(watches) > c.MAX_WATCHES
+                or len({w["automation_id"] for w in watches}) != len(watches)):
+            raise StoreError("store_invalid")
+        ids = {w["watch_id"] for w in watches}
+        meta = [m for m in lifecycle.get("watch_meta", []) if m["watch_id"] in ids]
+        ordered = watch_order(watches, meta)
+        primary = ordered[:c.V1_INDEX_MAX_WATCHES]
+        moving = self._loaded_overflow
+        overflow = ordered[c.V1_INDEX_MAX_WATCHES:] + [w for w in primary if w["watch_id"] in moving]
+        v1 = {key: index[key] for key in ("model", "snapshots", "quarantine")}
+        v1["watches"] = primary
+        raw = c.canonical(validate_index(v1))
         if len(raw) > c.INDEX_BYTES:
             raise StoreError("store_invalid")
+        sidecar = validate_lifecycle({
+            "model": c.LIFECYCLE_MODEL, "overflow": overflow, "watch_meta": meta,
+            "lapsed": list(lifecycle.get("lapsed", [])),
+            "lapsed_dropped": lifecycle.get("lapsed_dropped", 0)})
+        side_raw = c.canonical(sidecar)
+        if len(side_raw) > c.LIFECYCLE_BYTES:
+            raise StoreError("store_invalid")
+        if side_raw != self._lifecycle_raw and (self._lifecycle_raw is not None or overflow
+                                                or meta or sidecar["lapsed"]
+                                                or sidecar["lapsed_dropped"]):
+            self._replace(side_raw, self.lifecycle_path, "lifecycle")
+            self._lifecycle_raw = side_raw
         self._replace(raw, self.index_path, "index")
 
     def write_record(self, snapshot_id, raw):

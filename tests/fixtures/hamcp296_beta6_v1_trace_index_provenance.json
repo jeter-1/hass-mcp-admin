@@ -1,0 +1,57 @@
+{
+  "boundary": "Bytes are copied verbatim from the exact beta.6 writer and must not be edited.  Current code must read this v1 store unchanged; the shipped verdicts define the HAMCP-296 downgrade boundary: index.json must never hold more than ten watches, and lifecycle state must live in a separate namespace file the shipped reader ignores.",
+  "compatibility_model": "hamcp296-beta6-v1-trace-index-v1",
+  "generated_at": "2026-11-07T00:00:00Z",
+  "generator": "scripts/generate_hamcp296_beta6_v1_trace_index_fixture.py",
+  "generator_command": "python scripts/generate_hamcp296_beta6_v1_trace_index_fixture.py --source-root <exact-beta6-clone> --output-dir tests/fixtures --generated-at 2026-11-07T00:00:00Z",
+  "generator_sha256": "e8cd2e13cd7b4bcd82f9c2fdb5b3278d921bacbe1565c2f521f2ac14491351c0",
+  "record": {
+    "automation_ids": [
+      "fixture_watch_0",
+      "fixture_watch_1",
+      "fixture_watch_2",
+      "fixture_watch_3",
+      "fixture_watch_4",
+      "fixture_watch_5",
+      "fixture_watch_6",
+      "fixture_watch_7",
+      "fixture_watch_8",
+      "fixture_watch_9"
+    ],
+    "files": {
+      "trace-snapshots-v1/.transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trace-snapshots-v1/index.json": "ddb8f4b8b80082aad189df07a3f4093771acb8c7bbd6a8d7ff4e7da3eac15dfa",
+      "trace-snapshots-v1/records/9da175a882ece1e5d74b9c85af30b908.json": "dd4916d1818b36c6a72fb406dd085885b7bc828255dac501b158118359661eb6",
+      "trace-snapshots-v1/records/9f1eb8d032375c471a41dbbf63fce1f3.json": "d4ac747413ee66c8f2cb9cf74dd6ff0a63360d5561b2d77b714c346d40bbf9be"
+    },
+    "snapshot_count": 2,
+    "watch_count": 10,
+    "watch_ids": [
+      "18a864bc2705d9ed11284883b8831821",
+      "e4b7b3c28213ed130f210ba5cd1a783f",
+      "f3051408390d54db237d76137a943616",
+      "42094563bc3a9e24a5005281b801cc4f",
+      "a029e5a029b400fb0616dfcc98a116d2",
+      "a03fb141c9e3b4fdc762251ad5764a84",
+      "86253153ebeb61e759f938c881149bd9",
+      "fcd1f748acaf1df6fa404deffd407d8c",
+      "aeae52328c0787f468f5e97c368500ad",
+      "42e4ad930a6030c3d3529355b7d1b80a"
+    ]
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "af5ec8375401276f910804843c2ddb9180533c77",
+    "contracts_source_sha256": "6d097839291c68f64f827e9ca8734f11ce04a757a441bcf519d6e6fcad0ab8ff",
+    "service_source_sha256": "e275fc9e816efa8b5e5213df01cd80b3d65c2e1169ff744b19e827e63780721b",
+    "store_source_sha256": "68852b5b3a048dd0f69498c0ff943f0bba24de59ffcde990cd17cec797edbc17",
+    "tag": "v2.4.2-beta.6",
+    "writer": "tests.test_hamcp225_trace_snapshots.ServiceCase: capture(a1) then ten watch(action='add') calls on the exact source revision"
+  },
+  "verdicts": {
+    "shipped_load_index_ignores_unknown_namespace_file": true,
+    "shipped_max_watches": 10,
+    "shipped_validate_index_accepts_ten_watches": true,
+    "shipped_validate_index_rejects_eleven_watches": "store_invalid"
+  }
+}
