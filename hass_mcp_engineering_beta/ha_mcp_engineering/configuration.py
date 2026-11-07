@@ -96,18 +96,19 @@ class SeparatorOnlySecretPathError(ValueError):
     """The configured secret path span percent-decodes to nothing but ``/``."""
 
 
-# HAMCP-288 round 4 (Josh decision 2026-11-07). Same rules: the reason names
-# the option and carries no part of the configured value.
+# HAMCP-288 round 4 (Josh decisions 2026-11-07, the second limiting the
+# refusal to percent-encoded spans). Same rules: the reason names the option
+# and carries no part of the configured value.
 ROUTE_ONLY_SECRET_PATH_REASON = (
-    "upstream_dashboard_mcp_url: the secret path decodes to nothing but endpoint "
-    "route words; configure a secret path that still contains other text after "
-    "percent-decoding"
+    "upstream_dashboard_mcp_url: the percent-encoded secret path decodes to "
+    "nothing but endpoint route words; configure a secret path that still "
+    "contains other text after percent-decoding"
 )
 
 
 class RouteOnlySecretPathError(ValueError):
-    """The configured secret path span percent-decodes to nothing but endpoint
-    route words."""
+    """The configured secret path span is percent-encoded and decodes to
+    nothing but endpoint route words."""
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,8 @@ def parse_upstream_dashboard_endpoint(
         raise SeparatorOnlySecretPathError(SEPARATOR_ONLY_SECRET_PATH_REASON)
     if secret_paths.route_only_secret_path(candidate):
         # Refused, not redacted: after decoding only endpoint route words
-        # would remain to anchor the redaction on.
+        # would remain to anchor the redaction on. Only an encoded span; an
+        # unencoded one (``/readonly/mcp``) is accepted as before.
         raise RouteOnlySecretPathError(ROUTE_ONLY_SECRET_PATH_REASON)
 
     generic_segments = {"mcp", "sse"}

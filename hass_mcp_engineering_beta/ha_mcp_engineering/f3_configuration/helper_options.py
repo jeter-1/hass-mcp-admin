@@ -66,6 +66,11 @@ FLOW_ORPHANED = "options_flow_orphaned"
 OPTIONS_SCHEMA_CHANGED = "options_schema_changed"
 EXACT_OPTIONS_VERIFIED = "exact_options_verified"
 STALE = "stale_target_state"
+# HAMCP-104: the bound entry now belongs to another integration domain.  The
+# same refusal as before, reported as the identity change it is.
+IDENTITY_CHANGED = "resource_identity_mismatch"
+# Codes counted as stale rejections, as ``stale_target_state`` always was.
+_STALE_COUNTED_CODES = frozenset({STALE, CONFIG_ENTRY_MISSING, IDENTITY_CHANGED})
 _UNAVAILABLE_CODES = frozenset({"resource_read_unavailable", "permission_failure"})
 
 
@@ -257,7 +262,7 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
         if facts is None:
             return CONFIG_ENTRY_MISSING
         if facts.domain != intent["domain"]:
-            return STALE
+            return IDENTITY_CHANGED
         if facts.state != "loaded" or facts.disabled_by is not None:
             return CONFIG_ENTRY_NOT_LOADED
         if facts.modified_at != intent["modified_at"]:
@@ -309,7 +314,7 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
             )
         code = await self._entry_code(operation, intent)
         if code != "state_matches_plan":
-            if code in {STALE, CONFIG_ENTRY_MISSING}:
+            if code in _STALE_COUNTED_CODES:
                 self._increment("stale_rejections")
             return self._preflight_rejected(
                 operation,
@@ -523,6 +528,10 @@ class HelperOptionsAdapter(ConfigurationOperationAdapter):
             await self._release(key)
             raise
         if code != "state_matches_plan":
+            if code == IDENTITY_CHANGED:
+                # The base dispatch counts ``stale_target_state`` only; this
+                # keeps one count for the refusal that code used to name.
+                self._increment("stale_rejections")
             return await refuse(code)
         return ()
 
