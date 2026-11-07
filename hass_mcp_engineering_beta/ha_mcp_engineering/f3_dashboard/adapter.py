@@ -32,7 +32,7 @@ from .artifact_store import (
     artifact_resulting_configuration,
 )
 from .errors import ArtifactStorageError, RawEvidenceError
-from .identity import operational_identity_from_mapping
+from .identity import build_operational_identity, operational_identity_from_mapping
 from .json_codec import canonical_json_bytes, engineering_sha256
 from .raw_evidence import build_raw_dashboard_evidence
 
@@ -44,6 +44,12 @@ PROVIDER_CONTRACT_MODEL = "ha-mcp-dashboard-full-result-update-v1"
 PROVIDER_OPERATION = "ha_config_set_dashboard"
 OPERATOR_POLICY = "bounded_dashboard_update_non_atomic_v1"
 EVIDENCE_DEADLINE_SECONDS = 120
+# HAMCP-104: the precise preflight codes for a changed dashboard versus
+# provider version, protocol, compatibility or identity drift, and the
+# umbrella code both refusals still carry.
+STALE_DASHBOARD_STATE = "stale_dashboard_state"
+DASHBOARD_PROVIDER_CONTRACT_CHANGED = "dashboard_provider_contract_changed"
+STALE_OR_PROVIDER_CONTRACT_MISMATCH = "stale_or_provider_contract_mismatch"
 _PROVIDER_FAILURE_DIAGNOSTICS = {
     "structured_provider_rejection": "structured_provider_rejection_received",
     "transport_silence_or_response_loss": "transport_silence_or_response_loss",
@@ -412,10 +418,17 @@ class DashboardUpdateAdapter:
                 or current.engineering_config_sha256
                 != operation.current_engineering_sha256
             ):
+                # HAMCP-104: provider drift and a changed dashboard are
+                # reported apart; both refuse exactly as before.  The former
+                # umbrella code stays in the diagnostics and names the
+                # evidence category, so the evidence hash is unchanged.
                 return self._preflight_rejection(
                     operation,
-                    "stale_or_provider_contract_mismatch",
+                    DASHBOARD_PROVIDER_CONTRACT_CHANGED
+                    if self._provider_drift(operation, current)
+                    else STALE_DASHBOARD_STATE,
                     observed=current.engineering_config_sha256,
+                    category=STALE_OR_PROVIDER_CONTRACT_MISMATCH,
                 )
             key = await self.gateway.best_practice_key(
                 expected_provider_authority_evidence_hash=(
@@ -455,12 +468,45 @@ class DashboardUpdateAdapter:
         )
 
     @staticmethod
+    def _provider_drift(
+        operation: PreparedDashboardOperation, current: Any
+    ) -> bool:
+        """True when anything but the dashboard's own configuration moved.
+
+        The operational identity binds the configuration baseline, so a
+        changed dashboard always changes its hash.  Rebinding the current
+        identity to the planned baseline (pure computation, no read) leaves a
+        difference only when the provider, target, or storage identity moved.
+        """
+
+        if (
+            current.upstream_version != operation.upstream_version
+            or current.protocol_version != operation.protocol_version
+            or current.compatibility_entry != operation.compatibility_entry
+        ):
+            return True
+        identity = current.operational_identity
+        if identity.evidence_hash == operation.provider_identity_evidence_hash:
+            return False
+        rebased = build_operational_identity(
+            identity.authority,
+            target_url_path=identity.target_url_path,
+            storage_mode=identity.storage_mode,
+            baseline_upstream_config_hash=operation.current_upstream_config_hash,
+            baseline_engineering_sha256=operation.current_engineering_sha256,
+        )
+        return rebased.evidence_hash != operation.provider_identity_evidence_hash
+
+    @staticmethod
     def _preflight_rejection(
         operation: PreparedDashboardOperation,
         code: str,
         *,
         observed: str | None = None,
+        category: str | None = None,
     ) -> PreflightResult:
+        # ``category``, when given, is a former umbrella code kept beside the
+        # precise one; it names the evidence category as before.
         return PreflightResult(
             eligible=False,
             outcome=NormalizedOperationOutcome.PREFLIGHT_REJECTED,
@@ -469,8 +515,12 @@ class DashboardUpdateAdapter:
             provider_contract=None,
             provider_operation=None,
             provider_arguments_hash=None,
-            evidence_hash=stable_hash({"category": code}),
-            diagnostic_codes=(code, "fallback_none"),
+            evidence_hash=stable_hash({"category": category or code}),
+            diagnostic_codes=(
+                code,
+                *(() if category is None else (category,)),
+                "fallback_none",
+            ),
         )
 
     async def dispatch(
