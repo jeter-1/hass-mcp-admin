@@ -21,6 +21,10 @@ from pydantic import PrivateAttr
 from ..capabilities import replace_dynamic_upstream_capabilities
 from ..clients.mcp import DashboardTransportError
 from ..clients.rest import HomeAssistantRestClient
+from ..clients.ha_mcp_endpoint import (
+    OPERATOR_MESSAGES as HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
+    publish_endpoint_snapshot,
+)
 from ..clients.upstream_read import (
     BeforeDispatchFailure,
     CatalogValidationFailure,
@@ -247,6 +251,10 @@ _FAILURE_CATEGORIES = frozenset(
         "connection_failed",
         "authentication_failed",
         "endpoint_rejected",
+        "upstream_redirect_refused",
+        "upstream_endpoint_rejected",
+        "upstream_catalog_mode_unadmitted",
+        "upstream_catalog_selector_invalid",
         "timeout",
         "protocol_error",
         "invalid_response",
@@ -1191,11 +1199,14 @@ class UpstreamReadGateway:
             self._missing_release_retry_handle.cancel()
             self._missing_release_retry_handle = None
         self._reprobe_event.clear()
+        previous_transport = getattr(self, "_transport", None)
         self._transport = (
             transport
             if endpoint and transport is not None
             else McpReadGatewayTransport(
-                endpoint.url,
+                # HAMCP-319 section 3.3: the transport receives the published
+                # endpoint snapshot of this configuration generation.
+                publish_endpoint_snapshot(endpoint.url),
                 timeout_seconds=settings.ha_timeout_seconds,
                 client_version=_server_version(),
                 retain_session=(
@@ -1205,6 +1216,15 @@ class UpstreamReadGateway:
             if endpoint
             else None
         )
+        if (
+            previous_transport is not None
+            and previous_transport is not self._transport
+        ):
+            # A retained worker of the replaced configuration is closed, never
+            # reused with the earlier endpoint.
+            abandon = getattr(previous_transport, "abandon", None)
+            if callable(abandon):
+                abandon()
         counts = self._policy.classification_counts
         supported_versions = (
             list(self._release_registry.supported_versions)
@@ -5730,6 +5750,7 @@ class UpstreamReadGateway:
                         "Restore the reviewed MCP protocol or roll back "
                         "upstream."
                     ),
+                    **HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
                 }.get(
                     category,
                     "Restore upstream connectivity or authentication.",
@@ -5921,6 +5942,11 @@ class UpstreamReadGateway:
         value["catalog_name_projection_bounded"] = True
         for field in tool_fields:
             value[field] = []
+        # HAMCP-319 section 3.3: fixed operator remediation for the closed
+        # ha-mcp endpoint refusal codes; no URL, host, path or status text.
+        value["operator_remediation"] = HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(
+            value.get("last_failure_category")
+        )
         return value
 
     @staticmethod
@@ -6639,6 +6665,10 @@ def _public_failure(category: str) -> tuple[str, bool]:
         "not_initialized",
         "connection_failed",
         "endpoint_rejected",
+        "upstream_redirect_refused",
+        "upstream_endpoint_rejected",
+        "upstream_catalog_mode_unadmitted",
+        "upstream_catalog_selector_invalid",
         "upstream_version_mismatch",
         "server_identity_mismatch",
         "unsupported_protocol_version",
@@ -6657,6 +6687,10 @@ def _safe_failure_message(
     )
     if domain_message is not None:
         return domain_message
+    # HAMCP-319 §3.3: fixed operator remediation, never interpolated.
+    operator_message = HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(category)
+    if operator_message is not None:
+        return operator_message
     return {
         "argument_validation": "The request does not match the reviewed upstream schema.",
         "invalid_request": "The reviewed upstream provider rejected the request arguments.",

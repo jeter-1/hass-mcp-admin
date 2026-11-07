@@ -262,8 +262,17 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
     so incomplete streams cannot enter its resumption/reconnection path.
     """
 
-    def __init__(self, url, arguments, budget, owner_task, authorize, deadline):
-        self.url, self.arguments, self.budget = httpx.URL(url), arguments, budget
+    def __init__(self, url, arguments, budget, owner_task, authorize, deadline,
+                 binding=None):
+        try:
+            self.url = httpx.URL(url)
+        except (httpx.InvalidURL, TypeError, ValueError):
+            # Refused in _request; the SDK cannot build a request for it.
+            self.url = None
+        self.arguments, self.budget = arguments, budget
+        # The session's shared no-redirect binding (HAMCP-319 §3.3): the 3xx
+        # branch records the refusal through its single latch setter.
+        self.binding = binding
         self.owner_task, self.authorize = owner_task, authorize
         self.deadline = deadline
         self.delegate = httpx.AsyncHTTPTransport(retries=0)
@@ -285,7 +294,7 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
     async def _request(self, request):
         from .mcp import DashboardTransportError, REQUIRED_DASHBOARD_TOOL, MAX_TOOL_CATALOG_PAGES
 
-        if request.url != self.url:
+        if self.url is None or request.url != self.url:
             raise DashboardTransportError("endpoint_rejected", retryable=False)
         if request.method == "GET":
             # Synthetic local refusal: no background subscription or resume I/O.
@@ -332,7 +341,10 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
             if response.status_code in (401, 403):
                 raise DashboardTransportError("authentication_failed", retryable=False)
             if 300 <= response.status_code < 400:
-                raise DashboardTransportError("endpoint_rejected", retryable=False)
+                if self.binding is None:
+                    raise DashboardTransportError("endpoint_rejected", retryable=False)
+                raise self.binding.refuse_redirect(
+                    "cleanup" if request.method == "DELETE" else "operation")
             if response.status_code >= 400:
                 raise DashboardTransportError("upstream_error")
             if response.headers.get("Content-Encoding", "identity").lower() != "identity":
@@ -405,6 +417,9 @@ async def _bounded_mcp_read(transport, arguments, capability_validator, *, autho
                       REQUIRED_DASHBOARD_TOOL, MAX_UPSTREAM_CONTENT_CHARS,
                       MAX_TOOL_CATALOG_PAGES, MAX_TOOL_CATALOG_SIZE,
                       _classified_transport_error, _iter_exceptions)
+    from .ha_mcp_endpoint import (NoRedirectBinding, endpoint_snapshot,
+                                  ha_mcp_no_redirect_client_factory,
+                                  require_selector_agreement)
 
     authorize()
     seconds = min(budget.remaining(), transport._timeout.total_seconds())
@@ -443,41 +458,61 @@ async def _bounded_mcp_read(transport, arguments, capability_validator, *, autho
         return encoded
 
     started = time.perf_counter()
-    fence = _AnalysisMcpHttp(transport._url, arguments, budget,
-                            asyncio.current_task(), authorize, deadline)
-    def factory(headers=None, timeout=None, auth=None):
-        if auth is not None:
-            raise DashboardTransportError("prohibited_argument", retryable=False)
-        return httpx.AsyncClient(transport=fence, headers=headers, timeout=timeout,
-                                trust_env=False, follow_redirects=False)
+    snapshot = endpoint_snapshot(getattr(transport, "_snapshot", None) or transport._url)
+    # One binding per analysis session, built before the fence (§3.3).
+    binding = NoRedirectBinding(snapshot)
+    fence = _AnalysisMcpHttp(snapshot.url, arguments, budget,
+                            asyncio.current_task(), authorize, deadline, binding)
+    factory = ha_mcp_no_redirect_client_factory(
+        binding, transport=fence, trust_env=False, refuse_auth=True)
+
+    async def session_body(session):
+        initialized = await session.initialize()
+        require_selector_agreement(str(initialized.serverInfo.version), snapshot, binding)
+        tools = await catalog(session)
+        handshake = McpDashboardHandshake(str(initialized.protocolVersion),
+            str(initialized.serverInfo.name), str(initialized.serverInfo.version),
+            tools, round((time.perf_counter() - started) * 1000, 3))
+        admission = capability_validator(handshake)
+        if inspect.isawaitable(admission):
+            await admission
+        admit_call()
+        call_started = time.perf_counter()
+        result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,
+            read_timeout_seconds=timedelta(seconds=seconds))
+        encoded = await c.worker(dump_result, result)
+        return McpDashboardRead(handshake, encoded,
+            round((time.perf_counter() - call_started) * 1000, 3))
+
+    completed = False
+    result = None
     try:
         async with asyncio.timeout_at(deadline):
-            async with streamablehttp_client(transport._url, timeout=seconds,
+            async with streamablehttp_client(snapshot.url, timeout=seconds,
                     sse_read_timeout=seconds, httpx_client_factory=factory,
                     terminate_on_close=True) as (read, write, _):
                 async with ReviewedProtocolClientSession(read, write,
                         read_timeout_seconds=timedelta(seconds=seconds),
                         client_info=transport._client_info) as session:
-                    initialized = await session.initialize()
-                    tools = await catalog(session)
-                    handshake = McpDashboardHandshake(str(initialized.protocolVersion),
-                        str(initialized.serverInfo.name), str(initialized.serverInfo.version),
-                        tools, round((time.perf_counter() - started) * 1000, 3))
-                    admission = capability_validator(handshake)
-                    if inspect.isawaitable(admission):
-                        await admission
-                    admit_call()
-                    call_started = time.perf_counter()
-                    result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,
-                        read_timeout_seconds=timedelta(seconds=seconds))
-                    encoded = await c.worker(dump_result, result)
-                    result = McpDashboardRead(handshake, encoded,
-                        round((time.perf_counter() - call_started) * 1000, 3))
+                    result = await binding.run_until_latched(session_body(session))
+                    completed = True
+            # The latch is consulted before the fence's overwritable failure.
+            if binding.latched:
+                raise binding.latched_error()
             if fence.failure is not None:
                 raise fence.failure
+            if not completed:
+                # The SDK scopes exited normally without the step's outcome.
+                raise binding.unfinished_error()
             if time.monotonic() >= deadline:
                 raise DashboardTransportError("timeout")
     except BaseException as error:
+        own_cancel = (isinstance(error, asyncio.CancelledError)
+                      and asyncio.current_task() is not None
+                      and asyncio.current_task().cancelling())
+        if binding.latched and not own_cancel:
+            raise DashboardTransportError("upstream_redirect_refused",
+                                          retryable=False) from None
         # SDK task groups must not demote an authority/limit failure into a
         # transient provider error. All exposed reasons remain fixed.
         for leaf in _iter_exceptions(error):

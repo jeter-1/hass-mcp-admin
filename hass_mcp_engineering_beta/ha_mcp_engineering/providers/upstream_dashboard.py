@@ -30,6 +30,10 @@ from ..clients.mcp import (
     validate_dashboard_read_arguments,
     validate_dashboard_write_arguments,
 )
+from ..clients.ha_mcp_endpoint import (
+    ENDPOINT_REFUSAL_CODES as HA_MCP_ENDPOINT_REFUSAL_CODES,
+    OPERATOR_MESSAGES as HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
+)
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..models.responses import SuccessResponse, _compact_json
@@ -127,6 +131,10 @@ FAILURE_CATEGORIES = (
     "not_configured",
     "authentication_failed",
     "endpoint_rejected",
+    "upstream_redirect_refused",
+    "upstream_endpoint_rejected",
+    "upstream_catalog_mode_unadmitted",
+    "upstream_catalog_selector_invalid",
     "connection_failed",
     "timeout",
     "protocol_error",
@@ -195,6 +203,17 @@ _ERROR_CODES = {
     "not_configured": ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
     "authentication_failed": ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED,
     "endpoint_rejected": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    # HAMCP-319 section 3.3: the closed ha-mcp endpoint refusal codes keep the
+    # existing public error code; the category and fixed operator remediation
+    # travel in the bounded details.
+    "upstream_redirect_refused": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    "upstream_endpoint_rejected": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    "upstream_catalog_mode_unadmitted": (
+        ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED
+    ),
+    "upstream_catalog_selector_invalid": (
+        ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED
+    ),
     "connection_failed": ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
     "timeout": ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
     "protocol_error": ErrorCode.UPSTREAM_DASHBOARD_PROTOCOL_ERROR,
@@ -1857,7 +1876,7 @@ class UpstreamDashboardProvider:
             self._state.session_state = "failed"
             if category == "timeout":
                 self._state.timeout_count += 1
-            if category in {
+            if category in HA_MCP_ENDPOINT_REFUSAL_CODES or category in {
                 "authentication_failed",
                 "endpoint_rejected",
                 "connection_failed",
@@ -1921,6 +1940,10 @@ class UpstreamDashboardProvider:
         }
         if details:
             safe_details.update(details)
+        if category in HA_MCP_ENDPOINT_OPERATOR_MESSAGES:
+            safe_details["operator_remediation"] = (
+                HA_MCP_ENDPOINT_OPERATOR_MESSAGES[category]
+            )
         raise DashboardProviderError(_ERROR_CODES[category], details=safe_details)
 
     def health_snapshot(self) -> dict[str, Any]:
@@ -1959,6 +1982,9 @@ class UpstreamDashboardProvider:
                 "last_successful_call_at": state.last_successful_dashboard_call_timestamp,
                 "last_failed_call_at": state.last_failed_call_at,
                 "last_failure_category": state.last_failure_category,
+                "operator_remediation": HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(
+                    state.last_failure_category
+                ),
                 "capability_status": state.capability_status,
                 "upstream_server_name": state.upstream_server_name,
                 "upstream_server_version": state.upstream_server_version,

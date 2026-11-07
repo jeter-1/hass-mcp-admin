@@ -65,10 +65,14 @@ _RECOGNIZED_TYPED_ERROR_CATEGORIES = frozenset(
         "unsupported_trust_profile",
         "upstream_attestation_missing",
         "upstream_attestation_revoked",
+        "upstream_catalog_mode_unadmitted",
+        "upstream_catalog_selector_invalid",
         "upstream_contract_family_unknown",
+        "upstream_endpoint_rejected",
         "upstream_error",
         "upstream_input_contract_mismatch",
         "upstream_output_contract_mismatch",
+        "upstream_redirect_refused",
         "upstream_registry_expired",
         "upstream_registry_invalid_signature",
         "upstream_registry_replay_conflict",
@@ -115,7 +119,14 @@ _TYPED_ERROR_PRECEDENCE = {
                 "upstream_registry_unavailable",
                 "upstream_version_mismatch",
             },
-            {"authentication_failed", "endpoint_rejected"},
+            {
+                "authentication_failed",
+                "endpoint_rejected",
+                "upstream_catalog_mode_unadmitted",
+                "upstream_catalog_selector_invalid",
+                "upstream_endpoint_rejected",
+                "upstream_redirect_refused",
+            },
             {
                 "dashboard_not_found",
                 "invalid_response",
@@ -212,8 +223,12 @@ class McpDashboardTransport:
     reconnects after an upstream restart.
     """
 
-    def __init__(self, url: str, *, timeout_seconds: float, client_version: str):
-        self._url = url
+    def __init__(self, url, *, timeout_seconds: float, client_version: str):
+        from .ha_mcp_endpoint import endpoint_snapshot
+
+        # An EndpointSnapshot (or, for direct construction, a str).
+        self._snapshot = endpoint_snapshot(url)
+        self._url = self._snapshot.url
         # Preserve the reviewed Engineering minimum timeout even though the
         # pinned SDK handles fractional timedelta values correctly.
         self._timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
@@ -326,13 +341,22 @@ class McpDashboardTransport:
         arguments: dict[str, Any] | None,
         capability_validator: CapabilityValidator | None,
     ) -> McpDashboardHandshake | McpDashboardRead:
+        from .ha_mcp_endpoint import (
+            NoRedirectBinding,
+            ha_mcp_no_redirect_client_factory,
+        )
+
         started = time.perf_counter()
+        binding = NoRedirectBinding(self._snapshot)
+        completed = False
+        result: McpDashboardHandshake | McpDashboardRead | None = None
         try:
             async with streamablehttp_client(
                 self._url,
                 timeout=self._timeout,
                 sse_read_timeout=self._timeout,
                 terminate_on_close=True,
+                httpx_client_factory=ha_mcp_no_redirect_client_factory(binding),
             ) as (read_stream, write_stream, _get_session_id):
                 async with ClientSession(
                     read_stream,
@@ -340,67 +364,107 @@ class McpDashboardTransport:
                     read_timeout_seconds=self._timeout,
                     client_info=self._client_info,
                 ) as session:
-                    initialize = await session.initialize()
-                    tools = await self._list_all_tools(session)
-                    handshake = McpDashboardHandshake(
-                        protocol_version=str(initialize.protocolVersion),
-                        server_name=str(initialize.serverInfo.name),
-                        server_version=str(initialize.serverInfo.version),
-                        tools=tuple(tools),
-                        connection_latency_ms=round(
-                            (time.perf_counter() - started) * 1000, 3
-                        ),
-                    )
-                    if arguments is None:
-                        return handshake
-                    if tool_name is None:
-                        raise DashboardTransportError("internal_error")
-                    capability_validator(handshake)
-                    if (
-                        tool_name == REQUIRED_BEST_PRACTICES_TOOL
-                        and handshake.server_version == "8.6.0"
-                    ):
-                        # The validated exact 8.6 guide dropped the skill selector.
-                        # Keep this one internal read fixed; caller data cannot
-                        # select another file or manufacture an acknowledgement.
-                        if arguments != {
-                            "skill": "home-assistant-best-practices",
-                            "file": "references/dashboard-guide.md",
-                        }:
-                            raise DashboardTransportError("prohibited_argument")
-                        arguments = {"file": "references/dashboard-guide.md"}
-                    telemetry = current_telemetry()
-                    if (
-                        telemetry is not None
-                        and not telemetry.authorize_core_dispatch()
-                    ):
-                        raise DashboardTransportError(
-                            "connection_failed", tool_call_attempted=False
+                    result = await binding.run_until_latched(
+                        self._session_body(
+                            session,
+                            binding,
+                            started=started,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            capability_validator=capability_validator,
                         )
-                    call_started = time.perf_counter()
-                    call_result = await session.call_tool(
-                        tool_name,
-                        arguments,
-                        read_timeout_seconds=self._timeout,
                     )
-                    encoded = call_result.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    )
-                    if len(json.dumps(encoded, default=str)) > MAX_UPSTREAM_CONTENT_CHARS:
-                        raise DashboardTransportError("response_too_large")
-                    return McpDashboardRead(
-                        handshake=handshake,
-                        call_result=encoded,
-                        tool_call_latency_ms=round(
-                            (time.perf_counter() - call_started) * 1000, 3
-                        ),
-                    )
-        except DashboardTransportError:
-            raise
+                    completed = True
+            if not completed or result is None:
+                # The SDK scopes exited normally without the step's outcome.
+                raise binding.unfinished_error()
+            return result
         except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+            if binding.latched:
+                raise binding.latched_error() from None
+            if isinstance(exc, DashboardTransportError):
+                raise
             if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
                 raise
             raise _classified_transport_error(exc) from None
+
+    async def _session_body(
+        self,
+        session: ClientSession,
+        binding,
+        *,
+        started: float,
+        tool_name: str | None,
+        arguments: dict[str, Any] | None,
+        capability_validator: CapabilityValidator | None,
+    ) -> McpDashboardHandshake | McpDashboardRead:
+        from .ha_mcp_endpoint import require_selector_agreement
+
+        initialize = await session.initialize()
+        # Admission before any list page (design §3.3).
+        require_selector_agreement(
+            str(initialize.serverInfo.version),
+            self._snapshot,
+            binding,
+        )
+        tools = await self._list_all_tools(session)
+        handshake = McpDashboardHandshake(
+            protocol_version=str(initialize.protocolVersion),
+            server_name=str(initialize.serverInfo.name),
+            server_version=str(initialize.serverInfo.version),
+            tools=tuple(tools),
+            connection_latency_ms=round(
+                (time.perf_counter() - started) * 1000, 3
+            ),
+        )
+        if arguments is None:
+            return handshake
+        if tool_name is None:
+            raise DashboardTransportError("internal_error")
+        capability_validator(handshake)
+        if (
+            tool_name == REQUIRED_BEST_PRACTICES_TOOL
+            and handshake.server_version == "8.6.0"
+        ):
+            # The validated exact 8.6 guide dropped the skill selector.
+            # Keep this one internal read fixed; caller data cannot
+            # select another file or manufacture an acknowledgement.
+            if arguments != {
+                "skill": "home-assistant-best-practices",
+                "file": "references/dashboard-guide.md",
+            }:
+                raise DashboardTransportError("prohibited_argument")
+            arguments = {"file": "references/dashboard-guide.md"}
+        telemetry = current_telemetry()
+        if (
+            telemetry is not None
+            and not telemetry.authorize_core_dispatch()
+        ):
+            raise DashboardTransportError(
+                "connection_failed", tool_call_attempted=False
+            )
+        call_started = time.perf_counter()
+        call_result = await session.call_tool(
+            tool_name,
+            arguments,
+            read_timeout_seconds=self._timeout,
+        )
+        encoded = call_result.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+        if len(json.dumps(encoded, default=str)) > MAX_UPSTREAM_CONTENT_CHARS:
+            raise DashboardTransportError("response_too_large")
+        return McpDashboardRead(
+            handshake=handshake,
+            call_result=encoded,
+            tool_call_latency_ms=round(
+                (time.perf_counter() - call_started) * 1000, 3
+            ),
+        )
 
     async def _list_all_tools(self, session: ClientSession) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
@@ -538,7 +602,11 @@ def _recognized_typed_error_details(
 
 def _classified_transport_error(
     exc: BaseException,
+    binding: Any = None,
 ) -> DashboardTransportError:
+    # A set refusal latch wins over every exception shape (design §3.3).
+    if binding is not None and getattr(binding, "latched", False):
+        return binding.latched_error()
     leaves = tuple(_iter_exceptions(exc))
     typed = _recognized_typed_error_details(leaves)
     if typed is not None:
