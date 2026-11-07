@@ -225,11 +225,12 @@ reads with caller-bound cursors. `set_automation_trace_watch` (`add`,
 `remove`, `list`, and since HAMCP-296 `renew`) is core-independent local
 state: no plan or approval, an audited add, remove, renew, reinstate or
 displacement, at most 20 watches (HAMCP-296; `index.json` keeps the v1
-bound of 10 and the rest live in the `watch-lifecycle.json` sidecar; each
-watch keeps at most 20 snapshots inside a 400-snapshot, 100 MiB watch
-reservation of the 500-snapshot, 128 MiB store, and snapshot entries past
-the v1 `index.json` bound of 200 and 32 MiB live in the
-`snapshot-overflow.json` sidecar); the separately gated poller
+bound of 10; each watch keeps at most 20 snapshots inside a 400-snapshot,
+100 MiB watch reservation of the 500-snapshot, 128 MiB store; watches
+11-20, lifecycle rows and snapshot entries past the v1 `index.json` bound
+of 200 and 32 MiB live in one sidecar state kept in two slot files bound
+to the exact `index.json` bytes, so both commit as one transaction); the
+separately gated poller
 issues the same two read commands every 30 seconds. `get_automation_trace`
 keeps its input schema and now passes the shared trace sanitizer, which
 applies the shared `credentials.screen` to every string and key first. The

@@ -40,6 +40,9 @@ AUTHORITY = (7, VERSION)
 FULL = c.SNAPSHOT_BYTES
 ENDED_WATCH = "b" * 32
 E2_DEPTH = 20  # Decision E2 (2026-10-26), kept by Josh on 2026-11-07: 20 per watch.
+# The shipped v1 index entry bound (af5ec837 contracts.py:20 MAX_SNAPSHOTS),
+# a literal so the regressions also run against the reviewed head afd4acce.
+V1_SNAPSHOTS = 200
 
 
 class LifecycleCase(ServiceCase):
@@ -134,7 +137,7 @@ class LifecycleCase(ServiceCase):
 
         raw = self.index()
         store_module.validate_index(raw)
-        self.assertLessEqual(len(raw["snapshots"]), c.V1_INDEX_MAX_SNAPSHOTS)
+        self.assertLessEqual(len(raw["snapshots"]), V1_SNAPSHOTS)
         self.assertLessEqual(sum(e["bytes"] for e in raw["snapshots"]), c.V1_INDEX_MAX_BYTES)
         self.assertLessEqual(len(raw["watches"]), c.V1_INDEX_MAX_WATCHES)
         merged = self.service.store.load_index()["snapshots"]
@@ -418,7 +421,7 @@ class WorstCaseSizeTests(unittest.TestCase):
     def test_a_full_v1_index_fits_index_bytes(self):
         index = {"model": c.MODEL,
                  # Six-digit byte counts inside the 32 MiB v1 bound.
-                 "snapshots": [self.snapshot(i, 100_000) for i in range(c.V1_INDEX_MAX_SNAPSHOTS)],
+                 "snapshots": [self.snapshot(i, 100_000) for i in range(V1_SNAPSHOTS)],
                  "watches": [self.watch(i) for i in range(c.V1_INDEX_MAX_WATCHES)],
                  "quarantine": {"entries": [self.stub(i) for i in range(c.QUARANTINE_MAX)],
                                 "dropped": 10**15}}
@@ -485,7 +488,7 @@ class BudgetTests(LifecycleCase):
         # Codex review F1: 20 retained captures; one more evicts exactly one
         # and keeps 20, and placing entries in index.json or the sidecar
         # never removes a retained record.
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS - 5, origin="manual", start=1000)
+        self.seed(V1_SNAPSHOTS - 5, origin="manual", start=1000)
         await self.add("a1", mode="executed")
         await self.service.poll_once(authority=AUTHORITY)  # baseline
         await self.poll_rounds(E2_DEPTH // c.MAX_CAPTURES)
@@ -516,7 +519,7 @@ class BudgetTests(LifecycleCase):
         self.assertEqual(held["watches"][0]["evicted_count"], 1)
         self.assertEqual(self.record_ids(), {e["snapshot_id"] for e in held["snapshots"]})
         self.assertEqual(sum(e["origin"] == "manual" for e in held["snapshots"]),
-                         c.V1_INDEX_MAX_SNAPSHOTS - 5)
+                         V1_SNAPSHOTS - 5)
 
     async def test_twenty_full_watches_fill_the_reservation_and_leave_manual_room(self):
         await self.fill(mode="executed")
@@ -526,9 +529,9 @@ class BudgetTests(LifecycleCase):
             self.assert_v1_bounds()
         self.assertEqual(len(self.watch_origin()), c.WATCH_STORE_SNAPSHOTS)
         raw, merged = self.assert_v1_bounds()
-        self.assertEqual(len(raw["snapshots"]), c.V1_INDEX_MAX_SNAPSHOTS)
+        self.assertEqual(len(raw["snapshots"]), V1_SNAPSHOTS)
         self.assertEqual(len(self.overflow()["snapshots"]),
-                         c.WATCH_STORE_SNAPSHOTS - c.V1_INDEX_MAX_SNAPSHOTS)
+                         c.WATCH_STORE_SNAPSHOTS - V1_SNAPSHOTS)
         # An ended watch's snapshots still count: a new watch's capture past
         # the reservation is store_full, and nothing is evicted for it.
         await self.service.watch(action="remove", automation_id="w0")
@@ -620,16 +623,16 @@ class BudgetTests(LifecycleCase):
 
 class OverflowStoreTests(LifecycleCase):
     async def test_index_json_keeps_manual_first_then_newest_watch_captures(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 10)  # watch captures, newest first by index
+        self.seed(V1_SNAPSHOTS + 10)  # watch captures, newest first by index
         self.seed(20, origin="manual", start=1000, age_ms=10 * HOUR * 1000)
         raw, merged = self.assert_v1_bounds()
-        self.assertEqual(len(raw["snapshots"]), c.V1_INDEX_MAX_SNAPSHOTS)
-        self.assertEqual(len(merged), c.V1_INDEX_MAX_SNAPSHOTS + 30)
+        self.assertEqual(len(raw["snapshots"]), V1_SNAPSHOTS)
+        self.assertEqual(len(merged), V1_SNAPSHOTS + 30)
         self.assertEqual(sum(e["origin"] == "manual" for e in raw["snapshots"]), 20)
         spilled = {e["run_id"] for e in self.overflow()["snapshots"]}
         self.assertEqual(spilled, {f"seed-{i}" for i in range(180, 210)})
         listed, _ = await self.service.list(limit=50)
-        self.assertEqual(listed["store"]["snapshots"], c.V1_INDEX_MAX_SNAPSHOTS + 30)
+        self.assertEqual(listed["store"]["snapshots"], V1_SNAPSHOTS + 30)
 
     async def test_index_json_keeps_the_v1_byte_bound(self):
         self.seed(150, size=FULL)
@@ -658,18 +661,18 @@ class OverflowStoreTests(LifecycleCase):
 
     async def test_the_retention_sweep_promotes_overflow_entries(self):
         self.seed(30, origin="manual", age_ms=91 * 24 * HOUR * 1000, start=1000)
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS)
+        self.seed(V1_SNAPSHOTS)
         self.assertEqual(len(self.overflow()["snapshots"]), 30)
         listed, _ = await self.service.list()
-        self.assertEqual(listed["store"]["snapshots"], c.V1_INDEX_MAX_SNAPSHOTS)
+        self.assertEqual(listed["store"]["snapshots"], V1_SNAPSHOTS)
         raw, merged = self.assert_v1_bounds()
-        self.assertEqual(len(raw["snapshots"]), c.V1_INDEX_MAX_SNAPSHOTS)
+        self.assertEqual(len(raw["snapshots"]), V1_SNAPSHOTS)
         self.assertFalse(any(e["origin"] == "manual" for e in merged))
         records = {p.name[:-5] for p in (self.root / c.MODEL / "records").iterdir()}
         self.assertEqual(records, {e["snapshot_id"] for e in merged})
 
     async def test_a_failed_overflow_write_changes_nothing(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 5)
+        self.seed(V1_SNAPSHOTS + 5)
         before = self.store_files()
         self.core.add("m1", minute=1)
 
@@ -683,7 +686,7 @@ class OverflowStoreTests(LifecycleCase):
         self.assertEqual(self.store_files(), before)
 
     async def test_a_failed_index_write_after_the_sidecar_loses_no_entry(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 5)
+        self.seed(V1_SNAPSHOTS + 5)
         index_before = (self.root / c.MODEL / "index.json").read_bytes()
         held = {e["snapshot_id"] for e in self.service.store.load_index()["snapshots"]}
         self.core.add("m1", minute=1)
@@ -709,7 +712,7 @@ class OverflowStoreTests(LifecycleCase):
         self.assertEqual(len(merged), len(held) + 1)
 
     async def test_a_damaged_sidecar_slot_resets_and_never_blocks(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 5)
+        self.seed(V1_SNAPSHOTS + 5)
         path, held = self.committed_slot()
         good = path.read_bytes()
         index = self.index()
@@ -744,7 +747,7 @@ class OverflowStoreTests(LifecycleCase):
                 value, _ = await service.watch(action="list")
                 self.assertEqual(value["lifecycle"]["lifecycle_store"], "reset")
                 listed, _ = await service.list()
-                self.assertEqual(listed["store"]["snapshots"], c.V1_INDEX_MAX_SNAPSHOTS)
+                self.assertEqual(listed["store"]["snapshots"], V1_SNAPSHOTS)
         self.assertEqual((self.root / "elsewhere.json").read_bytes(), good)
         # The disclosed loss: the reset entries' record files are orphan-swept.
         records = {p.name[:-5] for p in (self.root / c.MODEL / "records").iterdir()}
@@ -772,18 +775,18 @@ class OverflowStoreTests(LifecycleCase):
         self.assert_v1_bounds()
 
     async def test_sidecar_entries_without_a_record_file_are_dropped(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 5)
+        self.seed(V1_SNAPSHOTS + 5)
         gone = self.overflow()["snapshots"][0]["snapshot_id"]
         (self.root / c.MODEL / "records" / (gone + ".json")).unlink()
         listed, _ = await self.service.list()
-        self.assertEqual(listed["store"]["snapshots"], c.V1_INDEX_MAX_SNAPSHOTS + 4)
+        self.assertEqual(listed["store"]["snapshots"], V1_SNAPSHOTS + 4)
         # Rewritten without the dropped entry at that maintenance commit.
         self.assertNotIn(gone, {e["snapshot_id"] for e in self.overflow()["snapshots"]})
         self.assertEqual(self.service._lifecycle(self.service.store.load_index(),
                                                  0)["lifecycle_store"], "ok")
 
     async def test_the_v1_index_wins_over_a_sidecar_copy(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS + 1)
+        self.seed(V1_SNAPSHOTS + 1)
         index = self.index()
         spill = self.overflow()
         twin = dict(index["snapshots"][0], completeness="partial")
@@ -792,7 +795,7 @@ class OverflowStoreTests(LifecycleCase):
         (self.root / c.MODEL / "records" / ("f" * 32 + ".json")).write_bytes(b"{}")
         self.write_committed(spill)
         merged = self.service.store.load_index()["snapshots"]
-        self.assertEqual(len(merged), c.V1_INDEX_MAX_SNAPSHOTS + 1)
+        self.assertEqual(len(merged), V1_SNAPSHOTS + 1)
         first = next(e for e in merged if e["snapshot_id"] == twin["snapshot_id"])
         self.assertEqual(first["completeness"], "complete")
         self.assertNotIn("f" * 32, {e["snapshot_id"] for e in merged})
@@ -864,7 +867,7 @@ class CoherentCommitTests(LifecycleCase):
                              for w in self.service.store.load_index()["watches"]])
 
     async def ten_and_overflow_with_spill(self):
-        self.seed(c.V1_INDEX_MAX_SNAPSHOTS, origin="manual", start=1000)
+        self.seed(V1_SNAPSHOTS, origin="manual", start=1000)
         await self.ten_and_overflow()
 
     async def ten(self):
@@ -1087,7 +1090,7 @@ class StoreTests(LifecycleCase):
 
     def test_the_shipped_snapshot_bounds_and_orphan_sweep(self):
         verdicts = json.loads(BETA6_PROVENANCE.read_text())["verdicts"]
-        self.assertEqual(verdicts["shipped_max_snapshots"], c.V1_INDEX_MAX_SNAPSHOTS)
+        self.assertEqual(verdicts["shipped_max_snapshots"], V1_SNAPSHOTS)
         self.assertEqual(verdicts["shipped_store_bytes"], c.V1_INDEX_MAX_BYTES)
         self.assertEqual(verdicts["shipped_index_bytes"], c.INDEX_BYTES)
         for key in ("shipped_validate_index_accepts_max_snapshots",
