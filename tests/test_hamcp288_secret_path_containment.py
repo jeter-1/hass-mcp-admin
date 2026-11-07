@@ -876,22 +876,19 @@ class GrammarContainmentTests(unittest.TestCase):
     def test_every_accepted_custom_path_is_configured_and_contained_on_every_surface(self):
         cases = grammar_cases()
         # Not vacuous: the sweep reaches every body and the edge values the
-        # review named (``/%41%42%43/mcp``; ``/readonly/mcp`` is refused since
-        # round 4, below, and its exact-case variant stays accepted).
+        # review named (``/readonly/mcp``, ``/%41%42%43/mcp``). Unencoded
+        # route-word paths stay accepted (Josh decision 2026-11-07 limits the
+        # route-word refusal to percent-encoded spans).
         self.assertGreaterEqual(len(cases), 400)
         labels = {label for label, _value, _forbidden in cases}
-        for required in ("selector_word_upper/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
+        for required in ("selector_word_readonly/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
                          "encoded_short_decoding/[path_only]", "encoded_one_character/mcp[path_only]",
                          "encoded_slashes_short/[path_only]", "encoded_seven_as_written/mcp[query]",
-                         "selector_word_readonly/[path_only]", "seven_character_body/[query]",
-                         "seven_character_body/mcp[short_userinfo]", "short_segments_only/[short_query]"):
+                         "selector_route_as_path/[path_only]", "seven_character_body/[query]",
+                         "seven_character_body/mcp[short_userinfo]", "short_segments_only/[short_query]",
+                         "selector_word_upper/mcp[path_only]", "selector_catalog_as_path/mcp[query]",
+                         "selector_full_chain_as_path/sse[userinfo]"):
             self.assertIn(required, labels)
-        # Round 4 (Josh decision 2026-11-07): a secret path that is nothing
-        # but endpoint route words is refused, not configured
-        # (``RouteOnlySecretPathTests``).
-        for refused in ("selector_word_readonly/mcp[path_only]", "selector_route_as_path/[path_only]",
-                        "selector_catalog_as_path/mcp[query]", "selector_full_chain_as_path/sse[userinfo]"):
-            self.assertNotIn(refused, labels)
         for label, value, forbidden in cases:
             with self.subTest(case=label):
                 SP.configure(value)
@@ -923,7 +920,7 @@ class GrammarContainmentTests(unittest.TestCase):
                     self.assertIn("local-ha-mcp:9583", SP.redact(line))
 
     def test_the_process_streams_contain_each_edge_value(self):
-        for name in ("selector_word_upper", "selector_before_secret", "encoded_short_decoding",
+        for name in ("selector_word_readonly", "selector_route_as_path", "encoded_short_decoding",
                      "default_shape", "unicode_encoded"):
             body = secret_path_bodies()[name]
             value = f"http://local-ha-mcp:9583{body}" + ("" if body.endswith("/mcp") else "/mcp")
@@ -943,14 +940,14 @@ class GrammarContainmentTests(unittest.TestCase):
                 self.assertIn("retry http://local-ha-mcp:9583", out.getvalue())
 
     def test_selector_words_are_credentials_only_in_credential_position(self):
-        # The review's two values: the encoded one keeps its fragments; the
-        # one made only of endpoint route words is refused since round 4
-        # (Josh decision 2026-11-07) and, configured anyway, installs no
-        # route as an anchor, while its exact-case variant keeps a fragment.
+        # The review's two accepted values: each keeps a fragment. The
+        # unencoded route-word path stays accepted (Josh decision 2026-11-07
+        # limits the route-word refusal to percent-encoded spans), and so
+        # does its exact-case variant.
+        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/readonly/mcp"), ("readonly",))
         self.assertEqual(SP.derive_fragments("http://synthetic.invalid/%41%42%43/mcp"),
                          ("%41%42%43", "/ABC/mcp"))
-        self.assertFalse(accepted("http://synthetic.invalid/readonly/mcp"))
-        self.assertEqual(SP.derive_fragments("http://synthetic.invalid/readonly/mcp"), ())
+        self.assertTrue(accepted("http://synthetic.invalid/readonly/mcp"))
         self.assertEqual(SP.derive_fragments("http://synthetic.invalid/READONLY/mcp"), ("READONLY",))
         token = canary()
         # After a secret path, every supported endpoint suffix is not secret.
@@ -967,10 +964,14 @@ class GrammarContainmentTests(unittest.TestCase):
         # A selector word that IS the configured credential is redacted
         # wherever it appears (a disclosed over-redaction of that one word,
         # never a disabled guard), while other selector text stays.
+        SP.configure("http://synthetic.invalid/readonly/mcp")
+        self.assertEqual(SP.redact("mode readonly"), "mode " + TOKEN)
+        self.assertEqual(SP.redact("catalog/full and /mcp"), "catalog/full and /mcp")
+        self.assertEqual(SP.redact("http://synthetic.invalid/readonly/mcp"),
+                         "http://synthetic.invalid/" + TOKEN + "/mcp")
         SP.configure("http://synthetic.invalid/READONLY/mcp")
         self.assertEqual(SP.redact("mode READONLY"), "mode " + TOKEN)
         self.assertEqual(SP.redact("mode readonly"), "mode readonly")
-        self.assertEqual(SP.redact("catalog/full and /mcp"), "catalog/full and /mcp")
         self.assertEqual(SP.redact("http://synthetic.invalid/READONLY/mcp"),
                          "http://synthetic.invalid/" + TOKEN + "/mcp")
         # The complete decoded path of a percent-encoded secret path is
@@ -1389,21 +1390,57 @@ class SeparatorOnlySecretPathTests(unittest.TestCase):
 
 
 class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
-    """Round 4 follow-up (Josh decision 2026-11-07): a secret path span that,
+    """Round 4 follow-up (Josh decisions 2026-11-07, the second limiting the
+    first to percent-encoded spans): a percent-encoded secret path span that,
     after percent-decoding once and dropping ``/`` separators, holds nothing
     but endpoint route words (``/%2F%2Fmcp`` or ``/%2F%2F%2F/%6Dcp`` before
     ``/mcp``) is refused the same way, and configured anyway it never makes
     an endpoint route an anchor. A route word is a word of the code's own
     endpoint suffix set (``SP.SELECTOR_SUFFIXES`` in exact case,
-    ``SP.ROUTE_SEGMENTS`` without case). Runs every inherited test with these
-    bodies; the positive controls are its own."""
+    ``SP.ROUTE_SEGMENTS`` without case). An unencoded route-word span
+    (``/readonly/mcp``) is accepted and behaves exactly as before round 4.
+    Runs every inherited test with the encoded bodies; the positive controls
+    are its own."""
 
     REASON = "ROUTE_ONLY_SECRET_PATH_REASON"
     ERROR = "RouteOnlySecretPathError"
     PREDICATE = "route_only_secret_path"
     STARTUP_BODY = "/%2F%2Fmcp"
-    MINIMUM_CASES = 500
+    MINIMUM_CASES = 600
     ROUTE_ENDPOINTS = ("/mcp", "/sse", "/MCP")
+    # Behavior pinned from d4e37618 (identical on 2524b2f7): acceptance,
+    # ``_derive`` and the route text each configuration redacts. ``GET /mcp``
+    # and ``POST /sse 200`` are never redacted by any of them.
+    UNENCODED = {
+        "/readonly/mcp": (True, (("readonly",), ("readonly",), ()),
+                          {"mode readonly": "mode " + TOKEN, "/readonly/catalog/full": f"/{TOKEN}/catalog/full"}),
+        "/readonly/sse": (True, (("readonly",), ("readonly",), ()),
+                          {"mode readonly": "mode " + TOKEN, "/readonly/catalog/full": f"/{TOKEN}/catalog/full"}),
+        "/readonly/MCP": (True, (("readonly",), ("readonly",), ()),
+                          {"mode readonly": "mode " + TOKEN, "/readonly/catalog/full": f"/{TOKEN}/catalog/full"}),
+        "/readonly/readonly": (True, (("readonly",), ("readonly",), ()),
+                               {"mode readonly": "mode " + TOKEN,
+                                "/readonly/catalog/full": f"/{TOKEN}/catalog/full"}),
+        "/readonly/catalog/mcp": (True, (("readonly/catalog", "readonly"), ("readonly/catalog", "readonly"), ()),
+                                  {"mode readonly": "mode " + TOKEN, "/readonly/catalog/full": f"/{TOKEN}/full"}),
+        "/mcp/mcp?token=SYNTHtok12345678": (True, (("SYNTHtok12345678", "/mcp/mcp"), ("SYNTHtok12345678",), ()),
+                                            {}),
+        "/catalog/catalog/full": (False, (("/catalog",), (), ()),
+                                  {"GET /catalog/full": f"GET {TOKEN}/full",
+                                   "/readonly/catalog/full": f"/readonly{TOKEN}/full"}),
+        "/catalog/catalog/full?token=SYNTHtok12345678": (
+            True, (("SYNTHtok12345678", "/catalog"), ("SYNTHtok12345678",), ()),
+            {"GET /catalog/full": f"GET {TOKEN}/full", "/readonly/catalog/full": f"/readonly{TOKEN}/full"}),
+        "/catalog/mcp?token=SYNTHtok12345678": (
+            True, (("SYNTHtok12345678", "catalog/mcp", "/catalog"), ("SYNTHtok12345678",), ()),
+            {"GET /catalog/full": f"GET {TOKEN}/full", "/readonly/catalog/full": f"/readonly{TOKEN}/full"}),
+        "/full/readonly/catalog/full": (True, (("full/readonly/catalog/full",), (), ()), {}),
+        "/sse/mcp": (False, (("/sse/mcp",), (), ()), {}),
+        "/search/sse?token=SYNTHtok12345678": (True, (("SYNTHtok12345678", "search/sse"), ("SYNTHtok12345678",), ()),
+                                               {}),
+        "/mcp/sse": (False, (("/mcp/sse",), (), ()), {}),
+    }
+    PINNED_TEXTS = ("GET /mcp", "POST /sse 200", "mode readonly", "GET /catalog/full", "/readonly/catalog/full")
 
     def bodies(self) -> dict[str, str]:
         found = {}
@@ -1423,10 +1460,10 @@ class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
     def unencoded(self) -> dict[str, str]:
         return {f"plain_{word}": f"/{word}" for word in endpoint_words()}
 
-    def values(self) -> list[tuple[str, str, str]]:
-        found = super().values()
+    def unencoded_values(self) -> list[tuple[str, str]]:
         # An unencoded body is a span only with an endpoint after it; a route
         # segment endpoint is never part of a selector suffix.
+        found = []
         for name, body in self.unencoded().items():
             for endpoint in self.ROUTE_ENDPOINTS:
                 for form, (userinfo, query) in (("path_only", ("", "")),
@@ -1435,8 +1472,52 @@ class RouteOnlySecretPathTests(SeparatorOnlySecretPathTests):
                     nonce = secrets.token_hex(5)
                     value = (f"http://{userinfo.replace('%s', nonce)}local-ha-mcp:9583{body}{endpoint}"
                              f"{query.replace('%s', nonce)}")
-                    found.append((f"{name}{endpoint}[{form}]", value, body))
+                    found.append((f"{name}{endpoint}[{form}]", value))
         return found
+
+    def test_unencoded_route_word_paths_are_accepted_as_before(self):
+        # Josh decision 2026-11-07: the route-word refusal applies only to a
+        # percent-encoded span. An unencoded one is never route-only, is
+        # never refused for it, and keeps the pre-round-4 behavior.
+        from ha_mcp_engineering.application import validate_settings
+        from ha_mcp_engineering.errors import ConfigurationError
+
+        def issues(value: str) -> list[str]:
+            try:
+                validate_settings(self.settings(value))
+            except ConfigurationError as exc:
+                return [str(issue) for issue in exc.details.get("issues", [])]
+            return []
+
+        cases = self.unencoded_values()
+        self.assertGreaterEqual(len(cases), 50)
+        for label, value in cases:
+            with self.subTest(case=label):
+                self.assertFalse(getattr(SP, self.PREDICATE, lambda _value: False)(value))
+                try:
+                    parse_upstream_dashboard_endpoint(value)
+                except ValueError as exc:
+                    # Only the existing generic rule (no credential of the
+                    # bound) refuses some of them, as on d4e37618.
+                    self.assertNotIn(type(exc).__name__, (self.ERROR, "SeparatorOnlySecretPathError"))
+                    self.assertTrue(label.endswith("[path_only]"))
+                    self.assertTrue(issues(value))
+                    self.assertFalse(any("route words" in issue for issue in issues(value)))
+                    continue
+                self.assertFalse(any("route words" in issue for issue in issues(value)))
+                SP.configure(value)
+                self.assertTrue(SP.configured())
+                self.assertNotEqual(SP.redact("retry " + value), "retry " + value)
+                for text in ("GET /mcp", "POST /sse 200", "GET /MCP", f"connect to {HOST}/mcp"):
+                    self.assertEqual(SP.redact(text), text)
+        for path, (is_accepted, derived, redacted) in self.UNENCODED.items():
+            value = HOST + path
+            with self.subTest(pinned=path):
+                self.assertEqual(accepted(value), is_accepted)
+                self.assertEqual(SP._derive(value), derived)
+                SP.configure(value)
+                for text in self.PINNED_TEXTS:
+                    self.assertEqual(SP.redact(text), redacted.get(text, text))
 
     def test_paths_with_other_content_are_accepted_and_unchanged(self):
         # Positive controls: a route word with other content, a word in a

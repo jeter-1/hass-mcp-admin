@@ -29,12 +29,14 @@ the path can plausibly take on the way to that output:
   it reaches this module anyway, only its spelling as written is matched and
   nothing decoded is derived from it, so the endpoint suffix left after
   decoding (``/mcp``) never becomes a redaction anchor;
-* likewise a secret path span that percent-decodes to nothing but endpoint
-  route words (``/%2F%2Fmcp`` or ``/%6Dcp`` before ``/mcp``, unencoded
-  ``/readonly`` before ``/mcp``) is refused by configuration validation
-  (Josh decision 2026-11-07); if it reaches this module anyway, nothing
-  decoded is derived from it and only an encoded spelling as written is
-  matched, so no endpoint route becomes a redaction anchor;
+* likewise a percent-encoded secret path span (one that decoding changes)
+  that decodes to nothing but endpoint route words (``/%2F%2Fmcp`` or
+  ``/%6Dcp`` before ``/mcp``) is refused by configuration validation (Josh
+  decisions 2026-11-07, the second limiting the first to encoded spans); if
+  it reaches this module anyway, nothing decoded is derived from it and only
+  its spelling as written is matched, so no endpoint route becomes a
+  redaction anchor. An unencoded route-word span (``/readonly`` before
+  ``/mcp``) is accepted and derived as before round 4;
 * a fragment cut at a string or line boundary (a wrapped or truncated log
   line, a bounded upstream error), when at least ``MIN_BOUNDARY`` characters
   of a fragment remain at that edge and the text shows a cut (other text
@@ -236,9 +238,15 @@ def _separator_only(raw_parts: list[str]) -> bool:
 
 
 def _route_only(raw_parts: list[str]) -> bool:
-    """Whether the span of ``raw_parts`` decodes to nothing but endpoint
-    route words (``_route_word``), with or without ``/`` between them."""
+    """Whether the span of ``raw_parts`` is percent-encoded (decoding it once
+    changes it) and decodes to nothing but endpoint route words
+    (``_route_word``), with or without ``/`` between them. An unencoded span
+    is never route-only (Josh decision 2026-11-07): ``/readonly/mcp`` is
+    accepted and derived as before round 4."""
 
+    span = "/".join(_span(raw_parts))
+    if unquote(span) == span:
+        return False
     decoded = _decoded_span(raw_parts)
     return bool(decoded) and all(_route_word(part) for part in decoded)
 
@@ -264,11 +272,12 @@ def separator_only_secret_path(value: str | None) -> bool:
 
 
 def route_only_secret_path(value: str | None) -> bool:
-    """HAMCP-288 round 4 (Josh decision 2026-11-07): whether the path of the
-    configured upstream URL ``value`` carries a secret path span that, after
-    percent-decoding once and dropping ``/`` separators, holds nothing but
-    endpoint route words (``/%2F%2Fmcp/mcp``, ``/%2F%2F%2F/%6Dcp/mcp``,
-    ``/readonly/mcp``). Configuration validation refuses such a value. A
+    """HAMCP-288 round 4 (Josh decisions 2026-11-07): whether the path of the
+    configured upstream URL ``value`` carries a percent-encoded secret path
+    span that, after percent-decoding once and dropping ``/`` separators,
+    holds nothing but endpoint route words (``/%2F%2Fmcp/mcp``,
+    ``/%2F%2F%2F/%6Dcp/mcp``). Configuration validation refuses such a value.
+    An unencoded span (``/readonly/mcp``, ``/mcp/mcp``) is not route-only; a
     path that is only an endpoint suffix has no span and is not route-only;
     a value ``urlsplit`` rejects is not route-only (refused as malformed)."""
 
@@ -311,12 +320,13 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
     never as a known literal (``fragments`` does not hold it). The
     slash-prefixed raw spelling of such a path is a whole-match anchor too.
 
-    A secret path span that decodes to nothing but ``/`` or nothing but
-    endpoint route words (refused by configuration validation,
-    ``separator_only_secret_path`` and ``route_only_secret_path``) derives
-    nothing from its decoding, so no decoded base equal to an endpoint
-    route is ever installed: no credential text and no whole path. Only an
-    encoded spelling as written is still matched.
+    A secret path span that decodes to nothing but ``/``, or an encoded one
+    that decodes to nothing but endpoint route words (refused by
+    configuration validation, ``separator_only_secret_path`` and
+    ``route_only_secret_path``), derives nothing from its decoding, so no
+    decoded base equal to an endpoint route is ever installed: no credential
+    text and no whole path. Its spelling as written (always encoded) is
+    still matched. An unencoded route-word span is derived as before round 4.
 
     A value that cannot be parsed is itself the fragment (fail closed).
     """
@@ -335,9 +345,10 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
     # each part is a segment of its own as well as part of the whole path.
     parts = [part for part in unquote(parsed.path).split("/") if part]
     raw_parts = [part for part in parsed.path.split("/") if part]
-    # Round 4: a span that decodes to nothing but ``/`` or nothing but
-    # endpoint route words keeps no decoded base, so an endpoint route is
-    # never installed as an anchor.
+    # Round 4: a span that decodes to nothing but ``/``, or an encoded span
+    # that decodes to nothing but endpoint route words, keeps no decoded
+    # base, so an endpoint route is never installed as an anchor. Both are
+    # encoded, so their raw spelling below is matched as before.
     unanchorable = _separator_only(raw_parts) or _route_only(raw_parts)
     bases = _bases(parts) if parts and not unanchorable else []
     credential: list[str] = []
@@ -357,7 +368,7 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[
         joined = "/".join(base)
         anchors.extend((joined, "/" + joined))
     raw = parsed.path.strip("/")
-    if raw and (not unanchorable or unquote(raw) != raw):
+    if raw:
         anchors.append(raw)
         anchors.extend(
             segment for segment in parsed.path.split("/")
