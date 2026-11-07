@@ -20,6 +20,10 @@ the path can plausibly take on the way to that output:
   (``/readonly/mcp``) or one whose percent-decoding is shorter than the
   credential bound (``/%41%42%43/mcp``): every accepted value configures
   the redaction, so it is never silently off;
+* the complete decoded path of a percent-encoded secret path, with its
+  leading ``/``, however short its decoding (``/ABC`` of ``/%41%42%43``),
+  matched only as a whole path: not where a word character or ``-``
+  continues it, and never as a cut piece or a bare word;
 * a fragment cut at a string or line boundary (a wrapped or truncated log
   line, a bounded upstream error), when at least ``MIN_BOUNDARY`` characters
   of a fragment remain at that edge and the text shows a cut (other text
@@ -63,6 +67,12 @@ SELECTOR_SUFFIXES = (
 ROUTE_SEGMENTS = frozenset({"mcp", "sse"})
 # The parser's own credential-segment bound (configuration.py).
 MIN_FRAGMENT = 8
+# A decoded secret path shorter than ``MIN_FRAGMENT`` is matched only where
+# no word character or ``-`` continues it: ``/ABC`` in ``GET /ABC/mcp`` or
+# ``path /ABC.``, not in ``/ABCD`` or ``/ABC-x``. In the byte pattern of the
+# response guard ``\w`` is ASCII, so a non-ASCII continuation is masked
+# (over-masking, never a miss).
+_WHOLE_PATH_END = r"(?![\w\-])"
 # A cut fragment is redacted when at least this many of its characters remain
 # at a string or line edge; fewer than this many may remain visible.
 MIN_BOUNDARY = 8
@@ -170,8 +180,8 @@ def _longest_first(values) -> tuple[str, ...]:
     return tuple(sorted(set(values), key=lambda fragment: (-len(fragment), fragment)))
 
 
-def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """``(fragments, credentials)`` of one configured upstream URL.
+def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """``(fragments, credentials, whole_paths)`` of one configured upstream URL.
 
     ``credentials`` are the credential-position values: the decoded path
     without the endpoint suffix (so a custom multi-segment path is redacted
@@ -192,19 +202,28 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     shorter fragment adds nothing and is dropped, so the host and the
     endpoint suffix around a matched credential stay readable.
 
+    ``whole_paths`` holds the complete decoded secret path, with its leading
+    ``/`` and without the endpoint suffix, when the configured path is
+    percent-encoded, is spelled as ha-mcp's ``secret_path`` grammar allows
+    (``/`` plus at least seven characters as written) and decodes to fewer
+    than ``MIN_FRAGMENT`` characters. It is matched whole only, ended by
+    ``_WHOLE_PATH_END``: never as a cut piece, never without its ``/``, and
+    never as a known literal (``fragments`` does not hold it). The
+    slash-prefixed raw spelling of such a path is a whole-match anchor too.
+
     A value that cannot be parsed is itself the fragment (fail closed).
     """
 
     candidate = (value or "").strip()
     if not candidate:
-        return (), ()
+        return (), (), ()
     try:
         parsed = urlsplit(candidate)
         username = parsed.username
         password = parsed.password
     except ValueError:
         whole = (candidate,) if len(candidate) >= MIN_FRAGMENT else ()
-        return whole, whole
+        return whole, whole, ()
     # A segment whose ``/`` was percent-encoded decodes into several parts;
     # each part is a segment of its own as well as part of the whole path.
     parts = [part for part in unquote(parsed.path).split("/") if part]
@@ -232,6 +251,17 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
             segment for segment in parsed.path.split("/")
             if segment and unquote(segment) != segment
         )
+    whole_paths: list[str] = []
+    raw_parts = [part for part in parsed.path.split("/") if part]
+    if bases and raw_parts and unquote(parsed.path) != parsed.path:
+        # The configured spelling of the secret path, without its endpoint
+        # suffix, and its complete decoding (HAMCP-288 round 3).
+        raw_base = "/" + "/".join(min(_bases(raw_parts), key=len))
+        decoded_base = "/" + "/".join(min(bases, key=len))
+        if len(raw_base) >= MIN_FRAGMENT:
+            anchors.append(raw_base)
+            if len(decoded_base) < MIN_FRAGMENT:
+                whole_paths.append(decoded_base)
     if username is not None or password is not None:
         anchors.append(parsed.netloc)
     if parsed.query:
@@ -249,7 +279,7 @@ def _derive(value: str | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
         if any(other in anchor for other in added):
             continue
         added.append(anchor)
-    return _longest_first(kept + added), credentials
+    return _longest_first(kept + added), credentials, tuple(whole_paths)
 
 
 def derive_fragments(value: str | None) -> tuple[str, ...]:
@@ -278,13 +308,18 @@ def configure(value: str | None) -> None:
     """Install the redaction for ``value`` (the configured upstream URL)."""
 
     global _STATE
-    fragments, credentials = _derive(value)
+    fragments, credentials, whole_paths = _derive(value)
     with _LOCK:
         generation = _STATE.generation + 1
         if not fragments:
             _STATE = _State(generation=generation, endpoint_slug=_endpoint_slug(value))
             return
-        alternation = "|".join(_sequence(fragment) for fragment in fragments)
+        # Longest first, so a whole fragment wins over a short whole path it
+        # starts with (``/ABC/mcp`` over ``/ABC``).
+        alternation = "|".join(
+            [_sequence(fragment) for fragment in fragments]
+            + [_sequence(path) + _WHOLE_PATH_END for path in whole_paths]
+        )
         # The cut-edge rule applies to credential-position values only: a cut
         # host or route word is not a cut credential.
         prefixes = sorted(

@@ -9,8 +9,9 @@ Everything runs in a disposable ``git clone --shared`` of HEAD under
 secrets are synthetic canaries the tests generate at run time; nothing here
 reads configuration, logs or a real secret path, and no network is used.
 
-1. Regressions: the corrected test module, run against the reviewed head
-   7d8f2158, must fail each named regression test by an assertion.
+1. Regressions: the corrected test module, run against each reviewed head
+   (7d8f2158 for F1-F3, fe48d80f for the round-3 F1 residual R1), must fail
+   each named regression test by an assertion.
 2. Mutants: each mutant reopens one reviewed defect in the corrected source
    and is killed only by an assertion failure in its named test; an error,
    import failure or survival is not a kill.
@@ -25,6 +26,8 @@ from pathlib import Path
 ROOT = Path.cwd()
 OUT = ROOT / ".artifacts/mutation-hamcp288"
 REVIEWED = "7d8f21580a7d5677a3875d7c0e2f70b4073cb530"
+# Round 3: the head whose review left the F1 residual (short decoded path).
+REVIEWED_R3 = "fe48d80fbb95f83283a604c0395d5494f0b81bb2"
 MODULE = "tests.test_hamcp288_secret_path_containment"
 TEST_FILE = "tests/test_hamcp288_secret_path_containment.py"
 SECRET_PATHS = "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py"
@@ -32,6 +35,7 @@ RESPONSES = "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py"
 G = "GrammarContainmentTests."
 E = "SerializedEscapeTests."
 O = "StreamOverflowTests."
+D = "DecodedShortPathTests."
 
 shutil.rmtree(OUT, ignore_errors=True)
 OUT.mkdir(parents=True)
@@ -70,7 +74,15 @@ regressions = [
     ("F3", O + "test_the_reviewed_alignment_is_redacted"),
     ("F3", O + "test_every_split_across_the_bound_in_every_write_pattern"),
 ]
-DERIVED = "    return _longest_first(kept + added), credentials\n"
+regressions_r3 = [
+    ("R1", G + "test_every_accepted_custom_path_is_configured_and_contained_on_every_surface"),
+    ("R1", G + "test_selector_words_are_credentials_only_in_credential_position"),
+    ("R1", D + "test_the_complete_decoded_path_is_contained_on_every_surface"),
+    ("R1", D + "test_split_writes_never_reassemble_the_decoded_path"),
+    ("R1", D + "test_the_process_streams_contain_the_decoded_path"),
+]
+DERIVED = "    return _longest_first(kept + added), credentials, tuple(whole_paths)\n"
+WHOLE = "            + [_sequence(path) + _WHOLE_PATH_END for path in whole_paths]\n"
 CREDENTIAL = '        credential.append("/".join(base))\n        credential.extend(base)\n'
 OLD_STRIP = ('        base = [item for item in base if item.lower() not in {"readonly", "catalog", "full", "search"}]\n'
              '        credential.append("/".join(base))\n        credential.extend(base)\n')
@@ -81,7 +93,7 @@ FLUSH_ALL = ('            if len(self._pending) > self.MAX_PENDING:\n'
 HOLD = "        hold = min(state.tail_window, self.MAX_PENDING // 2) if state.text is not None else 0\n"
 mutants = [
     ("F1", "an accepted value without a long credential installs no guard", SECRET_PATHS, DERIVED,
-     "    return (_longest_first(kept + added) if credentials else ()), credentials\n",
+     "    return (_longest_first(kept + added) if credentials else ()), credentials, tuple(whole_paths)\n",
      G + "test_every_accepted_custom_path_is_configured_and_contained_on_every_surface"),
     ("F1", "selector words dropped from credential position", SECRET_PATHS, CREDENTIAL, OLD_STRIP,
      G + "test_selector_words_are_credentials_only_in_credential_position"),
@@ -99,19 +111,28 @@ mutants = [
      "                self._target.write(redact_lines(ready, cut_before=self._cut))\n",
      "                self._target.write(redact_lines(ready))\n",
      O + "test_a_held_tail_after_a_bounded_write_keeps_its_cut_evidence"),
+    ("R1", "the complete decoded path filtered by the fragment threshold again", SECRET_PATHS, WHOLE,
+     "            + [_sequence(path) + _WHOLE_PATH_END for path in whole_paths if len(path) >= MIN_FRAGMENT]\n",
+     D + "test_the_complete_decoded_path_is_contained_on_every_surface"),
+    ("R1", "the short whole path matched without its end boundary", SECRET_PATHS,
+     '_WHOLE_PATH_END = r"(?![\\w\\-])"\n', '_WHOLE_PATH_END = ""\n',
+     D + "test_ordinary_text_hosts_and_bare_words_are_kept"),
 ]
 
-results = {"head": HEAD, "reviewed_head": REVIEWED, "python": sys.version.split()[0],
-           "regressions": [], "mutants": [], "control": None}
-checkout(REVIEWED)
+results = {"head": HEAD, "reviewed_head": REVIEWED, "reviewed_head_r3": REVIEWED_R3,
+           "python": sys.version.split()[0], "regressions": [], "mutants": [], "control": None}
 corrected_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
-(COPY / TEST_FILE).write_bytes(corrected_tests)
-for index, (finding, test) in enumerate(regressions, 1):
-    code, raw = run(test, f"regression-{index:02d}.log")
-    classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
-    results["regressions"].append({"id": index, "finding": finding, "test": test,
-                                   "classification": classification, "exit_code": code})
-    print("regression", index, finding, classification, flush=True)
+index = 0
+for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3)):
+    checkout(revision)
+    (COPY / TEST_FILE).write_bytes(corrected_tests)
+    for finding, test in tests:
+        index += 1
+        code, raw = run(test, f"regression-{index:02d}.log")
+        classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
+        results["regressions"].append({"id": index, "finding": finding, "revision": revision, "test": test,
+                                       "classification": classification, "exit_code": code})
+        print("regression", index, finding, revision[:8], classification, flush=True)
 
 checkout(HEAD)
 for index, (finding, name, file, before, after, test) in enumerate(mutants, 1):

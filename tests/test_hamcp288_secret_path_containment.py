@@ -745,6 +745,7 @@ def secret_path_bodies() -> dict[str, str]:
     token = canary()
     hexed = secrets.token_hex(4)
     unicode_body = "ключ-секрет-" + hexed
+    letters = synthetic_letters(3)
     return {
         "default_shape": "/" + token,
         "selector_word_readonly": "/readonly",
@@ -757,6 +758,11 @@ def secret_path_bodies() -> dict[str, str]:
         "selector_before_secret": "/catalog/" + token,
         "encoded_short_decoding": "/%41%42%43",
         "encoded_short_decoding_4": "/%41%42%43%44",
+        # Round 3: decodings of one to six characters, each a complete path.
+        "encoded_short_random": "/" + "".join(f"%{ord(char):02X}" for char in letters),
+        "encoded_one_character": "/" + quote(chr(0x4E00 + secrets.randbelow(0x5000))),
+        "encoded_slashes_short": "/%2F%2F" + letters[:2],
+        "encoded_seven_as_written": "/%7E" + hexed[:4],
         "encoded_tilde_7": "/%7E" + hexed[:6],
         "seven_character_body": "/" + hexed[:7],
         "short_segments_only": "/" + "/".join(hexed),
@@ -777,6 +783,12 @@ CREDENTIAL_FORMS = {
     "query": ("", "?token=SYNTH%s"),
     "short_query": ("", "?k=v"),
 }
+
+
+def synthetic_letters(count: int) -> str:
+    """Random upper-case letters (an unmistakably synthetic short path body)."""
+
+    return "".join(chr(ord("A") + secrets.randbelow(26)) for _ in range(count))
 
 
 def accepted(value: str) -> bool:
@@ -807,7 +819,13 @@ def grammar_cases() -> list[tuple[str, str, dict[str, str]]]:
                     forbidden["password"] = parsed.password
                 for _key, item in parse_qsl(parsed.query):
                     forbidden["query_value"] = item
-                forbidden = {name: text for name, text in forbidden.items() if len(text) >= SP.MIN_FRAGMENT}
+                # A percent-encoded secret path's complete decoding stays
+                # forbidden however short it is (round 3); other values below
+                # the credential bound are not secrets.
+                encoded = unquote(body) != body
+                forbidden = {name: text for name, text in forbidden.items()
+                             if len(text) >= SP.MIN_FRAGMENT
+                             or (encoded and name in ("decoded_path", "decoded_secret_path"))}
                 cases.append((f"{body_name}{endpoint or '/'}[{form}]", value, forbidden))
     return cases
 
@@ -862,6 +880,8 @@ class GrammarContainmentTests(unittest.TestCase):
         self.assertGreaterEqual(len(cases), 400)
         labels = {label for label, _value, _forbidden in cases}
         for required in ("selector_word_readonly/mcp[path_only]", "encoded_short_decoding/mcp[path_only]",
+                         "encoded_short_decoding/[path_only]", "encoded_one_character/mcp[path_only]",
+                         "encoded_slashes_short/[path_only]", "encoded_seven_as_written/mcp[query]",
                          "selector_route_as_path/[path_only]", "seven_character_body/[query]",
                          "seven_character_body/mcp[short_userinfo]", "short_segments_only/[short_query]"):
             self.assertIn(required, labels)
@@ -872,7 +892,8 @@ class GrammarContainmentTests(unittest.TestCase):
                 self.assertGreaterEqual(SP.fragment_count(), 1)
                 line = f"connect failed: All connection attempts failed for url '{value}' (retry 2)"
                 sentences = [line, quote(value, safe=""), json.dumps({"url": value}),
-                             "secret_path " + forbidden.get("secret_path", value) + " in use"]
+                             "secret_path " + forbidden.get("secret_path", value) + " in use",
+                             "decoded " + forbidden.get("decoded_secret_path", value) + " in use"]
                 for text in sentences:
                     self.assertTrue(SP.contains(text) or SP.redact(text) != text)
                     self.assert_contained(SP.redact(text), forbidden, "redact")
@@ -939,13 +960,16 @@ class GrammarContainmentTests(unittest.TestCase):
         self.assertEqual(SP.redact("catalog/full and /mcp"), "catalog/full and /mcp")
         self.assertEqual(SP.redact("http://synthetic.invalid/readonly/mcp"),
                          "http://synthetic.invalid/" + TOKEN + "/mcp")
-        # The decoded form of a percent-encoded path that is shorter than the
-        # bound is matched with its ``/`` (an 8.5 secret path is ``/`` plus
-        # at least seven characters); the bare three letters are text.
+        # The complete decoded path of a percent-encoded secret path is
+        # matched whole with its ``/`` even when shorter than the bound (an
+        # 8.5 secret path is ``/`` plus at least seven characters as
+        # written), with and without the endpoint suffix; the bare three
+        # letters are text.
         SP.configure("http://synthetic.invalid/%41%42%43/mcp")
         self.assertEqual(SP.redact("GET /%41%42%43/mcp"), "GET " + TOKEN)
         self.assertEqual(SP.redact("GET %41%42%43 only"), "GET " + TOKEN + " only")
         self.assertEqual(SP.redact("GET /ABC/mcp"), "GET " + TOKEN)
+        self.assertEqual(SP.redact("secret_path /ABC in use"), "secret_path " + TOKEN + " in use")
         self.assertEqual(SP.redact("ABC"), "ABC")
 
     def test_refused_values_never_reach_an_output_and_unparseable_ones_fail_closed(self):
@@ -981,6 +1005,165 @@ class GrammarContainmentTests(unittest.TestCase):
         # And an accepted value always configures: the guard is never off.
         for _label, value, _forbidden in grammar_cases():
             self.assertTrue(SP.derive_fragments(value))
+
+
+class DecodedShortPathTests(unittest.TestCase):
+    """Round 3 (F1 residual): a percent-encoded secret path whose complete
+    decoding is shorter than the credential bound is contained whole, with
+    its ``/`` and without the endpoint suffix, on every surface."""
+
+    ENDPOINT_SHAPES = ("/mcp", "", "/readonly/catalog/full", "/sse")
+
+    def setUp(self) -> None:
+        self.addCleanup(SP.reset)
+
+    def configurations(self) -> list[tuple[str, str, str, str]]:
+        """``(label, url, raw_path, decoded_path)``: accepted encoded-short values."""
+
+        letters = synthetic_letters(3)
+        bodies = {
+            # The value the earlier review cited, and random decodings of
+            # three, two and one characters.
+            "abc": ("/%41%42%43", ""),
+            "random_three": ("/" + "".join(f"%{ord(char):02X}" for char in letters), ""),
+            "slashes_two": ("/%2F%2F" + letters[:2], ""),
+            "one_character": ("/" + quote(chr(0x4E00 + secrets.randbelow(0x5000))), ""),
+            # Seven characters as written: accepted with a query credential.
+            "seven_as_written": ("/%7E" + secrets.token_hex(2), "?token=SYNTH" + secrets.token_hex(5)),
+        }
+        found = []
+        for name, (body, query) in bodies.items():
+            for endpoint in self.ENDPOINT_SHAPES:
+                value = f"{HOST}{body}{endpoint}{query}"
+                self.assertTrue(accepted(value), (name, endpoint))
+                decoded = "/" + "/".join(part for part in unquote(body).split("/") if part)
+                self.assertLess(len(decoded), SP.MIN_FRAGMENT)
+                found.append((f"{name}{endpoint or '/'}", value, body, decoded))
+        return found
+
+    def texts(self, raw: str, decoded: str) -> list[str]:
+        return [
+            f"secret_path {decoded} in use",
+            f"secret_path {raw} in use",
+            f"path '{decoded}'",
+            f"GET {decoded}?x=1",
+            f"see {decoded}.",
+            f"ends with {decoded}",
+            decoded,
+            json.dumps({"path": decoded, "raw": raw}),
+            json.dumps(json.dumps({"path": decoded})),
+            "retry " + quote(decoded, safe=""),
+            f"connect to {HOST}{decoded}",
+        ]
+
+    def assert_contained(self, text: str, forbidden: dict[str, str], surface: str) -> None:
+        seen = all_views(text)
+        for name, secret in forbidden.items():
+            if any(secret in view for view in seen):
+                self.fail(f"{name} leaked through {surface}")
+
+    def test_the_complete_decoded_path_is_contained_on_every_surface(self):
+        for label, value, raw, decoded in self.configurations():
+            with self.subTest(case=label):
+                SP.configure(value)
+                forbidden = {"raw_path": raw, "decoded_path": decoded}
+                texts = self.texts(raw, decoded)
+                for text in texts:
+                    self.assertNotEqual(SP.redact(text), text)
+                    self.assert_contained(SP.redact(text), forbidden, "redact")
+                self.assert_contained(
+                    json.dumps(S.sanitize_untrusted_data({"texts": texts, decoded: raw},
+                                                         max_string=4096).value),
+                    forbidden, "sanitizer")
+                self.assert_contained(dump_json({"texts": texts, "path": decoded}), forbidden,
+                                      "response renderer")
+                sink = io.StringIO()
+                stream = SP.RedactingStream(sink)
+                for text in texts:
+                    stream.write(text + "\n")
+                stream.write("held " + decoded)
+                stream.drain()
+                self.assert_contained(sink.getvalue(), forbidden, "stream guard")
+                header, body = guard_response(f"{HOST}{decoded}".encode(),
+                                              json.dumps({"path": decoded, "raw": raw}).encode())
+                self.assert_contained(header.decode() + body.decode(), forbidden, "listener guard")
+                self.assertTrue(header.startswith(HOST.encode()))
+
+    def test_split_writes_never_reassemble_the_decoded_path(self):
+        for label, value, raw, decoded in self.configurations():
+            with self.subTest(case=label):
+                SP.configure(value)
+                forbidden = {"raw_path": raw, "decoded_path": decoded}
+                line = f"secret_path {decoded} in use; raw {raw}; GET {HOST}{decoded}/mcp\n"
+                for size in (1, 2, 3, 5):
+                    sink = io.StringIO()
+                    stream = SP.RedactingStream(sink)
+                    for start in range(0, len(line), size):
+                        stream.write(line[start:start + size])
+                    self.assert_contained(sink.getvalue(), forbidden, f"stream guard split {size}")
+                    self.assertIn("local-ha-mcp:9583", sink.getvalue())
+                # A path written last, with no line end, is drained whole.
+                sink = io.StringIO()
+                stream = SP.RedactingStream(sink)
+                for char in "held " + decoded:
+                    stream.write(char)
+                stream.drain()
+                self.assert_contained(sink.getvalue(), forbidden, "stream guard drain")
+
+    def test_the_process_streams_contain_the_decoded_path(self):
+        for label, value, raw, decoded in self.configurations():
+            with self.subTest(case=label):
+                SP.configure(value)
+                out, err = io.StringIO(), io.StringIO()
+                with patch.object(sys, "stdout", out), patch.object(sys, "stderr", err), \
+                        patch("atexit.register"):
+                    SP.install_stream_guard()
+                    print("secret_path " + decoded + " in use")
+                    print("retry " + HOST + decoded, file=sys.stderr)
+                    sys.stdout.drain()
+                    sys.stderr.drain()
+                self.assert_contained(out.getvalue() + err.getvalue(),
+                                      {"raw_path": raw, "decoded_path": decoded}, "process streams")
+                self.assertIn("retry " + HOST, err.getvalue())
+
+    def test_ordinary_text_hosts_and_bare_words_are_kept(self):
+        letters = synthetic_letters(3)
+        value = HOST + "/" + "".join(f"%{ord(char):02X}" for char in letters) + "/mcp"
+        SP.configure(value)
+        decoded = "/" + letters
+        kept = [
+            *ORDINARY,
+            letters, f"x {letters} y", f"{decoded}D", f"{decoded}-x", f"{decoded}_x", f"{decoded}9",
+            f"/x{letters}", decoded[:-1] + "...", f"cut {decoded[:-1]}", f"connect to {HOST}/mcp",
+        ]
+        for text in kept:
+            self.assertEqual(SP.redact(text), text)
+        self.assertEqual(SP.redact(f"connect to {HOST}{decoded}/mcp"), f"connect to {HOST}{TOKEN}")
+        self.assertEqual(SP.redact(f"GET {decoded}/other"), f"GET {TOKEN}/other")
+        # The short path is matched whole only: it is never a cut piece, and
+        # never one of the literal known secrets the journal screen withholds
+        # a whole entry for, so it cannot widen that screen.
+        self.assertNotIn(decoded, SP.fragments())
+        self.assertTrue(all(len(fragment) >= SP.MIN_FRAGMENT for fragment in SP.fragments()))
+        # Bytes: the same-length mask; an ASCII continuation is not masked.
+        header, body = guard_response(f"{HOST}{decoded}D".encode(), f"{decoded}".encode())
+        self.assertEqual(header, f"{HOST}{decoded}D".encode())
+        self.assertEqual(body, SP.MASK_BYTE * len(decoded))
+
+    def test_a_path_shorter_than_the_secret_path_grammar_is_not_a_whole_path(self):
+        # ``/`` plus fewer than seven characters as written is not an 8.5
+        # ``secret_path``; with a query credential the URL is accepted, the
+        # query is the credential and the short path stays readable text.
+        query = "SYNTH" + secrets.token_hex(6)
+        value = f"{HOST}/%41/mcp?token={query}"
+        self.assertTrue(accepted(value))
+        SP.configure(value)
+        self.assertEqual(SP.redact("GET /A/b"), "GET /A/b")
+        self.assertEqual(SP.redact("token " + query), "token " + TOKEN)
+        # And a path that is not encoded adds no whole path: unchanged.
+        token = canary()
+        SP.configure(url(token))
+        self.assertEqual(SP.derive_fragments(url(token)), (token,))
 
 
 class SerializedEscapeTests(Canary):

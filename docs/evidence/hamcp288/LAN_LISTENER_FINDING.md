@@ -87,3 +87,7 @@ read-only check:
 - No change to the ha-mcp app, its options or its network.
 - No recommendation is made here to change `host_network` or the bind host. That
   is an upstream app decision for Josh.
+
+## Decisions
+
+- Josh, 2026-11-07: not overly concerned about LAN reachability; no listener identification and no network restriction for now; rotation after containment remains planned.
