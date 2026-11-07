@@ -1,17 +1,17 @@
 {
-  "base_image": "python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+  "base_image": "python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54",
   "base_platforms": {
     "linux/amd64": {
-      "configuration_digest": "sha256:ec7d6c95cd3692a2e2d228a8b1ca74e4025b54121fcc4c5da6f09cfa473315ad",
-      "manifest_digest": "sha256:2fe5997d249a808b8eeea52c58a1dbffbba28754dc11699ef5c029f2d818ce79"
+      "configuration_digest": "sha256:78976a69c067520ef8be34cde307ef9f6fea6dcefa50edb57039773d241ca0db",
+      "manifest_digest": "sha256:05a994d2344eb364cc186910f4fc8786a38215f39f00d0acc25bff33a08f4177"
     },
     "linux/arm64": {
-      "configuration_digest": "sha256:4f8d1afed6d58037c680221ca6dd9fb4737b7ecfa7d4809ca809fdc0c7d9b786",
-      "manifest_digest": "sha256:3949e4271b0a3ff82afac7306764c313dcc8edeeb89c0376a3c2ac6007c66b1d"
+      "configuration_digest": "sha256:3617028275c0b0ffabe98f1d7eaa6b85624af2f457678f185c307ff3c1d31ae6",
+      "manifest_digest": "sha256:c61cffc3bacb94ed026ff8b45d5114b7693dd0420baca0a1ace0e3d0ce9035fd"
     }
   },
-  "installer_version": "25.0.1",
-  "python_version": "3.12.14",
+  "installer_version": "26.2.2",
+  "python_version": "3.12.16",
   "requirements_sha256": "e03585447824ff177b99651eff5931dc22bb031279053884dd839f5c46b64590",
   "runtime": {
     "aiohappyeyeballs": "2.7.1",

@@ -42,7 +42,7 @@ class BuildInputsTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for name in ("build-inputs.json", "requirements.lock", "requirements.txt", "Dockerfile"):
+        for name in ("build-inputs.json", "requirements.lock", "requirements.txt", "installer.lock", "Dockerfile"):
             shutil.copyfile(BETA / name, self.root / name)
         self.contract = json.loads((self.root / "build-inputs.json").read_text())
 
@@ -91,6 +91,53 @@ class BuildInputsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE"):
             BUILD.load_inputs(self.root)
 
+    def test_installer_lock_pins_exactly_the_declared_pip_with_one_hash(self):
+        # HAMCP-318: the base pip is replaced from one reviewed wheel and never joins the runtime lock.
+        installer = BUILD.parse_lock((BETA / "installer.lock").read_bytes())
+        self.assertEqual(installer, {"pip": (self.contract["installer_version"], (
+            "fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70",))})
+        path = self.root / "installer.lock"
+        digest = "--hash=sha256:" + "b" * 64
+        for bad in (f"pip==25.0.1 {digest}", f"pip==26.2.2 {digest} --hash=sha256:{'c' * 64}",
+                    f"pip==26.2.2 {digest}\nsetuptools==80.0 --hash=sha256:{'c' * 64}",
+                    f"setuptools==80.0 {digest}", "pip==26.2.2", f"pip>=26.2.2 {digest}", ""):
+            path.write_text(bad)
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                BUILD.load_inputs(self.root)
+        path.unlink()
+        with self.assertRaises(OSError):
+            BUILD.load_inputs(self.root)
+        lock = self.root / "requirements.lock"
+        lock.write_bytes(lock.read_bytes() + f"pip==26.2.2 {digest}\n".encode())
+        value = copy.deepcopy(self.contract)
+        value["runtime_lock_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
+        value["runtime"]["pip"] = "26.2.2"
+        (self.root / "build-inputs.json").write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError, "RUNTIME_LOCK"):
+            BUILD.load_inputs(self.root)
+
+    def test_contract_declares_the_hamcp318_trust_store_floor(self):
+        # A revert to the 3.12.14 / pip 25.0.1 / ca-certificates 20250419 base fails here.
+        def release(value):
+            return tuple(int(part) for part in value.split("."))
+        review = json.loads((ROOT / "docs/evidence/hamcp318/base-image-review.json").read_text())
+        self.assertGreaterEqual(release(self.contract["installer_version"]), (26, 2, 2))
+        self.assertGreaterEqual(release(self.contract["python_version"]), (3, 12, 16))
+        self.assertEqual(self.contract["base_image"].split("@")[1], review["base"]["index"])
+        self.assertEqual(self.contract["python_version"], review["base"]["python"])
+        self.assertEqual(self.contract["installer_version"], review["installer"]["version"])
+        self.assertEqual(self.contract["base_platforms"], {
+            platform: {key: item[key] for key in ("manifest_digest", "configuration_digest")}
+            for platform, item in review["base"]["platforms"].items()})
+        for platform in ("linux/amd64", "linux/arm64"):
+            self.assertEqual(review["debian_version_changes"][platform]["ca-certificates"],
+                             ["20250419", "20250419+deb13u1"])
+        self.assertEqual({item["subject"].split(",")[0] for item in review["ca_bundle"]["removed"]},
+                         {"CN=emSign ECC Root CA - G3", "CN=AAA Certificate Services"})
+        self.assertEqual(review["ca_bundle"]["added"], [])
+        runtime = BUILD.parse_lock((BETA / "requirements.lock").read_bytes())
+        self.assertGreaterEqual(release(runtime["certifi"][0]), (2026, 10, 19))
+
     def test_lock_refuses_unpinned_inputs_options_sources_and_duplicate_hashes(self):
         valid = "synthetic==1.0 --hash=sha256:" + "a" * 64
         self.assertEqual(BUILD.parse_lock(valid.encode())["synthetic"][0], "1.0")
@@ -103,7 +150,7 @@ class BuildInputsTests(unittest.TestCase):
 
     def test_installed_inventory_checks_exact_set_versions_python_and_platform(self):
         expected = {**self.contract["runtime"], "pip": self.contract["installer_version"]}
-        with mock.patch.object(BUILD.platform, "python_version", return_value="3.12.14"), \
+        with mock.patch.object(BUILD.platform, "python_version", return_value=self.contract["python_version"]), \
                 mock.patch.object(BUILD.platform, "machine", return_value="x86_64"), \
                 mock.patch.object(BUILD, "installed_inventory", return_value=expected) as installed:
             self.assertEqual(BUILD.verify_installed(self.root, "linux/amd64")["distributions"], expected)
@@ -144,12 +191,18 @@ class BuildInputsTests(unittest.TestCase):
     def test_build_uses_wheels_only_offline_install_and_networkless_smoke(self):
         dockerfile = (BETA / "Dockerfile").read_text()
         for required in ("--require-hashes", "--only-binary=:all:", "--no-index",
-                         "--find-links=/wheels", "python -m pip check",
+                         "--find-links=/wheels", "--find-links=/installer", "python -m pip check",
+                         "--dest /installer -r installer.lock", "rm -rf /installer /wheels",
                          "RUN --network=none python /app/build_inputs.py smoke"):
             self.assertIn(required, dockerfile)
-        for forbidden in ("apt-get", "pip wheel", "pip install --upgrade", "curl "):
+        for forbidden in ("apt-get", "pip wheel", "pip install --upgrade", "--upgrade", "curl ",
+                          "ensurepip", "get-pip"):
             self.assertNotIn(forbidden, dockerfile)
         self.assertLess(dockerfile.index("COPY ha_mcp_engineering"), dockerfile.index("RUN --network=none"))
+        # The reviewed installer replaces base pip before it installs the runtime closure.
+        final = dockerfile[dockerfile.rindex("FROM "):]
+        self.assertLess(final.index("-r installer.lock"), final.index("-r requirements.lock"))
+        self.assertEqual(dockerfile.count("installer.lock"), 4)
 
     def test_real_pip_accepts_exact_local_wheel_and_refuses_tampering_before_install(self):
         # Real pip, no network/index/build backend. Synthetic package only.
@@ -388,6 +441,171 @@ class PublicationBuildInputsTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.VerificationError, "HASH_MISMATCH"):
             VERIFY.release_build_inputs(self.root, sha)
 
+
+
+class PublicationInstallerVendoredSbomTests(unittest.TestCase):
+    """Real BuildKit SPDX Python entries; provenance is recorded in the fixture."""
+
+    FIXTURE = ROOT / "tests/fixtures/publication_sbom_python_inventory.json"
+    VENDORED = ("acquired package info from SBOM: "
+                "/usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.releases = json.loads(cls.FIXTURE.read_text(encoding="utf-8"))["releases"]
+
+    def release(self, version="2.4.2-beta.5", platform="linux/amd64"):
+        release = self.releases[version]
+        return (copy.deepcopy(release["platforms"][platform]["packages"]),
+                copy.deepcopy(release["contract"]))
+
+    def vendored(self, packages):
+        return [package for package in packages if package.get("sourceInfo") == self.VENDORED
+                and any(ref["referenceLocator"].startswith("pkg:pypi/") for ref in package["externalRefs"])]
+
+    def installed(self, packages, name):
+        return next(package for package in packages if package["name"] == name
+                    and package.get("sourceInfo") != self.VENDORED)
+
+    def assertRefused(self, code, packages, contract):
+        with self.assertRaises(VERIFY.VerificationError) as caught:
+            VERIFY.verify_sbom_inventory(packages, contract)
+        self.assertEqual(str(caught.exception), code)
+
+    def test_real_published_sbom_python_entries_pass_on_every_platform(self):
+        for version, vendored in (("2.4.2-beta.5", 18), ("2.4.2-beta.4", 0)):
+            for platform in ("linux/amd64", "linux/arm64"):
+                packages, contract = self.release(version, platform)
+                with self.subTest(version=version, platform=platform):
+                    self.assertEqual(len(self.vendored(packages)), vendored)
+                    VERIFY.verify_sbom_inventory(packages, contract)
+
+    def test_vendored_entries_are_ignored_only_from_the_exact_installer_sbom(self):
+        for source in (
+            "acquired package info from SBOM: /usr/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pkg/_vendor/bom.cdx.json",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json.bak",
+            "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json ",
+            "acquired package info from SBOM: /usr/local/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json",
+            None,
+        ):
+            packages, contract = self.release()
+            for package in self.vendored(packages):
+                if source is None:
+                    package.pop("sourceInfo")
+                else:
+                    package["sourceInfo"] = source
+            with self.subTest(source=source):
+                self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+
+    def test_vendored_entries_require_the_contracted_installed_pip(self):
+        packages, contract = self.release()
+        pip = self.installed(packages, "pip")
+        pip.update(versionInfo="26.2.1")
+        pip["externalRefs"][0]["referenceLocator"] = "pkg:pypi/pip@26.2.1"
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+        packages, contract = self.release()
+        packages.remove(self.installed(packages, "pip"))
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+        packages, contract = self.release()
+        contract["installer_version"] = "25.0.1"
+        self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+
+    def test_ignored_vendored_entries_are_bounded(self):
+        self.assertEqual(VERIFY.INSTALLER_VENDORED_SBOM_LIMIT, 32)
+        for total, refused in ((32, False), (33, True)):
+            packages, contract = self.release()
+            for index in range(total - len(self.vendored(packages))):
+                packages.append({"name": f"vendored-{index}", "versionInfo": "1.0", "sourceInfo": self.VENDORED,
+                                 "externalRefs": [{"referenceType": "purl",
+                                                   "referenceLocator": f"pkg:pypi/vendored-{index}@1.0"}]})
+            self.assertEqual(len(self.vendored(packages)), total)
+            with self.subTest(total=total):
+                if refused:
+                    self.assertRefused("SOURCE_SBOM_PYTHON_IDENTITY_INVALID", packages, contract)
+                else:
+                    VERIFY.verify_sbom_inventory(packages, contract)
+
+    def test_installed_inventory_stays_exact_beside_vendored_entries(self):
+        def duplicate(packages):
+            packages.append(copy.deepcopy(self.installed(packages, "certifi")))
+
+        def missing(packages):
+            packages.remove(self.installed(packages, "idna"))
+
+        def changed_version(packages):
+            idna = self.installed(packages, "idna")
+            idna.update(versionInfo="3.18")
+            idna["externalRefs"][0]["referenceLocator"] = "pkg:pypi/idna@3.18"
+
+        def inconsistent_identity(packages):
+            self.installed(packages, "idna").update(versionInfo="3.18")
+
+        def extra(packages):
+            packages.append({"name": "unknown", "versionInfo": "1", "externalRefs": [
+                {"referenceType": "purl", "referenceLocator": "pkg:pypi/unknown@1"}]})
+
+        for change, code in ((duplicate, "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"),
+                             (missing, "SOURCE_SBOM_RUNTIME_MISMATCH"),
+                             (changed_version, "SOURCE_SBOM_RUNTIME_MISMATCH"),
+                             (inconsistent_identity, "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"),
+                             (extra, "SOURCE_SBOM_RUNTIME_MISMATCH")):
+            for platform in ("linux/amd64", "linux/arm64"):
+                packages, contract = self.release(platform=platform)
+                change(packages)
+                with self.subTest(change=change.__name__, platform=platform):
+                    self.assertRefused(code, packages, contract)
+
+    def test_malformed_input_keeps_the_original_first_failure(self):
+        # Every expected code is the one the pre-change verifier (main 76e3c3d4)
+        # returns for the same input: deciding the exemption must never fail first.
+        _, contract = self.release()
+        self.assertRefused("SOURCE_SBOM_PACKAGE_INVALID",
+                           [None, {"sourceInfo": self.VENDORED, "externalRefs": None}], contract)
+        self.assertRefused("SOURCE_SBOM_REFS_INVALID",
+                           [{"sourceInfo": self.VENDORED, "externalRefs": None}, None], contract)
+
+        def unchanged(packages, contract):
+            pass
+
+        def missing_pip(packages, contract):
+            packages.remove(self.installed(packages, "pip"))
+
+        def changed_pip(packages, contract):
+            pip = self.installed(packages, "pip")
+            pip.update(versionInfo="26.2.1")
+            pip["externalRefs"][0]["referenceLocator"] = "pkg:pypi/pip@26.2.1"
+
+        def changed_installer(packages, contract):
+            contract["installer_version"] = "25.0.1"
+
+        def over_cap(packages, contract):
+            for index in range(33 - len(self.vendored(packages))):
+                packages.append({"name": f"vendored-{index}", "versionInfo": "1.0", "sourceInfo": self.VENDORED,
+                                 "externalRefs": [{"referenceType": "purl",
+                                                   "referenceLocator": f"pkg:pypi/vendored-{index}@1.0"}]})
+
+        malformed = {"package": None,
+                     "vendored-refs-null": {"sourceInfo": self.VENDORED, "externalRefs": None},
+                     "vendored-refs-object": {"sourceInfo": self.VENDORED, "externalRefs": {}},
+                     "vendored-refs-string": {"sourceInfo": self.VENDORED, "externalRefs": "pkg:pypi/x@1"},
+                     "vendored-refs-integer": {"sourceInfo": self.VENDORED, "externalRefs": 1},
+                     "installed-refs-string": {"name": "x", "externalRefs": "pkg:pypi/x@1"}}
+        for change in (unchanged, missing_pip, changed_pip, changed_installer, over_cap):
+            for kind, item in malformed.items():
+                for first in (True, False):
+                    if not first:
+                        code = "SOURCE_SBOM_PYTHON_IDENTITY_INVALID"
+                    elif item is None:
+                        code = "SOURCE_SBOM_PACKAGE_INVALID"
+                    else:
+                        code = "SOURCE_SBOM_REFS_INVALID"
+                    for platform in ("linux/amd64", "linux/arm64"):
+                        packages, contract = self.release(platform=platform)
+                        change(packages, contract)
+                        packages.insert(0 if first else len(packages), copy.deepcopy(item))
+                        with self.subTest(change=change.__name__, kind=kind, first=first, platform=platform):
+                            self.assertRefused(code, packages, contract)
 
 if __name__ == "__main__":
     unittest.main()

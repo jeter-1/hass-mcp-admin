@@ -1,0 +1,16 @@
+[
+  {
+    "name": "ruamel-yaml",
+    "version": "0.19.1",
+    "url": "https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl",
+    "hash": "sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93",
+    "scope": "disposable /config/deps only; no mcp downgrade"
+  },
+  {
+    "name": "voluptuous-openapi",
+    "version": "0.4.1",
+    "url": "https://files.pythonhosted.org/packages/bc/bb/64db054ad3852e3b63841a570942d3ce29e6b44979d5ac4be806973a2338/voluptuous_openapi-0.4.1-py3-none-any.whl",
+    "hash": "sha256:b30abc527c622cd62dba1269a05099e6b6170678c2838908d347fa85ab0cdb44",
+    "scope": "disposable /config/deps only; no mcp downgrade"
+  }
+]

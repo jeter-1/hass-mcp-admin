@@ -77,17 +77,11 @@ class Contracts(unittest.TestCase):
             with self.assertRaisesRegex(lane.Refusal, 'resource_ownership_mismatch'):
                 lane.inspect_owned('container', 'owned', 'id')
 
-    def test_busy_host_refuses_without_starting_resources(self):
-        with patch.object(lane, 'command', return_value=subprocess.CompletedProcess([], 0, b'running')):
-            with self.assertRaisesRegex(lane.Refusal, 'running_containers'): lane.idle()
-        with patch.object(lane, 'command', return_value=subprocess.CompletedProcess([], 0, b'')), \
-             patch.object(lane, 'cpu_sample', side_effect=[(100, 90), (200, 100)]), \
-             patch.object(lane.time, 'sleep'):
-            with self.assertRaisesRegex(lane.Refusal, 'not_idle'): lane.idle()
 
 
 class Orchestration(unittest.TestCase):
-    def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False):
+    def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
+                 admission_error=None, memory_args=()):
         calls, resources = [], {}
         def command(*args, **kwargs):
             calls.append(args)
@@ -111,13 +105,14 @@ class Orchestration(unittest.TestCase):
             root = Path(directory); (root / '.artifacts').mkdir()
             out = root / '.artifacts' / 'run'
             argv = ['--mode', 'local', '--pull', 'never', '--journal', 'journal',
-                    '--source-archive', 'archive', '--run-dir', str(out)]
+                    '--source-archive', 'archive', '--run-dir', str(out), *memory_args]
             with patch.dict(os.environ, {}, clear=True), patch.object(lane, 'ROOT', root), \
                  patch.object(lane, 'command', side_effect=command), \
                  patch.object(lane, 'inputs', return_value={}), \
                  patch.object(lane, 'images', return_value=('core@sha256:a', 'up@sha256:b', lane.host.FIXTURE_IMAGE)), \
                  patch.object(lane, 'cached_image', return_value='config'), \
-                 patch.object(lane, 'idle', return_value={'cpu_busy_fraction': 0}), \
+                 patch.object(lane.resources, 'wait_for_admission', side_effect=admission_error,
+                              return_value={'other_heavy_jobs': 0}), \
                  patch.object(lane, 'sha256', return_value='c' * 64), \
                  patch.object(lane, 'inspect_owned', side_effect=inspect), \
                  patch.object(lane.host, 'local_remove', side_effect=remove), \
@@ -131,14 +126,33 @@ class Orchestration(unittest.TestCase):
                     return
                 code = lane.main(argv)
                 result = json.loads((out / 'helper_value.json').read_text())
+                if admission_error:
+                    self.assertEqual(code, 1)
+                    self.assertFalse(result['execution_started'])
+                    self.assertEqual(result['reason'], 'host_admission_timeout')
+                    self.assertTrue(result['cleanup']['clean'])
+                    self.assertFalse(resources)
+                    self.assertFalse(any(c[:2] == ('docker', 'run') for c in calls))
+                    return
             self.assertFalse(resources)
             self.assertIn('started_utc', result); self.assertIn('ended_utc', result)
             for call in calls:
                 if call[:2] == ('docker', 'run'):
                     self.assertEqual(call[call.index('--pull') + 1], 'never')
                     self.assertIn('127.0.0.1:18123:8123', call)
+                    self.assertIn('--memory', call)
+                    self.assertEqual(call[call.index('--memory') + 1], '3g' if memory_args else '2g')
                 self.assertNotIn('pull', call[1:2])
             return code, result
+
+    def test_admission_timeout_creates_refusal_receipt_without_containers(self):
+        self.run_lane(admission_error=lane.resources.Refusal('host_admission_timeout'))
+
+    def test_explicit_memory_override(self):
+        code, result = self.run_lane(memory_args=('--core-memory', '3g', '--upstream-memory', '1g',
+                                                 '--fixture-memory', '256m'))
+        self.assertEqual(code, 0)
+        self.assertEqual(result['container_memory'], {'core': '3g', 'upstream': '1g', 'fixture': '256m'})
 
     def test_pass_requires_cleanup_true(self):
         code, result = self.run_lane()
@@ -168,10 +182,12 @@ class UpstreamStartup(unittest.IsolatedAsyncioTestCase):
         with patch.object(harness, 'UPSTREAM_IMAGE', 'repo@sha256:synthetic'), \
              patch.object(harness, '_docker_command', side_effect=docker):
             with self.assertRaisesRegex(RuntimeError, 'synthetic-stop'):
-                await harness._start_exact_upstream('synthetic-token', pull_policy='never', labels=('owned=test',))
+                await harness._start_exact_upstream('synthetic-token', pull_policy='never', labels=('owned=test',), memory='768m')
         call, = commands
         self.assertEqual(call[call.index('--pull') + 1], 'never')
         self.assertEqual(call[call.index('--label') + 1], 'owned=test')
+        self.assertIn('--memory', call)
+        self.assertEqual(call[call.index('--memory') + 1], '768m')
         self.assertFalse(Path(call[call.index('--env-file') + 1]).exists())
         self.assertNotIn('synthetic-token', repr(call))
 

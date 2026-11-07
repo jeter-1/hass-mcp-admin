@@ -1,0 +1,110 @@
+{
+  "utc": "2026-11-06T01:36:38.466979+00:00",
+  "containers": [
+    {
+      "name": "hamcp319-app",
+      "image_requested": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:dad67faa3ffeaf0e7bb24285f7122dc7f5221820c6fadb51b3fa82630d61adb9",
+      "image_local_id": "sha256:dad67faa3ffeaf0e7bb24285f7122dc7f5221820c6fadb51b3fa82630d61adb9",
+      "memory_bytes": 805306368,
+      "log_driver": "none",
+      "user": "1000:1000",
+      "ports": {
+        "9583/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "19813"
+          }
+        ]
+      },
+      "oom_killed": false,
+      "started_at": "2026-11-06T01:33:05.294612298Z"
+    },
+    {
+      "name": "hamcp319-core",
+      "image_requested": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+      "image_local_id": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+      "memory_bytes": 2147483648,
+      "log_driver": "none",
+      "user": "1000:1000",
+      "ports": {
+        "8123/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "19812"
+          }
+        ]
+      },
+      "oom_killed": false,
+      "started_at": "2026-11-06T01:28:05.780062733Z"
+    },
+    {
+      "name": "hamcp319-facade",
+      "image_requested": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+      "image_local_id": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+      "memory_bytes": 134217728,
+      "log_driver": "none",
+      "user": "1000:1000",
+      "ports": {},
+      "oom_killed": false,
+      "started_at": "2026-11-06T01:31:59.995895934Z"
+    }
+  ],
+  "component_source": "fc54437a804858732e4bc927add98e202d879a09",
+  "component_files_sha256": {
+    "yaml_rt.py": "988408e108d1a6f89e7703d00d8757e36b774e5d449e86148a28efe295539678",
+    "websocket_api.py": "3d45a0e54bf39d7d4db62e86de51e2306883ed720406e23c679279fe3e4c97b8",
+    "update.py": "ce48330d25c6858df3fd01e2caa00baac0b63bf96a0e7d21ff8bd15e2aa13441",
+    "ui_panel.py": "e543a8193aa21289d361b1e5d8032b49a55a53d9ceda44811f387bb836ab9139",
+    "template_diagnose.py": "3ab3a6033fe3ba1511d99865be1e9acd11753dd50d7fe5126f8cee1c5d7a4415",
+    "strings.json": "f939fe75d58520e02c2f84739fb2a6be650dd3c38861341ae4d8455ec9e132a2",
+    "services.yaml": "7ebc77a1a681f2fdd93115914c8b718b8ecf9ddee01f95d5d9533d1135cb2ec8",
+    "search_locations.py": "1739b60c6c60622f74a4f4be3eefdcf46331a6d71f1aea636bae2ddb23a426ed",
+    "repairs.py": "7bb0fac20152d7bf78a99c1cfc1059af60fc47cb890d23c580efa4acfd512089",
+    "readonly_webhook.py": "0926bf610f68c5df801007e223486b0bec88d790dda292eccdae6cfca823aabe",
+    "oauth_legacy.py": "02e2dc97cfc3d3559235709be662396bca38f41b555d681bfc29049e5aba5909",
+    "oauth_ha_auth.py": "d3f33014043af8d1a781d591459d06f21b0cf32b0c0b886a86cc15e6a2152218",
+    "oauth_dcr.py": "948b24b1ad034ddcd148a3886e17e102e7f8eefa305bf956fb9d13c6ce994d48",
+    "oauth_autoapprove.py": "339a875cd65754d74eeaf47aaf645ff7b7a43ec01278cdaaf3342a64e9aa8240",
+    "mcp_webhook.py": "ae28345f0658cf1701342c18551533396c7fa5a128690383526cf78fc2d5d339",
+    "manifest.json": "65be388f556bc6619fe93182110a9b32d7f05db96ab988568b9aa98875fd33b1",
+    "llm_api.py": "477ebd39e5fd97cb2570ff34d7c05559d80a9658f5a7e3ffdd428847d5e4a56d",
+    "install_source_check.py": "67471df87ee4b33d4b38fb641567d85358d6dd97df5a8aa54efc32a895f5d6cf",
+    "hacs_nudge.py": "44b3a63d9656faa8dff048f3f00c45b77a0bbb59956d68ad86ae18a5ea565df0",
+    "hacs.json": "cc4223332d1913aa2514d56169a118fd5805bfc1ebb547c837cb6df32f4d965e",
+    "embedded_setup.py": "10edc84ada8e3b2f653c8ac74036871da53944ca7752033c92e4203508bc1d75",
+    "embedded_server.py": "ca180bb10e188a7f09efc8f3426dd3f29caee279be021c9c1b2310c166b28fe0",
+    "embedded_entry.py": "eef3171797f76135a3e22c132c66c969a836a6559735f84aa9c6a8141def8d27",
+    "dependency_diagnostics.py": "31d3d43652288a4350e68b37e13b8061507a7db11cb6df69b3de518297e8b052",
+    "dashboard_patch.py": "189f7b05076013c6deae3479ca0a005367202b9a61c986057cd2a3f435702212",
+    "dashboard_edit.py": "184c4fdeb9c187a0f2a812822399a433444109305113811cddd5c3dccbb6ab69",
+    "coordinator.py": "144b83fa29272b5f3b2489738d71552120cccc53444625f304848735b7be82fb",
+    "const.py": "176a58afc5cba06e545665dda7e998e4ecc04da6f13466efd859bd50c47f4cbb",
+    "config_flow.py": "c871ef7a79e732397245b69f8b4c2ce27448c92a102aaa8ca44c98939c72e879",
+    "__init__.py": "a6ae8b1c2aea6ca0163efdfe477eee52aaf0d6a3837fe544f88cbfad4772c5e1",
+    "translations/zh-Hant.json": "b6117218327e4691535bcd9ad2525e504368248fdad4f81cf71216b8b2ee6145",
+    "translations/zh-Hans.json": "7056712b1efec5ea15be7dd14e941d4d2b695906edeba5fc68e82382b65f92ed",
+    "translations/tlh.json": "2f57da1982869113d7dcce7c12c99df5b19c04b16689efeef9d2d02f00ddcd03",
+    "translations/sv.json": "3aa9d2296dc1ea497f8d1108f7a5a3add8c2a9839e8e96a10a524091a0d62df2",
+    "translations/ru.json": "49be3e2fd05c162d897aa41a57abc210ec519bb081c1d2855a2088805b964b18",
+    "translations/pl.json": "0c0ba3a5a0f84910eda7fb9a7578aefce489d3b3d2e08fbed47b778fb340a87b",
+    "translations/nl.json": "d376a97f662c5d6b208cf28bec4a9844e33b55b425305bf508f05cbd8ac6bbb8",
+    "translations/ko.json": "670e465635638c47d0993dee20128a1019399ba42b2588f156a07ccccf1f711c",
+    "translations/it.json": "0ccda54049406b162b5e9338642201113550f59bb9c740d39fcdda730e73dda1",
+    "translations/fr.json": "1f8e58edd3c5f5ecce045b14d6c017d68cea3d77a147207a289ae361915a6405",
+    "translations/es.json": "dd853a699eefd587aa6ab79fd2cdae6bac3ec7642c13d388dac16a06efec7065",
+    "translations/eo.json": "48955f82053beda3e4ec1d4854bf0f8c4a40d2da60951637dfb1a78e10dc7239",
+    "translations/en.json": "f939fe75d58520e02c2f84739fb2a6be650dd3c38861341ae4d8455ec9e132a2",
+    "translations/de.json": "bd621d6e76585c812be1816bb6299f445b71579e36c853f650f7ceab6394d733",
+    "translations/cs.json": "0e7063b2ac98587cb83427e61cdcd820e92facf4845f8d32a78b01ca8a3d1dba",
+    "translations/az.json": "184b72f65cbd77149ed3996aecbbcd30fe973322a413e6667d8faf306e07561f",
+    "brand/logo@2x.png": "32fd49079c610bd17bce6831af5132119344a48f5760d81e1419e37556584f57",
+    "brand/logo.png": "97284a1cf74e9642ebca634e8d29ecb93f2371ebb0b52ffc5dffe5bdf3ac6210",
+    "brand/icon@2x.png": "3ca903853b747dc1d87f08e8d70f9cec46b3cabf76afb31915fc123ea4aa580c",
+    "brand/icon.png": "8019634584d9354f7022a75ff22db1255ac7d7b9f260fa20c097d8b5448b8d6d",
+    "brand/dark_logo@2x.png": "7c34270928464a4e2b4452b02829a2b0b5bd8f9212ab857db5bd499fc816a2c9",
+    "brand/dark_logo.png": "76aa26bde73cf194f6b6bf2568a05bab9fc0bd2d3ea19490ab6de3475429a190",
+    "brand/dark_icon@2x.png": "feb2228fdde155e4c5153f20204e610e2dab05035c60165bf06bc38741f4f50f",
+    "brand/dark_icon.png": "036e17c52799e36ed38ace20fd61f8ff7c92716164d7b98378978290817ba73a"
+  },
+  "component_overlay_matches_source": true
+}

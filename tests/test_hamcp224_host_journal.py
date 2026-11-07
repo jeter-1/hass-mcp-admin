@@ -811,7 +811,18 @@ class StaticBoundaryTests(unittest.TestCase):
         self.assertIn("libsystemd0 257.13-1~deb13u1", provenance["packages"])
         self.assertTrue(hj.LIBSYSTEMD_PIN.startswith("libsystemd0 257.13-1~deb13u1"))
         dockerfile = (ROOT / "hass_mcp_engineering_beta" / "Dockerfile").read_text(encoding="utf-8")
-        self.assertIn(provenance["base_image"].split("@", 1)[1], dockerfile)
+        # The fixture keeps its generation base. HAMCP-318 moved the image base and
+        # recorded that libsystemd0 is unchanged on both platforms.
+        review = json.loads((ROOT / "docs" / "evidence" / "hamcp318" / "base-image-review.json")
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(provenance["base_image"].split("@", 1)[1], review["previous_base"]["index"])
+        self.assertIn(review["base"]["index"], dockerfile)
+        library = review["host_journal_library"]
+        self.assertEqual(library["previous"], "257.13-1~deb13u1")
+        self.assertEqual(library["current"], library["previous"])
+        self.assertEqual(library["platforms"], ["linux/amd64", "linux/arm64"])
+        for platform in library["platforms"]:
+            self.assertNotIn("libsystemd0", review["debian_version_changes"][platform])
         self.assertEqual(provenance["machine_id_directory"], MACHINE_ID)
 
 

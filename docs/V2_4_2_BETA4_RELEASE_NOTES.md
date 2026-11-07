@@ -1,168 +1,144 @@
 # Engineering 2.4.2-beta.4 release notes
 
-Engineering 2.4.2-beta.4 bundles three Low fixes. It builds on 2.4.2-beta.3
-(HAMCP-311).
-
-- **HAMCP-304.** Prohibited operational plans and stored approval kinds now
-  project correctly in governance inspection and health.
-- **HAMCP-305.** The repository secret scan no longer flags the ADR-012
-  filename.
-- **HAMCP-312.** Two superseded reviewer probes are rewritten to the owner
-  decisions, so neither runs as an expected failure any more.
-
-Only HAMCP-304 changes the runtime.
+Engineering 2.4.2-beta.4 (HAMCP-310) treats a condition step in the middle
+of an action sequence as a causal helper read. It builds on 2.4.2-beta.3
+(HAMCP-311, #366), and its runtime is otherwise identical to it.
 
 Acceptance: [`V2_4_2_BETA4_ACCEPTANCE.md`](V2_4_2_BETA4_ACCEPTANCE.md).
 Per-release records: [release index](RELEASES.md).
 
-## HAMCP-304: prohibited operational plans and approval kind
+## The defect
 
-### What was observed
+Home Assistant runs a step that carries `condition`, `and`, `or` or `not` as
+a check-condition action: if it fails, the rest of the sequence does not
+run. In this automation, `input_boolean.guest_mode` decides whether the door
+unlocks:
 
-The architect inspected stored plans read-only with
-`inspect_governance_record`. Plans `2ab4764f`, `faba2fbd` (both
-`set_input_boolean_state`) and `4cf748d1` (`set_input_select_option`) shared
-one shape:
-- contract v3 operational administration plans;
-- `policy_class: prohibited`;
-- one creation event and no approval events;
-- nothing ever dispatched.
+```yaml
+triggers:
+  - trigger: state
+    entity_id: person.resident
+    to: home
+actions:
+  - condition: state
+    entity_id: input_boolean.guest_mode
+    state: "on"
+  - action: lock.unlock
+    target:
+      entity_id: lock.front_door
+```
 
-All three showed:
-- `approval_kind: unrecognized_value`;
-- `projection_failed: true`, counted as approval-sequence failures in health.
+The dependency extractor labelled every entity under an action path as
+`action_target`, the relation for an entity an action acts on. The helper
+projection and the F3 configuration locks treat that relation as non-causal,
+so a helper read only by such a step was reported as
+`proven_dependency_neutral`:
+- the automation was not listed as a consumer of the helper;
+- an F3 plan that changed the automation took no lock on the helper;
+- `control_helper` could not warn before a change to that helper, because its
+  safety-critical warning needs exact dependency evidence.
 
-Expired elevated plan `d3af624a` also showed `unrecognized_value`, without a
-projection failure. That led to the working hypothesis that the expiry or
-invalidation path lost or rewrote the stored approval kind.
+Top-level `conditions`, choose `conditions`, `if` and repeat `while`/`until`
+were already causal. A helper read in one of those places, as well as in a
+sequence step, was handled correctly.
 
-### The cause
+## The change
 
-**The expiry hypothesis was wrong.** Expiry and invalidation never touched
-the kind: every one of these plans still stores `approval_kind: apply`. The
-fixtures reproduce this with the shipped 2.4.2-beta.3 writer. There were two
-independent defects, both at 2.4.2-beta.3:
+Home Assistant Core decides a step's type from its keys (`ACTIONS_MAP` and
+`determine_script_action` in `homeassistant/helpers/config_validation.py`,
+verified identical at 2026.7.2 `f9122fb`, 2026.9.1 `fc03457` and 2026.11.0
+`74cf5a49`, lines 2125 and 2152).
 
-1. **Inspection vocabulary.**
-   - `governance/record_inspection.py` screened the stored
-     `approval.approval_kind` against `ApprovalActionKind`. That enum names
-     approval *action* records, not the kind of approval a plan awaits.
-   - A plan stores `apply` or `rollback`, neither of which is in that enum.
-   - So every plan with an approval record showed `unrecognized_value`,
-     whatever its status.
-2. **Prohibited-shape check.**
-   - `ChangeGovernanceService._prohibited_plan_has_execution_evidence`
-     accepted only `change_plan_created` as a prohibited plan's first and
-     only creation event.
-   - Every contract-v3 operational plan's create path records its own
-     operation's event instead, for example
-     `set_input_boolean_state_plan_created`.
-   - So a never-approvable prohibited operational plan read as carrying
-     execution evidence. It failed projection with
-     `approval_sequence_inconsistent` as soon as it was stored, and
-     `approve` refused it with `approval_sequence_failure` rather than
-     `prohibited_change`.
+A step in an executable action position that carries `condition`, `and`,
+`or` or `not` now gives its entity reads the same relation as a condition in
+that position: `condition`, `choose_condition` inside a choose option, or
+`repeat_condition` inside a repeat. The extractor tracks the action position
+explicitly while it walks the configuration. A position is executable only
+when it is reached through action structure:
+- automation `actions` and the legacy `action` key, and a script's
+  `sequence`;
+- inside a step: `sequence`, `then`, `else`, `default` and `parallel`, and
+  the `sequence` of a `choose` option or of a `repeat`.
 
-The category was misleading, not unsafe: no such plan was ever approvable
-or dispatched.
+This holds at any depth, including:
+- top-level actions and the legacy `action` key;
+- choose option sequences and `default`;
+- if `then` and `else`;
+- `parallel` branches and nested `sequence` steps;
+- repeat sequences;
+- script sequences, plain, nested and in the shorthand `and`/`or`/`not`
+  forms, the same as automations;
+- blueprint inputs used in such a step.
 
-### The change
+For such a helper:
+- the dependency evidence is `exact_dependency`;
+- the automation is a `referenced` consumer, with its physical consequence;
+- an F3 plan touching the automation takes the exact helper lock;
+- `control_helper` returns `confirmation_required` before changing it when
+  that consumer is safety-critical.
 
-- Inspection screens the stored kind against the plan's own vocabulary,
-  `apply` and `rollback`. Any other stored value still shows the
-  unrecognized marker.
-- The prohibited-shape check accepts exactly one creation event. For a
-  contract-v3 operational administration plan, that is the event its own
-  operation's create path records
-  (`OPERATIONAL_PLAN_CREATION_EVENTS`, one per operation). For every other
-  plan, it is still `change_plan_created`. Other operations' creation
-  events, unrelated `*_plan_created` events, a second creation event, and
-  any other evidence still fail the check.
-- So those plans now:
-  - project as terminal prohibited plans with no projection failure;
-  - are excluded from health's projection failures;
-  - show `approval_kind: apply`.
-- `approve` refuses them with `prohibited_change`. `apply` is still
-  refused, and nothing is dispatched.
+Nothing else is reclassified. A helper named as a service call's `target`,
+in its `data` (or `data_template`), as a legacy step-level `entity_id` on a
+service call or as a device action entity is still the thing the action
+acts on, and keeps its relation (`service_target`, `action_data` or
+`action_target`) and its `proven_dependency_neutral` projection. That holds
+even when the literal payload contains keys named `sequence`, `then`,
+`else`, `default`, `parallel`, `actions`, `repeat` or `choose`: a payload is
+data passed to the service, not an action sequence Home Assistant runs.
+Template reads inside such a payload stay `exact_dependency`, as before.
+Script entity references outside a condition step keep `script_reference`.
+The change can only add evidence, consumers, locks and warnings.
 
-### Existing acknowledgements
+The relation is part of each structured obligation's evidence ID and
+expression fingerprint, so those values change for the affected references:
+- an automation condition step in a sequence (previously `action_target`);
+- a script condition step: previously `script_reference` at the top of the
+  sequence, in nested `sequence` steps and in choose, `default` and repeat
+  sequences, which was already `exact_dependency`, and `action_target` in
+  `then`, `else` and directly in `parallel`, which was not.
 
-The record acknowledgement ledger (HAMCP-253) binds the view fingerprint
-that was reviewed. The corrected view changes the fingerprint of these
-plans. Without a fallback, every acknowledgement made before this release
-would turn stale.
+A plan or binding captured on 2.4.2-beta.3 that covers such an automation or
+script no longer matches and is refreshed or refused, as for any changed
+dependency evidence.
 
-- **Fallback.** When a stored acknowledgement does not match the current
-  fingerprint, the server recomputes the plan's view exactly as 2.4.2-beta.3
-  rendered it and compares again.
-  - If the stored record is unchanged, that fingerprint matches, and the
-    acknowledgement stays acknowledged.
-  - If the record has changed since, neither fingerprint matches, and the
-    acknowledgement is stale, as before.
-- **Bounds.**
-  - The fallback runs only on a mismatch, and only for plans.
-  - It is never shown and never stored.
-  - New acknowledgements must bind the current fingerprint. One submitted
-    against the 2.4.2-beta.3 fingerprint is refused as
-    `record_fingerprint_stale`.
+## Other gating constructs (not changed)
 
-## HAMCP-305: secret scan and the ADR-012 filename
+These were checked offline at the base and are recorded for follow-up:
 
-`scripts/check.ps1` matched `sk-[A-Za-z0-9_-]{20,}` case-insensitively, so
-`RISK-AND-ELEVATED-APPROVAL` in the ADR-012 filename read as an API key. The
-pattern now:
-- is case-sensitive;
-- starts at a token boundary;
-- requires a digit or capital letter in the key body.
-
-Lowercase kebab-case anchors and the filename no longer match, while real
-`sk-` keys are still rejected. This is a development tool, not runtime.
-
-## HAMCP-312: superseded reviewer probes
-
-Two reviewer methods expected behavior that the owner had decided against.
-They ran as registered expected failures:
-- `test_original_control_text_is_screened_before_ansi_removal` (HAMCP-224
-  host journal: a coloured ordinary line is shown);
-- `test_partial_internal_intent_never_submitted` (HAMCP-232: an incomplete
-  internal options intent is refused at create).
-
-Each is rewritten to assert the owner decision and now passes. The guard
-modules re-pin both suites by hash, and fail if any reviewer method becomes
-an expected failure again. The repository keeps five accepted expected
-failures:
-- three in `test_hamcp181_beta8_downgrade`;
-- two registered by `test_pr314_delta_cleanup_accepted`.
+| Construct | Current classification | Assessment |
+| --- | --- | --- |
+| `wait_for_trigger` with an entity trigger | Own `wait_for_trigger` relation, causal | No gap. |
+| repeat `while` / `until` | `repeat_condition`, causal | No gap. |
+| `if` / `stop` inside an `if` | `if_condition`, causal | No gap. |
+| `condition: template` step | `condition`, template obligation | No gap. |
+| `wait_template`, a template shorthand step, `variables`, a templated `enabled`, a templated target | Labelled `action_target` (`service_target` for a templated target), but template obligations are `exact_dependency` | Causal in both the projection and the locks: only structured references are neutralized. The label is misleading in disclosed evidence. Low, cosmetic. |
+| An entity in `above`/`below` (numeric_state) or `zone` (zone condition) | Not extracted, in any position | Real gap: such a helper read is invisible to the dependency index, including in top-level conditions. Follow-up candidate, Medium. |
+| A step carrying both `delay` and `condition` | Classified as a condition | Home Assistant runs it as a delay. Stricter only; no action. |
 
 ## Unchanged by design
 
-- Approval, apply and dispatch rules for every plan, including prohibited
-  plans, which stay never approvable.
-- Persisted plan, task, approval and acknowledgement formats. No stored
-  record is rewritten.
-- Tool and input schemas, providers, signed profiles, contract fingerprints
-  and add-on options.
+- The obligation ledger, policy classes, semantic registry and every other
+  relation.
+- Literal `target` and `data` relations, including structure-shaped keys
+  inside a literal payload.
+- Script references outside a condition step (`script_reference`).
+- Tool and input schemas, routes, providers, signed profiles, contract
+  fingerprints, persisted formats and add-on options.
 
 Static tools stay at 81. The advertised catalog stays at 109, or 110 with
 the optional YAML reader.
 
 ## Known limitations
 
-- **Fallback metric.** Recomputing the 2.4.2-beta.3 view of an acknowledged
-  prohibited operational plan reruns that release's prohibited-shape check.
-  This may record one classified `approval_sequence_failure` metric each
-  time. The displayed view, the health projection failures and the
-  acknowledgement state are not affected.
-- **Redaction pattern.** `scripts/pr-evidence.py` redacts with
-  `sk-[A-Za-z0-9_-]{16,}`, which is already case-sensitive. It is
-  deliberately left unchanged: redacting a little too much is safe.
-- The known issues carried by 2.4.2-beta.3 are not addressed here.
+- The gating constructs above are unchanged; entity references in
+  numeric_state `above`/`below` and zone `zone` remain unextracted.
+- The known issues carried by 2.4.2-beta.3 are not addressed here, apart
+  from this defect.
 
 ## Rollback
 
-Reinstall 2.4.2-beta.3. It has the same storage, plan, task and ledger
-formats. The four plans show `unrecognized_value` and the three projection
-failures again. An acknowledgement made under 2.4.2-beta.4 on a plan whose
-view changed binds the corrected fingerprint, so 2.4.2-beta.3 shows it as
-stale. An image rollback
-does not restore household configuration or physical state.
+Reinstall 2.4.2-beta.3. It has the same storage, plan and task formats.
+Helpers read only by a mid-sequence condition step are again reported as
+dependency-neutral, and plans captured on 2.4.2-beta.4 for affected
+automations are refreshed or refused. An image rollback does not restore
+household configuration or physical state.

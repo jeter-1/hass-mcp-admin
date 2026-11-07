@@ -1,0 +1,73 @@
+{
+  "base": "468d027896f0f65554f4daed75902eff3f3efd98",
+  "capture_sdk": "mcp==1.30.0",
+  "generated_utc": "2026-11-06T01:38:23.335924+00:00",
+  "heavy_lane_elapsed_seconds": 956.311337,
+  "lane_completed_with_timeout": false,
+  "oom_observed": false,
+  "forced_alone_rerun_required": false,
+  "oneoff_script_hashes": {
+    "stage_evidence.py": "b53e8a991e5082ba09855fd4f47d9d15910232e541be5c8be4e038191d307b9f",
+    "make_delta.py": "070b0f025212392b796eabac3158b3b7779af0c807dbb1859350780055a9b7bb",
+    "final_protocol.py": "16f94d3a3529fc21840ec2c27e7e81fe473a0a7ec5c9737d35f1d4267026027e",
+    "alternate.py": "9f48e3b8ebb22eb485dcffb2d47478cdba935a0d28bd0c77281586879d528044",
+    "more_edges.py": "ba6907bfa3d8f81070fe46d07e618c6157db9a703ed6758c6c5bbd923b73bdab",
+    "visibility_registry.py": "4ec802043d6a1fc2454d5e500e0dc2bde36639abf8d5c3eb87f951505f355774",
+    "extended.py": "86c7c62146a7a7807b43d43119f628fc185868bb049cd5c984c7e2f669b5d138",
+    "visibility.py": "ab876cb68456963cd0a4a2db71756ea12c40b2f5236c2df0e36d00619f37824b",
+    "edges.py": "d19152b8fc35a2f55cb2ab749f01093e27601e13a69ea3b07cc0a361b5277694",
+    "component_deps.py": "6f6414b42a7604adea8844ad422c47ad027e7fa489dff137e6fd7e5d79795063",
+    "probe.py": "259612da3bc74420346bce1d479b66fb781371e2e1e5622d8cf54c7163a91bab",
+    "verify_images.py": "08c8049bda2e3328f152796b6edafdd40686a060cd340b960275b4d6f9bcee83",
+    "lane.py": "9aef88d97f0fbefe11f7b56e85cd38c18de880e7c853e717da15304d48b5b567",
+    "facade.py": "1c97d4692d2c264982ce4cd334803011f81da5ced31e15095d75c9c41b5995bc",
+    "core-marketplace-websocket-repository.py": "d68a16976409a9e2a9c37c55a52700ed0a69bf3d22c977824ae208bb7b693ce0",
+    "core-marketplace-websocket-repositories.py": "fc0547d269b882b0a05a6b78a0d9f64a12e08044521c34fb8b2308e8c19ef405",
+    "core-marketplace-websocket-decorators.py": "0c853cd730e97f1e32e0d85f4ca45ae133e35c53f23712c38a6a768501c1cf13",
+    "core-marketplace-websocket-__init__.py": "b2e6c7d7cd40a806fe8e8637de728306763ca44db5f8d9c7c800f2a1e3e3bc0d",
+    "core-marketplace-const.py": "ea4d9e1f62decf93293441577a5b58127542061e6e38009e3ce3001474f83aa5",
+    "core-marketplace-config_flow.py": "e9ff336ec93bdcf6e887dd3fa7d43516d2965f8e89343fbf7ea3d9b937ce266e",
+    "core-marketplace-__init__.py": "b58fdddb2e0b7a21691fc8c7dd72b8f81e777ea78d86fae41c8deca60e83ecef",
+    "fetch_inputs.py": "fef3f27cc5256142006999192ef27b348ec4101c23cb138e4e0a6425f152bd56"
+  },
+  "oneoff_scripts_location": "/tmp/hamcp319-phase1/.artifacts/hamcp319 (not reusable deliverables)",
+  "harness_corrections": [
+    {
+      "case": "initial native inventory read",
+      "failure": "4 MiB aiohttp WebSocket receive bound closed on a 4,254,336-byte response containing 6,194 repositories",
+      "correction": "64 MiB bounded capture peer; no Core/app change"
+    },
+    {
+      "case": "facade initial image",
+      "failure": "aiohttp absent from app image",
+      "correction": "same already-pulled exact Core image for facade; memory128MiB"
+    },
+    {
+      "case": "app initial start",
+      "failure": "cap-drop ALL root could not read UID1000-owned mode0700 data",
+      "correction": "run app/facade as UID1000; no broadened filesystem mode"
+    },
+    {
+      "case": "component setup",
+      "failure": "exact Core lacks ruamel.yaml and voluptuous-openapi; flow404",
+      "correction": "exact2.2.1-lock wheels in disposable /config/deps, PYTHONPATH overlay; preserve Core mcp2.3.0, no project installs"
+    },
+    {
+      "case": "facade WebSocket mapping",
+      "failure": "/core/websocket mapped to /websocket, app got HTTP500",
+      "correction": "map to native /api/websocket; subsequent Marketplace calls passed"
+    },
+    {
+      "case": "disposable token revocation",
+      "failure": "revoking current session closed its WebSocket before acknowledgement",
+      "correction": "no re-revocation; original token HTTP401 and app AUTH_INVALID_TOKEN observed"
+    }
+  ],
+  "limitations": [
+    "Client cancellation did not emit notifications automatically; explicit notification did not yield response within 3s. Server stop not proved.",
+    "All corrections concern disposable harness; no timeout/OOM under the heavy-job rule occurred. Per-call timeout/cancellation are intentional probes, not Evidence/lane passes.",
+    "No arm64 container lane, Nabu Casa, real Supervisor, OAuth callback, TLS/IPv6, non-admin or natural token-expiry proof.",
+    "No device-inherited label/area or cache-age exhaustion probe; direct registry area/label/alias cases captured.",
+    "No actual malformed upstream catalog emitter; collector refusal cases are offline fixtures."
+  ]
+}

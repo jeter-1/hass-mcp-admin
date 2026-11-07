@@ -1,0 +1,231 @@
+{
+  "base": {
+    "bundled_pip": "25.0.1",
+    "debian": "13.7 (trixie)",
+    "index": "sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54",
+    "platforms": {
+      "linux/amd64": {
+        "configuration_digest": "sha256:78976a69c067520ef8be34cde307ef9f6fea6dcefa50edb57039773d241ca0db",
+        "created": "2026-11-05T07:52:11Z",
+        "manifest_digest": "sha256:05a994d2344eb364cc186910f4fc8786a38215f39f00d0acc25bff33a08f4177"
+      },
+      "linux/arm64": {
+        "configuration_digest": "sha256:3617028275c0b0ffabe98f1d7eaa6b85624af2f457678f185c307ff3c1d31ae6",
+        "created": "2026-11-05T07:57:25Z",
+        "manifest_digest": "sha256:c61cffc3bacb94ed026ff8b45d5114b7693dd0420baca0a1ace0e3d0ce9035fd"
+      }
+    },
+    "python": "3.12.16",
+    "source_revision": "docker-library/python 3d7e95597e56a415d9e4abc0f15877e005d2cb2e:3.12/slim-trixie",
+    "tag_observed": "python:3.12-slim"
+  },
+  "ca_bundle": {
+    "added": [],
+    "arm64_bundle_identical_to_amd64": true,
+    "current_count": 148,
+    "debian_changelog": "ca-certificates (20250419+deb13u1) trixie-security; urgency=high: Blacklist \"emSign ECC Root CA - G3\" and \"Comodo AAA Services root\" (Closes: #1151413), 2026-10-20",
+    "previous_count": 150,
+    "removed": [
+      {
+        "sha256_fingerprint": "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",
+        "subject": "CN=emSign ECC Root CA - G3,O=eMudhra Technologies Limited,OU=emSign PKI,C=IN"
+      },
+      {
+        "sha256_fingerprint": "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4",
+        "subject": "CN=AAA Certificate Services,O=Comodo CA Limited,L=Salford,ST=Greater Manchester,C=GB"
+      }
+    ]
+  },
+  "debian_package_set_unchanged": true,
+  "debian_version_changes": {
+    "linux/amd64": {
+      "apt": [
+        "3.0.3",
+        "3.0.4"
+      ],
+      "base-files": [
+        "13.8+deb13u6",
+        "13.8+deb13u7"
+      ],
+      "bash": [
+        "5.2.37-2+b9",
+        "5.2.37-2+b10"
+      ],
+      "ca-certificates": [
+        "20250419",
+        "20250419+deb13u1"
+      ],
+      "gzip": [
+        "1.13-1",
+        "1.13-1+deb13u1"
+      ],
+      "libapt-pkg7.0": [
+        "3.0.3",
+        "3.0.4"
+      ],
+      "libaudit-common": [
+        "1:4.0.2-2",
+        "1:4.0.2-2+deb13u1"
+      ],
+      "libaudit1": [
+        "1:4.0.2-2+b2",
+        "1:4.0.2-2+deb13u1"
+      ],
+      "libc-bin": [
+        "2.41-12+deb13u3",
+        "2.41-12+deb13u4"
+      ],
+      "libc6": [
+        "2.41-12+deb13u3",
+        "2.41-12+deb13u4"
+      ],
+      "libcap2": [
+        "1:2.75-10+deb13u1+b1",
+        "1:2.75-10+deb13u1+b3"
+      ],
+      "liblzma5": [
+        "5.8.1-1+deb13u1",
+        "5.8.1-1+deb13u2"
+      ],
+      "libpcre2-8-0": [
+        "10.46-1~deb13u1",
+        "10.46-1~deb13u3"
+      ],
+      "libsqlite3-0": [
+        "3.46.1-7+deb13u1",
+        "3.46.1-7+deb13u2"
+      ],
+      "libssl3t64": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "openssl": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "openssl-provider-legacy": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "perl-base": [
+        "5.40.1-6",
+        "5.40.1-6+deb13u1"
+      ],
+      "tzdata": [
+        "2026b-0+deb13u1",
+        "2026f-0+deb13u1"
+      ]
+    },
+    "linux/arm64": {
+      "apt": [
+        "3.0.3",
+        "3.0.4"
+      ],
+      "base-files": [
+        "13.8+deb13u6",
+        "13.8+deb13u7"
+      ],
+      "bash": [
+        "5.2.37-2+b9",
+        "5.2.37-2+b10"
+      ],
+      "ca-certificates": [
+        "20250419",
+        "20250419+deb13u1"
+      ],
+      "gzip": [
+        "1.13-1",
+        "1.13-1+deb13u1"
+      ],
+      "libapt-pkg7.0": [
+        "3.0.3",
+        "3.0.4"
+      ],
+      "libaudit-common": [
+        "1:4.0.2-2",
+        "1:4.0.2-2+deb13u1"
+      ],
+      "libaudit1": [
+        "1:4.0.2-2+b2",
+        "1:4.0.2-2+deb13u1"
+      ],
+      "libc-bin": [
+        "2.41-12+deb13u3",
+        "2.41-12+deb13u4"
+      ],
+      "libc6": [
+        "2.41-12+deb13u3",
+        "2.41-12+deb13u4"
+      ],
+      "libcap2": [
+        "1:2.75-10+deb13u1+b1",
+        "1:2.75-10+deb13u1+b3"
+      ],
+      "liblzma5": [
+        "5.8.1-1+deb13u1",
+        "5.8.1-1+deb13u2"
+      ],
+      "libpcre2-8-0": [
+        "10.46-1~deb13u1",
+        "10.46-1~deb13u3"
+      ],
+      "libsqlite3-0": [
+        "3.46.1-7+deb13u1",
+        "3.46.1-7+deb13u2"
+      ],
+      "libssl3t64": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "openssl": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "openssl-provider-legacy": [
+        "3.5.7-1~deb13u2",
+        "3.5.7-1~deb13u3"
+      ],
+      "perl-base": [
+        "5.40.1-6",
+        "5.40.1-6+deb13u1"
+      ],
+      "tzdata": [
+        "2026b-0+deb13u1",
+        "2026f-0+deb13u1"
+      ]
+    }
+  },
+  "host_journal_library": {
+    "current": "257.13-1~deb13u1",
+    "package": "libsystemd0",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "previous": "257.13-1~deb13u1"
+  },
+  "installer": {
+    "newer_available_not_selected": "26.3 (2026-11-02)",
+    "requires_python": ">=3.10",
+    "sha256": "fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70",
+    "upload_time": "2026-10-20T16:36:27",
+    "vendored_certifi": "2026.10.19",
+    "version": "26.2.2",
+    "wheel": "pip-26.2.2-py3-none-any.whl"
+  },
+  "method": [
+    "docker buildx imagetools inspect --raw <ref>; sha256 of the raw bytes equals the requested digest",
+    "configuration digest read from each raw platform manifest",
+    "method check: the same commands reproduce the previously recorded 2.2.0 amd64 manifest and configuration digests",
+    "Debian package versions read from /var/lib/dpkg/status via docker create + docker cp (no container execution; arm64 not emulated)",
+    "CA bundle: /etc/ssl/certs/ca-certificates.crt certificates compared by SHA-256 of DER"
+  ],
+  "previous_base": {
+    "ca_certificates": "20250419",
+    "index": "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+    "pip": "25.0.1",
+    "python": "3.12.14"
+  },
+  "retrieved": "2026-11-05 (CST), read-only public registry/PyPI retrieval",
+  "task": "HAMCP-318"
+}
