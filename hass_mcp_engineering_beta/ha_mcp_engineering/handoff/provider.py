@@ -13,8 +13,11 @@ from ..capabilities import build_capability_catalog
 from ..dependency.extraction import valid_entity_id
 from ..dependency.global_sources import (
     CONSUMED_SOURCE_TYPES,
+    PARTITION_EMISSION_LIMIT,
+    PARTITION_REFERENCE_LIMIT_ID,
     incomplete_partition_rows,
     partition_limitations,
+    partition_omission_warning,
     partition_summary,
     scoped_partition_findings,
 )
@@ -207,6 +210,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         index_requested = bool(query["include_dependency_context"] or query["include_integrity_context"])
         index_snapshot = None
         partition = None
+        partition_omitted = 0
         rebuilt = False
         lookup_ms = 0.0
         if index_requested:
@@ -223,13 +227,22 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                 failed = sum(max(0, int(row.failed_item_count)) for row in requested_rows)
                 unsupported = sorted(row.source_type for row in requested_rows if row.provider == "none" and row.completeness in {"unavailable", "unsupported", "not_supported"})
                 partition_rows = incomplete_partition_rows(partition)
-                completeness = "partial" if failed or unsupported or partition_rows else "complete"
+                # HAMCP-267 F1: every scoped reference left out at the selection
+                # or item bound is disclosed; it is a limitation, not a failure.
+                partition_selected, partition_total = scoped_partition_findings(partition, focus_entities)
+                partition_emitted = partition_selected[:PARTITION_EMISSION_LIMIT]
+                partition_omitted = partition_total - len(partition_emitted)
+                completeness = "partial" if failed or unsupported or partition_rows or partition_omitted else "complete"
                 limitations = (["dependency_index_unsupported_source_types"] if unsupported else []) + partition_limitations(partition, "dependency_index")
+                dependency_warnings = [str(w)[:240] for row in [*requested_rows, *partition_rows] for w in row.warnings]
+                if partition_omitted:
+                    limitations.append(f"dependency_index_{PARTITION_REFERENCE_LIMIT_ID}")
+                    dependency_warnings.insert(0, partition_omission_warning(partition_omitted, len(partition_emitted)))
                 requested_rows = [*requested_rows, *partition_rows]
                 coverage.append(IncidentSourceCoverage(
                     "dependency_index", "engineering", "dependency_analysis", completeness,
                     True, True, len(index_snapshot.findings) + (len(partition.findings) if partition is not None else 0), failed,
-                    [str(w)[:240] for row in requested_rows for w in row.warnings][:10],
+                    dependency_warnings[:10],
                     lookup_ms, not rebuilt, "item_read_failure" if failed else None,
                     True, limitations,
                 ))
@@ -242,7 +255,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                     summary = f"{finding.source_type} {finding.source_id} has an exact dependency on {finding.target_entity_id}."
                     ref = _reference(evidence, "dependency_index", finding.source_id, summary, coverage_status=completeness)
                     items.append(_item("confirmed_findings", "fact", "Static dependency relationship", summary, "current", "low", entities=(finding.target_entity_id,), automations=(finding.source_id,) if finding.source_type == "automation" else (), refs=(ref,), limitations=limitations, key=(finding.source_type, finding.source_id, finding.target_entity_id)))
-                for finding in scoped_partition_findings(partition, focus_entities)[:200]:
+                for finding in partition_emitted:
                     summary = partition_summary(finding)
                     ref = _reference(evidence, "dependency_index", finding.source_id, summary, coverage_status=completeness)
                     title = "Dashboard reference" if finding.source_type == "dashboard" else "Scene/group loaded membership"
@@ -320,7 +333,8 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         ))
 
         items = _dedupe_order(items)
-        item_truncated = len(items) > MAX_ITEMS
+        # HAMCP-267 F1: partition items left out at their bound also truncate.
+        item_truncated = len(items) > MAX_ITEMS or bool(partition_omitted)
         items = items[:MAX_ITEMS]
         if len(evidence) > MAX_EVIDENCE:
             allowed = {ref for item in items for ref in (*item.supporting_evidence_reference_ids, *item.contradicting_evidence_reference_ids)}

@@ -18,6 +18,8 @@ build already read. These tests prove:
   to an analysis failure;
 * withheld dashboard authority removes cached dashboard evidence everywhere;
 * pagination cursors are bound to the visible partition and fail closed;
+* a scoped reference left out at an incident or handoff bound is disclosed as
+  a named limitation and a truncation, never as complete (Codex F1);
 * the source_types filter excludes the partition;
 * membership state never raises a finding's severity;
 * the analyses make no new request, and an absent store keeps the prior
@@ -657,6 +659,170 @@ class NoNewRequestTests(Harness):
         self.assertEqual((dict(self.home.rest_counts), dict(self.home.ws_counts)), with_partition)
         self.assertEqual((self.reader.lists, self.reader.reads), (1, ["lovelace"]))
 
+
+class ConsumerBoundTests(Harness):
+    """Codex F1: a scoped reference left out at a consumer bound is disclosed.
+
+    Every partition row is complete here, so only the incident and handoff
+    selection (500) and emission (200) bounds can omit evidence. Omissions are
+    named limitations with ``failed_items == 0``; they never read complete and
+    never appear below the bound.
+    """
+
+    MISSING = "light.synthetic_missing_cap"
+    PRESENT = "light.synthetic_present_cap"
+
+    async def setup_groups(self, count, target):
+        states = [{"entity_id": f"group.synthetic_cap_{i:04d}", "state": "on",
+                   "attributes": {"entity_id": [target]}} for i in range(count)]
+        extra_states, extra_registry = [], []
+        if target == self.PRESENT:
+            extra_states.append({"entity_id": target, "state": "on", "attributes": {}})
+            extra_registry.append(registry_row(target))
+        await self.setup_home(Home(scenes=False, extra_states=[*extra_states, *states],
+                                   extra_registry=extra_registry),
+                              FakeReader({"lovelace": {"views": []}}))
+        partition = self.index.snapshot.global_sources.visible()
+        self.assertEqual(sum(item.target_entity_id == target for item in partition.findings), count)
+        for source_type in CONSUMED:
+            self.assertEqual(partition.coverage_for(source_type).completeness, "complete", source_type)
+
+    def assert_omission_row(self, row, limitation, omitted):
+        self.assertEqual(row["failed_items"], 0)
+        self.assertIsNone(row["failure_category"])
+        if omitted:
+            self.assertEqual(row["completeness"], "partial")
+            self.assertFalse(row["assessment_complete"] and row["required_for_assessment"])
+            self.assertIn(limitation, row["coverage_limitations"])
+            self.assertTrue(any(item.startswith(f"partition_reference_limit: {omitted} ")
+                                for item in row["warnings"]), row["warnings"])
+        else:
+            self.assertNotIn(limitation, row["coverage_limitations"])
+            self.assertFalse([item for item in row["warnings"]
+                              if item.startswith("partition_reference_limit:")])
+
+    async def check_incident(self, target, count, *, dependency, integrity):
+        values = {**INCIDENT_VALUES, "include_dependency_context": dependency,
+                  "include_integrity_context": integrity}
+        bundle = await self.incident_service.provider.collect({
+            **values, "focus_entity_id": target, "automation_id": "",
+            "analysis_timestamp": "2026-11-07T21:00:00+00:00"})
+        output = await self.incident(target, include_dependency_context=dependency,
+                                     include_integrity_context=integrity)
+        matrix = rows(output.data)
+        relationships = sum(item.event_type == "dependency_relationship" for item in bundle.events)
+        self.assertEqual(relationships, min(count, 200) if dependency else 0)
+        kept = min(count, 200) if dependency else min(count, 500)
+        self.assert_omission_row(matrix["dependency_index"],
+                                 "dependency_index_partition_reference_limit_exceeded", count - kept)
+        missing = target == self.MISSING
+        # Only the selected (at most 500) references are classified.
+        findings_omitted = max(0, min(count, 500) - 200) if integrity and missing else 0
+        if integrity:
+            row = matrix["configuration_integrity"]
+            self.assertEqual(len(bundle.integrity_findings), min(count, 200) if missing else 0)
+            self.assert_omission_row(row, "configuration_integrity_partition_reference_limit_exceeded",
+                                     max(0, count - 500))
+            self.assertEqual("configuration_integrity_finding_limit_exceeded" in row["coverage_limitations"],
+                             bool(findings_omitted))
+            self.assertEqual(any(item.startswith(f"integrity_finding_limit: {findings_omitted} ")
+                                 for item in row["warnings"]), bool(findings_omitted))
+            self.assertEqual(row["completeness"],
+                             "partial" if count > 500 or findings_omitted else "complete")
+        truncated = bool((dependency and count > 200) or findings_omitted)
+        self.assertEqual(bundle.timeline_truncated, truncated)
+        self.assertEqual("Bounded normalized-event retention was reached." in output.warnings, truncated)
+        self.assertFalse(bundle.evidence_truncated)
+        if count - kept or truncated:
+            self.assertEqual(output.data["result_status"], "partial")
+        return output
+
+    async def check_handoff(self, target, count, *, incident_context):
+        bundle = await self.handoff_service.provider._collect({
+            **HANDOFF_VALUES, "focus_entity_ids": [target], "include_incident_context": incident_context})
+        output = await self.handoff([target], include_incident_context=incident_context)
+        items = sum(item.title == "Scene/group loaded membership" for item in bundle.items)
+        self.assertEqual(items, min(count, 200))
+        omitted = max(0, count - 200)
+        self.assertEqual(bundle.item_truncated, bool(omitted))
+        self.assertEqual("The bounded handoff item retention limit was reached." in output.warnings,
+                         bool(omitted))
+        matrix = rows(output.data)
+        self.assert_omission_row(matrix["dependency_index"],
+                                 "dependency_index_partition_reference_limit_exceeded", omitted)
+        self.assertEqual(matrix["configuration_integrity"]["coverage_limitations"],
+                         ["bounded_handoff_integrity_scope"])
+        if omitted:
+            self.assertEqual(output.data["result_status"], "partial")
+            if incident_context:
+                self.assertEqual(matrix["incident_correlation"]["completeness"], "partial")
+        return output
+
+    async def request_counts(self):
+        self.home.rest_counts.clear()
+        self.home.ws_counts.clear()
+        self.home.batch_calls.clear()
+        await self.incident(self.MISSING)
+        await self.handoff([self.MISSING])
+        return dict(self.home.rest_counts), dict(self.home.ws_counts), len(self.home.batch_calls)
+
+    async def test_emission_bound_199_200_201(self):
+        requests = {}
+        for count in (199, 200, 201):
+            with self.subTest(count=count):
+                await self.setup_groups(count, self.MISSING)
+                before = governance_bytes(self.index.snapshot)
+                await self.incident(self.MISSING)  # warm per-service lazy state
+                await self.handoff([self.MISSING])
+                requests[count] = await self.request_counts()
+                for dependency, integrity in ((True, True), (True, False), (False, True)):
+                    with self.subTest(dependency=dependency, integrity=integrity):
+                        await self.check_incident(self.MISSING, count, dependency=dependency,
+                                                  integrity=integrity)
+                for incident_context in (False, True):
+                    with self.subTest(incident_context=incident_context):
+                        await self.check_handoff(self.MISSING, count, incident_context=incident_context)
+                self.assertEqual(governance_bytes(self.index.snapshot), before)
+        # The disclosure costs no request: the same requests below and above the bound.
+        self.assertEqual(requests[201], requests[200])
+        self.assertEqual(requests[200], requests[199])
+
+    async def test_selection_bound_499_500_501(self):
+        for target in (self.PRESENT, self.MISSING):
+            for count in (499, 500, 501):
+                with self.subTest(target=target, count=count):
+                    await self.setup_groups(count, target)
+                    for dependency, integrity in ((True, True), (False, True)):
+                        with self.subTest(dependency=dependency, integrity=integrity):
+                            await self.check_incident(target, count, dependency=dependency,
+                                                      integrity=integrity)
+                    await self.check_handoff(target, count, incident_context=False)
+
+    async def test_disclosure_survives_cursor_continuation(self):
+        await self.setup_groups(201, self.MISSING)
+        first = await self.handoff([self.MISSING], include_incident_context=False, limit=1)
+        cursor, pages = first.data["pagination"]["next_cursor"], 1
+        self.assertTrue(cursor)
+        while cursor and pages < 3:
+            page = await self.handoff([self.MISSING], include_incident_context=False, limit=1, cursor=cursor)
+            pages += 1
+            self.assertEqual(page.data["result_status"], "partial")
+            self.assert_omission_row(rows(page.data)["dependency_index"],
+                                     "dependency_index_partition_reference_limit_exceeded", 1)
+            cursor = page.data["pagination"]["next_cursor"]
+        self.assertGreater(pages, 1)
+        first = await self.incident(self.MISSING, limit=1)
+        self.assertEqual(first.data["result_status"], "partial")
+        cursor = first.data["pagination"]["next_cursor"]
+        self.assertTrue(cursor)
+        page = await self.incident(self.MISSING, limit=1, cursor=cursor)
+        self.assertEqual(page.data["result_status"], "partial")
+        matrix = rows(page.data)
+        self.assert_omission_row(matrix["dependency_index"],
+                                 "dependency_index_partition_reference_limit_exceeded", 1)
+        self.assertIn("configuration_integrity_finding_limit_exceeded",
+                      matrix["configuration_integrity"]["coverage_limitations"])
+        self.assertEqual(matrix["configuration_integrity"]["completeness"], "partial")
 
 class AbsentStoreTests(Harness):
     """An absent partition keeps the prior bounded behavior, with no failure."""

@@ -97,11 +97,24 @@ An incomplete partition source adds `dependency_index_<source>_partial` or
 `configuration_integrity_<source>_partial` or `_unavailable` to the
 configuration-integrity row, which then reports `partial`. As an
 implementation default pending Josh, that row inherits partiality only from
-the partition and stays not required for the assessment. These are coverage
-limitations, not failures: `failed_items` stays 0. Withheld dashboard
-authority removes cached dashboard evidence. Cursors are bound to the
-partition's visible fingerprint and become `STALE_CURSOR`
-(`diagnostic_evidence_changed`) when it changes.
+the partition and its bounds (below) and stays not required for the
+assessment. These are coverage limitations, not failures: `failed_items`
+stays 0. Withheld dashboard authority removes cached dashboard evidence.
+Cursors are bound to the partition's visible fingerprint and become
+`STALE_CURSOR` (`diagnostic_evidence_changed`) when it changes.
+
+The consumer bounds are disclosed, never reported as complete (Codex F1). At
+most 500 scoped partition references are selected and at most 200 become
+`dependency_relationship` events. References beyond the 200 make the
+dependency row `partial` with `dependency_index_partition_reference_limit_exceeded`
+and a counted `partition_reference_limit:` warning, and set
+`timeline_truncated`. References beyond the 500 are not assessed for
+integrity: the configuration-integrity row reports `partial` with
+`configuration_integrity_partition_reference_limit_exceeded`. Integrity
+findings beyond the bounded 200 make that row `partial` with
+`configuration_integrity_finding_limit_exceeded` and a counted
+`integrity_finding_limit:` warning, and set `timeline_truncated`. The
+disclosure is repeated on every cursor page.
 
 `missing_evidence` means evidence was actually absent or failed. A partial source
 with usable evidence instead appears under `coverage_limitations`. Actual item

@@ -729,19 +729,35 @@ async def collect_global_sources(
 # (configuration integrity, incident correlation, handoff generation). Each
 # caller reads ``visible()`` once and passes that view here.
 CONSUMED_SOURCE_TYPES = ("scene", "group", "dashboard")
+# The consumers' bounds: at most this many scoped references are selected for
+# one request, and at most ``PARTITION_EMISSION_LIMIT`` of them are emitted as
+# relationship events or handoff items. A reference beyond either bound is
+# disclosed as an omission (a coverage limitation, never a read failure).
+PARTITION_SELECTION_LIMIT = 500
+PARTITION_EMISSION_LIMIT = 200
+PARTITION_REFERENCE_LIMIT_ID = "partition_reference_limit_exceeded"
 
 
 def scoped_partition_findings(
-    partition: GlobalSourceDiagnostics | None, entity_ids, *, limit: int = 500,
-) -> list[DependencyFinding]:
-    """Visible partition findings whose target is one of ``entity_ids``."""
+    partition: GlobalSourceDiagnostics | None, entity_ids, *,
+    limit: int = PARTITION_SELECTION_LIMIT,
+) -> tuple[list[DependencyFinding], int]:
+    """The first ``limit`` visible partition findings whose target is one of
+    ``entity_ids``, and how many such findings there are in total."""
     if partition is None:
-        return []
+        return [], 0
     scope = set(entity_ids)
-    return [
+    matched = [
         item for item in partition.findings
         if item.source_type in CONSUMED_SOURCE_TYPES and item.target_entity_id in scope
-    ][:limit]
+    ]
+    return matched[:max(0, int(limit))], len(matched)
+
+
+def partition_omission_warning(omitted: int, kept: int, consequence: str = "omitted") -> str:
+    """A bounded, count-bearing description of a consumer omission."""
+    return (f"partition_reference_limit: {int(omitted)} scoped scene, group or dashboard "
+            f"reference(s) {consequence} beyond the bounded {int(kept)}.")[:240]
 
 
 def incomplete_partition_rows(
