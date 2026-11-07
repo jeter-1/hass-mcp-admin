@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 import json
 from typing import Any
 
+from .. import secret_paths
 from ..request_context import current_request_id
 
 MAX_CHARS = 60_000
@@ -499,6 +500,17 @@ def dump_json_with_truncation(data: Any, limit: int = MAX_CHARS) -> tuple[str, b
     if type(limit) is not int or limit < 2:
         raise ValueError("response bound must be an integer of at least two")
     output = json.dumps(data, indent=2, default=str)
+    if secret_paths.configured() and secret_paths.contains(output):
+        # HAMCP-288: the configured ha-mcp secret path never leaves in a
+        # response, whatever produced it; redacted before the size bound.
+        data = secret_paths.redact_tree(data)
+        output = json.dumps(data, indent=2, default=str)
+        if secret_paths.contains(output):
+            try:
+                data = json.loads(secret_paths.redact(output))
+            except ValueError:
+                data = secret_paths.MARKER
+            output = json.dumps(data, indent=2, default=str)
     if len(output) <= limit:
         return output, False
     compact = _compact_json(data)

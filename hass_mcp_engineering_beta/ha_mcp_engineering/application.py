@@ -23,6 +23,7 @@ from .configuration import (
     parse_upstream_dashboard_endpoint,
 )
 from .errors import ConfigurationError
+from . import secret_paths
 from .logging_config import configure_logging, get_logger, log_event
 from .health import HEALTH
 from .clients import HomeAssistantRestClient
@@ -184,6 +185,9 @@ def create_application(
     core_snapshot_source=None,
 ):
     settings = settings or load_settings()
+    # HAMCP-288: the configured ha-mcp secret path is redacted from every
+    # output before any provider, sink or listener exists.
+    secret_paths.configure(settings.upstream_dashboard_mcp_url)
     from .audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
     from .backup_inventory.service import BACKUP_INVENTORY
@@ -550,12 +554,14 @@ async def _serve(settings: Settings) -> None:
         )
 
     mcp_server = create_mcp_listener(
-        gateway, port=settings.port, log_level=settings.log_level.lower(),
+        secret_paths.ResponseGuard(gateway),
+        port=settings.port,
+        log_level=settings.log_level.lower(),
     )
     try:
         approval_server = uvicorn.Server(
             uvicorn.Config(
-                create_approval_application(settings),
+                secret_paths.ResponseGuard(create_approval_application(settings)),
                 host="0.0.0.0",
                 port=settings.ingress_port,
                 log_level=settings.log_level.lower(),
@@ -664,6 +670,9 @@ async def _serve(settings: Settings) -> None:
 
 
 def main() -> None:
+    # HAMCP-288: every write to stdout/stderr (log handlers, uvicorn,
+    # tracebacks, print) is redacted line by line once the path is known.
+    secret_paths.install_stream_guard()
     try:
         settings = load_settings()
     except ConfigurationError as exc:
@@ -671,6 +680,7 @@ def main() -> None:
         log_event(get_logger("application"), logging.ERROR, "startup_validation_failed",
                   exc.safe_message, context=exc.details)
         sys.exit("FATAL: beta configuration validation failed; review structured logs")
+    secret_paths.configure(settings.upstream_dashboard_mcp_url)
     configure_logging(settings.log_level)
     logger = get_logger("application")
     try:

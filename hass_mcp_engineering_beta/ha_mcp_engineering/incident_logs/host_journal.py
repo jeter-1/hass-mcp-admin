@@ -46,6 +46,7 @@ import time
 from types import MappingProxyType
 from typing import Callable
 
+from .. import secret_paths
 from ..configuration_definitions import credentials
 from ..configuration_definitions.credentials import (
     OMISSION as WITHHELD_OMISSION, UNVERIFIABLE_MARKER, UNVERIFIABLE_OMISSION, WITHHELD_MARKER,
@@ -153,6 +154,8 @@ UNAVAILABLE_DETAIL = MappingProxyType({
     "journal_unreadable": "the host journal directory or mount table could not be opened",
     "journal_reader_unavailable": "libsystemd.so.0 or one of its bound symbols is unavailable",
     "journal_empty_or_unsupported": "no journal file with entries could be opened",
+    # HAMCP-288: the ha-mcp app's own log prints its private MCP path.
+    secret_paths.WITHHELD_SOURCE_REASON: secret_paths.WITHHELD_SOURCE_DETAIL,
 })
 
 
