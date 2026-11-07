@@ -271,7 +271,7 @@ class CIEfficiencyTests(unittest.TestCase):
                 self.assertIsInstance(job.get("timeout-minutes"), int)
                 self.assertGreater(job["timeout-minutes"], 0)
         for name, expected in {"validate": 5, "real-ha-contract-tests": 50,
-                               "unit_test_shards": 20, "validate_source": 15,
+                               "unit_test_shards": 30, "validate_source": 15,
                                "exact-image-read-gateway": 25,
                                "exact-addon-runtime-acceptance": 20}.items():
             self.assertEqual(self.jobs[name]["timeout-minutes"], expected)
