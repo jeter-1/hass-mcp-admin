@@ -24,6 +24,7 @@ from tests import test_dependency_build_authority as dependency_tests
 from tests import test_core_update_continuity as continuity_tests
 import tests.test_hamcp162_yaml_admission as yaml_tests
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError
@@ -1704,6 +1705,13 @@ class SignedRegistryKey(unittest.IsolatedAsyncioTestCase):
         # Cumulative: the discarded confirmation plus the fresh streak.
         self.assertEqual(core.health_snapshot()["counters"]["recovery_confirmations"],
                          1 + CORE_RECOVERY_CONFIRMATIONS)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":
