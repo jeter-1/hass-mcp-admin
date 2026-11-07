@@ -151,6 +151,16 @@ provenance, and real failures are combined deterministically. A synthetic repeat
 failure cannot override a successfully acquired shared source; a real distinct
 required operation failure remains visible and increments failure telemetry once.
 
+Since HAMCP-267, scoped scene, group and dashboard references from the
+HAMCP-227 diagnostic partition appear as confirmed findings titled
+`Scene/group loaded membership` or `Dashboard reference`. No extra request is
+made. An incomplete partition source adds `dependency_index_<source>_partial`
+or `_unavailable` to the dependency row. Withheld dashboard authority removes
+cached dashboard evidence. Cursors are bound to the partition's visible
+fingerprint and become `STALE_CURSOR` (`diagnostic_evidence_changed`) when it
+changes. The configuration-integrity row keeps its
+`bounded_handoff_integrity_scope` limitation.
+
 ## Pagination and index provenance
 
 Items use a five-minute signed sanitized snapshot, not a general result cache.

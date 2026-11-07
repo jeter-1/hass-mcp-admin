@@ -11,6 +11,13 @@ from ..clients.paths import rest_path
 
 from ..capabilities import build_capability_catalog
 from ..dependency.extraction import valid_entity_id
+from ..dependency.global_sources import (
+    CONSUMED_SOURCE_TYPES,
+    incomplete_partition_rows,
+    partition_limitations,
+    partition_summary,
+    scoped_partition_findings,
+)
 from ..incident.models import IncidentSourceCoverage
 from ..observability import METRICS
 from ..providers import (
@@ -37,6 +44,12 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
 
     def active_index_identity(self) -> dict[str, object]:
         return self.index.active_identity()
+
+    def active_diagnostic_identity(self) -> str:
+        """HAMCP-267: the committed diagnostic partition as visible now."""
+
+        global_sources = getattr(getattr(self.index, "snapshot", None), "global_sources", None)
+        return global_sources.visible().fingerprint if global_sources is not None else ""
 
     def __init__(self, *, governance, incident, dependency_index, rest_client, health, secret="", ha_token=""):
         self.governance = governance
@@ -193,19 +206,29 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
 
         index_requested = bool(query["include_dependency_context"] or query["include_integrity_context"])
         index_snapshot = None
+        partition = None
         rebuilt = False
         lookup_ms = 0.0
         if index_requested:
             try:
                 index_snapshot, rebuilt, lookup_ms = await self.index.get(refresh=query["refresh_index"])
+                # HAMCP-267: read the diagnostic partition once per request.
+                global_sources = getattr(index_snapshot, "global_sources", None)
+                partition = global_sources.visible() if global_sources is not None else None
                 requested_rows = [row for row in index_snapshot.coverage if row.completeness != "not_requested"]
+                if partition is not None:
+                    # The partition rows stand in for the snapshot's scene, group
+                    # and dashboard rows; their counts are limitations, not failures.
+                    requested_rows = [row for row in requested_rows if row.source_type not in CONSUMED_SOURCE_TYPES]
                 failed = sum(max(0, int(row.failed_item_count)) for row in requested_rows)
                 unsupported = sorted(row.source_type for row in requested_rows if row.provider == "none" and row.completeness in {"unavailable", "unsupported", "not_supported"})
-                completeness = "partial" if failed or unsupported else "complete"
-                limitations = ["dependency_index_unsupported_source_types"] if unsupported else []
+                partition_rows = incomplete_partition_rows(partition)
+                completeness = "partial" if failed or unsupported or partition_rows else "complete"
+                limitations = (["dependency_index_unsupported_source_types"] if unsupported else []) + partition_limitations(partition, "dependency_index")
+                requested_rows = [*requested_rows, *partition_rows]
                 coverage.append(IncidentSourceCoverage(
                     "dependency_index", "engineering", "dependency_analysis", completeness,
-                    True, True, len(index_snapshot.findings), failed,
+                    True, True, len(index_snapshot.findings) + (len(partition.findings) if partition is not None else 0), failed,
                     [str(w)[:240] for row in requested_rows for w in row.warnings][:10],
                     lookup_ms, not rebuilt, "item_read_failure" if failed else None,
                     True, limitations,
@@ -219,6 +242,11 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                     summary = f"{finding.source_type} {finding.source_id} has an exact dependency on {finding.target_entity_id}."
                     ref = _reference(evidence, "dependency_index", finding.source_id, summary, coverage_status=completeness)
                     items.append(_item("confirmed_findings", "fact", "Static dependency relationship", summary, "current", "low", entities=(finding.target_entity_id,), automations=(finding.source_id,) if finding.source_type == "automation" else (), refs=(ref,), limitations=limitations, key=(finding.source_type, finding.source_id, finding.target_entity_id)))
+                for finding in scoped_partition_findings(partition, focus_entities)[:200]:
+                    summary = partition_summary(finding)
+                    ref = _reference(evidence, "dependency_index", finding.source_id, summary, coverage_status=completeness)
+                    title = "Dashboard reference" if finding.source_type == "dashboard" else "Scene/group loaded membership"
+                    items.append(_item("confirmed_findings", "fact", title, summary, "current", "low", entities=(finding.target_entity_id,), refs=(ref,), limitations=limitations, key=(finding.source_type, finding.source_id, finding.target_entity_id)))
                 for dynamic in index_snapshot.dynamic_references:
                     if dynamic.source_id not in set(automation_ids):
                         continue
@@ -339,7 +367,10 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             ) if enabled],
         }
         coverage = _normalize_coverage(coverage)
-        return HandoffEvidenceBundle(scope, items, evidence, coverage, index_info, payloads, (time.perf_counter() - started) * 1000, item_truncated)
+        return HandoffEvidenceBundle(
+            scope, items, evidence, coverage, index_info, payloads, (time.perf_counter() - started) * 1000, item_truncated,
+            diagnostic_fingerprint=partition.fingerprint if partition is not None else "",
+        )
 
     def _governance_plans(self, query):
         try:

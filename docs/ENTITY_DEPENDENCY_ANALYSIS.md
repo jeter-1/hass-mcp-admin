@@ -125,9 +125,12 @@ ledger, the snapshot findings and the snapshot fingerprint: governance
 cannot be downgraded by it, and a dashboard edit changes no approval-bound
 fingerprint. The snapshot rows for scene, group, template and dashboard keep
 their fingerprinted `unavailable` state; `entity_dependency_analysis` and
-`change_impact_analysis` overlay the partition rows. The integrity, incident
-and handoff analyses do not merge it yet (HAMCP-267). Governed plan
-disclosure does not include it (see the beta.55 acceptance, section 1.3).
+`change_impact_analysis` overlay the partition rows. Since HAMCP-267,
+`configuration_integrity_analysis`, `incident_correlation` and
+`handoff_generation` also read the visible partition (see their documents);
+they make no request of their own for it, and their cursors are bound to its
+visible fingerprint. Governed plan disclosure is described by HAMCP-270 (see
+the beta.55 acceptance, section 1.3).
 
 - **Scenes and groups.** Each `scene.*` and `group.*` state's `entity_id`
   attribute is read at `$.attributes.entity_id[n]`. This is loaded

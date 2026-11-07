@@ -62,6 +62,8 @@ class _IncidentSnapshot:
     warnings: tuple[str, ...]
     metadata: dict[str, Any]
     source_partial: bool
+    # HAMCP-267: the visible diagnostic partition the page was built from.
+    diagnostic_fingerprint: str = ""
 
 
 class _IncidentSnapshotStore:
@@ -266,7 +268,11 @@ class IncidentCorrelationService:
             index_requested = bool(bundle.index.get("requested"))
             index_generation = int(bundle.index.get("generation") or 0)
             index_fingerprint = str(bundle.index.get("fingerprint") or "")
-            if index_requested and not _active_index_matches(self.provider, index_generation, index_fingerprint):
+            diagnostic_fingerprint = str(getattr(bundle, "diagnostic_fingerprint", "") or "")
+            if index_requested and (
+                not _active_index_matches(self.provider, index_generation, index_fingerprint)
+                or _active_diagnostic_identity(self.provider) != diagnostic_fingerprint
+            ):
                 METRICS.record_incident_failure("index_changed_before_snapshot_commit")
                 raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE, details=_details("cursor", "index_changed_before_snapshot_commit"))
             snapshot_id = self.pagination_snapshots.put(_IncidentSnapshot(
@@ -278,6 +284,7 @@ class IncidentCorrelationService:
                 evidence_by_id={key: item.public() for key, item in bundle.evidence.items()},
                 events=tuple(item.public() for item in bundle.events), warnings=snapshot_warnings,
                 metadata=copy.deepcopy(metadata), source_partial=source_partial,
+                diagnostic_fingerprint=diagnostic_fingerprint,
             ))
             data["pagination"]["next_cursor"] = self._encode_cursor(
                 snapshot_id=snapshot_id, query_fingerprint=query_fingerprint, evidence_fingerprint=evidence_fingerprint,
@@ -331,6 +338,11 @@ class IncidentCorrelationService:
         if snapshot.index_requested and not _active_index_matches(self.provider, snapshot.index_generation, snapshot.index_fingerprint):
             METRICS.record_incident_cursor_event("stale_cursor")
             raise GovernanceError(ErrorCode.STALE_CURSOR, details=_details("cursor", "active_index_replaced_or_invalidated"))
+        # HAMCP-267: dashboard authority and scene/group membership can change
+        # without an index rebuild.
+        if snapshot.index_requested and _active_diagnostic_identity(self.provider) != snapshot.diagnostic_fingerprint:
+            METRICS.record_incident_cursor_event("stale_cursor")
+            raise GovernanceError(ErrorCode.STALE_CURSOR, details=_details("cursor", "diagnostic_evidence_changed"))
         offset = int(payload["offset"])
         if offset < 0 or offset > len(snapshot.hypotheses):
             METRICS.record_incident_cursor_event("invalid_cursor")
@@ -490,6 +502,19 @@ def _active_index_matches(provider, generation, fingerprint) -> bool:
         return bool(identity.get("valid") and int(identity.get("generation", 0)) == generation and str(identity.get("fingerprint") or "") == fingerprint)
     except Exception:
         return False
+
+
+def _active_diagnostic_identity(provider) -> str | None:
+    """``""`` for a provider without a diagnostic partition; ``None`` on failure."""
+
+    reader = getattr(provider, "active_diagnostic_identity", None)
+    if not callable(reader):
+        return ""
+    try:
+        value = reader()
+    except Exception:
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _timeline_summary(events, cluster_count):
