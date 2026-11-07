@@ -218,6 +218,11 @@ provider, fallback, or write path.
   `request.duplicates_removed`.
 - `lookback_hours` defaults to 168 and is bounded to 1-720. `trace_limit` defaults to 5
   and is bounded to 1-10 per item.
+- The raw arguments are checked before the MCP SDK validates or coerces them: an
+  unknown or missing argument name, a boolean, numeric string or float bound, or any
+  value refused above returns the tool's own `invalid_request` failure naming only a
+  fixed field, reason, bounds or offending indexes. A supplied value or unknown name
+  is never echoed, and no service or provider call is made.
 - At most two items run at once, and all items share one analysis instant. The batch has
   one 45-second budget. An item is not started with less than 5 seconds left; it is
   reported `skipped_budget` with reason `time_budget`. A started item that the budget

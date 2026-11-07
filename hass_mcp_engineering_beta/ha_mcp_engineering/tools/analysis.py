@@ -4,6 +4,7 @@ import json
 import time
 from typing import Annotated, Literal
 
+from mcp.server.fastmcp.tools.base import Tool
 from pydantic import Field
 
 from ..dependency import DEPENDENCY_ANALYSIS
@@ -20,8 +21,9 @@ from ..reliability.batch import (
     MAX_BATCH_TRACE_LIMIT,
     POLICY_ID as BATCH_POLICY_ID,
     RELIABILITY_BATCH,
+    validate_raw_batch_arguments,
 )
-from ..errors import ErrorCode, GovernanceError, map_exception
+from ..errors import ErrorCode, GovernanceError, InvalidRequestError, map_exception
 from ..models import FailureResponse, SuccessResponse
 from ..models.responses import dump_json_with_truncation
 from ..observability import METRICS
@@ -215,11 +217,7 @@ async def automation_reliability_batch_analysis(
     started = time.perf_counter()
     telemetry = current_telemetry()
     limit = min(MAX_BATCH_RESPONSE_CHARS, SETTINGS.response_size_limit)
-    routing = {
-        "lifecycle_status": "beta_native", "classification": "engineering_native",
-        "provider": "engineering", "policy": BATCH_POLICY_ID,
-        "access": "read", "fallback_occurred": False,
-    }
+    routing = _batch_routing()
     try:
         service = RELIABILITY_ANALYSIS.require()
         output = await RELIABILITY_BATCH.analyze(
@@ -265,22 +263,61 @@ async def automation_reliability_batch_analysis(
             )
         return rendered
     except Exception as exc:
-        code, message, retryable, details = map_exception(exc)
-        if telemetry:
-            telemetry.error_code = code.value
-            telemetry.result_status = "failure"
-            telemetry.completeness = "failed"
-        return FailureResponse(
-            operation="automation_reliability_batch_analysis",
-            error=type(exc).__name__,
-            error_code=code.value,
-            message=message,
-            details=details,
-            retryable=retryable,
-            metadata={"routing": routing},
-            timing=timing_since(started),
-            request_id=current_request_id(),
-        ).to_json(SETTINGS.response_size_limit)
+        return _batch_failure(exc, started, routing)
+
+
+def _batch_routing() -> dict:
+    return {
+        "lifecycle_status": "beta_native", "classification": "engineering_native",
+        "provider": "engineering", "policy": BATCH_POLICY_ID,
+        "access": "read", "fallback_occurred": False,
+    }
+
+
+def _batch_failure(exc: Exception, started: float, routing: dict) -> str:
+    code, message, retryable, details = map_exception(exc)
+    telemetry = current_telemetry()
+    if telemetry:
+        telemetry.error_code = code.value
+        telemetry.result_status = "failure"
+        telemetry.completeness = "failed"
+    return FailureResponse(
+        operation="automation_reliability_batch_analysis",
+        error=type(exc).__name__,
+        error_code=code.value,
+        message=message,
+        details=details,
+        retryable=retryable,
+        metadata={"routing": routing},
+        timing=timing_since(started),
+        request_id=current_request_id(),
+    ).to_json(SETTINGS.response_size_limit)
+
+
+class ReliabilityBatchTool(Tool):
+    """Codex M1 (PR #402): validate raw arguments before SDK coercion.
+
+    The closed raw contract runs on the uncoerced mapping, so the SDK can
+    neither coerce a boolean or numeric string into a bound nor render a
+    supplied value into its validation error. A refusal is the tool's own
+    bounded ``invalid_request`` response, before any service or provider
+    call. Valid arguments then take the unchanged SDK path.
+    """
+
+    async def run(self, arguments, context=None, convert_result=False):
+        started = time.perf_counter()
+        try:
+            validate_raw_batch_arguments(arguments)
+        except InvalidRequestError as exc:
+            rendered = _batch_failure(exc, started, _batch_routing())
+            return self.fn_metadata.convert_result(rendered) if convert_result else rendered
+        return await super().run(arguments, context, convert_result)
+
+
+def registered_reliability_batch_tool() -> Tool:
+    # Same name, description, schema and (absent) annotations as the plain
+    # SDK registration it replaces; only the raw-argument boundary is added.
+    return ReliabilityBatchTool.from_function(automation_reliability_batch_analysis)
 
 
 async def change_impact_analysis(

@@ -1116,13 +1116,13 @@ Completeness: **partial**. Planned restarts/reloads only on admitted upstream; l
 | `list_trace_snapshots` | Local snapshots | `trace_snapshots.py:72` |
 | `get_trace_snapshot` | Local snapshots | `trace_snapshots.py:89` |
 | `run_held_read_canary` | Exercises held upstream reads (ha_get_operation_status held_for_canary at 8.6.0) | `canary.py:12` |
-| `entity_dependency_analysis` | Compose-only analysis | `analysis.py:63` |
-| `automation_reliability_analysis` | Compose-only analysis | `analysis.py:135` |
-| `automation_reliability_batch_analysis` | Compose-only analysis | `analysis.py:199` |
-| `change_impact_analysis` | Compose-only analysis | `analysis.py:286` |
-| `configuration_integrity_analysis` | Compose-only analysis | `analysis.py:400` |
-| `incident_correlation` | Compose-only analysis | `analysis.py:535` |
-| `handoff_generation` | Compose-only analysis | `analysis.py:623` |
+| `entity_dependency_analysis` | Compose-only analysis | `analysis.py:65` |
+| `automation_reliability_analysis` | Compose-only analysis | `analysis.py:137` |
+| `automation_reliability_batch_analysis` | Compose-only analysis | `analysis.py:201` |
+| `change_impact_analysis` | Compose-only analysis | `analysis.py:323` |
+| `configuration_integrity_analysis` | Compose-only analysis | `analysis.py:437` |
+| `incident_correlation` | Compose-only analysis | `analysis.py:572` |
+| `handoff_generation` | Compose-only analysis | `analysis.py:660` |
 | `cancel_execution_task` | Local task cancel; no HA write. | `governance.py:120` |
 | `approve_change_plan` | Governance: records an external approval request for an existing plan; reads only Engineering plan state. | `governance.py:680` |
 | `rollback_change` | Governance: replays a plan's own captured rollback through that plan's write path; no source of its own. | `governance.py:724` |

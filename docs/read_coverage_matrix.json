@@ -6455,7 +6455,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 63,
+     "line": 65,
      "anchor": "entity_dependency_analysis"
     }
    ]
@@ -6466,7 +6466,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 135,
+     "line": 137,
      "anchor": "automation_reliability_analysis"
     }
    ]
@@ -6477,7 +6477,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 199,
+     "line": 201,
      "anchor": "automation_reliability_batch_analysis"
     }
    ]
@@ -6488,7 +6488,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 286,
+     "line": 323,
      "anchor": "change_impact_analysis"
     }
    ]
@@ -6499,7 +6499,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 400,
+     "line": 437,
      "anchor": "configuration_integrity_analysis"
     }
    ]
@@ -6510,7 +6510,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 535,
+     "line": 572,
      "anchor": "incident_correlation"
     }
    ]
@@ -6521,7 +6521,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/analysis.py",
-     "line": 623,
+     "line": 660,
      "anchor": "handoff_generation"
     }
    ]

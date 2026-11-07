@@ -571,5 +571,201 @@ class NegativeReachabilityTests(unittest.TestCase):
         self.assertEqual(single.parameters["required"], ["automation_id"])
 
 
+# Codex M1 (PR #402): raw public arguments are refused by the closed contract
+# before the MCP SDK can coerce them or render them into an error. Every case
+# carries a synthetic marker that must never come back to the caller.
+MARKER = "HAMCP229RAWMARK"
+RAW_REASONS = {
+    "invalid_arguments", "unexpected_argument", "missing_argument",
+    "invalid_automation_ids", "empty_automation_ids", "too_many_automation_ids",
+    "invalid_identifier", "out_of_range",
+}
+
+
+def raw_refusal_cases():
+    return (
+        # Wrong types.
+        ("ids_dict", {"automation_ids": {"synthetic": MARKER}}, "invalid_automation_ids"),
+        ("ids_string", {"automation_ids": MARKER}, "invalid_automation_ids"),
+        ("ids_member_dict", {"automation_ids": ["good", {"x": MARKER}]}, "invalid_identifier"),
+        ("ids_member_int", {"automation_ids": ["good", 7]}, "invalid_identifier"),
+        ("ids_member_list", {"automation_ids": [[MARKER]]}, "invalid_identifier"),
+        ("trace_limit_marker_string", {"automation_ids": ["good"], "trace_limit": MARKER}, "out_of_range"),
+        ("lookback_numeric_string", {"automation_ids": ["good"], "lookback_hours": "24"}, "out_of_range"),
+        ("trace_limit_numeric_string", {"automation_ids": ["good"], "trace_limit": "5"}, "out_of_range"),
+        ("lookback_float", {"automation_ids": ["good"], "lookback_hours": 24.0}, "out_of_range"),
+        ("lookback_null", {"automation_ids": ["good"], "lookback_hours": None}, "out_of_range"),
+        # Boolean versus integer.
+        ("lookback_true", {"automation_ids": ["good"], "lookback_hours": True}, "out_of_range"),
+        ("trace_limit_true", {"automation_ids": ["good"], "trace_limit": True}, "out_of_range"),
+        ("trace_limit_false", {"automation_ids": ["good"], "trace_limit": False}, "out_of_range"),
+        # Unknown and missing keys.
+        ("unknown_key", {"automation_ids": ["good"], "detail_level": "full"}, "unexpected_argument"),
+        ("unknown_marker_key", {"automation_ids": ["good"], MARKER: 1}, "unexpected_argument"),
+        ("missing_ids", {"trace_limit": 5}, "missing_argument"),
+        # Oversize lists.
+        ("oversize", {"automation_ids": ids(MAX_BATCH_ITEMS + 1, prefix=MARKER)}, "too_many_automation_ids"),
+        ("oversize_duplicates", {"automation_ids": [MARKER] * (MAX_BATCH_ITEMS + 1)}, "too_many_automation_ids"),
+        ("empty", {"automation_ids": []}, "empty_automation_ids"),
+        # Synthetic secret-looking values.
+        ("secret_member", {"automation_ids": ["good", f"Bearer {SYNTHETIC_SECRET}"]}, "invalid_identifier"),
+        ("secret_bound", {"automation_ids": ["good"], "lookback_hours": SYNTHETIC_SECRET}, "out_of_range"),
+        ("secret_key", {"automation_ids": ["good"], SYNTHETIC_SECRET: True}, "unexpected_argument"),
+        ("secret_nested", {"automation_ids": {"token": SYNTHETIC_SECRET}}, "invalid_automation_ids"),
+    )
+
+
+def secret_markers(arguments):
+    """Every caller-supplied marker that must not be reflected."""
+
+    text = json.dumps(arguments)
+    return [value for value in (MARKER, SYNTHETIC_SECRET) if value in text]
+
+
+class RawArgumentAssertions:
+    def assert_refused_without_echo(self, rendered, expected_reason, arguments):
+        for marker in secret_markers(arguments):
+            self.assertNotIn(marker, rendered)
+        self.assertNotIn("input_value", rendered)
+        self.assertNotIn("validation error", rendered.lower())
+        output = json.loads(rendered)
+        self.assertIs(output["success"], False)
+        self.assertEqual(output["operation"], TOOL)
+        self.assertEqual(output["error"], "InvalidRequestError")
+        self.assertEqual(output["error_code"], ErrorCode.INVALID_REQUEST.value)
+        self.assertFalse(output["retryable"])
+        self.assertEqual(output["details"]["reason"], expected_reason)
+        self.assertIn(output["details"]["reason"], RAW_REASONS)
+        self.assertLessEqual(
+            set(output["details"]),
+            {"operation", "reason", "field", "minimum", "maximum", "received", "invalid_indexes"},
+        )
+        self.assertFalse(output["metadata"]["routing"]["fallback_occurred"])
+
+
+def sdk_text(result):
+    """The text content of a FastMCP ``call_tool`` result."""
+
+    content = result[0] if isinstance(result, tuple) else result
+    return content[0].text
+
+
+class RawArgumentSdkBoundaryTests(RawArgumentAssertions, unittest.TestCase):
+    """The served FastMCP registration, not the Python function."""
+
+    def call(self, arguments):
+        return run(get_registered_server().call_tool(TOOL, arguments))
+
+    def test_invalid_raw_arguments_are_refused_before_sdk_coercion_without_echo(self):
+        for name, arguments, reason in raw_refusal_cases():
+            with self.subTest(case=name):
+                provider = PerIdProvider()
+                with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)), \
+                        patch.object(batch_module.RELIABILITY_BATCH, "analyze") as analyze:
+                    rendered = sdk_text(self.call(copy.deepcopy(arguments)))
+                self.assert_refused_without_echo(rendered, reason, arguments)
+                self.assertEqual(provider.calls, [])
+                analyze.assert_not_called()
+
+    def test_registered_tool_keeps_the_public_schema_and_catalog(self):
+        tools = registered_tools(get_registered_server())
+        self.assertEqual(len(tools), 82)
+        tool = tools[TOOL]
+        self.assertIsNone(tool.annotations)
+        self.assertEqual(tool.description, automation_reliability_batch_analysis.__doc__)
+        self.assertNotIn("additionalProperties", tool.parameters)
+        self.assertEqual(tool.parameters["title"], f"{TOOL}Arguments")
+
+    def test_valid_arguments_still_succeed_through_the_sdk(self):
+        provider = PerIdProvider()
+        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)):
+            explicit = json.loads(sdk_text(self.call({
+                "automation_ids": ids(MAX_BATCH_ITEMS), "lookback_hours": 24, "trace_limit": 3,
+            })))
+        self.assertTrue(explicit["success"], explicit)
+        self.assertEqual(explicit["data"]["coverage"]["deduplicated"], MAX_BATCH_ITEMS)
+        self.assertEqual({call["lookback_hours"] for call in provider.calls}, {24})
+        provider = PerIdProvider()
+        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)):
+            defaults = json.loads(sdk_text(self.call({"automation_ids": ["b", "a", "b"]})))
+        self.assertTrue(defaults["success"], defaults)
+        self.assertEqual(defaults["data"]["request"]["duplicates_removed"], ["b"])
+        self.assertEqual([call["automation_id"] for call in provider.calls], ["b", "a"])
+
+
+class RawArgumentGatewayTests(RawArgumentAssertions, unittest.TestCase):
+    """The production HTTP gateway and pinned SDK, with synthetic Core only."""
+
+    @classmethod
+    def setUpClass(cls):
+        import dataclasses
+        import tempfile
+
+        from tests import test_beta_v2 as beta
+        from tests.same_thread_asgi_client import SameThreadAsgiTestClient
+        from tests.support.process_isolation import restore_after_class
+        from ha_mcp_engineering.application import create_application
+        from ha_mcp_engineering.governance import GOVERNANCE
+        from ha_mcp_engineering.ha_core_readmission.runtime import CORE_READMISSION
+
+        restore_after_class(cls)
+
+        class SyntheticCoreSource:
+            async def capture_core_snapshot(self):
+                return beta.core_snapshot("2026.8.1", evidence=beta.core_capability_evidence())
+
+        cls.beta = beta
+        cls.tempdir = tempfile.TemporaryDirectory()
+        settings = dataclasses.replace(
+            beta.beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl")),
+            rate_limit_per_minute=6000, rate_limit_burst=1000,
+        )
+        gateway = create_application(settings, core_snapshot_source=SyntheticCoreSource())
+        asyncio.run(CORE_READMISSION.reconcile_once("startup"))
+        asyncio.run(GOVERNANCE.require().f3_runtime.recover_once("synthetic-application-startup"))
+        cls.client_context = SameThreadAsgiTestClient(gateway, lifespan_app=gateway.app, follow_redirects=False)
+        cls.client = cls.client_context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_context.__exit__(None, None, None)
+        cls.tempdir.cleanup()
+
+    def post(self, arguments, request_id):
+        response = self.client.post(
+            f"/{self.beta.SECRET}/mcp",
+            json={"jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                  "params": {"name": TOOL, "arguments": arguments}},
+            headers={"accept": "application/json, text/event-stream",
+                     "content-type": "application/json", "x-request-id": request_id},
+        )
+        line = next(item for item in response.text.replace("\r", "").splitlines()
+                    if item.startswith("data: "))
+        return response.text, json.loads(line.removeprefix("data: "))["result"]
+
+    def test_invalid_raw_arguments_are_refused_over_http_without_echo_or_dispatch(self):
+        for number, (name, arguments, reason) in enumerate(raw_refusal_cases()):
+            with self.subTest(case=name):
+                provider = PerIdProvider()
+                with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)), \
+                        patch.object(batch_module.RELIABILITY_BATCH, "analyze") as analyze:
+                    body, result = self.post(copy.deepcopy(arguments), f"hamcp229-raw-{number}")
+                for marker in secret_markers(arguments):
+                    self.assertNotIn(marker, body)
+                self.assertNotIn("input_value", body)
+                self.assertFalse(result.get("isError"))
+                self.assert_refused_without_echo(result["content"][0]["text"], reason, arguments)
+                self.assertEqual(provider.calls, [])
+                analyze.assert_not_called()
+
+    def test_valid_arguments_still_succeed_over_http(self):
+        provider = PerIdProvider()
+        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)):
+            _, result = self.post({"automation_ids": ["a", "b"], "lookback_hours": 1}, "hamcp229-raw-ok")
+        output = json.loads(result["content"][0]["text"])
+        self.assertTrue(output["success"], output)
+        self.assertEqual([call["lookback_hours"] for call in provider.calls], [1, 1])
+
+
 if __name__ == "__main__":
     unittest.main()

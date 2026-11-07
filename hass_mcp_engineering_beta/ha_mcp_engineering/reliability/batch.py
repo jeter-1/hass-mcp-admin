@@ -105,6 +105,38 @@ def validate_batch_request(automation_ids, lookback_hours, trace_limit) -> tuple
     return unique, duplicates
 
 
+RAW_ARGUMENT_NAMES = frozenset({"automation_ids", "lookback_hours", "trace_limit"})
+
+
+def validate_raw_batch_arguments(arguments) -> None:
+    """The closed contract on the raw public arguments, before SDK coercion.
+
+    Codex M1 (PR #402): the MCP SDK validates and coerces arguments (a
+    boolean becomes an integer) and renders invalid values into its error
+    text. This check runs on the uncoerced mapping first, refuses unknown or
+    missing names and every value ``validate_batch_request`` refuses, and
+    names only fixed fields, reasons and indexes, never a supplied value or
+    an unknown argument name.
+    """
+
+    def refuse(reason: str, **extra) -> InvalidRequestError:
+        return InvalidRequestError(details={"operation": OPERATION, "reason": reason, **extra})
+
+    if type(arguments) is not dict:
+        raise refuse("invalid_arguments")
+    if any(type(name) is not str or name not in RAW_ARGUMENT_NAMES for name in arguments):
+        raise refuse("unexpected_argument")
+    if "automation_ids" not in arguments:
+        raise refuse("missing_argument", field="automation_ids")
+    if type(arguments["automation_ids"]) is not list:
+        raise refuse("invalid_automation_ids", field="automation_ids")
+    validate_batch_request(
+        arguments["automation_ids"],
+        arguments.get("lookback_hours", DEFAULT_BATCH_LOOKBACK_HOURS),
+        arguments.get("trace_limit", DEFAULT_BATCH_TRACE_LIMIT),
+    )
+
+
 @dataclass
 class _ItemOutcome:
     automation_id: str
