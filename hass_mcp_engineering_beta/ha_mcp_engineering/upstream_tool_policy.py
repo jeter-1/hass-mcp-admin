@@ -1359,11 +1359,13 @@ def load_upstream_tool_policy(
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
     from .providers import upstream_reads_9_1 as reads_9_1
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
-    from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, OPTIONAL_NAMES
+    from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, ALL_OPTIONAL_NAMES
     for entry in entries:
         # The optional YAML reader is binary-owned (HAMCP-162): a policy
-        # document can neither carry its adapter token nor review its names.
-        if entry.upstream_name in OPTIONAL_NAMES or any(
+        # document can neither carry its adapter token nor review its names,
+        # including the version-specific prohibited siblings (HAMCP-319: the
+        # 9.1 ha_write_file and ha_delete_file).
+        if entry.upstream_name in ALL_OPTIONAL_NAMES or any(
             token in YAML_ADAPTERS for token in entry.argument_restrictions
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_yaml_adapter")
