@@ -58,8 +58,8 @@ async def capture_automation_trace(
     captured. Each run reports captured, already_captured, trace_not_retained,
     run_in_progress, over_size_bound, store_full or read_failed. Reads only
     trace/list and trace/get for the automation domain; writes only the
-    Engineering-local store (200 snapshots, 256 KiB each, 90 days; refused when
-    full). Values are sanitized before storage; a resolved !secret in a field
+    Engineering-local store (500 snapshots and 128 MiB, 256 KiB each, 90 days;
+    refused when full). Values are sanitized before storage; a resolved !secret in a field
     that is neither credential-named nor credential-shaped is not detectable.
     """
     return await _respond(
@@ -132,9 +132,9 @@ async def set_automation_trace_watch(
     stopped runs matching the mode (failures: error, aborted, cancelled,
     failed_single, failed_max_runs, disallowed_recursion_detected or an error
     field; executed: every run except failed_conditions and not_triggered).
-    Each watch keeps at most 5 snapshots and evicts only its own oldest;
-    watch snapshots together never exceed 100, and manual snapshots are never
-    evicted. Polling pauses while Core authority is unavailable; missed runs
+    Each watch keeps at most 20 snapshots and evicts only its own oldest;
+    watch snapshots together never exceed 400 (100 MiB), and manual snapshots
+    are never evicted. Polling pauses while Core authority is unavailable; missed runs
     are counted, never backfilled.
     """
     return await _respond(

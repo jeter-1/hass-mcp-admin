@@ -415,6 +415,7 @@ class TraceSnapshotService:
             "lapsed_dropped": lifecycle["lapsed_dropped"],
             "warning_window_hours": c.EXPIRY_WARNING_HOURS,
             "lifecycle_store": "reset" if self.store.lifecycle_reset else "ok",
+            "overflow_store": "reset" if self.store.overflow_reset else "ok",
         }
 
     @staticmethod
@@ -534,8 +535,11 @@ class TraceSnapshotService:
         """Store ``prepared`` records in one transaction; return outcomes.
 
         A manual capture is refused at capacity (E1). A watch capture evicts
-        only its own oldest snapshot past the watch quota (E2); the global
-        bounds still refuse. ``update_watch(watch)`` applies poll state to
+        only its own oldest snapshot past the watch quota (E2, 20 per watch);
+        the global bounds (500 snapshots, 128 MiB) and the watch-origin
+        reservation (400 snapshots, 100 MiB) still refuse, never evict. Where
+        the entries live on disk (``index.json`` or the overflow sidecar) is
+        the store's concern (``store.write_index``). ``update_watch(watch)`` applies poll state to
         the current watch row, which may have been replaced or removed since
         the poll began.
 

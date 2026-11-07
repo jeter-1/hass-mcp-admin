@@ -856,11 +856,21 @@ delegated provider or fallback.
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
   bounded size, count and age. Manual
   captures are refused at capacity; a watch evicts only its own snapshots
-  (at most 5 each since HAMCP-296), and watch captures together stay inside
-  a 100-snapshot, 25 MiB reservation, so at least 100 snapshots and 7 MiB
-  always remain for manual captures. Priority, renewal and at most 20
-  lapsed records (7 days) live in `watch-lifecycle.json`; damage to it
-  resets only that file and never blocks the snapshot store.
+  (at most 20 each), and watch captures together stay inside a
+  400-snapshot, 100 MiB reservation (HAMCP-296) that is refused, never
+  evicted, when full. The store holds at most 500 snapshots and 128 MiB
+  since HAMCP-296, so at least 100 snapshots and 28 MiB always remain for
+  manual captures. `index.json` keeps the shipped v1 bounds (10 watches,
+  200 snapshot entries, 32 MiB of entry bytes; manual captures first, then
+  the newest watch captures); further snapshot entries live in the
+  closed-schema `snapshot-overflow.json` sidecar (4 MiB bound), and
+  priority, renewal, watches 11-20 and at most 20 lapsed records (7 days)
+  in `watch-lifecycle.json` (512 KiB bound). Both sidecars use the same
+  lock, `O_NOFOLLOW`, `0600`, fsync and rename, are written before the
+  index, and on damage reset only that file and never block the store. A
+  shipped (v1) server ignores both sidecars and deletes the record files
+  of entries the index does not name, so a downgrade loses every overflow
+  snapshot.
 - **Watch poller.** The only periodic Core read: bounded to 20 watches
   (HAMCP-296; 10 before) every 30 seconds, high-priority watches first, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each

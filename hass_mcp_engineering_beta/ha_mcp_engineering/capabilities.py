@@ -156,7 +156,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "automation-trace-watch-v1", "external_approval_required": False,
         "direct_write_allowed": False, "dispatch_allowed": False, "durable_evidence_write": True,
         "bounded_poller": {"max_watches": 20, "poll_seconds": 30, "max_hours": 168,
-                           "snapshot_quota": 5, "watch_snapshot_reservation": 100,
+                           "snapshot_quota": 20, "watch_snapshot_reservation": 400,
                            "priorities": ["high", "normal"], "lapsed_records": 20},
     },
     {

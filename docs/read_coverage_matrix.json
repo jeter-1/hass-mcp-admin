@@ -4903,7 +4903,7 @@
      "purpose_binding": "automation-trace-snapshot-v1",
      "admission": "native; signed:core.automation_trace_read (compiled-active)",
      "completeness": "partial",
-     "detail": "Durable local snapshot of a trace (262144 B per snapshot, 32 MiB store, 90-day retention, max 5 captures per call).",
+     "detail": "Durable local snapshot of a trace (262144 B per snapshot, 500-snapshot 128 MiB store, 90-day retention, max 5 captures per call).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/trace_snapshots.py",
@@ -4912,7 +4912,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/contracts.py",
-       "line": 20,
+       "line": 26,
        "anchor": "MAX_SNAPSHOTS"
       }
      ]
@@ -4965,7 +4965,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/contracts.py",
-       "line": 39,
+       "line": 62,
        "anchor": "MAX_WATCHES"
       }
      ]
@@ -6921,7 +6921,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "1fd80af7b1355bdb7f312e5e6bf4ee4dc92ae16c45010fe723667bd92eaf824e",
+   "fingerprint": "5a527f09113c8a875b43cb8bf71b5331bc667c762da62135eea365dd98f06df9",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7794,7 +7794,7 @@
     "native:search_entities": "4b30c103858b5555",
     "native:search_services": "bcdecf73c5575c39",
     "native:server_info": "be0768a662e71e7f",
-    "native:set_automation_trace_watch": "93890c7df2913de0",
+    "native:set_automation_trace_watch": "af00b9b4ca3cfa76",
     "native:upsert_automation": "349442c319d1ebf1"
    }
   },

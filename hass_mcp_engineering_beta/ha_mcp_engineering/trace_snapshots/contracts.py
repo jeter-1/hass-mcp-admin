@@ -16,10 +16,33 @@ RECORD_MODEL = "automation-trace-snapshot-v1"
 CAPABILITY = "core.automation_trace_read"
 REQUIREMENTS = (CAPABILITY,)
 
-# Decision B (Josh, 2026-10-26): the design note section 2.4 bounds.
-MAX_SNAPSHOTS = 200
+# Decision B (Josh, 2026-10-26): the design note section 2.4 bounds, with
+# the overall caps raised by HAMCP-296 (below).
 SNAPSHOT_BYTES = 262_144
-STORE_BYTES = 32 * 1024 * 1024
+# HAMCP-296 overall caps (orchestrator default, pending Codex/Josh): above the
+# 400-snapshot, 100 MiB watch reservation, so manual captures keep at least
+# 500 - 400 = 100 snapshots and 128 - 100 = 28 MiB (>= 100 full-size
+# 256 KiB snapshots). Before HAMCP-296 they were 200 and 32 MiB.
+MAX_SNAPSHOTS = 500
+STORE_BYTES = 128 * 1024 * 1024
+# The shipped (2.4.x/2.5.0) v1 index reader marks the whole store
+# ``store_invalid`` when ``index.json`` names more than 200 snapshots or more
+# than 32 MiB of summed entry bytes (shipped ``store.validate_index``; the
+# HAMCP-296 beta.6 fixture provenance records both verdicts). ``index.json``
+# therefore never exceeds the shipped bounds: manual captures first, then
+# the newest watch captures, stay in it and the rest live in the
+# ``snapshot-overflow.json`` sidecar, which shipped code ignores.
+V1_INDEX_MAX_SNAPSHOTS = 200
+V1_INDEX_MAX_BYTES = 32 * 1024 * 1024
+# ``index.json`` size bound (unchanged; the shipped reader uses the same).
+# A worst-case snapshot entry is 6,575 canonical bytes (256-character
+# automation ID, 128-character run ID, three 160-character text fields of
+# astral characters at 12 escaped bytes each), so the 200 v1 entries take
+# about 1.32 MB; with 10 worst-case watch rows (15,346 bytes each) and 20
+# quarantine stubs (648 bytes each) the index stays under 1.49 MB of the
+# 2,097,152 (test ``WorstCaseSizeTests``). A single 500-entry index could
+# need about 3.29 MB, one more reason the entries past the v1 bounds live in
+# the sidecar.
 INDEX_BYTES = 2 * 1024 * 1024
 RETENTION_SECONDS = 90 * 24 * 3600
 MAX_CAPTURES = 5
@@ -42,15 +65,13 @@ MAX_WATCHES = 20
 # never holds more than 10: the rest live in the lifecycle sidecar, which
 # shipped code ignores, so a downgrade keeps the 10 highest-priority watches.
 V1_INDEX_MAX_WATCHES = 10
-# HAMCP-296 snapshot budget: MAX_SNAPSHOTS stays 200 (the shipped reader also
-# rejects more) and the per-watch quota (E2: own-oldest eviction) falls from
-# 20 to 5, so 20 full watches hold at most 100 snapshots and at most
-# 100 x 256 KiB = 25 MiB; at least 100 snapshots and 7 MiB stay for manual
-# captures. Five is the number of runs Core itself retains by default.
-WATCH_QUOTA = 5
-# The reservation that makes the split hold: watch captures together (active,
-# ended or lapsed watches) never exceed 100 snapshots or 25 MiB; a watch
-# capture past it is ``store_full`` and nothing is evicted for it.
+# Decision E2 (Josh, 2026-10-26), kept by Josh on 2026-11-07: each watch
+# holds at most 20 snapshots and evicts only its own oldest past that.
+WATCH_QUOTA = 20
+# The watch-origin reservation (Josh, 2026-11-07: grow it to 20 x 20 = 400
+# snapshots, 400 x 256 KiB = 100 MiB): watch captures together (active,
+# ended or lapsed watches) never exceed it; a watch capture past it is
+# ``store_full`` and nothing is evicted for it (refuse, not evict).
 WATCH_STORE_SNAPSHOTS = MAX_WATCHES * WATCH_QUOTA
 WATCH_STORE_BYTES = WATCH_STORE_SNAPSHOTS * SNAPSHOT_BYTES
 WATCH_MAX_HOURS = 168
@@ -70,6 +91,12 @@ LIFECYCLE_MODEL = "trace-watch-lifecycle-v1"
 # 20 overflow watch rows of at most about 14 KB each (100 seen run IDs), plus
 # 20 lapsed records and 20 metadata rows, stay well under this bound.
 LIFECYCLE_BYTES = 512 * 1024
+# HAMCP-296 snapshot overflow sidecar (``snapshot-overflow.json``): the
+# entries past the v1 index bounds, plus, for one write, any entry moving
+# from it into the index, so at most MAX_SNAPSHOTS entries. 500 worst-case
+# entries take about 3.29 MB of the 4,194,304 (see INDEX_BYTES).
+OVERFLOW_MODEL = "trace-snapshot-overflow-v1"
+OVERFLOW_BYTES = 4 * 1024 * 1024
 EXPIRY_WARNING_HOURS = 24
 LAPSED_MAX = 20
 LAPSED_RETENTION_SECONDS = 7 * 24 * 3600

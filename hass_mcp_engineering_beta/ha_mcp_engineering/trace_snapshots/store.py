@@ -7,6 +7,14 @@ payload reflection. A damaged record is deleted, never retained: the index
 keeps a bounded, content-free quarantine stub for it (HAMCP-225 review H3).
 Hashes detect accidental damage, not an attacker able to rewrite both a
 record and the index.
+
+HAMCP-296 keeps ``index.json`` inside the shipped v1 reader's bounds (10
+watches, 200 snapshots, 32 MiB of entry bytes) and keeps the rest in two
+closed-schema sidecars that shipped code never reads: ``watch-lifecycle.json``
+(watches 11-20, priority, renewal and lapsed records) and
+``snapshot-overflow.json`` (snapshot entries past the v1 bounds). Both are
+written before the index, under the same lock and discipline; damage to
+either resets only that file.
 """
 
 from __future__ import annotations
@@ -44,6 +52,7 @@ DAMAGE_REASONS = frozenset({"missing", "unreadable", "digest_mismatch", "invalid
 # 2.5.0 code never reads it, so nothing in it can make their v1 reader fail.
 LIFECYCLE_KEYS = frozenset({"model", "overflow", "watch_meta", "lapsed", "lapsed_dropped"})
 META_KEYS = frozenset({"watch_id", "priority", "renewed_at_ms"})
+OVERFLOW_KEYS = frozenset({"model", "snapshots"})
 LAPSED_KEYS = frozenset({
     "watch_id", "automation_id", "mode", "priority", "created_at_ms", "expired_at_ms",
     "reason", "captured_count",
@@ -61,6 +70,10 @@ class StoreError(RuntimeError):
 def empty_index():
     return {"model": c.MODEL, "snapshots": [], "watches": [],
             "quarantine": {"entries": [], "dropped": 0}}
+
+
+def empty_overflow():
+    return {"model": c.OVERFLOW_MODEL, "snapshots": []}
 
 
 def empty_lifecycle():
@@ -148,6 +161,50 @@ def _valid_lapsed(record):
             and record["reason"] in c.LAPSE_REASONS and _count(record["captured_count"]))
 
 
+def _unique_snapshots(entries):
+    ids = [e["snapshot_id"] for e in entries]
+    runs = [(e["automation_id"], e["run_id"]) for e in entries]
+    return len(set(ids)) == len(ids) and len(set(runs)) == len(runs)
+
+
+def validate_overflow(value):
+    """The closed snapshot sidecar shape; any other value is damage (reset)."""
+
+    if (type(value) is not dict or set(value) != OVERFLOW_KEYS
+            or value["model"] != c.OVERFLOW_MODEL
+            or type(value["snapshots"]) is not list
+            or len(value["snapshots"]) > c.MAX_SNAPSHOTS
+            or not all(_valid_snapshot(e) for e in value["snapshots"])
+            or not _unique_snapshots(value["snapshots"])
+            or sum(e["bytes"] for e in value["snapshots"]) > c.STORE_BYTES):
+        raise StoreError("store_invalid")
+    return value
+
+
+def keep_order(entries):
+    """Most valuable first: manual captures, then newest; ties by snapshot id."""
+
+    return sorted(entries, key=lambda e: (e["origin"] != "manual", -e["captured_at_ms"],
+                                          e["snapshot_id"]))
+
+
+def v1_snapshot_ids(entries):
+    """The entries ``index.json`` keeps: ``keep_order`` inside the v1 bounds.
+
+    An entry that would pass the byte bound is skipped and a later, smaller
+    one may still fit; the rule is deterministic for a given entry set.
+    """
+
+    kept, total = set(), 0
+    for entry in keep_order(entries):
+        if len(kept) >= c.V1_INDEX_MAX_SNAPSHOTS:
+            break
+        if total + entry["bytes"] <= c.V1_INDEX_MAX_BYTES:
+            kept.add(entry["snapshot_id"])
+            total += entry["bytes"]
+    return kept
+
+
 def validate_lifecycle(value):
     """The closed sidecar shape; any other value is damage (reset, never trusted)."""
 
@@ -177,7 +234,8 @@ def watch_order(watches, meta):
 
 
 def validate_index(value):
-    """The shipped v1 ``index.json`` rule, unchanged: at most 10 watches.
+    """The shipped v1 ``index.json`` rule, unchanged: at most 10 watches,
+    200 snapshots and 32 MiB of summed entry bytes.
 
     HAMCP-296 keeps this the on-disk rule so that every index the new code
     writes is one the shipped reader accepts.
@@ -186,7 +244,7 @@ def validate_index(value):
     if (type(value) is not dict or set(value) != {"model", "snapshots", "watches", "quarantine"}
             or value["model"] != c.MODEL or type(value["snapshots"]) is not list
             or type(value["watches"]) is not list
-            or len(value["snapshots"]) > c.MAX_SNAPSHOTS
+            or len(value["snapshots"]) > c.V1_INDEX_MAX_SNAPSHOTS
             or len(value["watches"]) > c.V1_INDEX_MAX_WATCHES
             or not all(_valid_snapshot(e) for e in value["snapshots"])
             or not all(_valid_watch(w) for w in value["watches"])
@@ -197,7 +255,7 @@ def validate_index(value):
     watched = [w["automation_id"] for w in value["watches"]]
     if (len(set(ids)) != len(ids) or len(set(runs)) != len(runs)
             or len(set(watched)) != len(watched)
-            or sum(e["bytes"] for e in value["snapshots"]) > c.STORE_BYTES):
+            or sum(e["bytes"] for e in value["snapshots"]) > c.V1_INDEX_MAX_BYTES):
         raise StoreError("store_invalid")
     return value
 
@@ -211,6 +269,7 @@ class TraceSnapshotStore:
         self.quarantine_root = self.root / "quarantine"
         self.index_path = self.root / "index.json"
         self.lifecycle_path = self.root / "watch-lifecycle.json"
+        self.overflow_path = self.root / "snapshot-overflow.json"
         self.fault_hook = None
         self.commit_unknown = False
         # The sidecar bytes last read or written; an unchanged sidecar is not rewritten.
@@ -219,6 +278,10 @@ class TraceSnapshotStore:
         self._loaded_overflow = set()
         # Set when a damaged sidecar was replaced by an empty one (process life).
         self.lifecycle_reset = False
+        # The same for the snapshot overflow sidecar.
+        self._overflow_raw = None
+        self._loaded_overflow_snapshots = set()
+        self.overflow_reset = False
 
     def _inject(self, stage):
         if self.fault_hook is not None:
@@ -313,6 +376,60 @@ class TraceSnapshotStore:
         except OSError:
             raise StoreError("store_unavailable") from None
 
+    def _load_overflow(self):
+        """The snapshot sidecar, or an empty one; damage resets it, I/O errors refuse."""
+
+        try:
+            raw = self._read_regular(self.overflow_path, c.OVERFLOW_BYTES)
+            if raw is None:
+                self._overflow_raw = None
+                return empty_overflow()
+            value = validate_overflow(json.loads(raw))
+            self._overflow_raw = raw
+            return value
+        except (StoreError, ValueError, TypeError, RecursionError, OverflowError):
+            self.overflow_reset = True
+            self._overflow_raw = b""
+            return empty_overflow()
+        except OSError:
+            raise StoreError("store_unavailable") from None
+
+    def _merge_overflow(self, index):
+        """Append sidecar snapshot entries the v1 index does not name; True if any was dropped.
+
+        The v1 entries win over a sidecar entry with the same snapshot or
+        run. A sidecar entry whose record file is absent is dropped: its
+        capture never committed, or a downgraded (shipped) server's orphan
+        sweep deleted the file. Past the overall caps (only possible after a
+        downgrade or a failed index write) the least valuable sidecar entries
+        in ``keep_order`` are dropped; their files go at the next tidy.
+        """
+
+        snapshots = index["snapshots"]
+        ids = {e["snapshot_id"] for e in snapshots}
+        ids.update(q["snapshot_id"] for q in index["quarantine"]["entries"])
+        runs = {(e["automation_id"], e["run_id"]) for e in snapshots}
+        candidates = [e for e in self._load_overflow()["snapshots"]
+                      if e["snapshot_id"] not in ids and (e["automation_id"], e["run_id"]) not in runs]
+        self._loaded_overflow_snapshots = set()
+        if not candidates:
+            return False
+        committed, _ = self.record_files()
+        present = [e for e in candidates if e["snapshot_id"] in committed]
+        dropped = len(present) != len(candidates)
+        count, size = len(snapshots), sum(e["bytes"] for e in snapshots)
+        kept = set()
+        for entry in keep_order(present):
+            if count < c.MAX_SNAPSHOTS and size + entry["bytes"] <= c.STORE_BYTES:
+                kept.add(entry["snapshot_id"])
+                count += 1
+                size += entry["bytes"]
+            else:
+                dropped = True
+        snapshots.extend(e for e in present if e["snapshot_id"] in kept)
+        self._loaded_overflow_snapshots = kept
+        return dropped
+
     def load_index(self):
         """The merged in-memory index: v1 watches, then sidecar overflow watches.
 
@@ -325,6 +442,7 @@ class TraceSnapshotStore:
         """
 
         index = self._load_v1_index()
+        overflow_dropped = self._merge_overflow(index)
         lifecycle = self._load_lifecycle()
         watches = list(index["watches"])
         ids = {w["watch_id"] for w in watches}
@@ -344,6 +462,9 @@ class TraceSnapshotStore:
         index["watches"] = watches
         lifecycle["watch_meta"] = [m for m in lifecycle["watch_meta"] if m["watch_id"] in ids]
         lifecycle["recovered"] = recovered
+        if overflow_dropped:
+            # Rewrite the snapshot sidecar without the dropped entries.
+            lifecycle["dirty"] = True
         index["lifecycle"] = lifecycle
         return index
 
@@ -366,7 +487,7 @@ class TraceSnapshotStore:
             finally:
                 os.close(directory)
         except (OSError, ValueError, RecursionError):
-            if replaced and stage in {"index", "lifecycle"}:
+            if replaced and stage in {"index", "lifecycle", "overflow"}:
                 self.commit_unknown = True
             raise StoreError("store_unavailable") from None
         finally:
@@ -376,18 +497,23 @@ class TraceSnapshotStore:
                 pass
 
     def write_index(self, index):
-        """Write the sidecar (when changed), then the v1 index.
+        """Write the sidecars (when changed), then the v1 index.
 
-        ``index.json`` gets the ten first watches in ``watch_order``; the
-        sidecar gets every other watch plus any watch that was in the sidecar
-        as loaded and now moves to the index, so a failed index write after
-        the sidecar write loses no watch (``load_index`` deduplicates).
+        ``index.json`` gets the ten first watches in ``watch_order`` and the
+        snapshot entries ``v1_snapshot_ids`` selects (at most 200 and 32 MiB).
+        Each sidecar gets every other row plus any row that was in that
+        sidecar as loaded and now moves to the index, so a failed index write
+        after a sidecar write loses no row (``load_index`` deduplicates).
         """
 
         lifecycle = index.get("lifecycle") or empty_lifecycle()
         watches = index["watches"]
+        snapshots = index["snapshots"]
         if (len(watches) > c.MAX_WATCHES
-                or len({w["automation_id"] for w in watches}) != len(watches)):
+                or len({w["automation_id"] for w in watches}) != len(watches)
+                or len(snapshots) > c.MAX_SNAPSHOTS
+                or sum(e["bytes"] for e in snapshots) > c.STORE_BYTES
+                or not _unique_snapshots(snapshots)):
             raise StoreError("store_invalid")
         ids = {w["watch_id"] for w in watches}
         meta = [m for m in lifecycle.get("watch_meta", []) if m["watch_id"] in ids]
@@ -395,10 +521,20 @@ class TraceSnapshotStore:
         primary = ordered[:c.V1_INDEX_MAX_WATCHES]
         moving = self._loaded_overflow
         overflow = ordered[c.V1_INDEX_MAX_WATCHES:] + [w for w in primary if w["watch_id"] in moving]
-        v1 = {key: index[key] for key in ("model", "snapshots", "quarantine")}
+        keep = v1_snapshot_ids(snapshots)
+        moving_snapshots = self._loaded_overflow_snapshots
+        v1 = {key: index[key] for key in ("model", "quarantine")}
+        v1["snapshots"] = [e for e in snapshots if e["snapshot_id"] in keep]
         v1["watches"] = primary
         raw = c.canonical(validate_index(v1))
         if len(raw) > c.INDEX_BYTES:
+            raise StoreError("store_invalid")
+        spill = validate_overflow({
+            "model": c.OVERFLOW_MODEL,
+            "snapshots": [e for e in snapshots
+                          if e["snapshot_id"] not in keep or e["snapshot_id"] in moving_snapshots]})
+        spill_raw = c.canonical(spill)
+        if len(spill_raw) > c.OVERFLOW_BYTES:
             raise StoreError("store_invalid")
         sidecar = validate_lifecycle({
             "model": c.LIFECYCLE_MODEL, "overflow": overflow, "watch_meta": meta,
@@ -407,6 +543,10 @@ class TraceSnapshotStore:
         side_raw = c.canonical(sidecar)
         if len(side_raw) > c.LIFECYCLE_BYTES:
             raise StoreError("store_invalid")
+        if spill_raw != self._overflow_raw and (self._overflow_raw is not None
+                                                or spill["snapshots"]):
+            self._replace(spill_raw, self.overflow_path, "overflow")
+            self._overflow_raw = spill_raw
         if side_raw != self._lifecycle_raw and (self._lifecycle_raw is not None or overflow
                                                 or meta or sidecar["lapsed"]
                                                 or sidecar["lapsed_dropped"]):

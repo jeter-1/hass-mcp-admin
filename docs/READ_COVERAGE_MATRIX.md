@@ -883,13 +883,13 @@ Completeness: **partial**. Live traces are limited to what Core still retains; s
 | `list_automation_traces` | direct_ha_api | DIRECT_HA_READ_POLICIES bounded_automation_trace_list_read | native; core.automation_trace_read compiled-active (CORE_CAPABILITY_PROFILES) | partial | WS trace/list domain automation, bounded. | `routing.py:382`<br>`compatibility.py:568` |
 | `get_automation_trace` | direct_ha_api | DIRECT_HA_READ_POLICIES bounded_automation_trace_read | native; core.automation_trace_read compiled-active | partial | WS trace/get domain automation for one run_id; bounded/sanitized. | `routing.py:388`<br>`compatibility.py:582` |
 | `ha_get_automation_traces` | upstream_read_gateway | adapter token ha-mcp-8.6.0-public-reads-v1 | upstream:ha_get_automation_traces 8.6.0 adapter public-reads-v1 | partial | Delegated trace read via reviewed adapter; Core requirement automation_trace_read. | `routes.py:202`<br>`upstream_reads_8_6.py:992` |
-| `capture_automation_trace` | engineering trace_snapshots | automation-trace-snapshot-v1 | native; signed:core.automation_trace_read (compiled-active) | partial | Durable local snapshot of a trace (262144 B per snapshot, 32 MiB store, 90-day retention, max 5 captures per call). | `trace_snapshots.py:47`<br>`contracts.py:20` |
+| `capture_automation_trace` | engineering trace_snapshots | automation-trace-snapshot-v1 | native; signed:core.automation_trace_read (compiled-active) | partial | Durable local snapshot of a trace (262144 B per snapshot, 500-snapshot 128 MiB store, 90-day retention, max 5 captures per call). | `trace_snapshots.py:47`<br>`contracts.py:26` |
 | `list_trace_snapshots` | engineering trace_snapshots | CORE_INDEPENDENT_STATIC_TOOLS (local state) | native | complete | Lists locally stored snapshots. | `trace_snapshots.py:72` |
 | `get_trace_snapshot` | engineering trace_snapshots | CORE_INDEPENDENT_STATIC_TOOLS (local state) | native | complete | Reads one stored snapshot. | `trace_snapshots.py:89` |
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `set_automation_trace_watch` | state | Engineering-local watch (max 20 watches, 168 h, 30 s poll; renew, high/normal priority, lapsed records) | native | Local watch state only; no HA write. | `trace_snapshots.py:106`<br>`contracts.py:39` |
+| `set_automation_trace_watch` | state | Engineering-local watch (max 20 watches, 168 h, 30 s poll; renew, high/normal priority, lapsed records) | native | Local watch state only; no HA write. | `trace_snapshots.py:106`<br>`contracts.py:62` |
 | `capture_automation_trace` | create | local snapshot store | native | Writes Engineering-local snapshot only; no HA write. | `trace_snapshots.py:47` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |
@@ -1181,7 +1181,7 @@ Completeness: **partial**. Planned restarts/reloads only on admitted upstream; l
 
 | Inventory | Items | Fingerprint |
 |---|---|---|
-| tool_catalog | 873 | `1fd80af7b1355bdb` |
+| tool_catalog | 873 | `5a527f09113c8a87` |
 | reader_purposes | 5 | `759281ffbf9c47e5` |
 | core_profiles | 32 | `d832ddda61f6eb61` |
 | provider_registry | 203 | `28709f591ce523ce` |
