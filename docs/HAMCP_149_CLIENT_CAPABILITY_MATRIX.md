@@ -61,14 +61,24 @@ Recorded characterizations:
 
 ## Transport rows
 
-| Row | Layer | Protocol version | Session id | Server capability for resume (`resources.subscribe`, `tasks`) | `clientInfo` visible to tools | Unrelated notification delivered | Mid-call disconnect |
+| Row | Layer | Protocol version | Session id | Server capability for resume (`resources.subscribe`, `tasks`) | `clientInfo` visible to tools | Unrelated notification delivered | Mid-call client close |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Loopback Streamable HTTP, stateless, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | none | none | no | no (dropped, no GET stream) | plan unchanged; re-read reports true state |
-| Loopback Streamable HTTP, stateful, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | yes (observation only; not stored or bound) | not asserted | not run |
-| Loopback Streamable HTTP, stateful, raw HTTP without GET stream | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | not applicable | no (response carries only the call result) | not run |
+| In-process Streamable HTTP, stateless, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | none | none | no | no (dropped, no GET stream) | plan unchanged; re-read reports true state |
+| In-process Streamable HTTP, stateful, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | yes (observation only; not stored or bound) | not asserted | not run |
+| In-process Streamable HTTP, stateful, raw HTTP without GET stream | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | not applicable | no (response carries only the call result) | not run |
 | Claude.ai via Nabu Casa relay | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
 | Claude Code (remote MCP) | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
 | Claude mobile app | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
+| Real socket (uvicorn) Streamable HTTP, any mode | A (synthetic) | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI |
+
+Layer A rows run the real gateway and FastMCP Streamable HTTP app in the test
+process through `httpx.ASGITransport`, with the app lifespan entered directly.
+They use no socket, no uvicorn server and no signal handler. The mid-call row
+closes the client session and cancels its in-flight request; a TCP-level
+disconnect is not exercised in CI. A uvicorn peer was removed because its
+shutdown latched the process-global `sse_starlette` exit flag and ended later
+SSE responses in the same test process. The rows now assert that this flag and
+the SIGTERM handler are unchanged after each test.
 
 Layer B rows need manual observation with a real client against a disposable
 or owner-approved deployment. That is outside HAMCP-149 PR-0 and needs Josh's

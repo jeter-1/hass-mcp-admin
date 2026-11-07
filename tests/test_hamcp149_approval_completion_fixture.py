@@ -16,10 +16,11 @@ non-executing compatibility fixture of the design note, section 3.1, Layer A:
   (two stages), rejection at each stage, challenge expiry (projected, then
   persisted on touch), plan expiry, replan and plan-hash mismatch, stale
   state, another caller, and storage failure;
-* loopback Streamable HTTP rows with the pinned SDK client, stateless and
-  stateful, that record what the server negotiates and prove that a
-  notification unrelated to a request is never delivered without a GET stream
-  and that a mid-call disconnect leaves the plan unchanged.
+* in-process Streamable HTTP rows (``httpx.ASGITransport``; no socket, no
+  uvicorn) with the pinned SDK client, stateless and stateful, that record
+  what the server negotiates and prove that a notification unrelated to a
+  request is never delivered without a GET stream and that closing the
+  client mid-call leaves the plan unchanged.
 
 A completion observation is never execution authority. A test continues only
 through ``apply`` with the exact plan hash, which re-checks approval validity,
@@ -30,12 +31,13 @@ code and selects no S1 or S2 output schema.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 from datetime import timedelta
 import hashlib
 import json
 from pathlib import Path
-import socket
+import signal
 import sys
 import tempfile
 import unittest
@@ -45,7 +47,7 @@ import httpx
 from mcp import ClientSession, types
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.server.fastmcp import Context
-import uvicorn
+from sse_starlette.sse import AppStatus
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -877,27 +879,27 @@ class ReferenceRecipeTests(unittest.TestCase):
         self.assertLessEqual(per_minute * 10, options["rate_limit_per_minute"])
 
 
-# --- Loopback Streamable HTTP rows (synthetic; no Home Assistant) ------------
+# --- In-process Streamable HTTP rows (synthetic; no Home Assistant) ---------
+#
+# The rows drive the real gateway and FastMCP Streamable HTTP app in process
+# through ``httpx.ASGITransport``, with the app lifespan entered explicitly.
+# There is no socket, no uvicorn server and no signal handler. A real uvicorn
+# peer installs a SIGTERM handler that sse_starlette introspects; shutting it
+# down latched the process-global ``sse_starlette.sse.AppStatus.should_exit``
+# and ended every later SSE response in the same test process (HAMCP-149 CI
+# shard 8). ``LoopbackTransportRows`` asserts that this state stays untouched.
 
 SECRET = "synthetic-hamcp149-loopback-secret"
 CLIENT_INFO = types.Implementation(name="synthetic-hamcp149", version="1.0.0")
+PEER_ADDRESS = ("127.0.0.1", 45149)
+BASE_URL = "http://127.0.0.1:8100"
 
 
-def _free_loopback_socket():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    return sock
+class _InProcessPeer:
+    """A disposable in-process Engineering MCP peer over synthetic state."""
 
-
-class _LoopbackPeer:
-    """A disposable loopback Engineering MCP peer over synthetic state."""
-
-    def __init__(self, directory, *, stateful, service, clock):
-        self.sock = _free_loopback_socket()
-        self.port = self.sock.getsockname()[1]
+    def __init__(self, directory, *, stateful, service):
         self.service = service
-        self.clock = clock
         self.observed = []
         self.blocking_entered = asyncio.Event()
         self.blocking_release = asyncio.Event()
@@ -905,7 +907,7 @@ class _LoopbackPeer:
             ha_url="http://synthetic-ha.invalid",
             ha_token="synthetic-hamcp149-token",
             access_secret=SECRET,
-            port=self.port,
+            port=8100,
             audit_path=str(Path(directory) / "audit.jsonl"),
             rate_limit_per_minute=10_000,
             rate_limit_burst=1_000,
@@ -972,14 +974,7 @@ class _LoopbackPeer:
             settings,
             AuditLogger(settings.audit_path, SECRET),
         )
-        self.uvicorn = uvicorn.Server(
-            uvicorn.Config(
-                self.gateway,
-                lifespan="on",
-                log_level="warning",
-                access_log=False,
-            )
-        )
+        self._stack = contextlib.AsyncExitStack()
 
     @staticmethod
     def _fixture():
@@ -987,32 +982,35 @@ class _LoopbackPeer:
 
         return copy.deepcopy(CURRENT)
 
-    @property
-    def url(self):
-        return f"http://127.0.0.1:{self.port}/{SECRET}/mcp"
+    url = f"{BASE_URL}/{SECRET}/mcp"
+
+    def http_client(self, headers=None, timeout=None, auth=None):
+        """Also the SDK ``httpx_client_factory``: in-process, no socket."""
+
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=self.gateway, client=PEER_ADDRESS),
+            base_url=BASE_URL,
+            headers=headers,
+            timeout=timeout if timeout is not None else httpx.Timeout(5),
+            auth=auth,
+        )
 
     async def __aenter__(self):
-        self.task = asyncio.create_task(self.uvicorn.serve(sockets=[self.sock]))
-        for _ in range(200):
-            if self.uvicorn.started:
-                return self
-            if self.task.done():
-                self.task.result()
-            await asyncio.sleep(0.01)
-        raise AssertionError("loopback peer did not start")
+        app = self.gateway.app
+        await self._stack.enter_async_context(app.router.lifespan_context(app))
+        return self
 
     async def __aexit__(self, *exc):
         self.blocking_release.set()
-        self.uvicorn.should_exit = True
-        await asyncio.wait_for(self.task, timeout=10)
-        self.sock.close()
+        await self._stack.aclose()
 
 
 class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
-    """Layer A transport rows: what the pinned SDK negotiates on loopback."""
+    """Layer A transport rows: what the pinned SDK negotiates in process."""
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        self.process_state_before = self.process_transport_state()
         self.install_observer(
             lambda observer: ChangeGovernanceService(
                 self.repository,
@@ -1024,12 +1022,27 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
 
+    async def asyncTearDown(self):
+        # Leak guard: a row must not change process-global transport state
+        # that later Streamable HTTP tests in the same process depend on.
+        self.assertEqual(self.process_transport_state(), self.process_state_before)
+        self.assertFalse(AppStatus.should_exit)
+        await super().asyncTearDown()
+
+    @staticmethod
+    def process_transport_state():
+        return {
+            "sse_app_status_should_exit": AppStatus.should_exit,
+            # SIGINT is excluded: IsolatedAsyncioTestCase's runner installs
+            # its own per-coroutine SIGINT handler.
+            "sigterm_handler": signal.getsignal(signal.SIGTERM),
+        }
+
     def peer(self, *, stateful):
-        return _LoopbackPeer(
+        return _InProcessPeer(
             self.directory.name,
             stateful=stateful,
             service=self.service,
-            clock=self.clock,
         )
 
     async def client_session(self, peer, notifications):
@@ -1038,7 +1051,11 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
                 notifications.append(message.root.method)
 
         streams = streamablehttp_client(
-            peer.url, timeout=5, sse_read_timeout=5, terminate_on_close=True
+            peer.url,
+            timeout=5,
+            sse_read_timeout=5,
+            terminate_on_close=True,
+            httpx_client_factory=peer.http_client,
         )
         return streams, handler
 
@@ -1103,8 +1120,8 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
             )["state"],
             "approval_not_requested",
         )
-        # The requester is a hash of the loopback peer address, not a client
-        # or conversation identity.
+        # The requester is a hash of the peer address, not a client or
+        # conversation identity.
         stored = self.repository.get(row["created"]["plan_id"])
         self.assertEqual(
             stored.requested_by,
@@ -1142,7 +1159,7 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
                     "accept": "application/json, text/event-stream",
                     "content-type": "application/json",
                 }
-                async with httpx.AsyncClient(timeout=5) as client:
+                async with peer.http_client() as client:
                     opened = await client.post(
                         peer.url,
                         headers=headers,
@@ -1191,7 +1208,7 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
         self.assertEqual([message.get("id") for message in messages], [3])
         self.assertNotIn("resources/list_changed", called.text)
 
-    async def test_mid_call_disconnect_leaves_plan_unchanged(self):
+    async def test_mid_call_client_close_leaves_plan_unchanged(self):
         created = await self.create_standard()
         plan_id, plan_hash = created["plan_id"], created["plan_hash"]
         self.service.approve(plan_id, plan_hash)
@@ -1218,7 +1235,8 @@ class LoopbackTransportRows(CompletionFixtureMixin, F2ApprovalTestCase):
                         call.cancel()
                         with self.assertRaises(asyncio.CancelledError):
                             await call
-                # The client is gone; let the server-side read finish.
+                # The client session and its in-flight request are closed;
+                # let the server-side read finish.
                 peer.blocking_release.set()
                 await asyncio.sleep(0.1)
         self.assertEqual(self.plan_bytes(plan_id), stored_before)
