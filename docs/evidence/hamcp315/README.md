@@ -164,8 +164,21 @@ its acceptance body to thirty minutes and performs cleanup on failure/interrupti
 It records execution UTC start/end, admitted host metrics, memory limits, source
 commit, manifest/journal hashes, exact running image config digests and the
 group result in `helper_value.json`. No other evidence group runs. The fresh
-Core uses a committed synthetic YAML fixture on a new internal Docker network;
-published ports bind only to 127.0.0.1. The onboarding token exists only in
+Core uses a committed synthetic YAML fixture on a new dedicated Docker bridge,
+matching CI. [DECISION] Josh, 2026-11-06 (HAMCP-326): local test containers may
+have outbound network access. This non-internal bridge restores the published
+host endpoints; `--pull never` still requires cached images, but does not disable
+container egress. Published ports bind only to 127.0.0.1. No new host credential
+or secret mounts are added. The receipt's `network_posture` records the configured
+driver, host bind address and allowed egress, including on failure; it is not a
+claim that failed setup verified that posture.
+
+The runner verifies network ownership, bridge driver and non-internal mode, then
+checks actual `NetworkSettings.Ports` and sole owned-network membership for Core
+and ha-mcp immediately after each starts, before its first readiness request.
+Missing/null mappings, wrong ports, additional published ports or any non-loopback
+binding refuse at `container_start/port_mapping`, with normal owned cleanup.
+The onboarding token exists only in
 memory and the temporary mode-600 upstream environment file (removed on startup).
 Raw container logs/configuration/tokens are not evidence artifacts.
 
@@ -191,7 +204,9 @@ resources before any retry and do not infer absence from an inspection error.
 ### Local failure diagnostics (HAMCP-322)
 
 Only failed local helper receipts gain `failure` (and a separate
-`cleanup.failure` if cleanup also fails). Passing receipts are unchanged.
+`cleanup.failure` if cleanup also fails). Diagnostics add no fields to passing
+receipts; HAMCP-326 separately adds the configured `network_posture` to all run
+receipts.
 Diagnostics identify lane, code-owned stage/check, up to four exception types,
 up to eight repository-relative frames per exception, and messages capped at
 160 characters. Messages are an exact whole-message allowlist of fixed startup
