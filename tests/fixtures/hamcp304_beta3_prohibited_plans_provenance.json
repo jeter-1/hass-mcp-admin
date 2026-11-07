@@ -1,0 +1,176 @@
+{
+  "boundary": "Hash-bearing bytes are copied verbatim from the exact v2.4.2-beta.3 writer and must not be edited.  Current code reads them without rewriting them; shipped_view is the inspection view the shipped code returned for each record.",
+  "compatibility_model": "hamcp304-beta3-prohibited-plan-projection-v1",
+  "generated_at": "2026-11-05T23:30:00Z",
+  "generator": "scripts/generate_hamcp304_beta3_prohibited_plan_fixture.py",
+  "generator_command": "python scripts/generate_hamcp304_beta3_prohibited_plan_fixture.py --source-root <exact-v2.4.2-beta.3-clone> --output-dir tests/fixtures --generated-at 2026-11-05T23:30:00Z",
+  "generator_sha256": "a65ff6e86a2392b972a6945836fdede3ce27a3c6057a069ce375776cf533aa50",
+  "records": {
+    "expired_elevated_input_boolean": {
+      "acknowledgement": null,
+      "clock": "2026-08-15T12:00:00+00:00",
+      "files": {
+        "plans/operational-administration-v3/8d3469c3b300455b898d99b3b6af367c.json": "3d8434875968bc06c6ce7e9f9aaecb02aacfffbcd4445e8fd9edeb0d9845c00e"
+      },
+      "operation": "set_input_boolean_state",
+      "plan_hash": "669b79b628984cc0b6d53694f03d26f3fc4125bcb1531ecbd3b13ca1797e47f7",
+      "plan_id": "8d3469c3b300455b898d99b3b6af367c",
+      "policy_class": "elevated_admin",
+      "provider_dispatch_count": 0,
+      "shipped_view": {
+        "acknowledgeable": false,
+        "acknowledgement_state": "unacknowledged",
+        "approval": {
+          "approval_kind": "unrecognized_value",
+          "authority_version": 3,
+          "bundle_state": "invalidated",
+          "consumed": false,
+          "state": "invalidated"
+        },
+        "events": [
+          "set_input_boolean_state_plan_created",
+          "external_approval_requested",
+          "external_approval_invalidated",
+          "change_plan_expired"
+        ],
+        "failure": {
+          "category": null,
+          "category_model": "hamcp198-projection-failure-category-v1",
+          "execution_outcome": "not_applied",
+          "projection_failed": false,
+          "reason_code": null
+        },
+        "policy_class": "elevated_admin",
+        "record_fingerprint": "9f7482d7b0816e6c4b78a65f44173cc4acd28931d8a8df2dbdb02f6b00b2fb9a",
+        "status": "expired"
+      }
+    },
+    "prohibited_input_boolean_acknowledged": {
+      "acknowledgement": {
+        "classification": "historical_record",
+        "principal": "home_assistant_admin_ingress:hamcp304-fixture-admin",
+        "record_fingerprint": "bd4c8dc16da72f6904ebf2617c27fa337d5b8b321a081cc4d73b1d70804f2033"
+      },
+      "clock": "2026-08-13T12:00:00+00:00",
+      "files": {
+        "plans/hamcp253-record-acknowledgement-v1/acknowledgements.json": "bffaa5163d3f3e187a0c282c6b1145c2d678040b918697da6ec2cd474b2798cb",
+        "plans/operational-administration-v3/719a129315464656b3867fb4a6fbaeed.json": "41d948163cf294fc58bc00904fccdecb5ad879907c639838f085531ad1a90fa9"
+      },
+      "operation": "set_input_boolean_state",
+      "plan_hash": "bc93fe61d11f971602217824ef59264ce595ee8d6b21f119ab644994e5de8621",
+      "plan_id": "719a129315464656b3867fb4a6fbaeed",
+      "policy_class": "prohibited",
+      "provider_dispatch_count": 0,
+      "shipped_view": {
+        "acknowledgeable": true,
+        "acknowledgement_state": "acknowledged",
+        "approval": {
+          "approval_kind": "unrecognized_value",
+          "authority_version": 3,
+          "bundle_state": "prohibited",
+          "consumed": false,
+          "state": "required"
+        },
+        "events": [
+          "set_input_boolean_state_plan_created"
+        ],
+        "failure": {
+          "category": "approval_sequence_inconsistent",
+          "category_model": "hamcp198-projection-failure-category-v1",
+          "execution_outcome": "not_applied",
+          "projection_failed": true,
+          "reason_code": "approval_sequence_failure"
+        },
+        "policy_class": "prohibited",
+        "record_fingerprint": "bd4c8dc16da72f6904ebf2617c27fa337d5b8b321a081cc4d73b1d70804f2033",
+        "status": "awaiting_approval"
+      }
+    },
+    "prohibited_input_boolean_unacknowledged": {
+      "acknowledgement": null,
+      "clock": "2026-08-13T12:00:00+00:00",
+      "files": {
+        "plans/operational-administration-v3/a8378cfac1934ce5bc1970c9b8fe93ac.json": "0b4afa44cbf6c8fffbde1297558c880d77ba22bf7d6b2c0856579ae1d23e53e3"
+      },
+      "operation": "set_input_boolean_state",
+      "plan_hash": "e807a3bf9fce2d907c6d2582cb30d2fe918c7d16c4370c8ff1214196a3fcecf7",
+      "plan_id": "a8378cfac1934ce5bc1970c9b8fe93ac",
+      "policy_class": "prohibited",
+      "provider_dispatch_count": 0,
+      "shipped_view": {
+        "acknowledgeable": true,
+        "acknowledgement_state": "unacknowledged",
+        "approval": {
+          "approval_kind": "unrecognized_value",
+          "authority_version": 3,
+          "bundle_state": "prohibited",
+          "consumed": false,
+          "state": "required"
+        },
+        "events": [
+          "set_input_boolean_state_plan_created"
+        ],
+        "failure": {
+          "category": "approval_sequence_inconsistent",
+          "category_model": "hamcp198-projection-failure-category-v1",
+          "execution_outcome": "not_applied",
+          "projection_failed": true,
+          "reason_code": "approval_sequence_failure"
+        },
+        "policy_class": "prohibited",
+        "record_fingerprint": "02a8fbef1c292f17f8d62b5bf825dbb5aeda47fbb5cb9f02fc9d1963d4a1c2d2",
+        "status": "awaiting_approval"
+      }
+    },
+    "prohibited_input_select_acknowledged": {
+      "acknowledgement": {
+        "classification": "current_defect",
+        "principal": "home_assistant_admin_ingress:hamcp304-fixture-admin",
+        "record_fingerprint": "f6b8d1bdb225e4791405b9461857e3ff5ea363944124390c6735aacab906cf1a"
+      },
+      "clock": "2026-10-22T12:00:00+00:00",
+      "files": {
+        "plans/hamcp253-record-acknowledgement-v1/acknowledgements.json": "0fcad7e2758ed254807d2f2d9d121f4b1950f3ffb3fddbb1a204e57ba8b2e258",
+        "plans/operational-administration-v3/9914c6937c46420cba9a8b57d1d89ec7.json": "618edc5611126b1d8617e9d665e6a8ada7b46fa72a83f5ba7266805d5a870af2"
+      },
+      "operation": "set_input_select_option",
+      "plan_hash": "85ebaadfa31f28abae4c13d05849fab2ae736602a8ed4578187d68d3bbe1c7ee",
+      "plan_id": "9914c6937c46420cba9a8b57d1d89ec7",
+      "policy_class": "prohibited",
+      "provider_dispatch_count": 0,
+      "shipped_view": {
+        "acknowledgeable": true,
+        "acknowledgement_state": "acknowledged",
+        "approval": {
+          "approval_kind": "unrecognized_value",
+          "authority_version": 3,
+          "bundle_state": "prohibited",
+          "consumed": false,
+          "state": "required"
+        },
+        "events": [
+          "set_input_select_option_plan_created"
+        ],
+        "failure": {
+          "category": "approval_sequence_inconsistent",
+          "category_model": "hamcp198-projection-failure-category-v1",
+          "execution_outcome": "not_applied",
+          "projection_failed": true,
+          "reason_code": "approval_sequence_failure"
+        },
+        "policy_class": "prohibited",
+        "record_fingerprint": "f6b8d1bdb225e4791405b9461857e3ff5ea363944124390c6735aacab906cf1a",
+        "status": "awaiting_approval"
+      }
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "446a0dd79629a93165fe68e897ff5a119c42f25e",
+    "record_acknowledgement_source_sha256": "bed199a6446beca3b0dc26b8ef82e9c37587093d77619ceb370ad83503018c83",
+    "record_inspection_source_sha256": "388034e3c9629ae8b5c0216b135535d80f17a1ba300030a194e1454368bd5556",
+    "service_source_sha256": "66dbfb2a07b5d8c93d8eac77960828eaf4092c8001fb46a392b77c14c0305d3c",
+    "tag": "v2.4.2-beta.3",
+    "writer": "tests.test_beta54_owner_authoritative_execution.Beta54CapturedHelperAuthorityTests and tests.test_hamcp274_input_select_relevance.InstallationTestCase on the exact source revision; acknowledgements through ChangeGovernanceService.acknowledge_governance_record"
+  }
+}

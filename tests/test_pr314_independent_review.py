@@ -64,19 +64,28 @@ class FlowReview(HelperOptionsServiceTestCase):
   self.assertEqual(self.options_rest.submits(),[])
   self.assertEqual(self.options_rest.flows,{})
  async def test_partial_internal_intent_never_submitted(self):
+  # HAMCP-312: rewritten to the owner's decision (HAMCP-232/145 review 1 H3):
+  # create refuses an incomplete intent before approval, submit, or apply; its
+  # read-only schema flow is aborted.
   self.add_filter(precision=7)
   original=planning.prepare
   async def omit_one_field(*args,**kwargs):
    prepared=await original(*args,**kwargs)
    del prepared.items[0].intent[contract.INTENT_KEY]['submit']['precision']
    return prepared
+  store=lambda:{str(p.relative_to(self.root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in self.root.rglob('*') if p.is_file()}
+  before=store()
   with patch.object(planning,'prepare',omit_one_field):
-   created=await self.create_options(TIME_CONSTANT_20)
-  await self.approve(created)
-  result=await self.apply(created)
+   with self.assertRaises(GovernanceError) as refused:await self.create_options(TIME_CONSTANT_20)
+  self.assertEqual(refused.exception.details['validation_errors'],
+   ['options intent submit is not the complete intended set'])
+  opened=[r for r in self.options_rest.requests if r==('POST','/config/config_entries/options/flow')]
+  self.assertEqual(len(opened),len(self.options_rest.aborts()))
+  self.assertEqual(store(),before)
   self.assertEqual(self.options_rest.visible('filterentry01')['precision'],7,
    'unrequested precision reset by accepted incomplete internal intent')
   self.assertEqual(self.options_rest.submits(),[])
+  self.assertEqual(self.options_rest.flows,{})
  async def test_retained_unadmitted_task_refuses_before_persistence(self):
   self.add_filter();created=await self.approved_options(TIME_CONSTANT_20)
   plan=self.service._load(created['plan_id'])

@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -1410,6 +1411,113 @@ class CheckScriptExecutionTests(unittest.TestCase):
         )
         self.assertNotIn(synthetic_token, output)
         self.assertNotIn("Full validation passed", output)
+
+    def test_full_secret_scan_accepts_the_adr012_filename(self):
+        # HAMCP-305: the case-insensitive scan read RISK-AND-ELEVATED-APPROVAL
+        # in this filename as an sk- key.
+        self.fixture.write(
+            "docs/adr012-reference.md",
+            "See docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md\n"
+            "and [ADR-012](#adr-012-policy-risk-and-elevated-approval).\n",
+        )
+        self.fixture.commit("fixture ADR-012 reference")
+        result = self.fixture.run_check(self.powershell, "Full")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(
+            "No bounded high-confidence credential pattern was found.",
+            output,
+        )
+
+    def test_full_secret_scan_still_rejects_an_sk_key(self):
+        synthetic_key = "sk-" + "proj-" + "HAMCP305fixture" + "0" * 24
+        self.fixture.write(
+            "docs/adr012-reference.md",
+            "See docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md\n",
+        )
+        self.fixture.write("docs/key-fixture.md", f"token = {synthetic_key}\n")
+        self.fixture.commit("fixture sk key")
+        result = self.fixture.run_check(self.powershell, "Full")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 1, output)
+        self.assertIn(
+            "Potential credential pattern found in: docs/key-fixture.md",
+            output,
+        )
+        self.assertNotIn("adr012-reference.md", output)
+        self.assertNotIn(synthetic_key, output)
+        self.assertNotIn("Full validation passed", output)
+
+    def sk_pattern(self):
+        text = CHECK_SCRIPT.read_text(encoding="utf-8")
+        block = text[text.index("function Test-SecretPatterns"):]
+        block = block[:block.index("$matchedFiles")]
+        patterns = [
+            line.strip().rstrip(",")[1:-1]
+            for line in block.splitlines()
+            if line.strip().startswith("'") and "sk-" in line
+        ]
+        self.assertEqual(len(patterns), 1, block)
+        return patterns[0]
+
+    @staticmethod
+    def sk_pattern_table():
+        key = "sk-" + "HAMCP305" + "fixture" + "0123456789"
+        return {
+            # A key at a token boundary, in the shapes keys are issued in.
+            key: True,
+            f"token={key}": True,
+            f'"{key}"': True,
+            f"Authorization: {key}": True,
+            "sk-" + "proj-" + "abc" * 6 + "9": True,
+            "sk-" + "ant-api03-" + "x" * 16 + "Q": True,
+            "sk-" + "a1" * 10: True,
+            "sk-" + "A" * 20: True,
+            # HAMCP-305 false positives and other near misses.
+            "ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md": False,
+            "adr-012-policy-risk-and-elevated-approval": False,
+            "SK-" + "HAMCP305" + "FIXTURE" + "0123456789": False,
+            "Sk-" + "HAMCP305" + "fixture" + "0123456789": False,
+            "disk-" + "HAMCP305" + "fixture" + "0123456789": False,
+            "task-" + "and-elevated-approval-2": False,
+            "sk-" + "and-elevated-approval-policy": False,
+            "sk-" + "a1" * 9 + "a": False,
+        }
+
+    def test_sk_pattern_table(self):
+        # The exact pattern from check.ps1 under PowerShell's own -match,
+        # which is case-insensitive unless the pattern says otherwise.
+        matches = self.sk_pattern_table()
+        samples = list(matches)
+        payload = json.dumps({"pattern": self.sk_pattern(), "samples": samples})
+        script = (
+            "$in = [Console]::In.ReadToEnd() | ConvertFrom-Json; "
+            "foreach ($s in $in.samples) { "
+            "if ($s -match $in.pattern) { 'True' } else { 'False' } }"
+        )
+        result = subprocess.run(
+            [self.powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+            input=payload,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = result.stdout.split()
+        self.assertEqual(len(observed), len(samples), result.stdout)
+        for sample, outcome in zip(samples, observed):
+            with self.subTest(sample=sample):
+                self.assertEqual(outcome == "True", matches[sample])
+
+    def test_sk_pattern_table_in_python_re(self):
+        # The committed-file scan tests (tests/hamcp162_synthetic.py) compile
+        # the check.ps1 patterns with Python re.IGNORECASE. A .NET-only
+        # construct such as a global (?-i) does not parse there.
+        pattern = re.compile(self.sk_pattern(), re.IGNORECASE)
+        for sample, expected in self.sk_pattern_table().items():
+            with self.subTest(sample=sample):
+                self.assertEqual(bool(pattern.search(sample)), expected)
 
     def test_evidence_rejects_a_dirty_worktree_before_repository_code(self):
         self.fixture.write("docs/change.md", "uncommitted change\n")

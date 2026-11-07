@@ -27,6 +27,7 @@ root README. It does not move earlier records or add narration to the README.
 
 | Version | Release notes | Acceptance |
 | --- | --- | --- |
+| 2.4.2-beta.6 | [`V2_4_2_BETA6_RELEASE_NOTES.md`](V2_4_2_BETA6_RELEASE_NOTES.md) | [`V2_4_2_BETA6_ACCEPTANCE.md`](V2_4_2_BETA6_ACCEPTANCE.md) |
 | 2.4.2-beta.5 | [`V2_4_2_BETA5_RELEASE_NOTES.md`](V2_4_2_BETA5_RELEASE_NOTES.md) | [`V2_4_2_BETA5_ACCEPTANCE.md`](V2_4_2_BETA5_ACCEPTANCE.md) |
 | 2.4.2-beta.4 | [`V2_4_2_BETA4_RELEASE_NOTES.md`](V2_4_2_BETA4_RELEASE_NOTES.md) | [`V2_4_2_BETA4_ACCEPTANCE.md`](V2_4_2_BETA4_ACCEPTANCE.md) |
 | 2.4.2-beta.3 | [`V2_4_2_BETA3_RELEASE_NOTES.md`](V2_4_2_BETA3_RELEASE_NOTES.md) | [`V2_4_2_BETA3_ACCEPTANCE.md`](V2_4_2_BETA3_ACCEPTANCE.md) |

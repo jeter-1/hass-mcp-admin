@@ -431,6 +431,17 @@ LIFECYCLE_OPERATIONS = frozenset(
         ChangeOperation.RESTART_HOME_ASSISTANT,
     }
 )
+# HAMCP-304: an operational plan records its own creation event, never
+# ``change_plan_created``. A never-approvable prohibited operational plan is
+# recognized only with exactly the event its own create path records.
+OPERATIONAL_PLAN_CREATION_EVENTS = {
+    ChangeOperation.CREATE_FULL_BACKUP: "operational_backup_plan_created",
+    ChangeOperation.CONTROLLED_RELOAD: "controlled_reload_plan_created",
+    ChangeOperation.RESTART_ADDON: "restart_addon_plan_created",
+    ChangeOperation.RESTART_HOME_ASSISTANT: "restart_home_assistant_plan_created",
+    ChangeOperation.SET_INPUT_BOOLEAN_STATE: "set_input_boolean_state_plan_created",
+    ChangeOperation.SET_INPUT_SELECT_OPTION: "set_input_select_option_plan_created",
+}
 MAX_CONFIGURATION_OPERATIONS = 8
 MAX_PLAN_PROJECTION_FAILURES = 20
 PLAN_OBSERVABILITY_CURSOR_VERSION = 3
@@ -1679,6 +1690,24 @@ class ChangeGovernanceService:
         return False
 
     @staticmethod
+    def _prohibited_creation_event(plan: ChangePlan) -> str:
+        """The one creation event a reviewed prohibited plan may carry.
+
+        HAMCP-304: a contract-v3 operational plan's create path records its
+        own operation's event. Every other plan keeps ``change_plan_created``.
+        """
+
+        if (
+            not record_inspection.PRE_HAMCP304_PROJECTION.get()
+            and plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.plan_family == "operational_administration"
+            and plan.operational is not None
+            and plan.operation in OPERATIONAL_PLAN_CREATION_EVENTS
+        ):
+            return OPERATIONAL_PLAN_CREATION_EVENTS[plan.operation]
+        return "change_plan_created"
+
+    @staticmethod
     def _prohibited_plan_has_execution_evidence(plan: ChangePlan) -> bool:
         """Reject execution evidence under the reviewed default event profile."""
 
@@ -1689,8 +1718,9 @@ class ChangeGovernanceService:
         )
         if has_non_event_evidence:
             return True
+        created_event = ChangeGovernanceService._prohibited_creation_event(plan)
         allowed_events = {
-            "change_plan_created": (
+            created_event: (
                 "success",
                 None,
             ),
@@ -1719,8 +1749,8 @@ class ChangeGovernanceService:
         event_names = [event.event for event in plan.events]
         if (
             not event_names
-            or event_names[0] != "change_plan_created"
-            or event_names.count("change_plan_created") != 1
+            or event_names[0] != created_event
+            or event_names.count(created_event) != 1
             or event_names.count("change_plan_superseded") > 1
         ):
             return True
@@ -15901,18 +15931,50 @@ class ChangeGovernanceService:
             task, record_id, sensitive_values=self.sensitive_values
         )
 
+    def _pre_hamcp304_fingerprint(
+        self, record_kind: str, record_id: str
+    ) -> str | None:
+        """The plan's fingerprint as its pre-HAMCP-304 view computed it.
+
+        An acknowledgement recorded before HAMCP-304 bound that view. The
+        same stored record still reproduces it; a changed record does not.
+        """
+
+        if record_kind != "change_plan":
+            return None
+        try:
+            plan = self.repository.read_for_inspection(record_id)
+        except ChangePlanStorageError:
+            return None
+        if plan is None:
+            return None
+        return record_inspection.plan_view(
+            self, plan, record_id, pre_hamcp304=True
+        )["record_fingerprint"]
+
     @staticmethod
     def _acknowledgement_projection(
-        entry: dict[str, Any] | None, current_fingerprint: str | None
+        entry: dict[str, Any] | None,
+        current_fingerprint: str | None,
+        pre_hamcp304_fingerprint: Callable[[], str | None] | None = None,
     ) -> dict[str, Any]:
         if entry is None:
             return {"state": "unacknowledged", "classification": None,
                     "recorded_at": None, "history_count": 0}
+
+        def reviewed(fingerprint: str | None) -> bool:
+            return fingerprint is not None and hmac.compare_digest(
+                entry["record_fingerprint"], fingerprint
+            )
+
         state = (
             "revoked" if entry["action"] == "revoke"
             else "acknowledged"
-            if current_fingerprint is not None
-            and hmac.compare_digest(entry["record_fingerprint"], current_fingerprint)
+            if reviewed(current_fingerprint)
+            or (
+                pre_hamcp304_fingerprint is not None
+                and reviewed(pre_hamcp304_fingerprint())
+            )
             # The record changed after review: the acknowledgement no longer
             # describes it, so the record warns again.
             else "stale"
@@ -15946,7 +16008,10 @@ class ChangeGovernanceService:
         except AcknowledgementStorageError:
             entry, audit_pending, ledger_status = None, False, "unavailable"
         view["acknowledgement"] = {
-            **self._acknowledgement_projection(entry, view["record_fingerprint"]),
+            **self._acknowledgement_projection(
+                entry, view["record_fingerprint"],
+                lambda: self._pre_hamcp304_fingerprint(record_kind, record_id),
+            ),
             "audit_pending": audit_pending,
             "ledger_status": ledger_status,
         }
@@ -16440,7 +16505,10 @@ class ChangeGovernanceService:
                         ]
                     except Exception:
                         current = None
-                    projected = self._acknowledgement_projection(entry, current)
+                    projected = self._acknowledgement_projection(
+                        entry, current,
+                        lambda: self._pre_hamcp304_fingerprint(kind, record_id),
+                    )
                     state, classification = projected["state"], projected["classification"]
                     stale += state == "stale"
                 groups[

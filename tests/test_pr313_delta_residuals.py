@@ -37,13 +37,19 @@ class DeltaResidualTests(author.Harness):
                     self.assertFalse(page['complete'])
 
     async def test_original_control_text_is_screened_before_ansi_removal(self):
+        # HAMCP-312: rewritten to the owner's decision (HAMCP-224 review 2 M4,
+        # SGR only since review 3). The shared screen still refuses the raw
+        # escape; the journal shows a colour code stripped, never withheld.
         value = '\x1b[31mordinary\x1b[0m'
         self.assertIsNotNone(author.credentials.screen(value, (), labelled=True))
         for field, source in FIELDS:
             with self.subTest(field=field):
                 page = await self.planted(value.encode(), field, source)
-                self.assertTrue(all('withheld' in row for row in page['entries']))
-                self.assertFalse(page['complete'])
+                self.assertTrue(page['entries'])
+                self.assertFalse(any('withheld' in row for row in page['entries']))
+                self.assertIn('ordinary', json.dumps(page))
+                self.assertNotIn('\x1b', json.dumps(page, ensure_ascii=False))
+                self.assertTrue(page['complete'])
 
     async def test_level_filtered_withholding_is_partial(self):
         page = await self.planted(('pass' + 'word=' + NEEDLE).encode(), min_level='critical')
