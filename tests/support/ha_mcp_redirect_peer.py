@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import http.server
 import json
 import threading
-from typing import Iterator
+from typing import Callable, Iterator
 
 
 URL_PATH_CANARY = "syntheticpathcanary7Q2"
@@ -110,7 +110,21 @@ class RedirectPeer:
         tool_names: tuple[str, ...] = ("ha_synthetic_one", "ha_synthetic_two"),
         raw_suffix: str | None = None,
         host: str | None = None,
+        tools: tuple[dict, ...] | None = None,
+        page_size: int | None = None,
+        call_handler: Callable[[str, dict], dict] | None = None,
+        delete_status: int = 200,
     ):
+        # ``tools``: serve these raw descriptors verbatim (in this order) in
+        # pages of ``page_size`` (one page when None) instead of the synthetic
+        # two-page catalog. ``call_handler(name, arguments)`` returns the
+        # ``structuredContent`` of a successful ``tools/call``.
+        self.tools = tools
+        self.page_size = page_size
+        self.call_handler = call_handler
+        self.calls: list[tuple[str, dict]] = []
+        # Status of a non-redirected DELETE (500 makes cleanup fail).
+        self.delete_status = delete_status
         # ``raw_suffix``: serve an arbitrary configured value (path, query and
         # anything after the authority) verbatim; every origin request then
         # counts as an origin request whatever path the client normalized it
@@ -200,6 +214,17 @@ class RedirectPeer:
             self.counters.injected += 1
         return True
 
+    def _page(self, cursor) -> dict:
+        tools = list(self.tools or ())
+        size = self.page_size or max(len(tools), 1)
+        index = 0
+        if cursor:
+            index = int(str(cursor).rsplit("-", 1)[1]) - 1
+        page = {"tools": tools[index * size:(index + 1) * size]}
+        if (index + 1) * size < len(tools):
+            page["nextCursor"] = f"synthetic-cursor-{index + 2}"
+        return page
+
     # -- servers ----------------------------------------------------------
     def _origin_handler(peer):  # noqa: N805 - closure factory
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -252,7 +277,7 @@ class RedirectPeer:
                     )
                     return
                 if method == "DELETE":
-                    self._send(200)
+                    self._send(peer.delete_status)
                     return
                 if method == "GET":
                     if request_type == "get_stream":
@@ -278,6 +303,9 @@ class RedirectPeer:
                         peer.get_answered.wait(10)
                         peer.release.wait(10)
                     params = message.get("params") or {}
+                    if peer.tools is not None:
+                        self._json(request_id, peer._page(params.get("cursor")))
+                        return
                     if params.get("cursor"):
                         result = {"tools": [_tool(n) for n in peer.tool_names[1:]]}
                     else:
@@ -294,11 +322,20 @@ class RedirectPeer:
                         payload = b"id: event-1\nretry: 5\nevent: message\ndata:\n\n"
                         self._send(200, payload, content_type="text/event-stream")
                         return
+                    params = message.get("params") or {}
+                    name = str(params.get("name"))
+                    arguments = params.get("arguments") or {}
                     with peer.lock:
                         peer.counters.executions += 1
+                        peer.calls.append((name, arguments))
+                    structured = (
+                        peer.call_handler(name, arguments)
+                        if peer.call_handler is not None
+                        else {"ok": True}
+                    )
                     result = {
-                        "content": [{"type": "text", "text": json.dumps({"ok": True})}],
-                        "structuredContent": {"ok": True},
+                        "content": [{"type": "text", "text": json.dumps(structured)}],
+                        "structuredContent": structured,
                         "isError": False,
                     }
                     self._json(request_id, result)

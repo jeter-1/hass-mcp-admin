@@ -23,6 +23,7 @@ from ..clients.mcp import DashboardTransportError
 from ..clients.rest import HomeAssistantRestClient
 from ..clients.ha_mcp_endpoint import (
     OPERATOR_MESSAGES as HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
+    STRICT_FULL_SELECTOR_RELEASES,
     publish_endpoint_snapshot,
 )
 from ..clients.upstream_read import (
@@ -640,7 +641,7 @@ def _optional_state_recognized(name: str, state: Any, advertised: bool) -> bool:
         return not advertised
     if not advertised:
         return False
-    if name in yaml_reader.SIBLING_TOOLS:
+    if name in yaml_reader.ALL_SIBLING_TOOLS:
         return state == "prohibited_withheld"
     if name != yaml_reader.TOOL_NAME:
         return False
@@ -683,9 +684,9 @@ def _reviewed_tool_accounting_valid(
     nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed
     no_sibling_drift = not sibling_drift
     states_recognized = len(optional_states) == len(
-        yaml_reader.OPTIONAL_NAMES
+        yaml_reader.optional_names(optional.version)
     ) and {name for name, _ in optional_states} == set(
-        yaml_reader.OPTIONAL_NAMES
+        yaml_reader.optional_names(optional.version)
     ) and all(
         _optional_state_recognized(name, state, name in names)
         for name, state in optional_states
@@ -2945,6 +2946,14 @@ class UpstreamReadGateway:
             if name in policy_by_name:
                 if name not in observed_reviewed:
                     observed_reviewed_order.append(name)
+                elif (
+                    selected_policy.reviewed_upstream_version
+                    in STRICT_FULL_SELECTOR_RELEASES
+                ):
+                    # HAMCP-319 sections 4 and 8.2: a strict-full catalog has
+                    # no duplicate names, read route or not. The deduplicated
+                    # order fingerprint cannot see a repeat, so refuse it here.
+                    catalog_has_invalid_structure = True
                 observed_reviewed.setdefault(name, []).append(item)
                 continue
             unreviewed_occurrences[name] += 1
@@ -3315,7 +3324,7 @@ class UpstreamReadGateway:
                 # The closed Engineering-built shape; caller keys are never
                 # forwarded (HAMCP-162 design section 3).
                 dispatch_arguments = yaml_reader.upstream_arguments(
-                    yaml_reader.validate_arguments(arguments)
+                    yaml_reader.validate_arguments(arguments), entry=policy_entry
                 )
         except reads_9_1.ReadTierUnavailable:
             # HAMCP-319 R4: a shipped 8.5 tier 9.1 cannot serve; never synthesized.
@@ -4180,6 +4189,7 @@ class UpstreamReadGateway:
                         yaml_path,
                         known_secrets=self._known_secrets,
                         max_string=max(2_000, min(response_limit // 2, 20_000)),
+                        entry=policy_entry,
                     )
                 except YamlReadRefusal as refusal:
                     raise _GatewayFailure(
