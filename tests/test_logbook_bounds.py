@@ -624,7 +624,10 @@ class WindowRefusalTests(unittest.IsolatedAsyncioTestCase):
             {"start_time": at(hours=200)},
             {"start_time": NOW.isoformat()},
             {"start_time": (NOW + timedelta(hours=1)).isoformat(), "end_time": (NOW + timedelta(hours=2)).isoformat()},
-            {"hours": 12, "start_time": at(hours=1)},
+            {"hours": 24, "start_time": at(hours=1)},
+            {"hours": 1, "start_time": at(hours=1)},
+            {"hours": 0, "start_time": at(hours=1)},
+            {"hours": 10**1000, "start_time": at(hours=1)},
             {"hours": 0, "end_time": at(hours=1)},
             {"hours": 169, "end_time": at(hours=1)},
             {"hours": 10**1000, "end_time": at(hours=1)},
@@ -645,6 +648,18 @@ class WindowRefusalTests(unittest.IsolatedAsyncioTestCase):
                 start_time=at(hours=168), end_time=NOW.isoformat()))
         self.assertFalse(result["effective_interval"]["end_clamped"])
         self.assertEqual(len(client.calls), 1)
+
+    async def test_default_hours_with_start_time_is_ignored_not_refused(self):
+        # The public hours default stays 12 (v1.1.2 parity); start_time wins.
+        for hours in (12, 12.0, None):
+            client = StatesClient()
+            with patch.object(logbook, "datetime", Clock):
+                result = json.loads(await logbook.LogbookReader().read(
+                    client, hours=hours, entity_id="", response_limit=60000,
+                    start_time=at(hours=30), end_time=at(hours=1)))
+            with self.subTest(hours=hours):
+                self.assertEqual(result["requested_interval"], {"start": at(hours=30), "end": at(hours=1)})
+                self.assertEqual(unquote(urlsplit(client.calls[0][1]).path), "/logbook/" + at(hours=30))
 
     async def test_one_filter_and_filter_bounds(self):
         long_ids = [f"sensor.{c}" + "x"*200 for c in "abc"]
@@ -985,7 +1000,7 @@ class WindowRegisteredTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("name_matched_no_entity", json.dumps(result))
         self.assertEqual(len(client.calls), 1)
         start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-        for kwargs in ({"hours": 12, "start_time": start}, {"entity_id": "light.a", "name": "porch"},
+        for kwargs in ({"hours": 6, "start_time": start}, {"entity_id": "light.a", "name": "porch"},
                        {"start_time": "2026-09-29T10:00:00"}):
             client = StatesClient()
             result = await self.call(client, **kwargs)
@@ -998,3 +1013,18 @@ class WindowRegisteredTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call(FakeClient(entries()))
         self.assertTrue(result["success"])
         self.assertEqual(result["data"], entries())
+
+    async def test_registered_start_time_overrides_default_hours(self):
+        start = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+        for kwargs in ({"start_time": start}, {"hours": 12, "start_time": start}):
+            client = StatesClient()
+            result = await self.call(client, **kwargs)
+            with self.subTest(kwargs=kwargs):
+                self.assertTrue(result["success"])
+                self.assertEqual(datetime.fromisoformat(result["data"]["requested_interval"]["start"]),
+                                 datetime.fromisoformat(start))
+                self.assertEqual(len(client.calls), 1)
+
+    def test_public_hours_schema_keeps_v1_default(self):
+        import inspect
+        self.assertEqual(inspect.signature(compatibility.get_logbook).parameters["hours"].default, 12)

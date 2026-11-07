@@ -50,16 +50,18 @@ automatic continuation request.
 
 ## Bounded window and entity filter (HAMCP-294)
 
-`get_logbook(hours=null, entity_id="", start_time=null, end_time=null,
+`get_logbook(hours=12, entity_id="", start_time=null, end_time=null,
 entity_ids=null, name=null)`. When `start_time`, `end_time`, `entity_ids` or
-`name` is set, the call is windowed. With none of them set, `hours` defaults
-to 12 and the original behavior and shapes apply unchanged.
+`name` is set, the call is windowed. With none of them set, the original
+behavior and shapes apply unchanged. The `hours` schema (default 12) is
+unchanged from v1.1.2.
 
 - `start_time` and `end_time` are ISO-8601 times with seconds and an explicit
   offset (`Z` or `+HH:MM`), at most microsecond precision; naive or
   date-only values are refused rather than guessed. Both are normalized to UTC.
 - `end_time` defaults to now; `start_time` defaults to `end_time` minus
-  `hours` (default 12). `hours` with `start_time` is refused.
+  `hours` (default 12). With `start_time`, `hours` must stay at its default
+  12, which is then ignored; any other `hours` value is refused as conflicting.
 - The window must have `start < end`, be no longer than 168 hours, and start
   before now. An `end_time` in the future is clamped to now and reported as
   `effective_interval.end_clamped=true`; the clamped end is what Core receives.

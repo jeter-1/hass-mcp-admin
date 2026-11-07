@@ -416,7 +416,7 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
 
 @mcp.tool()
 async def get_logbook(
-    hours: float | None = None,
+    hours: float = 12,
     entity_id: str = "",
     start_time: str | None = None,
     end_time: str | None = None,
@@ -429,17 +429,15 @@ async def get_logbook(
     source-order prefix or a limit error. Narrow hours or select one entity.
 
     Bounded window (HAMCP-294): start_time/end_time are ISO-8601 times with an
-    explicit offset; the window is at most 168 hours, start_time must be in the
-    past and must not be combined with hours (default 12 back from end_time); a
-    future end_time is clamped to now. Filter with at most one of entity_id,
+    explicit offset; the window is at most 168 hours and start_time must be in
+    the past. Without start_time the window is hours back from end_time; with
+    start_time, hours must stay at its default 12 and is ignored. A future
+    end_time is clamped to now. Filter with at most one of entity_id,
     entity_ids (1-10 IDs) or name (1-100 characters, case-insensitive substring
     of a current entity_id or friendly_name resolving to 1-10 entities; 0 or
     more than 10 matches is refused with no logbook read). Any of these returns
     one object with effective_interval, filter, completeness_notes and, when
     truncated, a continuation window that may overlap returned rows."""
-    windowed = any(value is not None for value in (start_time, end_time, entity_ids, name))
-    if hours is None and not windowed:
-        hours = 12
     return await LOGBOOK.read(
         REST_CLIENT, hours=hours, entity_id=entity_id,
         response_limit=SETTINGS.response_size_limit,

@@ -296,7 +296,12 @@ def _valid_hours(hours):
 def resolve_window(now, hours, start_time, end_time):
     """Requested and effective windows; refuse before any request or slot."""
     if start_time is not None and hours is not None:
-        raise InvalidRequestError("hours must be null when start_time is set.")
+        # The public hours default stays 12 (v1.1.2 parity), so an explicit
+        # start takes precedence over that default; any other hours conflicts.
+        if not (_valid_hours(hours) and hours == DEFAULT_HOURS):
+            raise InvalidRequestError(
+                "hours must be omitted (default 12) when start_time is set.")
+        hours = None
     if hours is not None and not _valid_hours(hours):
         raise InvalidRequestError("hours must be finite, positive, and no greater than 168.")
     end = now if end_time is None else _timestamp(end_time, "end_time")
