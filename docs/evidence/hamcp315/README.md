@@ -188,6 +188,38 @@ resources before any retry and do not infer absence from an inspection error.
 
 ## Candidate gate and security
 
+### Local failure diagnostics (HAMCP-322)
+
+Only failed local helper receipts gain `failure` (and a separate
+`cleanup.failure` if cleanup also fails). Passing receipts are unchanged.
+Diagnostics identify lane, code-owned stage/check, up to four exception types,
+up to eight repository-relative frames per exception, and messages capped at
+160 characters. Messages are an exact whole-message allowlist of fixed startup
+errors; all other text is `[redacted]`. No request body, URL, token, secret path,
+locals or source line text is copied into the receipt. The innermost check wins;
+cleanup does not overwrite the primary failure.
+
+The common `lane_failure_diagnostics.py` instrumentation is inert outside an
+explicit local-lane scope. The helper runner calls shared startup functions
+directly, bypassing the real-HA CLI's failure formatter, so integration is at
+these call sites rather than changing every lane's independent result format.
+Checks, pass/fail decisions, polling, timeouts and resource admission do not
+change. A failed check remains WITHHELD, even when raw-log retention fails.
+
+Raw exception chains and bounded logs from owned containers are retained only
+locally under `~/.local/state/hamcp-lane-failures/`, in exclusive mode-0600 files
+inside a mode-0700 directory, outside all Git repositories. Container log capture
+uses the last 200 lines, capped at 256 KiB per container, before cleanup removes
+them. Raw material is never printed or placed in the run/upload directory.
+Only `raw_log_retained` (existence, never path) enters the receipt. Actions never
+retains raw logs. Symlinked, insecure or repository-contained destinations
+refuse retention without changing the original lane failure. Operators inspect
+these private files locally and share only redacted findings; ordinary lane
+cleanup does not remove them. They may contain disposable credentials.
+
+The HAMCP-322 branch's single helper run is diagnosis only, never registry
+signing evidence. Seq17 still needs its separately authorized passing lane.
+
 After a passing merged lane, use the existing registry utility's
 `extend-capabilities` operation and non-signing verifier. Preserve all old
 references in order, all sibling entries and denial history. The new evidence

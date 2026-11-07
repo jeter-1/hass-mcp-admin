@@ -35,6 +35,7 @@ from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
+import lane_failure_diagnostics as lane_diagnostics  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -679,6 +680,7 @@ def _attach_cleanup_evidence(
     setattr(error, "contract_diagnostic", updated)
 
 
+@lane_diagnostics.checked("auth", "bootstrap_http")
 async def _json_request(session, method, path, *, json_body=None, data=None, token=""):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     async with session.request(
@@ -693,6 +695,7 @@ async def _json_request(session, method, path, *, json_body=None, data=None, tok
         return await response.json(content_type=None)
 
 
+@lane_diagnostics.checked("auth", "bootstrap")
 async def bootstrap_disposable_admin() -> str:
     """Complete first-run onboarding and return an in-memory access token."""
 
@@ -700,16 +703,17 @@ async def bootstrap_disposable_admin() -> str:
     password = secrets.token_urlsafe(32)
     timeout = aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        for _ in range(120):
-            try:
-                async with session.get(f"{HA_URL}/api/onboarding") as response:
-                    if response.status == 200:
-                        break
-            except (aiohttp.ClientError, asyncio.TimeoutError):
-                pass
-            await asyncio.sleep(1)
-        else:
-            raise RuntimeError("Disposable Home Assistant did not become ready within 120 seconds")
+        with lane_diagnostics.check("core_boot", "onboarding_ready"):
+            for _ in range(120):
+                try:
+                    async with session.get(f"{HA_URL}/api/onboarding") as response:
+                        if response.status == 200:
+                            break
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    pass
+                await asyncio.sleep(1)
+            else:
+                raise RuntimeError("Disposable Home Assistant did not become ready within 120 seconds")
 
         onboarding = await _json_request(session, "GET", "/api/onboarding")
         if any(item.get("done") for item in onboarding if item.get("step") == "user"):
@@ -791,6 +795,7 @@ def settings(token: str) -> Settings:
     )
 
 
+@lane_diagnostics.checked("core_boot", "runtime_ready")
 async def wait_for_runtime_ready(rest: HomeAssistantRestClient) -> dict:
     """Wait for Core and the required integrations to finish starting."""
 
@@ -2489,6 +2494,7 @@ async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
     return stdout.decode("utf-8", errors="replace")[:256]
 
 
+@lane_diagnostics.checked("container_start", "upstream_start")
 async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), environment_directory=None, memory=None) -> None:
     """Start the exact reviewed ha-mcp release against disposable HA only."""
 

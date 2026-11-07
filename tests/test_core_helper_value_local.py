@@ -81,10 +81,12 @@ class Contracts(unittest.TestCase):
 
 class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
-                 admission_error=None, memory_args=()):
+                 admission_error=None, memory_args=(), command_failure=None):
         calls, resources = [], {}
         def command(*args, **kwargs):
             calls.append(args)
+            if command_failure and args[:len(command_failure)] == command_failure:
+                raise RuntimeError("synthetic-command-failure")
             stdout, code = b'', 0
             if args[:2] == ('git', 'status'):
                 stdout = b' M source.py' if dirty else b''
@@ -117,6 +119,7 @@ class Orchestration(unittest.TestCase):
                  patch.object(lane, 'inspect_owned', side_effect=inspect), \
                  patch.object(lane.host, 'local_remove', side_effect=remove), \
                  patch.object(lane, 'require_free_ports'), patch.object(lane.signal, 'signal'), \
+                 patch.object(lane.diagnostics, '_raw_log', return_value=False), \
                  patch.object(lane, 'exercise', new=AsyncMock(side_effect=exercise_error,
                      return_value={'result': 'PASS'})), patch('sys.stdout', new_callable=io.StringIO):
                 if dirty or existing:
