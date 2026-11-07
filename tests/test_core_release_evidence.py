@@ -347,7 +347,8 @@ class ReleaseDiscovery(unittest.TestCase):
     def test_listing_order_violation_refused(self):
         newer = '2026-11-05T00:00:00Z'
         within = [{'tag_name': '2026.10.4'}, {'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}]
-        across = ([{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(100)]
+        # Part 3: the page-boundary inversion is between official stable records (2026.10.4 ends page 1).
+        across = ([{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(99)] + [{'tag_name': '2026.10.4'}]
                   + [{'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}])
         fallback = [{'tag_name': '2026.10.4', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
                     {'tag_name': '2026.11.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.10.3'}]
@@ -406,6 +407,77 @@ class ReleaseDiscovery(unittest.TestCase):
         with patch.object(w, 'listing_timestamp', wraps=w.listing_timestamp) as parser:
             self.discover(history)
         self.assertEqual([c.args for c in parser.call_args_list], [('2026-11-03T00:00:00Z',), ('2026-11-02T00:00:00Z',)])
+
+    # Part 3: only official stable records are order-compared; every record read is still parsed.
+    def test_real_prerelease_inversion_below_predecessor_accepted(self):
+        # Scheduled run 42256753191 refused this captured page: 2026.4.0b10 follows 2026.4.0b9 but was created later.
+        import core_evidence_workflow as w
+        fixture = json.loads((ROOT / 'tests/fixtures/hamcp309/core_releases_page1_20261107.json').read_text())
+        history = fixture['releases']; names = [r['tag_name'] for r in history]
+        b9, b10 = names.index('2026.4.0b9'), names.index('2026.4.0b10')
+        self.assertEqual((len(history), b10, history[b9]['prerelease'], history[b10]['prerelease']), (100, b9 + 1, True, True))
+        self.assertGreater(w.listing_timestamp(history[b10]['created_at']), w.listing_timestamp(history[b9]['created_at']))
+        self.assertLess(names.index('2026.11.0'), names.index('2026.10.3'))
+        self.assertLess(names.index('2026.10.3'), b9)
+        # Records excluded from the order comparison are exactly those selection can never choose.
+        for record in history + [{'tag_name': '2026.12.0b1'}, {'tag_name': '2026.12.0', 'draft': True}, {'tag_name': 'v2026.12.0'}]:
+            self.assertEqual(bool(w.official(record)), e.select_release([record], set(), []) == record['tag_name'])
+        for predecessor, entries, expected in (('2026.10.3', None, '2026.11.0'), ('2026.11.0', [{'version': '2026.11.0'}], None)):
+            with self.subTest(predecessor=predecessor):
+                releases, calls = self.discover(history, entries=entries)
+                self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
+                self.assertEqual(len(releases), 100)
+                published = self.published if entries is None else {predecessor}
+                self.assertEqual(e.select_release(releases, published, []), expected)
+
+    def test_nonofficial_order_never_refuses(self):
+        older, newer = '2026-01-01T00:00:00Z', '2026-11-06T00:00:00Z'
+        pre = lambda tag, at=None: {'tag_name': tag, 'prerelease': True, **({'created_at': at} if at else {})}
+        tail = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'}]
+        cases = {
+            'prerelease pair before the predecessor': [pre('2026.12.0b1', older), pre('2026.12.0b2', newer)] + tail,
+            'prerelease then newer stable': [pre('2026.12.0b1', older)] + tail,
+            'stable then newer prerelease': [tail[0], pre('2026.12.0b1', newer), tail[1]],
+            'draft': [{'tag_name': '2026.12.0', 'draft': True, 'created_at': older}] + tail,
+            'non-stable tag': [{'tag_name': '2026.12.0b1', 'created_at': older}] + tail,
+            'prerelease pair below the predecessor': tail + [pre('2026.9.0b1', older), pre('2026.9.0b2', newer)],
+            'prerelease pair across pages': ([pre(f'2026.12.0b{i}') for i in range(99)] + [pre('2026.12.0b99', older)]
+                                             + [pre('2026.12.0b100', newer)] + tail),
+        }
+        for name, history in cases.items():
+            with self.subTest(name=name):
+                releases, calls = self.discover(history)
+                self.assertEqual(len(calls), 1 + (len(history) > 100))
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+
+    def test_official_stable_inversion_refused(self):
+        older, middle, newer = '2026-01-01T00:00:00Z', '2026-11-04T12:00:00Z', '2026-11-06T00:00:00Z'
+        pre = lambda tag, at=None: {'tag_name': tag, 'prerelease': True, **({'created_at': at} if at else {})}
+        cases = {
+            # Compared with the previous official record, never with an intervening non-official one.
+            'stable pair around a newer prerelease': [{'tag_name': '2026.10.4'}, pre('2026.12.0b1', newer),
+                                                      {'tag_name': '2026.11.0', 'created_at': middle}, {'tag_name': '2026.10.3'}],
+            'stable pair around an older prerelease': [{'tag_name': '2026.10.4'}, pre('2026.12.0b1', older),
+                                                       {'tag_name': '2026.11.0', 'created_at': middle}, {'tag_name': '2026.10.3'}],
+            'stable pair across pages around prereleases': ([{'tag_name': '2026.10.4'}] + [pre(f'2026.12.0b{i}') for i in range(99)]
+                                                            + [{'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}]),
+            'stable newer than the predecessor listed after it': [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'},
+                                                                 {'tag_name': '2026.10.4', 'created_at': newer}],
+            'stable pair below the predecessor': [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'},
+                                                  {'tag_name': '2026.9.0', 'created_at': older},
+                                                  {'tag_name': '2026.9.1', 'created_at': '2026-02-01T00:00:00Z'}],
+        }
+        for name, history in cases.items():
+            with self.subTest(name=name):
+                self.refused('release listing is not newest-first', history)
+
+    def test_nonofficial_records_still_need_valid_timestamps(self):
+        for flags in ({'prerelease': True}, {'draft': True}, {}):
+            for record in ({'created_at': 'yesterday'}, {'created_at': '2026-11-04T00:00:00'}, {'created_at': ''},
+                           {'created_at': None, 'published_at': None}, {'created_at': ABSENT, 'published_at': '2026-11-04'}):
+                with self.subTest(flags=flags, record=record):
+                    history = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.12.0b1', **flags, **record}, {'tag_name': '2026.10.3'}]
+                    self.refused('release listing order cannot be established', history)
 
     def test_complete_short_listing_is_unchanged(self):
         releases, calls = self.discover([{'tag_name': '2026.10.4'}])
