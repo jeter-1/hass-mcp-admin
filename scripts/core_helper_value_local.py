@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_evidence_host as host
 import core_local_resources as resources
+import lane_failure_diagnostics as diagnostics
 from core_lane_bindings import REVIEWED_CORE_BINDINGS
 from core_release_evidence import canonical, read_json
 
@@ -107,6 +108,7 @@ def sha256(path):
     return value.hexdigest()
 
 
+@diagnostics.checked("image_verify", "journal_inputs")
 def inputs(journal_path, archive_path):
     from core_registry_one_tap import load_public_key
     from prepare_core_release_registry import parse_journal, require_known_contracts
@@ -146,6 +148,7 @@ def images():
             host.FIXTURE_IMAGE)
 
 
+@diagnostics.checked("image_verify", "cached_image_digest")
 def cached_image(image):
     result = command("docker", "image", "inspect", image)
     value, = json.loads(result.stdout)
@@ -176,31 +179,38 @@ def inspect_owned(kind, name, run_id):
     return data
 
 
+@diagnostics.checked("helper_setup", "helper_contract")
 async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memory, upstream_memory):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     from helper_value_contract_acceptance import run
-    token = await harness.bootstrap_disposable_admin()
+    with diagnostics.check("auth", "bootstrap"):
+        token = await harness.bootstrap_disposable_admin()
     configured = replace(harness.settings(token), audit_path=str(run_dir / "audit.jsonl"))
     from ha_mcp_engineering.clients import HomeAssistantRestClient
-    observed = await harness.wait_for_runtime_ready(HomeAssistantRestClient(configured))
-    if observed.get("version") != VERSION:
-        raise Refusal("running_core_version_mismatch")
-    await harness._start_exact_upstream(token, pull_policy="never", labels=(LABEL + "=" + run_id,),
-                                        environment_directory=run_dir, memory=upstream_memory)
+    with diagnostics.check("core_boot", "runtime_ready"):
+        observed = await harness.wait_for_runtime_ready(HomeAssistantRestClient(configured))
+    with diagnostics.check("image_verify", "running_identity"):
+        if observed.get("version") != VERSION:
+            raise Refusal("running_core_version_mismatch")
+    with diagnostics.check("container_start", "upstream_start"):
+        await harness._start_exact_upstream(token, pull_policy="never", labels=(LABEL + "=" + run_id,),
+                                            environment_directory=run_dir, memory=upstream_memory)
     identities = {}
-    for name, image, memory in ((CORE, core_image, core_memory), (UPSTREAM, upstream_image, upstream_memory)):
-        data = inspect_owned("container", name, run_id)
-        if data is None or data["Image"] != cached_image(image) or data["Config"]["Image"] != image:
-            raise Refusal("running_image_mismatch")
-        if data.get("HostConfig", {}).get("Memory") != host.memory_bytes(memory):
-            raise Refusal("running_container_memory_mismatch")
-        identities[name] = {"image": image, "config_digest": data["Image"],
-                            "memory_bytes": data["HostConfig"]["Memory"]}
+    with diagnostics.check("image_verify", "running_identity"):
+        for name, image, memory in ((CORE, core_image, core_memory), (UPSTREAM, upstream_image, upstream_memory)):
+            data = inspect_owned("container", name, run_id)
+            if data is None or data["Image"] != cached_image(image) or data["Config"]["Image"] != image:
+                raise Refusal("running_image_mismatch")
+            if data.get("HostConfig", {}).get("Memory") != host.memory_bytes(memory):
+                raise Refusal("running_container_memory_mismatch")
+            identities[name] = {"image": image, "config_digest": data["Image"],
+                                "memory_bytes": data["HostConfig"]["Memory"]}
     return {**await run(configured, entry, run_dir), "images": identities}
 
 
-def main(argv=None):
+@diagnostics.checked("admission", "preflight")
+def _main(argv=None):
     if not __debug__:
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
@@ -237,10 +247,12 @@ def main(argv=None):
         raise Refusal("new_task_artifact_directory_required")
     run_dir.mkdir(mode=0o700)  # Exclusive: never overwrite evidence or reuse a prior fixture.
     try:
-        admission = resources.wait_for_admission(run_dir / "resource-admission.json")
+        with diagnostics.check("admission", "host_resources"):
+            admission = resources.wait_for_admission(run_dir / "resource-admission.json")
     except resources.Refusal as exc:
         result = {"result": "WITHHELD", "reason": str(exc), "source_commit": revision,
-                  "execution_started": False, "cleanup": {"clean": True, "resources_created": False}}
+                  "execution_started": False, "cleanup": {"clean": True, "resources_created": False},
+                  "failure": diagnostics.failure(exc)}
         (run_dir / "helper_value.json").write_bytes(canonical(result))
         print(json.dumps(result))
         return 1
@@ -271,33 +283,43 @@ def main(argv=None):
         raise Refusal("lane_interrupted")
     previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
-        command("docker", "network", "create", "--internal", "--label", LABEL + "=" + run_id, NETWORK)
-        command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
-                "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
-                "--publish", "127.0.0.1:18123:8123", "--security-opt", "no-new-privileges",
-                "--mount", f"type=bind,source={owned},target=/config", core_image)
+        with diagnostics.check("container_start", "network_create"):
+            command("docker", "network", "create", "--internal", "--label", LABEL + "=" + run_id, NETWORK)
+        with diagnostics.check("container_start", "core_start"):
+            command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
+                    "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
+                    "--publish", "127.0.0.1:18123:8123", "--security-opt", "no-new-privileges",
+                    "--mount", f"type=bind,source={owned},target=/config", core_image)
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id,
                                       args.core_memory, args.upstream_memory)
         result.update(asyncio.run(bounded()))
     except BaseException as exc:
-        result.update(result="WITHHELD", failure_type=type(exc).__name__)
+        result.update(result="WITHHELD", failure_type=type(exc).__name__,
+                      failure=diagnostics.failure(exc, extra=lambda stream: local_failure_logs(stream, run_id)))
     finally:
         try:
-            for name in (UPSTREAM, CORE):
-                if inspect_owned("container", name, run_id) is not None:
-                    command("docker", "rm", "-f", name)
-            if inspect_owned("network", NETWORK, run_id) is not None:
-                command("docker", "network", "rm", NETWORK)
-            host.local_remove(argparse.Namespace(directory=str(owned), memory=args.fixture_memory, owner=run_id), os.environ, subprocess.run)
-            assert not owned.exists()
-            assert all(inspect_owned("container", name, run_id) is None for name in (CORE, UPSTREAM))
-            assert inspect_owned("network", NETWORK, run_id) is None
+            with diagnostics.check("cleanup", "container_remove"):
+                for name in (UPSTREAM, CORE):
+                    if inspect_owned("container", name, run_id) is not None:
+                        command("docker", "rm", "-f", name)
+            with diagnostics.check("cleanup", "network_remove"):
+                if inspect_owned("network", NETWORK, run_id) is not None:
+                    command("docker", "network", "rm", NETWORK)
+            with diagnostics.check("cleanup", "configuration_remove"):
+                host.local_remove(argparse.Namespace(directory=str(owned), memory=args.fixture_memory, owner=run_id), os.environ, subprocess.run)
+            with diagnostics.check("cleanup", "cleanup_absence"):
+                assert not owned.exists()
+                assert all(inspect_owned("container", name, run_id) is None for name in (CORE, UPSTREAM))
+                assert inspect_owned("network", NETWORK, run_id) is None
             result["cleanup"] = {"clean": True, "containers_absent": True, "network_absent": True,
                                  "configuration_absent": True}
         except BaseException as exc:
-            result.update(result="WITHHELD", cleanup={"clean": False, "failure_type": type(exc).__name__})
+            cleanup_failure = diagnostics.failure(exc)
+            result.setdefault("failure", cleanup_failure)
+            result.update(result="WITHHELD", cleanup={"clean": False, "failure_type": type(exc).__name__,
+                                                    "failure": cleanup_failure})
         result["ended_utc"] = utc()
         (run_dir / "helper_value.json").write_bytes(canonical(result))
         signal.signal(signal.SIGTERM, previous_handler)
@@ -305,9 +327,28 @@ def main(argv=None):
     return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
 
 
+def local_failure_logs(stream, run_id):
+    """Only owned disposable logs; never stdout, receipts or upload artifacts."""
+    for name in (CORE, UPSTREAM):
+        data = inspect_owned("container", name, run_id)
+        if data is not None:
+            stream.write("\nOwned container " + name + "\n")
+            stream.write(json.dumps({key: data.get("State", {}).get(key)
+                                    for key in ("Status", "ExitCode", "OOMKilled")}))
+            output = subprocess.run(["docker", "logs", "--tail", "200", name],
+                                    capture_output=True, timeout=10)
+            stream.write("\n" + (output.stdout + output.stderr)[-262144:].decode("utf-8", errors="replace"))
+
+
+def main(argv=None):
+    with diagnostics.lane("helper_value"):
+        return _main(argv)
+
+
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(json.dumps({"result": "WITHHELD", "failure_type": type(exc).__name__}))
+        print(json.dumps({"result": "WITHHELD", "failure_type": type(exc).__name__,
+                          "failure": diagnostics.failure(exc)}))
         raise SystemExit(1) from None
