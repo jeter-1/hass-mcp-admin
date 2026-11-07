@@ -101,6 +101,8 @@ from .upstream_reads_8_6 import (
     ADAPTER as READ_ADAPTER_8_6,
 )
 from .upstream_search_8_6 import search_catalog_view
+from . import upstream_reads_9_1 as reads_9_1
+from .upstream_device_projection import project_device_result
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
     read_arguments as blueprint_read_arguments,
@@ -384,6 +386,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ("ha_get_skill_guide", "resource_not_found"): (
         "The requested skill guide resource was not found."
     ),
+    ("ha_get_skill_guide", "capability_unavailable"): (
+        "This skill guide request is unavailable on this upstream version."
+    ),
     ("ha_get_state", "entity_not_found"): (
         "The requested entity state was not found."
     ),
@@ -408,10 +413,10 @@ _YAML_RETRYABLE_CODES = frozenset(
 def _public_read_schema(entry, observed):
     if is_yaml_adapter(entry):
         return deepcopy(yaml_reader.PUBLIC_SCHEMA)
-    schema = public_schema_8_6(
+    schema = reads_9_1.public_schema(entry, public_schema_8_6(
         entry,
         platform_public_schema(entry, blueprint_public_schema(entry, observed)),
-    )
+    ))
     # Preserve the shipped public descriptor. This exact upstream schema differs
     # only in one example; raw descriptor validation still binds all its bytes.
     if (entry.upstream_name == "ha_get_overview" and
@@ -3293,7 +3298,9 @@ class UpstreamReadGateway:
         if errors:
             raise _GatewayFailure("argument_validation", dispatched=False)
         try:
-            dispatch_arguments = read_arguments_8_6(policy_entry, arguments)
+            dispatch_arguments = reads_9_1.read_arguments(
+                policy_entry, read_arguments_8_6(policy_entry, arguments)
+            )
             if is_blueprint_adapter(policy_entry):
                 dispatch_arguments = blueprint_read_arguments(arguments)
             if is_platform_adapter(policy_entry):
@@ -3310,6 +3317,11 @@ class UpstreamReadGateway:
                 dispatch_arguments = yaml_reader.upstream_arguments(
                     yaml_reader.validate_arguments(arguments)
                 )
+        except reads_9_1.ReadTierUnavailable:
+            # HAMCP-319 R4: a shipped 8.5 tier 9.1 cannot serve; never synthesized.
+            raise _GatewayFailure(
+                "capability_unavailable", dispatched=False
+            ) from None
         except (ValueError, YamlReadRefusal):
             raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
@@ -4229,6 +4241,17 @@ class UpstreamReadGateway:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True
                         ) from None
+                if reads_9_1.is_adapter(policy_entry):
+                    # HAMCP-319 section 7: compiled 9.1 projections back to the
+                    # shipped 8.5 public result before the generic sanitizer.
+                    try:
+                        payload = reads_9_1.project_result(
+                            policy_entry, payload, arguments
+                        )
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
                 response_adapter = None
                 if policy_entry.upstream_name == "ha_get_device":
                     if telemetry is None:
@@ -4293,6 +4316,16 @@ class UpstreamReadGateway:
                         telemetry.core_dispatch_authorizer = (
                             prior_core_authorizer
                         )
+                    # HAMCP-319 section 6.5 (DCL2): allowlist projection on
+                    # every reviewed version; no credential material passes.
+                    try:
+                        payload = project_device_result(
+                            payload, upstream_version=mapping.adapter_version
+                        )
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
                 sanitation = sanitize_untrusted_data(
                     payload,
                     known_secrets=self._known_secrets,
@@ -6218,7 +6251,8 @@ def _compare_tool_contract(
         entry.argument_restrictions[0]
         if is_blueprint_adapter(entry) or is_platform_adapter(entry)
         else READ_ADAPTER_8_6
-        if is_8_6_read_adapter(entry) else "ha_search_partial_v1"
+        if is_8_6_read_adapter(entry) else reads_9_1.ADAPTER
+        if reads_9_1.is_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
     )
@@ -7146,6 +7180,10 @@ def _upstream_completeness(
         return blueprint_completeness(payload)
     if is_platform_adapter(policy_entry):
         return platform_completeness(payload)
+    if reads_9_1.is_adapter(policy_entry):
+        partial, warnings = reads_9_1.completeness(policy_entry, payload)
+        if policy_entry.upstream_name != "ha_search" or partial:
+            return partial, warnings
     if policy_entry.upstream_name != "ha_search":
         return False, []
     if not isinstance(payload, dict) or not isinstance(payload.get("partial"), bool):

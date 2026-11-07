@@ -1823,6 +1823,7 @@ OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
     "8.4.3": "admitted",
     "8.5.0": "admitted",
     "8.6.0": "held",
+    "9.1.0": "held",
 }
 OPTIONAL_NAMES = (TOOL_NAME,) + SIBLING_TOOLS
 

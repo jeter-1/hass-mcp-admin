@@ -71,6 +71,8 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 # sequence to this fingerprint instead of treating alphabetical order as an
 # upstream contract.
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
+    # HAMCP-319: wire order of the exact 9.1 standalone and app captures.
+    "9.1.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
@@ -1355,6 +1357,7 @@ def load_upstream_tool_policy(
         ADAPTER_BINDINGS as PLATFORM_BINDINGS, is_platform_adapter,
     )
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
+    from .providers import upstream_reads_9_1 as reads_9_1
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
     from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, OPTIONAL_NAMES
     for entry in entries:
@@ -1384,6 +1387,12 @@ def load_upstream_tool_policy(
         if READ_ADAPTER in entry.argument_restrictions and (
             not is_adapter(entry) or expected_version != "8.6.0"
             or expected_source_commit != READ_SOURCE
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
+        if reads_9_1.ADAPTER in entry.argument_restrictions and (
+            not reads_9_1.is_adapter(entry)
+            or expected_version != reads_9_1.VERSION
+            or expected_source_commit != reads_9_1.SOURCE
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
     if len(entries) != stock_tool_count:
@@ -2444,7 +2453,9 @@ def _reviewed_artifact_evidence(
     )
     addon_tools = json.loads(canonical_json(standalone_tools))
     policy_differences = []
-    if release.version != "8.6.0":
+    # 8.6.0 and 9.1.0 publish no private ``_meta.ha_mcp.policy`` block; their
+    # exact standalone and app catalogs are byte-identical (HAMCP-319 capture).
+    if release.version not in {"8.6.0", "9.1.0"}:
         for tool in addon_tools:
             policy_state = tool["_meta"]["ha_mcp"]["policy"]
             policy_state.update(
@@ -2616,12 +2627,14 @@ def _dashboard_attestation_projection(attestation: Any) -> dict[str, Any]:
 
 def _dashboard_compiled_constraints_projection(
     contract_family: str,
+    *,
+    upstream_version: str,
 ) -> dict[str, Any]:
     from .providers.upstream_contracts import (
-        ALLOWED_SCHEMA_PROPERTIES,
         COMPILED_ARGUMENT_SHAPES,
         COMPILED_CONTRACT_FAMILIES,
-        PROHIBITED_ARGUMENTS,
+        allowed_schema_properties_for_version,
+        prohibited_arguments_for_version,
     )
 
     family = COMPILED_CONTRACT_FAMILIES.get(contract_family)
@@ -2642,9 +2655,11 @@ def _dashboard_compiled_constraints_projection(
         },
         "compiled_argument_shapes": COMPILED_ARGUMENT_SHAPES,
         "allowed_schema_properties": sorted(
-            ALLOWED_SCHEMA_PROPERTIES
+            allowed_schema_properties_for_version(upstream_version)
         ),
-        "prohibited_arguments": sorted(PROHIBITED_ARGUMENTS),
+        "prohibited_arguments": sorted(
+            prohibited_arguments_for_version(upstream_version)
+        ),
     }
 
 
@@ -2709,7 +2724,8 @@ def _dashboard_evidence(
     )
     constraints_fingerprint = schema_fingerprint(
         _dashboard_compiled_constraints_projection(
-            attestation.contract_family
+            attestation.contract_family,
+            upstream_version=attestation.upstream_version,
         )
     )
     return attestation_fingerprint, constraints_fingerprint
