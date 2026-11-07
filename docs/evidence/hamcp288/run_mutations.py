@@ -10,7 +10,8 @@ secrets are synthetic canaries the tests generate at run time; nothing here
 reads configuration, logs or a real secret path, and no network is used.
 
 1. Regressions: the corrected test module, run against each reviewed head
-   (7d8f2158 for F1-F3, fe48d80f for the round-3 F1 residual R1), must fail
+   (7d8f2158 for F1-F3, fe48d80f for the round-3 F1 residual R1, 2524b2f7
+   for the round-3 Low L1, a separator-only decoded secret path), must fail
    each named regression test by an assertion.
 2. Mutants: each mutant reopens one reviewed defect in the corrected source
    and is killed only by an assertion failure in its named test; an error,
@@ -28,14 +29,19 @@ OUT = ROOT / ".artifacts/mutation-hamcp288"
 REVIEWED = "7d8f21580a7d5677a3875d7c0e2f70b4073cb530"
 # Round 3: the head whose review left the F1 residual (short decoded path).
 REVIEWED_R3 = "fe48d80fbb95f83283a604c0395d5494f0b81bb2"
+# Round 4: the head whose review left the Low L1 (separator-only decoded path).
+REVIEWED_R4 = "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed"
 MODULE = "tests.test_hamcp288_secret_path_containment"
 TEST_FILE = "tests/test_hamcp288_secret_path_containment.py"
 SECRET_PATHS = "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py"
 RESPONSES = "hass_mcp_engineering_beta/ha_mcp_engineering/models/responses.py"
+CONFIGURATION = "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py"
+APPLICATION = "hass_mcp_engineering_beta/ha_mcp_engineering/application.py"
 G = "GrammarContainmentTests."
 E = "SerializedEscapeTests."
 O = "StreamOverflowTests."
 D = "DecodedShortPathTests."
+S = "SeparatorOnlySecretPathTests."
 
 shutil.rmtree(OUT, ignore_errors=True)
 OUT.mkdir(parents=True)
@@ -81,6 +87,12 @@ regressions_r3 = [
     ("R1", D + "test_split_writes_never_reassemble_the_decoded_path"),
     ("R1", D + "test_the_process_streams_contain_the_decoded_path"),
 ]
+regressions_r4 = [
+    ("L1", S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1", S + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
+    ("L1", S + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
+]
+REFUSAL = "        raise SeparatorOnlySecretPathError(SEPARATOR_ONLY_SECRET_PATH_REASON)\n"
 DERIVED = "    return _longest_first(kept + added), credentials, tuple(whole_paths)\n"
 WHOLE = "            + [_sequence(path) + _WHOLE_PATH_END for path in whole_paths]\n"
 CREDENTIAL = '        credential.append("/".join(base))\n        credential.extend(base)\n'
@@ -117,13 +129,28 @@ mutants = [
     ("R1", "the short whole path matched without its end boundary", SECRET_PATHS,
      '_WHOLE_PATH_END = r"(?![\\w\\-])"\n', '_WHOLE_PATH_END = ""\n',
      D + "test_ordinary_text_hosts_and_bare_words_are_kept"),
+    ("L1", "a separator-only secret path accepted by validation again", CONFIGURATION,
+     "    if secret_paths.separator_only_secret_path(candidate):\n", "    if False:\n",
+     S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
+    ("L1", "the endpoint suffix installed as an anchor when configured anyway", SECRET_PATHS,
+     "    bases = _bases(parts) if parts and not _separator_only(raw_parts) else []\n",
+     "    bases = _bases(parts) if parts else []\n",
+     S + "test_configured_anyway_the_endpoint_suffix_is_never_an_anchor"),
+    ("L1", "the operator sees only the generic reason", APPLICATION,
+     "    except SeparatorOnlySecretPathError as exc:\n",
+     "    except () as exc:\n",
+     S + "test_the_operator_sees_the_reason_at_startup_and_nothing_starts"),
+    ("L1", "the reason carries the configured value", CONFIGURATION, REFUSAL,
+     '        raise SeparatorOnlySecretPathError(f"{SEPARATOR_ONLY_SECRET_PATH_REASON}: {candidate}")\n',
+     S + "test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option"),
 ]
 
 results = {"head": HEAD, "reviewed_head": REVIEWED, "reviewed_head_r3": REVIEWED_R3,
+           "reviewed_head_r4": REVIEWED_R4,
            "python": sys.version.split()[0], "regressions": [], "mutants": [], "control": None}
 corrected_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
 index = 0
-for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3)):
+for revision, tests in ((REVIEWED, regressions), (REVIEWED_R3, regressions_r3), (REVIEWED_R4, regressions_r4)):
     checkout(revision)
     (COPY / TEST_FILE).write_bytes(corrected_tests)
     for finding, test in tests:

@@ -1,7 +1,8 @@
 {
-  "head": "8f7f3ad0e75d7245f5558e0e01345aa194e74da6",
+  "head": "38e06ee5ec48e305484791523f6f7b5e47d37ddf",
   "reviewed_head": "7d8f21580a7d5677a3875d7c0e2f70b4073cb530",
   "reviewed_head_r3": "fe48d80fbb95f83283a604c0395d5494f0b81bb2",
+  "reviewed_head_r4": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
   "python": "3.13.5",
   "regressions": [
     {
@@ -115,6 +116,30 @@
       "test": "DecodedShortPathTests.test_the_process_streams_contain_the_decoded_path",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "L1",
+      "revision": "2524b2f7b8c5458bcc6bfaa423bb2e72754c2bed",
+      "test": "SeparatorOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "mutants": [
@@ -198,12 +223,48 @@
       "test": "DecodedShortPathTests.test_ordinary_text_hosts_and_bare_words_are_kept",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "L1",
+      "name": "a separator-only secret path accepted by validation again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "L1",
+      "name": "the endpoint suffix installed as an anchor when configured anyway",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/secret_paths.py",
+      "test": "SeparatorOnlySecretPathTests.test_configured_anyway_the_endpoint_suffix_is_never_an_anchor",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "L1",
+      "name": "the operator sees only the generic reason",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+      "test": "SeparatorOnlySecretPathTests.test_the_operator_sees_the_reason_at_startup_and_nothing_starts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "L1",
+      "name": "the reason carries the configured value",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration.py",
+      "test": "SeparatorOnlySecretPathTests.test_a_separator_only_secret_path_is_refused_with_a_reason_naming_the_option",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "control": {
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 47 tests in 28.158s"
+    "ran": "Ran 51 tests in 27.805s"
   }
 }
