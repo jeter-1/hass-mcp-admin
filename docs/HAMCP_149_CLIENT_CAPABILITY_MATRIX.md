@@ -2,11 +2,24 @@
 
 Status: Layer A (offline, synthetic) rows are recorded by
 [`tests/test_hamcp149_approval_completion_fixture.py`](../tests/test_hamcp149_approval_completion_fixture.py).
-Layer B (real-client observation) rows are **unobserved — pending Josh (Q1)**.
+Layer B (real-client observation) rows are **unobserved**. Josh decided
+(2026-11-07, Q1) that they are observed once at 2.6 acceptance; see
+**Josh decisions** below.
 This file records observation only. A row is never a trust decision, an
 advertised capability, or execution authority.
 
-## Implementation default — pending Josh (Q2)
+## Josh decisions (2026-11-07)
+
+- **Q2: signal S0.** No runtime change (detail below).
+- **Q1: Layer B.** Run the real-client observation once at 2.6 acceptance:
+  Josh approves a harmless plan while a client session waits, and the Layer B
+  rows below are filled from that observation. Build S1 (an additive
+  `approval_completion` block) only if that observation shows sessions miss
+  approvals. S2 is deferred.
+- **Q3: binding as designed.** The plan id and plan hash held by the
+  requesting conversation; no persisted client identity.
+
+## Signal S0
 
 Signal **S0**: no runtime change. The completion check is the existing
 persisted-only `get_change_plan` read. The server adds no completion field, no
@@ -15,7 +28,7 @@ completion only prompts the requesting conversation to call `apply_change_plan`
 with the exact plan id and plan hash it already holds. Apply re-checks approval
 validity, stale state, and at-most-once dispatch on its own.
 
-Binding default — pending Josh (Q3): the plan id and plan hash held by the
+Binding (Josh, Q3): the plan id and plan hash held by the
 requesting conversation. The stored `requested_by` is a hash of the relay peer
 address (`sha256(client_ip)[:12]`), not a client or conversation identity. It
 is not projected by `get_change_plan` and is not enforced at apply.
@@ -57,7 +70,8 @@ Recorded characterizations:
   same hash is accepted. Recovery is a new owner decision, not a continuation.
 - The read is persisted-only, so it cannot see Home Assistant drift. Stale
   state after approval is refused by apply, not by the completion check.
-- Apply authority binds the plan id and hash, not the requesting caller (Q3).
+- Apply authority binds the plan id and hash, not the requesting caller
+  (Q3, binding as designed).
 
 ## Transport rows
 
@@ -66,9 +80,9 @@ Recorded characterizations:
 | In-process Streamable HTTP, stateless, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | none | none | no | no (dropped, no GET stream) | plan unchanged; re-read reports true state |
 | In-process Streamable HTTP, stateful, pinned SDK client | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | yes (observation only; not stored or bound) | not asserted | not run |
 | In-process Streamable HTTP, stateful, raw HTTP without GET stream | A (synthetic) | `2025-11-25` (mcp 1.30.0 latest) | issued | none | not applicable | no (response carries only the call result) | not run |
-| Claude.ai via Nabu Casa relay | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
-| Claude Code (remote MCP) | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
-| Claude mobile app | B | unobserved — pending Josh (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
+| Claude.ai via Nabu Casa relay | B | unobserved — at 2.6 acceptance (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
+| Claude Code (remote MCP) | B | unobserved — at 2.6 acceptance (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
+| Claude mobile app | B | unobserved — at 2.6 acceptance (Q1) | unobserved | unobserved | unobserved | unobserved | unobserved |
 | Real socket (uvicorn) Streamable HTTP, any mode | A (synthetic) | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI | not exercised in CI |
 
 Layer A rows run the real gateway and FastMCP Streamable HTTP app in the test
@@ -80,6 +94,8 @@ shutdown latched the process-global `sse_starlette` exit flag and ended later
 SSE responses in the same test process. The rows now assert that this flag and
 the SIGTERM handler are unchanged after each test.
 
-Layer B rows need manual observation with a real client against a disposable
-or owner-approved deployment. That is outside HAMCP-149 PR-0 and needs Josh's
-direction before it is run.
+Layer B rows need manual observation with a real client. Josh directed
+(2026-11-07) one observation at 2.6 acceptance against the deployed 2.6 beta,
+with Josh approving a harmless plan while a session waits. It is outside
+HAMCP-149 PR-0 and is not run by this PR; running it is a separate,
+Josh-authorized live action.

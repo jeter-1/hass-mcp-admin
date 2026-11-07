@@ -1,6 +1,6 @@
 """HAMCP-149 Layer A: offline approval-completion compatibility fixture.
 
-Implementation default (pending Josh, design note Q2): signal S0. The
+Josh decision (2026-11-07, design note Q2): signal S0. The
 authoritative completion check is the existing persisted-only
 ``get_change_plan`` read. The server gains no completion field, no
 server-to-client notification, no push and no persistence. This module is the
@@ -537,7 +537,7 @@ class CompletionScenarioTests(CompletionFixtureMixin, F2ApprovalTestCase):
         self.assertEqual(self.observer.events, events_before)
         self.assertEqual(self.repository.get(plan_id).requested_by, "mcp-requester")
         # S0 binding is the plan id and hash the requesting conversation
-        # holds; the stored requester is not projected (Q3 pending Josh).
+        # holds; the stored requester is not projected (Q3, Josh 2026-11-07).
         self.assertNotIn("requested_by", other_view)
         self.assertEqual(self.gateway.writes, 0)
         self.assert_no_task(plan_id)
@@ -545,7 +545,7 @@ class CompletionScenarioTests(CompletionFixtureMixin, F2ApprovalTestCase):
     async def test_characterization_apply_is_not_bound_to_requesting_caller(self):
         # Records current authority (unchanged by HAMCP-149 S0): approval binds
         # the plan id and hash, not the requesting caller. A persisted client
-        # binding is design-note Q3 (pending Josh); if it lands this flips.
+        # binding is not planned (Josh 2026-11-07, Q3); if one lands this flips.
         created = await self.create_standard()
         plan_id, plan_hash = created["plan_id"], created["plan_hash"]
         await self.fully_approve(created)
