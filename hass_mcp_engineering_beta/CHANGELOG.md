@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.2-beta.6 - Prohibited plans and approval kind project correctly (HAMCP-304, HAMCP-305, HAMCP-312)
+
+Builds on 2.4.2-beta.5 (HAMCP-318, #376). No tool, input schema, route,
+provider, signed profile, contract fingerprint, persisted format, add-on
+option, approval/apply/dispatch rule or Home Assistant write change.
+
+- HAMCP-304: governance inspection recognizes the stored approval kind
+  (`apply`, `rollback`) instead of showing `unrecognized_value`, and a
+  never-approvable prohibited contract-v3 operational plan accepts exactly
+  its own operation's creation event, so it no longer projects as an
+  `approval_sequence_inconsistent` failure. Acknowledgements bound to the
+  pre-fix view stay acknowledged on unchanged records through a lazy,
+  never-stored fallback.
+- HAMCP-305 (development only): the `check.ps1` `sk-` secret pattern is
+  case-sensitive, token-bounded and needs a key-like body, so the ADR-012
+  filename no longer matches.
+- HAMCP-312 (tests only): the two superseded reviewer probes assert the
+  owner decisions instead of running as expected failures.
+- New exact `V2_4_2_BETA6` release notes and read-only acceptance contract.
+- Rollback to 2.4.2-beta.5 is safe (same storage contracts).
+
 ## 2.4.2-beta.5 - Image trust store refresh for GHSA-6q48-6c7w-9gw2 (HAMCP-318)
 
 Builds on 2.4.2-beta.4 (HAMCP-310, #371). No application source, tool, input
