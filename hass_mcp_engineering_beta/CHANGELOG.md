@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.2-beta.7 - 2.5.0 build, in progress (HAMCP-331)
+
+Builds on 2.4.2-beta.6 (HAMCP-304, #373). In progress: items land through
+reviewed pull requests into `release/2.5.0`, and the final release pull
+request completes this entry. At the branch base no item has landed and the
+runtime is unchanged apart from the version strings.
+
+- Version materialized once at the `release/2.5.0` base, so item pull
+  requests carry no version change. The release transition refuses
+  `2.4.2-beta.6 -> 2.5.0-beta.1`, so the build ships as 2.4.2-beta.7.
+- Planned, pending: HAMCP-327 (folds in HAMCP-301), HAMCP-288, HAMCP-319
+  Phase 2 (ha-mcp 9.1.0, including the `/catalog/full` option), HAMCP-290,
+  and HAMCP-278/HAMCP-279 status.
+- New in-progress `V2_4_2_BETA7` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.6 - Prohibited plans and approval kind project correctly (HAMCP-304, HAMCP-305, HAMCP-312)
 
 Builds on 2.4.2-beta.5 (HAMCP-318, #376). No tool, input schema, route,
