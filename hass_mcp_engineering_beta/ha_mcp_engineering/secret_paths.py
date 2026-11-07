@@ -17,7 +17,8 @@ the path can plausibly take on the way to that output:
   to any depth;
 * a fragment cut at a string or line boundary (a wrapped or truncated log
   line, a bounded upstream error), when at least ``MIN_BOUNDARY`` characters
-  of a fragment remain at that edge.
+  of a fragment remain at that edge and the text shows a cut (other text
+  beside the piece, an adjacent line, or a cut mark).
 
 Only the configured value is known: a value Engineering was never given (a
 path the app generated after rotation, before the option is updated) cannot
@@ -58,6 +59,12 @@ _TRAIL = r"""(?:[^\w\-]|<truncated>|\[truncated\]){0,16}"""
 # only the prefix visible reveals nothing and is not a cut fragment.
 _PUBLIC_PREFIX = "private_"
 _DECORATION_WINDOW = 16 * len("[truncated]")
+# A cut needs evidence that something was cut: other text beside the piece
+# (besides quotes, brackets and whitespace), an adjacent line, or a cut mark.
+# A value that is nothing but a run of fragment characters is a different
+# value, not a cut one; the fragment itself is matched whole regardless.
+_CUT_MARK = re.compile(r"\.\.\.|\u2026|<truncated>|\[truncated\]")
+_FRAME = " \t\r\n\f\v\"'`()[]{}<>"
 # The same-length byte mask of the response guard keeps Content-Length valid.
 MASK_BYTE = b"*"
 # Slugs whose logs are the ha-mcp app's own: the app prints its secret path
@@ -257,8 +264,13 @@ def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
     at least ``MIN_BOUNDARY`` characters at the start or end of ``value``
     (with ``per_line``, of each line, a CR terminator excluded), where
     surrounding whitespace, quotes, brackets, punctuation, an ellipsis or a
-    truncation mark do not move the edge. A span never contains a line
-    break, because no fragment contains whitespace.
+    truncation mark do not move the edge. A cut is recognized only with
+    evidence of one: other text beside the piece (besides quotes, brackets
+    and whitespace), an adjacent line on the cut side (with ``per_line``),
+    or a cut mark (``...``, an ellipsis, a truncation mark). A value that is
+    only a short run of fragment characters (a trace trigger ``synthetic``
+    beside a configured ``synthetic-...`` path) is ordinary text. A span
+    never contains a line break, because no fragment contains whitespace.
     """
 
     state = _STATE
@@ -274,16 +286,25 @@ def spans(value: str, *, per_line: bool = False) -> list[tuple[int, int]]:
             position = stop + 1
     else:
         bounds = [(0, len(value))]
-    for start, stop in bounds:
+    last = len(bounds) - 1
+    for index, (start, stop) in enumerate(bounds):
         if stop <= start:
             continue
         if state.head is not None:
             match = state.head.match(value, start, stop)
-            if match:
+            if match and (
+                index > 0
+                or _CUT_MARK.search(value, start, match.start(1))
+                or value[match.end(1):stop].strip(_FRAME)
+            ):
                 found.append(match.span(1))
         if state.tail is not None:
             match = state.tail.search(value, max(start, stop - state.tail_window), stop)
-            if match:
+            if match and (
+                index < last
+                or _CUT_MARK.search(value, match.end(1), stop)
+                or value[start:match.start(1)].strip(_FRAME)
+            ):
                 found.append(match.span(1))
     found.sort()
     merged: list[tuple[int, int]] = []

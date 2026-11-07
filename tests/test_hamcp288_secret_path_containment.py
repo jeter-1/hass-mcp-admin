@@ -228,6 +228,40 @@ class MatcherTests(Canary):
         self.assertEqual(tree[7], "seven")
         self.assert_no_leak(json.dumps({str(key): value for key, value in tree.items()}))
 
+    def test_a_cut_needs_evidence_and_a_bare_run_of_fragment_characters_is_ordinary(self):
+        head, tail = self.secret[:16], self.secret[-9:]
+        # A value that is only a run of fragment characters is not a cut one.
+        for bare in (head, tail, f'"{head}"', f"({tail})", f"  {head}  "):
+            with self.subTest(bare=bare):
+                self.assertEqual(SP.redact(bare), bare)
+        # The whole fragment is always matched, with or without other text.
+        self.assertEqual(SP.redact(self.secret), TOKEN)
+        # Evidence of a cut on either side: other text, a cut mark, an
+        # adjacent line.
+        self.assertEqual(SP.redact("x " + head), "x " + TOKEN)
+        self.assertEqual(SP.redact(tail + " y"), TOKEN + " y")
+        self.assertEqual(SP.redact(head + "..."), TOKEN + "...")
+        self.assertEqual(SP.redact(head + "<truncated>"), TOKEN + "<truncated>")
+        self.assertEqual(SP.redact("…" + tail), "…" + TOKEN)
+        self.assertEqual(SP.redact_lines(head + "\n" + tail), TOKEN + "\n" + TOKEN)
+        self.assertEqual(SP.redact_lines("plain\n" + tail), "plain\n" + TOKEN)
+        self.assertEqual(SP.redact_lines(head + "\nplain"), TOKEN + "\nplain")
+
+    def test_a_low_entropy_configured_path_keeps_ordinary_upstream_values_complete(self):
+        # The exact-image acceptance configures this synthetic path; its fixture
+        # returns a trace whose trigger is the bare word ``synthetic`` (a cut
+        # prefix of the path). That value is ordinary text, so the delegated
+        # read stays complete, while the path itself is still redacted.
+        configured = "http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp"
+        SP.configure(configured)
+        trace = [{"run_id": "fixture-trace", "state": "stopped", "trigger": "synthetic"}]
+        result = S.sanitize_untrusted_data(trace, max_string=4096)
+        self.assertEqual(result.value, trace)
+        self.assertFalse(result.redaction_applied)
+        leaked = S.sanitize_untrusted_data({"error": "failed for url " + configured}, max_string=4096)
+        self.assertNotIn("synthetic-upstream-secret", json.dumps(leaked.value))
+        self.assertTrue(leaked.redaction_applied)
+
     def test_ordinary_text_is_kept_and_nothing_changes_unconfigured(self):
         for text in ORDINARY:
             with self.subTest(text=text):
