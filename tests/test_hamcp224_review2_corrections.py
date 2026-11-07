@@ -4,15 +4,15 @@ Synthetic fixtures only; no live Home Assistant and no host journal. Every
 credential-shaped payload is assembled at run time, so this file holds no
 secret-shaped literal.
 
-The reviewer's delta suite (``test_pr313_delta_residuals``) is kept byte for
-byte. One of its methods,
-``test_original_control_text_is_screened_before_ansi_removal``, expects a
+The reviewer's delta suite (``test_pr313_delta_residuals``) is pinned by
+hash. One of its methods,
+``test_original_control_text_is_screened_before_ansi_removal``, expected a
 coloured ordinary line to be withheld; the owner decided otherwise (review 2
 M4: an SGR colour code is a recognized display format, stripped for display
 and never by itself a reason to withhold; review 3 narrowed the exemption
-from every CSI sequence to SGR codes only). That method uses only SGR codes,
-so it is registered below as an expected failure: it still runs, still has to
-fail, and turns the build red if colour codes are ever withheld again.
+from every CSI sequence to SGR codes only). It ran here as an expected
+failure until HAMCP-312 rewrote it to assert that decision, so it now passes,
+and turns the build red if colour codes are ever withheld again.
 """
 
 from __future__ import annotations
@@ -38,17 +38,15 @@ hj = review1.hj
 author = review1.author
 
 # Owner decision, HAMCP-224 review 2 M4 (recorded in the PR body and the
-# reviewer delta brief): superseded, so expected to fail.
-SUPERSEDED = "test_original_control_text_is_screened_before_ansi_removal"
-_method = getattr(residuals.DeltaResidualTests, SUPERSEDED)
-if not getattr(_method, "__unittest_expecting_failure__", False):
-    setattr(residuals.DeltaResidualTests, SUPERSEDED, unittest.expectedFailure(_method))
+# reviewer delta brief). HAMCP-312 rewrote this reviewer method to assert it.
+REWRITTEN = "test_original_control_text_is_screened_before_ansi_removal"
 
-# HAMCP-272 changes only the review fixture cleanup owner; test bodies remain intact.
-# Keep the exact-file integrity check, pinned to those corrected fixture bytes.
+# HAMCP-272 changed only the review fixture cleanup owner; HAMCP-312 rewrote
+# only REWRITTEN in the delta suite. Keep the exact-file integrity check,
+# pinned to those corrected fixture bytes.
 REVIEWER_SUITES = {
     "test_pr313_independent_review.py": "2ba2d9fabe9c74ca2c2d84c319b04f6f36e4af787625d74d5ab93919ee23e1a0",
-    "test_pr313_delta_residuals.py": "9b3d8d37299a60a36e3d7e7098882d000149b6c556be657cfbf95d0a7848e202",
+    "test_pr313_delta_residuals.py": "205f5739e721b6e8fe703c66287e19a6e309986274bae832ec3a7ad5b24cbc7a",
 }
 
 NEEDLE = "SYNTHETIC" + "compact79"
@@ -167,19 +165,19 @@ class ReviewerSuiteTests(unittest.TestCase):
             with self.subTest(suite=name):
                 self.assertEqual(hashlib.sha256((TESTS / name).read_bytes()).hexdigest(), expected)
 
-    def test_only_the_superseded_method_is_an_expected_failure(self):
+    def test_no_reviewer_method_is_an_expected_failure(self):
         for name in dir(residuals.DeltaResidualTests):
             if name.startswith("test"):
                 with self.subTest(method=name):
-                    expecting = getattr(getattr(residuals.DeltaResidualTests, name),
-                                        "__unittest_expecting_failure__", False)
-                    self.assertEqual(expecting, name == SUPERSEDED)
+                    self.assertFalse(getattr(getattr(residuals.DeltaResidualTests, name),
+                                             "__unittest_expecting_failure__", False))
 
-    def test_the_superseded_method_still_runs_and_fails(self):
+    def test_the_rewritten_method_passes(self):
         result = unittest.TestResult()
-        residuals.DeltaResidualTests(SUPERSEDED).run(result)
-        self.assertEqual((len(result.expectedFailures), result.unexpectedSuccesses, result.failures, result.errors),
-                         (1, [], [], []))
+        residuals.DeltaResidualTests(REWRITTEN).run(result)
+        self.assertEqual((result.testsRun, result.expectedFailures, result.unexpectedSuccesses,
+                          result.failures, result.errors, result.skipped),
+                         (1, [], [], [], [], []))
 
 
 class AnsiScreeningTests(review1.Harness):

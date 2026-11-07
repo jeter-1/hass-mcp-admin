@@ -28,7 +28,7 @@ sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent))
 sys.path.insert(0, str(TESTS.parent / "hass_mcp_engineering_beta"))
 
-import test_hamcp224_review2_corrections as review2  # noqa: E402  (registers the superseded method)
+import test_hamcp224_review2_corrections as review2  # noqa: E402
 import test_pr313_delta_residuals as residuals  # noqa: E402
 import test_pr313_independent_review as independent  # noqa: E402
 import test_review2_ansi_residual as combined  # noqa: E402
@@ -63,7 +63,7 @@ class ReviewerSuiteTests(unittest.TestCase):
             with self.subTest(suite=name):
                 self.assertEqual(hashlib.sha256((TESTS / name).read_bytes()).hexdigest(), expected)
 
-    def test_the_superseded_method_is_the_only_expected_failure_in_any_reviewer_suite(self):
+    def test_no_reviewer_suite_has_an_expected_failure(self):
         expecting = []
         for module in (independent, residuals, combined):
             for _name, case in inspect.getmembers(module, inspect.isclass):
@@ -73,11 +73,11 @@ class ReviewerSuiteTests(unittest.TestCase):
                     if method.startswith("test") and getattr(getattr(case, method),
                                                              "__unittest_expecting_failure__", False):
                         expecting.append(f"{module.__name__}.{case.__name__}.{method}")
-        self.assertEqual(expecting, ["test_pr313_delta_residuals.DeltaResidualTests." + review2.SUPERSEDED])
+        self.assertEqual(expecting, [])
 
-    def test_the_superseded_method_uses_only_sgr_codes(self):
-        # It still fails for the reason the owner superseded: colours are shown.
-        source = inspect.getsource(getattr(residuals.DeltaResidualTests, review2.SUPERSEDED))
+    def test_the_rewritten_method_uses_only_sgr_codes(self):
+        # HAMCP-312: it asserts the owner's decision that colours are shown.
+        source = inspect.getsource(getattr(residuals.DeltaResidualTests, review2.REWRITTEN))
         self.assertIn("'\\x1b[31mordinary\\x1b[0m'", source)
         self.assertEqual(hj.screen_text("\x1b[31mordinary\x1b[0m".encode(), ()), ("ordinary", None))
 

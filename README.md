@@ -16,17 +16,17 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.5**. It refreshes the image trust
-store for the certifi/eMudhra incident (GHSA-6q48-6c7w-9gw2): Python 3.12.16,
-Debian `ca-certificates` 20250419+deb13u1 and pip 26.2.2, with no application
-change (HAMCP-318). Read the
-[2.4.2-beta.5 release notes](docs/V2_4_2_BETA5_RELEASE_NOTES.md) and the
-[2.4.2-beta.5 acceptance contract](docs/V2_4_2_BETA5_ACCEPTANCE.md).
+The current source version is **2.4.2-beta.6**. It makes never-approvable
+prohibited operational plans and stored approval kinds project correctly in
+governance inspection and health (HAMCP-304). It also bundles two
+development-only fixes (HAMCP-305, HAMCP-312). Read the
+[2.4.2-beta.6 release notes](docs/V2_4_2_BETA6_RELEASE_NOTES.md) and the
+[2.4.2-beta.6 acceptance contract](docs/V2_4_2_BETA6_ACCEPTANCE.md).
 
 This version's delegated catalog is reviewed against ha-mcp 8.6.0. Its source
 baseline is 109 expected connector tools (81 native/static plus 28 automatic
-delegated reads), or 110 (81 + 29) with the optional reader. Rolling back to
-2.4.2-beta.4 is safe.
+delegated reads), or 110 (81 + 29) with the optional reader, unchanged from
+2.4.2-beta.5. Rolling back to 2.4.2-beta.5 is safe.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on

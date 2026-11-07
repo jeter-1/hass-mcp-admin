@@ -1387,8 +1387,10 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(plan["approval_actionable"])
         with self.assertRaises(GovernanceError) as caught:
             self.service.approve(plan["plan_id"], plan["plan_hash"])
+        # HAMCP-304: the never-approvable plan is recognized as prohibited,
+        # so approval refuses as prohibited instead of approval-sequence.
         self.assertEqual(
-            ErrorCode.APPROVAL_SEQUENCE_FAILURE,
+            ErrorCode.PROHIBITED_CHANGE,
             caught.exception.code,
         )
         self.assertEqual(0, self.helper.dispatch_count)
