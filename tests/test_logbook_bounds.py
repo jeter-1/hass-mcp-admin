@@ -832,6 +832,36 @@ class WindowReadTests(unittest.IsolatedAsyncioTestCase):
             await reader.read(client, hours=None, entity_id="", response_limit=60000, name="synthetic")
         self.assertFalse(reader._active)
 
+    async def test_continuation_recovers_omitted_rows_with_disclosed_overlap(self):
+        start = NOW - timedelta(hours=6)
+        rows = [{"entity_id": "sensor.synthetic", "when": (start + timedelta(seconds=60*i+30)).isoformat(),
+                 "message": f"{i:04}" + "x"*2048} for i in range(300)]
+
+        class Core(StatesClient):
+            async def request(self, method, path, body=None, raw=False, expected_statuses=frozenset(), *, logbook_read=False):
+                self.calls.append((method, path, raw, logbook_read))
+                split = urlsplit(path)
+                low = datetime.fromisoformat(unquote(split.path).removeprefix("/logbook/"))
+                high = datetime.fromisoformat(parse_qs(split.query)["end_time"][0])
+                # Core: exclusive start, chronological order.
+                return json.dumps([r for r in rows if low < datetime.fromisoformat(r["when"]) < high])
+
+        seen, kwargs, reads = [], {"start_time": start.isoformat(), "entity_ids": ["sensor.synthetic"]}, 0
+        while True:
+            client = Core()
+            result = json.loads(await self.read(client, **kwargs))
+            reads += 1
+            seen.extend(entry["message"][:4] for entry in result["entries"])
+            if not result["truncated"]:
+                break
+            continuation = result["continuation"]
+            self.assertTrue(continuation["overlap_possible"])
+            kwargs = {"start_time": continuation["start_time"], "end_time": continuation["end_time"],
+                      "entity_ids": ["sensor.synthetic"]}
+            self.assertLess(reads, 50)
+        self.assertGreater(reads, 1)
+        self.assertEqual(sorted(set(seen)), [f"{i:04}" for i in range(300)])
+
     async def test_legacy_shape_unchanged_without_new_arguments(self):
         client = FakeClient(entries())
         with patch.object(logbook, "datetime", Clock):
