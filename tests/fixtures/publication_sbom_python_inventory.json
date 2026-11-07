@@ -1,0 +1,4033 @@
+{
+ "provenance": {
+  "contract": "installer_version and runtime copied from hass_mcp_engineering_beta/build-inputs.json at release_commit (blob build_inputs_blob)",
+  "read": "2026-11-06, anonymous OCI distribution API: index by digest, attestation manifests, SPDX in-toto statement blobs (digest-verified)",
+  "registry": "ghcr.io/jeter-1/hass-mcp-engineering-beta",
+  "selection": "SPDX packages, in document order, whose externalRefs contain a pkg:pypi purl or whose sourceInfo is pip's vendored bom.cdx.json; every field verbatim except externalRefs, which keeps only its purl entries (cpe23Type entries dropped for size)",
+  "task": "HAMCP-323"
+ },
+ "releases": {
+  "2.4.2-beta.4": {
+   "build_inputs_blob": "bd7a347e07d284cc6fbc1b67c68aa631766b37a8",
+   "contract": {
+    "installer_version": "25.0.1",
+    "runtime": {
+     "aiohappyeyeballs": "2.7.1",
+     "aiohttp": "3.14.4",
+     "aiosignal": "1.4.0",
+     "annotated-types": "0.8.0",
+     "anyio": "4.15.1",
+     "attrs": "26.1.0",
+     "certifi": "2026.10.19",
+     "cffi": "2.1.1",
+     "click": "8.5.0",
+     "cryptography": "50.0.0",
+     "frozenlist": "1.8.0",
+     "h11": "0.16.0",
+     "httpcore": "1.0.9",
+     "httpx": "0.28.1",
+     "httpx-sse": "0.4.3",
+     "idna": "3.19",
+     "jinja2": "3.1.6",
+     "jsonschema": "4.25.1",
+     "jsonschema-specifications": "2025.9.1",
+     "markupsafe": "3.0.3",
+     "mcp": "1.30.0",
+     "multidict": "6.9.1",
+     "propcache": "0.5.2",
+     "pycparser": "3.0",
+     "pydantic": "2.13.5",
+     "pydantic-core": "2.46.5",
+     "pydantic-settings": "2.15.0",
+     "pyjwt": "2.15.0",
+     "python-dotenv": "1.2.3",
+     "python-multipart": "0.0.32",
+     "pyyaml": "6.0.2",
+     "referencing": "0.37.0",
+     "rpds-py": "2026.6.3",
+     "sse-starlette": "3.4.11",
+     "starlette": "1.3.1",
+     "typing-extensions": "4.16.0",
+     "typing-inspection": "0.4.4",
+     "uvicorn": "0.51.0",
+     "yarl": "1.25.1"
+    }
+   },
+   "index_digest": "sha256:3ebe6e89ba15e0365eeba645cb7ed3575b08a8f0b0ecdf202ccc8cd36cb3e9c5",
+   "origin": "published tag 2.4.2-beta.4",
+   "platforms": {
+    "linux/amd64": {
+     "attestation_manifest_digest": "sha256:cc26b213fd69660aa0dbd4e16c03c12923eb654b9f7d5407e58ee5d45f6a791e",
+     "image_digest": "sha256:e38d8d1698af1304da42f93810a5b6f6b367c4de8a3d41609220534a9e19d71e",
+     "packages": [
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohappyeyeballs-a41d18011f2c8d64",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohappyeyeballs@2.7.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "aiohappyeyeballs",
+       "originator": "Person: J. Nick Koston (nick@koston.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/RECORD",
+       "supplier": "Person: J. Nick Koston (nick@koston.org)",
+       "versionInfo": "2.7.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohttp-2034429031a4e043",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohttp@3.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 AND MIT)",
+       "name": "aiohttp",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiosignal-2970012a639c1c9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiosignal@1.4.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-2.0",
+       "name": "aiosignal",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.4.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-annotated-types-d2fe544d47dd8dbd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/annotated-types@0.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "annotated-types",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-anyio-941faa826cba0b38",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/anyio@4.15.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "anyio",
+       "originator": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/top_level.txt",
+       "supplier": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "versionInfo": "4.15.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-attrs-92ef3804a47391df",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/attrs@26.1.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "attrs",
+       "originator": "Person: Hynek Schlawack (hs@ox.cx)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/RECORD",
+       "supplier": "Person: Hynek Schlawack (hs@ox.cx)",
+       "versionInfo": "26.1.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-5f7893c8cc951e77",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MPL-2.0",
+       "name": "certifi",
+       "originator": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/top_level.txt",
+       "supplier": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cffi-ab1a46bdc19e9cfe",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cffi@2.1.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT-0",
+       "name": "cffi",
+       "originator": "Person: Armin Rigo, Maciej Fijalkowski",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/top_level.txt",
+       "supplier": "Person: Armin Rigo, Maciej Fijalkowski",
+       "versionInfo": "2.1.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-click-13a434999cfa4ae7",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/click@8.5.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "click",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "8.5.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cryptography-4c819eb63668f433",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cryptography@50.0.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 OR BSD-3-Clause)",
+       "name": "cryptography",
+       "originator": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/RECORD",
+       "supplier": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "versionInfo": "50.0.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-frozenlist-cf23322bfd30fd74",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/frozenlist@1.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "frozenlist",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-h11-7516c1582ce0ead2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/h11@0.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "h11",
+       "originator": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/top_level.txt",
+       "supplier": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "versionInfo": "0.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpcore-215821b430ae513a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpcore@1.0.9",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpcore",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.0.9"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-1bfce058645adf1c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx@0.28.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpx",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.28.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-sse-cb6a3ae6ab169738",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx-sse@0.4.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "httpx-sse",
+       "originator": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/top_level.txt",
+       "supplier": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "versionInfo": "0.4.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-da79f9a861581c3d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "idna",
+       "originator": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/RECORD",
+       "supplier": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "versionInfo": "3.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jinja2-d80fb42418d14986",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jinja2@3.1.6",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "jinja2",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.1.6"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-4ade515fbcdeade5",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema@4.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema",
+       "originator": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "versionInfo": "4.25.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-specifications-1a50ed0ac4fd7495",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema-specifications@2025.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema-specifications",
+       "originator": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "versionInfo": "2025.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-markupsafe-2375a41b37cf8d3d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/markupsafe@3.0.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "markupsafe",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.0.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-mcp-2e4ab3e2e8ae335b",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/mcp@1.30.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "mcp",
+       "originator": "Person: Anthropic, PBC.",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/RECORD",
+       "supplier": "Person: Anthropic, PBC.",
+       "versionInfo": "1.30.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-multidict-19936816a5320d25",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/multidict@6.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-License-2.0",
+       "name": "multidict",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "6.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pip-b07d834d26c4749b",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pip@25.0.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pip",
+       "originator": "Person: The pip developers (distutils-sig@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/top_level.txt",
+       "supplier": "Person: The pip developers (distutils-sig@python.org)",
+       "versionInfo": "25.0.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-propcache-c421e42c7299b175",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/propcache@0.5.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "propcache",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "0.5.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pycparser-c08b0e8cd2dfb133",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pycparser@3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "pycparser",
+       "originator": "Person: Eli Bendersky (eliben@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/top_level.txt",
+       "supplier": "Person: Eli Bendersky (eliben@gmail.com)",
+       "versionInfo": "3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-b062e24b56bb5e1d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic@2.13.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.13.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-core-f7e0c23e8b8b4208",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-core@2.46.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-core",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.46.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-settings-54cd44ab6099c274",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-settings@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-settings",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyjwt-8915b3265a5fc83a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyjwt@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyjwt",
+       "originator": "Person: Jose Padilla (hello@jpadilla.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/top_level.txt",
+       "supplier": "Person: Jose Padilla (hello@jpadilla.com)",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-dotenv-caf0122acd204b48",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-dotenv@1.2.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "python-dotenv",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-multipart-f11064976caf78b6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-multipart@0.0.32",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "python-multipart",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.0.32"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyyaml-830418222cb9ee84",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyyaml@6.0.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyyaml",
+       "originator": "Person: Kirill Simonov (xi@resolvent.net)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/top_level.txt",
+       "supplier": "Person: Kirill Simonov (xi@resolvent.net)",
+       "versionInfo": "6.0.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-referencing-6d68ad5f19811f0c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/referencing@0.37.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "referencing",
+       "originator": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "versionInfo": "0.37.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rpds-py-9241e6f19ad9fffd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rpds-py@2026.6.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "rpds-py",
+       "originator": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "versionInfo": "2026.6.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-sse-starlette-bb95ec6c58dc0211",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/sse-starlette@3.4.11",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "sse-starlette",
+       "originator": "Person: sysid (sysid@gmx.de)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/top_level.txt",
+       "supplier": "Person: sysid (sysid@gmx.de)",
+       "versionInfo": "3.4.11"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-starlette-0dbcf35f5633aa6c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/starlette@1.3.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "starlette",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.3.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-extensions-36cab8b3f2049906",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-extensions@4.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "typing-extensions",
+       "originator": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/RECORD",
+       "supplier": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "versionInfo": "4.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-inspection-c92f906175eef393",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-inspection@0.4.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "typing-inspection",
+       "originator": "Person: Victorien Plot (contact@vctrn.dev)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/RECORD",
+       "supplier": "Person: Victorien Plot (contact@vctrn.dev)",
+       "versionInfo": "0.4.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-uvicorn-334080743be2360c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/uvicorn@0.51.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "uvicorn",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.51.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-yarl-97497966cf53e535",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/yarl@1.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "yarl",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "1.25.1"
+      }
+     ],
+     "spdx_created": "2026-11-06T11:16:29Z",
+     "spdx_creators": [
+      "Organization: Anchore, Inc",
+      "Tool: syft-v1.51.0",
+      "Tool: buildkit-v0.34.2"
+     ],
+     "spdx_package_count": 135,
+     "spdx_statement_digest": "sha256:ed313ef992b137a736e4bbd51542ed70fadc792c4698ef05cf2d722ba3e2c2df"
+    },
+    "linux/arm64": {
+     "attestation_manifest_digest": "sha256:7b6df9174888a2b917331bd4b94aac97f7bc3bdc9285c83e06d9dc8b0692bbf2",
+     "image_digest": "sha256:647426015c0d19de2e71991e07dcd0bd496a0ec44662e5b1ef465e6302d6f75f",
+     "packages": [
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohappyeyeballs-a41d18011f2c8d64",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohappyeyeballs@2.7.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "aiohappyeyeballs",
+       "originator": "Person: J. Nick Koston (nick@koston.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/RECORD",
+       "supplier": "Person: J. Nick Koston (nick@koston.org)",
+       "versionInfo": "2.7.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohttp-9d0fcbd141412f1c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohttp@3.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 AND MIT)",
+       "name": "aiohttp",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiosignal-2970012a639c1c9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiosignal@1.4.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-2.0",
+       "name": "aiosignal",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.4.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-annotated-types-d2fe544d47dd8dbd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/annotated-types@0.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "annotated-types",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-anyio-941faa826cba0b38",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/anyio@4.15.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "anyio",
+       "originator": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/top_level.txt",
+       "supplier": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "versionInfo": "4.15.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-attrs-92ef3804a47391df",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/attrs@26.1.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "attrs",
+       "originator": "Person: Hynek Schlawack (hs@ox.cx)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/RECORD",
+       "supplier": "Person: Hynek Schlawack (hs@ox.cx)",
+       "versionInfo": "26.1.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-5f7893c8cc951e77",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MPL-2.0",
+       "name": "certifi",
+       "originator": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/top_level.txt",
+       "supplier": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cffi-a13b6145f266d9c2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cffi@2.1.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT-0",
+       "name": "cffi",
+       "originator": "Person: Armin Rigo, Maciej Fijalkowski",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/top_level.txt",
+       "supplier": "Person: Armin Rigo, Maciej Fijalkowski",
+       "versionInfo": "2.1.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-click-13a434999cfa4ae7",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/click@8.5.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "click",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "8.5.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cryptography-da214eaea49f8390",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cryptography@50.0.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 OR BSD-3-Clause)",
+       "name": "cryptography",
+       "originator": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/RECORD",
+       "supplier": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "versionInfo": "50.0.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-frozenlist-bcbb5d0e2468667a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/frozenlist@1.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "frozenlist",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-h11-7516c1582ce0ead2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/h11@0.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "h11",
+       "originator": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/top_level.txt",
+       "supplier": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "versionInfo": "0.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpcore-215821b430ae513a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpcore@1.0.9",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpcore",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.0.9"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-1bfce058645adf1c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx@0.28.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpx",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.28.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-sse-cb6a3ae6ab169738",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx-sse@0.4.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "httpx-sse",
+       "originator": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/top_level.txt",
+       "supplier": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "versionInfo": "0.4.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-da79f9a861581c3d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "idna",
+       "originator": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/RECORD",
+       "supplier": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "versionInfo": "3.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jinja2-d80fb42418d14986",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jinja2@3.1.6",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "jinja2",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.1.6"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-4ade515fbcdeade5",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema@4.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema",
+       "originator": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "versionInfo": "4.25.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-specifications-1a50ed0ac4fd7495",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema-specifications@2025.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema-specifications",
+       "originator": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "versionInfo": "2025.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-markupsafe-2400b78ca5fe1b9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/markupsafe@3.0.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "markupsafe",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.0.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-mcp-2e4ab3e2e8ae335b",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/mcp@1.30.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "mcp",
+       "originator": "Person: Anthropic, PBC.",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/RECORD",
+       "supplier": "Person: Anthropic, PBC.",
+       "versionInfo": "1.30.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-multidict-80cf32472d19d517",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/multidict@6.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-License-2.0",
+       "name": "multidict",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "6.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pip-b07d834d26c4749b",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pip@25.0.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pip",
+       "originator": "Person: The pip developers (distutils-sig@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/top_level.txt",
+       "supplier": "Person: The pip developers (distutils-sig@python.org)",
+       "versionInfo": "25.0.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-propcache-1c8dc359e42481e0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/propcache@0.5.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "propcache",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "0.5.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pycparser-c08b0e8cd2dfb133",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pycparser@3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "pycparser",
+       "originator": "Person: Eli Bendersky (eliben@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/top_level.txt",
+       "supplier": "Person: Eli Bendersky (eliben@gmail.com)",
+       "versionInfo": "3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-b062e24b56bb5e1d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic@2.13.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.13.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-core-ccfa14be77300fcd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-core@2.46.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-core",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.46.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-settings-54cd44ab6099c274",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-settings@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-settings",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyjwt-8915b3265a5fc83a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyjwt@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyjwt",
+       "originator": "Person: Jose Padilla (hello@jpadilla.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/top_level.txt",
+       "supplier": "Person: Jose Padilla (hello@jpadilla.com)",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-dotenv-caf0122acd204b48",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-dotenv@1.2.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "python-dotenv",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-multipart-f11064976caf78b6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-multipart@0.0.32",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "python-multipart",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.0.32"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyyaml-4fd8a45ded7edc9f",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyyaml@6.0.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyyaml",
+       "originator": "Person: Kirill Simonov (xi@resolvent.net)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/top_level.txt",
+       "supplier": "Person: Kirill Simonov (xi@resolvent.net)",
+       "versionInfo": "6.0.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-referencing-6d68ad5f19811f0c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/referencing@0.37.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "referencing",
+       "originator": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "versionInfo": "0.37.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rpds-py-bedee7375c8e25a6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rpds-py@2026.6.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "rpds-py",
+       "originator": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "versionInfo": "2026.6.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-sse-starlette-bb95ec6c58dc0211",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/sse-starlette@3.4.11",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "sse-starlette",
+       "originator": "Person: sysid (sysid@gmx.de)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/top_level.txt",
+       "supplier": "Person: sysid (sysid@gmx.de)",
+       "versionInfo": "3.4.11"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-starlette-0dbcf35f5633aa6c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/starlette@1.3.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "starlette",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.3.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-extensions-36cab8b3f2049906",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-extensions@4.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "typing-extensions",
+       "originator": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/RECORD",
+       "supplier": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "versionInfo": "4.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-inspection-c92f906175eef393",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-inspection@0.4.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "typing-inspection",
+       "originator": "Person: Victorien Plot (contact@vctrn.dev)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/RECORD",
+       "supplier": "Person: Victorien Plot (contact@vctrn.dev)",
+       "versionInfo": "0.4.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-uvicorn-334080743be2360c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/uvicorn@0.51.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "uvicorn",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.51.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-yarl-07c370f37a253898",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/yarl@1.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "yarl",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "1.25.1"
+      }
+     ],
+     "spdx_created": "2026-11-06T11:18:17Z",
+     "spdx_creators": [
+      "Organization: Anchore, Inc",
+      "Tool: syft-v1.51.0",
+      "Tool: buildkit-v0.34.2"
+     ],
+     "spdx_package_count": 135,
+     "spdx_statement_digest": "sha256:dd47f6318c2e4742b3928fd5e4869df35e74ba0e7edd8389fa9a87214c565fb3"
+    }
+   },
+   "release_commit": "a402cca44ec94980d0709f2f3bd53185c5b80318"
+  },
+  "2.4.2-beta.5": {
+   "build_inputs_blob": "fc027892fbe2c162650f47edd1abcb0301538814",
+   "contract": {
+    "installer_version": "26.2.2",
+    "runtime": {
+     "aiohappyeyeballs": "2.7.1",
+     "aiohttp": "3.14.4",
+     "aiosignal": "1.4.0",
+     "annotated-types": "0.8.0",
+     "anyio": "4.15.1",
+     "attrs": "26.1.0",
+     "certifi": "2026.10.19",
+     "cffi": "2.1.1",
+     "click": "8.5.0",
+     "cryptography": "50.0.0",
+     "frozenlist": "1.8.0",
+     "h11": "0.16.0",
+     "httpcore": "1.0.9",
+     "httpx": "0.28.1",
+     "httpx-sse": "0.4.3",
+     "idna": "3.19",
+     "jinja2": "3.1.6",
+     "jsonschema": "4.25.1",
+     "jsonschema-specifications": "2025.9.1",
+     "markupsafe": "3.0.3",
+     "mcp": "1.30.0",
+     "multidict": "6.9.1",
+     "propcache": "0.5.2",
+     "pycparser": "3.0",
+     "pydantic": "2.13.5",
+     "pydantic-core": "2.46.5",
+     "pydantic-settings": "2.15.0",
+     "pyjwt": "2.15.0",
+     "python-dotenv": "1.2.3",
+     "python-multipart": "0.0.32",
+     "pyyaml": "6.0.2",
+     "referencing": "0.37.0",
+     "rpds-py": "2026.6.3",
+     "sse-starlette": "3.4.11",
+     "starlette": "1.3.1",
+     "typing-extensions": "4.16.0",
+     "typing-inspection": "0.4.4",
+     "uvicorn": "0.51.0",
+     "yarl": "1.25.1"
+    }
+   },
+   "index_digest": "sha256:ded9e5a23e19aef38c480eb5979ac117878a319a2077638413a5975036c61f60",
+   "origin": "publish run 42251481880 attempt 1 (failed verify-image; untagged digest)",
+   "platforms": {
+    "linux/amd64": {
+     "attestation_manifest_digest": "sha256:fa17909ed8a43923d300d6b1090a19c9119e321f5493661d308dd3da209b3d29",
+     "image_digest": "sha256:4fc6fc1bb2bf6859d2b655cec4999c6a1d6ec8f2156374dbd34ee192b9ca6dd3",
+     "packages": [
+      {
+       "SPDXID": "SPDXRef-Package-python-CacheControl-pkg-pypi-CacheControl-0.14.4",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/CacheControl@0.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "CacheControl",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohappyeyeballs-a41d18011f2c8d64",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohappyeyeballs@2.7.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "aiohappyeyeballs",
+       "originator": "Person: J. Nick Koston (nick@koston.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/RECORD",
+       "supplier": "Person: J. Nick Koston (nick@koston.org)",
+       "versionInfo": "2.7.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohttp-2034429031a4e043",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohttp@3.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 AND MIT)",
+       "name": "aiohttp",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiosignal-2970012a639c1c9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiosignal@1.4.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-2.0",
+       "name": "aiosignal",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.4.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-annotated-types-d2fe544d47dd8dbd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/annotated-types@0.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "annotated-types",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-anyio-941faa826cba0b38",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/anyio@4.15.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "anyio",
+       "originator": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/top_level.txt",
+       "supplier": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "versionInfo": "4.15.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-attrs-92ef3804a47391df",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/attrs@26.1.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "attrs",
+       "originator": "Person: Hynek Schlawack (hs@ox.cx)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/RECORD",
+       "supplier": "Person: Hynek Schlawack (hs@ox.cx)",
+       "versionInfo": "26.1.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-5f7893c8cc951e77",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MPL-2.0",
+       "name": "certifi",
+       "originator": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/top_level.txt",
+       "supplier": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-pkg-pypi-certifi-2026.10.19",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "certifi",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cffi-1848143ea7f88299",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cffi@2.1.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT-0",
+       "name": "cffi",
+       "originator": "Person: Armin Rigo, Maciej Fijalkowski",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/top_level.txt",
+       "supplier": "Person: Armin Rigo, Maciej Fijalkowski",
+       "versionInfo": "2.1.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-click-13a434999cfa4ae7",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/click@8.5.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "click",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "8.5.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cryptography-4c819eb63668f433",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cryptography@50.0.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 OR BSD-3-Clause)",
+       "name": "cryptography",
+       "originator": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/RECORD",
+       "supplier": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "versionInfo": "50.0.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-distlib-pkg-pypi-distlib-0.4.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/distlib@0.4.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "distlib",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.4.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-distro-pkg-pypi-distro-1.9.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/distro@1.9.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "distro",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.9.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-frozenlist-cf23322bfd30fd74",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/frozenlist@1.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "frozenlist",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-h11-7516c1582ce0ead2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/h11@0.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "h11",
+       "originator": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/top_level.txt",
+       "supplier": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "versionInfo": "0.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpcore-215821b430ae513a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpcore@1.0.9",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpcore",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.0.9"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-e93c1667fb557132",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx@0.28.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpx",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.28.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-sse-cb6a3ae6ab169738",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx-sse@0.4.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "httpx-sse",
+       "originator": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/top_level.txt",
+       "supplier": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "versionInfo": "0.4.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-pkg-pypi-idna-3.18",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.18",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "idna",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.18"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-cd6c4de5450a2dfa",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "idna",
+       "originator": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/RECORD",
+       "supplier": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "versionInfo": "3.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jinja2-d80fb42418d14986",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jinja2@3.1.6",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "jinja2",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.1.6"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-5c52a2d62d28cacd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema@4.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema",
+       "originator": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "versionInfo": "4.25.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-specifications-1a50ed0ac4fd7495",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema-specifications@2025.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema-specifications",
+       "originator": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "versionInfo": "2025.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-markupsafe-2375a41b37cf8d3d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/markupsafe@3.0.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "markupsafe",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.0.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-mcp-2c93b276f832a407",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/mcp@1.30.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "mcp",
+       "originator": "Person: Anthropic, PBC.",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/RECORD",
+       "supplier": "Person: Anthropic, PBC.",
+       "versionInfo": "1.30.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-msgpack-pkg-pypi-msgpack-1.1.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/msgpack@1.1.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "msgpack",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.1.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-multidict-19936816a5320d25",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/multidict@6.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-License-2.0",
+       "name": "multidict",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "6.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-packaging-pkg-pypi-packaging-26.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/packaging@26.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "packaging",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "26.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pip-6c21f82917c616cd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pip@26.2.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pip",
+       "originator": "Person: The pip developers (distutils-sig@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pip-26.2.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pip-26.2.2.dist-info/RECORD",
+       "supplier": "Person: The pip developers (distutils-sig@python.org)",
+       "versionInfo": "26.2.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-UnknownPackage-pip-65017cac4ea792c6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pip",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "UNKNOWN"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-platformdirs-pkg-pypi-platformdirs-4.10.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/platformdirs@4.10.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "platformdirs",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "4.10.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-propcache-c421e42c7299b175",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/propcache@0.5.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "propcache",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "0.5.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pycparser-c08b0e8cd2dfb133",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pycparser@3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "pycparser",
+       "originator": "Person: Eli Bendersky (eliben@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/top_level.txt",
+       "supplier": "Person: Eli Bendersky (eliben@gmail.com)",
+       "versionInfo": "3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-b062e24b56bb5e1d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic@2.13.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.13.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-core-f7e0c23e8b8b4208",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-core@2.46.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-core",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.46.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-settings-54cd44ab6099c274",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-settings@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-settings",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pygments-pkg-pypi-pygments-2.20.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pygments@2.20.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pygments",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.20.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyjwt-8915b3265a5fc83a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyjwt@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyjwt",
+       "originator": "Person: Jose Padilla (hello@jpadilla.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/top_level.txt",
+       "supplier": "Person: Jose Padilla (hello@jpadilla.com)",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyproject-hooks-pkg-pypi-pyproject-hooks-1.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyproject-hooks@1.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pyproject-hooks",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-dotenv-13ab6340872e2a4f",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-dotenv@1.2.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "python-dotenv",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-multipart-f11064976caf78b6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-multipart@0.0.32",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "python-multipart",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.0.32"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyyaml-830418222cb9ee84",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyyaml@6.0.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyyaml",
+       "originator": "Person: Kirill Simonov (xi@resolvent.net)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/top_level.txt",
+       "supplier": "Person: Kirill Simonov (xi@resolvent.net)",
+       "versionInfo": "6.0.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-referencing-6d68ad5f19811f0c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/referencing@0.37.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "referencing",
+       "originator": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "versionInfo": "0.37.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-requests-pkg-pypi-requests-2.34.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/requests@2.34.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "requests",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.34.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-resolvelib-pkg-pypi-resolvelib-1.2.1",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/resolvelib@1.2.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "resolvelib",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rich-pkg-pypi-rich-14.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rich@14.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "rich",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "14.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rpds-py-9241e6f19ad9fffd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rpds-py@2026.6.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "rpds-py",
+       "originator": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "versionInfo": "2026.6.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-setuptools-pkg-pypi-setuptools-70.3.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/setuptools@70.3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "setuptools",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "70.3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-sse-starlette-bb95ec6c58dc0211",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/sse-starlette@3.4.11",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "sse-starlette",
+       "originator": "Person: sysid (sysid@gmx.de)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/top_level.txt",
+       "supplier": "Person: sysid (sysid@gmx.de)",
+       "versionInfo": "3.4.11"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-starlette-0dbcf35f5633aa6c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/starlette@1.3.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "starlette",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.3.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-tomli-pkg-pypi-tomli-2.4.1",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/tomli@2.4.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "tomli",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.4.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-tomli-w-pkg-pypi-tomli-w-1.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/tomli-w@1.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "tomli-w",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-truststore-pkg-pypi-truststore-0.10.4",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/truststore@0.10.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "truststore",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.10.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-extensions-36cab8b3f2049906",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-extensions@4.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "typing-extensions",
+       "originator": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/RECORD",
+       "supplier": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "versionInfo": "4.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-inspection-c92f906175eef393",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-inspection@0.4.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "typing-inspection",
+       "originator": "Person: Victorien Plot (contact@vctrn.dev)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/RECORD",
+       "supplier": "Person: Victorien Plot (contact@vctrn.dev)",
+       "versionInfo": "0.4.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-urllib3-pkg-pypi-urllib3-2.7.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/urllib3@2.7.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "urllib3",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.7.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-uvicorn-43f08668900a4827",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/uvicorn@0.51.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "uvicorn",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.51.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-yarl-97497966cf53e535",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/yarl@1.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "yarl",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "1.25.1"
+      }
+     ],
+     "spdx_created": "2026-11-06T16:42:57Z",
+     "spdx_creators": [
+      "Organization: Anchore, Inc",
+      "Tool: syft-v1.51.0",
+      "Tool: buildkit-v0.34.2"
+     ],
+     "spdx_package_count": 154,
+     "spdx_statement_digest": "sha256:90dd87475db89e762af6229c221c37d94e1135e3cd13fc42afaef7dce6a3c9d3"
+    },
+    "linux/arm64": {
+     "attestation_manifest_digest": "sha256:7f5fa20104c381254788244f4561ac788ec3166bdfaabfebbf800c9ceaba8400",
+     "image_digest": "sha256:ef2f7221cb70a3c9282b0b204627bc6cb5326b5f39ec06a7348cc07eb8697b10",
+     "packages": [
+      {
+       "SPDXID": "SPDXRef-Package-python-CacheControl-pkg-pypi-CacheControl-0.14.4",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/CacheControl@0.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "CacheControl",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohappyeyeballs-a41d18011f2c8d64",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohappyeyeballs@2.7.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "aiohappyeyeballs",
+       "originator": "Person: J. Nick Koston (nick@koston.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohappyeyeballs-2.7.1.dist-info/RECORD",
+       "supplier": "Person: J. Nick Koston (nick@koston.org)",
+       "versionInfo": "2.7.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiohttp-9d0fcbd141412f1c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiohttp@3.14.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 AND MIT)",
+       "name": "aiohttp",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiohttp-3.14.4.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.14.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-aiosignal-2970012a639c1c9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/aiosignal@1.4.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-2.0",
+       "name": "aiosignal",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/aiosignal-1.4.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.4.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-annotated-types-d2fe544d47dd8dbd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/annotated-types@0.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "annotated-types",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-anyio-941faa826cba0b38",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/anyio@4.15.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "anyio",
+       "originator": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/anyio-4.15.1.dist-info/top_level.txt",
+       "supplier": "Person: Alex Gr\u00f6nholm (alex.gronholm@nextday.fi)",
+       "versionInfo": "4.15.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-attrs-92ef3804a47391df",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/attrs@26.1.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "attrs",
+       "originator": "Person: Hynek Schlawack (hs@ox.cx)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/attrs-26.1.0.dist-info/RECORD",
+       "supplier": "Person: Hynek Schlawack (hs@ox.cx)",
+       "versionInfo": "26.1.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-5f7893c8cc951e77",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MPL-2.0",
+       "name": "certifi",
+       "originator": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/certifi-2026.10.19.dist-info/top_level.txt",
+       "supplier": "Person: Kenneth Reitz (me@kennethreitz.com)",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-certifi-pkg-pypi-certifi-2026.10.19",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/certifi@2026.10.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "certifi",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2026.10.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cffi-26945c096523abc2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cffi@2.1.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT-0",
+       "name": "cffi",
+       "originator": "Person: Armin Rigo, Maciej Fijalkowski",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/cffi-2.1.1.dist-info/top_level.txt",
+       "supplier": "Person: Armin Rigo, Maciej Fijalkowski",
+       "versionInfo": "2.1.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-click-13a434999cfa4ae7",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/click@8.5.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "click",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/click-8.5.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "8.5.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-cryptography-da214eaea49f8390",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/cryptography@50.0.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "(Apache-2.0 OR BSD-3-Clause)",
+       "name": "cryptography",
+       "originator": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/cryptography-50.0.0.dist-info/RECORD",
+       "supplier": "Person: The Python Cryptographic Authority and individual contributors (cryptography-dev@python.org)",
+       "versionInfo": "50.0.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-distlib-pkg-pypi-distlib-0.4.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/distlib@0.4.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "distlib",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.4.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-distro-pkg-pypi-distro-1.9.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/distro@1.9.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "distro",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.9.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-frozenlist-bcbb5d0e2468667a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/frozenlist@1.8.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "frozenlist",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/frozenlist-1.8.0.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.8.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-h11-7516c1582ce0ead2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/h11@0.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "h11",
+       "originator": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/h11-0.16.0.dist-info/top_level.txt",
+       "supplier": "Person: Nathaniel J. Smith (njs@pobox.com)",
+       "versionInfo": "0.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpcore-215821b430ae513a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpcore@1.0.9",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpcore",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpcore-1.0.9.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.0.9"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-e93c1667fb557132",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx@0.28.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "httpx",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx-0.28.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.28.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-httpx-sse-cb6a3ae6ab169738",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/httpx-sse@0.4.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "httpx-sse",
+       "originator": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/httpx_sse-0.4.3.dist-info/top_level.txt",
+       "supplier": "Person: Florimond Manca (florimond.manca@protonmail.com)",
+       "versionInfo": "0.4.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-pkg-pypi-idna-3.18",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.18",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "idna",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.18"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-idna-cd6c4de5450a2dfa",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/idna@3.19",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "idna",
+       "originator": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/idna-3.19.dist-info/RECORD",
+       "supplier": "Person: Kim Davies (kim+pypi@gumleaf.org)",
+       "versionInfo": "3.19"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jinja2-d80fb42418d14986",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jinja2@3.1.6",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "jinja2",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jinja2-3.1.6.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.1.6"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-5c52a2d62d28cacd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema@4.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema",
+       "originator": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema-4.25.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema@GrayVines.com)",
+       "versionInfo": "4.25.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-jsonschema-specifications-1a50ed0ac4fd7495",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/jsonschema-specifications@2025.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "jsonschema-specifications",
+       "originator": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/jsonschema_specifications-2025.9.1.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+jsonschema-specifications@GrayVines.com)",
+       "versionInfo": "2025.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-markupsafe-2400b78ca5fe1b9d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/markupsafe@3.0.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "markupsafe",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/markupsafe-3.0.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "3.0.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-mcp-2c93b276f832a407",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/mcp@1.30.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "mcp",
+       "originator": "Person: Anthropic, PBC.",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/mcp-1.30.0.dist-info/RECORD",
+       "supplier": "Person: Anthropic, PBC.",
+       "versionInfo": "1.30.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-msgpack-pkg-pypi-msgpack-1.1.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/msgpack@1.1.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "msgpack",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.1.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-multidict-80cf32472d19d517",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/multidict@6.9.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "LicenseRef-Apache-License-2.0",
+       "name": "multidict",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/multidict-6.9.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "6.9.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-packaging-pkg-pypi-packaging-26.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/packaging@26.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "packaging",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "26.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pip-6c21f82917c616cd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pip@26.2.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pip",
+       "originator": "Person: The pip developers (distutils-sig@python.org)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pip-26.2.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pip-26.2.2.dist-info/RECORD",
+       "supplier": "Person: The pip developers (distutils-sig@python.org)",
+       "versionInfo": "26.2.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-UnknownPackage-pip-65017cac4ea792c6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pip",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "UNKNOWN"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-platformdirs-pkg-pypi-platformdirs-4.10.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/platformdirs@4.10.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "platformdirs",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "4.10.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-propcache-1c8dc359e42481e0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/propcache@0.5.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "propcache",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/propcache-0.5.2.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "0.5.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pycparser-c08b0e8cd2dfb133",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pycparser@3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "pycparser",
+       "originator": "Person: Eli Bendersky (eliben@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pycparser-3.0.dist-info/top_level.txt",
+       "supplier": "Person: Eli Bendersky (eliben@gmail.com)",
+       "versionInfo": "3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-b062e24b56bb5e1d",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic@2.13.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic-2.13.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.13.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-core-ccfa14be77300fcd",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-core@2.46.5",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-core",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_core-2.46.5.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.46.5"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pydantic-settings-54cd44ab6099c274",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pydantic-settings@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pydantic-settings",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pydantic_settings-2.15.0.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pygments-pkg-pypi-pygments-2.20.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pygments@2.20.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pygments",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.20.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyjwt-8915b3265a5fc83a",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyjwt@2.15.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyjwt",
+       "originator": "Person: Jose Padilla (hello@jpadilla.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/pyjwt-2.15.0.dist-info/top_level.txt",
+       "supplier": "Person: Jose Padilla (hello@jpadilla.com)",
+       "versionInfo": "2.15.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyproject-hooks-pkg-pypi-pyproject-hooks-1.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyproject-hooks@1.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "pyproject-hooks",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-dotenv-13ab6340872e2a4f",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-dotenv@1.2.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "python-dotenv",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/python_dotenv-1.2.3.dist-info/top_level.txt",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-python-multipart-f11064976caf78b6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/python-multipart@0.0.32",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "python-multipart",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/python_multipart-0.0.32.dist-info/RECORD",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.0.32"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-pyyaml-4fd8a45ded7edc9f",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/pyyaml@6.0.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "pyyaml",
+       "originator": "Person: Kirill Simonov (xi@resolvent.net)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/PyYAML-6.0.2.dist-info/top_level.txt",
+       "supplier": "Person: Kirill Simonov (xi@resolvent.net)",
+       "versionInfo": "6.0.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-referencing-6d68ad5f19811f0c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/referencing@0.37.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "referencing",
+       "originator": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/referencing-0.37.0.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+referencing@GrayVines.com)",
+       "versionInfo": "0.37.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-requests-pkg-pypi-requests-2.34.2",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/requests@2.34.2",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "requests",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.34.2"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-resolvelib-pkg-pypi-resolvelib-1.2.1",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/resolvelib@1.2.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "resolvelib",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rich-pkg-pypi-rich-14.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rich@14.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "rich",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "14.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-rpds-py-bedee7375c8e25a6",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/rpds-py@2026.6.3",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "rpds-py",
+       "originator": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/rpds_py-2026.6.3.dist-info/RECORD",
+       "supplier": "Person: Julian Berman (Julian+rpds@GrayVines.com)",
+       "versionInfo": "2026.6.3"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-setuptools-pkg-pypi-setuptools-70.3.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/setuptools@70.3.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "setuptools",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "70.3.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-sse-starlette-bb95ec6c58dc0211",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/sse-starlette@3.4.11",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "sse-starlette",
+       "originator": "Person: sysid (sysid@gmx.de)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/sse_starlette-3.4.11.dist-info/top_level.txt",
+       "supplier": "Person: sysid (sysid@gmx.de)",
+       "versionInfo": "3.4.11"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-starlette-0dbcf35f5633aa6c",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/starlette@1.3.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "starlette",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/starlette-1.3.1.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "1.3.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-tomli-pkg-pypi-tomli-2.4.1",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/tomli@2.4.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "tomli",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.4.1"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-tomli-w-pkg-pypi-tomli-w-1.2.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/tomli-w@1.2.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "tomli-w",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "1.2.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-truststore-pkg-pypi-truststore-0.10.4",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/truststore@0.10.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "truststore",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "0.10.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-extensions-36cab8b3f2049906",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-extensions@4.16.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "PSF-2.0",
+       "name": "typing-extensions",
+       "originator": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_extensions-4.16.0.dist-info/RECORD",
+       "supplier": "Person: \\\"Guido van Rossum, Jukka Lehtosalo, \u0141ukasz Langa, Michael Lee\\\" (levkivskyi@gmail.com)",
+       "versionInfo": "4.16.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-typing-inspection-c92f906175eef393",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/typing-inspection@0.4.4",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "MIT",
+       "name": "typing-inspection",
+       "originator": "Person: Victorien Plot (contact@vctrn.dev)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/typing_inspection-0.4.4.dist-info/RECORD",
+       "supplier": "Person: Victorien Plot (contact@vctrn.dev)",
+       "versionInfo": "0.4.4"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-urllib3-pkg-pypi-urllib3-2.7.0",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/urllib3@2.7.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "NOASSERTION",
+       "name": "urllib3",
+       "sourceInfo": "acquired package info from SBOM: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json",
+       "supplier": "NOASSERTION",
+       "versionInfo": "2.7.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-uvicorn-43f08668900a4827",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/uvicorn@0.51.0",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "BSD-3-Clause",
+       "name": "uvicorn",
+       "originator": "Person: Tom Christie (tom@tomchristie.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/uvicorn-0.51.0.dist-info/RECORD",
+       "supplier": "Person: Tom Christie (tom@tomchristie.com)",
+       "versionInfo": "0.51.0"
+      },
+      {
+       "SPDXID": "SPDXRef-Package-python-yarl-07c370f37a253898",
+       "copyrightText": "NOASSERTION",
+       "downloadLocation": "NOASSERTION",
+       "externalRefs": [
+        {
+         "referenceCategory": "PACKAGE-MANAGER",
+         "referenceLocator": "pkg:pypi/yarl@1.25.1",
+         "referenceType": "purl"
+        }
+       ],
+       "filesAnalyzed": false,
+       "licenseConcluded": "NOASSERTION",
+       "licenseDeclared": "Apache-2.0",
+       "name": "yarl",
+       "originator": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "sourceInfo": "acquired package info from installed python package manifest file: /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/METADATA, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/RECORD, /usr/local/lib/python3.12/site-packages/yarl-1.25.1.dist-info/top_level.txt",
+       "supplier": "Person: Andrew Svetlov (andrew.svetlov@gmail.com)",
+       "versionInfo": "1.25.1"
+      }
+     ],
+     "spdx_created": "2026-11-06T16:45:31Z",
+     "spdx_creators": [
+      "Organization: Anchore, Inc",
+      "Tool: syft-v1.51.0",
+      "Tool: buildkit-v0.34.2"
+     ],
+     "spdx_package_count": 154,
+     "spdx_statement_digest": "sha256:2c38ec8c5367b440994432bb6b171447b32b96b220fae9dc0f7b593caf6f5d76"
+    }
+   },
+   "release_commit": "76e3c3d49a5e19190baebac9e457f288d2cd85a9"
+  }
+ }
+}
