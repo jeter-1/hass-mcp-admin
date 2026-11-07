@@ -81,7 +81,7 @@ class Gateway(a.GatewayStackTests):
    self.assertFalse(a.HA_TOKEN in json.dumps(record),'known secret persisted in production gateway audit')
  def test_watch_limit_failure_is_sanitized(self):
   self.call('set_automation_trace_watch',{'action':'add','automation_id':a.HA_TOKEN})
-  for i in range(9):self.call('set_automation_trace_watch',{'action':'add','automation_id':'safe'+str(i)})
+  for i in range(a.c.MAX_WATCHES-1):self.call('set_automation_trace_watch',{'action':'add','automation_id':'safe'+str(i)})  # HAMCP-296: cap is MAX_WATCHES
   rendered,record,wire=self.call('set_automation_trace_watch',{'action':'add','automation_id':'overflow'})
   self.assertFalse(rendered['success'])
   self.assertFalse(a.HA_TOKEN in wire,'known secret in authenticated refusal response')

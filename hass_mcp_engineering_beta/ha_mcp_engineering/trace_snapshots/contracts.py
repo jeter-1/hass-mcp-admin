@@ -31,9 +31,28 @@ PAGE_BYTES = 40_000
 # retention rule. The oldest stub goes first and is counted as dropped.
 QUARANTINE_MAX = 20
 
-# Decisions W1 and E2: at most 10 watches, a 30 s poll, 20 snapshots a watch.
-MAX_WATCHES = 10
-WATCH_QUOTA = 20
+# Decision W1 (30 s poll, 168 h term) and HAMCP-296 Q1 (Josh, 2026-11-07:
+# raise the cap with a stated bound and add priority). The bound is 20
+# watches: at a 30 s poll that is at most 40 ``trace/list`` reads a minute
+# (20 at the old cap of 10) and each watch's share of a tick's 16 s read time
+# falls from 1.6 s to 0.8 s.
+MAX_WATCHES = 20
+# The shipped (2.4.x/2.5.0) v1 index reader rejects more than 10 watches and
+# would mark the whole store ``store_invalid``. ``index.json`` therefore
+# never holds more than 10: the rest live in the lifecycle sidecar, which
+# shipped code ignores, so a downgrade keeps the 10 highest-priority watches.
+V1_INDEX_MAX_WATCHES = 10
+# HAMCP-296 snapshot budget: MAX_SNAPSHOTS stays 200 (the shipped reader also
+# rejects more) and the per-watch quota (E2: own-oldest eviction) falls from
+# 20 to 5, so 20 full watches hold at most 100 snapshots and at most
+# 100 x 256 KiB = 25 MiB; at least 100 snapshots and 7 MiB stay for manual
+# captures. Five is the number of runs Core itself retains by default.
+WATCH_QUOTA = 5
+# The reservation that makes the split hold: watch captures together (active,
+# ended or lapsed watches) never exceed 100 snapshots or 25 MiB; a watch
+# capture past it is ``store_full`` and nothing is evicted for it.
+WATCH_STORE_SNAPSHOTS = MAX_WATCHES * WATCH_QUOTA
+WATCH_STORE_BYTES = WATCH_STORE_SNAPSHOTS * SNAPSHOT_BYTES
 WATCH_MAX_HOURS = 168
 POLL_SECONDS = 30.0
 TICK_SECONDS = 20.0
@@ -41,7 +60,22 @@ MAX_SEEN_RUNS = 100
 # Share of a tick spent on Core reads; the rest is the local commit reserve.
 READ_SHARE = 0.8
 WATCH_MODES = ("failures", "executed")
-WATCH_ACTIONS = ("add", "remove", "list")
+WATCH_ACTIONS = ("add", "remove", "list", "renew")
+WATCH_PRIORITIES = ("high", "normal")
+
+# HAMCP-296 lifecycle (implementation defaults pending Josh, Q2): a watch
+# warns when its time left is at most min(24 h, half its current term);
+# at most 20 lapsed records are kept, each for at most 7 days.
+LIFECYCLE_MODEL = "trace-watch-lifecycle-v1"
+# 20 overflow watch rows of at most about 14 KB each (100 seen run IDs), plus
+# 20 lapsed records and 20 metadata rows, stay well under this bound.
+LIFECYCLE_BYTES = 512 * 1024
+EXPIRY_WARNING_HOURS = 24
+LAPSED_MAX = 20
+LAPSED_RETENTION_SECONDS = 7 * 24 * 3600
+LAPSE_REASONS = ("expired", "identifier_unavailable", "displaced", "store_recovery")
+HEALTH_LIST = 10
+RENEW_OUTCOMES = ("renewed", "unchanged", "reinstated", "watch_limit", "identifier_unavailable")
 
 # Core 2026.10 script/automation stop reasons a failure watch captures.
 FAILURE_EXECUTIONS = frozenset({
@@ -74,7 +108,7 @@ REASONS = frozenset({
 class TraceSnapshotError(GovernanceError):
     """Fixed reason only; never a stored payload or an exception's text."""
 
-    def __init__(self, reason, *, watches=None):
+    def __init__(self, reason, *, watches=None, lifecycle=None):
         if reason not in REASONS:
             reason = "store_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
@@ -85,6 +119,8 @@ class TraceSnapshotError(GovernanceError):
         details = {"reason": reason}
         if watches is not None:
             details["watches"] = watches
+        if lifecycle is not None:
+            details["lifecycle"] = lifecycle
         super().__init__(code, details=details)
         self.reason = reason
 
@@ -150,23 +186,43 @@ def validate_get(arguments):
 
 
 def validate_watch(arguments):
-    _closed(arguments, {"action", "automation_id", "mode", "duration_hours"})
+    _closed(arguments, {"action", "automation_id", "mode", "duration_hours", "priority",
+                        "displace", "include_lapsed"})
     action = arguments.get("action")
-    if action not in WATCH_ACTIONS:
+    if type(action) is not str or action not in WATCH_ACTIONS:
         raise TraceSnapshotError("invalid_arguments")
     automation_id = arguments.get("automation_id", "")
     mode = arguments.get("mode", "failures")
     hours = arguments.get("duration_hours", 24)
+    priority = arguments.get("priority")
     if type(mode) is not str or mode not in WATCH_MODES:
         raise TraceSnapshotError("invalid_arguments")
     if type(hours) is not int or not 1 <= hours <= WATCH_MAX_HOURS:
         raise TraceSnapshotError("invalid_arguments")
+    if priority is not None and (type(priority) is not str or priority not in WATCH_PRIORITIES):
+        raise TraceSnapshotError("invalid_arguments")
+    _strict_bool(arguments.get("displace", False))
+    include_lapsed = _strict_bool(arguments.get("include_lapsed", False))
+    present = set(arguments) - {"action"}
     if action == "list":
-        if automation_id != "" or set(arguments) - {"action"}:
+        if automation_id != "" or present:
             raise TraceSnapshotError("invalid_arguments")
         return
+    if action == "renew":
+        # ``""`` renews every active watch; include_lapsed only then (Q3 default).
+        if present - {"automation_id", "duration_hours", "include_lapsed"}:
+            raise TraceSnapshotError("invalid_arguments")
+        if type(automation_id) is not str:
+            raise TraceSnapshotError("invalid_arguments")
+        if automation_id:
+            _automation_id(automation_id)
+            if include_lapsed:
+                raise TraceSnapshotError("invalid_arguments")
+        return
     _automation_id(automation_id)
-    if action == "remove" and set(arguments) - {"action", "automation_id"}:
+    if action == "remove" and present - {"automation_id"}:
+        raise TraceSnapshotError("invalid_arguments")
+    if action == "add" and "include_lapsed" in present:
         raise TraceSnapshotError("invalid_arguments")
 
 

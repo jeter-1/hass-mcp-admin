@@ -855,9 +855,14 @@ delegated provider or fallback.
   `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
   bounded size, count and age. Manual
-  captures are refused at capacity; a watch evicts only its own snapshots.
-- **Watch poller.** The only periodic Core read: bounded to 10 watches every
-  30 seconds, under its own Core authority lease, paused while authority is
+  captures are refused at capacity; a watch evicts only its own snapshots
+  (at most 5 each since HAMCP-296), and watch captures together stay inside
+  a 100-snapshot, 25 MiB reservation, so at least 100 snapshots and 7 MiB
+  always remain for manual captures. Priority, renewal and at most 20
+  lapsed records (7 days) live in `watch-lifecycle.json`; damage to it
+  resets only that file and never blocks the snapshot store.
+- **Watch poller.** The only periodic Core read: bounded to 20 watches
+  (HAMCP-296; 10 before) every 30 seconds, high-priority watches first, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each
   watch's reads are stored and again under the store lock, immediately
   before the first write. Watch changes need no approval but write a

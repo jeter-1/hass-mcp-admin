@@ -222,8 +222,10 @@ Assistant write. `capture_automation_trace` (risk
 sanitized snapshots to the Engineering-local `trace-snapshots-v1` store.
 `list_trace_snapshots` and `get_trace_snapshot` are core-independent local
 reads with caller-bound cursors. `set_automation_trace_watch` (`add`,
-`remove`, `list`) is core-independent local state: no plan or approval, an
-audited add or remove, at most 10 watches; the separately gated poller
+`remove`, `list`, and since HAMCP-296 `renew`) is core-independent local
+state: no plan or approval, an audited add, remove, renew, reinstate or
+displacement, at most 20 watches (HAMCP-296; `index.json` keeps the v1
+bound of 10 and the rest live in the `watch-lifecycle.json` sidecar); the separately gated poller
 issues the same two read commands every 30 seconds. `get_automation_trace`
 keeps its input schema and now passes the shared trace sanitizer, which
 applies the shared `credentials.screen` to every string and key first. The
