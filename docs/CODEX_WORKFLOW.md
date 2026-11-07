@@ -312,8 +312,19 @@ required CI job family, not the source/unit-test worker alone:
 - `real-ha-contract-tests`: every disposable Core contract lane in the tier;
 - `prepare_exact_image_matrix`: support-window matrix derivation, cross-checked
   against the reviewed gateway registry;
-- `exact-image-read-gateway`: every derived exact-image gateway lane; and
-- `exact-addon-runtime-acceptance`: every derived exact add-on runtime lane.
+- `exact-image-read-gateway`: every derived exact-image gateway lane;
+- `exact-addon-runtime-acceptance`: every derived exact add-on runtime lane;
+- `exact-image-admission-lanes`: the six HAMCP-319 design section 5.1 lanes
+  (8.5-only, 9.1-only and side by side, each on native amd64 and arm64
+  runners). A lane whose configuration the reviewed registry does not admit
+  yet is dormant: it executes no case, writes a `NOT_EXECUTED` manifest with
+  its reason, and is never reported as a pass. It activates automatically once
+  `scripts/support_window.py admission_matrix` finds the reviewed registry row;
+  and
+- `exact-image-admission-manifest-gate`: verifies all six lane manifests
+  together. A missing lane, a listed case that did not execute or was skipped
+  in an active lane, a dormant lane that reports a result, or image identity
+  that differs from the reviewed registry row fails it.
 
 The aggregate and its result-checking step use `always()` so a failed dependency
 does not merely skip the required gate. Every expected job must report exactly

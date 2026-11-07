@@ -45,6 +45,8 @@ jobs:
       - prepare_exact_image_matrix
       - exact-image-read-gateway
       - exact-addon-runtime-acceptance
+      - exact-image-admission-lanes
+      - exact-image-admission-manifest-gate
       - dashboard-disposable
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -68,6 +70,8 @@ jobs:
               "prepare_exact_image_matrix",
               "exact-image-read-gateway",
               "exact-addon-runtime-acceptance",
+              "exact-image-admission-lanes",
+              "exact-image-admission-manifest-gate",
               "dashboard-disposable",
           )
           try:
@@ -653,6 +657,7 @@ jobs:
       matrix: ${{ steps.support-window.outputs.gateway }}
       real_ha: ${{ steps.support-window.outputs.real_ha }}
       addon: ${{ steps.support-window.outputs.addon }}
+      admission: ${{ steps.support-window.outputs.admission }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -954,6 +959,305 @@ jobs:
             kill "$(cat "$RUNNER_TEMP/read-gateway-ha.pid")" >/dev/null 2>&1 || true
           fi
           sudo rm -rf "$RUNNER_TEMP/read-gateway-data"
+
+  exact-image-admission-lanes:
+    name: Exact-image admission ${{ matrix.configuration }} ${{ matrix.architecture }} (${{ matrix.state }})
+    needs: prepare_exact_image_matrix
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_exact_image_matrix.outputs.admission) }}
+    env:
+      LANE_CONFIGURATION: ${{ matrix.configuration }}
+      LANE_ARCHITECTURE: ${{ matrix.architecture }}
+      LANE_STATE: ${{ matrix.state }}
+      LANE_DORMANT_REASON: ${{ matrix.dormant_reason }}
+      LANE_ROW: ${{ toJSON(matrix) }}
+      LANE_PEERS: ${{ toJSON(matrix.peers) }}
+      BASELINE_IMAGE: ${{ matrix.peers.baseline.upstream_image }}
+      BASELINE_VERSION: ${{ matrix.peers.baseline.upstream_version }}
+      ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
+      LEGACY_UPSTREAM_URL: http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp
+      STRICT_FULL_UPSTREAM_URL: http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/catalog/full
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Dormant lane, not executed
+        if: matrix.state != 'active'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$LANE_DORMANT_REASON"
+          echo "::notice title=HAMCP-319 ${LANE_CONFIGURATION} ${LANE_ARCHITECTURE} dormant::${LANE_DORMANT_REASON}"
+          {
+            echo "### HAMCP-319 ${LANE_CONFIGURATION} ${LANE_ARCHITECTURE}: dormant, not executed"
+            echo
+            echo "${LANE_DORMANT_REASON}"
+            echo
+            echo "No case runs in this lane. Its manifest records NOT_EXECUTED; it is never a pass."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Active lane without an established case runner
+        if: matrix.state == 'active' && matrix.configuration != '85_only'
+        shell: bash
+        run: |
+          echo "::error title=HAMCP-319 ${LANE_CONFIGURATION} ${LANE_ARCHITECTURE}::active, but this workflow has no runner yet for its non-identity cases; they are recorded not executed and the lane fails (design section 5.1, R5)"
+      - name: Install exact-image admission dependencies
+        if: matrix.state == 'active'
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Verify exact peer image identity on this architecture
+        if: matrix.state == 'active'
+        shell: bash
+        run: |
+          python scripts/exact_image_admission_lanes.py identity \
+            --peers "$LANE_PEERS" \
+            --configuration "$LANE_CONFIGURATION" \
+            --architecture "$LANE_ARCHITECTURE" \
+            --cases-dir "$RUNNER_TEMP/admission-cases"
+      - name: Start synthetic read-only Home Assistant fixture
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fake_ha_read_gateway_contract_server.py \
+            --port 18123 --upstream-version "$BASELINE_VERSION" \
+            > "$RUNNER_TEMP/admission-ha.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/admission-ha.pid"
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18123/api/ >/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Start exact ha-mcp 8.5 peer
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --network host --name exact-admission-upstream \
+            --read-only --tmpfs /tmp --tmpfs /home/mcpuser/.ha-mcp \
+            -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
+            -e HOMEASSISTANT_TOKEN=synthetic-read-gateway-token \
+            -e MCP_HOST=127.0.0.1 -e MCP_PORT=18086 \
+            -e MCP_SECRET_PATH=/synthetic-upstream-secret/mcp \
+            -e HA_MCP_DISABLE_SETTINGS_UI=true \
+            "$BASELINE_IMAGE" ha-mcp-web
+          status="000"
+          for attempt in $(seq 1 60); do
+            status="$(curl --max-time 1 --silent --output /dev/null --write-out '%{http_code}' \
+              http://127.0.0.1:18086/synthetic-upstream-secret/mcp || true)"
+            if test "$status" != "000"; then
+              break
+            fi
+            sleep 1
+          done
+          test "$status" != "000"
+          test "$(
+            docker exec exact-admission-upstream python -c \
+              'from importlib.metadata import version; print(version("ha-mcp"))'
+          )" = "$BASELINE_VERSION"
+      - name: Case 8.5 legacy and strict-full direct initialize without redirects
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          python scripts/exact_image_admission_lanes.py initialize \
+            --case 85_legacy_direct_initialize_no_redirect \
+            --url http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --form legacy --expect served --expected-version "$BASELINE_VERSION" \
+            --output "$RUNNER_TEMP/admission-cases/85_legacy_direct_initialize_no_redirect.json" || status=1
+          python scripts/exact_image_admission_lanes.py initialize \
+            --case 85_strict_full_direct_initialize_refused \
+            --url http://127.0.0.1:18086/synthetic-upstream-secret/catalog/full \
+            --form strict_full --expect refused \
+            --output "$RUNNER_TEMP/admission-cases/85_strict_full_direct_initialize_refused.json" || status=1
+          exit "$status"
+      - name: Build and start Engineering on the 8.5 legacy value
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          beta_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+          docker build \
+            --build-arg "BUILD_VERSION=$beta_version" \
+            --build-arg "HAMCP_BUILD_SHA=$(git rev-parse HEAD)" \
+            --build-arg "HAMCP_BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --build-arg "HAMCP_BUILD_DIRTY=false" \
+            -t engineering-admission-lane:test \
+            ./hass_mcp_engineering_beta
+          for profile in legacy strict-full; do
+            mkdir -p "$RUNNER_TEMP/admission-data-$profile"
+            printf '%s\n' \
+              '{' \
+              '  "access_secret": "synthetic-engineering-access-secret",' \
+              '  "audit_enabled": true,' \
+              '  "prewarm_enabled": false,' \
+              '  "rate_limit_per_minute": 600,' \
+              '  "rate_limit_burst": 100,' \
+              '  "approval_notification_service": "notify.mobile_app_beta31_fixture",' \
+              '  "upstream_trust_registry_enabled": false' \
+              '}' > "$RUNNER_TEMP/admission-data-$profile/options.json"
+          done
+          docker run --detach --rm --network host \
+            --add-host abcdef12-ha-mcp:127.0.0.1 \
+            --add-host supervisor:127.0.0.1 \
+            --name engineering-admission-legacy \
+            -v "$RUNNER_TEMP/admission-data-legacy:/data" \
+            -e HA_URL=http://supervisor:18123/core \
+            -e HA_TOKEN=synthetic-read-gateway-token \
+            -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
+            -e MCP_PORT=18100 -e APPROVAL_INGRESS_PORT=18110 \
+            -e "UPSTREAM_DASHBOARD_MCP_URL=$LEGACY_UPSTREAM_URL" \
+            engineering-admission-lane:test
+          for attempt in $(seq 1 90); do
+            status="$(curl --max-time 1 --silent --output /dev/null \
+              --write-out '%{http_code}' http://127.0.0.1:18100/ready || true)"
+            test "$status" = "200" && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Case 8.5 legacy authenticated gateway acceptance
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -uo pipefail
+          python scripts/exact_image_read_gateway_acceptance.py \
+            --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --configured-upstream-endpoint "$LEGACY_UPSTREAM_URL" \
+            --expected-upstream-version "$BASELINE_VERSION" \
+            --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
+            --ha-url http://127.0.0.1:18123 \
+            --ha-token synthetic-read-gateway-token \
+            --output "$RUNNER_TEMP/admission-85-gateway-result.json"
+          python scripts/exact_image_admission_lanes.py record \
+            --configuration 85_only --case 85_legacy_gateway_acceptance \
+            --source "$RUNNER_TEMP/admission-85-gateway-result.json" \
+            --output "$RUNNER_TEMP/admission-cases/85_legacy_gateway_acceptance.json"
+      - name: Case 8.5 legacy exact admission after disconnect and readmission
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -uo pipefail
+          docker stop --time 10 exact-admission-upstream \
+            && python scripts/exact_image_readmission_acceptance.py \
+              --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+              --expected-upstream-version "$BASELINE_VERSION" \
+              --phase disconnected \
+              --output "$RUNNER_TEMP/admission-85-disconnected-result.json" \
+            && docker start exact-admission-upstream \
+            && python scripts/exact_image_readmission_acceptance.py \
+              --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+              --expected-upstream-version "$BASELINE_VERSION" \
+              --phase readmitted \
+              --output "$RUNNER_TEMP/admission-85-readmitted-result.json"
+          python scripts/exact_image_admission_lanes.py record \
+            --configuration 85_only --case 85_legacy_exact_admission_health \
+            --source "$RUNNER_TEMP/admission-85-readmitted-result.json" \
+            --output "$RUNNER_TEMP/admission-cases/85_legacy_exact_admission_health.json"
+      - name: Case 8.5 strict-full value keeps Engineering fail closed
+        if: matrix.state == 'active' && matrix.configuration == '85_only'
+        shell: bash
+        run: |
+          set -uo pipefail
+          docker rm -f engineering-admission-legacy >/dev/null 2>&1 || true
+          docker run --detach --rm --network host \
+            --add-host abcdef12-ha-mcp:127.0.0.1 \
+            --add-host supervisor:127.0.0.1 \
+            --name engineering-admission-strict-full \
+            -v "$RUNNER_TEMP/admission-data-strict-full:/data" \
+            -e HA_URL=http://supervisor:18123/core \
+            -e HA_TOKEN=synthetic-read-gateway-token \
+            -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
+            -e MCP_PORT=18200 -e APPROVAL_INGRESS_PORT=18210 \
+            -e "UPSTREAM_DASHBOARD_MCP_URL=$STRICT_FULL_UPSTREAM_URL" \
+            engineering-admission-lane:test
+          python scripts/exact_image_admission_lanes.py fail-closed \
+            --case 85_strict_full_engineering_fails_closed \
+            --configured-url "$STRICT_FULL_UPSTREAM_URL" \
+            --form strict_full \
+            --ready-url http://127.0.0.1:18200/ready \
+            --engineering-endpoint "http://127.0.0.1:18200/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --observe-seconds 45 \
+            --output "$RUNNER_TEMP/admission-cases/85_strict_full_engineering_fails_closed.json"
+      - name: Write section 5.1 acceptance manifest
+        if: always()
+        shell: bash
+        run: |
+          python scripts/exact_image_admission_lanes.py write-manifest \
+            --row "$LANE_ROW" \
+            --engineering-commit "$(git rev-parse HEAD)" \
+            --cases-dir "$RUNNER_TEMP/admission-cases" \
+            --output "$RUNNER_TEMP/admission-manifest/exact-image-admission-manifest-${LANE_CONFIGURATION}-${LANE_ARCHITECTURE}.json"
+      - name: Upload section 5.1 acceptance manifest
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: exact-image-admission-manifest-${{ matrix.configuration }}-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/admission-manifest/exact-image-admission-manifest-${{ matrix.configuration }}-${{ matrix.architecture }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded admission case results
+        if: always() && matrix.state == 'active'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: exact-image-admission-cases-${{ matrix.configuration }}-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/admission-cases/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove disposable exact-image admission environment
+        if: always() && matrix.state == 'active'
+        shell: bash
+        run: |
+          docker rm -f engineering-admission-legacy engineering-admission-strict-full exact-admission-upstream >/dev/null 2>&1 || true
+          if test -f "$RUNNER_TEMP/admission-ha.pid"; then
+            kill "$(cat "$RUNNER_TEMP/admission-ha.pid")" >/dev/null 2>&1 || true
+          fi
+          sudo rm -rf "$RUNNER_TEMP/admission-data-legacy" "$RUNNER_TEMP/admission-data-strict-full"
+
+  exact-image-admission-manifest-gate:
+    name: Exact-image admission manifest gate (design section 5.1)
+    needs:
+      - prepare_exact_image_matrix
+      - exact-image-admission-lanes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ADMISSION_MATRIX: ${{ needs.prepare_exact_image_matrix.outputs.admission }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+      - name: Download every lane manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: exact-image-admission-manifest-*
+          path: ${{ runner.temp }}/admission-manifests
+          merge-multiple: true
+      - name: Verify all six section 5.1 lanes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMISSION_MATRIX"
+          python scripts/exact_image_admission_lanes.py gate \
+            --manifests-dir "$RUNNER_TEMP/admission-manifests" \
+            --admission-matrix "$ADMISSION_MATRIX" \
+            --engineering-commit "$(git rev-parse HEAD)" \
+            --output "$RUNNER_TEMP/exact-image-admission-gate.json"
+      - name: Upload admission gate summary
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: exact-image-admission-gate
+          path: ${{ runner.temp }}/exact-image-admission-gate.json
+          if-no-files-found: error
+          retention-days: 14
 
   exact-addon-runtime-acceptance:
     name: Exact ha-mcp ${{ matrix.upstream_version }} add-on runtime acceptance ${{ matrix.architecture }} (${{ matrix.support_slot }})
