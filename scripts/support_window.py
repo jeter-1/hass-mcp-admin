@@ -18,6 +18,16 @@ Only the candidate slot of either component may be empty (``candidate: null``);
 current and rollback are always required. An empty slot creates and requires
 nothing (no lane, job, provenance, registry cross-check or add-on row), and
 every non-empty ha-mcp slot still declares at least one add-on runtime lane.
+
+HAMCP-319 (design section 5.1; Josh 2026-11-07): the optional top-level
+``admission`` key names an ha-mcp admission candidate that is deliberately NOT a
+slot, so it creates no gateway, add-on or real-HA row and cannot break those
+lanes. ``admission_matrix`` derives the six exact-image acceptance lanes, one per
+(configuration, architecture). The baseline lane runs now. The candidate and
+side-by-side lanes stay ``dormant`` (visibly not executed) until the reviewed
+registry carries the candidate version, which is the build's admission signal;
+the lanes then become ``active`` with no workflow edit, and their pins come only
+from that reviewed registry row.
 """
 
 from __future__ import annotations
@@ -64,6 +74,14 @@ VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,2}\.[0-9]{1,3}")
 CORE_KEYS = {"version", "image_index_digest"}
 HA_MCP_KEYS = {"version", "image_index_digest", "source_commit", "addon_runtime"}
 POWER_KEYS = {"kind", "profile", "architectures"}
+ADMISSION_KEYS = {"baseline_version", "candidate_version"}
+# HAMCP-319 section 5.1: each configuration needs an exact-image lane on both
+# architectures. The order is the matrix order and the manifest gate's contract.
+ADMISSION_CONFIGURATIONS = ("85_only", "91_only", "side_by_side")
+ADMISSION_ARCHITECTURES = ("amd64", "arm64")
+# Which peers each configuration launches: the baseline, the candidate, or both.
+ADMISSION_PEERS = {"85_only": ("baseline",), "91_only": ("candidate",),
+                   "side_by_side": ("baseline", "candidate")}
 LIVE_KEYS = {"kind", "addon_detail_profile", "secret_path", "addon_amd64_index_digest",
              "addon_amd64_manifest_digest", "addon_arm64_index_digest", "addon_arm64_manifest_digest"}
 
@@ -111,7 +129,8 @@ def load(root=None):
     path = Path(root, WINDOW)
     require(path.is_file() and not path.is_symlink(), "window_unavailable")
     window = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
-    require(isinstance(window, dict) and set(window) == {"schema_version", "core", "ha_mcp"}
+    require(isinstance(window, dict) and {"schema_version", "core", "ha_mcp"} <= set(window)
+            <= {"schema_version", "core", "ha_mcp", "admission"}
             and window["schema_version"] == 1, "window_schema")
     for component, keys in (("core", CORE_KEYS), ("ha_mcp", HA_MCP_KEYS)):
         slots = window[component]
@@ -151,6 +170,18 @@ def load(root=None):
                             and re.fullmatch(r"/[a-z0-9-]{1,64}/mcp", str(lane["secret_path"])), "addon_live_lane")
         require(len(set(versions)) == len(versions), component + "_slot_versions_not_distinct")
     require("source_archive_sha256" in window["ha_mcp"]["current"], "ha_mcp_current_archive_required")
+    if "admission" in window:
+        admission = window["admission"]
+        require(isinstance(admission, dict) and set(admission) == ADMISSION_KEYS
+                and all(isinstance(admission[k], str) and VERSION.fullmatch(admission[k]) for k in ADMISSION_KEYS),
+                "admission_keys")
+        slot_versions = {window["ha_mcp"][slot]["version"] for slot in ha_mcp_slots(window, SLOTS)}
+        # The baseline peer is the deployed ha-mcp, never a second copy of a pin.
+        require(admission["baseline_version"] == window["ha_mcp"]["current"]["version"],
+                "admission_baseline_not_current")
+        # A slot would also derive the legacy-URL gateway and add-on lanes for the
+        # candidate, which a strict-selector candidate must refuse.
+        require(admission["candidate_version"] not in slot_versions, "admission_candidate_in_slot")
     for slot in core_slots(window, SLOTS):
         core = window["core"][slot]
         # The window never vouches for itself: every Core it names must already
@@ -294,6 +325,67 @@ def addon_matrix(window, tier, codes=None):
     return {"include": rows}
 
 
+def admission_matrix(window, registry_matrix):
+    """The HAMCP-319 section 5.1 exact-image lanes: every configuration x architecture.
+
+    Without an ``admission`` key no row is emitted. Each row carries its native
+    runner, its state and the reviewed registry rows of the peers it launches.
+    ``active`` needs every peer in the reviewed registry. A configuration that
+    needs the candidate stays ``dormant`` while the registry lacks it; a dormant
+    row carries a reason and no peer pins, so it can never run a peer or claim a
+    result. A registry candidate row that is malformed or misbound refuses
+    instead of silently staying dormant.
+    """
+
+    require(isinstance(registry_matrix, dict) and isinstance(registry_matrix.get("include"), list),
+            "registry_matrix_malformed")
+    admission = window.get("admission")
+    if admission is None:
+        return {"include": []}
+    by_version = {}
+    for row in registry_matrix["include"]:
+        require(isinstance(row, dict) and row.get("upstream_version") not in by_version, "registry_matrix_duplicate")
+        by_version[row["upstream_version"]] = row
+    current = window["ha_mcp"]["current"]
+    baseline = by_version.get(admission["baseline_version"])
+    require(baseline is not None, "admission_baseline_not_in_reviewed_registry")
+    require(baseline.get("image_index_digest") == current["image_index_digest"]
+            and baseline.get("source_commit") == current["source_commit"], "admission_baseline_registry_mismatch")
+    candidate = by_version.get(admission["candidate_version"])
+    if candidate is not None:
+        digests = candidate.get("architecture_image_digests")
+        require(isinstance(candidate.get("image_index_digest"), str)
+                and DIGEST.fullmatch(candidate["image_index_digest"])
+                and isinstance(candidate.get("source_commit"), str) and COMMIT.fullmatch(candidate["source_commit"])
+                and isinstance(digests, dict)
+                and all(isinstance(digests.get("linux/" + arch), str) and DIGEST.fullmatch(digests["linux/" + arch])
+                        for arch in ADMISSION_ARCHITECTURES),
+                "admission_candidate_registry_malformed")
+    peers = {"baseline": baseline, "candidate": candidate}
+    rows = []
+    for configuration in ADMISSION_CONFIGURATIONS:
+        needed = ADMISSION_PEERS[configuration]
+        missing = [role for role in needed if peers[role] is None]
+        for architecture in ADMISSION_ARCHITECTURES:
+            row = {
+                "configuration": configuration,
+                "architecture": architecture,
+                "runner": RUNNERS[architecture],
+                "baseline_version": admission["baseline_version"],
+                "candidate_version": admission["candidate_version"],
+            }
+            if missing:
+                row.update(state="dormant", peers={}, dormant_reason=(
+                    "not executed: the reviewed upstream registry has no ha-mcp "
+                    + admission["candidate_version"]
+                    + " entry yet (HAMCP-319 build admission signal absent)"))
+            else:
+                row.update(state="active", dormant_reason="",
+                           peers={role: peers[role] for role in needed})
+            rows.append(row)
+    return {"include": rows}
+
+
 def write_outputs(path, values):
     with Path(path).open("a", encoding="utf-8") as stream:
         for key, value in values.items():
@@ -314,7 +406,9 @@ def main():
         tier = args.tier or tier_for(args.event or os.environ.get("GITHUB_EVENT_NAME"))
         values = {"tier": tier, "real_ha": real_ha_matrix(window, tier), "addon": addon_matrix(window, tier)}
         if args.registry_matrix:
-            values["gateway"] = gateway_matrix(window, tier, json.loads(args.registry_matrix.read_text(encoding="utf-8")))
+            registry = json.loads(args.registry_matrix.read_text(encoding="utf-8"))
+            values["gateway"] = gateway_matrix(window, tier, registry)
+            values["admission"] = admission_matrix(window, registry)
         if args.github_output:
             write_outputs(args.github_output, values)
         print(json.dumps(values, sort_keys=True, indent=1))
