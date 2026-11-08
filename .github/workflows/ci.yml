@@ -1245,7 +1245,7 @@ jobs:
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
             --fixture-stats-url "$FIXTURE_STATS_URL" \
             --output "$RUNNER_TEMP/admission-cases/91_strict_admission_positive.json"
-      - name: Case 9.1 strict-full parity and dashboard gateway acceptance
+      - name: Case 9.1 strict-full parity and read gateway acceptance
         if: matrix.state == 'active' && matrix.configuration == '91_only'
         shell: bash
         run: |
@@ -1260,14 +1260,14 @@ jobs:
             --ha-token synthetic-read-gateway-token \
             --output "$RUNNER_TEMP/admission-91-gateway-result.json" || true
           python scripts/exact_image_admission_91_runners.py gateway-case \
-            --configuration 91_only --case 91_parity_dashboard_gateway_acceptance \
+            --configuration 91_only --case 91_parity_read_gateway_acceptance \
             --source "$RUNNER_TEMP/admission-91-gateway-result.json" \
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --engineering-container engineering-admission-91-strict \
             --configured-url "$STRICT_FULL_UPSTREAM_URL" \
             --upstream-endpoint "$PEER_STRICT_FULL_URL" \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
-            --output "$RUNNER_TEMP/admission-cases/91_parity_dashboard_gateway_acceptance.json"
+            --output "$RUNNER_TEMP/admission-cases/91_parity_read_gateway_acceptance.json"
       - name: Case 9.1 legacy value refused before tools/list
         if: matrix.state == 'active' && matrix.configuration == '91_only'
         shell: bash
@@ -1332,6 +1332,20 @@ jobs:
             --architecture "$LANE_ARCHITECTURE" \
             --cases-dir "$RUNNER_TEMP/admission-cases" \
             --work-dir "$RUNNER_TEMP/typed91"
+      - name: Cases 9.1 governed dashboard and public typed controls through the built image
+        if: ${{ !cancelled() && matrix.state == 'active' && matrix.configuration == '91_only' }}
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          python scripts/exact_image_admission_91_governed.py \
+            --peers "$LANE_PEERS" \
+            --architecture "$LANE_ARCHITECTURE" \
+            --configuration 91_only \
+            --cases-dir "$RUNNER_TEMP/admission-cases" \
+            --engineering-image engineering-admission-lane:test \
+            --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
+            --work-dir "$RUNNER_TEMP/governed91"
       - name: Verify the previous Engineering release by digest
         if: matrix.state == 'active' && matrix.configuration == 'side_by_side'
         shell: bash
@@ -1538,6 +1552,21 @@ jobs:
             --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
             --persisted-restart "$RUNNER_TEMP/admission-persisted-roll-forward-restart.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_a_again_85_legacy_useful.json"
+      - name: Cases side-by-side governed dashboard and public typed controls (stage A, beta.6 rollback, stage A again)
+        if: ${{ !cancelled() && matrix.state == 'active' && matrix.configuration == 'side_by_side' }}
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          python scripts/exact_image_admission_91_governed.py \
+            --peers "$LANE_PEERS" \
+            --architecture "$LANE_ARCHITECTURE" \
+            --configuration side_by_side \
+            --cases-dir "$RUNNER_TEMP/admission-cases" \
+            --engineering-image engineering-admission-lane:test \
+            --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
+            --rollback-identity "$RUNNER_TEMP/admission-rollback-identity.json" \
+            --work-dir "$RUNNER_TEMP/governed91"
       - name: Write section 5.1 acceptance manifest
         if: always()
         shell: bash
@@ -1572,10 +1601,12 @@ jobs:
             engineering-admission-sbs exact-admission-upstream >/dev/null 2>&1 || true
           docker ps -aq --filter label=io.hass-mcp.typed91 | xargs -r docker rm -f >/dev/null 2>&1 || true
           docker network ls -q --filter label=io.hass-mcp.typed91 | xargs -r docker network rm >/dev/null 2>&1 || true
+          docker ps -aq --filter label=io.hass-mcp.governed91 | xargs -r docker rm -f >/dev/null 2>&1 || true
+          docker network ls -q --filter label=io.hass-mcp.governed91 | xargs -r docker network rm >/dev/null 2>&1 || true
           if test -f "$RUNNER_TEMP/admission-ha.pid"; then
             kill "$(cat "$RUNNER_TEMP/admission-ha.pid")" >/dev/null 2>&1 || true
           fi
-          sudo rm -rf "$RUNNER_TEMP"/admission-data-* "$RUNNER_TEMP/typed91"
+          sudo rm -rf "$RUNNER_TEMP"/admission-data-* "$RUNNER_TEMP/typed91" "$RUNNER_TEMP/governed91"
 
   exact-image-admission-manifest-gate:
     name: Exact-image admission manifest gate (design section 5.1)
