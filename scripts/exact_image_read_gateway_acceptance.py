@@ -1832,16 +1832,12 @@ async def inspect_engineering(
                 gateway_state.get("dynamically_exposed_count") == len(automatic),
                 "dynamic exposure count mismatch",
             )
-            native_withheld = {
-                item.get("tool"): item.get("disposition")
-                for item in gateway_state.get("core_withheld_tools") or ()
-                if isinstance(item, dict)
-            }
+            # HAMCP-290: public health keeps counts, not per-tool rows
+            # (health_projection empties core_withheld_tools). Nothing else is
+            # Core-withheld on this lane (dynamic exposure equals every other
+            # automatic read), so the count must be exactly the native-owned set.
             require(
-                all(
-                    native_withheld.get(name) == "engineering_native_owned"
-                    for name in native_owned
-                ),
+                gateway_state.get("core_withheld_read_count") == len(native_owned),
                 "an Engineering-native-owned delegated read was not withheld",
             )
             require(
