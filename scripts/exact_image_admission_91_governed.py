@@ -1541,16 +1541,16 @@ async def run_lane(plan: Plan) -> None:
                 return json.loads(result.stdout.strip().splitlines()[-1])
 
             async def host_probe(plan_id: str) -> int:
-                import urllib.error
-                import urllib.request
-                request = urllib.request.Request(f"http://127.0.0.1:{INGRESS_PORT}/plans/{plan_id}",
+                from urllib.error import HTTPError
+                from urllib.request import Request, urlopen
+                request = Request(f"http://127.0.0.1:{INGRESS_PORT}/plans/{plan_id}",
                                                  headers={"X-Ingress-Path": INGRESS_PATH, "X-Remote-User-Id": owner})
 
                 def fetch() -> int:
                     try:
-                        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 - loopback
+                        with urlopen(request, timeout=30) as response:  # noqa: S310 - loopback
                             return response.status
-                    except urllib.error.HTTPError as error:
+                    except HTTPError as error:
                         return error.code
                 return await asyncio.to_thread(fetch)
 
@@ -1577,15 +1577,15 @@ async def run_lane(plan: Plan) -> None:
 
 def _wait_ready(url: str, seconds: float) -> bool:
     import time
-    import urllib.error
-    import urllib.request
+    from urllib.error import URLError
+    from urllib.request import urlopen
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310 - loopback
+            with urlopen(url, timeout=3) as response:  # noqa: S310 - loopback
                 if response.status == 200:
                     return True
-        except (urllib.error.URLError, OSError):
+        except (URLError, OSError):
             pass
         time.sleep(2)
     return False
