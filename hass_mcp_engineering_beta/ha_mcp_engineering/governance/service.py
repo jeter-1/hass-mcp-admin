@@ -56,6 +56,7 @@ from ..f3_dashboard.errors import (
     DashboardFoundationError,
     ProviderAuthorityUnavailableError,
     RiskAnalysisError,
+    is_compiler_limit_refusal,
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
@@ -5610,7 +5611,7 @@ class ChangeGovernanceService:
             ) from None
         except DashboardFoundationError as exc:
             details = {"reason": exc.code}
-            if exc.constraint == "semantic_leaf_changes" and exc.stage == "compilation":
+            if is_compiler_limit_refusal(exc):
                 details = {**exc.diagnostic_details(), "reason": exc.code}
             raise GovernanceError(
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,

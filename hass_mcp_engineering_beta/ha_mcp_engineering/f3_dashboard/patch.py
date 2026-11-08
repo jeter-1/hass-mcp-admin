@@ -21,7 +21,7 @@ from .constants import (
     MIN_PATCH_OPERATIONS,
     PATCH_MODEL,
 )
-from .errors import PatchCompilationError, PatchValidationError
+from .errors import PatchCompilationError, PatchValidationError, json_bound_of
 from .json_codec import (
     canonical_json_bytes,
     clone_json,
@@ -66,10 +66,22 @@ def parse_pointer(
     if not isinstance(path, str) or not path or not path.startswith("/"):
         raise PatchValidationError("Patch paths must be non-root RFC 6901 pointers")
     if len(path) > MAX_POINTER_CHARS:
-        raise PatchValidationError("Patch pointer exceeds the reviewed length bound")
+        raise PatchValidationError(
+            "Patch pointer exceeds the reviewed length bound",
+            constraint="pointer_length",
+            observed=len(path),
+            limit=MAX_POINTER_CHARS,
+            stage="validation",
+        )
     encoded_tokens = path[1:].split("/")
     if len(encoded_tokens) > MAX_POINTER_DEPTH:
-        raise PatchValidationError("Patch pointer exceeds the reviewed depth bound")
+        raise PatchValidationError(
+            "Patch pointer exceeds the reviewed depth bound",
+            constraint="pointer_depth",
+            observed=len(encoded_tokens),
+            limit=MAX_POINTER_DEPTH,
+            stage="validation",
+        )
     tokens = tuple(_decode_token(token) for token in encoded_tokens)
     if any(not token for token in tokens):
         raise PatchValidationError("Empty pointer tokens are prohibited")
@@ -121,9 +133,27 @@ def _canonical_operation(raw: Mapping[str, Any]) -> PatchOperation:
         raise PatchValidationError("Add and replace operations require a value")
     value = raw.get("value")
     if value_present:
-        validate_json_value(value)
-        if serialized_size(value) > MAX_INDIVIDUAL_VALUE_BYTES:
-            raise PatchValidationError("Patch value exceeds the reviewed bound")
+        try:
+            validate_json_value(value)
+        except PatchValidationError as exc:
+            bound = json_bound_of(exc)
+            if bound is None:
+                raise
+            raise PatchValidationError(
+                str(exc),
+                constraint=f"value_json_{bound[0]}",
+                limit=bound[1],
+                stage="validation",
+            ) from None
+        value_bytes = serialized_size(value)
+        if value_bytes > MAX_INDIVIDUAL_VALUE_BYTES:
+            raise PatchValidationError(
+                "Patch value exceeds the reviewed bound",
+                constraint="operation_value_bytes",
+                observed=value_bytes,
+                limit=MAX_INDIVIDUAL_VALUE_BYTES,
+                stage="validation",
+            )
         value = clone_json(value)
     return PatchOperation(
         operation_id=operation_id,
@@ -141,7 +171,15 @@ def canonicalize_patch(
     if isinstance(operations, (str, bytes, Mapping)):
         raise PatchValidationError("Patch operations must be an ordered list")
     raw_operations = list(operations)
-    if not MIN_PATCH_OPERATIONS <= len(raw_operations) <= MAX_PATCH_OPERATIONS:
+    if len(raw_operations) > MAX_PATCH_OPERATIONS:
+        raise PatchValidationError(
+            "Patch must contain between 1 and 16 operations",
+            constraint="operation_count",
+            observed=len(raw_operations),
+            limit=MAX_PATCH_OPERATIONS,
+            stage="validation",
+        )
+    if len(raw_operations) < MIN_PATCH_OPERATIONS:
         raise PatchValidationError("Patch must contain between 1 and 16 operations")
     normalized = tuple(_canonical_operation(raw) for raw in raw_operations)
     ids = [item.operation_id for item in normalized]
@@ -156,8 +194,28 @@ def canonicalize_patch(
             if left[:shortest] == right[:shortest]:
                 raise PatchValidationError("Parent/child patch path conflicts are prohibited")
     projection = patch_projection(normalized)
-    if serialized_size(projection) > MAX_PATCH_BYTES:
-        raise PatchValidationError("Canonical patch exceeds the reviewed byte bound")
+    try:
+        patch_bytes = serialized_size(projection)
+    except PatchValidationError as exc:
+        # Each value passed its own bound; the canonical patch nests values
+        # two levels deeper and sums their nodes, so it is bounded separately.
+        bound = json_bound_of(exc)
+        if bound is None:
+            raise
+        raise PatchValidationError(
+            str(exc),
+            constraint=f"patch_json_{bound[0]}",
+            limit=bound[1],
+            stage="validation",
+        ) from None
+    if patch_bytes > MAX_PATCH_BYTES:
+        raise PatchValidationError(
+            "Canonical patch exceeds the reviewed byte bound",
+            constraint="patch_bytes",
+            observed=patch_bytes,
+            limit=MAX_PATCH_BYTES,
+            stage="validation",
+        )
     return normalized
 
 
@@ -221,12 +279,29 @@ def _resolve_parent(
     raise PatchCompilationError("Patch target parent is not a collection")
 
 
+def _check_traversal(budget: list[int], depth: int, message: str) -> None:
+    # The walk aborts at the bound, so no truthful observed total exists.
+    if budget[0] < 0:
+        raise PatchCompilationError(
+            message,
+            constraint="traversal_nodes",
+            limit=MAX_JSON_NODES,
+            stage="compilation",
+        )
+    if depth > MAX_JSON_DEPTH:
+        raise PatchCompilationError(
+            message,
+            constraint="traversal_depth",
+            limit=MAX_JSON_DEPTH,
+            stage="compilation",
+        )
+
+
 def _leaf_weight(value: Any, *, depth: int = 0, budget: list[int] | None = None) -> int:
     if budget is None:
         budget = [MAX_JSON_NODES]
     budget[0] -= 1
-    if budget[0] < 0 or depth > MAX_JSON_DEPTH:
-        raise PatchCompilationError("Semantic leaf traversal exceeds its bound")
+    _check_traversal(budget, depth, "Semantic leaf traversal exceeds its bound")
     if isinstance(value, dict):
         if not value:
             return 1
@@ -250,8 +325,7 @@ def semantic_leaf_difference(
     if budget is None:
         budget = [MAX_JSON_NODES]
     budget[0] -= 1
-    if budget[0] < 0 or depth > MAX_JSON_DEPTH:
-        raise PatchCompilationError("Semantic difference traversal exceeds its bound")
+    _check_traversal(budget, depth, "Semantic difference traversal exceeds its bound")
     if strict_json_equal(before, after):
         return 0
     if isinstance(before, dict) and isinstance(after, dict):
@@ -370,18 +444,12 @@ def _apply_one(
     )
 
 
-def compile_dashboard_patch(
+def _compile_effects(
     configuration: dict[str, Any],
-    operations: Iterable[Mapping[str, Any]],
-) -> PatchCompilation:
-    """Compile a bounded patch without mutating the caller's configuration."""
-
-    if not isinstance(configuration, dict):
-        raise PatchCompilationError("Dashboard configuration must be an object")
-    validate_json_value(configuration)
-    normalized = canonicalize_patch(operations)
-    original = clone_json(configuration)
-    result = clone_json(configuration)
+    original: dict[str, Any],
+    result: dict[str, Any],
+    normalized: tuple[PatchOperation, ...],
+) -> tuple[list[PatchEffect], int, int, int]:
     effects: list[PatchEffect] = []
     for operation in normalized:
         effects.append(_apply_one(result, operation))
@@ -399,11 +467,56 @@ def compile_dashboard_patch(
         )
     original_size = serialized_size(original, ensure_ascii=True)
     result_size = serialized_size(result, ensure_ascii=True)
+    return effects, leaf_count, original_size, result_size
+
+
+def compile_dashboard_patch(
+    configuration: dict[str, Any],
+    operations: Iterable[Mapping[str, Any]],
+) -> PatchCompilation:
+    """Compile a bounded patch without mutating the caller's configuration."""
+
+    if not isinstance(configuration, dict):
+        raise PatchCompilationError("Dashboard configuration must be an object")
+    validate_json_value(configuration)
+    normalized = canonicalize_patch(operations)
+    original = clone_json(configuration)
+    result = clone_json(configuration)
+    try:
+        effects, leaf_count, original_size, result_size = _compile_effects(
+            configuration, original, result, normalized
+        )
+    except PatchValidationError as exc:
+        # The input configuration was validated above, so a JSON bound
+        # exceeded while compiling belongs to the resulting configuration:
+        # every value walked here is that result, the validated input, or a
+        # subtree or array suffix of one of them.
+        bound = json_bound_of(exc)
+        if bound is None:
+            raise
+        raise PatchValidationError(
+            str(exc),
+            constraint=f"result_json_{bound[0]}",
+            limit=bound[1],
+            stage="compilation",
+        ) from None
     growth = result_size - original_size
     if result_size > MAX_RESULT_CONFIG_BYTES:
-        raise PatchCompilationError("Resulting dashboard exceeds the reviewed size bound")
+        raise PatchCompilationError(
+            "Resulting dashboard exceeds the reviewed size bound",
+            constraint="result_config_bytes",
+            observed=result_size,
+            limit=MAX_RESULT_CONFIG_BYTES,
+            stage="compilation",
+        )
     if growth > MAX_CONFIG_GROWTH_BYTES:
-        raise PatchCompilationError("Dashboard growth exceeds the reviewed bound")
+        raise PatchCompilationError(
+            "Dashboard growth exceeds the reviewed bound",
+            constraint="config_growth_bytes",
+            observed=growth,
+            limit=MAX_CONFIG_GROWTH_BYTES,
+            stage="compilation",
+        )
 
     projection = patch_projection(normalized)
     patch_bytes = canonical_json_bytes(projection)
