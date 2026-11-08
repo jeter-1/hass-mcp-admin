@@ -503,7 +503,8 @@ identifiers: `ext_pan_id`/`extended_pan_id`, `pan_id`, `channel`, the Thread
 network name, `rloc16`, Matter `node_id` and `ha_device_id`. (The existing
 delegated `thread_network` section already returns `extended_address` and
 `border_agent_id` at the base. This proposal does not change that section.
-Whether to align it in a separate change is still pending Josh, §12.)
+Aligning it is a separate item after 2.6, HAMCP-341; Josh decision
+(in-session 2026-11-08), §12.)
 
 Default rules, which apply to A1-A4 together:
 
@@ -923,12 +924,12 @@ A build of (a) must prove each of the following:
    (absent or refused, fail closed) while the other approved capabilities
    behave as the selected option says. No persisted state is added.
 
-## 12. Decided choices (J1-J5)
+## 12. Decided choices (J1-J5 and the J3 sub-question)
 
 Already settled before these decisions (§1): release 2.6.0; additive
 profiles; Core 2026.11.0 only; one combined 2.6 signing. The public tool
 shape is proposed concretely in §6 and is part of the build contract. J1-J5
-are now decided:
+are now decided, and so is the J3 sub-question (item 6):
 
 1. **J1, initial read subset. Decided: A1 + A2.** Josh decision (in-session 2026-11-08),
    item 16. The new signed Core read profile is approved for the build
@@ -951,15 +952,16 @@ are now decided:
    item 19. Sections: §5.1.6, §5.2, §5.3, §7, §8 items 6 and 10, §10.
 5. **J5, HAAC-E009 richer reasons. Decided: a separate item.**
    Josh decision (in-session 2026-11-08), item 20. The delegated `thread_network`
-   section is unchanged by HAMCP-231. The separate register item is to be
-   created by the orchestrator; it has no ID at this revision. Sections:
-   status, §3.3, §5.3, §6, §8 item 12.
+   section is unchanged by HAMCP-231. The separate register item is
+   HAMCP-340 (Backlog). Sections: status, §3.3, §5.3, §6, §8 item 12.
 
-**Still pending Josh (does not block 2.6).** J3's sub-question was not part
-of the decided recommendation: whether the delegated `thread_network`
-section, which already returns `extended_address` and `border_agent_id` at
-the base, should later be aligned with the opaque-id policy in a separate
-change. HAMCP-231 does not change that section either way.
+6. **J3 sub-question, delegated `thread_network` identifiers. Decided: a
+   separate item after 2.6, HAMCP-341 (Backlog).** Josh decision (in-session
+   2026-11-08). The question was whether the delegated `thread_network`
+   section, which already returns `extended_address` and `border_agent_id`
+   at the base, should be aligned with the opaque-id policy. HAMCP-231 does
+   not change that section, and 2.6 ships it as it is at the base. Sections:
+   §5.1.2, §12.
 
 **Superseded (historical).** The previous revision (head `8917c19a`) offered
 A1 + A2 + A3, A1 + A2 + A4 or all of A1-A4 (J1); withholding A2, an
@@ -997,9 +999,10 @@ Each is recorded as "Josh decision (in-session 2026-11-08), item N".
 |---|---|---|
 | 16 (J1) | A1 + A2 only; profile approved for the build contract | status; §1 consequences; §4.2 note; §5.1 table (A3, A4 marked not in the first build), §5.1.2 rule 2 (`b<k>` standalone), §5.1.5 (OTBR reasons A3-only), §5.1.6 (A3/A4 excluded); §6 (input `datasets`/`topology` only, no `device_id`); §7 (command list, A3/A4 in `never_sent`); §8 items 1, 3, 4, 5; §9 (fixture and failure preservation without A3); §10 (no credential-bearing response, authority) |
 | 17 (J2) | Accept A2 discovery with disclosure; no refresh, discover or ping | §4.4 table (ping excluded); §5.1.3 (accepted with disclosure; no class R read); §5.1.6; §5.3; §8 item 6 (no device read; disclosure asserted); §9 activity disclosure; §10 |
-| 18 (J3) | (a) opaque per-response ids | §5.1.2 (default is the decided policy; delegated-section alignment pending Josh); §6 `identifier_policy`; §8 item 4 (no class returned raw); §10 |
+| 18 (J3) | (a) opaque per-response ids | §5.1.2 (default is the decided policy; delegated-section alignment is HAMCP-341, after 2.6); §6 `identifier_policy`; §8 item 4 (no class returned raw); §10 |
 | 19 (J4) | Nothing beyond Core in 2.6 | §5.1.6; §5.2 (heading and text); §5.3; §7; §8 items 6 and 10 (B1 case removed; no direct add-on connection); §10 |
-| 20 (J5) | HAAC-E009 richer reasons is a separate item | status; §3.3; §5.3; §6; §8 item 12 (delegated section unchanged) |
+| 20 (J5) | HAAC-E009 richer reasons is a separate item (HAMCP-340) | status; §3.3; §5.3; §6; §8 item 12 (delegated section unchanged) |
+| J3 sub-question (asked after the list) | Aligning the delegated `thread_network` ids with the opaque policy is a separate item after 2.6, HAMCP-341 | §5.1.2; §12 (no longer pending) |
 
 **Effect on the Codex corrections (§13).** Findings 3, 5 and 6 are
 unchanged. Finding 1's identifier policy is now the decided policy; the A3
