@@ -1,6 +1,7 @@
 {
-  "head": "c078402325b14e5cf67d5a00ce8a146c8a80a045",
+  "head": "80a434235f14022cb93315aa180db6bb03d38e1e",
   "reviewed_head": "afd4acce61174acc152550a3a09877341a4b37bf",
+  "delta_reviewed_head": "2f56e2ba9be95ebf2ed336ce95bdbd54ec47da73",
   "python": "3.12.14",
   "regressions": [
     {
@@ -16,6 +17,14 @@
       "finding": "F2",
       "revision": "afd4acce61174acc152550a3a09877341a4b37bf",
       "test": "CoherentCommitTests.test_every_fault_point_leaves_the_prior_or_the_committed_store",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "D1",
+      "revision": "2f56e2ba9be95ebf2ed336ce95bdbd54ec47da73",
+      "test": "CoherentCommitTests.test_a_damaged_slot_never_revives_an_older_sidecar_state",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -74,12 +83,21 @@
       "test": "CoherentCommitTests.test_every_fault_point_leaves_the_prior_or_the_committed_store",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "D1",
+      "name": "a load picks the highest remaining valid slot beside a damaged one",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/store.py",
+      "test": "CoherentCommitTests.test_a_damaged_slot_never_revives_an_older_sidecar_state",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "control": {
     "name": "control (unmutated corrected copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 63 tests in 98.020s"
+    "ran": "Ran 64 tests in 109.691s"
   }
 }
