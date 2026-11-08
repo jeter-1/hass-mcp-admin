@@ -12,7 +12,8 @@ transport, real typed power service) against loopback ``RedirectPeer`` peers:
 * ``test_85_useful_calls_per_row`` (8.5-only): on **both** accepted URL forms,
   one useful authorized call per 8.5.0 ledger row that the gateway serves
   (rows 1-28), each answered by its committed fixture and attributed to
-  8.5.0. Kills "Drop the 8.5.0 registry entry".
+  8.5.0. Kills "Drop the 8.5.0 registry entry". Rows 25-28 are C (8.5.0
+  evidence); rows 1-24 are S (8.6 replay), see the provenance list below.
 * ``test_91_strict_admission_positive`` (9.1-only): on a ``strict_full`` value
   the gateway admits 9.1.0 exactly from the reviewed registry (9.1.0 in
   ``reviewed_supported_versions``, complete catalog in wire order across
@@ -33,27 +34,33 @@ test) lives in tests/test_hamcp319_endpoint_selector.py.
 
 Fixture provenance (committed evidence only, never hand-edited):
 
-* Rows 1-11, 13, 14, 16, 17, 19-24 (8.5.0 per-row calls): the decoded
-  standalone records of tests/fixtures/ha_mcp_8_6_0/read-results.json
-  (provenance.json in that directory), replayed on the 8.5.0 policy exactly as
-  tests/test_hamcp319_parity_config.py already does for rows 1-11.
-* Row 25 (8.5.0) and the 9.1.0 delegated read: the cases of
+* Rows 1-24 (8.5.0 per-row calls), evidence class **S (8.6 replay), never C**
+  (architect ruling 2026-11-07, item 1): the decoded standalone records of
+  tests/fixtures/ha_mcp_8_6_0/read-results.json (provenance.json in that
+  directory), replayed on the 8.5.0 policy exactly as
+  tests/test_hamcp319_parity_config.py does for rows 1-11. No 8.5.0 capture
+  exists for these rows (tests/fixtures/ha_mcp_8_5_0 holds only the blueprint
+  list/get and a get_state not-found record). Rows 12, 15 and 18 are replayed
+  too but their data is not compared (``PROJECTED_85``). The live 8.5.0 proof
+  for these rows is the 8.5 exact-image lanes.
+* Row 25 (8.5.0, class C) and the 9.1.0 delegated read (class S): the cases of
   tests/test_hamcp319_no_redirect_useful.py (8.5.0 blueprint capture and the
   9.1.0 row 1 class S fixture).
-* Rows 26-28 (8.5.0): tests/fixtures/hamcp129/results-8.5.0.json (see
+* Rows 26-28 (8.5.0, class C): tests/fixtures/hamcp129/results-8.5.0.json (see
   tests/fixtures/hamcp129/provenance.json) with the public arguments of
   tests/test_hamcp129_platform_reads.py ``FIXTURE_PUBLIC``.
 * Typed power: the TW-area templates through
   ``test_hamcp319_typed_writes.Peer``.
 
-Engineering rollback is NOT accepted here (architect ruling 2026-11-07, item
-2). Its acceptance is the exact-image lane stage that runs the previous
-release, 2.4.2-beta.6, by its published image digest against 8.5.0 (handoff
-Lane contract section E; runner owned by the stacked lanes PR). The separate
-``AdditionalRegistryWithout91Tests`` only checks that the current build's
-version gate refuses 9.1.0 when the 9.1.0 entry is absent from the loaded
-registry; it is an additional unit test and never counts as rollback
-acceptance in tests, ledger, manifests or the PR body.
+Engineering rollback is NOT accepted here. Its acceptance is the exact-image
+lane (handoff Lane contract section E, Josh ruling 2026-11-07 on #407), which
+runs the previous release, 2.4.2-beta.6, by published digest
+sha256:9284290132d1d4f06195f5ee5bb27797238b86d8a250db13c6c78f2171059f6a in two
+cases: ``sbs_rollback_85_legacy_useful`` (beta.6 on the 8.5 legacy URL against
+8.5.0, must be useful) and ``sbs_engineering_rollback_91_refused`` (beta.6
+strict against 9.1.0, must be refused with unsupported_version_rollback). The
+runners arrive via #407. No "current build minus the 9.1.0 entry" variant is
+modelled (Josh ruling 2026-11-07: skipped).
 
 Loopback peers only; every secret is synthetic.
 """
@@ -152,6 +159,7 @@ YAML = "ha_config_get_yaml"  # row 29, optional; its own provider path
 # released 8.5 hacs projection, row 18 the shared acknowledgement redaction).
 PROJECTED_85 = {"ha_get_device", HACS, "ha_get_skill_guide"}
 
+# S (8.6 replay) for 8.5.0 rows 1-24: 8.6.0 records, not 8.5.0 captures.
 _READS_86 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_8_6_0/read-results.json").read_text("utf-8")
 )["standalone"]
@@ -786,55 +794,6 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 self.assertIs(entry["dispatch_intent_recorded"], True)
             else:
                 self.assertIs(entry["read_only_recovery"], True)
-
-
-class AdditionalRegistryWithout91Tests(_Assertions, unittest.TestCase):
-    """Additional unit test, NOT Engineering rollback acceptance.
-
-    The current build with the 9.1.0 entry removed from its loaded registry
-    refuses a 9.1.0 peer with the existing unsupported-version refusal and
-    dispatches nothing. This exercises the current version gate only. The
-    previous release's own binary (2.4.2-beta.6, by published digest, against
-    8.5.0) is the rollback acceptance and runs only in the exact-image lane
-    (architect ruling 2026-11-07, item 2).
-    """
-
-    def test_current_build_without_91_entry_refuses_91_additional(self):
-        registry = load_reviewed_upstream_release_registry()
-        without_91 = replace(
-            registry,
-            releases=tuple(item for item in registry.releases if item.version != "9.1.0"),
-        )
-        self.assertNotIn("9.1.0", without_91.by_version)
-        self.assertIn("8.5.0", without_91.by_version)
-        case = _delegated_case("9.1.0")
-        calls = []
-
-        def handler(tool, arguments):
-            calls.append((tool, arguments))
-            return deepcopy(case.structured)
-
-        async def scenario():
-            gateway = UpstreamReadGateway()
-            peer = _peer("9.1.0", "strict_full", call_handler=handler)
-            with peer.serve():
-                gateway.configure(_settings(peer.url), release_registry=without_91)
-                await asyncio.wait_for(gateway.initialize(FastMCP("without-91")), DEADLINE)
-                return (gateway.health_snapshot(),
-                        frozenset(gateway._registered_tool_registry.snapshot()), peer)
-
-        with patch.object(socketserver.BaseServer, "handle_error", lambda *_a: None):
-            health, exposed, peer = asyncio.run(scenario())
-        self.assertNotEqual(health["admission_status"], "admitted_exact")
-        self.assertIs(health["admission_complete"], False)
-        self.assertEqual(health["last_discovery_failure_category"], "upstream_version_mismatch")
-        self.assertEqual(health["version_status"], "rejected_unreviewed")
-        self.assertNotIn("9.1.0", health["reviewed_supported_versions"])
-        self.assertIn("8.5.0", health["reviewed_supported_versions"])
-        self.assertEqual(exposed & set(LEDGER), frozenset())
-        self.assertEqual(calls, [])
-        self.assertEqual(peer.counters.executions, 0)
-        self.assertEqual(peer.counters.destination_total(), 0)
 
 
 if __name__ == "__main__":
