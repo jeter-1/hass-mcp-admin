@@ -124,6 +124,8 @@ class HandoffEvidenceBundle:
     collection_duration_ms: float = 0.0
     item_truncated: bool = False
     markdown_truncated: bool = False
+    # HAMCP-267: the visible diagnostic partition (pagination binding only).
+    diagnostic_fingerprint: str = ""
 
     @property
     def source_partial(self) -> bool:

@@ -349,6 +349,26 @@ class LogbookFamilyTests(FamilyAssertions, unittest.TestCase):
         self.assert_injected(result, secrets=(secret, needle), before=before)
         self.assertIn(ORDINARY, json.dumps(result))
 
+    def test_logbook_window_projection(self):
+        # HAMCP-294: the windowed object retains records through the same _fit.
+        from ha_mcp_engineering.clients import logbook
+        from datetime import datetime
+
+        secret = syn.needle("hamcp191 logbook window secret")
+        needle = syn.needle("hamcp191 logbook window needle")
+        rows = [{"name": ORDINARY, "message": p1(secret)}, {"message": p2(needle)}]
+        now = datetime.fromisoformat(self.INTERVAL["end"])
+        window = logbook.resolve_window(now, None, self.INTERVAL["start"], self.INTERVAL["end"])
+        context = {"window": window, "requested_interval": window["requested_interval"],
+                   "effective_interval": window["effective_interval"],
+                   "filter": {"kind": "none", "entity_ids": [], "name": None,
+                              "match_basis": None, "matched_count": None},
+                   "completeness_notes": list(logbook.BASE_NOTES)}
+        before = self.collisions()
+        result = json.loads(logbook.project_window(json.dumps(rows), context, 60_000, (secret,)))
+        self.assert_injected(result, secrets=(secret, needle), before=before)
+        self.assertIn(ORDINARY, json.dumps(result))
+
 
 class AnalysisFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
     FAMILY = "analysis"

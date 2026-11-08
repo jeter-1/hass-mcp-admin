@@ -59,6 +59,8 @@ class _IntegritySnapshot:
     warnings: tuple[str, ...]
     metadata: dict[str, Any]
     source_partial: bool
+    # HAMCP-267: the visible diagnostic partition the page was built from.
+    diagnostic_fingerprint: str = ""
 
 
 class _IntegritySnapshotStore:
@@ -415,12 +417,17 @@ class ConfigurationIntegrityAnalysisService:
             index_generation = int(bundle.index.get("generation", 0))
             index_fingerprint = str(bundle.index.get("fingerprint") or "")
             active_index = _active_index_identity(self.provider)
+            diagnostic_fingerprint = str(
+                getattr(bundle, "diagnostic_fingerprint", "") or ""
+            )
             if (
                 not active_index
                 or not active_index.get("valid")
                 or int(active_index.get("generation", 0)) != index_generation
                 or str(active_index.get("fingerprint") or "")
                 != index_fingerprint
+                or _active_diagnostic_identity(self.provider)
+                != diagnostic_fingerprint
             ):
                 METRICS.record_integrity_analysis_failure(
                     "index_changed_before_snapshot_commit"
@@ -446,6 +453,7 @@ class ConfigurationIntegrityAnalysisService:
                 warnings=snapshot_warnings,
                 metadata=copy.deepcopy(metadata),
                 source_partial=source_partial,
+                diagnostic_fingerprint=diagnostic_fingerprint,
             )
             snapshot_id = self.pagination_snapshots.put(snapshot)
             data["pagination"]["next_cursor"] = self._encode_cursor(
@@ -551,6 +559,14 @@ class ConfigurationIntegrityAnalysisService:
                 details=_details(
                     "cursor", "active_index_replaced_or_invalidated"
                 ),
+            )
+        # HAMCP-267: dashboard authority and scene/group membership can
+        # change without an index rebuild.
+        if _active_diagnostic_identity(self.provider) != snapshot.diagnostic_fingerprint:
+            METRICS.record_integrity_cursor_event("stale_cursor")
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details=_details("cursor", "diagnostic_evidence_changed"),
             )
         offset = int(payload["offset"])
         if offset < 0 or offset > len(snapshot.findings):
@@ -857,6 +873,19 @@ def _active_index_identity(provider) -> dict[str, object] | None:
     except Exception:
         return None
     return value if isinstance(value, dict) else None
+
+
+def _active_diagnostic_identity(provider) -> str | None:
+    """``""`` for a provider without a diagnostic partition; ``None`` on failure."""
+
+    reader = getattr(provider, "active_diagnostic_identity", None)
+    if not callable(reader):
+        return ""
+    try:
+        value = reader()
+    except Exception:
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _dynamic_review_items(bundle: IntegrityEvidenceBundle) -> list[dict[str, Any]]:

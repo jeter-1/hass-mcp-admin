@@ -420,15 +420,34 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
 
 
 @mcp.tool()
-async def get_logbook(hours: float = 12, entity_id: str = "") -> str:
+async def get_logbook(
+    hours: float = 12,
+    entity_id: str = "",
+    start_time: str | None = None,
+    end_time: str | None = None,
+    entity_ids: list[str] | None = None,
+    name: str | None = None,
+) -> str:
     """Logbook entries (what happened, triggered by what) for the last N
     hours (positive, maximum 168), optionally filtered to one entity. Acquisition
     is capped at 1 MiB and 30 seconds without retry; large results return a partial
-    source-order prefix or a limit error. Narrow hours or select one entity."""
+    source-order prefix or a limit error. Narrow hours or select one entity.
+
+    Bounded window (HAMCP-294): start_time/end_time are ISO-8601 times with an
+    explicit offset; the window is at most 168 hours and start_time must be in
+    the past. Without start_time the window is hours back from end_time; with
+    start_time, hours must stay at its default 12 and is ignored. A future
+    end_time is clamped to now. Filter with at most one of entity_id,
+    entity_ids (1-10 IDs) or name (1-100 characters, case-insensitive substring
+    of a current entity_id or friendly_name resolving to 1-10 entities; 0 or
+    more than 10 matches is refused with no logbook read). Any of these returns
+    one object with effective_interval, filter, completeness_notes and, when
+    truncated, a continuation window that may overlap returned rows."""
     return await LOGBOOK.read(
         REST_CLIENT, hours=hours, entity_id=entity_id,
         response_limit=SETTINGS.response_size_limit,
         secrets=(SETTINGS.ha_token, SETTINGS.access_secret),
+        start_time=start_time, end_time=end_time, entity_ids=entity_ids, name=name,
     )
 
 

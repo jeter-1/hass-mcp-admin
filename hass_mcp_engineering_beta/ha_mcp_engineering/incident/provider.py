@@ -12,6 +12,16 @@ from typing import Any
 
 from ..clients.paths import rest_path
 from ..dependency.extraction import valid_entity_id
+from ..dependency.global_sources import (
+    CONSUMED_SOURCE_TYPES,
+    PARTITION_EMISSION_LIMIT,
+    PARTITION_REFERENCE_LIMIT_ID,
+    incomplete_partition_rows,
+    partition_limitations,
+    partition_omission_warning,
+    partition_summary,
+    scoped_partition_findings,
+)
 from ..errors import EntityNotFoundError
 from ..integrity.models import IntegrityEvidenceBundle, IntegritySourceCoverage
 from ..integrity.rules import classify_integrity
@@ -80,6 +90,12 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
     def active_index_identity(self) -> dict[str, object]:
         return self.index.active_identity()
+
+    def active_diagnostic_identity(self) -> str:
+        """HAMCP-267: the committed diagnostic partition as visible now."""
+
+        global_sources = getattr(getattr(self.index, "snapshot", None), "global_sources", None)
+        return global_sources.visible().fingerprint if global_sources is not None else ""
 
     async def fetch(self, request: EvidenceRequest) -> ProviderResult:
         started = time.perf_counter()
@@ -260,6 +276,10 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
         index_requested = bool(query.get("include_dependency_context") or query.get("include_integrity_context"))
         snapshot = None
+        partition = None
+        partition_selected: list = []
+        partition_total = 0
+        relationships_omitted = 0
         rebuilt = False
         lookup_ms = 0.0
         if index_requested:
@@ -271,7 +291,22 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     snapshot, rebuilt, lookup_ms = provided_snapshot, False, 0.0
                 else:
                     snapshot, rebuilt, lookup_ms = await self.index.get(refresh=bool(query.get("refresh_index")))
-                index_coverage = _index_coverage(snapshot, rebuilt, lookup_ms)
+                # HAMCP-267: read the diagnostic partition once per request.
+                global_sources = getattr(snapshot, "global_sources", None)
+                partition = global_sources.visible() if global_sources is not None else None
+                # HAMCP-267 F1: one bounded selection feeds both contexts; every
+                # scoped reference it or the event bound leaves out is disclosed.
+                partition_selected, partition_total = scoped_partition_findings(partition, entity_ids)
+                partition_emitted = (
+                    partition_selected[:PARTITION_EMISSION_LIMIT]
+                    if query.get("include_dependency_context") else partition_selected
+                )
+                if query.get("include_dependency_context"):
+                    relationships_omitted = partition_total - len(partition_emitted)
+                index_coverage = _index_coverage(
+                    snapshot, rebuilt, lookup_ms, partition,
+                    partition_omitted=(partition_total - len(partition_emitted), len(partition_emitted)),
+                )
                 coverage.append(index_coverage)
                 scoped_findings = _scoped_dependency_findings(snapshot, entity_ids, automation_id)
                 if query.get("include_dependency_context"):
@@ -280,6 +315,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                             event_type="dependency_relationship", summary=f"{item.source_type} {item.source_id} has an exact dependency on {item.target_entity_id}.",
                             entity_id=item.target_entity_id, automation_id=automation_id if item.source_id == automation_id else None,
                             severity="info", confidence="exact", coverage_status=index_coverage.completeness))
+                    for item in partition_emitted:
+                        events.append(event(evidence, source_type="dependency_index", source_object=item.source_id,
+                            event_type="dependency_relationship", summary=partition_summary(item),
+                            entity_id=item.target_entity_id, severity="info", confidence=item.confidence,
+                            coverage_status=index_coverage.completeness))
             except (asyncio.TimeoutError, TimeoutError):
                 coverage.append(_failed_coverage(
                     "dependency_index", "dependency_analysis", True,
@@ -294,9 +334,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             coverage.append(_not_requested("dependency_index", "dependency_analysis"))
 
         integrity_findings: list[dict[str, Any]] = []
+        integrity_findings_omitted = 0
         if query.get("include_integrity_context") and snapshot is not None:
-            integrity_findings = self._integrity_context(
+            integrity_findings, integrity_findings_omitted = self._integrity_context(
                 snapshot,
+                partition_selected,
                 states,
                 registry,
                 entity_ids,
@@ -310,8 +352,28 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     summary=item.get("explanation") or item.get("finding_type"), entity_id=item.get("target_entity_id"),
                     automation_id=automation_id if item.get("source_id") == automation_id else None,
                     severity=_severity(item.get("severity")), confidence=str(item.get("confidence") or "limited")))
-            coverage.append(IncidentSourceCoverage("configuration_integrity", "engineering", "configuration_integrity_analysis", "complete",
-                True, False, len(integrity_findings), 0, [], 0.0, True, None, False))
+            # HAMCP-267 Q1 (implementation default, pending Josh): the row is
+            # partial when a consumed partition row is not complete. F1: it is
+            # also partial when a scoped reference was not assessed or a
+            # finding was omitted at a bound; omissions are not read failures.
+            incomplete = incomplete_partition_rows(partition)
+            references_omitted = partition_total - len(partition_selected)
+            integrity_warnings = [f"{row.source_type} references were not completely read." for row in incomplete]
+            integrity_limitations = partition_limitations(partition, "configuration_integrity")
+            if references_omitted:
+                integrity_warnings.insert(0, partition_omission_warning(
+                    references_omitted, len(partition_selected), "not assessed"))
+                integrity_limitations.append(f"configuration_integrity_{PARTITION_REFERENCE_LIMIT_ID}")
+            if integrity_findings_omitted:
+                integrity_warnings.insert(0, (
+                    f"integrity_finding_limit: {integrity_findings_omitted} scoped integrity finding(s) "
+                    f"omitted beyond the bounded {MAX_INTEGRITY_FINDINGS} kept."))
+                integrity_limitations.append("configuration_integrity_finding_limit_exceeded")
+            coverage.append(IncidentSourceCoverage("configuration_integrity", "engineering", "configuration_integrity_analysis",
+                "partial" if incomplete or references_omitted or integrity_findings_omitted else "complete",
+                True, False, len(integrity_findings), 0,
+                integrity_warnings, 0.0, True, None, False,
+                integrity_limitations))
         else:
             coverage.append(_not_requested("configuration_integrity", "configuration_integrity_analysis"))
 
@@ -332,7 +394,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     severity="medium" if state.get("state") == "unavailable" else "info"))
 
         ordered = deduplicate_and_sort(events)
-        timeline_truncated = len(ordered) > MAX_TIMELINE_EVENTS
+        # HAMCP-267 F1: relationship or integrity events left out at a consumer
+        # bound are normalized events this timeline does not retain.
+        timeline_truncated = bool(
+            len(ordered) > MAX_TIMELINE_EVENTS or relationships_omitted or integrity_findings_omitted
+        )
         ordered = ordered[:MAX_TIMELINE_EVENTS]
         evidence_truncated = len(evidence) > MAX_EVIDENCE_REFERENCES
         if evidence_truncated:
@@ -374,6 +440,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             collection_duration_ms=(time.perf_counter() - started) * 1000,
             evidence_truncated=evidence_truncated,
             timeline_truncated=timeline_truncated,
+            diagnostic_fingerprint=partition.fingerprint if partition is not None else "",
         )
 
     async def _states(self):
@@ -488,6 +555,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
     def _integrity_context(
         self,
         snapshot,
+        partition_selected,
         states,
         registry,
         entity_ids,
@@ -498,8 +566,13 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
     ):
         scoped = _scoped_dependency_findings(snapshot, entity_ids, automation_id)
         dynamic = [asdict(item) for item in snapshot.dynamic_references if automation_id and item.source_id == automation_id][:100]
+        # HAMCP-267: a group's or scene's state is not consumer enablement.
+        partition_references = [
+            {**asdict(item), "source_state": None}
+            for item in partition_selected
+        ]
         bundle = IntegrityEvidenceBundle(
-            exact_references=[asdict(item) for item in scoped],
+            exact_references=[asdict(item) for item in scoped] + partition_references,
             dynamic_references=dynamic,
             current_states=states,
             entity_registry=registry,
@@ -515,7 +588,10 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             finding_types=["missing_entity_reference", "disabled_entity_reference", "registry_only_entity_reference", "unresolved_dynamic_reference"],
             include_orphan_candidates=False,
         )
-        return [item.public() for item in findings[:MAX_INTEGRITY_FINDINGS]]
+        return (
+            [item.public() for item in findings[:MAX_INTEGRITY_FINDINGS]],
+            max(0, len(findings) - MAX_INTEGRITY_FINDINGS),
+        )
 
 
 def _coverage(source_type, capability, requested, examined, failed, duration):
@@ -603,8 +679,12 @@ def _from_reliability(source_type, item, required):
         completeness not in {"not_requested", "not_supported"}, list(normalized.coverage_limitations))
 
 
-def _index_coverage(snapshot, rebuilt, lookup_ms):
+def _index_coverage(snapshot, rebuilt, lookup_ms, partition=None, *, partition_omitted=(0, 0)):
     requested = [item for item in snapshot.coverage if item.completeness != "not_requested"]
+    if partition is not None:
+        # HAMCP-267: the partition rows stand in for the snapshot's scene, group
+        # and dashboard rows. Their counts are limitations, not read failures.
+        requested = [item for item in requested if item.source_type not in CONSUMED_SOURCE_TYPES]
     failed_items = sum(max(0, int(item.failed_item_count)) for item in requested)
     unsupported_types = sorted(
         item.source_type
@@ -613,22 +693,30 @@ def _index_coverage(snapshot, rebuilt, lookup_ms):
         and item.failed_item_count == 0
         and item.completeness in {"unavailable", "unsupported", "not_supported"}
     )
+    partition_rows = incomplete_partition_rows(partition)
+    omitted, kept = partition_omitted
     partial = bool(
         failed_items
         or unsupported_types
+        or partition_rows
+        or omitted
         or any(item.completeness == "partial" for item in requested)
     )
     limitation_ids = (
         ["dependency_index_unsupported_source_types"]
         if unsupported_types
         else []
+    ) + partition_limitations(partition, "dependency_index") + (
+        [f"dependency_index_{PARTITION_REFERENCE_LIMIT_ID}"] if omitted else []
     )
+    requested = [*requested, *partition_rows]
+    examined = len(snapshot.findings) + (len(partition.findings) if partition is not None else 0)
     normalized = normalize_coverage(
         source_type="dependency_index",
         completeness="partial" if partial else "complete",
         requested=True,
         required=True,
-        items_examined=len(snapshot.findings),
+        items_examined=examined,
         failed_items=failed_items,
         failure_category="item_read_failure" if failed_items else None,
         limitation_ids=limitation_ids,
@@ -638,10 +726,14 @@ def _index_coverage(snapshot, rebuilt, lookup_ms):
         for item in requested
         for warning in item.warnings
         if str(warning).strip()
-    ))[:10]
+    ))
+    if omitted:
+        # HAMCP-267 F1: first, so the ten-warning bound never hides it.
+        warnings.insert(0, partition_omission_warning(omitted, kept))
+    warnings = warnings[:10]
     return IncidentSourceCoverage(
         "dependency_index", "engineering", "dependency_analysis",
-        normalized.completeness, True, True, len(snapshot.findings),
+        normalized.completeness, True, True, examined,
         normalized.failed_items, warnings, lookup_ms, not rebuilt,
         normalized.failure_category, True, list(normalized.coverage_limitations),
     )
