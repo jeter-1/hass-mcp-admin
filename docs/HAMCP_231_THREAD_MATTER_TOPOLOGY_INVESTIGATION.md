@@ -1,9 +1,12 @@
 # HAMCP-231 Thread/Matter topology and health — source investigation
 
 Status: **investigation only (2.6.0 design wave, docs only), corrected after
-the Codex design review of 2026-11-08 (§13).** No build is authorized. Any new
-signed Core profile or any new provider boundary needs Josh's decision before a
-build starts (§1). This document does not authorize registry signing, a new
+the Codex design review of 2026-11-08 (§13), with Josh's decisions of
+2026-11-08 recorded (§12, §14).** Josh decided the first-build read subset
+(A1 + A2), the activity policy, the identifier policy and that nothing beyond
+Core is in 2.6 (Josh decision (in-session 2026-11-08), items 16-20). No build is
+authorized by this document: build start still needs the design delta review
+to settle and a build task that names the protected paths. This document does not authorize registry signing, a new
 provider, deployment, live Home Assistant or Engineering access, or a release.
 All evidence comes from public upstream source at exact tags and commits, plus
 repository source at the base. Nothing here was observed on a live system.
@@ -16,7 +19,8 @@ repository source at the base. Nothing here was observed on a live system.
 - Authority model:
   [ADR-021](architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md). Upstream
   citations use exact commits or tags. Line numbers are at those revisions.
-- Prepared 2026-11-07; corrected 2026-11-08 (US Central).
+- Prepared 2026-11-07; corrected 2026-11-08, and Josh decisions recorded
+  2026-11-08 (US Central).
 
 ## 1. Register outcome and binding decisions
 
@@ -45,8 +49,10 @@ Consequences for this document:
 1. The surface is read-only. This document proposes no write, service call,
    reload or physical action. It does disclose the upstream LAN and device
    reads that some proposed reads cause (§5.1.3).
-2. Every new signed Core profile (§7) and every new provider boundary (§5.2)
-   is still a decision for Josh. Neither is approved here.
+2. The new signed Core profile (§7) is approved for the build contract with
+   reads A1 + A2 only (Josh decision (in-session 2026-11-08), item 16). No new
+   provider boundary (§5.2) is in 2.6 (item 19). Signing remains Josh's
+   action in the one combined 2.6 signing.
 
 **Superseded (historical).** The row's Next Action on 2026-11-07 read: "Josh
 decided 2026-11-07 (design-complete scoping): IN 3.0, investigation first:
@@ -194,8 +200,8 @@ Abbreviations used below:
 ha-mcp turns each of these into an error string. Engineering then drops the
 string (`upstream_platform_reads.py:497-502`). The reason behind HAAC-E009 is
 therefore not visible through Engineering, and it cannot be inferred from
-source. Whether a bounded reason code should be preserved is a scope question
-(J5).
+source. Bounded reason codes for the delegated section are a **separate
+item**, not HAMCP-231 scope (Josh decision (in-session 2026-11-08), item 20; §12).
 
 ## 4. Source inventory
 
@@ -248,8 +254,8 @@ num-of-router). Core therefore cannot surface OTBR mesh diagnostics.
 
 **Important:** even with an Engineering-side projection, the raw `otbr/info`
 WebSocket response carries the active dataset TLV, which includes the
-network key, into the Engineering process before the projection runs
-(see J1).
+network key, into the Engineering process before the projection runs.
+That is one reason A3 is not in the first build (§12, item 16).
 
 ### 4.3 OTBR REST, called directly (ot-br-posix `fd872ab9`; new provider boundary)
 
@@ -275,7 +281,7 @@ no authentication. One port serves reads, writes and a factory reset.
 | `matter/network_topology` (:384-404) | admin | core-ws | `NetworkTopology{collected_at, nodes[], connections[]}`. Each node is annotated with `ha_device_id` (`_serialize_topology`, :365-381). Node fields (MC `common/models.py:307-380`): `id`, `kind` (`matter`, `border_router`, `thread_unknown`, `wifi_ap`), `network_type`, `node_id`, `role`, `available`, `is_bridge`, `ext_address`, `rloc16`, `ext_pan_id`, `network_name`, `ssid`, `bssid`, `host_name`, `vendor_name`, `model_name`, `last_seen`. Connection fields: `source`, `target`, `network`, `strength`, `source_to_target` and `target_to_source` (each `{strength, lqi, rssi}`), `via_route_table`, `path_cost` | no credential. LAN identifiers appear in **aliases as well as named fields**: `ssid`, `bssid`, `host_name` and `ext_address`; the graph `id` and the connection `source`/`target` (which embed BSSIDs and extended addresses, see below); and `network_name` on `wifi_ap` nodes, which upstream sets to the BSSID (§5.1.2) | upstream has no cap; ~0.3 KB per node and ~0.25 KB per link | **BR partly**: only border routers that are Thread neighbours of a commissioned node with a retained edge, **not** a full inventory of discovered BRs; DS: `ext_pan_id`/`network_name` only; **Path partly**: `via_route_table`, `path_cost` and per-direction LQI/RSSI per link, not an end-to-end forwarding path |
 | `matter/subscribe_network_topology` (:407-466) | admin | core-ws subscription | the same snapshots, streamed | as above | unbounded stream | as above; **excluded** (stream) |
 | `matter/node_diagnostics` (:232-251) | **none** (not `require_admin`) | core-ws | `NodeDiagnostics` (MC `client/models/node.py:623`): `node_id`, `network_type`, `node_type`, `network_name`, `ip_adresses` (sic), `mac_address`, `available`, `active_fabrics`, `active_fabric_index` | IPs and MAC are identifiers. `network_name` is the Thread network name for Thread nodes, but for Wi-Fi (and `unknown` with the Wi-Fi feature) nodes it falls back to the **SSID** from `NetworkCommissioning` (MC `client.py:620-657`) | one node per call; **causes a device read** on an available node (§3.1, §5.1.3) | BR no; DS no; Path no (per-node reachability) |
-| `matter/ping_node` (:254-273) | none | core-ws | a per-IP ping result map | — | one node per call | **active ICMP to the device (J2)** |
+| `matter/ping_node` (:254-273) | none | core-ws | a per-IP ping result map | — | one node per call | **active ICMP to the device; excluded (§12, item 17)** |
 | `matter/commission`, `commission_on_network`, `set_thread`, `set_wifi_credentials`, `open_commissioning_window`, `remove_matter_fabric`, `interview_node` (:137-345) | admin | core-ws | — | `set_thread` carries a dataset; `set_wifi_credentials` carries a password | — | **writes and actions: forbidden** |
 
 Topology semantics, from MJ:504-524 and matterjs-server
@@ -440,24 +446,25 @@ This is a single, additive Engineering-native read profile.
   `core_thread_matter_topology_read_v1`. The existing `_contract` builder
   derives it as `capability_id.replace(".", "_") + "_v1"`
   (`ha_core_readmission/profiles.py:119`, inside `_contract` at `:109`).
-- Both names are proposals for the build contract. Whether a new signed
-  profile is approved at all is Josh's decision (J1).
+- Both names are proposals for the build contract. The profile itself is
+  approved with A1 + A2 only (Josh decision (in-session 2026-11-08), item 16).
 
 It sends only the exact commands below, with fixed arguments built by
-Engineering. No caller-supplied argument reaches Core except an optional
-`device_id` that has been validated against the device registry.
+Engineering. No caller-supplied argument reaches Core. (A4's registry-validated
+`device_id` would have been the only one; A4 is not in the first build.)
 
 | # | Exact Core message | Projection kept (under the default identifier policy, §5.1.2) | Dropped or rewritten | Proposed cap |
 |---|---|---|---|---|
 | A1 | `{"type": "thread/list_datasets"}` | `dataset_id`, `network_name` (Thread network name), `extended_pan_id`, `pan_id`, `channel`, `preferred`, `source`, `created`; `preferred_border_agent_id` and `preferred_extended_address` **rewritten to per-response opaque references** | nothing secret is present; reject the whole response if any key matching `tlv`, `network_key` or `pskc` appears | 16 datasets |
 | A2 | `{"type": "matter/network_topology", "refresh": false}` (the literal `false`; the caller cannot set it) | nodes: `id` (**rewritten**), `kind`, `network_type`, `role`, `available`, `is_bridge`, `rloc16`, `ext_pan_id`, `network_name` (**only** when `network_type == "thread"` and `kind != "wifi_ap"`), `vendor_name`, `model_name`, `node_id`, `ha_device_id` (nullable), `last_seen` (labelled as BR mDNS last-seen). connections: `source` and `target` (**rewritten** consistently with node ids), `network`, `strength`, `source_to_target{strength, lqi, rssi}`, `target_to_source{…}`, `via_route_table`, `path_cost`. top level: `collected_at`, relabelled `graph_assembled_at` (§5.1.4) | `ssid`, `bssid`, `host_name`, `ext_address`; every upstream graph id; `network_name` on Wi-Fi, Ethernet, unknown and `wifi_ap` nodes | 200 nodes, 800 connections, with truncation flags and totals as in HAMCP-129 |
-| A3 (optional, J1) | `{"type": "otbr/info"}` | for each router: `channel`, `extended_pan_id`; `extended_address` and `border_agent_id` **rewritten to opaque references** | **`active_dataset_tlvs`, `url`**, and any unknown key | 16 routers |
-| A4 (optional, J1) | `{"type": "matter/node_diagnostics", "device_id": <registry-validated id>}` | `network_type`, `node_type`, `available`, `network_name` (**only** when `network_type == "thread"`), `active_fabrics` (count only) | `ip_adresses`, `mac_address`, `active_fabric_index`, every fabric descriptor field; `network_name` for any non-Thread network type (it can be the Wi-Fi SSID) | 1 device per call |
+| A3 (**not in the first build**, item 16) | `{"type": "otbr/info"}` | for each router: `channel`, `extended_pan_id`; `extended_address` and `border_agent_id` **rewritten to opaque references** | **`active_dataset_tlvs`, `url`**, and any unknown key | 16 routers |
+| A4 (**not in the first build**, item 16) | `{"type": "matter/node_diagnostics", "device_id": <registry-validated id>}` | `network_type`, `node_type`, `available`, `network_name` (**only** when `network_type == "thread"`), `active_fabrics` (count only) | `ip_adresses`, `mac_address`, `active_fabric_index`, every fabric descriptor field; `network_name` for any non-Thread network type (it can be the Wi-Fi SSID) | 1 device per call |
 
 #### 5.1.1 What A1-A4 deliver, and what they do not
 
-- **Border routers (partial).** HA-run OTBRs come from A3. Other BRs (Apple,
-  Google, vendor) appear in A2 **only** when they are a Thread neighbour of a
+- **Border routers (partial).** A3 would have listed HA-run OTBRs; it is not
+  in the first build (§12, item 16), so every BR, HA-run or not (Apple,
+  Google, vendor), appears in A2 **only** when they are a Thread neighbour of a
   commissioned node and keep a graph edge (§4.4). A2 is **not** a complete
   inventory of discovered border routers. An isolated BR is invisible to
   A1-A4, and the output must say so (`coverage.border_routers:
@@ -468,7 +475,8 @@ Engineering. No caller-supplied argument reaches Core except an optional
   reports. This is per-link evidence. It is **not** an end-to-end forwarding
   path, and the tool must not present a route from a node to a BR as proven
   unless every hop is a reported link.
-- **Health.** A2 `available` and `role`, plus A4 per-node reachability.
+- **Health.** A2 `available` and `role`. (A4 per-node reachability is not in
+  the first build.)
 - **HA identity (nullable).** `ha_device_id` is `null` for every
   `border_router`, `thread_unknown` and `wifi_ap` node, and for a commissioned
   node with no registry match (§4.4). The tool keeps it `null`, with
@@ -494,8 +502,8 @@ Kept by default, as network-level rather than device- or radio-level
 identifiers: `ext_pan_id`/`extended_pan_id`, `pan_id`, `channel`, the Thread
 network name, `rloc16`, Matter `node_id` and `ha_device_id`. (The existing
 delegated `thread_network` section already returns `extended_address` and
-`border_agent_id` at the base. This proposal does not change that section;
-alignment is part of J3.)
+`border_agent_id` at the base. This proposal does not change that section.
+Whether to align it in a separate change is still pending Josh, §12.)
 
 Default rules, which apply to A1-A4 together:
 
@@ -508,11 +516,13 @@ Default rules, which apply to A1-A4 together:
 2. **One alias table across sections.** Engineering normalizes each
    identifier value (uppercase hex, separators removed) and keeps one table
    per response. A BR whose extended address appears in A2, A1
-   (`preferred_extended_address`) and A3 gets the **same** opaque reference
+   (`preferred_extended_address`) and, in a later change that adds it, A3
+   gets the **same** opaque reference
    everywhere, so "this OTBR is graph node `g7` and the preferred BR of
    dataset D" still resolves. A value with no graph node gets a fresh `x<k>`
-   reference. Border agent ids use their own `b<k>` references, linked to
-   the router's graph id when A3 provides both for one router.
+   reference. Border agent ids use their own `b<k>` references. (Linking a
+   `b<k>` to a graph id needed A3, which is not in the first build, so in
+   the first build a `b<k>` stands alone.)
 3. **No derived bytes.** References are counters, not hashes. Hashed MAC
    and EUI-64 values can be brute-forced over the vendor-prefix space.
    References are not stable across calls; stable handles are `node_id` and
@@ -528,9 +538,10 @@ Default rules, which apply to A1-A4 together:
 6. **Positive allowlist.** A field not listed in the A1-A4 table is never
    emitted. That includes unknown future fields.
 
-If Josh chooses to return some identifier classes (J3), the same alias table
-still applies: a returned class is returned consistently in every alias and
-section, and a dropped class is dropped from every alias and section.
+This default is the decided policy: opaque per-response ids for every LAN
+identifier class (Josh decision (in-session 2026-11-08), item 18). No class is
+returned raw. The A3 and A4 rows above stay as the record for a later,
+separately reviewed change; they are not first-build aliases.
 
 #### 5.1.3 Upstream activity behind each read (source-derived; disclosed, not observed)
 
@@ -540,8 +551,8 @@ fall into three classes:
 | Class | Meaning | Proposed reads in the class |
 |---|---|---|
 | **C: cached graph construction / Core state** | builds output from data Core or the Matter Server already holds | A1 (Core dataset store); A2's graph build from the attribute cache (no per-node table refresh, because `refresh` is fixed `false`) |
-| **L: LAN discovery and probing** | mDNS browsing, or HTTP to a LAN or host service; no Matter device read | **A2 may start it.** The Matter Server's handler calls `startBorderRouterDiscovery()` even with `refresh=false` (`WH:2220-2229`). If discovery has not already started (auto subscription disabled), this first call starts mDNS BR discovery plus REST probing of every BR found, and it then keeps running in the background (`MX:478-490`). **A3** makes local REST GETs from Core to HA's OTBR app (§4.2). Radio effects of those OTBR GETs were not traced into ot-br-posix and are unknown. |
-| **R: radio / device reads** | a Matter read interaction with a device | **A4.** For an available node, `get_matter_fabrics` refreshes `OperationalCredentials.Fabrics` on the device (`MC client.py:471-485`). Whether `get_node_ip_addresses(prefer_cache=True)` resolves on the LAN when uncached is unknown. |
+| **L: LAN discovery and probing** | mDNS browsing, or HTTP to a LAN or host service; no Matter device read | **A2 may start it.** The Matter Server's handler calls `startBorderRouterDiscovery()` even with `refresh=false` (`WH:2220-2229`). If discovery has not already started (auto subscription disabled), this first call starts mDNS BR discovery plus REST probing of every BR found, and it then keeps running in the background (`MX:478-490`). **A3** (not in the first build) would make local REST GETs from Core to HA's OTBR app (§4.2). Radio effects of those OTBR GETs were not traced into ot-br-posix and are unknown. |
+| **R: radio / device reads** | a Matter read interaction with a device | **A4** (not in the first build). For an available node, `get_matter_fabrics` refreshes `OperationalCredentials.Fabrics` on the device (`MC client.py:471-485`). Whether `get_node_ip_addresses(prefer_cache=True)` resolves on the LAN when uncached is unknown. |
 
 Excluded active operations (not in (a)): `refresh: true` (per-node table
 reads on every available node, class R), `thread/discover_routers`
@@ -550,10 +561,13 @@ reads on every available node, class R), `thread/discover_routers`
 discovery and a background refresh, §4.5).
 
 The tool output carries an `upstream_activity` list per section, with
-values `cached_graph`, `may_start_br_discovery`, `otbr_rest_get` and
-`device_read`, so a caller sees the class of each read. Whether A2's
-possible discovery start and A4's device read are acceptable is part of J1
-and J2.
+values `cached_graph` and `may_start_br_discovery` in the first build
+(`otbr_rest_get` and `device_read` belonged to A3 and A4, which are not in
+it), so a caller sees the class of each read. A2's possible discovery start
+is **accepted with this disclosure**, and none of `refresh: true`,
+`thread/discover_routers` or `matter/ping_node` is included
+(Josh decision (in-session 2026-11-08), item 17). The first build has no
+class R read.
 
 #### 5.1.4 Freshness
 
@@ -574,8 +588,8 @@ failure in one section does not hide the others.
 
 | Source condition | Reason |
 |---|---|
-| `otbr/info` returns `not_loaded` | `otbr_not_configured` |
-| `otbr/info` returns `otbr_info_failed` | `otbr_unreachable` |
+| `otbr/info` returns `not_loaded` | `otbr_not_configured` (A3 only; not in the first build) |
+| `otbr/info` returns `otbr_info_failed` | `otbr_unreachable` (A3 only; not in the first build) |
 | `matter/network_topology` returns `ERR_NOT_SUPPORTED` | `matter_server_schema_below_13` |
 | the Matter integration is not loaded | `matter_not_loaded` |
 | an admin refusal | `core_authority_refused` |
@@ -589,24 +603,26 @@ Explicitly **not** in (a), each fail-closed by an exact allowlist:
 
 - `thread/get_dataset_tlv`
 - every `thread/*`, `otbr/*` and `matter/*` write or action
-- `matter/network_topology` with `refresh: true` (J2)
+- `otbr/info` and `matter/node_diagnostics` (A3 and A4; not in the first
+  build, item 16)
+- `matter/network_topology` with `refresh: true` (item 17)
 - `matter/subscribe_network_topology`
-- `thread/discover_routers` (J2)
-- `matter/ping_node` (J2)
-- the diagnostics downloads (J4)
+- `thread/discover_routers` (item 17)
+- `matter/ping_node` (item 17)
+- the diagnostics downloads (item 19)
 
-### 5.2 (b) Needs a new provider boundary (decision for Josh)
+### 5.2 (b) Needs a new provider boundary (not in 2.6: Josh decision (in-session 2026-11-08), item 19)
 
 | Boundary | What it would add beyond (a) | Why it is a new boundary | Key risks |
 |---|---|---|---|
 | B1: direct Matter Server WebSocket (`get_thread_border_routers`, `get_thread_diagnostics`, `read_attribute` on 0x0035) | full-mesh Route64 router-to-router next hops, child tables, leader and partition data, MLE counters, raw neighbour and route tables | not reached through Core; a direct socket to an add-on on the Supervisor network | no authentication, and the same socket carries commissioning, node removal, credentials and camera commands, so Engineering would have to self-restrict a full-authority channel; collection triggers mesh traffic; the deployed schema is unknown |
 | B2: direct OTBR REST (`GET /api/node`; optionally `/api/diagnostics`) | partition ID, leader router, router count and role for HA-run OTBRs; mesh diagnostic TLVs (only after a `POST /api/actions`) | not reached through Core; a direct HTTP connection to an add-on | no authentication, and the same port serves factory reset, dataset writes and ephemeral-key issuance; diagnostics need a POST that changes OTBR state and causes radio traffic; `/node/dataset/active` returns the network key |
 
-Neither boundary is designed here. If Josh wants either one, it needs its own
-security architecture design. That design would cover the trust artifact,
+Neither boundary is designed here, and neither is in 2.6 (item 19). Any later
+proposal needs its own security architecture design. That design would cover the trust artifact,
 an exact endpoint and command allowlist, negative reachability, address
 pinning, and HAMCP-129-style projection. A Core signed profile cannot admit
-either boundary. See J4.
+either boundary.
 
 ### 5.3 (c) Not available
 
@@ -617,33 +633,32 @@ either boundary. See J4.
 | Routes inside other ecosystems (Apple or Google BR internals) | They are visible only where those devices are neighbours of HA-fabric nodes (`thread_unknown` or `border_router` nodes in A2). |
 | Historical topology | Topology is a point-in-time snapshot. The Matter Server caches about 1 h of diagnostics but keeps no history. |
 | Age of cached link and route data | `matter/network_topology` exposes only graph assembly time (§5.1.4). Observation age stays `unknown`. |
-| A complete inventory of discovered border routers through Core | A2 shows only BRs that are neighbours of commissioned nodes (§4.4). `thread/discover_routers` is an active stream and is excluded (J2). |
+| A complete inventory of discovered border routers through Core | A2 shows only BRs that are neighbours of commissioned nodes (§4.4). `thread/discover_routers` is an active stream and is excluded (item 17). |
 
-| Host-to-BR IPv6 route and neighbour data | Only Thread config-entry diagnostics provide it (§4.7). That path is excluded by the HAMCP-129 diagnostics policy (J4). |
-| The cause of HAAC-E009 | The upstream message is dropped at `upstream_platform_reads.py:497-502` (§3.3, J5). |
+| Host-to-BR IPv6 route and neighbour data | Only Thread config-entry diagnostics provide it (§4.7). That path is excluded by the HAMCP-129 diagnostics policy; no exception in 2.6 (item 19). |
+| The cause of HAAC-E009 | The upstream message is dropped at `upstream_platform_reads.py:497-502` (§3.3). Reason codes are a separate item (item 20). |
 | Deployed app versions and schema | Not knowable without live access. They must be established by an authorized read-only observation, not by this document. |
 
 ## 6. Public schema and tool-registration impact
 
 This investigation PR has **no impact**: it adds one document only.
 
-**Proposed tool shape (for the build contract; not a question).** If Josh
-approves (a) under J1, the build adds one Engineering-native read tool:
+**Proposed tool shape (for the build contract; not a question).** With (a)
+approved as A1 + A2 (Josh decision (in-session 2026-11-08), item 16), the build
+adds one Engineering-native read tool:
 
 - Name: `get_thread_matter_topology`.
 - Input (closed, `additionalProperties: false`):
-  - `sections`: optional array of the enum `datasets` (A1), `topology` (A2),
-    `border_routers` (A3), `node` (A4), limited to the subset Josh approves.
-    Default: every approved section except `node`.
-  - `device_id`: string, required if and only if `node` is requested;
-    validated against the device registry before dispatch. No other input
-    exists. In particular, there is no `refresh` input.
+  - `sections`: optional array of the enum `datasets` (A1) and `topology`
+    (A2). Default: both. No other input exists. In particular, there is no
+    `refresh` input and no `device_id` input (A3 `border_routers` and A4
+    `node` are not in the first build).
 - Output: one object per requested section, each with `status` (`ok` or
   the typed reason of §5.1.5), `items` (or `nodes` and `connections`),
   `total`, `truncated` and `upstream_activity` (§5.1.3). `topology` also has
   `graph_assembled_at`, `observation_age: "unknown"`,
   `connections_dropped_unresolved` and `coverage`. The top level has
-  `identifier_policy: "opaque_per_response_v1"` (or the policy J3 selects).
+  `identifier_policy: "opaque_per_response_v1"` (the decided policy, item 18).
 - Count: the static tool count rises by one (81 → 82 at this document's
   base; connector total 109 → 110). The build recomputes both counts against
   the actual 2.6.0 base, because other 2.6 work also adds tools.
@@ -656,8 +671,8 @@ The surfaces it would touch are all security-sensitive:
 - redaction
 - audit
 
-The delegated `ha_get_system_health` `thread_network` section would stay as it
-is unless J5 brings richer reason codes into scope.
+The delegated `ha_get_system_health` `thread_network` section stays as it is.
+Richer reason codes for it are a separate item (item 20).
 
 ## 7. Signing impact
 
@@ -666,7 +681,7 @@ only**, **one combined 2.6 signing**.
 
 | `capability_id` / `profile_id` | New or changed | Core commands / contract added | Why | Fingerprint impact | Signing |
 |---|---|---|---|---|---|
-| `core.thread_matter_topology_read` / `core_thread_matter_topology_read_v1` (proposed) | **New, additive** | `thread/list_datasets`; `matter/network_topology` with `refresh=false` fixed; and, only if approved under J1, `otbr/info` (projected) and `matter/node_diagnostics` (one validated `device_id`). The contract also carries the projection allowlists, the identifier policy and alias rewrite (§5.1.2), the activity classes (§5.1.3), caps, typed unavailable reasons, `never_sent` list and `principal_origin: existing_configured_authenticated_origin_only` (the `integration_inspection/contracts.py:78-89` pattern). All of this is fixed before the evidence and fingerprint freeze. | the only way Engineering-native code may issue these admin-only commands; the outcome needs border-router, dataset and link data that no existing profile covers | a new capability fingerprint over the exact command list, response contract and `never_sent`; **no existing profile's fingerprint changes** | a capability reference appended to the existing reviewed Core 2026.11.0 entry (`ha-core-2026.11.0-reviewed-v1`, `74cf5a49`) in the **single combined 2.6 `extend-capabilities` signing**, together with every other approved 2.6 profile. No other Core version. No separate or phased signing. |
+| `core.thread_matter_topology_read` / `core_thread_matter_topology_read_v1` (proposed) | **New, additive** | `thread/list_datasets`; `matter/network_topology` with `refresh=false` fixed. Nothing else: `otbr/info` and `matter/node_diagnostics` are not in the first build (Josh decision (in-session 2026-11-08), item 16) and are in the contract's `never_sent`. The contract also carries the projection allowlists, the identifier policy and alias rewrite (§5.1.2), the activity classes (§5.1.3), caps, typed unavailable reasons, `never_sent` list and `principal_origin: existing_configured_authenticated_origin_only` (the `integration_inspection/contracts.py:78-89` pattern). All of this is fixed before the evidence and fingerprint freeze. | the only way Engineering-native code may issue these admin-only commands; the outcome needs border-router, dataset and link data that no existing profile covers | a new capability fingerprint over the exact command list, response contract and `never_sent`; **no existing profile's fingerprint changes** | a capability reference appended to the existing reviewed Core 2026.11.0 entry (`ha-core-2026.11.0-reviewed-v1`, `74cf5a49`) in the **single combined 2.6 `extend-capabilities` signing**, together with every other approved 2.6 profile. No other Core version. No separate or phased signing. |
 | `core.basic_websocket_read` and all other existing profiles | Unchanged | — | (a) uses a dedicated profile and does not widen the generic read | none (byte-identical) | existing references preserved exactly, in order |
 
 How the existing journal tool constrains this (`scripts/prepare_core_release_registry.py`
@@ -687,18 +702,19 @@ at the base):
 
 The boundaries in (b) have **no** Core profile. The signed Core registry
 does not cover add-on endpoints. B1 or B2 would need a new kind of trust
-artifact (J4).
+artifact; neither is in 2.6 (item 19).
 
 ## 8. Negative reachability and refusal (for a future build)
 
 A build of (a) must prove each of the following:
 
-1. **Exact allowlist.** The profile can emit only the approved subset of
-   A1-A4 (J1), byte-for-byte.
+1. **Exact allowlist.** The profile can emit only A1 and A2 (item 16),
+   byte-for-byte.
    A table test feeds every other `thread/*`, `otbr/*` and `matter/*` command
    name found in the pinned Core source (§4) and expects refusal before
    dispatch with no WebSocket send. Those commands are:
    - `get_dataset_tlv`
+   - `otbr/info` and `node_diagnostics` (A3 and A4, item 16)
    - `discover_routers`
    - `subscribe_network_topology`
    - `ping_node`
@@ -706,29 +722,32 @@ A build of (a) must prove each of the following:
 2. **`refresh` is pinned.** The caller cannot set `refresh`. A test sends
    `refresh: true` through every input path and expects refusal or
    no effect. The dispatched message is asserted to be the literal `false`.
-3. **Secret canaries.** Fixtures add these canaries:
-   - `active_dataset_tlvs` (in the A3 response)
+3. **Secret canaries.** Fixtures add these canaries to the A1 and A2
+   responses:
    - `networkKey` and `pskc` keys
    - TLV-shaped hex in unexpected fields
 
    The test asserts that none of them appears in tool output, audit records,
-   logs or error text. Any unknown key fails closed.
+   logs or error text. Any unknown key fails closed. It also asserts that
+   `otbr/info` (whose response carries `active_dataset_tlvs`) and
+   `thread/get_dataset_tlv` are never dispatched.
 4. **Identifier canaries across aliases (§5.1.2).** Fixtures use synthetic
    canaries: a BSSID (`AA:BB:CC:DD:EE:FF`, which upstream also emits as
    `ap_AABBCCDDEEFF` and as a `wifi_ap` `network_name`), Thread extended
    addresses or EUI-64 values (in `ext_address`, `br_<XA>`,
-   `unknown_<EXTADDR>`, A1 `preferred_extended_address` and A3 map keys), a
-   border agent id, a Wi-Fi SSID (in A2 `ssid` and A4 Wi-Fi
-   `network_name`), an IP address, a MAC address and a hostname. The test
+   `unknown_<EXTADDR>` and A1 `preferred_extended_address`), a border agent
+   id (A1 `preferred_border_agent_id`), a Wi-Fi SSID (A2 `ssid`), a
+   hostname (A2 `host_name`), and an IP address and a MAC address placed in
+   unknown fields. The test
    searches tool output, audit records, logs and error text for each canary
    in upper case, lower case, with and without separators, and expects no
    match. In the same run, every emitted connection `source` and `target`
    resolves to an emitted node id, the edge count equals the upstream edge
-   count minus `connections_dropped_unresolved`, and a BR seen in A1, A2 and
-   A3 carries one shared opaque reference. If J3 returns some classes, the
-   test instead proves each class is returned consistently in every alias.
-5. **Network name by type.** An A4 Wi-Fi node with an SSID-valued
-   `network_name`, and an A2 `wifi_ap` node, both return
+   count minus `connections_dropped_unresolved`, and a BR seen in A1 and A2
+   carries one shared opaque reference. No identifier class is returned raw
+   (item 18).
+5. **Network name by type.** An A2 Wi-Fi station node and an A2 `wifi_ap`
+   node whose `network_name` carries a BSSID-like value both return
    `network_name_withheld: true`. A Thread node keeps its network name.
 6. **Activity (§5.1.3).** Against the exact-version Matter Server
    (matterjs-server `a7922e85`, or the version the build pins) in a
@@ -738,11 +757,12 @@ A build of (a) must prove each of the following:
      read is sent;
    - the same call with thread diagnostics disabled: assert no discovery
      start;
-   - A4 against an available node: record the attribute reads actually sent
-     (expected: the `OperationalCredentials.Fabrics` refresh) and assert
-     nothing else; against an unavailable node: assert no device read;
-   - for B1 evidence only, if J4 ever opens it: no-argument
-     `get_thread_diagnostics` starts discovery and a background refresh.
+   - across a full tool call: assert that no device read is sent (no
+     `matter/node_diagnostics`, no `ping_node`, no `refresh: true`, no
+     `discover_routers`; the first build has no class R read, item 17);
+   - the `topology` section reports `upstream_activity` with
+     `may_start_br_discovery` (accepted with disclosure, item 17) and the
+     `datasets` section reports `cached_graph`.
 
    Each test asserts and reports the actual sends. None of them requires or
    authorizes running against a household system.
@@ -752,20 +772,29 @@ A build of (a) must prove each of the following:
    are current.
 8. **Bounds.** A response one item over each cap is truncated with
    `truncated=true` and accurate totals. Oversized strings are capped.
-9. **Typed failure.** `not_loaded`, `otbr_info_failed`, `ERR_NOT_SUPPORTED`,
-   an admin refusal and a malformed payload each map to their typed reason.
+9. **Typed failure.** `ERR_NOT_SUPPORTED`, the Matter integration not
+   loaded, an admin refusal and a malformed payload each map to their typed
+   reason. (The `otbr/info` reasons apply only to A3, which is not in the
+   first build.)
    A failure in one source does not hide the other sources (partial result,
    no fallback).
-10. **No fallback.** An unavailable profile or registry refuses the tool. It
-    never falls back to ha-mcp, direct REST, or an add-on address.
+10. **No fallback and nothing beyond Core.** An unavailable profile or
+    registry refuses the tool. It never falls back to ha-mcp, direct REST,
+    or an add-on address, and no tool path opens a connection to the Matter
+    Server or OTBR app directly (B1 and B2 are not in 2.6, item 19).
 11. **`node_diagnostics` passthrough.** Before or with the build, add a
     regression test that pins how the delegated `ha_get_device` output treats
     ha-mcp's `node_diagnostics` sub-object (§3.1 gap).
+12. **Delegated section unchanged (item 20).** The delegated
+    `ha_get_system_health` `thread_network` section output is unchanged by
+    the build (same fixture, before and after); reason codes are not added
+    there by HAMCP-231.
 
 ## 9. Acceptance (for a future build)
 
 - **Useful success.** Use a fixture home that contains:
-  - an HA OTBR (A3) that is also a Thread neighbour of a commissioned node;
+  - an HA OTBR that is a Thread neighbour of a commissioned node and is the
+    preferred BR of an A1 dataset;
   - a non-HA border router (for example an Apple BR) that is a neighbour of
     a commissioned node, so it appears in A2;
   - an **isolated discovered BR** that is not a neighbour of any
@@ -776,9 +805,9 @@ A build of (a) must prove each of the following:
   - valid commissioned Thread links with `path_cost`, `via_route_table` and
     LQI.
 
-  The tool returns non-secret dataset identities (A1), the HA OTBR (A3) and
-  the neighbouring non-HA BR (A2) under one shared opaque reference where
-  they match, nodes with role and availability, and links with
+  The tool returns non-secret dataset identities (A1), the HA OTBR and the
+  neighbouring non-HA BR as A2 border-router nodes, the HA OTBR under one
+  shared opaque reference with its A1 preferred-BR value, nodes with role and availability, and links with
   `path_cost`, `via_route_table`, LQI and RSSI whose endpoints all resolve.
   It also states its limits truthfully:
   - the isolated BR is absent, and `coverage.border_routers` says A2 lists
@@ -795,8 +824,9 @@ A build of (a) must prove each of the following:
 - **Privacy.** The canary test of §8 item 4 passes on the same fixture.
 - **Refusal.** Every non-allowlisted command and `refresh: true` is refused
   before dispatch (§8).
-- **Failure preservation.** A home with only Apple BRs gets
-  `otbr_not_configured` together with the A1 and A2 data. A Matter Server
+- **Failure preservation.** A home with only Apple BRs still gets the A1
+  and A2 data, with no OTBR-specific failure (A3 is not in the first build).
+  A Matter Server
   below schema 13 gets `matter_server_schema_below_13`. Neither is a generic
   `section_unavailable`.
 - **Verification.** This is a read only, so there is no readback.
@@ -804,7 +834,8 @@ A build of (a) must prove each of the following:
   `observation_age` is `"unknown"` (§5.1.4). The tool does not claim a
   current outage or route change from that timestamp.
 - **Activity disclosure.** Each section reports its `upstream_activity`
-  class, and §8 item 6 evidence matches it.
+  class, and §8 item 6 evidence matches it. The first-build output never
+  reports a class R read.
 - **Recovery.** A failed read is reported and never re-dispatched. Retry is
   the caller's choice.
 - **Exact-Core evidence.** Profile admission follows the existing
@@ -818,11 +849,11 @@ A build of (a) must prove each of the following:
   - the `active_dataset_tlvs` field of `otbr/info`
   - OTBR `GET /node/dataset/active`
 
-  The first and third are never called. `otbr/info` puts the credential
-  into Engineering memory even when it is projected away. J1 decides whether
-  to accept that, with first-parse dropping and never logging, or to exclude
-  A3.
-- **Authority.** Every proposed Core command except A4 is `require_admin`.
+  None of the three is called in the first build. `otbr/info` would put the
+  credential into Engineering memory even when projected away; A3 is
+  excluded (Josh decision (in-session 2026-11-08), item 16), so no
+  credential-bearing response is read.
+- **Authority.** Both first-build Core commands (A1, A2) are `require_admin`.
   They run under the existing configured authenticated origin, so the build
   adds no new credential. Whether that origin's principal is an admin at
   runtime is not established from source, and is one of the candidate causes
@@ -832,27 +863,27 @@ A build of (a) must prove each of the following:
   - `refresh=false` prevents the per-node table-refresh fan-out. It does not
     make A2 passive: the call may start Matter Server BR discovery and REST
     probing if discovery is not already running.
-  - A4 performs a device read (the Fabrics refresh) on an available node.
-  - A3 makes REST GETs from Core to HA's OTBR app.
+  - A4's device read (the Fabrics refresh) and A3's REST GETs to HA's OTBR
+    app do not occur: neither read is in the first build.
   - `thread/discover_routers` (mDNS queries), `matter/ping_node` (ICMP) and
-    `refresh=true` (mesh-wide reads) are active and stay excluded unless
-    Josh decides otherwise (J2).
+    `refresh=true` (mesh-wide reads) are active and are excluded (item 17).
+    A2's possible discovery start is accepted with disclosure (item 17).
 - **New provider boundaries.** B1 and B2 are unauthenticated, full-authority
   add-on endpoints. Adding either one is a security architecture change
   under root AGENTS.md: it needs explicit scope, negative tests and focused
-  review (J4).
+  review. Neither is in 2.6 (item 19).
 - **Identifiers.** IP addresses, MAC and EUI-64 addresses, extended
   addresses, border agent ids, hostnames, SSID and BSSID, and fabric
   descriptors describe the household network. They are not secrets. They
   also hide in graph ids, connection endpoints and `network_name` aliases.
-  The default policy drops them and rewrites ids (§5.1.2); the policy choice
-  is J3.
+  The decided policy drops them and rewrites ids to opaque per-response
+  references (§5.1.2; item 18).
 
 ## 11. Build plan (conditional; nothing is approved)
 
-1. Josh decides J1-J5 (§12). Release placement (2.6.0), the additive rule,
-   the Core 2026.11.0 target and the single combined signing are already
-   settled (§1).
+1. J1-J5 are decided (Josh decision (in-session 2026-11-08), items 16-20; §12).
+   Release placement (2.6.0), the additive rule, the Core 2026.11.0 target
+   and the single combined signing were already settled (§1).
 2. **PR 1, profile and contract.** Add the new profile and contract in
    `ha_core_readmission/profiles.py` and a contract module, with the tests in
    §8 and the exact-Core 2026.11.0 evidence. This touches a protected path,
@@ -892,43 +923,51 @@ A build of (a) must prove each of the following:
    (absent or refused, fail closed) while the other approved capabilities
    behave as the selected option says. No persisted state is added.
 
-## 12. Open choices — pending Josh
+## 12. Decided choices (J1-J5)
 
-Already settled and not asked again (§1): release 2.6.0; additive profiles;
-Core 2026.11.0 only; one combined 2.6 signing. The public tool shape is
-proposed concretely in §6 and is part of the build contract, not a
-question. The earlier Q1-Q12 list is replaced by these five choices.
+Already settled before these decisions (§1): release 2.6.0; additive
+profiles; Core 2026.11.0 only; one combined 2.6 signing. The public tool
+shape is proposed concretely in §6 and is part of the build contract. J1-J5
+are now decided:
 
-1. **J1, initial read subset.** Approve the new signed Core read profile,
-   and with which of A1-A4?
-   - A1 + A2 only (no credential-bearing response, no device read; A2 may
-     still start BR discovery, see J2);
-   - A1 + A2 + A3 (adds HA-run OTBR identity, but the raw `otbr/info`
-     response carries the active dataset TLV, with network key and PSKc,
-     into Engineering before projection);
-   - A1 + A2 + A4 (adds per-node reachability, at the cost of one device
-     read per call on an available node);
-   - all of A1-A4.
-2. **J2, active discovery, refresh and ping.** A2 can start Matter Server
-   BR discovery and REST probing if it is not already running; this cannot
-   be suppressed through Core. Accept that with disclosure, or withhold A2?
-   Separately, include any of `thread/discover_routers` (bounded mDNS
-   window), `refresh: true` (mesh-wide reads, for example owner-initiated
-   only) or `matter/ping_node` (ICMP)? The default proposal excludes all
-   three.
-3. **J3, LAN-identifier policy across all aliases.** Drop every LAN
-   identifier with opaque per-response ids (the default, §5.1.2); return
-   selected classes (for example Thread extended addresses and border agent
-   ids, which the delegated `thread_network` section already returns) in
-   every alias consistently; or return all. Also: should the delegated
-   section be aligned with the chosen policy (a separate change)?
-4. **J4, beyond Core.** Authorize design of a direct Matter Server provider
-   (B1), a direct OTBR REST provider (B2), a domain-scoped exception to the
-   HAMCP-129 diagnostics exclusion for Thread config-entry diagnostics, or
-   none of these? Each would be a separately designed security boundary.
-5. **J5, HAAC-E009 reasons.** Bring bounded reason codes for the delegated
-   `thread_network` section (instead of `section_unavailable`) into
-   HAMCP-231, track them as a separate item, or leave them out?
+1. **J1, initial read subset. Decided: A1 + A2.** Josh decision (in-session 2026-11-08),
+   item 16. The new signed Core read profile is approved for the build
+   contract with `thread/list_datasets` and `matter/network_topology`
+   (`refresh` fixed `false`) only. A3 (`otbr/info`, which carries the active
+   dataset TLV into Engineering) and A4 (`matter/node_diagnostics`, a device
+   read) are not in the first build. Sections: status, §1, §4.2, §5.1
+   (table, §5.1.2, §5.1.3, §5.1.5, §5.1.6), §6, §7, §8 items 1, 3-6, §9,
+   §10.
+2. **J2, active effects. Decided: accept A2's possible BR discovery start
+   with disclosure; none of `refresh: true`, `thread/discover_routers` or
+   `matter/ping_node`.** Josh decision (in-session 2026-11-08), item 17. Sections:
+   §4.4 table, §5.1.3, §5.1.6, §5.3, §8 item 6, §9, §10.
+3. **J3, LAN identifiers. Decided: (a) opaque per-response ids** for every
+   identifier class and alias (§5.1.2). Josh decision (in-session 2026-11-08),
+   item 18. Sections: §5.1.2, §6, §8 item 4, §10.
+4. **J4, beyond Core. Decided: nothing beyond Core in 2.6.** No B1 Matter
+   Server provider, no B2 OTBR REST provider, and no Thread diagnostics
+   exception to the HAMCP-129 policy. Josh decision (in-session 2026-11-08),
+   item 19. Sections: §5.1.6, §5.2, §5.3, §7, §8 items 6 and 10, §10.
+5. **J5, HAAC-E009 richer reasons. Decided: a separate item.**
+   Josh decision (in-session 2026-11-08), item 20. The delegated `thread_network`
+   section is unchanged by HAMCP-231. The separate register item is to be
+   created by the orchestrator; it has no ID at this revision. Sections:
+   status, §3.3, §5.3, §6, §8 item 12.
+
+**Still pending Josh (does not block 2.6).** J3's sub-question was not part
+of the decided recommendation: whether the delegated `thread_network`
+section, which already returns `extended_address` and `border_agent_id` at
+the base, should later be aligned with the opaque-id policy in a separate
+change. HAMCP-231 does not change that section either way.
+
+**Superseded (historical).** The previous revision (head `8917c19a`) offered
+A1 + A2 + A3, A1 + A2 + A4 or all of A1-A4 (J1); withholding A2, an
+owner-triggered refresh, or all three active operations (J2); returning
+selected or all identifier classes (J3); B1, B2 or a diagnostics exception
+(J4); and bringing reason codes into HAMCP-231 or leaving them out (J5).
+None of these is a live choice. The A3 and A4 analysis in §4 and §5.1 stays
+as the record for a possible later, separately reviewed additive change.
 
 ## 13. Codex design review 2026-11-08 — disposition
 
@@ -948,3 +987,25 @@ the verified Core 2026.11.0 archive (SHA-256
 
 Proving tests named here are requirements for future build evidence. None of
 them was run for this document.
+
+## 14. Josh decisions 2026-11-08 — disposition
+
+Josh answered J1-J5 in-session on 2026-11-08 (choices file items 16-20).
+Each is recorded as "Josh decision (in-session 2026-11-08), item N".
+
+| Item | Decision | Sections changed |
+|---|---|---|
+| 16 (J1) | A1 + A2 only; profile approved for the build contract | status; §1 consequences; §4.2 note; §5.1 table (A3, A4 marked not in the first build), §5.1.2 rule 2 (`b<k>` standalone), §5.1.5 (OTBR reasons A3-only), §5.1.6 (A3/A4 excluded); §6 (input `datasets`/`topology` only, no `device_id`); §7 (command list, A3/A4 in `never_sent`); §8 items 1, 3, 4, 5; §9 (fixture and failure preservation without A3); §10 (no credential-bearing response, authority) |
+| 17 (J2) | Accept A2 discovery with disclosure; no refresh, discover or ping | §4.4 table (ping excluded); §5.1.3 (accepted with disclosure; no class R read); §5.1.6; §5.3; §8 item 6 (no device read; disclosure asserted); §9 activity disclosure; §10 |
+| 18 (J3) | (a) opaque per-response ids | §5.1.2 (default is the decided policy; delegated-section alignment pending Josh); §6 `identifier_policy`; §8 item 4 (no class returned raw); §10 |
+| 19 (J4) | Nothing beyond Core in 2.6 | §5.1.6; §5.2 (heading and text); §5.3; §7; §8 items 6 and 10 (B1 case removed; no direct add-on connection); §10 |
+| 20 (J5) | HAAC-E009 richer reasons is a separate item | status; §3.3; §5.3; §6; §8 item 12 (delegated section unchanged) |
+
+**Effect on the Codex corrections (§13).** Findings 3, 5 and 6 are
+unchanged. Finding 1's identifier policy is now the decided policy; the A3
+and A4 alias rows stay as record, but the canary test (§8 item 4) now covers
+the A1 and A2 aliases only. Finding 2's activity classes stay, but the first
+build has no class R read and no OTBR REST GET, so §8 item 6 asserts their
+absence instead of recording A4 reads. Finding 4's coverage limits stay;
+without A3, HA-run OTBRs appear only as A2 border-router neighbours, which
+the existing `coverage.border_routers` statement already covers.
