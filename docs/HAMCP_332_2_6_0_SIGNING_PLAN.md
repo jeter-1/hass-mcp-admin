@@ -48,6 +48,21 @@ and fingerprints stay unknown until the reviewed implementation is on
   only change under `ha_core_readmission/` is five lines in `routes.py`
   (HAMCP-229 maps one static tool to two existing profiles; no profile
   changes). Script line numbers below hold at both revisions.
+- Refreshed 2026-11-08 after #410 merged `release/2.5.0` (`62008070`) into
+  `release/2.6.0`: the integration head is now
+  `7038aaea275d0347d7dc15e649534b3926edb993`. `1c4c32b3..7038aaea` brings in
+  only HAMCP-319's exact-image admission lanes and rollback probe (#404,
+  #405). These change `ci.yml`, `ci/support-window.yaml` (a new `admission`
+  block for ha-mcp 8.5.0/9.1.0; the Core current and candidate slots are
+  unchanged), `scripts/exact_image_admission_lanes.py`,
+  `scripts/support_window.py`, tests and docs. The signing, selection and
+  evidence paths cited here have an empty diff over that range:
+  `scripts/prepare_core_release_registry.py`,
+  `scripts/core_registry_one_tap.py`, `scripts/core_release_evidence.py`,
+  `.github/workflows/core-release-registry-publish.yml`,
+  `ha_core_readmission/`, `ci/core-evidence-groups.json` and
+  `ci/core-contract-read-files.json`. So every C1-C12 citation and line
+  number holds at `7038aaea`. HAMCP-290 is not in `7038aaea`.
 - Canonical journal: `origin/registry` at
   `e486028ed0b06b8a5a737824c829705b403b34d8`, sequence 17.
 - Authored 2026-11-07; corrected 2026-11-08 after the Codex design review
@@ -441,7 +456,7 @@ expiry. Every positive signing, `extend-capabilities` included, writes a new
 sequence whose `expires_at` is its `generated_at` plus 90 days
 (`prepare_core_release_registry.py:247-248`, checked at `:322-323`), so the
 cutoff signing also renews the authority. This is source behavior at
-`1c4c32b3`.
+`1c4c32b3`, unchanged at `7038aaea`.
 
 - **Nothing frozen at the cutoff.** An extension must append at least one
   reference (`:189-191`), so it cannot serve as the renewal. The plan reads
@@ -460,7 +475,9 @@ cutoff signing also renews the authority. This is source behavior at
 ## 6. Interaction with 2.5.0 and automated releases
 
 - **HAMCP-319 (#385)** adds no Core signing. Its only overlap is the shared
-  `main` that C4 and C5 sign from.
+  `main` that C4 and C5 sign from. Its admission lanes (#404, #405, now in
+  `release/2.6.0` at `7038aaea`) gate ha-mcp images, not Core profiles. They
+  are not G4 lane evidence for any N row.
 - **HAMCP-290** is separately reviewed 2.5 scope. It is **not** pulled into
   this 2.6 batch. If it is signed first, its references are part of the
   predecessor the 2.6 extension preserves (G7). Its contract is unknown here.
