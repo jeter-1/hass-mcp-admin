@@ -78,13 +78,6 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
     "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
 }
-# HAMCP-319 (Josh decision relayed by the architect, 2026-11-07): on these
-# releases every upstream tool Engineering dispatches must match its reviewed
-# release descriptor exactly under the release's runtime model (name, title,
-# description, inputSchema, outputSchema, annotations and _meta; only the four
-# dynamic _meta.ha_mcp.policy values are projected to validity by the v2
-# model). Older releases keep their previously reviewed admission rules.
-EXACT_USED_TOOL_RELEASES = frozenset({"8.5.0", "9.1.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )

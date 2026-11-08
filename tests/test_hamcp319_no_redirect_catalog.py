@@ -454,12 +454,14 @@ class OrderAcrossPagesTests(unittest.TestCase):
                 "input_schema": runtime,
                 "title": runtime,
             },
-            # 8.5.0 has no title rule (today's behavior, kept).
+            # 8.5.0's dashboard profile has no title rule; since HAMCP-319's
+            # exact used-tool admission (2026-11-07) the whole-descriptor
+            # release runtime contract refuses it instead of admitting it.
             "8.5.0": {
                 "description": runtime,
                 "read_only": security,
                 "input_schema": "upstream_input_contract_mismatch",
-                "title": None,
+                "title": runtime,
             },
         }
         mutations = {

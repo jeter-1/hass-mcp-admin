@@ -49,7 +49,6 @@ from ..sanitization import (
 )
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
-    EXACT_USED_TOOL_RELEASES,
     RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
     load_reviewed_upstream_release_registry,
     runtime_contract_fingerprint,
@@ -114,6 +113,10 @@ DASHBOARD_WRITE_DEPENDENCIES = (
     REQUIRED_BEST_PRACTICES_TOOL,
     REQUIRED_DASHBOARD_WRITE_TOOL,
 )
+# HAMCP-319: releases on which the getter read path also requires the getter's
+# whole descriptor to equal its reviewed release runtime contract. Older
+# releases keep their previously reviewed read-path admission.
+EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0"})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
         "ha_config_set_dashboard",
@@ -1393,14 +1396,6 @@ class UpstreamDashboardProvider:
                                 model=release_runtime_model,
                             )
                         )
-            # HAMCP-319: the dashboard getter is a used tool, so on exact
-            # releases its whole descriptor must match the reviewed release
-            # contract before any read is dispatched.
-            if handshake.server_version in EXACT_USED_TOOL_RELEASES and (
-                expected_release_runtime is None
-                or observed_release_runtime != expected_release_runtime
-            ):
-                raise ValueError("exact used tool descriptor mismatch")
         except (TypeError, ValueError, OverflowError):
             with self._lock:
                 self._state.required_schema_compatible = False
@@ -1502,6 +1497,17 @@ class UpstreamDashboardProvider:
             if not admission.accepted:
                 raise DashboardTransportError(
                     admission.failure_category or "internal_error"
+                )
+            # HAMCP-319: the getter is a used tool. On exact releases its whole
+            # descriptor must also match the reviewed release contract (the
+            # 8.5.0 profile has no title or annotation-hint rule) before any
+            # read is dispatched. Specific admission categories above win.
+            if handshake.server_version in EXACT_GETTER_RELEASES and (
+                expected_release_runtime is None
+                or observed_release_runtime != expected_release_runtime
+            ):
+                raise DashboardTransportError(
+                    "upstream_runtime_contract_mismatch"
                 )
             decision = DashboardTrustDecision(
                 mode=TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
