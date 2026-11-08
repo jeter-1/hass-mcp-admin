@@ -203,3 +203,47 @@ omission is not processing truncation. Cursor pages freeze the same bounded
 lifecycle object without recollection. The existing foundational trace-failure
 gate remains unchanged; static hazards cannot bypass it. Neither these findings
 nor startup syntax establish actual execution, failure or durable recovery.
+
+## Bounded batch analysis (HAMCP-229)
+
+`automation_reliability_batch_analysis` covers a set of automations in one read-only call
+(audit HAAC-E005 needed 113 separate calls). The batch reuses this single-item analysis for
+every item through the same reviewed reliability provider. It adds no Core command,
+provider, fallback, or write path.
+
+- `automation_ids`: 1-20 internal automation IDs, the same grammar as `automation_id`.
+  A dotted `automation.*` entity ID, a non-string, more than 20 entries (before
+  de-duplication), or an empty list refuses the whole request before any read.
+  Duplicates collapse to their first occurrence and are listed in
+  `request.duplicates_removed`.
+- `lookback_hours` defaults to 168 and is bounded to 1-720. `trace_limit` defaults to 5
+  and is bounded to 1-10 per item.
+- The raw arguments are checked before the MCP SDK validates or coerces them: an
+  unknown or missing argument name, a boolean, numeric string or float bound, or any
+  value refused above returns the tool's own `invalid_request` failure naming only a
+  fixed field, reason, bounds or offending indexes. A supplied value or unknown name
+  is never echoed, and no service or provider call is made.
+- At most two items run at once, and all items share one analysis instant. The batch has
+  one 45-second budget. An item is not started with less than 5 seconds left; it is
+  reported `skipped_budget` with reason `time_budget`. A started item that the budget
+  cuts is reported `failed` with reason `time_budget_exceeded`.
+- One failed item does not abort the others. Failure reasons are
+  `automation_not_found`, `provider_timeout`, `analysis_unavailable`,
+  `time_budget_exceeded`, and `internal_error`.
+- Each analyzed item is a digest: target, overall assessment, result status, finding
+  counts by severity, unique root-cause count, at most three root-cause summaries,
+  lifecycle hazard and coverage flags, per-source completeness, and the configuration and
+  evidence fingerprints. Call `automation_reliability_analysis` for an item's findings
+  and evidence (`drill_down`).
+- The response stays under 60,000 characters. When the digests do not fit, the items
+  that do not fit are reported `skipped_budget` with reason `output_budget`. Every
+  requested ID appears exactly once in `items`.
+- `batch_result_status` is `success` only when every item is analyzed with complete
+  evidence. It is `failed` when no item is analyzed, and `partial` otherwise.
+  `coverage.remaining_automation_ids` lists, in request order, the budget-skipped and
+  budget-cut IDs. Resubmitting them is stateless; no batch cursor is stored.
+- Only one batch runs at a time in a process. A concurrent request is refused with the
+  retryable `rate_limit_exceeded` code before any read.
+
+These bounds and the explicit-ID selector are implementation defaults, pending Josh. The
+batch has no query or "tier" selector.

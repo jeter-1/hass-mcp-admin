@@ -393,6 +393,15 @@ restart, deletion, physical-action, or destructive permission. The handler canno
 transport clients directly. Audit records contain input bounds and the automation ID,
 not configuration, trace, log, finding, or evidence payloads.
 
+HAMCP-229 `automation_reliability_batch_analysis` uses the engineering-native
+`bounded_automation_set_reliability_read` policy: at most 20 explicit automation IDs,
+each read under the `single_automation_reliability_read` bounds through the same
+provider, within one 45-second budget. It grants the same nothing: no write, service
+call, trigger, reload, restart, deletion, fallback, or direct transport access. The
+final response is screened as a whole, and any withheld value makes the batch partial.
+Its raw arguments pass a closed, non-echoing check before MCP SDK validation or
+coercion, so an invalid value or unknown argument name is refused without reflection.
+
 ## Standard Home Assistant MCP
 
 Home Assistant documents a stateless Streamable HTTP MCP endpoint at `/api/mcp`. From

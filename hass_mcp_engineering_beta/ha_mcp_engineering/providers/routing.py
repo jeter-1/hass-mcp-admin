@@ -221,6 +221,8 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "rollback_change": ProviderCapability.GOVERNED_ROLLBACK,
     "entity_dependency_analysis": ProviderCapability.DEPENDENCY_ANALYSIS,
     "automation_reliability_analysis": ProviderCapability.RELIABILITY_ANALYSIS,
+    # HAMCP-229: the same reviewed reliability provider, repeated per item.
+    "automation_reliability_batch_analysis": ProviderCapability.RELIABILITY_ANALYSIS,
     "change_impact_analysis": ProviderCapability.IMPACT_ANALYSIS,
     "configuration_integrity_analysis": ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
     "incident_correlation": ProviderCapability.INCIDENT_CORRELATION,
@@ -309,6 +311,14 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "access": "read",
         "orchestrator": "engineering",
         "scope": "one automation plus bounded configuration, trace, entity, registry, blueprint, and sanitized System Log evidence",
+        "writes_allowed": "none",
+        "fallback_policy": "none",
+    },
+    "automation_reliability_batch_analysis": {
+        "policy_id": "bounded_automation_set_reliability_read",
+        "access": "read",
+        "orchestrator": "engineering",
+        "scope": "at most 20 explicit automation IDs, each under single_automation_reliability_read bounds, within one 45 second budget",
         "writes_allowed": "none",
         "fallback_policy": "none",
     },

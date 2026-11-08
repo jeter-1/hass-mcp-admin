@@ -764,6 +764,17 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "provider": "engineering",
     },
     {
+        "tool": "automation_reliability_batch_analysis",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "policy": "bounded_automation_set_reliability_read",
+        "fallback": "none",
+    },
+    {
         "tool": "change_impact_analysis",
         "category": "analysis",
         "status": "beta_native",

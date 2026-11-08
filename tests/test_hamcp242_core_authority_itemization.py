@@ -196,6 +196,7 @@ EXPECTED_AFFECTED_TOOLS = {
     ],
     "core.automation_trace_read": [
         "automation_reliability_analysis",
+        "automation_reliability_batch_analysis",
         "capture_automation_trace",
         "change_impact_analysis",
         "get_automation_trace",
@@ -242,6 +243,7 @@ EXPECTED_AFFECTED_TOOLS = {
     "core.scene_configuration_operation": ["create_scene_configuration_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",
+        "automation_reliability_batch_analysis",
         "change_impact_analysis",
         "configuration_integrity_analysis",
         "create_change_plan",

@@ -77,6 +77,7 @@ STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
     "approve_change_plan": LOCAL,
     "automation_reliability_analysis": MAPPED,
+    "automation_reliability_batch_analysis": MAPPED,
     "call_service": REFUSED,
     "cancel_execution_task": LOCAL,
     "capture_automation_baseline": MAPPED,
@@ -253,7 +254,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 81)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 82)
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
