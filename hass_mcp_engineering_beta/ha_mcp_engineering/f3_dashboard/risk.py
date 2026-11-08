@@ -5,8 +5,19 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from .constants import MAX_JSON_DEPTH, MAX_JSON_NODES, MAX_RISK_FINDINGS, RISK_MODEL
-from .errors import RiskAnalysisError
+from .constants import (
+    MAX_JSON_DEPTH,
+    MAX_JSON_NODES,
+    MAX_RISK_EVIDENCE_FINDINGS,
+    MAX_RISK_FINDINGS,
+    RISK_MODEL,
+)
+from .errors import (
+    MAX_STRUCTURAL_CARD_PATH_SEGMENTS,
+    STRUCTURAL_CARD_CONTAINERS,
+    STRUCTURAL_CARD_WRAPPERS,
+    RiskAnalysisError,
+)
 from .json_codec import engineering_sha256, validate_json_value
 from .models import (
     DashboardRiskEvidence,
@@ -47,6 +58,18 @@ _DESTRUCTIVE_ADMIN_SERVICES = frozenset(
     }
 )
 _TEMPLATE_MARKERS = ("{{", "{%", "${")
+# HAMCP-338 (owner direction 2026-11-08): an entities-card row without its
+# own row ``type`` renders a domain control.  Rows for these domains are
+# classified exactly like a toggle of the same entity on a tile, through
+# ``_domain_control_category``: lock, cover and alarm_control_panel are
+# high-consequence, light and switch are toggles.  Other domains, typed rows
+# (section, divider, weblink, buttons, custom and so on) and non-entity rows
+# are not classified here.
+_ENTITY_ROW_CONTROL_DOMAINS = frozenset(
+    {"lock", "cover", "alarm_control_panel", "light", "switch"}
+)
+_STRUCTURAL_INDEX_MAX_DIGITS = 5
+_RISK_STAGE = "risk_analysis"
 
 
 def _encode(token: str) -> str:
@@ -55,6 +78,59 @@ def _encode(token: str) -> str:
 
 def _pointer(tokens: tuple[str, ...]) -> str:
     return "/" + "/".join(_encode(token) for token in tokens)
+
+
+def _pointer_tokens(pointer: str) -> tuple[str, ...]:
+    if pointer in {"", "/"}:
+        return ()
+    return tuple(
+        token.replace("~1", "/").replace("~0", "~")
+        for token in pointer[1:].split("/")
+    )
+
+
+def _structural_index(token: str) -> bool:
+    return (
+        0 < len(token) <= _STRUCTURAL_INDEX_MAX_DIGITS
+        and all("0" <= character <= "9" for character in token)
+    )
+
+
+def _card_path(tokens: tuple[str, ...]) -> str:
+    """Return the structural location of ``tokens`` without any data value.
+
+    Only fixed container tokens followed by an ASCII list index and fixed
+    single-card wrapper tokens are kept; the walk stops at the first other
+    token, so mapping keys, entity IDs and names are never included.
+    """
+
+    segments: list[str] = []
+    index = 0
+    while index < len(tokens) and len(segments) < MAX_STRUCTURAL_CARD_PATH_SEGMENTS:
+        token = tokens[index]
+        if (
+            token in STRUCTURAL_CARD_CONTAINERS
+            and index + 1 < len(tokens)
+            and _structural_index(tokens[index + 1])
+        ):
+            segments.append(f"/{token}/{tokens[index + 1]}")
+            index += 2
+        elif token in STRUCTURAL_CARD_WRAPPERS:
+            segments.append(f"/{token}")
+            index += 1
+        else:
+            break
+    return "".join(segments) or "/"
+
+
+def _domain_control_category(domain: str | None) -> RiskCategory:
+    """Classify a direct domain control the way a tile toggle is classified."""
+
+    return (
+        RiskCategory.HIGH_CONSEQUENCE
+        if domain in _HIGH_ENTITY_DOMAINS
+        else RiskCategory.TOGGLE
+    )
 
 
 def _entity_domain(value: Any) -> str | None:
@@ -220,11 +296,7 @@ def _action_findings(
         category = RiskCategory.NAVIGATION
         reason = "frontend_navigation_action"
     elif action_name == "toggle":
-        category = (
-            RiskCategory.HIGH_CONSEQUENCE
-            if domain in _HIGH_ENTITY_DOMAINS
-            else RiskCategory.TOGGLE
-        )
+        category = _domain_control_category(domain)
         reason = (
             "toggle_targets_high_consequence_domain"
             if category is RiskCategory.HIGH_CONSEQUENCE
@@ -268,6 +340,73 @@ def _action_findings(
     return findings
 
 
+def _entity_row_findings(
+    card: dict[str, Any],
+    *,
+    tokens: tuple[str, ...],
+    custom_card: bool,
+    conditional: bool,
+    custom_card_configuration: Any,
+    conditional_configuration: Any,
+) -> tuple[list[RiskFinding], set[tuple[str, ...]]]:
+    """Classify the implicit control of each default entities-card row."""
+
+    rows = card.get("entities")
+    if card.get("type") != "entities" or not isinstance(rows, list):
+        return [], set()
+    findings: list[RiskFinding] = []
+    classified_rows: set[tuple[str, ...]] = set()
+    for index, row in enumerate(rows):
+        if isinstance(row, str):
+            entity: Any = row
+        elif isinstance(row, dict) and "type" not in row:
+            entity = row.get("entity")
+        else:
+            continue
+        domain = _entity_domain(entity)
+        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+            continue
+        row_tokens = (*tokens, "entities", str(index))
+        category = _domain_control_category(domain)
+        binding = engineering_sha256(
+            {
+                "model": "f3-dashboard-entity-row-semantic-binding-v1",
+                "data_role": "untrusted_data",
+                "card_type": "entities",
+                "complete_row": row,
+                "row_entity": entity,
+                "custom_card_semantics_inherited": custom_card,
+                "conditional_semantics_inherited": conditional,
+                "custom_card_configuration": (
+                    custom_card_configuration if custom_card else None
+                ),
+                "conditional_configuration": (
+                    conditional_configuration if conditional else None
+                ),
+            }
+        )
+        findings.append(
+            RiskFinding(
+                category,
+                _pointer(row_tokens),
+                None,
+                None,
+                domain,
+                False,
+                binding,
+                False,
+                (
+                    "entity_row_control_targets_high_consequence_domain"
+                    if category is RiskCategory.HIGH_CONSEQUENCE
+                    else "entity_row_toggle_control"
+                ),
+            )
+        )
+        if isinstance(row, dict):
+            classified_rows.add(row_tokens)
+    return findings, classified_rows
+
+
 def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
     validate_json_value(configuration)
     findings: list[RiskFinding] = []
@@ -286,6 +425,9 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
         (configuration, (), False, False, None, None, None, None)
     ]
     visited = 0
+    # Object rows whose implicit control is already classified are not also
+    # reported as display-only entities.
+    classified_rows: set[tuple[str, ...]] = set()
     while stack:
         (
             value,
@@ -298,8 +440,22 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
             inherited_conditional_configuration,
         ) = stack.pop()
         visited += 1
-        if visited > MAX_JSON_NODES or len(tokens) > MAX_JSON_DEPTH:
-            raise RiskAnalysisError("Dashboard risk traversal exceeds its reviewed bound")
+        if visited > MAX_JSON_NODES:
+            raise RiskAnalysisError(
+                "Dashboard risk traversal exceeds its reviewed bound",
+                constraint="risk_traversal_nodes",
+                stage=_RISK_STAGE,
+                limit=MAX_JSON_NODES,
+                card_path=_card_path(tokens),
+            )
+        if len(tokens) > MAX_JSON_DEPTH:
+            raise RiskAnalysisError(
+                "Dashboard risk traversal exceeds its reviewed bound",
+                constraint="risk_traversal_depth",
+                stage=_RISK_STAGE,
+                limit=MAX_JSON_DEPTH,
+                card_path=_card_path(tokens),
+            )
         if isinstance(value, list):
             for index in range(len(value) - 1, -1, -1):
                 stack.append(
@@ -355,6 +511,17 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                 )
             )
 
+        row_findings, row_tokens = _entity_row_findings(
+            value,
+            tokens=tokens,
+            custom_card=custom,
+            conditional=conditional,
+            custom_card_configuration=custom_configuration,
+            conditional_configuration=conditional_configuration,
+        )
+        findings.extend(row_findings)
+        classified_rows.update(row_tokens)
+
         domain = _entity_domain(card_entity)
         context_binding: str | None = None
         if domain in _HIGH_ENTITY_DOMAINS and (
@@ -374,9 +541,19 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     "conditional_configuration": conditional_configuration,
                 }
             )
-        if domain in _HIGH_ENTITY_DOMAINS and not action_keys and "features" not in value:
+        if (
+            domain in _HIGH_ENTITY_DOMAINS
+            and not action_keys
+            and "features" not in value
+            and tokens not in classified_rows
+        ):
             if context_binding is None:
-                raise RiskAnalysisError("Dashboard risk binding was not calculated")
+                raise RiskAnalysisError(
+                    "Dashboard risk binding was not calculated",
+                    constraint="risk_semantic_binding",
+                    stage=_RISK_STAGE,
+                    card_path=_card_path(tokens),
+                )
             findings.append(
                 RiskFinding(
                     RiskCategory.DISPLAY_ONLY,
@@ -392,7 +569,12 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
             )
         if "features" in value and domain in _HIGH_ENTITY_DOMAINS:
             if context_binding is None:
-                raise RiskAnalysisError("Dashboard risk binding was not calculated")
+                raise RiskAnalysisError(
+                    "Dashboard risk binding was not calculated",
+                    constraint="risk_semantic_binding",
+                    stage=_RISK_STAGE,
+                    card_path=_card_path(tokens),
+                )
             findings.append(
                 RiskFinding(
                     RiskCategory.UNKNOWN,
@@ -420,8 +602,17 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     conditional_configuration,
                 )
             )
-    if len(findings) > MAX_RISK_FINDINGS:
-        raise RiskAnalysisError("Dashboard risk findings exceed the complete review bound")
+    if len(findings) > MAX_RISK_EVIDENCE_FINDINGS:
+        raise RiskAnalysisError(
+            "Dashboard risk findings exceed the evidence bound",
+            constraint="risk_evidence_findings",
+            stage=_RISK_STAGE,
+            observed=len(findings),
+            limit=MAX_RISK_EVIDENCE_FINDINGS,
+            card_path=_card_path(
+                _pointer_tokens(findings[MAX_RISK_EVIDENCE_FINDINGS].path)
+            ),
+        )
     return findings
 
 
@@ -463,6 +654,19 @@ def analyze_dashboard_risk(
         for finding in _scan(proposed)
     ]
     changed = [finding for finding in proposed if finding.introduced_or_changed]
+    # HAMCP-337 (E031): the complete-review bound counts only the findings a
+    # reviewer must assess.  It previously counted every finding in the
+    # whole dashboard, so a dashboard already near the bound refused a small
+    # valid change such as two lock tiles and two toggles.
+    if len(changed) > MAX_RISK_FINDINGS:
+        raise RiskAnalysisError(
+            "Dashboard risk findings exceed the complete review bound",
+            constraint="changed_risk_findings",
+            stage=_RISK_STAGE,
+            observed=len(changed),
+            limit=MAX_RISK_FINDINGS,
+            card_path=_card_path(_pointer_tokens(changed[MAX_RISK_FINDINGS].path)),
+        )
     manual_categories = {
         RiskCategory.OPAQUE_CUSTOM,
         RiskCategory.TEMPLATE_OR_CONDITIONAL,
