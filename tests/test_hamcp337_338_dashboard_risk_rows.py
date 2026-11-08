@@ -1909,5 +1909,61 @@ class NestedTypeDataPlanningTests(_PlanOnlyHarness):
         self.assertEqual(risk.high_consequence_action_count, 2)
 
 
+class ToggleTargetEntityTests(_PlanOnlyHarness):
+    """HAMCP-337 F1 (architect follow-up on 144d5639): handle-action.ts
+    (frontend a67b691a) toggles the card or row ``config.entity``; an
+    ``entity`` inside a toggle action is never read.  At 144d5639 a lock,
+    cover or alarm card whose toggle named another entity planned as a
+    plain toggle."""
+
+    OTHER = "light.synthetic_other"
+    GESTURES = ("tap_action", "hold_action", "double_tap_action")
+
+    def shapes(self, entity: str, gesture: str, action: dict):
+        yield {"type": "tile", "entity": entity, gesture: action}, f"{CARD}/{gesture}"
+        yield {"type": "button", "entity": entity, gesture: action}, f"{CARD}/{gesture}"
+        yield (
+            {"type": "tile", "entity": entity, f"icon_{gesture}": action},
+            f"{CARD}/icon_{gesture}",
+        )
+        yield (
+            {"type": "entities", "entities": [{"entity": entity, gesture: action}]},
+            f"{CARD}/entities/0/{gesture}",
+        )
+
+    async def categories_at(self, card: dict, path: str):
+        await self.asyncTearDown()
+        await self.asyncSetUp()
+        created, stored, update = await self.plan(background_dashboard(0), insert_cards([card]))
+        return created, stored, update, self.changed_at(update, path)
+
+    async def test_toggle_naming_another_entity_classifies_the_card_entity(self):
+        action = {"action": "toggle", "entity": self.OTHER}
+        for entity in HIGH_ENTITIES:
+            for gesture in self.GESTURES:
+                for card, path in self.shapes(entity, gesture, action):
+                    with self.subTest(entity=entity, card=json.dumps(card)):
+                        created, stored, update, categories = await self.categories_at(card, path)
+                        self.assertIn("high_consequence_action", categories)
+                        self.assertNotIn("toggle", categories)
+                        self.assert_elevated(created, stored, update)
+
+    async def test_toggle_never_follows_the_action_entity(self):
+        # The exact rule, not a union of both entities: a light card whose
+        # toggle names a lock toggles the light, and a card with no entity
+        # toggles nothing.
+        action = {"action": "toggle", "entity": LOCK}
+        for card, path in (
+            ({"type": "tile", "entity": self.OTHER, "tap_action": action}, f"{CARD}/tap_action"),
+            ({"type": "button", "entity": self.OTHER, "hold_action": action}, f"{CARD}/hold_action"),
+            ({"type": "button", "tap_action": action}, f"{CARD}/tap_action"),
+            ({"type": "button", "entity": "", "tap_action": action}, f"{CARD}/tap_action"),
+        ):
+            with self.subTest(card=json.dumps(card)):
+                _, _, update, categories = await self.categories_at(card, path)
+                self.assertEqual(categories, {"toggle"})
+                self.assertEqual(update["risk"]["high_consequence_action_count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

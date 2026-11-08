@@ -379,6 +379,10 @@ def _action_findings(
         category = RiskCategory.NAVIGATION
         reason = "frontend_navigation_action"
     elif action_name == "toggle":
+        # HAMCP-337 F1: handle-action.ts toggles the card or row
+        # ``config.entity`` (frontend a67b691a); an ``entity`` inside the
+        # action is never read for a toggle.
+        domain = _entity_domain(card_entity)
         category = _domain_control_category(domain)
         reason = (
             "toggle_targets_high_consequence_domain"
