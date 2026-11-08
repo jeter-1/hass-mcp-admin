@@ -66,6 +66,12 @@ and fingerprints stay unknown until the reviewed implementation is on
   2.6 signing**: one `extend-capabilities` extension of the existing
   2026.11.0 entry. No 10.x targets for new profiles. No separate or phased
   2.6 signings.
+  - **Superseded in part** by the Josh decision (in-session 2026-11-08), late-row rule (§8): the combined
+    signing waits for N2-N6 only until the hard cutoff of 2027-01-22. A row
+    that is not frozen by then gets its own later additive
+    `extend-capabilities` signing of the same 2026.11.0 entry; it does not
+    move to 3.0. The rest of this bullet stands: Core 2026.11.0 only, no 10.x
+    targets, and no phasing by choice.
 - HAMCP-134 and HAMCP-231 are delivered in **2.6.0**.
 - HAMCP-295 rename **rewrites references with verified undo**. A
   disclose-only rename is not a deliverable.
@@ -79,7 +85,14 @@ and dispositions in §9A):
 - HAMCP-295/109 target 2.6.0 with a hard cutoff to 3.0 if the rename
   contract is not frozen when the combined signing is assembled (Josh
   decision (in-session 2026-11-08), item 6). The cutoff never delays the
-  combined signing, and there is no second 2.6 signing (§4 N1).
+  combined signing, and N1 gets no second 2.6 signing (§4 N1).
+- **Late-row rule** (Josh decision (in-session 2026-11-08), late-row rule). The combined signing waits for
+  every row, with a hard cutoff of **2027-01-22**, the HAMCP-139 renewal
+  checkpoint. At the cutoff, what is frozen is signed, and that signing
+  doubles as the renewal of the Core authority. A late row gets its own
+  later additive signing; it is not moved to 3.0. This plan reads the rule
+  as answering its §8 question, which was about N2-N6; item 6 still governs
+  N1 (§4 Count, §8).
 - #393 uses **two** additive profiles, scene create/delete and created-helper
   delete (Josh decision (in-session 2026-11-08), item 12).
 - HAMCP-297 is switch-like ordinary typed control with exact readback and
@@ -108,7 +121,8 @@ Consequences, from source (§2.6):
 
 - **Josh decides** product scope, profile contents where a design leaves a
   choice open, and every signing action (ADR-022). The target release, the
-  batch shape and the additive rule are settled (§1).
+  batch shape (one combined signing, with the late-row rule of §8) and the
+  additive rule are settled (§1).
 - **Current source decides** what the signing tools can express. That means
   `scripts/prepare_core_release_registry.py`,
   `scripts/core_registry_one_tap.py`, `scripts/core_release_evidence.py`,
@@ -309,12 +323,19 @@ is the HAMCP-295 cutoff (Josh decision (in-session 2026-11-08), item 6):
   (N2-N6). The whole of HAMCP-295/109 moves to 3.0. S1-S3 do not merge into
   the 2.6.0 line before F1-F4 can be met, so 2.6.0 carries no registered or
   reachable rename behavior (#390 R2).
-- The cutoff never delays the combined signing, there is no second 2.6
+- The cutoff never delays the combined signing, N1 gets no second 2.6
   signing, and no 10.x target is added.
-- The cutoff is the only alternative this plan recognizes. The other five
-  rows are not optional: if one of them is not frozen in time, this plan
-  does not invent a cutoff for it. That would be a scope decision for Josh
-  (§8, new open choice).
+- **N2-N6 follow the late-row rule** (Josh decision (in-session 2026-11-08), late-row rule, §8). The
+  combined signing waits until N2-N6 are all frozen, but never past
+  2027-01-22. If one is late at the cutoff, the combined signing appends
+  only the frozen rows (plus N1 if F1-F4 hold), and each late row is
+  appended later by its own additive `extend-capabilities` signing of the
+  2026.11.0 entry. Over all 2.6 signings the total stays 6 references, or 5
+  under the item 6 cutoff. Each signing has its own sequence number (the
+  predecessor's plus one at preparation, unknown here) and its own review
+  evidence (`prepare_core_release_registry.py:189-193`).
+- No row is narrowed to fit the cutoff: a late row is signed whole, later
+  (G1).
 
 "32 to 33" in the earlier #389 §7 was a base-local delta for that profile
 alone, and #389 still labels its §7 counts as base-local deltas; neither is
@@ -408,13 +429,33 @@ assigned here.
 7. The new capabilities remain unadmitted on 2026.10.0, 2026.10.1 and
    2026.10.3, even with the extended journal.
 
-### 5.4 Expiry
+### 5.4 Expiry and the 2027-01-22 cutoff
 
-The extension needs a current predecessor (C2, C11). If preparation falls
-after 2027-02-05 00:16:34 CST, positive authority has already lapsed and
-failed closed, and an identical renewal (C3) is needed first. That renewal is
-registry maintenance, not a 2.6 profile signing. This plan does not analyse
-renewal further.
+The extension needs a current predecessor (C2, C11;
+`prepare_core_release_registry.py:181-183`). The sequence 17 tip expires
+2027-02-05 00:16:34 CST.
+
+Under the Josh decision (in-session 2026-11-08), late-row rule, the combined signing is prepared no later
+than **2027-01-22**, the HAMCP-139 renewal checkpoint, 14 days before that
+expiry. Every positive signing, `extend-capabilities` included, writes a new
+sequence whose `expires_at` is its `generated_at` plus 90 days
+(`prepare_core_release_registry.py:247-248`, checked at `:322-323`), so the
+cutoff signing also renews the authority. This is source behavior at
+`1c4c32b3`.
+
+- **Nothing frozen at the cutoff.** An extension must append at least one
+  reference (`:189-191`), so it cannot serve as the renewal. The plan reads
+  "sign what's ready" as an identical `add` renewal of the 2026.11.0 entry
+  (C3, `:176-180`), registry maintenance with no 2.6 profile. This is a
+  plan reading, not a Josh decision.
+- **An earlier signing renews first** (for example an automated 2026.12
+  Core add, HAMCP-139). The cutoff still applies to the 2.6 rows; that
+  signing becomes part of the predecessor (G7).
+- **Preparation after expiry.** If the cutoff is missed and preparation falls
+  after the tip's expiry, positive authority has lapsed and failed closed.
+  An identical renewal (C3) comes first.
+- **Later late-row signings** each need a current predecessor too, and each
+  renews the authority again.
 
 ## 6. Interaction with 2.5.0 and automated releases
 
@@ -520,24 +561,38 @@ then the Codex delta review of this plan.
 is decided: aligning the delegated `thread_network` ids is HAMCP-341, after
 2.6 (§9A).
 
-**New open choice raised by this plan (not decided):**
+**Late-row rule: decided** (Josh decision (in-session 2026-11-08), late-row rule).
 
-- **What happens if a row other than N1 is not frozen when the combined
-  signing is assembled.** Item 6 gives HAMCP-295/109 a cutoff; no decision
-  gives one to N2-N6, and this plan does not invent one.
-  - Options: (a) the combined signing waits until N2-N6 are all frozen;
-    (b) a late row moves to 3.0 the way N1 does, and the signing proceeds
-    without it.
-  - Recommendation: (a). HAMCP-134 and HAMCP-231 are 2.6.0 deliverables by
-    Josh's direction (§1), #393's two profiles and #389's profile are decided
-    2.6.0 scope, and dropping one would be a scope change. The wait is bounded
-    by the predecessor's expiry (2027-02-05 00:16:34 CST, §5.4), after which a
-    renewal comes first.
-  - Blocks: nothing now. It matters only if a row is late at assembly.
+- **Question.** What happens if a row other than N1 is not frozen when the
+  combined signing is assembled? The plan had offered (a) wait or (b) move
+  the late row to 3.0, recommending (a) bounded by the 2027-02-05 expiry.
+- **Decision.** Wait for all rows, with a hard cutoff of **2027-01-22**, the
+  HAMCP-139 renewal checkpoint. At the cutoff, sign what is ready; that
+  signing doubles as the renewal. Late rows get their own later additive
+  signing. They are not moved to 3.0.
+- **Supersedes** the "no separate or phased 2.6 signings" part of the §1
+  direction, but only for rows late at the cutoff.
+- **Consequences recorded by this plan** (source-derived, not decisions):
+  - §4 Count: the combined signing appends only the frozen rows. Each late
+    row is appended whole by its own `extend-capabilities` signing of the
+    2026.11.0 entry.
+  - §5.4: the cutoff signing renews the authority (90 days from preparation).
+    With nothing frozen, the renewal is an identical `add`.
+  - G1-G8 apply to every signing. G7 re-fetches the predecessor each time,
+    so an earlier 2.6 signing is part of a later one's preserved prefix.
+  - Until a late row is signed, its tool refuses with the §5.3 test 3
+    reason. G2 still requires its implementation on `main` before its
+    signing. Which Engineering release carries a late row's runtime is not
+    decided here.
+- **Plan reading, pending Josh only if he wants otherwise.** Item 6 still
+  governs N1: if F1-F4 fail at assembly, HAMCP-295/109 moves to 3.0 and gets
+  no later 2.6 signing. The late-row rule answered a question asked about
+  N2-N6 only.
+- Blocks: nothing.
 
 **Signing-specific choices: none new.** The additive architecture, the scene
-profile, the 2026.11.0-only target, the single batch and the placement of
-HAMCP-134 and HAMCP-231 are settled (§1). Final signing approval is a later,
+profile, the 2026.11.0-only target, the single batch (with the late-row
+rule above) and the placement of HAMCP-134 and HAMCP-231 are settled (§1). Final signing approval is a later,
 concrete owner action, not requested here.
 
 ## 9. Codex design review 2026-11-08 — disposition
@@ -609,12 +664,16 @@ documents carry the full text.
 | Q9 (later 2026-11-08) | #389 | Compiled `(domain, platform, translation_key)` allowlist, keys confirmed from source; a target without a key is dropped | N4 carries (`select`, `matter`, `startup_on_off`), (`switch`, `matter`, `child_lock`) and (`number`, `matter`, `sensitivity_level`); Tapo numbers dropped | §4 N4; §8 |
 | Follow-up and Q10 (later 2026-11-08) | #389 | Drop the Aqara sensitivity select (its triple is shared with smoke/CO sensitivity); accept and disclose the breadth of the three kept triples | Narrows item 1; no device-type filter | §4 N4; §8 |
 | J3 sub-question (later 2026-11-08) | #394 | Delegated `thread_network` id alignment is HAMCP-341, after 2.6 | None | §4 (no-profile list); §8 |
+| Late-row rule (later 2026-11-08) | #395 | Wait for all rows, with a hard cutoff of 2027-01-22 (HAMCP-139 renewal checkpoint); at the cutoff sign what is ready, which doubles as the renewal; late rows get their own later additive signing, not 3.0 | The combined signing appends the rows frozen by the cutoff; each late N2-N6 row is appended later by its own extension; the cutoff signing renews the authority. Supersedes "no separate or phased 2.6 signings" for late rows only. Item 6 still governs N1 (plan reading) | §1; §4 Count; §5.4; §8 |
 
 **Earlier direction.** The §1 bullets keep their attribution, "Josh direction
 (register 2026-11-07; confirmed in-session 2026-11-08)".
 
-**Conflicts.** None. No decision conflicts with the additive-only rule, the
-2026.11.0-only target or the single combined signing. Item 25 adds a new
+**Conflicts.** None unresolved. No decision conflicts with the additive-only
+rule or the 2026.11.0-only target. The late-row rule deliberately supersedes
+the "no separate or phased 2.6 signings" part of the §1 direction for rows
+late at the 2027-01-22 cutoff. Per ADR-022, the earlier direction is kept
+with a superseded note (§1), not silently rewritten. Item 25 adds a new
 direct-HA provider contract inside the one additive N4 profile; that is a
 provider-boundary change for review (§5.2 G2), not a signing-policy
 conflict.
@@ -698,6 +757,8 @@ workflow or fingerprint.
   their owners and for review.
 - No Josh decision beyond items 1-25 and the earlier direction is recorded
   or implied, other than Josh's in-session 2026-11-08 answers to #389 Q8, Q9,
-  the target follow-up and Q10, and to the #394 J3 sub-question (§9A). No
+  the target follow-up and Q10, to the #394 J3 sub-question, and the
+  late-row rule (§9A). The N1 and nothing-frozen readings in §5.4 and §8
+  are this plan's, not Josh's. HAMCP-139's row and schedule were not edited. No
   registry read was performed here; the HAMCP-297 `translation_key` values
   come from integration source as cited in #389 §4.1 and §10.
