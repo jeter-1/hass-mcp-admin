@@ -1,31 +1,56 @@
 # HAMCP-329 governed scene create and HAMCP-298 rollback for governed creates — design
 
-Status: **2.6.0 design, docs only.** Written 2026-11-07 (CST). This document
-does not authorize implementation outside its build plan, deployment, live
-Home Assistant access, registry signing, a signed-profile change or a release.
-Codex reviews it; the author does not review its own work.
+Status: **2.6.0 design, docs only.** Written 2026-11-07 (CST); corrected
+2026-11-08 (CST) after the Codex design review of PR #393 (§0). This
+document does not authorize implementation outside its build plan,
+deployment, live Home Assistant access, registry signing, a signed-profile
+change or a release. Codex reviews it; the author does not review its own
+work.
 
 Base: `origin/release/2.6.0` `7246f2d21693f039504542574569f03b71476489`
 (Engineering `2.4.2-beta.7` materialized; the same commit as the
-`release/2.5.0` tip). Every `file:line` below is at this base. Paths under
-`hass_mcp_engineering_beta/ha_mcp_engineering/` are shortened to `ha_mcp_engineering/`.
+`release/2.5.0` tip). Every Engineering `file:line` below is at this base.
+Paths under `hass_mcp_engineering_beta/ha_mcp_engineering/` are shortened to
+`ha_mcp_engineering/`.
 
-Upstream authority (ADR-021): Home Assistant Core at exact tags.
+Current comparison points (read 2026-11-08, used only where named):
 
-- `2026.11.0`, commit `74cf5a49c63ed8d4d87717844bf14f79c28c9cea`. This is the
-  HAMCP-280 exact stable target (`scripts/core_lane_bindings.py:59-63`).
-- `2026.10.3`, commit `1f214b8461dd1fbbd66e10765c6905f49d3c1d86`. This is the
-  newest Core release in the signed journal.
+- integration `origin/release/2.6.0` `1c4c32b3c2da152bd42f25178b077c62c13af7d4`;
+- signed registry, `registry` branch `e486028ed0b06b8a5a737824c829705b403b34d8`,
+  envelope sequence 17, which carries Core 2026.10.0, 2026.10.1, 2026.10.3
+  and 2026.11.0.
 
-`homeassistant/components/config/scene.py`, `components/config/view.py` and
-`helpers/collection.py` are byte-identical at the two tags. Upstream line
-numbers are at `2026.11.0` unless a tag is named. `2026.10.1` (signed for the
-delete profile) was not re-read for this design. Its v2 evidence belongs to
-the signing step (§9).
+Upstream authority (ADR-021): Home Assistant Core **2026.11.0**, commit
+`74cf5a49c63ed8d4d87717844bf14f79c28c9cea`, archive SHA-256
+`85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1`
+(digest re-verified 2026-11-08 before use; the registry's 2026.11.0 entry
+names the same archive). This is the HAMCP-280 exact stable target
+(`scripts/core_lane_bindings.py:59-63`) and the **only** Core release the new
+profiles in this design are signed for. Upstream line numbers are at
+2026.11.0. Upstream paths are under `homeassistant/`.
 
-## 1. Register outcomes and binding decisions
+> Superseded (historical): the 2026-11-07 text also read Core 2026.10.3 and
+> claimed `config/scene.py`, `config/view.py` and `helpers/collection.py` were
+> byte-identical there, so that a delete v2 could be re-referenced on every
+> carried release. That claim is not relied on: the new profiles target
+> 2026.11.0 only, and the existing profiles are not changed on any release.
 
-**HAMCP-329** (register, quoted):
+## 0. Codex design review 2026-11-08 — disposition
+
+Review: one top-level comment on PR #393 at head `a306b4d8`, verdict "not
+ready". Every finding is corrected in this revision.
+
+| ID | Severity | Finding (short) | Corrected in |
+| --- | --- | --- | --- |
+| H1 | High | Replace the version-switch architecture with additive profiles | §1 (binding direction), §3.1 (architecture and routing), §5 (profile table, proving tests), §5.1 (old analysis labelled superseded), §9 (build order and implementation rollback), §10 (Q1-Q5 withdrawn). Existing `core.configuration_delete_operation` and `core.scene_configuration_operation` stay byte-identical. Scene create/delete gets its own new profile. Helper delete gets a second new profile (decision and justification in §3.1). Automation and script create rollback uses the already-signed delete contract unchanged. Both new profiles are signed for Core 2026.11.0 only, in the one combined 2.6 signing |
+| H2 | High | Ownership proof is not established by rollback-time identity, and Core restores the registry entry id | §3.2 (creation-time identity capture; what Core restores; the remaining observable-identity limitation), §3.4 (eligibility needs creation-time identity; outcome table for the four replacement cases), §8 (the categorical "never deletes an object Engineering did not create" claim is removed and replaced by an accurate limitation), §10 Q-A (strictness is a Josh choice) |
+| M3 | Medium | Helper target identity must be converted, hash-bound and correspondence-checked | §3.2.2 (identity tuple, correspondence rules), §3.5 (exact delete argument, state readback by actual entity id), §6 (tests for both domains, mismatch and cross-domain refusal, rename, exact argument) |
+| M4 | Medium | Mixed-plan rollback cannot be deferred as an implementation choice | §3.4.4 (one reverse plan is the acceptance outcome; prerequisite rule for excluded or failed children), §7 (acceptance), §9 (no deferral slice; escalation only for a specific proven-unsupported combination) |
+| — | (review text) | Admission before reads; helper save delay is not disk durability; persistence/downgrade gate; actual adapter id; seq 15/16 as frozen-base history | §3.4.1 (numbered execution order, admission first), §3.5 (10 s delayed save and the final-write flush), §8 (persistence and downgrade gate with exact-historical-writer fixtures), §2.1 (adapter id `compiled-core-governed-configuration-operation-v1`; base-history label) |
+
+## 1. Register outcomes and binding direction
+
+**HAMCP-329** (register outcome, quoted):
 
 > Engineering creates a new scene by exact config id with approval, verifies
 > the stored configuration and registry identity exactly (loaded state
@@ -34,12 +59,11 @@ the signing step (§9).
 > version, shared with HAMCP-298 rollback for governed creates; scene
 > activation stays never-sent.
 
-Dependency: "New profile versions signed in a sequence after 17." Source:
-`docs/FEATURE_READINESS_MAP.md` row "HAMCP-071 Part 3" (`:59-80`, RCG-004..007).
-The row notes require that `scene_loaded_state_not_verified_disclosed` carry
-over from Part 2.
+The clause "the existing core.configuration_delete_operation profile gains
+scenes in a new version" is **superseded** by the same row's Next Action
+(below). Everything else in the outcome stands.
 
-**HAMCP-298** (register, quoted):
+**HAMCP-298** (register outcome, quoted):
 
 > A plan that creates an automation, script or helper produces a rollback that
 > deletes exactly that created object (bound to its identity and fingerprint,
@@ -47,42 +71,50 @@ over from Part 2.
 > plan. Generalizes the HAMCP-071 Part 3 idea beyond scenes, reusing governed
 > deletion (HAMCP-155).
 
-Dependencies: HAMCP-155, HAMCP-071.
+Dependencies: HAMCP-155, HAMCP-071. Source of the 329 scope:
+`docs/FEATURE_READINESS_MAP.md` row "HAMCP-071 Part 3" (`:59-80`,
+RCG-004..007); the row requires that `scene_loaded_state_not_verified_disclosed`
+carry over from Part 2.
 
-**Binding decisions**
+**Binding direction.** Josh direction (register 2026-11-07; confirmed
+in-session 2026-11-08):
 
-- **Josh decision, 2026-11-07** (recorded in the task prompt as design-complete
-  scoping for the 2.6.0 feature milestone):
-  - Extend the existing signed delete profile to scenes.
-  - Scene create by exact config id, with approval.
-  - Verify the stored configuration and the registry identity exactly.
-  - Disclose loaded state as unverified.
-  - Undo by deleting exactly that scene.
-  - The delete profile gains scenes in a new version, shared with HAMCP-298.
-  - Scene activation stays never-sent.
-- **HAMCP-071 option C, Josh 2026-10-31** (`ha_core_readmission/profiles.py:806-809`).
-  Verified means the stored configuration plus the registry identity. Loaded
+- Additive profiles only. An existing signed profile is never version-bumped
+  or replaced. Existing fingerprints stay byte-identical.
+- Scene create/delete gets a **separate, new** scene profile. The rule applies
+  to HAMCP-298 too.
+- New 2.6 profiles are signed for **Core 2026.11.0 only**, in **one combined
+  2.6 signing**: one `extend-capabilities` extension of the existing 2026.11.0
+  registry entry. No 2026.10.x targets and no separate or phased 2.6 signing.
+
+**Other recorded decisions this design relies on** (cited from their
+records, unchanged):
+
+- HAMCP-071 option C, recorded at `ha_core_readmission/profiles.py:806-809`:
+  verified means the stored configuration plus the registry identity; loaded
   state is not verified.
-- **HAMCP-155 decisions, Josh 2026-10-23**
-  (`docs/HAMCP_155_GOVERNED_DELETION_DESIGN.md` §0, §2-§3):
-  - delete semantics;
-  - polled absence readback;
-  - a recreate rollback;
-  - protected-effect and consumer disclosure;
-  - 1-8 children, ordered, non-atomic;
-  - Ingress-only exact-hash approval.
-- **ADR-018** (`docs/architecture/ADR-018-F3-GOVERNED-ROLLBACK.md`) states:
-  "Create-through-delete is prohibited" and "No generalized … deletion … becomes
-  reachable".
-  - For scenes, the 329 decision above supersedes that prohibition.
-  - For automations, scripts and helpers, the 298 register outcome supersedes
-    it. The row carries no dated Josh decision, so confirmation is **Q5**
-    (§10).
-  - Under ADR-022 the superseding decision must be recorded. The ADR-018
-    amendment is a build-plan item (§9), not part of this PR.
+- HAMCP-155 decisions, recorded in `docs/HAMCP_155_GOVERNED_DELETION_DESIGN.md`
+  §0, §2-§3: delete semantics; polled absence readback; a recreate rollback;
+  protected-effect and consumer disclosure; 1-8 children, ordered,
+  non-atomic; Ingress-only exact-hash approval.
+- ADR-018 (`docs/architecture/ADR-018-F3-GOVERNED-ROLLBACK.md`) says
+  "Create-through-delete is prohibited" and "No generalized … deletion …
+  becomes reachable". The approved HAMCP-329 and HAMCP-298 register outcomes
+  ask for exactly the undo of an Engineering create, so for these five types
+  they supersede that prohibition. Under ADR-022 the superseding direction is
+  recorded in an ADR-018 amendment (build slice 1, §9). The amendment must not
+  use the old prohibition to narrow the requested create-rollback outcome.
+  Bounded deletion still holds: no general-purpose scene or helper deletion
+  becomes reachable (non-goals below).
 
-**Non-goals.** Adding any of these would be a scope change. This design
-stops at that line.
+> Superseded (historical): the 2026-11-07 revision recorded a same-day
+> "extend the existing signed delete profile to scenes … in a new version"
+> decision from the task prompt. The HAMCP-329 Next Action records that
+> Josh replaced it the same day with the separate additive scene profile
+> above.
+
+**Non-goals.** Adding any of these is a scope change; this design stops at
+that line.
 
 - Public, general-purpose deletion of scenes or helpers through
   `create_configuration_delete_plan`. Both outcomes ask only for undo of an
@@ -91,43 +123,56 @@ stops at that line.
   `ROLLBACK_NOT_SUPPORTED`.
 - Scene activation (`scene.turn_on`, `scene.apply`), dynamic scenes
   (`scene.create`) and `scene.reload`.
-- Storage-helper types that Engineering cannot create today (readiness map
-  future row 3).
+- Helper types other than the existing governed creates, `input_boolean` and
+  `input_number` (`governance/resources.py:89`). A future storage-helper type
+  joins only with its own create and its own reviewed permission.
+- Any change to an existing signed profile.
 
 ## 2. Current state at the base
 
 ### 2.1 Signed Core profiles involved
 
 All three profiles are built by `_contract()` (`ha_core_readmission/profiles.py:109-142`).
-The fingerprints below were recomputed from base source and match the signed
-journal entries in `upstream-trust/ha-core-release-registry.json`. The
-journal tip is sequence 15 (checkpoint 1), carrying Core 2026.10.0,
-2026.10.1 and 2026.10.3.
+The references below were read from the signed registry at `e486028e`
+(sequence 17), 2026.11.0 entry, and equal the fingerprints recomputed from
+base source.
 
-| Capability | Profile id / version | Adapter | Fingerprint | Signed for |
+| Capability | Profile id / version | Adapter | Fingerprint | Signed for (seq 17) |
 | --- | --- | --- | --- | --- |
-| `core.configuration_delete_operation` | `core_configuration_delete_operation_v1` / 1 | `compiled-core-configuration-delete-operation-v1` | `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d` | 2026.10.1 (since seq 13), 2026.10.3 (since seq 14), carried in seq 15; not 2026.10.0 |
-| `core.scene_configuration_operation` | `core_scene_configuration_operation_v1` / 1 | `compiled-core-scene-configuration-operation-v1` | `sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb` | 2026.10.3 (seq 15) |
-| `core.governed_configuration_operation` | `core_governed_configuration_operation_v1` / 1 | (signed probe profile) | `sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441` | 2026.10.0, 2026.10.1, 2026.10.3 |
+| `core.configuration_delete_operation` | `core_configuration_delete_operation_v1` / 1 | `compiled-core-configuration-delete-operation-v1` | `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d` | 2026.10.1, 2026.10.3, 2026.11.0; not 2026.10.0 |
+| `core.scene_configuration_operation` | `core_scene_configuration_operation_v1` / 1 | `compiled-core-scene-configuration-operation-v1` | `sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb` | 2026.10.3, 2026.11.0 |
+| `core.governed_configuration_operation` | `core_governed_configuration_operation_v1` / 1 | `compiled-core-governed-configuration-operation-v1` | `sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441` | 2026.10.0, 2026.10.1, 2026.10.3, 2026.11.0 |
 
-Planned sequence 16 carries the 31 existing profiles forward to Core
-2026.11.0 and adds none (`docs/FEATURE_READINESS_MAP.md`). Sequence 17 is
-the next planned batch. This design's profile versions are signed after 17
-(register dependency). `CORE_RUNTIME_CAPABILITY_PROFILES` has 32 entries
-(`profiles.py:892-900`). The delete and scene profiles are runtime-only, not
-members of `CORE_CAPABILITY_PROFILES`, so changing them moves no signed probe
-fingerprint (`profiles.py:603-607`, `:632-637`).
+**This design changes none of the three.** The 2026.11.0 entry at sequence
+17 references 32 capabilities; `CORE_RUNTIME_CAPABILITY_PROFILES` has 32
+entries at the base (`profiles.py:892-900`). The delete and scene profiles
+are runtime-only, not members of `CORE_CAPABILITY_PROFILES`, so they move no
+signed probe fingerprint (`profiles.py:603-607`, `:632-637`). The new
+profiles in §5 are runtime-only in the same way.
 
-**Delete v1 contract** (`profiles.py:608-631`):
+> Frozen-base history (not current signing readiness): at the base, the
+> repository's committed copy of `upstream-trust/ha-core-release-registry.json`
+> has tip sequence 15 (2026.10.0, 2026.10.1, 2026.10.3), and the readiness map
+> described a "planned sequence 16" carrying the existing profiles to
+> 2026.11.0. The signed registry has since reached sequence 17 with
+> 2026.11.0 present. The next sequence number, the new profile IDs and
+> fingerprints, and the aggregate capability count remain unknown until the
+> implementation is materialized and signed.
+
+**Delete v1 contract** (`profiles.py:608-631`), unchanged:
 
 - target `one_exact_existing_automation_or_script_configuration`;
 - `resource_types: ["automation", "script"]`;
+- requests `rest_config_automation_script_get`,
+  `rest_config_automation_script_delete_no_body`,
+  `websocket_entity_registry_list`, `rest_entity_state_get`,
+  `config_registry_state_absence_readback`;
 - dispatch `at_most_once_config_delete_no_body`;
 - absent target `400_resource_not_found_no_write`;
 - readback `config_404_registry_entry_absent_state_absent`;
 - recovery `read_only_no_redispatch`.
 
-**Scene v1 contract** (`profiles.py:812-890`):
+**Scene v1 contract** (`profiles.py:812-890`), unchanged:
 
 - target `one_exact_existing_ui_managed_scene_by_config_id_with_homeassistant_registry_entry`;
 - requests `SCENE_CONFIGURATION_REQUESTS` (`profiles.py:147-153`): config GET
@@ -139,27 +184,28 @@ fingerprint (`profiles.py:603-607`, `:632-637`).
 - concurrency
   `no_core_compare_and_swap_upsert_concurrent_edit_overwritten_undetected_concurrent_delete_recreated_disclosed`.
 
-### 2.2 Profile versioning: what the code allows
+### 2.2 Why additive profiles (code facts)
 
-- `_contract()` hard-codes the version. It sets
-  `profile_id = capability_id.replace(".", "_") + "_v1"` and writes
-  `"profile_version": 1` into both the fingerprint material (model
+These facts explain why a version switch is not the plan. They are kept as
+background; §5.1 holds the superseded analysis.
+
+- `_contract()` hard-codes version 1: `profile_id = capability_id.replace(".", "_") + "_v1"`
+  and `"profile_version": 1` in both the fingerprint material (model
   `ha-core-binary-capability-contract-v2`) and the profile
-  (`profiles.py:119-141`). **No versioned-profile precedent exists.**
-- The coordinator refuses to compile two profiles for one capability
+  (`profiles.py:119-141`). New profiles in this design are version 1 of new
+  capabilities, so `_contract()` needs **no change**.
+- The coordinator refuses two profiles for one capability
   (`profile_capability_duplicate`), two with the same `(profile_id, version)`
   or two with the same adapter (`ha_core_readmission/coordinator.py:177-187`).
-  **A runtime compiles exactly one version per capability.**
-- Registry selection keys references by capability:
-  `references = {p.capability_id: p for p in entry.capabilities}`. It admits a
-  profile only on an exact match of profile_id, profile_version, adapter_id,
+- Registry selection keys references by capability and admits a profile only
+  on an exact match of profile_id, profile_version, adapter_id,
   contract_fingerprint and `auto_eligible`
-  (`ha_core_readmission/registry.py:58-100`, match at `:70-78`). **A release
-  entry references exactly one version per capability.**
+  (`ha_core_readmission/registry.py:58-100`, match at `:70-78`).
 - The registry is fetched from the `registry` branch and polled every six
-  hours (`registry.py:14-18`; `docs/CORE_RELEASE_REGISTRY.md:117`, `:139`). It
-  is not baked into the image. Runtime and registry therefore move
-  independently. See §5.1.
+  hours (`registry.py:14-18`; `docs/CORE_RELEASE_REGISTRY.md:117`, `:139`).
+  Runtime and registry move independently. With new capability ids, each side
+  only ever lacks the *new* capabilities; nothing existing is withdrawn
+  (proving tests in §5).
 
 ### 2.3 Governed creates today
 
@@ -170,540 +216,714 @@ fingerprint (`profiles.py:603-607`, `:632-637`).
 | Scene | `scene_configuration`, **update only** | `core.scene_configuration_operation` | the gateway refuses create: `governance/resources.py:808` ("scene configuration is update-only"); `governance/scene_configuration.py:63-65` |
 | Legacy contract-1 automation plan | `automation` (`CREATE_AUTOMATION`) | legacy writer | `governance/service.py:5523-5526`, `:14977-14978` |
 
-Facts about helper create and absence (`governance/resources.py:791-915`):
+Helper create today (`governance/resources.py:791-915`):
 
-- Helper create rechecks absence through the storage list and a
-  `GET /api/states/<entity_id>` 404. It refuses with `target_already_exists`
-  (`:849`) or `target_entity_id_reserved` (`:876`).
-- It marks the send, then calls `{type}/create`.
-- A returned id that differs from the predicted object id raises
-  `generated_identity_mismatch` with `orphan_risk: True` (`:901-913`).
-- The generic `write()` accepts only create and update.
+- The governance resource id of a helper is its **full entity id**, for
+  example `input_boolean.example`. `_split_helper_entity_id`
+  (`resources.py:1409-1430`) checks the domain equals the helper type and
+  splits off the object id `example`.
+- Create rechecks absence through the storage list and a
+  `GET /api/states/input_boolean.example` 404, refusing with
+  `target_already_exists` (`:849`) or `target_entity_id_reserved` (`:876`).
+- It marks the send (`:880`), then sends `{type}/create`.
+- A returned id that differs from the object id raises
+  `generated_identity_mismatch` with `orphan_risk: True` (`:887-913`).
+- No registry read happens on the create path. No creation identity is
+  recorded today for any type.
 
 ### 2.4 Governed deletion today (HAMCP-155)
 
 `ha_mcp_engineering/governance/configuration_delete.py` (401 lines):
 
-- `RESOURCE_TYPES = ("automation", "script")` (`:31`).
-- Identities `delete_automation_configuration` and
-  `delete_script_configuration` (`:32-35`).
-- Intent model `configuration_delete_intent_v1`, with fields (`:39-51`):
-  - `model`
-  - `resource_type`
-  - `target_id`
-  - `entity_id`
-  - `registry_entry_id`
-  - `pre_image_fingerprint`
-  - `consumer_evidence_fingerprint`
-  - `dependency_reasons`
-  - `recreate_eligible`
+- `RESOURCE_TYPES = ("automation", "script")` (`:31`); identities
+  `delete_automation_configuration` and `delete_script_configuration`
+  (`:32-35`).
+- Intent model `configuration_delete_intent_v1` (`:39-51`, built at
+  `:85-110`): `model`, `resource_type`, `target_id`, `entity_id`,
+  `registry_entry_id`, `pre_image_fingerprint`,
+  `consumer_evidence_fingerprint`, `dependency_reasons`, `recreate_eligible`.
 - Absence polling: 6 attempts at 0.5 s (`:58-59`). A lingering registry entry
   or state reports `config_removed_runtime_unverified` (`:60`).
-- `registry_entry` matches `platform == resource_type` and
-  `unique_id == target_id`. A duplicate entry is refused (`:234-273`, match
-  at `:256`).
-- `delete()` refuses any other type before I/O (`:320-327`). It marks the send
-  at `:347`. A 4xx response becomes `ConfigurationMutationNotDispatchedError`
-  with reason `configuration_delete_rejected` (`:55`, `:352-363`).
+- `registry_entry` (`:234-273`) reads `config/entity_registry/list`, matches
+  `platform == resource_type` and `unique_id == target_id`, refuses a
+  duplicate, and takes the **actual** entity id from the entry
+  (`entity_id_for`, `:73-82`), so a renamed automation is handled.
+- `delete()` refuses any other type before I/O (`:320-327`), marks the send at
+  `:347`, and turns a 4xx into `ConfigurationMutationNotDispatchedError`
+  reason `configuration_delete_rejected` (`:55`, `:352-363`).
 
-Routing (`ha_core_readmission/routes.py`):
+Routing (`ha_core_readmission/routes.py`): only the two delete identities map
+to `core.configuration_delete_operation` (`:107-116`, `:1019-1022`); the scene
+update identity maps only to the scene profile (`:161-173`, `:1029-1032`);
+every unknown identity maps to `core.unsupported_f3_operation`.
 
-- Only the two delete identities map to `core.configuration_delete_operation`
-  (`:107-116`, `:1019-1022`).
-- The scene update identity maps only to the scene profile (`:161-173`,
-  `:1029-1032`).
-- Every unknown identity maps to `core.unsupported_f3_operation`.
-
-The public tool schema is
-`CONFIGURATION_DELETE_INPUT_SCHEMA`: `resource_type` enum
+Public schema `CONFIGURATION_DELETE_INPUT_SCHEMA`: `resource_type` enum
 `["automation", "script"]`, 1-8 deletions (`tools/governance.py:1236-1273`).
 
-Path allowlist (`clients/paths.py:293-310`):
-
-- The scene route is method-bound to `{GET, POST}`. The comment reads "a scene
-  configuration DELETE is never reachable" (`:305-308`).
-- The automation and script routes are not method-bound.
+Path allowlist (`clients/paths.py:293-310`): the scene route is method-bound
+to `{GET, POST}` ("a scene configuration DELETE is never reachable",
+`:305-308`); the automation and script routes are not method-bound.
 
 ### 2.5 Rollback today
 
 `create_rollback_plan` (`f3_runtime/runtime.py:5132-5269`) dispatches by plan
 family:
 
-- Label plans are refused with `ROLLBACK_NOT_SUPPORTED` (`:5156-5170`).
-- Delete plans go to `_create_configuration_delete_rollback` (`:5414-5530`).
-  This is the HAMCP-155 recreate, model
-  `hamcp155-configuration-delete-recreate-v1` (`:5508`).
-- Scene plans go to `_create_scene_configuration_rollback` (`:5840`).
-- Everything else goes to `_plan_fresh_rollback` (`:5271-5413`, model
-  `f3-governed-rollback-plan-v1`). It excludes any operation whose
+- label plans: `ROLLBACK_NOT_SUPPORTED` (`:5156-5170`);
+- delete plans: `_create_configuration_delete_rollback` (`:5414-5530`), the
+  HAMCP-155 recreate, model `hamcp155-configuration-delete-recreate-v1`
+  (`:5508`);
+- scene plans: `_create_scene_configuration_rollback` (`:5840`);
+- everything else: `_plan_fresh_rollback` (`:5271-5413`, model
+  `f3-governed-rollback-plan-v1`), which excludes any operation whose
   `action != "update"`.
 
-Post-apply availability (`runtime.py:4322-4379`):
+Post-apply availability (`runtime.py:4322-4379`): a create-only plan gets
+`unavailable_for_create` (`:4369-4372`); a delete plan is available when
+`dispatched_once` and `_recreate_eligible` hold (`:4334-4342`, `:1414-1420`).
 
-- A plan made only of creates gets **`unavailable_for_create`**
-  (`:4369-4372`).
-- A delete plan is available when `dispatched_once` and `_recreate_eligible`
-  hold (`:4334-4342`, `:1414-1420`).
-
-The proof that a create succeeded is already persisted.
+The proof that a create succeeded is persisted:
 `record.evidence["resulting_state_fingerprint"] == operation.proposed_config_hash`
-is the equality that HAMCP-135 uses (`governance/configuration_rollback_eligibility.py:89`).
+(HAMCP-135 equality, `governance/configuration_rollback_eligibility.py:89`).
+That proves the *content* written, not object continuity (§3.2).
 
 ### 2.6 What is missing
 
-1. A scene create path. This needs:
-   - a planner action;
-   - an absence check;
-   - a create permit;
-   - a create readback that polls for the new registry identity.
-2. Deletion of scenes, `input_boolean` and `input_number`. There is no gateway
-   path, profile contract or route method for it.
-3. Rollback planning for creates. This needs:
-   - an eligibility proof;
-   - a delete-family rollback plan;
-   - a change to availability marking;
-   - a mixed create-and-update reverse order.
-4. Versioned profiles (§2.2).
+1. Scene create: planner action, absence check, create permit, polled create
+   readback with creation identity capture.
+2. Creation-time identity capture for automation, script and helper creates.
+3. Deletion of Engineering-created scenes, `input_boolean` and `input_number`:
+   gateway commands, permits, route method, new profiles.
+4. Rollback planning for creates: eligibility, ownership checks, a
+   created-object rollback plan, availability marking, mixed reverse order.
 
 ## 3. Proposed design
 
-### 3.1 Answers to the scoping questions
+### 3.1 Architecture: additive profiles and routing
 
-- **Which helper domains does 298 cover today?** The helpers Engineering can
-  create: `input_boolean` and `input_number` (`resources.py:89`;
-  `runtime.py:1961`). **Both need the profile change.** Delete v1 signs no
-  helper delete command and no `{type}/list` absence readback. The exact type
-  set is **Q2**.
-- **Does rollback-of-create for automations and scripts need a profile
-  change?** **No.** Delete v1 already signs the exact
-  `DELETE /api/config/{automation|script}/config/<id>`, the 400-absent rule
-  and the config-registry-state absence readback.
-  - A created automation or script, once verified, is an "existing
-    automation or script configuration". The v1 target therefore fits.
-  - The work is all on the Engineering side:
-    - the eligibility proof;
-    - the rollback planner;
-    - availability marking;
-    - the ADR-018 amendment.
-  - One caveat. Once delete v2 replaces v1 (one version per capability,
-    §2.2), automation and script rollback also run under v2. Phasing is
-    **Q4**.
-- **Does rollback-of-create for helpers need a profile change?** **Yes**:
-  `input_boolean/delete`, `input_number/delete` and the `{type}/list` absence
-  readback (§3.4).
-- **Does scene undo need a profile change?** **Yes**: scene `DELETE` in delete
-  v2 (Josh decision).
-- **Does scene create need a profile change?** **Yes.** Its profile home is
-  not decided, and is **Q1**.
-  - POST to an absent id is outside the scene v1 target, which says
-    "existing".
-  - Delete v1 covers only DELETE.
-  - The readiness map lists two candidates (`docs/FEATURE_READINESS_MAP.md:464`):
-    "a new version of `core.scene_configuration_operation`, or a separate
-    create/delete profile".
+Two new runtime-only profiles are added. Proposed names (final IDs,
+adapter ids and fingerprints are unknown until built):
 
-### 3.2 Scene create (HAMCP-329)
+| New capability (proposed) | Covers | Why it is its own profile |
+| --- | --- | --- |
+| `core.scene_create_delete_operation` | scene create by absent config id (POST); creation identity capture for scenes; scene DELETE of an Engineering-created scene, reachable only from created-object rollback; the scene recreate that undoes that delete | Josh direction: a separate, new scene create/delete profile. The existing scene update profile keeps `DELETE` never-sent and its "existing" target |
+| `core.created_helper_delete_operation` | creation identity capture for `input_boolean` and `input_number` creates; `input_boolean/delete` and `input_number/delete` of an Engineering-created helper, reachable only from created-object rollback; their absence readback | Helper delete is a newly required permission. It is not a scene permission (below) |
 
-**Tool.** Extend the existing `create_scene_configuration_plan` with an
-optional `action: "update" | "create"`. The default is `"update"`, so every
-existing call keeps its exact meaning. No tool is added, and the
-Engineering-native tool count stays **81** (§4).
+**Decision: helper delete lives in its own profile, not in the scene
+profile.** Justification:
 
-When `action` is `create`, the inputs are:
+- Josh's direction names a *scene* create/delete profile. A contract with that
+  name and target that also authorizes `input_boolean/delete` would repeat
+  the defect of the withdrawn "delete contract authorizes a create" option:
+  the profile name and target would not describe what it admits.
+- Separate profiles admit and withdraw independently. A scene readback
+  problem found at signing does not take helper rollback with it, and the
+  reverse.
+- Both go in the same one combined 2.6 signing, so a second profile costs one
+  more reference in the same `extend-capabilities` extension, not a second
+  signing.
+
+The alternative (one profile carrying scene and helper deletes) is therefore
+not presented as an equal option. Codex may challenge this in the delta
+review.
+
+**Automation and script create rollback uses the existing signed delete
+contract unchanged.** A verified created automation or script is an
+"existing automation or script configuration" (v1 target). The delete, the
+400-absent rule and the absence readback are all already signed. Creation
+identity capture for these two types (§3.2) uses only reads that v1 already
+signs for that exact target class: `rest_config_automation_script_get`,
+`websocket_entity_registry_list` and `rest_entity_state_get`. Its route
+identities therefore map to `core.configuration_delete_operation`. No new
+permission is needed for automation or script rollback. The alternative —
+putting automation/script capture in a new profile — would make
+automation/script rollback depend on a new signing for reads already signed;
+it is not proposed. Codex should confirm this reading of the v1 contract.
+
+**Routing** (all new identities are proposed names; every unknown identity
+still maps to `core.unsupported_f3_operation`):
+
+| Identity | Capability | Profile status |
+| --- | --- | --- |
+| `update_scene_configuration_configuration` (existing) | `core.scene_configuration_operation` | unchanged |
+| `delete_automation_configuration`, `delete_script_configuration` (existing) | `core.configuration_delete_operation` | unchanged; also used by automation/script created-object rollback children |
+| `capture_created_automation_identity`, `capture_created_script_identity` (new, read-only) | `core.configuration_delete_operation` | unchanged profile, new runtime route |
+| `create_scene_configuration_configuration`, `capture_created_scene_identity`, `delete_created_scene_configuration` (new) | `core.scene_create_delete_operation` | new |
+| `capture_created_input_boolean_identity`, `capture_created_input_number_identity`, `delete_created_input_boolean`, `delete_created_input_number` (new) | `core.created_helper_delete_operation` | new |
+| `create_*` / `update_*` for automation, script, helpers (existing) | `core.governed_configuration_operation` | unchanged |
+
+Consequences:
+
+- Every existing capability keeps its exact profile id, version, adapter and
+  fingerprint on every Core release.
+- On Core 2026.10.x the new capabilities are never admitted; scene create and
+  scene/helper create rollback report `pending_signed_registry_admission`
+  there. Automation and script create rollback works wherever delete v1 is
+  signed (2026.10.1, 2026.10.3, 2026.11.0).
+- No withdrawal window, no carried-release switch and no re-sign-to-v1
+  recovery exist in this design.
+
+### 3.2 Created-object identity (creation-time evidence)
+
+**Rule.** Rollback eligibility requires **creation-time identity evidence**:
+identity observed by the forward task, under its locks, after the create
+verified. Rollback-time observation is never substituted for missing
+creation-time evidence.
+
+#### 3.2.1 What Core 2026.11.0 lets Engineering observe
+
+- `config/entity_registry/list` returns each entry's `as_partial_dict`
+  (`components/config/entity_registry.py:42-60`; `helpers/entity_registry.py:393-424`,
+  `:443-447`), which includes `id`, `entity_id`, `platform`, `unique_id`,
+  `created_at` and `modified_at`.
+- Registry removal keeps a `DeletedRegistryEntry` with the entry's `id`,
+  `created_at`, `entity_id` and metadata (`entity_registry.py:1812-1846`),
+  for 30 days when no config entry owns it (`ORPHANED_ENTITY_KEEP_SECONDS`,
+  `:97`; purge at `:2736-2748`).
+- Re-registration of the same `(domain, platform, unique_id)` pops that entry
+  and **restores its `id`** (`entity_registry_id = deleted_entity.id`,
+  `:1685-1699`), its `created_at` (`:1692`), entity_id if free, area, labels,
+  categories, aliases, `disabled_by`, `hidden_by` and options. A stored
+  registry id, or `created_at`, is therefore **not** an incarnation proof.
+- The restored entry is constructed without `modified_at` (`:1775-1797`), so
+  it takes the `RegistryEntry` default `utcnow()` (`:264`, `:290`). Any later
+  registry update also sets `modified_at = utcnow()` (`:2163`). An entry
+  loaded from storage keeps its stored `modified_at` (`:2515`).
+
+So Engineering can detect, through `modified_at`, that a registry entry was
+removed and re-registered (or edited) after the creation capture. It cannot
+distinguish that from a benign metadata edit (rename, area, labels, exposure,
+a Core migration), and it cannot detect a replacement that never removed the
+registry entry: for example an identical-body scene POST or a `scenes.yaml`
+edit, or a helper storage file edited while Core was stopped. **Uninterrupted
+object incarnation is not observable through Core's public surfaces.** The
+strictness Engineering applies to a changed `modified_at` is **Q-A** (§10).
+
+#### 3.2.2 The creation identity record
+
+At create verification, inside the forward task and under its locks, a
+bounded poll (6 attempts at 0.5 s, the HAMCP-155 bound) captures and stores
+in the record evidence a closed `created_identity` object, hash-bound into
+the record:
+
+| Field | automation / script | `input_boolean` / `input_number` | scene |
+| --- | --- | --- | --- |
+| `resource_type` | `automation` / `script` | `input_boolean` / `input_number` | `scene_configuration` |
+| `resource_target` (governance resource id) | config id, e.g. `kitchen_motion` | **full entity id**, e.g. `input_boolean.example` (`resources.py:1409-1430`) | config id |
+| `storage_object_id` | config id | object id `example` = create response `id` (`resources.py:887`) | config id |
+| `registry_domain` / `registry_platform` | `automation`/`automation`, `script`/`script` | `input_boolean`/`input_boolean`, `input_number`/`input_number` | `scene`/`homeassistant` |
+| `registry_unique_id` | config id | object id (`input_boolean/entity.py:26`, `input_number/entity.py:51`: `_attr_unique_id = config[CONF_ID]`) | config id (`components/homeassistant/scene.py:368-371`) |
+| `registry_entry_id` | entry `id` | entry `id` | entry `id` |
+| `entity_id` (actual) | registry entry `entity_id` | registry entry `entity_id`; initially `<domain>.<object id>` (`input_boolean/entity.py:41`, `input_number/entity.py:68`) but the registry entry wins (rename, or a restored entry's old entity id) | registry entry `entity_id` (assigned by Core) |
+| `registry_created_at`, `registry_modified_at` | as listed | as listed | as listed |
+| `delete_argument` | `DELETE /api/config/<type>/config/<config id>` | `{"type": "input_boolean/delete", "input_boolean_id": "<object id>"}` / same for `input_number` (`helpers/collection.py:585-586` `item_id_key = f"{model_name}_id"`; model name = domain, `input_boolean/__init__.py:129-131`) | `DELETE /api/config/scene/config/<config id>` |
+| `capture_fingerprint` | fingerprint of the above | fingerprint of the above | fingerprint of the above |
+
+**Correspondence checks at capture** (any failure: no identity is stored and
+the record carries `created_identity_capture: identity_mismatch`):
+
+- `resource_type` equals the registry domain, and for automation, script and
+  helpers equals the registry platform; scene platform is `homeassistant`.
+- For helpers: the domain of `resource_target` equals `resource_type`
+  (cross-domain refusal); the object id of `resource_target` equals
+  `storage_object_id`, `registry_unique_id` and the delete argument's
+  `<domain>_id`; the `{type}/list` item with that id is present.
+- Exactly one registry entry matches `(domain, platform, unique_id)`.
+- `entity_id` starts with `<registry domain>.`. It may differ from
+  `<domain>.<object id>`; a difference is recorded and disclosed, not refused.
+  State reads use this actual entity id, never `resource_target`.
+- The config body at capture still equals the created fingerprint.
+
+**Capture outcomes.** Capture never changes the create's own outcome:
+`succeeded_verified` stays exactly as today. The record additionally carries
+`created_identity_capture`, one of `captured`, `registry_entry_not_observed_within_bound`,
+`identity_mismatch`, `capability_unadmitted` or `read_failed`. Only
+`captured` makes the child rollback-eligible. For scenes, the registry entry
+is also part of the create's verification itself (§3.3), so a scene create
+without it is not `succeeded_verified`.
+
+**Admission.** Capture reads run only if the capture identity's capability
+is admitted (§3.1), checked before the first capture read. If it is not
+admitted, no read is sent and the record says `capability_unadmitted`.
+
+**Asynchrony.** Automation, script and scene registry entries appear after
+Core's fire-and-forget post-write reload; helper entries appear before the
+create reply (collection listener). The bounded poll covers both. An entry
+that does not appear within the bound is `registry_entry_not_observed_within_bound`:
+the create is reported as today, rollback is not offered, and the plan says
+so. Automation and script can then still be deleted through the existing
+public `create_configuration_delete_plan`; scenes and helpers have no public
+delete (non-goal), and this is disclosed.
+
+### 3.3 Scene create (HAMCP-329)
+
+**Tool.** Extend `create_scene_configuration_plan` with an optional
+`action: "update" | "create"`, default `"update"`, so every existing call
+keeps its exact meaning. No tool is added.
+
+When `action` is `create`:
 
 | Field | Rule |
 | --- | --- |
-| `config_id` | required. `CONFIG_ID_PATTERN` `^[A-Za-z0-9_-]{1,64}$` (`scene_configuration.py:122`). It becomes the scene's registry `unique_id` (`homeassistant/scene.py:369-371`) |
-| `name` | required. Part 2 name rule (non-empty, at most 255, exact, no trim) |
-| `icon` | optional. Part 2 icon rule; `null` is refused for create |
-| `entities` | required. 1..`MAX_ENTITIES`. Every value is a bounded snapshot with `state`; a `null` (merge-patch remove) is refused for create |
-| `entity_id` | **refused** for create. Core derives it (below) |
+| `config_id` | required; `CONFIG_ID_PATTERN` `^[A-Za-z0-9_-]{1,64}$` (`scene_configuration.py:122`); becomes the registry `unique_id` (`components/homeassistant/scene.py:368-371`) |
+| `name` | required; Part 2 name rule (non-empty, at most 255, exact, no trim) |
+| `icon` | optional; Part 2 icon rule; `null` refused for create |
+| `entities` | required; 1..`MAX_ENTITIES`; every value a bounded snapshot with `state`; `null` (merge-patch remove) refused |
+| `entity_id` | **refused** for create; Core assigns it |
 | `expiration_minutes` | unchanged |
 
 **Core facts (2026.11.0):**
 
-- `POST /api/config/scene/config/<id>`, in `components/config/view.py:99-139`:
-  - The body is validated with the scene `PLATFORM_SCHEMA` and the key with
-    `cv.string` (`components/config/scene.py:42-51`). A failure returns 400
-    and nothing is written.
-  - Under `mutation_lock`, `EditSceneConfigView._write_value`
-    (`config/scene.py:59-89`) builds `{id, name, entities, **body}`.
-  - It **replaces every** entry with a matching id (the loop does not break)
-    or appends one if none match.
-  - It also writes a fresh `uuid4().hex` id into any stored entry that has no
-    id (`:79-82`).
-  - The file write is atomic (`view.py:252-257`).
-  - The post-write hook runs `scene.reload` as a fire-and-forget task
-    (`config/scene.py:25-28`; `view.py:134-137`).
-  - The response is `{"result": "ok"}`.
-- **Entity id.** Core assigns it when the reload adds the entity: the
-  entity platform derives the object id from the name
-  (`helpers/entity_platform.py:1105`; `_async_derive_object_ids` `:1384-1428`)
-  and the registry generates a free id (`helpers/entity_registry.py:1450`,
-  `:1518`).
-- **Prior registry metadata.** If a registry entry for
-  `(scene, homeassistant, <config_id>)` was deleted within 30 days
-  (`ORPHANED_ENTITY_KEEP_SECONDS`, `entity_registry.py:97`), `async_get_or_create`
-  restores it (`entity_registry.py:1685-1700`):
-  - entity_id, if it is still free;
-  - area, labels, categories and aliases;
-  - `disabled_by` and `hidden_by`;
-  - options, including assistant exposure.
+- `POST /api/config/scene/config/<id>` (`components/config/view.py:99-139`):
+  - body validated with the scene `PLATFORM_SCHEMA`, key with `cv.string`
+    (`components/config/scene.py:42-51`); failure is 400, nothing written;
+  - under `mutation_lock`, `EditSceneConfigView._write_value`
+    (`config/scene.py:59-89`) builds `{id, name, entities, **body}`, replaces
+    **every** entry with a matching id (no break) or appends one;
+  - writes a fresh `uuid4().hex` id into any stored entry that has no id
+    (`:79-82`);
+  - atomic file write (`view.py:252-257`);
+  - post-write hook runs `scene.reload` fire-and-forget
+    (`config/scene.py:25-28`; `view.py:134-137`); response `{"result": "ok"}`.
+- Entity id: assigned when the reload adds the entity
+  (`helpers/entity_platform.py:1105`, `:1384-1428`;
+  `helpers/entity_registry.py:1450`, `:1518`).
+- Prior registry entry: if `(scene, homeassistant, <config_id>)` was deleted
+  within 30 days, re-registration restores its `id`, `created_at`, entity_id
+  (if free), area, labels, categories, aliases, `disabled_by`, `hidden_by`
+  and options including exposure (§3.2.1). Deleted entries are not visible in
+  `config/entity_registry/list`, so Engineering **cannot predict the entity
+  id or registry id**; both are disclosed as assigned by Home Assistant and
+  reported after readback.
 
-  Deleted registry entries are not visible through `config/entity_registry/list`,
-  so Engineering **cannot predict the entity_id**. It is disclosed as "assigned
-  by Home Assistant" and reported after readback.
+**Execution order (planning).** Admission first:
 
-**Planning reads.** All are existing scene-profile requests, refused before
-I/O while unadmitted:
+1. Validate the request (schema, rules above). No I/O.
+2. Admission: `create_scene_configuration_configuration` must be admitted
+   for the connected Core release. If not: `pending_signed_registry_admission`,
+   zero Home Assistant reads, nothing stored.
+3. Config GET must be 404, else `scene_configuration_target_exists`.
+4. Registry list must have **no** `scene.*` entry with `unique_id == config_id`
+   on any platform, else `scene_configuration_config_id_registered` (covers a
+   YAML-only `homeassistant` scene, an integration scene, a leftover).
+5. Member validation and protected-member policy as in Part 2 (existence,
+   device-class reads, safety-critical members). Saving never activates the
+   scene; the disclosure names members whose snapshot would set a protected
+   state when the scene is later activated.
+6. Consumer disclosure: a new scene has no consumers by identity; a dangling
+   reference to the eventual entity id would bind to it. Coverage gaps are
+   disclosed as in Part 2.
+7. Store the plan, binding the absence fingerprint
+   `resource_fingerprint("scene_configuration", None)`, the exact proposed
+   stored body, and no entity id.
 
-1. Config GET must return 404. Otherwise refuse `scene_configuration_target_exists`.
-2. The registry list must have **no** `scene.*` entry with
-   `unique_id == config_id` on any platform. Otherwise refuse
-   `scene_configuration_config_id_registered`. This covers a YAML-only
-   `homeassistant` scene, an integration scene and a not-yet-purged leftover.
-3. Member validation and the protected-member policy follow Part 2 unchanged:
-   existence, device-class reads and safety-critical members. Saving never
-   activates the scene. The risk disclosure still names members whose stored
-   snapshot would set a protected state when the scene is later activated.
-4. Consumer disclosure: a new scene has no consumers by identity. The plan
-   states that a dangling reference to the eventual entity_id would bind to it.
-   Coverage gaps are disclosed as in Part 2.
-
-The plan binds:
-
-- the absence fingerprint `resource_fingerprint("scene_configuration", None)`;
-- the exact proposed stored body;
-- no entity_id.
-
-**Locks, preflight, dispatch.**
-
-- Locks: the existing per-resource lock on `scene_configuration:<config_id>`
-  and the scene reload-domain lock that Part 2 uses.
-- Final preflight under the locks repeats reads 1 and 2. Any change is a
-  stale-state refusal with zero writes.
-- Then come the durable dispatch intent, a single-use **create permit** (the
-  Part 2 R1-H2 write permit, extended with `action=create`), `mark_provider_send()`
-  and **one** POST. There is no retry. Recovery is read-only.
+**Apply.** Locks: the per-resource lock on `scene_configuration:<config_id>`
+and the scene reload-domain lock used by Part 2. Under the locks: admission
+recheck, then reads 3 and 4 repeated (any change is a stale-state refusal,
+zero writes), then the durable dispatch intent, a single-use **create
+permit** (the Part 2 R1-H2 permit with `action=create`, bound to plan, task,
+operation, exact config id and exact body), `mark_provider_send()` and **one**
+POST. No retry; recovery is read-only.
 
 **Concurrency, disclosed and not prevented.** Core has no compare-and-swap.
 A concurrent create of the same id between the preflight GET and the POST is
-**overwritten undetected**. This is the Part 2 upsert race, now on the create
-side. The `uuid4` repair of id-less entries is a Core side effect on other
-stored entries, disclosed as in Part 2.
+overwritten undetected (the Part 2 upsert race on the create side). The
+`uuid4` repair of id-less entries is a Core side effect on other entries,
+disclosed as in Part 2.
 
-**Readback.** Polled within a bound because the reload is fire-and-forget: 6
-attempts at 0.5 s, the 155 bound. Each attempt checks:
-
-- config GET equals the exact expected stored body (type-exact canonical
-  JSON);
-- the registry has exactly one `scene.*` entry with `unique_id == config_id`
-  and `platform == "homeassistant"`.
-
-On success, the record evidence stores the **created identity**:
-`{config_id, entity_id, registry_entry_id, disabled_by}`.
+**Readback** (polled, 6 × 0.5 s, because the reload is fire-and-forget).
+Each attempt: config GET equals the exact expected body (type-exact
+canonical JSON), and the registry has exactly one `scene.*` entry with
+`unique_id == config_id` and `platform == "homeassistant"`. On success the
+creation identity (§3.2.2) is stored.
 
 | Observation | Outcome |
 | --- | --- |
-| Config exact + registry identity present | `succeeded_verified`, with `verification_scope: stored_configuration_and_registry_identity`, `loaded_state: not_verified` and the `scene_loaded_state_not_verified_disclosed` statement. Restored `disabled_by`, `hidden_by`, area or exposure are reported, not treated as failures |
-| Config exact, no registry entry after the bound | `scene_config_stored_registry_unverified`: not success and not rollback-eligible (**Q7**) |
-| Config differs (for example, a concurrent writer) | readback mismatch: not success |
+| Config exact + registry identity captured | `succeeded_verified`, `verification_scope: stored_configuration_and_registry_identity`, `loaded_state: not_verified`, the `scene_loaded_state_not_verified_disclosed` statement; restored `disabled_by`, `hidden_by`, area or exposure are reported, not failures |
+| Config exact, no registry entry within the bound | `scene_config_stored_registry_unverified`: not success, not rollback-eligible (Q7, §10) |
+| Config differs (e.g. a concurrent writer) | readback mismatch: not success |
 | Config 404 | not applied, or unresolved if the send was uncertain |
 
-**Never sent, unchanged:** `scene.turn_on`, `scene.apply`, `scene.create`,
-`scene.delete` and `scene.reload` (Core sends the reload itself). The scene
-gateway itself never sends `DELETE`. Scene `DELETE` is sent only by the
-deletion gateway (§3.4).
+**Never sent:** `scene.turn_on`, `scene.apply`, `scene.create`,
+`scene.delete`, `scene.reload` (Core sends its own reload). The scene
+*update* gateway never sends `DELETE`; scene `DELETE` is sent only by the
+created-object deletion gateway (§3.5).
 
-### 3.3 Rollback for governed creates (HAMCP-298, and HAMCP-329 undo)
+### 3.4 Rollback for governed creates (HAMCP-298, and the HAMCP-329 undo)
 
 `rollback_change(plan_id, plan_hash)` on a plan whose children include
-verified creates goes to a new `_create_created_object_delete_rollback`. That
-function plans a **new, separately approved** deletion plan in the HAMCP-155
-family (`target_type: configuration_deletion`). It dispatches nothing.
+verified creates goes to a new `_create_created_object_rollback`. It plans a
+**new, separately approved** plan and dispatches nothing.
 
-- Rollback model: `hamcp298-created-object-delete-rollback-v1`.
+- Rollback model (proposed): `hamcp298-created-object-rollback-v1`.
 - The plan carries `source_plan_id`, `source_plan_hash`, the source task id,
-  and for each child the source `operation_id` and record hash.
+  and per child the source `operation_id`, record hash and
+  `created_identity.capture_fingerprint`; plus the provenance
+  `source: created_object_rollback`. All are bound into the plan hash.
 - Excluded children are listed with their reasons.
 
-**Eligibility.** A created child is included only if every check passes:
+#### 3.4.1 Execution order (planning)
 
-1. The source operation has `action == "create"` and a type in
-   {`automation`, `script`, `input_boolean`, `input_number`,
-   `scene_configuration`}.
-2. The record shows:
-   - `terminal`;
-   - `normalized_outcome == "succeeded_verified"`;
-   - `dispatch_intent` present;
-   - `dispatch_count == 1`;
-   - `evidence.resulting_state_fingerprint == operation.proposed_config_hash`.
+1. **Local checks, no Home Assistant I/O.** Validate `plan_id`/`plan_hash`;
+   return a cached rollback for the same `rollback.request_id` if one exists
+   (`runtime.py:5172-5175`); load the source plan and records from local
+   persistence and verify their hashes.
+2. **Local eligibility per child**, no I/O. Included only if all hold:
+   - source operation `action == "create"`, type in {`automation`, `script`,
+     `input_boolean`, `input_number`, `scene_configuration`};
+   - record `terminal`, `normalized_outcome == "succeeded_verified"`,
+     `dispatch_intent` present, `dispatch_count == 1`;
+   - `evidence.resulting_state_fingerprint == operation.proposed_config_hash`
+     (HAMCP-135 equality, `configuration_rollback_eligibility.py:89`);
+   - `created_identity_capture == "captured"` and the stored
+     `created_identity` passes its fingerprint and the §3.2.2 correspondence
+     checks.
 
-   This is the created-state fingerprint, using the HAMCP-135 equality
-   (`configuration_rollback_eligibility.py:89`).
-3. Current readback fingerprint equals the created fingerprint. A difference
-   is refused `created_object_changed`. Absence is excluded as
-   `created_object_already_absent`.
-4. Registry identity:
-   - There is exactly one entry for `(domain, platform, unique_id=target_id)`,
-     where the platform is the domain for automation, script and helpers, and
-     `homeassistant` for scenes.
-   - For scenes, its `registry_entry_id` must equal the created identity
-     recorded at verification. A difference is refused
-     `created_object_identity_changed`. A scene record without a created
-     identity is refused, never inferred.
-   - For automation and script, the registry entry appears only after Core's
-     post-write reload. It cannot be captured at create verification, so the
-     entry observed at rollback planning is bound, and the 155 preflight
-     rechecks it. Disclosed.
-   - For helpers, the created identity is captured when the create readback
-     observes it. Otherwise the automation and script rule applies.
-5. The delete profile admits the delete identity for that type
-   (`core.route_status`). If not, the response is
-   `pending_signed_registry_admission`, with zero Home Assistant reads and
+   Otherwise the child is excluded: `created_object_not_verified` or
+   `created_object_identity_not_captured`. Excluded children never cause an
+   identity to be read at rollback time and adopted.
+3. **Admission, before any Home Assistant read.** Each remaining child's
+   delete identity (automation/script → `core.configuration_delete_operation`;
+   helpers → `core.created_helper_delete_operation`; scene →
+   `core.scene_create_delete_operation`), and each update child's existing
+   restore capability, must be admitted. An unadmitted child is excluded with
+   `pending_signed_registry_admission`, and the prerequisite rule (§3.4.4)
+   applies. If no child remains, the response is
+   `pending_signed_registry_admission` with **zero** Home Assistant reads and
    nothing stored.
-6. The source has no cached rollback. The existing `rollback.request_id`
-   caching applies (`runtime.py:5172-5175`).
+4. **Current-state reads** (only for admitted children): config or storage
+   item, registry entries, state by actual entity id, consumer evidence.
+5. **Ownership checks** (§3.4.2) and the prerequisite rule (§3.4.4).
+6. Store the plan.
 
-**Rollback plan contents.**
+The executor repeats steps 3-5 under the locks at preflight (§3.4.3).
 
-- One HAMCP-155 delete child per eligible created object, in **reverse**
-  forward order. The count is at most 8: `MAX_CONFIGURATION_OPERATIONS = 8`
-  (`governance/service.py:445`) equals the 155 bound.
-- Each child's intent is a standard `configuration_delete_intent_v1`:
-  - `pre_image_fingerprint` is the created fingerprint;
-  - `consumer_evidence_fingerprint` comes from the fenced dependency index
-    (consumers added since the create are disclosed and raise the plan as in
-    155 §3.2);
-  - `recreate_eligible: true`, so the rollback of this rollback is the 155
-    recreate.
-- **Mixed forward plans** (creates and verified updates): a single reverse
-  plan. Updates get the existing restore child. Creates get a delete child.
-  The order is strictly the reverse of the forward order. For example, if an
-  automation was updated to reference a newly created helper, the automation
-  is restored before the helper is deleted.
+#### 3.4.2 Ownership checks and outcomes
 
-  Two separate plans would lose that ordering. If the F3 child sequence cannot
-  carry delete and configuration adapters in one plan, the mixed case ships
-  later (§9 slice 5), and until then mixed plans keep today's update-only
-  rollback with the creates listed as excluded. This is a build risk, not a
-  product decision.
-- **Policy** (unchanged HAMCP-155/213): delete is in `physical_effects` as
-  `configuration_deleted`; protected effects in the created configuration
-  become elevated with an acknowledgement; dependency gaps become elevated.
-- **Approval:** exact-hash, through Ingress only, with no self-approval. The
-  forward approval is never reused.
+At planning and again at preflight, for each included child, against its
+creation-time identity:
+
+- current body fingerprint equals the created fingerprint, else
+  `created_object_changed`;
+- exactly one registry entry for `(registry_domain, registry_platform,
+  registry_unique_id)`, else `created_object_identity_changed` (none:
+  see absence below; more than one: refused);
+- that entry's `id` and `created_at` equal the captured values, else
+  `created_object_identity_changed`;
+- that entry's `modified_at` equals the captured value — the treatment of a
+  difference is **Q-A** (§10): refuse (`created_object_registry_modified_since_create`),
+  or include with disclosure and an elevated acknowledgement;
+- for helpers, the §3.2.2 correspondence checks hold for the current
+  storage item and registry entry; the delete argument is rebuilt from the
+  captured object id and must equal the captured `delete_argument`;
+- absence of the config/storage item: excluded `created_object_already_absent`,
+  nothing sent.
+
+Owner-consistent outcome for each replacement case (never silently adopted
+as proven ownership):
+
+| Case | What Engineering observes | Outcome |
+| --- | --- | --- |
+| Replacement with a different registry id (external delete/recreate after the 30-day purge, or an entry from another path) | `id` differs (and `created_at` usually differs) | Refused `created_object_identity_changed`, zero writes, under every Q-A option |
+| Replacement that restores the same registry id with an identical body (external delete/recreate within 30 days) | `id`, `created_at`, body equal; `modified_at` newer | Q-A option S: refused `created_object_registry_modified_since_create`. Option E: included only with the disclosure "the registry entry changed after Engineering created it; it may have been edited, or deleted and recreated outside Engineering, which Home Assistant does not distinguish" and an elevated acknowledgement. Option O: included with that disclosure, no elevation. Never reported as proven ownership |
+| Replacement that never removed the registry entry, with an identical body (identical-body scene POST, YAML or storage-file edit) | nothing distinguishable | Included as the created object; this residual limitation is disclosed in every created-object rollback plan (§8) |
+| Missing creation identity (older record, capture not admitted, not observed within bound, mismatch, read failure) | — | Excluded `created_object_identity_not_captured`; no rollback-time identity is captured or adopted. Automation/script may still be deleted through the public delete tool |
+| Replacement between planning and preflight | preflight identity, body or `modified_at` differs from the plan-bound values | Stale-state refusal at preflight, zero writes; a fresh rollback plan must be requested |
+| Replacement between preflight and the single send | not observable (no compare-and-swap) | Residual race under the locks, disclosed as in HAMCP-155; the send deletes by the bound id |
+
+#### 3.4.3 Rollback plan contents and approval
+
+- One child per eligible forward child, in **strict reverse** forward order,
+  at most 8 (`MAX_CONFIGURATION_OPERATIONS = 8`, `governance/service.py:445`,
+  equal to the HAMCP-155 bound).
+- Automation/script delete children: standard `configuration_delete_intent_v1`
+  (unchanged model) with `target_id` = config id, `entity_id` and
+  `registry_entry_id` from the creation identity, `pre_image_fingerprint` =
+  created fingerprint; the 155 preflight runs unchanged, and the 298 layer
+  additionally rechecks `created_at`/`modified_at` and the capture
+  fingerprint.
+- Helper and scene delete children: a new closed intent (proposed
+  `created_object_delete_intent_v1`) carrying the full §3.2.2 tuple
+  (`resource_target`, `storage_object_id`, `registry_unique_id`,
+  `registry_entry_id`, actual `entity_id`, `delete_argument`) plus
+  `pre_image_fingerprint`, `consumer_evidence_fingerprint`,
+  `dependency_reasons`, `recreate_eligible`.
+- Update children (mixed plans): the existing restore child, unchanged.
+- `consumer_evidence_fingerprint` from the fenced dependency index; consumers
+  added since the create are disclosed and raise the plan as in 155 §3.2.
+- `recreate_eligible: true`. The rollback of a created-object delete is a
+  recreate: automation/script through the HAMCP-155 recreate; helpers through
+  the existing governed create (its `generated_identity_mismatch` check
+  applies); scenes through the new scene profile's create.
+- Policy (unchanged HAMCP-155/213): `configuration_deleted` in
+  `physical_effects`; protected effects in the created configuration become
+  elevated with an acknowledgement; dependency gaps become elevated.
+- Approval: exact-hash, Ingress only, no self-approval; the forward approval
+  is never reused.
+
+#### 3.4.4 Mixed forward plans (create and update)
+
+**Acceptance outcome:** one reverse plan. Updates get the existing restore
+child; creates get a delete child; the order is strictly the reverse of the
+forward order. Example: forward "create helper H, then update automation A to
+reference H" rolls back as "restore A, then delete H".
+
+**Prerequisite rule.** In rollback order, every child that precedes a delete
+child D(X) is a prerequisite of D(X) (conservatively positional: Engineering
+does not try to prove which later forward child references X).
+
+- At planning: if any prerequisite of D(X) is excluded (stale, changed,
+  unverified, unadmitted, identity not captured), D(X) is excluded with
+  `created_object_rollback_prerequisite_excluded`, naming the prerequisite.
+- At execution: the plan is ordered and stops on the first failure (§3.6), so
+  a failed or uncertain restore of A leaves D(H) unattempted and marked.
+- A later delete is never attempted while an earlier restore is unresolved.
+
+This is not deferred. If implementation proves that a **specific**
+combination cannot be carried in one F3 child sequence (for example a named
+adapter pair), the build stops and that exact combination is escalated to
+Josh as a bounded scope question; nothing is pre-approved here.
 
 **Availability marking** (`runtime.py:4322-4379`):
 
 - `unavailable_for_create` becomes `available_pending_current_state_check`
-  when at least one created child meets checks 1-2.
+  when at least one created child passes the local checks of §3.4.1 step 2.
 - Plans made only of labels keep `ROLLBACK_NOT_SUPPORTED`.
 - Legacy contract-1 `CREATE_AUTOMATION` plans keep `unavailable_for_create`
-  (**Q6**).
+  pending Q6 (they carry no creation identity).
 
-### 3.4 Delete v2: the deletion gateway for scenes and helpers
+### 3.5 Deletion gateway for Engineering-created scenes and helpers
 
-`ConfigurationDeleteGateway` gains per-type commands. The automation and
-script behaviour is byte-for-byte unchanged.
+A created-object deletion gateway (beside `ConfigurationDeleteGateway`, whose
+automation/script code is unchanged) sends exactly these commands:
 
 | Type | Write (once) | Absent target | Registry match | Absence readback (polled 6 × 0.5 s) |
 | --- | --- | --- | --- | --- |
-| `automation` / `script` | `DELETE /api/config/<type>/config/<id>`, no body (unchanged) | 400 "Resource not found", no write | `(type, type, id)` | config 404 + registry absent + state absent (unchanged) |
-| `scene_configuration` | `DELETE /api/config/scene/config/<config_id>`, no body | 400 "Resource not found", no write (`view.py:142-151`) | `(scene, homeassistant, config_id)` | config GET 404 + registry absent + `GET /api/states/<entity_id>` 404 |
-| `input_boolean` / `input_number` | WS `input_boolean/delete` `{input_boolean_id}` / `input_number/delete` `{input_number_id}` | WS error `not_found`, then a stray result frame (below) | `(domain, domain, id)` | `{type}/list` lacks id + registry absent + state 404 |
+| `scene_configuration` | `DELETE /api/config/scene/config/<config_id>`, no body | 400 "Resource not found", no write (`view.py:142-151`) | `(scene, homeassistant, config_id)` | config GET 404 + registry absent + `GET /api/states/<actual entity_id>` 404 |
+| `input_boolean` | WS `{"type": "input_boolean/delete", "input_boolean_id": "<storage_object_id>"}` | WS `not_found`, then a stray result frame (below) | `(input_boolean, input_boolean, <storage_object_id>)` | `input_boolean/list` lacks the object id + registry absent + `GET /api/states/<actual entity_id>` 404 |
+| `input_number` | WS `{"type": "input_number/delete", "input_number_id": "<storage_object_id>"}` | as above | `(input_number, input_number, <storage_object_id>)` | `input_number/list` lacks the object id + registry absent + state 404 by actual entity id |
+
+The helper delete argument is the **object id**, never the full entity id;
+the state readback uses the **actual registry entity id**, never the
+resource target. A renamed helper therefore deletes by object id and reads
+back the renamed entity id (subject to Q-A for whether a rename blocks
+rollback at all).
 
 **Core facts:**
 
-- **Scene delete.**
-  - `view.py:142-159` writes atomically.
-  - `EditIdBasedConfigView._delete_value` pops only the **first** matching id
-    (`view.py:233-241`).
-  - The hook does **not** reload. It resolves
-    `ent_reg.async_get_entity_id(SCENE_DOMAIN, HOMEASSISTANT_DOMAIN, key)` and
-    calls `async_remove`, which removes the entity and its state, as a
-    fire-and-forget task (`config/scene.py:30-40`; `view.py:157`).
-  - A duplicate id leaves a 200 GET after the DELETE, which is a readback
-    mismatch (155 rule).
-  - Core keeps a `DeletedRegistryEntry` for 30 days.
-- **Helper delete.**
-  - `ws_delete_item` awaits `async_delete_item` (`helpers/collection.py:764-777`).
-  - That pops the item, schedules the storage save after `SAVE_DELAY = 10` s
-    (`:31`, `:356-369`) and awaits `notify_changes`. The listener
-    `_remove_entity` removes the registry entry, or force-removes the entity
-    (`:479-490`), **before** the reply.
-  - The collection serves only storage items. YAML helpers live in a separate
-    collection that shares the `IDManager`
-    (`input_boolean/__init__.py:105-131`; `input_number/__init__.py:160-184`;
-    the same wiring at 2026.10.3, `input_boolean/__init__.py:95-119`,
-    `input_number/__init__.py:116-140`). A YAML helper is therefore never
-    deleted.
-- **Upstream quirk.** On `ItemNotFound`, `ws_delete_item` sends
-  `ERR_NOT_FOUND` and then falls through to `send_result` for the same message
-  id (`collection.py:771-777`).
-  - The client must treat the **first** frame as authoritative and drop the
-    second.
-  - A not-found error is a confirmed non-mutation: `ItemNotFound` is raised
-    before the pop.
-  - A regression test pins this (§6).
-- **Persistence window, disclosed.** Helper absence is verified in the
-  runtime and registry. The storage file is written up to 10 s later, so a
-  Core stop inside that window can bring the helper back. Helper create has
-  the same window today.
+- Scene delete: `view.py:142-159` writes atomically;
+  `EditIdBasedConfigView._delete_value` pops only the **first** matching id
+  (`view.py:233-241`); the hook does not reload, it resolves
+  `ent_reg.async_get_entity_id(SCENE_DOMAIN, HOMEASSISTANT_DOMAIN, key)` and
+  calls `async_remove` fire-and-forget (`config/scene.py:30-40`;
+  `view.py:157`); a duplicate id leaves a 200 GET after the DELETE, which is a
+  readback mismatch (155 rule); Core keeps a `DeletedRegistryEntry` for 30
+  days (§3.2.1).
+- Helper delete: `ws_delete_item` awaits `async_delete_item`
+  (`helpers/collection.py:764-777`), which pops the item, schedules the
+  storage save with `SAVE_DELAY = 10` s (`:31`, `:356-369`), and awaits
+  `notify_changes`; the listener `_remove_entity` removes the registry entry
+  or force-removes the entity (`:479-490`) **before** the reply. The
+  collection serves only storage items; YAML helpers are a separate
+  collection sharing the `IDManager` (`input_boolean/__init__.py:107-131`;
+  `input_number/__init__.py:160-184`), so a YAML helper is never deleted.
+- Upstream quirk: on `ItemNotFound`, `ws_delete_item` sends `ERR_NOT_FOUND`
+  and then falls through to `send_result` for the same message id
+  (`collection.py:771-777`). The client treats the **first** frame as
+  authoritative and drops the second; not-found is a confirmed non-mutation
+  (`ItemNotFound` is raised before the pop).
+- **Durability, disclosed.** Helper absence is verified in the runtime and
+  registry, not on disk. The storage save is delayed 10 s. A clean Core stop
+  flushes pending delayed saves on `EVENT_HOMEASSISTANT_FINAL_WRITE`
+  (`helpers/storage.py:586-592`, `:609-620`); a crash or power loss inside
+  the window can lose the save, so the helper can reappear after restart.
+  Helper create has the same window today. Runtime absence is reported as
+  runtime absence, never as disk durability.
 
 **Route and permits.**
 
 - `clients/paths.py` `_route_methods` for `/config/scene/config/{}` becomes
-  `{GET, POST, DELETE}`.
-- `DELETE` additionally requires a **single-use delete permit**, mirroring the
-  Part 2 R1-H2 write permit. It is bound to plan, task, operation, exact
-  target, exact command and the recorded dispatch intent. Only the deletion
-  gateway installs it, and any other `DELETE` is refused before a session
-  exists.
-- Helper delete goes through a closed command builder. Only those two
-  commands are possible, and every other `{type}/delete` is refused.
-
-**Identities and routing.**
-
-- New F3 identities `delete_scene_configuration_configuration`,
-  `delete_input_boolean_configuration` and `delete_input_number_configuration`
-  map only to `core.configuration_delete_operation`.
-- `create_scene_configuration_configuration` maps only to the Q1 profile.
-- `f3_requirements()` keeps sending every unknown identity to
-  `core.unsupported_f3_operation`.
+  `{GET, POST, DELETE}`, and `DELETE` additionally requires a **single-use
+  delete permit** bound to plan, task, operation, exact config id, exact
+  command and the recorded dispatch intent. Only the created-object deletion
+  gateway installs it; any other scene `DELETE` (including from the scene
+  update gateway) is refused before a session exists. The scene update
+  profile's `never_sent` stays as it is.
+- Helper delete goes through a closed command builder that can produce only
+  the two commands above, from a validated object id; every other
+  `{type}/delete` is refused.
 
 **Reachability.**
 
 - The public `create_configuration_delete_plan` enum stays
   `["automation", "script"]`.
 - Scene and helper delete children are constructed **only** by the
-  rollback planner from a verified Engineering create. The service enforces
-  this with a provenance field on the plan, `source: created_object_rollback`,
-  bound into the plan hash. The executor refuses scene or helper delete
-  children without it.
-- The same rule is part of the v2 signed contract (`reachability`, §5).
+  created-object rollback planner from a record with captured creation
+  identity, with the plan provenance `source: created_object_rollback` bound
+  into the plan hash. The executor refuses scene or helper delete children
+  without it, and refuses a provenance whose source plan/record hashes do
+  not verify.
+- The same rule is part of both new signed contracts (`reachability`, §5).
 
-### 3.5 Partial failure and recovery
+### 3.6 Partial failure and recovery
 
 - Forward create plans keep today's semantics: ordered, non-atomic, stop on
-  the first failure.
-- Rollback plans: ordered, non-atomic, stop on the first failure; unattempted
-  children are marked; no automatic compensation.
-- An uncertain send is resolved by readback only, and a delete is never
-  redispatched (155 §1). Absent means verified. Present means not applied or
-  unresolved.
-- A child that read back `config_removed_runtime_unverified` is reported as
-  such and is not recreate-eligible.
+  the first failure. Capture failure never changes a create's outcome.
+- Rollback plans: ordered, non-atomic, stop on the first failure;
+  unattempted children are marked; no automatic compensation.
+- An uncertain send is resolved by readback only; a delete is never
+  redispatched (155 §1, `BlindRedispatchProhibited`). Absent means verified;
+  present means not applied or unresolved.
+- `config_removed_runtime_unverified` is reported as such and is not
+  recreate-eligible.
 
 ## 4. Public schema and tool-registration impact
 
-- **Tool count: unchanged.** Engineering-native tools: 81 at the base
-  (`len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)` = 25 + 56, computed from
-  base source; the formula is `application.py:278-280`). No tool is added or
-  removed. The delegated count is dynamic and untouched.
-- **`create_scene_configuration_plan`** (`tools/governance.py:1730-1778`) gains
-  the additive optional `action` enum `["update", "create"]`, default
-  `"update"`. With `create`:
-  - `name` and `entities` are required;
-  - `entity_id` and `null` member values are refused.
-
-  Under `update`, every existing request validates and behaves identically.
-  The security-sensitive surface is a public input schema change. A
-  regression test pins that update requests are identical.
+- **Tool count: no tool added or removed.** Engineering-native tools at the
+  base: 81 (`len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)` = 25 + 56;
+  formula `application.py:278-280`). The 2.6.0 aggregate depends on other
+  2.6 work and is not asserted here. The delegated count is dynamic and
+  untouched.
+- **`create_scene_configuration_plan`** (`tools/governance.py:1730-1778`)
+  gains the additive optional `action` enum `["update", "create"]`, default
+  `"update"`. With `create`: `name` and `entities` required; `entity_id` and
+  `null` member values refused. Under `update`, every existing request
+  validates and behaves identically (regression test). This is a
+  security-sensitive public input schema change.
 - **`create_configuration_delete_plan`**: schema unchanged
   (`tools/governance.py:1236-1273`).
 - **`rollback_change`**: schema unchanged. New response values:
-  - `rollback_model: hamcp298-created-object-delete-rollback-v1`;
-  - exclusion reasons `created_object_changed`,
-    `created_object_already_absent`, `created_object_identity_changed` and
-    `created_object_not_verified`.
-- **Plan and record surfaces:**
-  - availability status `available_pending_current_state_check` for create
-    plans;
-  - scene create evidence `created_identity`;
-  - scene create disclosure (`scene_loaded_state_not_verified_disclosed`,
-    "entity_id assigned by Home Assistant", the prior-metadata restore and the
-    upsert race).
-- **Catalog and health:**
-  - `capabilities.py:431` lists `resource_types: [automation, script]` for the
-    public delete tool, which is unchanged;
-  - `capabilities.py:528` lists the scene tool, which gains a `create`
-    description;
-  - `core_admission` reports both profiles.
+  `rollback_model: hamcp298-created-object-rollback-v1`; exclusion reasons
+  `created_object_not_verified`, `created_object_identity_not_captured`,
+  `created_object_changed`, `created_object_identity_changed`,
+  `created_object_already_absent`, `created_object_rollback_prerequisite_excluded`,
+  `pending_signed_registry_admission`, and (Q-A option S)
+  `created_object_registry_modified_since_create`.
+- **Plan and record surfaces:** availability
+  `available_pending_current_state_check` for create plans; record evidence
+  `created_identity` and `created_identity_capture` on automation, script,
+  helper and scene creates; scene create disclosures
+  (`scene_loaded_state_not_verified_disclosed`, "entity id and registry id
+  assigned by Home Assistant", the prior-metadata restore, the upsert race).
+- **Catalog and health:** `capabilities.py:431` (public delete tool
+  `resource_types: [automation, script]`) unchanged; `capabilities.py:528`
+  (scene tool) gains a `create` description; `core_admission` reports the two
+  new capabilities.
 
 ## 5. Signing impact
 
-| Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Can it batch with other 2.6 profiles |
+| Profile | New or changed | Core commands / contract | Why | Fingerprint impact | Batch |
 | --- | --- | --- | --- | --- | --- |
-| `core.configuration_delete_operation` | **Changed, from version 1** (`core_configuration_delete_operation_v1`, adapter `compiled-core-configuration-delete-operation-v1`, `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d`; signed for 2026.10.1 since seq 13 and 2026.10.3 since seq 14, carried in seq 15) **to version 2** (`core_configuration_delete_operation_v2`, adapter `compiled-core-configuration-delete-operation-v2`) | REST `DELETE /api/config/scene/config/{config_id}` (no body; domain `scene`, registry platform `homeassistant`); WS `input_boolean/delete` `{input_boolean_id}` and `input_number/delete` `{input_number_id}`; absence-readback reads `GET /api/config/scene/config/{config_id}` (404), WS `input_boolean/list` and `input_number/list`, `config/entity_registry/list`, `GET /api/states/{entity_id}`. `resource_types` grows from `[automation, script]` to `[automation, script, scene, input_boolean, input_number]` (helper set: Q2). Contract adds a per-type `absent_target` (REST 400 no write; WS `not_found` no write, duplicate result frame ignored), per-type readback, `reachability` (automation and script through the public delete tool or created-object rollback; scene and helpers through created-object rollback only), and `never_sent` (`scene.apply`, `scene.create`, `scene.delete`, `scene.reload`, `scene.turn_on`, `input_boolean/create`, `input_boolean/update`, `input_number/create`, `input_number/update`). Automation and script commands unchanged | Josh decision 2026-11-07 (scenes, new version shared with 298); 298 outcome (helpers). Undo of a scene or helper create needs a signed delete command, and v1 has none | **New fingerprint. Value unknown until computed from merged code**; it cannot be derived before the contract text merges. Version 2 needs `_contract()` to take a `profile_version` (§2.2). All existing v1 fingerprints must stay byte-identical (regression test). Every carried Core release entry (2026.10.1, 2026.10.3, 2026.11.0 and any later carried release) must switch its reference from v1 to v2 **in the same sequence**, each with exact v2 contract evidence for that release. A release left on v1 loses all deletion on a v2 runtime (§5.1). Probe fingerprints are unaffected (runtime-only profile) | **Yes**: one sequence after 17, together with the scene-create profile row below and any other 2.6 profiles. It must be the same sequence that re-references every carried release |
-| `core.scene_configuration_operation` | **Pending Q1.** If option A: **changed, from version 1** (`core_scene_configuration_operation_v1`, adapter `compiled-core-scene-configuration-operation-v1`, `sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb`; signed for 2026.10.3 in seq 15, carried to 2026.11.0 in planned seq 16) **to version 2** (`core_scene_configuration_operation_v2`, adapter `…-v2`). If option B or C: unchanged here | Option A adds a create target: `one_exact_absent_config_id_with_no_scene_registry_entry`, using the same `POST /api/config/scene/config/{config_id}` already in `SCENE_CONFIGURATION_REQUESTS`; create arguments (name required, every member a snapshot, no null, no entity_id); absence check (config 404 plus no `scene.*` registry entry with that unique_id); polled readback of the created registry identity; concurrency `upsert_concurrent_create_of_same_id_overwritten_undetected_disclosed`. No new route or command. `never_sent` unchanged, so scene `DELETE` stays never-sent for this profile | 329 outcome: create a new scene. Scene v1's target is "existing" only, and delete v1 or v2 is a delete contract | Option A: **new fingerprint, unknown until merged**. Every carried release (2026.10.3, 2026.11.0) moves v1→v2 in one sequence. Scene edit (Part 2) is withdrawn on any runtime and registry pairing where the versions differ (§5.1) | **Yes**: same sequence as the delete v2 row |
-| `core.governed_configuration_operation` | **Unchanged** (version 1, `sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441`) | None | Creates of automation, script, `input_boolean` and `input_number` are already signed. Rollback of those creates sends a delete under the delete profile, never under this one | None | Not applicable |
+| `core.configuration_delete_operation` | **Unchanged** (`core_configuration_delete_operation_v1`, `compiled-core-configuration-delete-operation-v1`, `sha256:5688af5d…887d`) | None. Also serves automation/script created-object rollback and their creation identity capture (reads already in the contract) | §3.1 | None | Not applicable |
+| `core.scene_configuration_operation` | **Unchanged** (`core_scene_configuration_operation_v1`, `compiled-core-scene-configuration-operation-v1`, `sha256:73bac906…a6bb`) | None; `DELETE` stays never-sent | Josh direction: separate scene profile | None | Not applicable |
+| `core.governed_configuration_operation` | **Unchanged** (`core_governed_configuration_operation_v1`, `compiled-core-governed-configuration-operation-v1`, `sha256:d517fa73…f441`) | None. Automation, script and helper creates (and the helper recreate) stay under it | Already signed | None | Not applicable |
+| `core.scene_create_delete_operation` (proposed) | **New**, version 1 (`core_scene_create_delete_operation_v1`, adapter `compiled-core-scene-create-delete-operation-v1`, proposed) | REST `POST /api/config/scene/config/{config_id}` to an absent id; `GET /api/config/scene/config/{config_id}`; `DELETE /api/config/scene/config/{config_id}` (no body); WS `config/entity_registry/list`; `GET /api/states/{entity_id}`. Contract: create target `one_exact_absent_ui_scene_config_id_with_no_scene_registry_entry`; delete target `one_exact_engineering_created_scene_with_creation_identity`; `resource_types: ["scene"]`, platform `homeassistant`; create arguments (name required, every member a snapshot, no null, no entity_id); create readback `config_exact_and_registry_identity_polled_loaded_state_not_verified`; delete `absent_target` `400_resource_not_found_no_write`; delete readback `config_404_registry_absent_state_absent_polled`; `reachability` (create through `create_scene_configuration_plan` `action: create`; delete only through created-object rollback); required check `scene_loaded_state_not_verified_disclosed`; concurrency `upsert_concurrent_create_of_same_id_overwritten_undetected_disclosed`; `never_sent` `scene.apply`, `scene.create`, `scene.delete`, `scene.reload`, `scene.turn_on`; recovery `read_only_no_redispatch` | HAMCP-329 outcome; Josh direction | New fingerprint, **unknown until computed from merged code** | One combined 2.6 signing: an `extend-capabilities` extension of the existing 2026.11.0 entry only |
+| `core.created_helper_delete_operation` (proposed) | **New**, version 1 (`core_created_helper_delete_operation_v1`, adapter `compiled-core-created-helper-delete-operation-v1`, proposed) | WS `input_boolean/list`, `input_number/list`, `input_boolean/delete {input_boolean_id}`, `input_number/delete {input_number_id}`, `config/entity_registry/list`; REST `GET /api/states/{entity_id}`. Contract: target `one_exact_engineering_created_storage_helper_with_creation_identity`; `resource_types: ["input_boolean", "input_number"]`; identity correspondence (resource target domain = type; object id = storage id = registry unique_id = delete argument; state by actual registry entity id); creation identity capture read-only; dispatch `at_most_once_ws_helper_delete_by_object_id`; `absent_target` `ws_not_found_no_write_duplicate_result_frame_ignored`; readback `storage_list_absent_registry_absent_state_absent_polled_runtime_not_disk_durable`; `reachability` created-object rollback only; `never_sent` `input_boolean/create`, `input_boolean/update`, `input_number/create`, `input_number/update` and every other `{type}/delete`; recovery `read_only_no_redispatch` | HAMCP-298 outcome (helpers); helper delete is a newly required permission | New fingerprint, **unknown until computed from merged code** | Same one combined 2.6 signing, 2026.11.0 only |
 
-### 5.1 The v1→v2 transition window (one version per capability)
+No other new permission is required. The probe profile and its fingerprints
+do not move (both new profiles are runtime-only). The signing tool checks
+retained references against the compiled exact contracts, so the one
+combined signing appends the two new references to the 2026.11.0 entry and
+retains every existing reference byte-for-byte (cross-check with #395).
 
-A runtime compiles one version per capability (§2.2). A registry release entry
-references one version per capability. The registry is fetched independently
-of the image. So:
+**Proving tests (required implementation evidence; none has been run):**
 
-- A **v2 runtime with a registry that still references v1** withdraws every
-  deletion: automation and script deletes, the HAMCP-155 recreate's source,
-  and 298 rollbacks. Under option A it also withdraws scene edit. The status
-  is `pending_signed_registry_admission`, fail-closed.
-- A **v1 runtime with a registry that references v2** loses the same
-  capabilities on the currently deployed Engineering.
+1. Every existing runtime profile (32 at the base) keeps its exact
+   `profile_id`, `profile_version`, `adapter_id` and `contract_fingerprint`,
+   compared to the signed references at sequence 17 for every carried Core
+   release.
+2. **Old runtime + extended registry:** a base runtime with a test-signed
+   registry whose 2026.11.0 entry also references the two new capabilities
+   keeps admission of every existing capability, and the unknown references
+   do not break selection.
+3. **New runtime + old registry** (sequence-17 references only): every
+   existing capability is admitted exactly as before (scene update,
+   automation/script delete, automation/script create rollback); only the new
+   identities (scene create, scene/helper capture, scene/helper delete)
+   report `pending_signed_registry_admission`, with zero Home Assistant
+   reads.
+4. **Older Core releases:** on 2026.10.0, 2026.10.1 and 2026.10.3 the new
+   capabilities are never admitted, even with the extended registry, and
+   existing admission on those releases is unchanged.
+5. Probe fingerprints unchanged.
 
-No ordering avoids both cases. The window is the time between signing and
-deploying. Whether to accept the window, and which side of it, is **Q3**.
-Supporting two versions per capability is a registry-model change outside
-this scope. Josh's decision is a new version, so the design does not propose
-a sibling capability id to avoid the window.
+### 5.1 Superseded (historical): the v1→v2 version-switch analysis
+
+The 2026-11-07 revision proposed `core.configuration_delete_operation` v2
+(and, under its option A, `core.scene_configuration_operation` v2), moving
+every carried Core release from v1 to v2 in one sequence, accepting a
+fail-closed withdrawal window between signing and deploying (old Q3), and
+recovering an implementation revert by re-signing references back to v1.
+Josh's direction (register 2026-11-07; confirmed in-session 2026-11-08)
+replaced that architecture with additive profiles. The analysis is retained
+only as history; it is not an actionable plan, no version-replacement tooling
+is to be built for it, and nothing in §3, §5, §7 or §9 depends on it.
 
 ## 6. Negative reachability, refusals and tests
 
+All rows are required implementation evidence; none has been run.
+
 | Path | Refusal | Test (new unless noted) |
 | --- | --- | --- |
-| Scene create while the Q1 profile is unadmitted | `pending_signed_registry_admission`, zero HA reads, nothing stored | admission-first test, with a counted fake transport |
-| Scene create for an existing id or a registered unique_id | `scene_configuration_target_exists` / `scene_configuration_config_id_registered`, no write | planning-refusal tests; preflight-stale test (id appears after planning) |
+| Scene create or scene/helper rollback while its new profile is unadmitted | `pending_signed_registry_admission`, zero Home Assistant reads, nothing stored | admission-first tests with a counted fake transport (planning and preflight) |
+| Creation identity capture while its capability is unadmitted | no read sent; record `capability_unadmitted`; create outcome unchanged | counted-transport test |
+| Scene create for an existing id or a registered unique_id | `scene_configuration_target_exists` / `scene_configuration_config_id_registered`, no write | planning tests; preflight-stale test (id appears after planning) |
 | Scene create with `entity_id`, a `null` member, a missing name or entities | schema or planner refusal before reads | schema tests; update-request identity regression |
-| Scene `DELETE` without the delete permit, or from the scene gateway | refused before transport (`paths.py`) | permit-missing, permit-reuse and wrong-target tests; scene gateway `NEVER_SENT` unchanged (existing) |
-| Scene services | `scene.turn_on`, `scene.apply`, `scene.create`, `scene.delete` and `scene.reload` never sent | existing never-sent tests extended to the create and delete paths |
+| Scene `DELETE` without the permit, reused permit, wrong target, or from the scene update gateway | refused before transport (`paths.py`) | permit tests; scene update `never_sent` unchanged (existing) |
+| Scene services | never sent | existing never-sent tests extended to create and delete |
 | Public delete tool with scene or helper types | schema enum refusal; planner `unsupported_resource_type` before reads | schema-unchanged test; direct-service-call refusal |
-| Scene or helper delete child without `source: created_object_rollback` | executor refusal before intent | forged-plan test |
+| Scene or helper delete child without `source: created_object_rollback`, or with forged/mismatched source hashes | executor refusal before intent | forged-plan and missing-provenance tests |
 | Helper `{type}/delete` for any other type | closed builder refusal | WS allowlist test |
-| `ERR_NOT_FOUND` followed by a duplicate result frame | first frame authoritative → `sent_rejected_no_mutation`; second frame dropped without mis-correlation | fake-WS quirk test |
-| Rollback of an unverified, uncertain or undispatched create | excluded (`created_object_not_verified`) | eligibility matrix |
-| Rollback after the created object changed, or its identity changed | `created_object_changed` / `created_object_identity_changed`, zero writes | stale tests at planning and preflight |
-| Rollback when already absent | excluded, nothing sent | test |
-| Label-create rollback | `ROLLBACK_NOT_SUPPORTED` unchanged (existing) | existing test |
+| Helper identity mismatch: resource target domain ≠ type (cross-domain), object id ≠ storage id / unique_id / delete argument, registry entry of the other helper domain | capture `identity_mismatch`; rollback excluded or refused, zero writes | tests for **both** `input_boolean` and `input_number` with distinct full ids and object ids |
+| Helper exact delete argument | sends `{type: "<domain>/delete", "<domain>_id": "<object id>"}`, never the full entity id | fake-WS argument assertion for both domains |
+| Renamed helper or automation (registry entity id ≠ `<domain>.<object id>`) | per Q-A: option S refuses `created_object_registry_modified_since_create`; options E/O delete by object id/config id and read state by the actual entity id | rename tests per option, state readback against the renamed id |
+| `ERR_NOT_FOUND` followed by a duplicate result frame | first frame authoritative → `sent_rejected_no_mutation`; second dropped without mis-correlation | fake-WS quirk test |
+| Rollback of an unverified, uncertain or undispatched create | excluded `created_object_not_verified` | eligibility matrix |
+| Record without creation identity (older record, capture failed/timed out/unadmitted/mismatch) | excluded `created_object_identity_not_captured`; no rollback-time identity read is adopted | missing-identity test with a counted transport proving no adoption |
+| Replacement with a different registry id before rollback | `created_object_identity_changed`, zero writes | test at planning and at preflight |
+| Replacement restoring the same registry id and identical body | per Q-A (S: refused; E: elevated acknowledgement + disclosure; O: disclosure) — never reported as proven ownership | delete/re-register fake-registry test with restored `id`/`created_at` and new `modified_at` |
+| Replacement between planning and preflight | stale-state refusal, zero writes | preflight-stale test for each type |
+| Created object changed or already absent | `created_object_changed` / `created_object_already_absent`, nothing sent | tests |
+| Mixed plan, prerequisite restore excluded at planning | dependent delete excluded `created_object_rollback_prerequisite_excluded` | create helper → update consumer, consumer stale |
+| Mixed plan, prerequisite restore fails or is uncertain at execution | stop; helper delete unattempted and marked | create helper → update consumer, restore fails |
+| Label-create rollback | `ROLLBACK_NOT_SUPPORTED` (existing) | existing test |
 | Generic `create_configuration_plan` with `delete` | refused (existing) | existing test |
-| v1/v2 profile mismatch | `pending_signed_registry_admission` for every delete identity, scene identities under option A | coordinator and selection tests with test-signed registries referencing v1 and v2 |
-| Existing profile fingerprints | byte-identical after the `_contract()` change | regression over all 32 profiles |
-| Uncertain delete send | readback only, never redispatched (existing `BlindRedispatchProhibited`) | recovery tests per new type |
+| Existing profile references and fingerprints | byte-identical | §5 proving tests 1-5 |
+| Uncertain delete send | readback only, never redispatched (`BlindRedispatchProhibited`) | recovery tests per new type |
 
 Mutations, run under the heavy-job rules in the build PRs and not here:
 
 1. drop the scene create absence recheck;
 2. drop the created-fingerprint check;
-3. drop the scene `registry_entry_id` binding;
-4. accept a delete without the permit;
-5. treat the second WS frame as the reply;
-6. skip the polled create readback;
-7. expose scene in the public delete enum.
+3. drop the registry `id` comparison;
+4. drop the `modified_at` comparison (if Q-A selects S or E);
+5. accept a rollback-time identity when creation identity is missing;
+6. send the helper full entity id as the delete argument;
+7. accept a delete without the permit;
+8. treat the second WS frame as the reply;
+9. skip the polled create readback;
+10. drop the mixed-plan prerequisite rule;
+11. expose scene in the public delete enum.
 
 ## 7. Acceptance
 
 **Useful authorized success** (test-signed registry, fake Core, end to end):
 
-1. Scene create: plan → approve → one POST → verified (config exact, registry
-   identity captured) with the loaded-state disclosure. Then `rollback_change`
-   → separate approval → one scene `DELETE` → absence verified. The 155
-   recreate restores the same config id.
-2. Automation create, then a rollback that deletes it, under **delete v1**
-   (Q4 phasing) and again under v2.
-3. `input_boolean` and `input_number` create, then a rollback that deletes
-   them.
-4. A mixed plan (create a helper, update an automation to reference it). The
+1. Scene create: plan → approve → one POST → verified (config exact,
+   creation identity captured) with the loaded-state disclosure; then
+   `rollback_change` → separate approval → one scene `DELETE` → absence
+   verified; the recreate restores the same config id.
+2. Automation and script create → creation identity captured under the
+   unchanged delete contract → rollback deletes it under **unchanged delete
+   v1**, on a Core release where only sequence-17 references exist.
+3. `input_boolean` and `input_number` create → identity captured → rollback
+   sends the exact object-id delete argument → absence verified by object id
+   and actual entity id.
+4. Mixed plan: create a helper, update an automation to reference it;
    rollback restores the automation first, then deletes the helper.
+5. Mixed plan with the restore excluded at planning, and separately with the
+   restore failing at execution: the helper delete is not attempted in
+   either case and the result says why.
 
 **Refusal:** every row of §6.
 
@@ -711,138 +931,150 @@ Mutations, run under the heavy-job rules in the build PRs and not here:
 
 - A 400 on DELETE, or a WS not-found, gives `sent_rejected_no_mutation`.
 - An uncertain send gives a readback decision.
-- `config_removed_runtime_unverified` is reported as not success.
-- `scene_config_stored_registry_unverified` is reported as not success.
-- A partial rollback stops at the first failure, with the remaining children
-  marked.
+- `config_removed_runtime_unverified` and `scene_config_stored_registry_unverified`
+  are reported as not success.
+- A partial rollback stops at the first failure, remaining children marked.
+- Capture failure leaves the forward create outcome unchanged.
 
-**Verification:** each exact readback in §3.2 and §3.4, polled within a
-bound.
+**Verification:** each exact readback in §3.3 and §3.5, polled within a
+bound; helper absence reported as runtime absence, not disk durability.
 
-**Recovery:**
-
-- A process loss after the intent resolves by readback only.
-- The rollback of the rollback (the recreate) is offered only for
-  `succeeded_verified` delete children.
+**Recovery:** process loss after the intent resolves by readback only; the
+rollback of the rollback (the recreate) is offered only for
+`succeeded_verified` delete children; restart around intent and readback
+tested (§8 persistence gate).
 
 **Post-signing canary** (a separate, Josh-authorized step, not part of this
-design):
-
-1. Create one test scene, verify it, roll it back and verify absence.
-2. Do the same for one test automation and one test helper.
+design): create one test scene, verify, roll back, verify absence; the same
+for one test automation and one test helper.
 
 ## 8. Security
 
 - **New write reachability** (an architecture change under root
-  `AGENTS.md`):
-  - scene `DELETE`;
-  - `input_boolean/delete` and `input_number/delete`;
-  - scene create through POST to an absent id.
-
-  Each is:
-  - bound to an exact identity and a signed profile;
-  - admission-checked before any read;
-  - sent at most once after a durable intent;
-  - verified by exact readback;
-  - negative-tested (§6).
-- **Bounded deletion.** Scene and helper deletion is reachable only as the
-  undo of a verified Engineering create. The proof is the fingerprint
-  equality plus the registry identity. Deletion is never offered as a general
-  tool, so Engineering cannot delete a scene or helper it did not create.
-- **No provider bypass.**
-  - The provider boundary stays `direct_ha_api`.
-  - There is no ha-mcp delegation, fallback or direct-HA path outside the two
-    gateways.
-  - Upstream `ha_config_remove_*` stay unrouted.
-  - Legacy `delete_automation` stays prohibited (155 §4).
-- **Persistence.**
-  - New record evidence `created_identity` (scene creates), which is additive.
-  - New plan provenance `source: created_object_rollback` and rollback model,
-    both bound into the plan hash.
-  - Records that lack the new keys are refused, never inferred.
-  - No historical persisted format is rewritten, and no compatibility fixture
-    is needed. Older plans are read as before.
-- **Signing.**
-  - Two runtime-only profile versions.
-  - No probe fingerprint moves.
-  - Fingerprints come from merged code only.
-  - The transition window fails closed (§5.1).
-- **Disclosure, not prevention.** The following are stated in every relevant
-  plan:
-  - the upsert race;
-  - the `uuid4` repair of id-less entries;
-  - the prior registry metadata restore;
-  - the 10 s helper storage window;
-  - the asynchronous registry creation for automation, script and scene;
-  - loaded state not verified.
-- **Secrets.** None are read or added. No live Home Assistant access is used
+  `AGENTS.md`): scene create by POST to an absent id; scene `DELETE`;
+  `input_boolean/delete` and `input_number/delete`. Each is bound to an exact
+  identity and a new signed profile, admission-checked before any read, sent
+  at most once after a durable intent, verified by exact readback, and
+  negative-tested (§6). Automation/script deletion reachability is unchanged
+  (already reachable through the public delete tool under delete v1).
+- **Bounded deletion and its limit.** Scene and helper deletion is reachable
+  only as the separately approved undo of a verified Engineering create
+  whose identity was captured at creation, through a closed command builder
+  and a single-use permit. Deletion is never offered as a general tool for
+  these types. Engineering refuses whenever the observable identity (registry
+  `id`, `created_at`, body fingerprint, helper correspondence and, per Q-A,
+  `modified_at`) differs from the creation capture. **Limitation:** Home
+  Assistant does not expose object incarnation. A replacement that keeps
+  every observable value equal — in particular one that never removed the
+  registry entry and has an identical body — cannot be detected, and the
+  rollback would delete it; under Q-A options E/O a delete/recreate that
+  restored the same registry id is also included, disclosed. The design does
+  not claim that Engineering can never delete an object it did not create.
+- **No provider bypass.** The provider boundary stays `direct_ha_api`; no
+  ha-mcp delegation, fallback or direct-HA path outside the gateways;
+  upstream `ha_config_remove_*` stay unrouted; legacy `delete_automation`
+  stays prohibited (155 §4).
+- **Persistence and downgrade — implementation acceptance gate.**
+  - New record evidence `created_identity` / `created_identity_capture` on
+    create records, new plan provenance `source: created_object_rollback`,
+    the new rollback model and the new delete intent are additive and bound
+    into their hashes.
+  - Old plans and records (without the new keys) must load, verify their
+    historical hashes and behave exactly as before; they are never inferred
+    to be rollback-eligible.
+  - An older runtime must reject the new rollback plan forms and delete
+    intents as unsupported, never execute them, and must still load records
+    that carry the new evidence keys.
+  - Restart tests around the dispatch intent and the readback for every new
+    path.
+  - If implementation changes the serializer or hashed material of any
+    already-shipped plan or record format, executable old-record
+    compatibility evidence is required, and any committed historical fixture
+    must be generated by the exact historical writer (root `AGENTS.md`
+    "Persisted Compatibility Fixtures"). No fixture is reconstructed by hand.
+    This gate is not waived by this design.
+- **Signing.** Two new runtime-only profiles, Core 2026.11.0 only, one
+  combined 2.6 signing; existing references unchanged; no probe fingerprint
+  moves; fingerprints come from merged code only.
+- **Disclosure, not prevention:** the upsert race; the `uuid4` repair of
+  id-less entries; the prior registry metadata and id restore; the residual
+  observable-identity limitation; the 10 s helper storage window and crash
+  durability; asynchronous registry creation for automation, script and
+  scene; loaded state not verified.
+- **Secrets.** None are read or added. No live Home Assistant access was used
   for this design.
 
 ## 9. Build plan
 
-Every implementation PR targets `release/2.6.0`. Each is a draft with
-independent review. 2.5.0 lands first and **wins shared files**.
+Every implementation PR targets `release/2.6.0`, is a draft with independent
+review, and catches up by merge, never rebase. 2.5.0 lands first and **wins
+shared files**: #387 (HAMCP-288) touches `application.py`,
+`models/responses.py`, `tests/test_f3_runtime_integration.py`,
+`tests/test_beta_v2.py`, `tests/test_f3_readiness.py`; #384 (HAMCP-309 Part
+3) touches `docs/CORE_RELEASE_REGISTRY.md` and
+`scripts/core_evidence_workflow.py`, which signing uses; #386 touches helper
+value control only.
 
-- #387 (HAMCP-288) touches `application.py`, `models/responses.py`,
-  `tests/test_f3_runtime_integration.py`, `tests/test_beta_v2.py` and
-  `tests/test_f3_readiness.py`.
-- #384 (HAMCP-309 Part 3) touches `docs/CORE_RELEASE_REGISTRY.md` and
-  `scripts/core_evidence_workflow.py`, which the signing step uses.
-- #386 touches helper value control only, with no overlap.
-
-Catch up with `release/2.5.0` by merge, never by rebase.
+All slices ship in 2.6.0. Slice order is build sequencing, not phased
+signing.
 
 | Slice | Content | Profile or signing effect | Depends on |
 | --- | --- | --- | --- |
-| 1 | `_contract(profile_version=1)` support (`_v{n}` id, versioned material); ADR-018 amendment recording the superseding decisions (after Q5) | none (regression: 32 fingerprints unchanged) | 2.5.0 merged |
-| 2 | 298 for automation and script under **delete v1**: eligibility proof, `_create_created_object_delete_rollback`, availability marking, create-only plans | none; runs on the signed v1 | slice 1; Q4 |
-| 3 | Delete v2: scene and helper gateway commands, the delete permit, the route method, identities, `reachability` enforcement, the WS quirk; 298 for helpers and the scene undo | **compiles v2 in place of v1.** Merging it into a released image starts the §5.1 window, so it ships only in an image whose deploy follows the signing (Q3) | slice 2; Q2, Q3 |
-| 4 | Scene create (`action: create`, absence check, create permit, polled readback, created identity) under the Q1 profile | Q1 profile version (option A: scene v2) | slice 3; Q1 |
-| 5 | Mixed create-and-update reverse plans, if the F3 sequence needs work | none | slice 2 |
-| 6 | Signing (Josh only): one sequence **after 17** re-referencing every carried release to delete v2 (and to scene v2 under option A), with per-release contract evidence | new fingerprints | slices 3-4 merged; built image provenance |
+| 1 | ADR-018 amendment recording the HAMCP-329/298 direction; creation identity capture framework and `created_identity` evidence; persistence/downgrade tests | none; §5 proving test 1 | 2.5.0 merged |
+| 2 | 298 for automation and script: capture under the unchanged delete contract, eligibility and ownership checks, `_create_created_object_rollback`, availability marking, mixed reverse plans with the prerequisite rule | none (runs on signed delete v1) | slice 1; Q-A for the `modified_at` rule |
+| 3 | New `core.created_helper_delete_operation`: closed helper builder, identity tuple, WS quirk, permits, routes; 298 for helpers including mixed plans | new runtime-only profile, dormant until signed | slice 2 |
+| 4 | New `core.scene_create_delete_operation`: scene `action: create`, absence check, create permit, polled readback, scene delete, route method + delete permit, scene undo and recreate | new runtime-only profile, dormant until signed | slice 2 |
+| 5 | Signing (Josh only): the one combined 2.6 `extend-capabilities` extension of the 2026.11.0 entry, adding these two references with the other approved 2.6 additions | two new references; existing references unchanged | slices 3-4 merged; built image provenance |
 
-**Rollback of the implementation.**
-
-- Slices 1, 2 and 5: revert.
-- Slices 3 and 4: reverting to a v1 runtime while the registry references v2
-  withdraws deletion (§5.1). It needs a re-signed sequence referencing v1, or
-  an accepted withdrawal. Josh decides.
+**Rollback of the implementation.** Every slice reverts cleanly: the
+existing capabilities never change, so a revert only removes new identities.
+If a release with the new profiles is reverted to an older runtime while the
+registry carries the new references, the older runtime ignores them (§5
+proving test 2) and must reject any stored new-form rollback plans (§8 gate);
+no re-signing is needed.
 
 ## 10. Open questions — pending Josh
 
-- **Q1. Profile home for scene create.** Not covered by the 329 decision, which
-  places only the undo in the delete profile. The options:
-  - **(A)** `core.scene_configuration_operation` v2 adds create. This keeps
-    create next to the scene readback contract. Cost: scene edit enters the
-    v1→v2 window.
-  - **(B)** Delete v2 also carries the scene create POST. Only one profile
-    changes. Cost: a contract named "delete" authorizes a create.
-  - **(C)** A new sibling profile for scene create. There is no window for
-    scene edit. Cost: a new capability id, and readiness map row 1 named it
-    only as an alternative.
+Withdrawn per Josh direction (register 2026-11-07; confirmed in-session
+2026-11-08) and the Codex review: old Q1 (scene profile home: separate new
+scene profile), Q2 (helper types: the existing governed creates
+`input_boolean`, `input_number`), Q3 (v1→v2 window: obsolete), Q4 (phasing:
+all in 2.6.0, one signing), Q5 (ADR-018: the approved HAMCP-298 outcome is
+recorded in the amendment).
 
-  The author's analysis favours A. That is not a decision.
-- **Q2. Helper types in delete v2.** The proposal is `input_boolean` and
-  `input_number`, which are today's governed creates. Readiness map row 2 gates
-  helper delete on "owner scope (types)". Future storage-helper types would
-  join through a later version once their create exists.
-- **Q3. The v1→v2 transition window** (§5.1). Accept the fail-closed
-  withdrawal of all deletion (and scene edit under option A) between signing
-  and deploying, and choose the order: sign first or deploy first.
-- **Q4. Phasing.** May 298 for automation and script ship under the signed
-  delete v1 (slice 2) before v2 is signed? Or must 298 ship as one unit with
-  helpers and scenes?
-- **Q5. ADR-018 supersession.** ADR-018 prohibits create-through-delete. The
-  329 decision covers scenes. Confirm that the 298 register outcome is Josh's
-  superseding direction for automations, scripts and helpers, so the amendment
-  can record it as such.
+- **Q-A. Ownership strictness when the registry entry changed after
+  creation.** Home Assistant restores the registry `id` and `created_at` on
+  delete/recreate, so only `modified_at` reveals that the entry changed, and
+  it cannot say whether that was a benign edit or a delete/recreate. Options:
+  - **S (strict):** refuse rollback when `modified_at` differs. Fail-closed;
+    a created helper or scene that is later renamed, given an area or
+    exposed can no longer be undone by Engineering (automation/script can
+    still use the public delete tool).
+  - **E (elevated, author's recommendation):** include it with the
+    disclosure in §3.4.2 and an elevated acknowledgement at approval. Keeps
+    the common rename/area case actionable; never claims proof.
+  - **O (observed):** include it with the disclosure only.
+
+  Under every option a different registry id, `created_at` or body refuses,
+  and missing creation identity excludes. Blocks: contract freeze of the
+  eligibility rule (slice 2 onward); if unanswered at freeze, S is the
+  fail-closed default.
 - **Q6. Legacy contract-1 `CREATE_AUTOMATION` plans**
-  (`governance/service.py:5523-5526`). Are they in 298 scope, or do they keep
-  `unavailable_for_create`?
-- **Q7. A created scene that is stored but never registered.** The registry
-  entry may not appear within the bound, for example if the reload fails. The
-  config then exists with no registry identity. The 155 rule refuses a delete
-  without a registry entry, so no governed undo exists. The options:
-  - keep that rule (fail-closed, the author's default);
-  - allow a config-only scene delete with a weaker readback (config 404 only),
-    which deviates from HAMCP-155.
+  (`governance/service.py:5523-5526`). Their records carry no creation
+  identity, and §3.2 forbids substituting rollback-time evidence. Options:
+  (a) keep `unavailable_for_create` (recommended; consistent with §3.2, and
+  the public delete tool still deletes such an automation); (b) bring them
+  into scope, which requires the legacy writer to capture creation identity
+  for new legacy plans — a scope change to a legacy path. Blocks: contract
+  freeze of availability marking.
+- **Q7. A created scene that is stored but never registered within the
+  bound.** The config exists with no registry identity, so there is no
+  creation identity and no governed undo. Options: (a) keep it non-success
+  and not rollback-eligible (recommended; fail-closed, matches HAMCP-155);
+  (b) separately design a config-only scene cleanup with a weaker readback
+  (config 404 only), a distinct weakening needing its own explicit decision.
+  Blocks: scene create acceptance scope (slice 4).
+
+Conditional, not a current question: a mixed-plan deferral needs Josh only
+if implementation proves a **specific** combination cannot meet §3.4.4; it
+is not pre-approved.
