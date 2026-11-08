@@ -127,7 +127,7 @@ EXPECTATIONS = {
     "unsupported_version_rollback": ("side_by_side", "sbs_engineering_rollback_91_refused"),
 }
 GATEWAY_CASES = {
-    ("91_only", "91_parity_dashboard_gateway_acceptance"): (CANDIDATE_VERSION, "admitted"),
+    ("91_only", "91_parity_read_gateway_acceptance"): (CANDIDATE_VERSION, "admitted"),
     ("91_only", "91_filesystem_disabled_variant"): (CANDIDATE_VERSION, "absent"),
     ("side_by_side", "sbs_stage_a_85_legacy_useful"): (BASELINE_VERSION, None),
     ("side_by_side", "sbs_stage_b2_91_strict_full_useful"): (CANDIDATE_VERSION, "admitted"),

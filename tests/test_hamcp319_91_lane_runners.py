@@ -34,6 +34,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support import governed91_evidence  # noqa: E402
 
 
 def _load(name: str):
@@ -83,6 +86,8 @@ def produced_cases(step: dict, configuration: str) -> list[str]:
         produced += [f"image_identity_{role}" for role in lanes.ROLES[configuration]]
     if "exact_image_admission_91_typed.py" in text:
         produced.append(typed.CASE)
+    if "exact_image_admission_91_governed.py" in text:
+        produced += list(governed91_evidence.governed.CASES)
     return produced
 
 
@@ -348,6 +353,8 @@ def passing_results(configuration: str, architecture: str = "amd64") -> dict:
             observed = {"role": role, "version": peer["upstream_version"], "image_digest": peer["image_index_digest"],
                         "manifest_digest": peer["architecture_image_digests"]["linux/" + architecture],
                         "config_digest": "sha256:" + "e" * 64}
+        if case.name in governed91_evidence.governed.REQUIRED_OPERATIONS:
+            observed = governed91_evidence.passing_observed(case.name)
         results[case.name] = lanes.case_result(case.name, "passed", form=case.endpoint_form, observed=observed)
     return results
 
@@ -428,7 +435,7 @@ class StrictFullEndpointTests(unittest.TestCase):
     def test_strict_cases_with_the_short_form_fail(self) -> None:
         status, reason, _ = health_case("admitted_strict_91", configured_url=SHORT_STRICT)
         self.assertEqual((status, reason), ("failed", "endpoint_path_not_lane_value"))
-        status, reason, _ = gateway_case("91_only", "91_parity_dashboard_gateway_acceptance",
+        status, reason, _ = gateway_case("91_only", "91_parity_read_gateway_acceptance",
                                          configured_url=SHORT_STRICT)
         self.assertEqual((status, reason), ("failed", "endpoint_path_not_lane_value"))
         status, reason, _ = gateway_case("side_by_side", "sbs_stage_b2_91_strict_full_useful",
@@ -723,7 +730,7 @@ class GatewayCaseTests(unittest.TestCase):
                 self.assertEqual(observed["negotiated_protocol"], PROTOCOL)
 
     def test_gateway_negatives(self) -> None:
-        name = ("91_only", "91_parity_dashboard_gateway_acceptance")
+        name = ("91_only", "91_parity_read_gateway_acceptance")
         self.assertEqual(gateway_case(*name, source=None)[:2], ("failed", "acceptance_result_missing"))
         self.assertEqual(gateway_case(*name, source={**gateway_source("9.1.0", "admitted"), "result": "FAIL"})[:2],
                          ("failed", "acceptance_result_not_pass"))
@@ -743,7 +750,7 @@ class GatewayCaseTests(unittest.TestCase):
 
 class NonExecutionTests(unittest.TestCase):
     def args(self, directory: str, **overrides) -> argparse.Namespace:
-        values = dict(configuration="91_only", case="91_parity_dashboard_gateway_acceptance",
+        values = dict(configuration="91_only", case="91_parity_read_gateway_acceptance",
                       source=str(Path(directory) / "missing.json"), engineering_endpoint="http://127.0.0.1:18100/x/mcp",
                       configured_url=STRICT, upstream_endpoint=PEER_STRICT, expected_engineering_version=LANE_VERSION,
                       engineering_container="engineering-admission-91-strict", rollback_identity=None,

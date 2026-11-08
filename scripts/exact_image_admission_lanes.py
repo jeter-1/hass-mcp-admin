@@ -87,8 +87,10 @@ CASES: dict[str, tuple[Case, ...]] = {
         Case("image_identity_candidate", None),
         Case("91_strict_full_direct_initialize_no_redirect", "strict_full"),
         Case("91_strict_admission_positive", "strict_full"),
-        Case("91_parity_dashboard_gateway_acceptance", "strict_full"),
+        Case("91_parity_read_gateway_acceptance", "strict_full"),
         Case("91_typed_controls_verified_readback", "strict_full"),
+        Case("91_governed_dashboard_verified_readback", "strict_full"),
+        Case("91_typed_public_verified_readback", "strict_full"),
         Case("91_legacy_form_refused_before_list", "legacy"),
         Case("91_filesystem_disabled_variant", "strict_full"),
     ),
@@ -586,6 +588,17 @@ def load_case_results(cases_dir: Path) -> dict[str, dict[str, Any]]:
     return results
 
 
+def governed_module():
+    """The governed-evidence validator (imported lazily: it imports this module)."""
+
+    import exact_image_admission_91_governed as governed
+    return governed
+
+
+def governed_operations() -> dict[str, tuple[str, ...]]:
+    return governed_module().REQUIRED_OPERATIONS
+
+
 def build_manifest(row: dict[str, Any], engineering_commit: str,
                    results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     configuration, architecture, state = row.get("configuration"), row.get("architecture"), row.get("state")
@@ -619,6 +632,13 @@ def build_manifest(row: dict[str, Any], engineering_commit: str,
         require(status in ("passed", "failed", "skipped"), "manifest_case_status_invalid")
         require(value.get("endpoint_form") == case.endpoint_form, "manifest_case_form_mismatch")
         reason = bounded(value.get("reason") or "")
+        governed_case = case.name in governed_operations()
+        if governed_case and status == "passed":
+            # A governed case passes only when its own operation evidence proves
+            # every required operation; the runner's verdict is never trusted.
+            problem = governed_module().case_evidence_problem(case.name, value)
+            if problem is not None:
+                status, reason = "failed", bounded("evidence: " + problem)
         if status == "skipped":
             require(reason != "", "manifest_skip_without_reason")
             skips.append({"case": case.name, "reason": reason})
@@ -630,7 +650,10 @@ def build_manifest(row: dict[str, Any], engineering_commit: str,
                 protocols.add(observed["negotiated_protocol"])
             if status == "passed" and case.name.startswith("image_identity_"):
                 images.append({key: observed.get(key) for key in sorted(IMAGE_KEYS)})
-        cases.append({"name": case.name, "endpoint_form": case.endpoint_form, "status": status, "reason": reason})
+        entry = {"name": case.name, "endpoint_form": case.endpoint_form, "status": status, "reason": reason}
+        if governed_case and status != "skipped":
+            entry["operations"] = governed_module().compact_operations(case.name, value.get("observed"))
+        cases.append(entry)
     executed = sum(case["status"] in ("passed", "failed") for case in cases)
     passed = all(case["status"] == "passed" for case in cases) and len(protocols) == 1
     manifest.update(
@@ -745,6 +768,11 @@ def manifest_problems(manifest: dict[str, Any], row: dict[str, Any] | None, engi
     failed = [c["name"] for c in cases if c["status"] == "failed"]
     if failed:
         problems.append("failed: " + ", ".join(failed))
+    for case in cases:
+        if case.get("name") in governed_operations() and case.get("status") == "passed":
+            problem = governed_module().manifest_operations_problem(case["name"], case.get("operations"))
+            if problem is not None:
+                problems.append("governed evidence: " + problem)
     if executed != len(names):
         problems.append(f"executed {executed} of {len(names)} listed cases")
     if manifest["negotiated_protocol"] != EXPECTED_PROTOCOL:
