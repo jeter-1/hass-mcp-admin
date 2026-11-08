@@ -81,6 +81,20 @@ _MATTER_PAYLOAD_KEYS = frozenset(
         "matter_qr_payload",
     }
 )
+# HAMCP-319 design section 6.5 optional backstop: Thread network credential
+# and operational-dataset keys. A second line of defense for a generic
+# attribute that carries them; the ha_get_device allowlist is the control.
+_THREAD_CREDENTIAL_KEYS = frozenset(
+    {
+        "network_key",
+        "pskc",
+        "pskd",
+        "active_dataset_tlvs",
+        "pending_dataset_tlvs",
+        "dataset_tlvs",
+        "tlv",
+    }
+)
 
 _AUTH_HEADER = re.compile(
     r"(?i)(\bauthorization\s*[:=]\s*)(?:bearer\s+)?([^\s,;\]}]+)"
@@ -462,6 +476,8 @@ def key_category(key: str, path: tuple[str, ...]) -> str | None:
         any("matter" in part for part in path) and key in {"payload", "qr_payload"}
     ):
         return "matter_setup_payload"
+    if key in _THREAD_CREDENTIAL_KEYS:
+        return "thread_credential"
     if key in _AUTH_FLOW_KEYS:
         return "auth_flow"
     if key == "webhook_id":

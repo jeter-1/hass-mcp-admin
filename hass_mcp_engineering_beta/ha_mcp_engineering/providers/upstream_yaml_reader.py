@@ -878,7 +878,8 @@ REDACTION_CATEGORIES = frozenset(
         # The shared sanitizer's.
         "token", "password", "auth_cookie", "url_credentials",
         "webhook_identifier", "webhook_secret", "auth_flow",
-        "matter_setup_payload", "matter_setup_code", "reference_marker",
+        "matter_setup_payload", "matter_setup_code", "thread_credential",
+        "reference_marker",
     }
 )
 KNOWN_SECRET_MARKER = "[REDACTED:token]"

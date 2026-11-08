@@ -1076,5 +1076,67 @@ class CoreChildDeviceBindingTests(unittest.IsolatedAsyncioTestCase):
         await self._gateway("8.5.0")
 
 
+# Section 6.5 optional backstop: the exact key list of the design.
+THREAD_CREDENTIAL_KEYS = (
+    "network_key", "pskc", "pskd", "active_dataset_tlvs", "pending_dataset_tlvs",
+    "dataset_tlvs", "tlv",
+)
+
+
+class ThreadCredentialSanitizerTests(unittest.TestCase):
+    """Section 8.3: ``test_sanitizer_thread_credential_category`` (section 6.5
+    backstop). The ``ha_get_device`` allowlist stays the control; this is the
+    second line of defense for a generic attribute carrying the same keys."""
+
+    def test_sanitizer_thread_credential_category(self):
+        from ha_mcp_engineering import sanitization
+        from ha_mcp_engineering.providers.upstream_yaml_reader import REDACTION_CATEGORIES
+
+        marker = "[REDACTED:thread_credential]"
+        # The reader's closed category set carries the new category, so a YAML
+        # value under these keys is screened rather than refused as unknown.
+        self.assertIn("thread_credential", REDACTION_CATEGORIES)
+        for key in THREAD_CREDENTIAL_KEYS:
+            # Exact, case and separator variants all normalize to the key.
+            variants = {key, key.upper(), key.replace("_", "-"), key.title().replace("_", " ")}
+            for variant in sorted(variants):
+                normalized = sanitization.normalize_key(variant)
+                with self.subTest(key=variant):
+                    self.assertEqual(normalized, key)
+                    self.assertEqual(sanitization.key_category(normalized, ()), "thread_credential")
+                    # Nested under an arbitrary attribute container, with
+                    # every value shape a generic attribute can carry.
+                    for value in (
+                        f"{CANARY}-{key}",
+                        {"inner": f"{CANARY}-{key}-dict"},
+                        [f"{CANARY}-{key}-list"],
+                        1234567,
+                    ):
+                        payload = {
+                            "attributes": {
+                                variant: value,
+                                "network_name": "synthetic-net",
+                                "channel": 15,
+                                "extended_pan_id": "dead00beef00cafe",
+                            }
+                        }
+                        result = sanitization.sanitize_untrusted_data(payload)
+                        attributes = result.value["attributes"]
+                        self.assertEqual(attributes[variant], marker)
+                        self.assertEqual(result.redaction_categories, ("thread_credential",))
+                        self.assertEqual(result.redacted_field_count, 1)
+                        self.assertFalse(result.failed_closed)
+                        self.assertNotIn(CANARY, json.dumps(result.value))
+                        # Released neighbors are untouched.
+                        self.assertEqual(attributes["network_name"], "synthetic-net")
+                        self.assertEqual(attributes["channel"], 15)
+                        self.assertEqual(attributes["extended_pan_id"], "dead00beef00cafe")
+        # Keys outside the list keep their earlier treatment: no category.
+        for key in ("network_name", "channel", "extended_pan_id", "pan_id",
+                    "mesh_local_prefix", "dataset", "tlvs"):
+            with self.subTest(neighbor=key):
+                self.assertIsNone(sanitization.key_category(key, ()))
+
+
 if __name__ == "__main__":
     unittest.main()
