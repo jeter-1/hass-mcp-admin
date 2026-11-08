@@ -59,6 +59,7 @@ from ha_mcp_engineering.ha_core_readmission import routes  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
     STATIC_TOOL_CORE_REQUIREMENTS,
     static_tools_requiring,
 )
@@ -81,6 +82,7 @@ HELPER_OPTIONS = "core.config_entry_helper_options_operation"
 DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
 SCENE_CONFIGURATION = "core.scene_configuration_operation"  # HAMCP-071 seq 16
 HELPER_VALUE = "core.typed_helper_value_operation"  # HAMCP-311 (signed-only)
+MARKETPLACE = "core.marketplace_read"  # HAMCP-290 (dormant, no sequence names it)
 MISSING = "positive_authority_missing"
 
 # The public block before HAMCP-242, in order; it must survive unchanged.
@@ -139,9 +141,10 @@ REFUSED_BLOCK_KEYS = (
 ENTRY_KEYS = ("capability_id", "disposition", "reason_code", "affected_tools")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
 
-# The six profiles the signed sequence-14 2026.10.3 entry does not name
+# The seven profiles the signed sequence-14 2026.10.3 entry does not name
 # (three HAMCP-232/145, HAMCP-106 dashboard metadata, the HAMCP-071 seq 16
-# scene configuration and the HAMCP-311 signed-only helper value profile),
+# scene configuration, the HAMCP-311 signed-only helper value profile and
+# the HAMCP-290 dormant Marketplace read),
 # with the tools routes.py maps to each (pinned by hand, not derived).
 # control_helper is Core-independent in routes.py (it acquires its own
 # signed exact-target authority), so the helper value profile maps no tool.
@@ -157,6 +160,13 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["create_dashboard_metadata_plan"],
+    },
+    # HAMCP-290: the dormant Marketplace read (projection order).
+    {
+        "capability_id": MARKETPLACE,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": ["ha_get_hacs_info"],
     },
     {
         "capability_id": SCENE_CONFIGURATION,
@@ -239,6 +249,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "list_dashboards",
     ],
     "core.dashboard_metadata_operation": ["create_dashboard_metadata_plan"],
+    "core.marketplace_read": ["ha_get_hacs_info"],  # HAMCP-290
     "core.scene_configuration_operation": ["create_scene_configuration_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",
@@ -437,8 +448,9 @@ class LiveCaseTests(_LiveCase):
                 # +1 HAMCP-106 dashboard metadata (dormant November batch),
                 # +1 HAMCP-071 seq 16 scene configuration,
                 # +1 HAMCP-311 signed-only helper value (no sequence names it)
-                "unavailable_count": 6,
-                "withheld_count": 6,
+                # +1 HAMCP-290 dormant Marketplace read (no sequence names it)
+                "unavailable_count": 7,
+                "withheld_count": 7,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -453,10 +465,10 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # The six withheld profiles are still refused.
+        # The seven withheld profiles are still refused (HAMCP-290: + Marketplace).
         for capability in (
             INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
-            HELPER_VALUE,
+            HELPER_VALUE, MARKETPLACE,
         ):
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -466,13 +478,14 @@ class LiveCaseTests(_LiveCase):
         # seq 16: sequence 15 does not name the scene configuration profile,
         # so it stays withheld until sequence 16.  HAMCP-311: no sequence
         # names the signed-only helper value profile, so it stays withheld too.
+        # HAMCP-290: no sequence names the dormant Marketplace read either.
         self.assertEqual(projection["compatible_count"], 30)
-        self.assertEqual(projection["withheld_count"], 2)
-        self.assertEqual(projection["unavailable_count"], 2)
+        self.assertEqual(projection["withheld_count"], 3)
+        self.assertEqual(projection["unavailable_count"], 3)
         self.assertEqual(
             projection["withheld_capabilities"],
             [item for item in EXPECTED_LIVE_WITHHELD
-             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE)],
+             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE, MARKETPLACE)],
         )
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual(
@@ -481,6 +494,7 @@ class LiveCaseTests(_LiveCase):
         )
         self.assertIsNone(self.core.acquire((SCENE_CONFIGURATION,)))
         self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
+        self.assertIsNone(self.core.acquire((MARKETPLACE,)))  # HAMCP-290
 
     async def test_after_sequence_16_the_list_is_empty_and_compatible_is_31(self):
         # HAMCP-071 seq 16: the synthetic sequence-16 entry names every
@@ -488,16 +502,18 @@ class LiveCaseTests(_LiveCase):
         # the signed-only helper value profile, so it alone stays withheld
         # (31 of 32 runtime profiles compatible).
         projection = await self.admit(sequence_15_entry(sequence_16=True))
+        # HAMCP-290: the dormant Marketplace read stays withheld as well.
         self.assertEqual(projection["compatible_count"], 31)
-        self.assertEqual(projection["compatible_count"] + 1, len(CORE_RUNTIME_CAPABILITY_PROFILES))
-        self.assertEqual(projection["withheld_count"], 1)
-        self.assertEqual(projection["unavailable_count"], 1)
+        self.assertEqual(projection["compatible_count"] + 2, len(CORE_RUNTIME_CAPABILITY_PROFILES))
+        self.assertEqual(projection["withheld_count"], 2)
+        self.assertEqual(projection["unavailable_count"], 2)
         expected = [item for item in EXPECTED_LIVE_WITHHELD
-                    if item["capability_id"] == HELPER_VALUE]
+                    if item["capability_id"] in (HELPER_VALUE, MARKETPLACE)]
         self.assertEqual(projection["withheld_capabilities"], expected)
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual((await self.public_block())["withheld_capabilities"], expected)
         self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
+        self.assertIsNone(self.core.acquire((MARKETPLACE,)))  # HAMCP-290
 
     async def test_projection_adds_no_core_call_and_persists_nothing(self):
         await self.admit(signed_sequence_14_entry())
@@ -985,7 +1001,10 @@ class AffectedToolsTests(unittest.TestCase):
     def test_delegated_and_unknown_names_are_not_listed(self):
         self.assertEqual(static_tools_requiring("core.unsupported_f3_operation"), ())
         self.assertEqual(static_tools_requiring("core.typed_fan_operation"), ())
-        delegated = set(DELEGATED_CORE_REQUIREMENTS)
+        # HAMCP-290: only the exact Engineering-native owned name may appear in
+        # both tables (the gateway withholds its delegated read).
+        self.assertEqual(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, frozenset({"ha_get_hacs_info"}))
+        delegated = set(DELEGATED_CORE_REQUIREMENTS) - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
         for profile in CORE_RUNTIME_CAPABILITY_PROFILES:
             self.assertFalse(set(static_tools_requiring(profile.capability_id)) & delegated)
 

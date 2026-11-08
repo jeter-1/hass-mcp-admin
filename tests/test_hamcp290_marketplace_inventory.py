@@ -247,7 +247,7 @@ class ContractTests(unittest.TestCase):
         self.assertIs(registered.annotations.readOnlyHint, True)
         self.assertIs(registered.annotations.destructiveHint, False)
         self.assertIs(registered.annotations.openWorldHint, False)
-        self.assertIs(registered.parameters["additionalProperties"], False)
+        self.assertIs(registered.parameters.get("additionalProperties"), False)
         properties = registered.parameters["properties"]
         self.assertEqual(set(properties), {"query", "category", "limit", "offset"})
         self.assertEqual(registered.parameters.get("required", []), [])
@@ -565,6 +565,52 @@ class ServiceAdmissionTests(ServiceTestCase):
             with self.subTest(change=change):
                 await self.refused(self.service(reader).inventory(mi.InventoryQuery()), "authority_unavailable")
 
+    async def test_admission_change_while_building_the_page_does_not_publish(self):
+        # HAMCP-290 mutation A5: the last recheck runs after the page is built.
+        original = mi.build_page
+        for backend, fallback in ((mi.BACKEND_MARKETPLACE, False), (mi.BACKEND_HACS, True)):
+            self.core = AdmissionCore()
+
+            def flipping(*args, **kwargs):
+                page = original(*args, **kwargs)
+                self.core.generation += 1
+                return page
+
+            with self.subTest(backend=backend), mock.patch.object(mi, "build_page", flipping):
+                error = await self.refused(self.service(FakeReader(backend=backend)).inventory(mi.InventoryQuery()),
+                                           "authority_unavailable")
+                self.assertIs(error.fallback_occurred, fallback)
+
+    async def test_admission_asks_for_exactly_the_marketplace_profile(self):
+        # HAMCP-290 mutation A8: never an empty or different requirement set.
+        await self.service(FakeReader()).inventory(mi.InventoryQuery())
+        self.assertEqual(mi.CORE_REQUIREMENTS, (PROFILE,))
+        self.assertTrue(self.core.calls)
+        self.assertEqual(set(self.core.calls), {(PROFILE,)})
+
+    async def test_dispatch_outside_the_closed_vocabulary_is_refused(self):
+        # HAMCP-290 mutation C4: defense in depth behind the constant payloads.
+        class Dispatching(FakeReader):
+            def __init__(self, commands):
+                super().__init__()
+                self.commands = commands
+                self.dispatched = []
+
+            async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None):
+                self.calls += 1
+                for command in self.commands:
+                    authorize()
+                    on_dispatch(command)
+                    self.dispatched.append(command)
+                return self.backend, deepcopy(self.result)
+
+        for commands in (["hacs/repository/download"],
+                         [mi.MARKETPLACE_LIST_COMMAND, mi.HACS_LIST_COMMAND, mi.HACS_LIST_COMMAND]):
+            reader = Dispatching(commands)
+            with self.subTest(commands=commands):
+                await self.refused(self.service(reader).inventory(mi.InventoryQuery()), "provider_error")
+                self.assertEqual(reader.dispatched, commands[:-1])
+
     async def test_unconfigured_runtime_fails_closed(self):
         runtime = mi.MarketplaceInventoryRuntime()
         with self.assertRaises(mi.MarketplaceError) as raised:
@@ -641,13 +687,15 @@ class LoopbackPeer:
         self.replies: dict[str, str] = {}
         self.hold = False
         self.extra_frame: str | None = None
+        self.greeting_pad = 0
 
     async def handler(self, request):
         self.connections += 1
         ws = web.WebSocketResponse(max_msg_size=0)
         await ws.prepare(request)
         try:
-            await ws.send_str(json.dumps({"type": "auth_required", "ha_version": self.auth_version}))
+            await ws.send_str(json.dumps({"type": "auth_required", "ha_version": self.auth_version,
+                                          **({"pad": "x" * self.greeting_pad} if self.greeting_pad else {})}))
             await ws.receive_json()
             await ws.send_json({"type": self.auth_type, "ha_version": self.auth_version})
             while True:
@@ -775,6 +823,16 @@ class ReaderLoopbackTests(LoopbackTestCase):
         with mock.patch.object(mi, "FRAME_BYTES", 4096):
             await self.failed("response_too_large")
 
+    async def test_auth_frames_have_their_own_smaller_bound(self):
+        # HAMCP-290 mutation B4: the 64 KiB auth bound, not the 8 MiB command bound.
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, result_frame(0, store()))
+        self.peer.greeting_pad = mi.AUTH_BYTES
+        await self.failed("response_too_large")
+        self.assertEqual(self.peer.ledger, [])
+        self.peer.greeting_pad = 1024
+        backend, _records = await self.read()
+        self.assertEqual(backend, "core_marketplace")
+
     async def test_unsolicited_frames_and_non_json_fail_closed(self):
         self.reply(mi.MARKETPLACE_LIST_COMMAND, result_frame(0, store()))
         self.peer.extra_frame = json.dumps({"id": 9, "type": "event", "event": {}})
@@ -828,6 +886,16 @@ class ReaderLoopbackTests(LoopbackTestCase):
         self.assertEqual(self.telemetry.timeout_occurred, True)
         self.settings.ha_timeout_seconds = 0
         await self.failed("timeout")
+
+    async def test_configured_timeout_never_exceeds_the_cap(self):
+        # HAMCP-290 mutation B8: a large configured timeout is capped at MAX_SECONDS.
+        self.settings.ha_timeout_seconds = 600.0
+        self.peer.hold = True
+        started = asyncio.get_running_loop().time()
+        with mock.patch.object(mi, "MAX_SECONDS", 0.3):
+            await self.failed("timeout")
+        self.assertLess(asyncio.get_running_loop().time() - started, 4.0)
+        self.assertEqual(len(self.peer.ledger), 1)
 
     async def test_unreachable_peer_is_transport_unavailable(self):
         await self.runner.cleanup()

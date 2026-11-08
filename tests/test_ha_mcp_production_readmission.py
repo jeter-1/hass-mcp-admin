@@ -63,6 +63,7 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
     McpReadResult,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.application import validate_settings  # noqa: E402
 from ha_mcp_engineering.errors import ConfigurationError  # noqa: E402
@@ -2694,9 +2695,14 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(len(registered), 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 106)
+        # HAMCP-290: this bare server exposes the delegated ha_get_hacs_info;
+        # production registers the native tool, so the gateway withholds it.
+        self.assertEqual(set(registered) & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, {"ha_get_hacs_info"})
+        self.assertEqual(
+            ENGINEERING_STATIC_TOOL_COUNT + len(set(registered) - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS), 106
+        )
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
             if policy_entry.classification != "automatic_read":

@@ -219,6 +219,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "compare_automation_baselines",
                         # HAMCP-253: read-only stuck-record inspection.
                         "inspect_governance_record",
+                        # HAMCP-290: additive installed-only Marketplace read.
+                        "ha_get_hacs_info",
                     )
                 )
             ),
@@ -460,7 +462,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 81)
+        self.assertEqual(len(classifications), 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

@@ -42,6 +42,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CORE_ROUTE_MAPPED,
     CORE_ROUTE_UNMAPPED,
     DELEGATED_CORE_REQUIREMENTS,
+    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
     STATIC_TOOL_CORE_REQUIREMENTS,
     f3_requirements,
     static_tool_core_route,
@@ -132,6 +133,7 @@ STATIC_CORE_TABLE = {
     "get_logbook": MAPPED,
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
+    "ha_get_hacs_info": MAPPED,  # HAMCP-290: dormant core.marketplace_read
     "handoff_generation": MAPPED,
     "incident_correlation": MAPPED,
     "inspect_governance_record": LOCAL,
@@ -253,7 +255,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 81)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -359,7 +361,14 @@ class StaticCoreTableTests(unittest.TestCase):
     def test_every_delegated_route_maps_a_non_empty_requirement_set(self):
         # HAMCP-162 maps ha_config_get_yaml (30 -> 31).
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
-        self.assertFalse(set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES))
+        # HAMCP-290: the only permitted overlap is the exact Engineering-native
+        # owned set, whose delegated read the gateway withholds whenever the
+        # static name is registered; any other overlap still fails.
+        self.assertEqual(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, frozenset({"ha_get_hacs_info"}))
+        self.assertEqual(
+            set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES),
+            set(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS),
+        )
         for name, values in DELEGATED_CORE_REQUIREMENTS.items():
             with self.subTest(tool=name):
                 self.assertTrue(values)
@@ -512,6 +521,9 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                # HAMCP-290: the dormant Marketplace read is likewise refused
+                # pending signed admission (its own tests cover it).
+                "ha_get_hacs_info",
             }:
                 continue
             with self.subTest(tool=name):

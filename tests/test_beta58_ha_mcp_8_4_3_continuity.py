@@ -23,6 +23,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
 )
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS  # noqa: E402
 from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission_ha_mcp  # noqa: E402
 from ha_mcp_engineering.ha_mcp_readmission.ha_mcp import (  # noqa: E402
     HaMcpAuthorityError,
@@ -266,8 +267,13 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         registered = set(gateway._registered_tool_registry.snapshot())
         self.assertEqual(registered, EXACT_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 28)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 109)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
+        # HAMCP-290: this bare server exposes the delegated ha_get_hacs_info;
+        # production registers the native tool, so the gateway withholds it.
+        self.assertEqual(registered & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, {"ha_get_hacs_info"})
+        self.assertEqual(
+            ENGINEERING_STATIC_TOOL_COUNT + len(registered - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS), 109
+        )
         self.assertNotIn("ha_get_operation_status", registered)
         self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
         self.assertEqual(snapshot["readmission_withheld_tools"], [])

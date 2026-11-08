@@ -72,8 +72,25 @@ How this preserves the one-connector topology:
   gateway's exposure loop and recorded as withheld. It is not aliased to
   `ha_mcp__ha_get_hacs_info`.
 - The client therefore sees exactly one `ha_get_hacs_info`.
-- When 8.x is admitted, the total exposed tool count is unchanged.
-- The static Engineering tool count goes from 81 to 82.
+- As implemented, the gateway withholds any delegated automatic read whose
+  public name an Engineering-native static tool owns
+  (`ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS`, today exactly
+  `{"ha_get_hacs_info"}`). It records the read in `core_withheld` with
+  disposition `engineering_native_owned` and reason
+  `engineering_native_route_owns_name`. It never aliases it.
+- When 8.x is admitted, the connector total is unchanged at 109: 82 static
+  tools plus 27 exposed delegated reads. `dynamically_exposed_count` drops by
+  one, and `exact_matched_automatic_read_count` is unchanged because the read
+  still matches the reviewed policy.
+- A bare test server that does not register the static tool still exposes
+  the delegated read, so the withholding depends on the static registry, not
+  on a name list alone.
+- The static Engineering tool count goes from 81 to 82, and the runtime
+  profile count from 32 to 33.
+- The container lane scripts (`exact_image_read_gateway_acceptance.py`,
+  `exact_image_readmission_acceptance.py`) and `codex-context.py` subtract
+  native-owned reads from their expected exposure, and require the
+  `engineering_native_owned` withheld disposition.
 - The existing delegated requirement
   `DELEGATED_CORE_REQUIREMENTS["ha_get_hacs_info"]` is removed. The tool is no
   longer delegated.
@@ -142,20 +159,25 @@ with no partial page:
 - a dedicated bounded reader, modeled on `read_alarmo_inspection`, with
   `trust_env=False`, no retry, and redirects rejected;
 - `auth_ok.ha_version` must equal the admitted Core version;
-- at most **8 MiB** per frame (about 2x the observed size) and a bounded frame
-  count;
+- at most **8 MiB** per command frame (about 2x the observed 4,264,900 bytes),
+  64 KiB per auth frame, and at most 4 frames (auth_required, auth_ok and two
+  command results);
+- a wall-clock cap of the configured HA timeout, never above 30 seconds;
 - at most **20,000** records;
 - the JSON parse rejects duplicate keys and non-finite numbers;
 - at most 2 commands per call, on one authenticated connection;
 - the service-level timeout comes from existing settings.
 
-Per-record projection: the store is validated whole first, then filtered to
-`installed is true`. Any malformed record fails the whole call.
+Per-record projection: every store record must be a mapping with a strict
+boolean `installed`. Records that are not installed are skipped without
+further projection. Every installed record must satisfy the full projection
+below, and installed repository ids must be unique. Any violation fails the
+whole call.
 
 | Field | Rule |
 | --- | --- |
 | `id` | Digit string of 1..20 characters (a non-bool non-negative int is normalized to a string) |
-| `full_name` | `owner/repo`, matching `^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$` |
+| `full_name` | `owner/repo`, matching `^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`; a `.` or `..` segment is refused |
 | `category` | `^[a-z_]{1,32}$` |
 | `domain` | null, or `^[a-z0-9_]{1,64}$` (an empty string becomes null) |
 | `installed`, `pending_upgrade`, `custom` | Strict booleans |
@@ -172,7 +194,13 @@ Output: `success`, `backend`, `results` (sorted by `full_name` casefold, then
 - `total_matches`, `offset`, `limit`, `count`;
 - `has_more`, and `next_offset` (null on the last page);
 - `inventory_fingerprint`, a SHA-256 of the sorted installed projection, so a
-  client can detect that the inventory changed between pages.
+  client can detect that the inventory changed between pages;
+- `completeness` (`partial` when the sanitizer withheld or truncation
+  shortened any text), `fallback_occurred` and `commands_sent`.
+
+`query` matches the **sanitized** `full_name`, `name`, `domain` and
+`description`, case-insensitively. A search therefore cannot probe text the
+sanitizer withheld.
 
 Every call is an independent snapshot. The response passes through the
 standard `response_size_limit`.
@@ -227,8 +255,8 @@ Marketplace commands stays reviewed rather than implicit.
 
 | Reason | Error code |
 | --- | --- |
-| `authority_unavailable` | provider unavailable |
-| `anonymous_request` | authorization |
+| `authority_unavailable` | provider unavailable (also an anonymous caller, with zero commands) |
+| `invalid_arguments` | invalid request |
 | `marketplace_not_loaded` | unavailable |
 | `marketplace_unauthorized` | authorization |
 | `marketplace_unavailable` | unavailable |
@@ -237,6 +265,7 @@ Marketplace commands stays reviewed rather than implicit.
 | `identity_mismatch` | unavailable |
 | `timeout` | timeout |
 | `transport_unavailable` | unavailable |
+| `provider_error` | upstream API error (any other failure code, an unexpected exception, or an unknown reason) |
 
 Every refusal carries `{"reason", "fallback_occurred"}` and never contains raw
 upstream text.
@@ -282,18 +311,32 @@ upstream text.
   `query` over 200 characters or containing control characters, an unknown
   `category`, and refused values never echoed.
 - **Gateway**:
-  - upstream `ha_get_hacs_info` is withheld, not aliased;
-  - the total exposed count is unchanged with 8.x admitted.
+  - upstream `ha_get_hacs_info` is withheld with disposition
+    `engineering_native_owned`, not aliased;
+  - the connector total is unchanged at 109 with 8.x admitted;
+  - the static/delegated name overlap is allowed only as exactly
+    `{"ha_get_hacs_info"}`.
 - **Catalog**: count and digest pins move from 81 to 82, and `capabilities`
   entries carry `signed_core_registry_admission`.
 - **Contract**:
   - existing fingerprints are unchanged;
   - the new profile's material contains its fallback value;
   - no signed registry in the repository references it.
-- **Mutation evidence**: `docs/evidence/hamcp290-mutations/` follows the
-  HAMCP-232 runner, with mutants for the fallback predicate, the installed
-  filter, bounds, the projection, the admission checks and the command
-  constants.
+- **Defense in depth**:
+  - the 64 KiB auth-frame bound is separate from the 8 MiB command bound;
+  - a configured timeout above 30 s is capped;
+  - an admission change while the page is built does not publish it;
+  - the service asks for exactly `core.marketplace_read`;
+  - a reader that dispatches outside the two constants, or a third command,
+    is refused with `provider_error`.
+- **Mutation evidence**: `docs/evidence/hamcp290-mutations/` uses the
+  HAMCP-253 runner machinery, with mutants for the fallback predicate, the
+  installed filter, bounds, the projection, the admission checks, the command
+  constants and attribution. A mutant is killed only by an assertion failure.
+  One mutant is equivalent (the frame-count guard, which is unreachable by
+  construction). One is caught fail closed at import (an empty static
+  requirement stops the runtime from importing); it is reported separately
+  and not counted as killed.
 
 ## 9. Not in scope
 
@@ -305,7 +348,28 @@ upstream text.
   Phase 1 receipts plus a later separately authorized lane run.
 - Version metadata (`config.yaml`, `.release/`), which is not authorized here.
 
-## 10. Rollback
+Also pending the separate signing step, and not changed here:
+
+- `ci/core-contract-read-files.json` and `ci/core-evidence-groups.json` do not
+  name `core.marketplace_read`.
+- Adding its Core source paths would require regenerating the hash-pinned
+  `docs/evidence/hamcp315/core-sources/2026.11.0.json` record, which holds no
+  `components/marketplace/` paths today.
+- Adding an evidence group needs a lane that produces its result, which means a
+  workflow change.
+- Until then, `passing_subset` refuses to inherit the profile ("unmapped
+  predecessor profile"), which is fail closed.
+
+## 10. Unsigned-window disclosure
+
+While `core.marketplace_read` is unsigned, `ha_get_hacs_info` is unavailable on
+every Core. This is a regression on Core 2026.7 through 2026.10 with HACS
+installed: there, the delegated 8.x read answered as an automatic read gated by
+`core.basic_rest_read`. Once a signed sequence admits the profile for such a
+release, the exact `unknown_command` fallback covers that case. Josh owns
+whether this window is acceptable for the 2.5 release (*pending Josh*).
+
+## 11. Rollback
 
 The change is source-only and dormant until signed. To roll back:
 

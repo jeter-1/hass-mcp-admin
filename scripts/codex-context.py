@@ -691,8 +691,28 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 "The reviewed upstream policy entry count differs from its stock catalog count."
             )
 
+    # HAMCP-290: an automatic read whose public name an Engineering-native
+    # tool owns is withheld by the gateway, never exposed a second time.
+    static_names = {
+        item.get("tool")
+        for group in (canonical, native)
+        if isinstance(group, (tuple, list))
+        for item in group
+        if isinstance(item, dict)
+    }
+    native_owned_count = (
+        sum(
+            1
+            for item in policy["tools"]
+            if isinstance(item, dict)
+            and item.get("classification") == "automatic_read"
+            and item.get("exposed_name") in static_names
+        )
+        if policy is not None and isinstance(policy.get("tools"), list)
+        else 0
+    )
     total_count = (
-        static_count + delegated_count
+        static_count + delegated_count - native_owned_count
         if static_count is not None and delegated_count is not None
         else None
     )

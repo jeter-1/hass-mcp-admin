@@ -121,7 +121,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "set_automation_trace_watch",
                           "compare_automation_baselines",
                           "control_helper",  # + HAMCP-311
-                          "inspect_governance_record"})
+                          "inspect_governance_record",
+                          "ha_get_hacs_info"})  # + HAMCP-290
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,

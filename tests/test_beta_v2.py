@@ -586,7 +586,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 81)
+        self.assertEqual(len(self.beta_tools), 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -647,6 +647,7 @@ class ToolParityTests(unittest.TestCase):
                 "control_helper",
                 "control_fan",
                 "run_held_read_canary",
+                "ha_get_hacs_info",  # HAMCP-290: Engineering-native read
             },
         )
 
@@ -717,7 +718,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 81)
+        self.assertEqual(result["data"]["tool_count"], 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -727,7 +728,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 81)
+        self.assertEqual(catalog["registered_count"], 82)  # HAMCP-290: + ha_get_hacs_info
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -766,6 +767,7 @@ class ToolParityTests(unittest.TestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                "ha_get_hacs_info",  # HAMCP-290
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -922,7 +924,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 81)
+        self.assertEqual(len(names), 82)  # HAMCP-290: + ha_get_hacs_info
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]

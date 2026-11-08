@@ -31,6 +31,9 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+)
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -326,8 +329,14 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         registered = set(gateway._registered_tool_registry.snapshot())
         self.assertEqual(registered, EXACT_8_4_1_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 106)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
+        # HAMCP-290: this bare test server registers no static tool, so the
+        # native-owned delegated read is exposed here; with the Engineering
+        # static registry present the gateway withholds it (82 + 24 = 106).
+        self.assertEqual(registered & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, {"ha_get_hacs_info"})
+        self.assertEqual(
+            ENGINEERING_STATIC_TOOL_COUNT + len(registered - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS), 106
+        )
         for unreachable in (
             "ha_get_operation_status",
             "ha_get_app",

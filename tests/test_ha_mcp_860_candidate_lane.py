@@ -102,16 +102,19 @@ class AuthorityHelperTests(unittest.TestCase):
     def test_readmission_requires_exact_860_counts_and_zero_fallback(self):
         helper = self.module('exact_image_readmission_acceptance')
         health = {name: 0 for name in helper.ZERO_ADMISSION_COUNTERS}
+        # HAMCP-290: the native ha_get_hacs_info owns the name; the matched
+        # delegated read is withheld, so 28 matched reads expose 27.
         health.update(admission_status='admitted_exact', selected_compatibility_entry_id='ha-mcp-v8.6.0-7426fb16',
                       observed_protocol_version='2025-03-26', observed_advertised_tool_count=77,
                       reviewed_accounted_tool_count=77, reviewed_tool_accounting_valid=True,
-                      exact_matched_automatic_read_count=28, dynamically_exposed_count=28, held_read_count=1)
+                      exact_matched_automatic_read_count=28, dynamically_exposed_count=27, held_read_count=1)
         observation = dict(success=True, provider='upstream_read_gateway', upstream_version='8.6.0',
-                           fallback='none', fallback_occurred=False, engineering_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT + 28,
+                           fallback='none', fallback_occurred=False, engineering_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT + 27,
                            engineering_local_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT,
                            gateway_health=health, held_tools_absent=True)
         self.assertTrue(helper.exact_readmission_observed(observation, expected_upstream_version='8.6.0'))
-        for field, value in [('reviewed_accounted_tool_count', 78), ('dynamically_exposed_count', 27),
+        for field, value in [('reviewed_accounted_tool_count', 78), ('dynamically_exposed_count', 28),
+                             ('dynamically_exposed_count', 26),
                              ('fallback_count', 1), ('held_read_count', 0),
                              ('selected_compatibility_entry_id', 'ha-mcp-v8.5.0-e1538bcd')]:
             with self.subTest(field=field):
