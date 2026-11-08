@@ -54,15 +54,29 @@ def lanes_module():
 LANES = lanes_module()
 
 
-def registry_with_91():
+def pre_91_registry():
+    """The committed reviewed registry without its 9.1.0 row (the pre-HAMCP-319 state).
+
+    The dormant-lane, writer and gate contracts below are defined against a
+    registry that has no 9.1.0 row; the committed registry gained the reviewed
+    9.1.0 row in the HAMCP-319 build, which activates every lane (see
+    ``test_committed_registry_91_row_activates_every_lane``).
+    """
+
     registry = copy.deepcopy(registry_matrix())
+    registry["include"] = [r for r in registry["include"] if r["upstream_version"] != "9.1.0"]
+    return registry
+
+
+def registry_with_91():
+    registry = pre_91_registry()
     registry["include"].append(copy.deepcopy(SYNTHETIC_91))
     return registry
 
 
 def current_matrix():
     sw = support_window()
-    return sw.admission_matrix(sw.load(ROOT), registry_matrix())
+    return sw.admission_matrix(sw.load(ROOT), pre_91_registry())
 
 
 def passing_results(row):
@@ -121,7 +135,7 @@ class SupportWindowAdmissionTests(unittest.TestCase):
                     self.assertTrue(row["dormant_reason"].startswith("not executed:"))
 
     def test_reviewed_registry_91_row_activates_every_lane_without_changing_gateway(self):
-        before = {tier: self.sw.gateway_matrix(self.window, tier, registry_matrix()) for tier in self.sw.TIERS}
+        before = {tier: self.sw.gateway_matrix(self.window, tier, pre_91_registry()) for tier in self.sw.TIERS}
         registry = registry_with_91()
         rows = self.sw.admission_matrix(self.window, registry)["include"]
         self.assertTrue(all(row["state"] == "active" for row in rows))
@@ -132,6 +146,33 @@ class SupportWindowAdmissionTests(unittest.TestCase):
         # The legacy-URL gateway lane never picks up the 9.1 candidate.
         for tier in self.sw.TIERS:
             self.assertEqual(self.sw.gateway_matrix(self.window, tier, registry), before[tier])
+
+    def test_committed_registry_91_row_activates_every_lane(self):
+        committed = registry_matrix()
+        real_91 = [r for r in committed["include"] if r["upstream_version"] == "9.1.0"]
+        self.assertEqual(len(real_91), 1)
+        self.assertNotEqual(real_91[0]["image_index_digest"], SYNTHETIC_91["image_index_digest"])
+        rows = self.sw.admission_matrix(self.window, committed)["include"]
+        self.assertEqual({(r["configuration"], r["architecture"]) for r in rows}, set(LANES.REQUIRED_LANES))
+        for row in rows:
+            with self.subTest(lane=(row["configuration"], row["architecture"])):
+                self.assertEqual(row["state"], "active")
+                self.assertEqual(row["dormant_reason"], "")
+                if "candidate" in row["peers"]:
+                    self.assertEqual(row["peers"]["candidate"]["image_index_digest"], real_91[0]["image_index_digest"])
+                    self.assertEqual(row["peers"]["candidate"]["source_commit"], real_91[0]["source_commit"])
+        # Activation never changes the legacy-URL gateway lanes.
+        for tier in self.sw.TIERS:
+            self.assertEqual(self.sw.gateway_matrix(self.window, tier, committed),
+                             self.sw.gateway_matrix(self.window, tier, pre_91_registry()))
+        # Active 9.1 lanes with only identity executed are never accepted.
+        manifests = [LANES.build_manifest(row, COMMIT, passing_results(row) if row["configuration"] == "85_only"
+                                          else {k: v for k, v in passing_results(row).items()
+                                                if k.startswith("image_identity_")}) for row in rows]
+        acceptance, errors = LANES.verify_manifests(manifests, {"include": rows}, COMMIT)
+        self.assertEqual(acceptance["91_only"], "NOT ACCEPTED")
+        self.assertEqual(acceptance["side_by_side"], "NOT ACCEPTED")
+        self.assertTrue(errors)
 
     def test_malformed_candidate_registry_row_refuses_instead_of_staying_dormant(self):
         for field in ("image_index_digest", "source_commit", "architecture_image_digests"):
