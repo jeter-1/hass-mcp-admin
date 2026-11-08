@@ -727,6 +727,76 @@ class GatewayTests(adm.Harness):
                 self.assertTrue(gateway.health_snapshot()["reviewed_tool_accounting_valid"])
                 self.assertEqual(transport.sent, [])
 
+    async def test_91_filesystem_disabled_catalog_admitted(self):
+        # Gap 2e: with the filesystem component off, 9.1 advertises the 77
+        # stock tools only (class S projection of full-1). That catalog is
+        # admitted exact under the same reviewed stock order fingerprint as
+        # the full 82-tool wire catalog, and every optional name reports
+        # optional_absent rather than blocking stock admission.
+        from ha_mcp_engineering.upstream_tool_policy import (
+            EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
+            schema_fingerprint,
+        )
+
+        reviewed_order = "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e"
+        self.assertEqual(EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"], reviewed_order)
+        off = filesystem_off_catalog()
+        self.assertEqual(len(off), 77)
+        self.assertEqual(schema_fingerprint([tool["name"] for tool in off]), reviewed_order)
+        full_stock_order = [tool["name"] for tool in wire_catalog() if tool["name"] not in OPTIONAL_91]
+        self.assertEqual(schema_fingerprint(full_stock_order), reviewed_order)
+        for mode in ("A", "B"):
+            with self.subTest(mode=mode):
+                full, _ = await self.gateway("9.1.0", mode=mode)
+                gateway, transport = await self.gateway("9.1.0", off, mode=mode)
+                health = gateway.health_snapshot()
+                self.assertEqual(health["admission_status"], "admitted_exact", health)
+                self.assertTrue(health["admission_complete"])
+                self.assertTrue(health["reviewed_tool_accounting_valid"])
+                self.assertEqual(health["quarantine_reason_counts"], {})
+                self.assertEqual(health["upstream_advertised_tool_count"], 77)
+                self.assertEqual(health["observed_strict_full_contract_fingerprint"],
+                                 health["reviewed_strict_full_contract_fingerprint"])
+                self.assertEqual(health["optional_tools"],
+                                 {name: "optional_absent" for name in OPTIONAL_91})
+                self.assertEqual(self.exposed(gateway), self.exposed(full) - {TOOL})
+                self.assertEqual(transport.sent, [])
+
+    async def test_stock_reads_admitted_with_and_without_the_optional_tool(self):
+        # Architect ruling 3 (2026-11-07): the optional tool-name hardening
+        # must not couple stock-read admission to the optional component.
+        # Whether the optional reader (and, on 9.1, its filesystem siblings)
+        # is advertised or not, the same stock reads are exposed and a stock
+        # read dispatches and succeeds.
+        from test_hamcp129_platform_reads import HEALTH
+
+        reader_only_91 = [tool for tool in wire_catalog() if tool["name"] not in SIBLINGS_91]
+        variants = {
+            "9.1.0": {"full": wire_catalog(), "reader_only": reader_only_91,
+                      "component_off": filesystem_off_catalog()},
+            "8.5.0": {"full": adm.captured("8.5.0"), "component_off": adm.stock_catalog("8.5.0")},
+        }
+        optional_names = set(OPTIONAL_91) | set(adm.OPTIONAL)
+        for version, catalogs in variants.items():
+            stock_sets = {}
+            for label, tools in catalogs.items():
+                for mode in ("A", "B"):
+                    with self.subTest(version=version, variant=label, mode=mode):
+                        gateway, transport = await self.gateway(version, tools, mode=mode)
+                        health = gateway.health_snapshot()
+                        self.assertEqual(health["admission_status"], "admitted_exact", health)
+                        self.assertEqual(health["quarantine_reason_counts"], {})
+                        exposed = self.exposed(gateway)
+                        self.assertEqual(TOOL in exposed, TOOL in {t["name"] for t in tools})
+                        stock_sets[(label, mode)] = exposed - optional_names
+                        self.assertIn(HEALTH, exposed)
+                        result = await call(gateway, HEALTH, {"sections": []})
+                        self.assertTrue(result.get("success"), result)
+                        self.assertFalse(result["metadata"]["fallback_occurred"])
+                        self.assertEqual([name for name, _ in transport.sent], [HEALTH])
+            with self.subTest(version=version, check="same_stock_set"):
+                self.assertEqual(len(set(map(frozenset, stock_sets.values()))), 1, sorted(stock_sets))
+
     async def test_91_siblings_prohibited_withheld_and_never_routed(self):
         for mode in ("A", "B"):
             with self.subTest(mode=mode):

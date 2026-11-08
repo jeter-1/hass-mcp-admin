@@ -833,11 +833,15 @@ class UpstreamDashboardProvider:
         except DashboardTransportError as error:
             reason = {"authentication_failed": "access_denied", "response_too_large": "response_limit",
                       "timeout": "timeout", "invalid_response": "malformed_response",
-                      "connection_failed": "source_unavailable", "upstream_error": "source_rejected"}.get(
+                      "connection_failed": "source_unavailable", "upstream_error": "source_rejected",
+                      "upstream_redirect_refused": "upstream_redirect_refused"}.get(
                           error.category, "authority_unavailable")
-            # HAMCP-319 section 3.3: a refused redirect (or catalog-mode
-            # refusal) keeps its closed analysis reason and carries the fixed
-            # operator text so the dashboard result names the fix.
+            # HAMCP-319 section 3.3: a refused redirect reports its own closed
+            # reason. The transport raises that category only after the
+            # binding latch was set by the fence's 3xx branch (the latch is
+            # consulted first in _bounded_mcp_read). A catalog-mode refusal
+            # keeps authority_unavailable. Both carry the fixed operator text
+            # so the dashboard result names the fix.
             raise c.AnalysisError(
                 reason,
                 operator_remediation=HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(error.category),

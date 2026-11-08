@@ -43,8 +43,9 @@ from test_upstream_8_5_compatibility import capture  # noqa: E402
 HEALTH, APP, INTEGRATION = platform.HEALTH, platform.APP, platform.INTEGRATION
 TOOLS = (HEALTH, APP, INTEGRATION)
 VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
-# 9.1.0 bindings are checked here; 9.1.0 gateway behavior is covered by the
-# HAMCP-319 parity ledger tests (ledger rows 26-28).
+# 9.1.0 bindings are checked here; 9.1.0 gateway behavior is covered by
+# test_hamcp319_parity_entities.ParityPlatformRowsTests (ledger rows 26-28,
+# class S: 8.6.0 replays, since the 9.1.0 input schemas equal 8.6.0).
 BINDING_VERSIONS = VERSIONS + ("9.1.0",)
 CANARY = "CANARY"
 REFUSED = {"argument_validation", "invalid_arguments"}

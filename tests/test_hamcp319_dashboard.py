@@ -773,8 +773,12 @@ class NoConfigFailsClosed(Harness):
 
 class AnalysisOperatorRemediation(unittest.IsolatedAsyncioTestCase):
     """Section 3.3: the dashboard-analysis result carries the fixed operator
-    text for a refused redirect; the closed analysis reason is unchanged and
-    no other category gains remediation text."""
+    text for a refused redirect and a catalog-mode refusal. A refused redirect
+    reports its own closed reason, upstream_redirect_refused (architect ruling
+    2026-11-07, item 4); a catalog-mode refusal keeps authority_unavailable. No
+    other category gains remediation text. The end-to-end latch path is
+    asserted in test_hamcp319_no_redirect_matrix
+    (NoRedirectAnalysisProviderReason)."""
 
     async def _refused(self, category):
         from ha_mcp_engineering.clients.dashboard_analysis import CollectionBudget
@@ -802,15 +806,21 @@ class AnalysisOperatorRemediation(unittest.IsolatedAsyncioTestCase):
             OPERATOR_MESSAGES, UPSTREAM_REDIRECT_OPERATOR_MESSAGE, UPSTREAM_REDIRECT_REFUSED)
         from ha_mcp_engineering.errors import map_exception
 
+        from ha_mcp_engineering.errors import ErrorCode
+
         for category in sorted(OPERATOR_MESSAGES):
             with self.subTest(category=category):
                 error = await self._refused(category)
-                self.assertEqual(error.reason, 'authority_unavailable')
+                reason = (UPSTREAM_REDIRECT_REFUSED if category == UPSTREAM_REDIRECT_REFUSED
+                          else 'authority_unavailable')
+                self.assertEqual(error.reason, reason)
                 self.assertFalse(error.retryable)
+                self.assertEqual(error.code, ErrorCode.PROVIDER_UNAVAILABLE)
                 self.assertEqual(error.details, {
-                    'reason': 'authority_unavailable',
+                    'reason': reason,
                     'operator_remediation': OPERATOR_MESSAGES[category]})
                 _code, _message, _retryable, details = map_exception(error)
+                self.assertEqual(details['reason'], reason)
                 self.assertEqual(details['operator_remediation'], OPERATOR_MESSAGES[category])
         error = await self._refused(UPSTREAM_REDIRECT_REFUSED)
         self.assertEqual(error.details['operator_remediation'], UPSTREAM_REDIRECT_OPERATOR_MESSAGE)

@@ -2,9 +2,15 @@
 
 Every call is an 8.5-shaped public call through the real upstream read gateway
 with a fake transport. 9.1 responses are class S fixtures transcribed from the
-pinned 9.1.0 source (tests/fixtures/ha_mcp_9_1_0/config/provenance.json); the
-8.5-side responses reuse the captured 8.6.0 standalone read results (the 8.5
-and 8.6 rows are pure pass-through). No live Home Assistant, no network.
+pinned 9.1.0 source (tests/fixtures/ha_mcp_9_1_0/config/provenance.json).
+
+Evidence class of the 8.5-side rows (architect ruling 2026-11-07, item 1): **S
+(8.6 replay), never C.** No 8.5.0 capture exists for rows 1-11, so the 8.5.0
+policy is exercised with the decoded 8.6.0 standalone records
+(tests/fixtures/ha_mcp_8_6_0/read-results.json). Those records prove the 8.5.0
+gateway's pass-through handling of that shape, not 8.5.0 upstream output; the
+live 8.5.0 proof is the 8.5 exact-image lanes. No live Home Assistant, no
+network.
 """
 from __future__ import annotations
 
@@ -35,6 +41,7 @@ FIXTURES_91 = json.loads(
 _READS_86 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_8_6_0/read-results.json").read_text("utf-8")
 )
+# S (8.6 replay): 8.6.0 records fed to the 8.5.0 policy; not 8.5.0 captures.
 FIXTURES_85 = {entry["upstream_name"]: entry for entry in _READS_86["standalone"][:11]}
 CANARY = "SYNTHETIC-CANARY-319-CFG"
 ADAPTER_91 = "ha_mcp_error_contract_9_1_0_v1"
@@ -453,7 +460,11 @@ class Parity91Tests(_Base):
 
 
 class Parity85Tests(_Base):
-    """The shipped 8.5.0 surface stays pass-through and byte-identical."""
+    """The 8.5.0 policy passes the replayed records through byte-identically.
+
+    Evidence class S (8.6 replay): the inputs are 8.6.0 records, so this proves
+    the 8.5.0 gateway path, not 8.5.0 upstream output (8.5 lanes carry that).
+    """
 
     version = "8.5.0"
 

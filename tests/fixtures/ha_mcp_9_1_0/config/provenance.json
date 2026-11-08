@@ -11,7 +11,7 @@
   },
   "generation": "Hand-written synthetic structuredContent and error envelopes transcribed from the pinned 9.1.0 source (read only, never executed). They are not captured records and carry no record hashes; the config_hash strings are opaque synthetic values reused from the 8.6.0 captured fixture and are not recomputed. The listed sha256 values identify the pinned source files the line citations refer to. Exact 9.1 error envelopes remain class S until the exact-image lane executes them (design open item).",
   "eight_five_shaped_responses": {
-    "note": "The 8.5-side tests reuse the captured 8.6.0 standalone read results (8.5/8.6 pass-through rows) under their own provenance; nothing is copied into this directory.",
+    "note": "Evidence class S (8.6 replay), not 8.5 evidence: the 8.5-side tests replay the captured 8.6.0 standalone read results on the 8.5.0 policy under their own provenance (no 8.5.0 capture exists for rows 1-11; the 8.5 exact-image lanes carry the live 8.5 proof). Nothing is copied into this directory.",
     "path": "tests/fixtures/ha_mcp_8_6_0/read-results.json",
     "provenance": "tests/fixtures/ha_mcp_8_6_0/provenance.json",
     "read_results_sha256": "sha256:acbfe18c46a6f2fabafeb58421d024be5a85d187055472a62810ea78bb7634d8",
