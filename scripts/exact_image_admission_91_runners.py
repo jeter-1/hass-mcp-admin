@@ -59,6 +59,18 @@ CATALOG_MODE_UNADMITTED = "upstream_catalog_mode_unadmitted"
 VERSION_MISMATCH = "upstream_version_mismatch"
 PROBE_TOOL = "ha_get_state"
 PROBE_ARGUMENTS = {"entity_id": "sun.sun"}
+HEALTH_TOOL = "get_server_health"
+HEALTH_ERROR_FIELDS = ("error", "error_code", "errors")
+# Every ha-mcp tool name, and so every delegated read Engineering can expose,
+# starts with this prefix; no Engineering-native tool does (2.4.2-beta.6 and
+# the lane build). A listed name with it is part of the delegated surface.
+DELEGATED_TOOL_PREFIX = "ha_"
+# 2.4.2-beta.6 refuses a delegated read it does not publish before Core
+# acquisition, provider dispatch or any upstream or Home Assistant request
+# (routing.py at ROLLBACK_ENGINEERING_REVISION): an MCP error whose content is
+# this structured refusal.
+ROLLBACK_REFUSAL = {"error": "CoreRequirementUnmapped", "error_code": "unsupported_operation",
+                    "reason_code": "core_requirement_unmapped"}
 YAML_READER = "ha_config_get_yaml"
 YAML_SIBLINGS = ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file")
 OPTIONAL_NAMES = (YAML_READER, *YAML_SIBLINGS)
@@ -241,6 +253,51 @@ def gateway_view(health: dict[str, Any]) -> dict[str, Any]:
     return view
 
 
+def health_problem(health: Any) -> str | None:
+    """A health observation counts only as a present, successful, error-free ``get_server_health`` result."""
+
+    if not isinstance(health, dict):
+        return "health_missing"
+    if health.get("success") is not True:
+        return "health_not_successful"
+    if any(health.get(key) not in (None, "", [], {}) for key in HEALTH_ERROR_FIELDS):
+        return "health_reports_error"
+    if health.get("operation") != HEALTH_TOOL:
+        return "health_operation_unexpected"
+    data = health.get("data")
+    if not (isinstance(data, dict) and isinstance(data.get("server"), dict)
+            and isinstance(data.get("upstream_read_gateway"), dict)):
+        return "health_data_missing"
+    return None
+
+
+def delegated_surface(tool_names: Any) -> list[str] | None:
+    """The delegated tools among Engineering's listed tools; ``None`` when the list was not observed."""
+
+    if not isinstance(tool_names, (list, tuple)) or not all(isinstance(name, str) for name in tool_names):
+        return None
+    if HEALTH_TOOL not in tool_names:
+        return None
+    return sorted(name for name in tool_names if name.startswith(DELEGATED_TOOL_PREFIX))
+
+
+def rollback_refusal_problem(probe: Any) -> str | None:
+    """The previous release's own refusal of the probe read, with nothing dispatched anywhere."""
+
+    details = probe.get("details") if isinstance(probe, dict) and isinstance(probe.get("details"), dict) else {}
+    if (not isinstance(probe, dict) or probe.get("success") is not False or probe.get("mcp_is_error") is not True
+            or probe.get("error") != ROLLBACK_REFUSAL["error"]
+            or probe.get("error_code") != ROLLBACK_REFUSAL["error_code"]
+            or details.get("reason_code") != ROLLBACK_REFUSAL["reason_code"]
+            or details.get("core_authority_acquired") is not False
+            or details.get("provider_dispatch_occurred") is not False
+            or details.get("upstream_attempted") is not False
+            or details.get("upstream_request_count") != 0
+            or details.get("home_assistant_request_count") != 0):
+        return "rollback_refusal_not_attributable"
+    return None
+
+
 def engineering_version_problem(name: str, health: dict[str, Any], expected: str) -> str | None:
     """Rollback cases must run the previous release; every other case the lane build."""
 
@@ -291,7 +348,7 @@ def deployment_problem(name: str, *, container_image: str | None,
 def probe_view(probe: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(probe, dict):
         return {"success": False, "error_code": "probe_unreadable", "failure_category": None,
-                "dispatch_occurred": None, "provider": None, "upstream_version": None}
+                "dispatch_occurred": None, "provider": None, "upstream_version": None, "mcp_is_error": None}
     metadata = probe.get("metadata") if isinstance(probe.get("metadata"), dict) else {}
     details = probe.get("details") if isinstance(probe.get("details"), dict) else {}
     return {
@@ -301,6 +358,7 @@ def probe_view(probe: dict[str, Any] | None) -> dict[str, Any]:
         "dispatch_occurred": metadata.get("upstream_dispatch_occurred"),
         "provider": metadata.get("provider"),
         "upstream_version": metadata.get("upstream_version"),
+        "mcp_is_error": probe.get("mcp_is_error"),
     }
 
 
@@ -443,16 +501,15 @@ def load_reviewed_91_capture(path: Path = REVIEWED_91_CAPTURE) -> list[dict[str,
 
 
 def strict_catalog_problem(observed: Any, reviewed: list[dict[str, Any]], *,
-                           reviewed_fingerprint: Any, optional_names: tuple[str, ...]) -> str | None:
-    """Exact comparison of the peer's strict-full catalog with the reviewed capture.
+                           optional_names: tuple[str, ...]) -> str | None:
+    """Exact, order-insensitive comparison of the peer's strict-full catalog with the reviewed capture.
 
     Every reviewed tool must be advertised exactly once with a descriptor equal
     to the reviewed one on every field (name, title, description, inputSchema,
     outputSchema, annotations, _meta, and no other key). The advertised set
-    must equal the reviewed set plus exactly ``optional_names``. The reviewed
-    capture, taken in the advertised order, must reproduce the runtime's
-    reviewed strict-full fingerprint, which binds this capture to the
-    runtime's registry and the advertised order to the reviewed order.
+    must equal the reviewed set plus exactly ``optional_names``. Advertised
+    order is not compared, and no fingerprint gates: fingerprints are recorded
+    as diagnostics only (Josh, 2026-11-07).
     """
 
     if not isinstance(observed, list) or not all(isinstance(tool, dict) and isinstance(tool.get("name"), str)
@@ -477,9 +534,6 @@ def strict_catalog_problem(observed: Any, reviewed: list[dict[str, Any]], *,
         for field in DESCRIPTOR_FIELDS:
             if field in expected and canonical_fingerprint(tool[field]) != canonical_fingerprint(expected[field]):
                 return f"peer_catalog_{field.strip('_')}_mismatch"
-    ordered = [by_name[name] for name in names if name in by_name]
-    if canonical_fingerprint({"tools": ordered}) != reviewed_fingerprint:
-        return "peer_catalog_order_or_reviewed_contract_mismatch"
     return None
 
 
@@ -507,11 +561,14 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
         problem = deployment_problem(name, container_image=container_image,
                                      rollback_identity=rollback_identity)
         require(problem is None, problem or "")
+        for observation in (health_before, health_after):
+            problem = health_problem(observation)
+            require(problem is None, problem or "")
         problem = engineering_version_problem(name, health_after, engineering_version)
         require(problem is None, problem or "")
         view = gateway_view(health_after)
         before = gateway_view(health_before)
-        names = set(tool_names)
+        names = set(tool_names) if isinstance(tool_names, (list, tuple, set)) else set()
         result = probe_view(probe)
         observed.update(
             configured_path=urlsplit(configured_url).path,
@@ -587,8 +644,7 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
                     and view.get("stock_catalog_match_is_informational") is True, "gateway_safety_flags_unexpected")
             require(isinstance(reviewed_tools, list), "reviewed_capture_missing")
             require(peer_tools is not None, "peer_catalog_unobserved")
-            problem = strict_catalog_problem(peer_tools, reviewed_tools, reviewed_fingerprint=fingerprint,
-                                             optional_names=OPTIONAL_NAMES)
+            problem = strict_catalog_problem(peer_tools, reviewed_tools, optional_names=OPTIONAL_NAMES)
             require(problem is None, problem or "")
             require(view.get("reviewed_accounted_tool_count") == len(reviewed_tools)
                     and view.get("reviewed_policy_entry_count") == len(reviewed_tools)
@@ -603,6 +659,10 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
                 "optional_on_wire": sorted(name for name in (tool["name"] for tool in peer_tools)
                                            if name in OPTIONAL_NAMES),
                 "duplicates": 0, "extras": 0, "missing": 0, "wire_fingerprint": wire,
+                # Diagnostic only: whether the reviewed capture, in its own
+                # order, reproduces the runtime's reviewed fingerprint.
+                "reviewed_capture_fingerprint_matches_runtime":
+                    canonical_fingerprint({"tools": reviewed_tools}) == fingerprint,
             }
             # One optional exposure: the admitted reader.
             require(view.get("exact_matched_automatic_read_count") is not None
@@ -610,6 +670,7 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
                     and view.get("core_withheld_read_count") == 0, "no_delegated_reads_exposed")
             require(PROBE_TOOL in names, "probe_tool_not_listed")
             require(result["success"], "probe_read_not_useful")
+            require(result["mcp_is_error"] is not True, "probe_mcp_is_error")
             require(result["provider"] == "upstream_read_gateway", "probe_not_via_read_gateway")
             require(result["upstream_version"] == CANDIDATE_VERSION, "probe_not_served_by_91")
             protocol = view.get("observed_protocol_version")
@@ -657,7 +718,16 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
                     "rollback_engineering_has_91_entry")
             require(view.get("dynamically_exposed_count") == 0, "rollback_exposed_reads")
             require(PROBE_TOOL not in names, "rollback_listed_delegated_read")
+            surface = delegated_surface(tool_names)
+            require(surface is not None, "engineering_tool_list_unobserved")
+            observed["listed_tool_count"] = len(tool_names)
+            observed["delegated_surface"] = surface
+            require(surface == [], "rollback_delegated_surface_not_empty")
             require(not result["success"], "rollback_served_a_read")
+            require(isinstance(probe, dict), "rollback_probe_evidence_missing")
+            problem = rollback_refusal_problem(probe)
+            require(problem is None, problem or "")
+            observed["probe_refusal"] = {key: probe.get(key) for key in ("error", "error_code", "mcp_is_error")}
             require(fixture_before is not None and fixture_after is not None, "fixture_not_observed")
             require(all(fixture_after[key] == fixture_before[key] for key in FIXTURE_READ_KEYS),
                     "fixture_read_observed")
@@ -698,7 +768,8 @@ def evaluate_gateway_case(configuration: str, name: str, *, source: dict[str, An
         problem = deployment_problem(name, container_image=container_image,
                                      rollback_identity=rollback_identity)
         require(problem is None, problem or "")
-        require(isinstance(health, dict), "health_missing")
+        problem = health_problem(health)
+        require(problem is None, problem or "")
         problem = engineering_version_problem(name, health, engineering_version)
         require(problem is None, problem or "")
         observed["engineering_version"] = engineering_version
@@ -807,13 +878,34 @@ def snapshot(fixture_stats_url: str | None, peer_container: str | None) -> dict[
     return mark
 
 
-def tool_text(result: Any) -> dict[str, Any] | None:
+def decoded_content(result: Any) -> dict[str, Any] | None:
     text = "".join(getattr(item, "text", "") or "" for item in getattr(result, "content", []) or [])
     try:
         value = json.loads(text)
     except ValueError:
         return None
     return value if isinstance(value, dict) else None
+
+
+def tool_text(result: Any) -> dict[str, Any] | None:
+    """The JSON object a successful tool call returned; an MCP error result (``isError``) is never one."""
+
+    if getattr(result, "isError", False) is not False:
+        return None
+    return decoded_content(result)
+
+
+def tool_evidence(result: Any) -> dict[str, Any] | None:
+    """A call's JSON object with its MCP ``isError`` flag recorded as ``mcp_is_error``.
+
+    For the probe read, whose refusal is itself evidence: the flag is kept so a
+    case can require it (an MCP error for a refusal, never for a served read).
+    """
+
+    value = decoded_content(result)
+    if value is None:
+        return None
+    return {**value, "mcp_is_error": getattr(result, "isError", None) is True}
 
 
 async def peer_catalog(endpoint: str) -> list[dict[str, Any]]:
@@ -850,10 +942,10 @@ async def engineering_session(endpoint: str, *, probe: bool) -> tuple[dict[str, 
             probe_result = None
             if probe:
                 try:
-                    probe_result = tool_text(await session.call_tool(PROBE_TOOL, PROBE_ARGUMENTS))
+                    probe_result = tool_evidence(await session.call_tool(PROBE_TOOL, PROBE_ARGUMENTS))
                 except Exception:  # noqa: BLE001 - an unlisted tool is a refusal, recorded as such
                     probe_result = {"success": False, "error_code": "probe_call_rejected"}
-            health = tool_text(await session.call_tool("get_server_health", {"check_ha": False}))
+            health = tool_text(await session.call_tool(HEALTH_TOOL, {"check_ha": False}))
             require(isinstance(health, dict), "health_unreadable")
             return health, names, probe_result
 

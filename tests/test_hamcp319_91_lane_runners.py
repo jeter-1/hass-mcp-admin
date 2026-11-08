@@ -87,7 +87,8 @@ def produced_cases(step: dict, configuration: str) -> list[str]:
 
 
 def health(version: str = LANE_VERSION, **view) -> dict:
-    return {"success": True, "data": {"server": {"version": version}, "upstream_read_gateway": view}}
+    return {"success": True, "operation": "get_server_health",
+            "data": {"server": {"version": version}, "upstream_read_gateway": view}}
 
 
 # The reviewed 9.1.0 capture the runtime's strict-full fingerprint is bound to,
@@ -154,6 +155,23 @@ def rollback_identity_ok(architecture: str = "amd64") -> dict:
             "revision": runners.ROLLBACK_ENGINEERING_REVISION}
 
 
+# A sample of 2.4.2-beta.6's Engineering-native public tools; none is delegated
+# (every ha-mcp tool name, and so every delegated read, starts with "ha_").
+ROLLBACK_NATIVE_TOOLS = ["get_change_plan", "get_server_health", "list_capabilities"]
+
+
+def rollback_refused_probe() -> dict:
+    """2.4.2-beta.6's refusal of an unlisted delegated read (routing.py, af5ec837), as the runner records it."""
+
+    return {"success": False, "operation": runners.PROBE_TOOL, "error": "CoreRequirementUnmapped",
+            "error_code": "unsupported_operation",
+            "details": {"reason": "core_requirement_unmapped", "reason_code": "core_requirement_unmapped",
+                        "core_authority_acquired": False, "provider_dispatch_occurred": False,
+                        "upstream_attempted": False, "home_assistant_request_count": 0,
+                        "upstream_request_count": 0},
+            "mcp_is_error": True}
+
+
 def rollback_view(**overrides) -> dict:
     view = {
         "initialized": False, "admission_status": "blocked_incompatible_upstream",
@@ -199,7 +217,8 @@ def health_case(expect: str, **overrides):
     else:
         view = rollback_view()
         version = runners.ROLLBACK_ENGINEERING_VERSION
-        arguments.update(health_before=health(version, **view), health_after=health(version, **view))
+        arguments.update(health_before=health(version, **view), health_after=health(version, **view),
+                         tool_names=list(ROLLBACK_NATIVE_TOOLS), probe=rollback_refused_probe())
     arguments.update(overrides)
     return runners.evaluate_health_case(expect, **arguments)
 
@@ -921,14 +940,9 @@ class StrictCatalogExactnessTests(unittest.TestCase):
                 peer.append(json.loads(json.dumps(next(tool for tool in peer if tool["name"] == name))))
                 self.assertEqual(self.strict(peer), ("failed", "peer_catalog_duplicate_tool"))
 
-    def test_order_and_reviewed_binding_are_checked_without_the_wire_fingerprint(self) -> None:
-        peer = peer_tools_91()
-        peer[0], peer[1] = peer[1], peer[0]
-        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_order_or_reviewed_contract_mismatch"))
-        self.assertEqual(self.strict(reviewed_strict_full_contract_fingerprint="5" * 64),
-                         ("failed", "peer_catalog_order_or_reviewed_contract_mismatch"))
-        # The optional tools may sit anywhere in the wire order; only the
-        # reviewed tools' relative order is bound.
+    def test_wire_order_is_not_bound_but_the_observation_is(self) -> None:
+        # D1 (#407 correction round): the comparison is an order-insensitive
+        # exact set; the optional tools may sit anywhere in the wire order.
         peer = peer_tools_91()
         moved = [tool for tool in peer if tool["name"] in runners.OPTIONAL_NAMES]
         peer = [tool for tool in peer if tool["name"] not in runners.OPTIONAL_NAMES] + moved
@@ -1269,6 +1283,365 @@ class RollForwardPersistedDataTests(unittest.TestCase):
                 self.assertEqual(match.group(1), "$RUNNER_TEMP/admission-data-sbs")
         for step in steps[:again + 1]:
             self.assertNotRegex(step.get("run", ""), r"rm[^\n]*admission-data")
+
+
+# ---------------------------------------------------------------------------
+# HAMCP-319 #407 correction round (Codex delta review of db04ca41).
+# Each Codex demonstration is a regression test that failed on db04ca41.
+# ---------------------------------------------------------------------------
+
+ROLLBACK_CASE = "sbs_engineering_rollback_91_refused"
+
+
+class _Text:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _Result:
+    def __init__(self, payload, *, is_error: bool = False) -> None:
+        text = payload if isinstance(payload, str) else json.dumps(payload)
+        self.content = [_Text(text)]
+        self.isError = is_error
+
+
+class _Tool:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def fake_mcp(*, tools, probe, health_result):
+    """A stand-in ``mcp`` package: the runner's real ``engineering_session`` talks to it.
+
+    ``probe`` and ``health_result`` are ``_Result`` objects, or an exception
+    instance the call raises.
+    """
+
+    import contextlib
+    import types
+
+    class Session:
+        def __init__(self, read, write) -> None:
+            del read, write
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def initialize(self):
+            return None
+
+        async def list_tools(self):
+            return types.SimpleNamespace(tools=[_Tool(name) for name in tools])
+
+        async def call_tool(self, name, arguments):
+            del arguments
+            value = probe if name == runners.PROBE_TOOL else health_result
+            if isinstance(value, BaseException):
+                raise value
+            return value
+
+    @contextlib.asynccontextmanager
+    async def client(endpoint):
+        del endpoint
+        yield None, None, None
+
+    package = types.ModuleType("mcp")
+    package.ClientSession = Session
+    client_package = types.ModuleType("mcp.client")
+    transport = types.ModuleType("mcp.client.streamable_http")
+    transport.streamablehttp_client = client
+    return {"mcp": package, "mcp.client": client_package, "mcp.client.streamable_http": transport}
+
+
+def rollback_health_result(**changes) -> _Result:
+    payload = health(runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view())
+    payload.update(changes)
+    return _Result(payload)
+
+
+def run_rollback_through_gate(*, tools=None, probe=None, health_result=None):
+    """command -> case file -> manifest (both architectures) -> gate, through the real MCP session code.
+
+    Returns ``(case_status, case_reason, side_by_side_acceptance, gate_errors)``.
+    """
+
+    tools = list(ROLLBACK_NATIVE_TOOLS) if tools is None else tools
+    probe = _Result(rollback_refused_probe_payload(), is_error=True) if probe is None else probe
+    health_result = rollback_health_result() if health_result is None else health_result
+    stats = {key: {"synthetic": value} for key, value in FIXTURE.items()}
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / f"{ROLLBACK_CASE}.json"
+        args = argparse.Namespace(
+            configuration="side_by_side", case=ROLLBACK_CASE, expect="unsupported_version_rollback",
+            engineering_endpoint="http://127.0.0.1:18300/synthetic/mcp", configured_url=STRICT,
+            expected_engineering_version=runners.ROLLBACK_ENGINEERING_VERSION,
+            engineering_container="engineering-admission-sbs", rollback_identity="synthetic-identity",
+            fixture_stats_url="http://127.0.0.1:18123/__fixture__/stats", peer_container=None,
+            mark=None, wait_seconds=0, output=str(output))
+        with mock.patch.dict(sys.modules, fake_mcp(tools=tools, probe=probe, health_result=health_result)), \
+                mock.patch.object(runners, "container_image", return_value=runners.ROLLBACK_ENGINEERING_IMAGE), \
+                mock.patch.object(runners, "load_identity", return_value=rollback_identity_ok()), \
+                mock.patch.object(runners, "http_json", return_value=stats), redirect_stdout(io.StringIO()):
+            runners.command_health_case(args)
+        loaded = lanes.load_case_results(Path(directory))
+    case = loaded[ROLLBACK_CASE]
+    rows = [lane_row(configuration, architecture=architecture)
+            for configuration in lanes.CASES for architecture in lanes.ARCHITECTURES]
+    manifests = []
+    for row in rows:
+        values = passing_results(row["configuration"], row["architecture"])
+        if row["configuration"] == "side_by_side":
+            values[ROLLBACK_CASE] = json.loads(json.dumps(case))
+        manifests.append(lanes.build_manifest(row, COMMIT, values))
+    acceptance, errors = lanes.verify_manifests(manifests, {"include": rows}, COMMIT)
+    return case["status"], case["reason"], acceptance.get("side_by_side"), errors
+
+
+def rollback_refused_probe_payload() -> dict:
+    payload = rollback_refused_probe()
+    del payload["mcp_is_error"]
+    return payload
+
+
+class RollbackRefusalOracleTests(unittest.TestCase):
+    """F1: no path to ACCEPTED when any rollback evidence is missing, errored, unexpected or inconsistent."""
+
+    def assert_refused_end_to_end(self, reason_prefix: str, **session) -> None:
+        status, reason, acceptance, _ = run_rollback_through_gate(**session)
+        self.assertEqual(status, "failed", reason)
+        self.assertTrue(reason.startswith(reason_prefix), reason)
+        self.assertNotEqual(acceptance, "ACCEPTED")
+
+    def test_positive_control_is_accepted_end_to_end(self) -> None:
+        status, reason, acceptance, errors = run_rollback_through_gate()
+        self.assertEqual((status, reason), ("passed", ""))
+        self.assertEqual(acceptance, "ACCEPTED", errors)
+
+    def test_unexpected_delegated_history_read_fails_end_to_end(self) -> None:
+        self.assert_refused_end_to_end("rollback_delegated_surface_not_empty",
+                                       tools=ROLLBACK_NATIVE_TOOLS + ["ha_get_history"])
+
+    def test_unexpected_call_service_fails_end_to_end(self) -> None:
+        self.assert_refused_end_to_end("rollback_delegated_surface_not_empty",
+                                       tools=ROLLBACK_NATIVE_TOOLS + ["ha_call_service"])
+
+    def test_missing_probe_evidence_fails_end_to_end(self) -> None:
+        # The probe answer is not decodable: there is no refusal evidence at all.
+        self.assert_refused_end_to_end("rollback_probe_evidence_missing", probe=_Result("not json", is_error=True))
+
+    def test_health_success_false_or_error_bearing_fails_end_to_end(self) -> None:
+        self.assert_refused_end_to_end("health_not_successful",
+                                       health_result=rollback_health_result(success=False,
+                                                                            error_code="synthetic_error"))
+        self.assert_refused_end_to_end("health_reports_error",
+                                       health_result=rollback_health_result(error="SyntheticError"))
+        self.assert_refused_end_to_end("health_reports_error",
+                                       health_result=rollback_health_result(error_code="synthetic_error"))
+        self.assert_refused_end_to_end("health_operation_unexpected",
+                                       health_result=rollback_health_result(operation="get_audit_log"))
+
+    def test_mcp_is_error_health_with_plausible_data_fails_end_to_end(self) -> None:
+        payload = health(runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view())
+        self.assert_refused_end_to_end("health_unreadable", health_result=_Result(payload, is_error=True))
+
+    def test_tool_text_treats_mcp_is_error_as_an_error(self) -> None:
+        payload = health(runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view())
+        self.assertIsNone(runners.tool_text(_Result(payload, is_error=True)))
+        self.assertIsNone(runners.tool_text(_Result(payload, is_error="yes")))
+        self.assertEqual(runners.tool_text(_Result(payload)), payload)
+        decoded = runners.tool_text(_Result(payload, is_error=True))
+        self.assertEqual(health_case("unsupported_version_rollback", health_after=decoded)[:2],
+                         ("failed", "health_missing"))
+
+    def test_unattributable_refusals_fail_end_to_end(self) -> None:
+        # A refusal must be beta.6's own unmapped-route refusal with no
+        # dispatch: a transport error, a generic failure or a dispatching
+        # refusal is not evidence that the previous release refused 9.1.
+        self.assert_refused_end_to_end("rollback_refusal_not_attributable", probe=RuntimeError("transport"))
+        generic = {"success": False, "error_code": "provider_unavailable"}
+        self.assert_refused_end_to_end("rollback_refusal_not_attributable", probe=_Result(generic, is_error=True))
+        for key, value in (("provider_dispatch_occurred", True), ("upstream_attempted", True),
+                           ("upstream_request_count", 1), ("home_assistant_request_count", 1),
+                           ("reason_code", "core_requirement_admitted")):
+            with self.subTest(key=key):
+                payload = rollback_refused_probe_payload()
+                payload["details"][key] = value
+                self.assert_refused_end_to_end("rollback_refusal_not_attributable",
+                                               probe=_Result(payload, is_error=True))
+        # The refusal is an MCP error; a non-error result carrying it is inconsistent.
+        self.assert_refused_end_to_end("rollback_refusal_not_attributable",
+                                       probe=_Result(rollback_refused_probe_payload(), is_error=False))
+
+    def test_unobserved_tool_list_fails(self) -> None:
+        self.assert_refused_end_to_end("engineering_tool_list_unobserved", tools=[])
+        self.assertEqual(health_case("unsupported_version_rollback", tool_names=None)[:2],
+                         ("failed", "engineering_tool_list_unobserved"))
+
+    def test_case_level_counterexamples_from_the_delta_probe(self) -> None:
+        expect = "unsupported_version_rollback"
+        good = health(runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view())
+        cases = {
+            "rollback_delegated_surface_not_empty": [dict(tool_names=ROLLBACK_NATIVE_TOOLS + ["ha_get_history"]),
+                                                     dict(tool_names=ROLLBACK_NATIVE_TOOLS + ["ha_call_service"])],
+            "rollback_probe_evidence_missing": [dict(probe=None)],
+            "health_not_successful": [dict(health_after={**good, "success": False, "error_code": "synthetic_error"}),
+                                      dict(health_before={**good, "success": False})],
+            "health_missing": [dict(health_after=None), dict(health_before=None)],
+        }
+        for reason, variants in cases.items():
+            for overrides in variants:
+                with self.subTest(reason=reason, overrides=sorted(overrides)):
+                    self.assertEqual(health_case(expect, **overrides)[:2], ("failed", reason))
+        # The positive, empty-health and sampled negative controls are kept.
+        self.assertEqual(health_case(expect)[:2], ("passed", ""))
+        self.assertEqual(health_case(expect, health_after={})[0], "failed")
+        self.assertEqual(health_case(expect, tool_names=[runners.PROBE_TOOL])[:2],
+                         ("failed", "rollback_listed_delegated_read"))
+
+    def test_the_85_rollback_gateway_case_requires_successful_health(self) -> None:
+        name = "sbs_rollback_85_legacy_useful"
+        bad = gateway_health("8.5.0", None, runners.ROLLBACK_ENGINEERING_VERSION)
+        for changes, reason in ((dict(success=False), "health_not_successful"),
+                                (dict(error_code="synthetic_error"), "health_reports_error")):
+            with self.subTest(reason=reason):
+                self.assertEqual(gateway_case("side_by_side", name, health={**bad, **changes})[:2],
+                                 ("failed", reason))
+
+
+def _mutant(replacements: list[tuple[str, str]]):
+    """The runner module with each ``old`` text (present exactly once) replaced."""
+
+    source = (ROOT / "scripts" / "exact_image_admission_91_runners.py").read_text(encoding="utf-8")
+    for old, new in replacements:
+        assert source.count(old) == 1, old
+        source = source.replace(old, new)
+    module = type(sys)("exact_image_admission_91_runners_mutant")
+    module.__file__ = str(ROOT / "scripts" / "exact_image_admission_91_runners.py")
+    sys.modules[module.__name__] = module
+    exec(compile(source, module.__file__, "exec"), module.__dict__)  # noqa: S102 - local mutation testing
+    return module
+
+
+def _disable_guard(reason: str) -> tuple[str, str]:
+    """Disable the one guard that reports ``reason``.
+
+    A single-line ``require(<condition>, "<reason>")`` becomes always true; a
+    ``return "<reason>"`` becomes ``pass``.
+    """
+
+    source = (ROOT / "scripts" / "exact_image_admission_91_runners.py").read_text(encoding="utf-8")
+    lines = [line for line in source.splitlines()
+             if (f'"{reason}")' in line and "require(" in line) or line.strip() == f'return "{reason}"']
+    assert len(lines) == 1, (reason, lines)
+    line = lines[0]
+    if "require(" in line:
+        return line + "\n", line.replace("require(", "require(True or ", 1) + "\n"
+    return line + "\n", line.replace(f'return "{reason}"', "pass") + "\n"
+
+
+class RollbackRefusalOracleMutationTests(unittest.TestCase):
+    """F1: removing any one rollback guard lets its counterexample through, so each guard is killed by a test."""
+
+    MUTANTS = {
+        "rollback_delegated_surface_not_empty": dict(tools=ROLLBACK_NATIVE_TOOLS + ["ha_call_service"]),
+        "rollback_probe_evidence_missing": dict(probe=_Result("not json", is_error=True)),
+        "rollback_refusal_not_attributable": dict(probe=_Result({"success": False,
+                                                                 "error_code": "provider_unavailable"},
+                                                                is_error=True)),
+        "health_not_successful": dict(health_result=rollback_health_result(success=False)),
+        "health_reports_error": dict(health_result=rollback_health_result(error_code="synthetic_error")),
+        "health_operation_unexpected": dict(health_result=rollback_health_result(operation="get_audit_log")),
+        "engineering_tool_list_unobserved": dict(tools=[]),
+    }
+
+    # Removing any other guard lets its counterexample reach an ACCEPTED gate.
+    # These two are backed by a later guard, so without them the case still
+    # fails, under a different reason (the mutant is still killed).
+    BACKED = {"rollback_probe_evidence_missing": "rollback_refusal_not_attributable",
+              "engineering_tool_list_unobserved": "rollback_delegated_surface_not_empty"}
+
+    def test_each_guard_is_load_bearing(self) -> None:
+        global runners
+        original = runners
+        for reason, session in self.MUTANTS.items():
+            with self.subTest(guard=reason):
+                status, observed_reason, acceptance, _ = run_rollback_through_gate(**session)
+                self.assertEqual((status, observed_reason), ("failed", reason))
+                self.assertNotEqual(acceptance, "ACCEPTED")
+                runners = _mutant([_disable_guard(reason)])
+                try:
+                    status, observed_reason, acceptance, _ = run_rollback_through_gate(**session)
+                finally:
+                    runners = original
+                if reason in self.BACKED:
+                    self.assertEqual((status, observed_reason), ("failed", self.BACKED[reason]))
+                else:
+                    self.assertEqual((status, acceptance), ("passed", "ACCEPTED"),
+                                     f"{reason}: the counterexample is caught by another guard too")
+
+    def test_the_is_error_guard_is_load_bearing(self) -> None:
+        global runners
+        original = runners
+        payload = health(runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view())
+        session = dict(health_result=_Result(payload, is_error=True))
+        self.assertEqual(run_rollback_through_gate(**session)[:2], ("failed", "health_unreadable"))
+        runners = _mutant([('    if getattr(result, "isError", False) is not False:\n        return None\n', "")])
+        try:
+            status, _, acceptance, _ = run_rollback_through_gate(**session)
+        finally:
+            runners = original
+        self.assertEqual((status, acceptance), ("passed", "ACCEPTED"))
+
+
+class StrictCatalogOrderInsensitiveTests(unittest.TestCase):
+    """D1: the catalog is an exact, order-insensitive set; fingerprints are diagnostic, never a gate."""
+
+    def strict(self, peer, **view):
+        view.setdefault("observed_strict_full_contract_fingerprint", runners.canonical_fingerprint({"tools": peer}))
+        return health_case("admitted_strict_91", peer_tools=peer, health_after=health(**strict_91_view(**view)))
+
+    def test_reordered_identical_catalog_passes(self) -> None:
+        peer = peer_tools_91()
+        peer[0], peer[1] = peer[1], peer[0]
+        self.assertEqual(sorted(peer, key=lambda tool: tool["name"]),
+                         sorted(peer_tools_91(), key=lambda tool: tool["name"]))
+        self.assertEqual(self.strict(peer)[:2], ("passed", ""))
+        self.assertEqual(self.strict(list(reversed(peer_tools_91())))[:2], ("passed", ""))
+
+    def test_reordering_does_not_hide_missing_extra_duplicate_or_drift(self) -> None:
+        base = list(reversed(peer_tools_91()))
+        cases = {
+            "peer_catalog_missing_reviewed_tool": [tool for tool in base if tool["name"] != "ha_restart"],
+            "peer_catalog_extra_tool": base + [{**OPTIONAL_91[0], "name": "ha_unreviewed_tool"}],
+            "peer_catalog_duplicate_tool": base + [json.loads(json.dumps(base[3]))],
+            "peer_catalog_optional_tool_missing": [tool for tool in base if tool["name"] != "ha_write_file"],
+        }
+        drift = json.loads(json.dumps(base))
+        next(tool for tool in drift if tool["name"] == "ha_get_state")["description"] += " changed"
+        cases["peer_catalog_description_mismatch"] = drift
+        keys = json.loads(json.dumps(base))
+        next(tool for tool in keys if tool["name"] == "ha_get_state")["icons"] = []
+        cases["peer_catalog_descriptor_keys_mismatch"] = keys
+        for reason, peer in cases.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(self.strict(peer)[:2], ("failed", reason))
+
+    def test_runner_observation_must_still_be_the_engineering_observation(self) -> None:
+        peer = list(reversed(peer_tools_91()))
+        stale = runners.canonical_fingerprint({"tools": peer_tools_91()})
+        self.assertEqual(self.strict(peer, observed_strict_full_contract_fingerprint=stale)[:2],
+                         ("failed", "peer_catalog_not_engineering_observation"))
+
+    def test_reviewed_fingerprint_is_recorded_not_gated(self) -> None:
+        status, reason, observed = self.strict(peer_tools_91(), reviewed_strict_full_contract_fingerprint="5" * 64)
+        self.assertEqual((status, reason), ("passed", ""))
+        self.assertEqual(observed["reviewed_strict_full_contract_fingerprint"], "5" * 64)
+        self.assertIs(observed["peer_catalog"]["reviewed_capture_fingerprint_matches_runtime"], False)
+        _, _, observed = self.strict(peer_tools_91())
+        self.assertIs(observed["peer_catalog"]["reviewed_capture_fingerprint_matches_runtime"], True)
 
 
 if __name__ == "__main__":
