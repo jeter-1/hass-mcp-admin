@@ -33,8 +33,8 @@ upstream tag `v1.30.0` = `8c2fa6eabacde869d75568e33b9d466b58c2f512`, paths under
 - **Not claimed.** No live acceptance. The Layer B rows stay unobserved until that separately authorized live
   observation. Signals stay advisory. An authoritative re-read and the guarded apply path stay mandatory. Automatic
   ended-turn continuation is not claimed without Layer B evidence.
-- **Deferred or optional.** Q4 (typed-task, F3 and record approvals) and Q5 (stateful transport) are optional future
-  scope. Q6 (mobile completion push) stays out of scope (section 9).
+- **Deferred past 2.6.** Q4 (typed-task, F3 and record approvals) and Q5 (stateful transport) are deferred past
+  2.6: Josh decision (in-session 2026-11-08), item 24. Q6 (mobile completion push) stays out of scope (section 9).
 
 ## 1. Register outcome and binding decisions
 
@@ -207,11 +207,12 @@ Resolved (recorded in register HAMCP-149 and the #396 matrix, section 0). Supers
 - Q2 (signal): S0. S1 only if Layer B shows missed approvals. S2 deferred.
 - Q3 (binding): the plan id and plan hash held by the conversation. No client identity is persisted.
 
-Optional future scope (pending Josh; none blocks 2.6):
-- Q4. Typed-task release, F3 and record approvals (`approval_web.py:413-421`): in scope, or change plans only?
-  Default: change plans only.
-- Q5. Stateful transport independent of the registry flag is an architecture change. Consider it only if Layer B
-  shows a client benefits.
+Deferred past 2.6 (Josh decision (in-session 2026-11-08), item 24). Whether to take either up after 2.6 stays
+pending Josh:
+- Q4. Typed-task release, F3 and record approvals (`approval_web.py:413-421`). In 2.6 the scope is change plans
+  only.
+- Q5. Stateful transport independent of the registry flag is an architecture change. Not in 2.6, whatever Layer B
+  shows; a Layer B result that favours it is reported for a post-2.6 decision.
 - Q6. Completion push to mobile stays out of scope unless Josh names that write (HAMCP-222 §7.2).
 
 ## 10. Codex design review 2026-11-08 — disposition
@@ -219,3 +220,14 @@ Optional future scope (pending Josh; none blocks 2.6):
 | Finding | Severity | Correction in this note |
 | --- | --- | --- |
 | F2: settled S0/S1/S2 and binding choices still asked | Low | Section 0 records the #396 delivery (reviewed head `f4a7173e`, merge `0ead041b`, ancestry checked) and the recorded choices (register HAMCP-149, 2026-11-07). The status line and section 8 mark PR-0 delivered and Layer B and S1 conditional. Section 9 removes Q1-Q3 as open questions; Q4-Q6 stay optional or out of scope. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-149` and `docs/HAMCP_149_CLIENT_CAPABILITY_MATRIX.md` at `1c4c32b3`. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 24 | Q4 (typed-task, F3 and record approvals) and Q5 (stateful transport) are deferred past 2.6. | 0 (deferred entry), 9 (Q4 and Q5 deferred). |
+
+Item 24 does not authorize the Layer B observation; that live action still needs its own authorization
+(section 8). Required evidence for item 24 (future, not run here): if S1 is built after Layer B, its
+`approval_completion` block covers change plans only, and no transport or session-mode change ships in 2.6.
+Effect on the Codex corrections in section 10: none; the recorded S0/S1/S2 and binding choices are unchanged.

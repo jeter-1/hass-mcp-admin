@@ -16,8 +16,12 @@ relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a full path i
   decisions merged in #401 stand: Josh direction (register 2026-11-07; confirmed in-session 2026-11-08). This note
   makes no new capacity decision. The delivered contract is in sections 3.5 and 3.6, and the downgrade warning is in
   section 8. Its citations are at `1c4c32b3`, in `trace_snapshots/contracts.py` and `trace_snapshots/store.py`.
-- **Not claimed.** This note claims no live acceptance. Live polling-load and storage measurement at 2.6 acceptance
-  needs Josh's separate authorization (HAMCP-296 row).
+- **Not claimed.** This note claims no live acceptance, and no live measurement has been made.
+- **Decided: live measurement at 2.6 acceptance.** Josh decision (in-session 2026-11-08), item 21: the live
+  polling-load and storage measurement is authorized at 2.6 acceptance, at acceptance time and read-only only. The
+  procedure and its limits are in section 7. It authorizes no live access now, and it does not cover the live renew
+  (section 7), which still needs its own authorization. Superseded (historical): "needs Josh's separate
+  authorization (HAMCP-296 row)".
 - **Deferred or optional.** No HAMCP-296 option is still open for the merged slice. Script traces stay out of scope
   (O1).
 
@@ -250,6 +254,23 @@ No new Home Assistant write, service call or Core command shape. Tests extend `t
 - Refusal: section 6. Failure preservation and recovery: all HAMCP-225 suites (snapshot suite, reviewer probes,
   HAMCP-191 sanitizer sites) pass unchanged; the sidecar-reset and index-write-failure paths recover at the next sweep.
 - Live acceptance (after deployment, Josh-authorized only): one live renew, then one health read. Not part of review.
+  Item 21 below does not authorize the renew, because a renew changes the watch store.
+- **Live read-only measurement at 2.6 acceptance (authorized).** Josh decision (in-session 2026-11-08), item 21. It
+  runs once, at 2.6 acceptance, against the deployed 2.6 beta after its separately authorized deployment. It is not
+  part of source review and is not done.
+  - **Reads only.** It uses only existing Engineering read surfaces: the `get_server_health` `trace_watches` block
+    (section 3.4), the watch tool's `list` action and `list_trace_snapshots`. It records the active and limit
+    counts, ticks and failed ticks across a stated interval, snapshot counts against the section 3.6 bounds
+    (watch reservation 400, overall 500), and stored bytes as those surfaces report them.
+  - **Unknown, not inferred.** A value no read surface reports (for example per-tick Core read time or bytes on
+    disk) is recorded as `unknown`. It is never filled in by reading the add-on filesystem, a host shell or Home
+    Assistant directly.
+  - **Never.** No `add`, `remove`, `renew`, `displace` or manual capture. No Home Assistant write, service call,
+    configuration change, reload or restart. No credential or Supervisor token read.
+  - **Required evidence.** The acceptance record states the interval, every value read (or `unknown`) and how each
+    compares with the section 3.6 estimates: at most 40 `trace/list` reads a minute at the 30 s poll, 400 / 100 MiB
+    watch reservation, 500 / 128 MiB overall. A value outside those bounds is reported to Josh as a finding; it does
+    not change a bound by itself.
 
 ## 8. Build slice and dependencies
 
@@ -281,6 +302,8 @@ None is open for the merged slice. The pre-build questions are resolved as follo
   separate scope.
 - **Q3 (bulk reinstatement): delivered in #401** as `include_lapsed` on `renew` with `automation_id: ""`, alongside
   named per-watch reinstatement.
+- **Live measurement at acceptance: decided.** Josh decision (in-session 2026-11-08), item 21: authorized at 2.6
+  acceptance, read-only only (section 7). It is an acceptance step, not a design question.
 
 ## 10. Codex design review 2026-11-08 — disposition
 
@@ -288,3 +311,13 @@ None is open for the merged slice. The pre-build questions are resolved as follo
 | --- | --- | --- |
 | F1: obsolete persistence and downgrade contract | Medium | Sections 3.5 and 3.6 now state the merged #401 contract. The old single 64 KiB file, the S1/S2/S3 options and the invalid-old-reader prediction are kept only as "Superseded (historical)". Section 6 states transactional failure preservation, the reported reset and the delivered evidence. Section 8 carries the release-note downgrade warning: at most 10 watches and at most 200 snapshots / 32 MiB, because watches alone are not enough. Section 9 has no build blocker. Proving check: compare against `trace_snapshots/contracts.py` and `store.py` at `1c4c32b3` and the #401 failure, reset and legacy-writer tests. No runtime change or new capacity decision is requested. |
 | F2: dated disposition | Low | Section 0 separates the historical baseline from the reviewed delivery (#401, head `5bf1398c`, merge `1c4c32b3`, ancestry checked) and the deferred options. It claims no live acceptance. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 21 | The live HAMCP-296 polling-load and storage measurement is authorized at 2.6 acceptance, acceptance-time and read-only only. | 0 (decided entry; old "needs separate authorization" text superseded), 7 (measurement procedure, read-only limits, `unknown` rule, required acceptance evidence), 9 (decided entry). |
+
+Effect on the Codex corrections in section 10: none. The #401 capacity, persistence, reset and downgrade contract
+is unchanged, and the earlier Josh direction (register 2026-11-07; confirmed in-session 2026-11-08) still governs
+it. The live renew in section 7 still needs its own authorization.

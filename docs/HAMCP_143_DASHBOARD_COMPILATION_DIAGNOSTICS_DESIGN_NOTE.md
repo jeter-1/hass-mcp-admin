@@ -15,15 +15,17 @@ that base; runtime paths are under `hass_mcp_engineering_beta/ha_mcp_engineering
   for every compiler limit. The remaining scope is a clear refusal diagnostic for each remaining dashboard
   compiler limit: operation count, byte bounds, pointer and JSON depth, node counts, and traversal and growth
   bounds. The live limits stay **256 semantic leaves and 16 patch operations**, and neither changes. Status:
-  Backlog, a later 2.6 wave, nothing built. No delivery is claimed.
+  Backlog, a later 2.6 wave (wave 2 in the orchestrator's 2.6 plan), nothing built. No delivery is claimed.
 - **Not reopened.** Whether to close HAMCP-143 is not a question any more; the row answers it. The question is
   removed from section 9.
-- **Deferred, optional.** These are optional future scope, not part of the narrowed contract:
+- **Decided: not expanded.** Josh decision (in-session 2026-11-08), item 23: HAMCP-143 is not expanded beyond the
+  narrowed compiler-limit diagnostics. These are not in scope:
   - categorizing the non-limit exits (`malformed_operation`, `unsupported_operation`, `target_mismatch`,
     `internal_failure`);
   - per-operation capacity enrichment;
   - path echo.
-  The current index/token-only default is enough for the narrowed scope (section 9).
+  The build emits only `category="capacity_exceeded"` on limit exits, indices and tokens only (section 9).
+  Superseded (historical): "Deferred, optional. These are optional future scope".
 
 ## 1. Register outcome and binding decisions
 
@@ -52,7 +54,7 @@ and [2_1_ROADMAP.md](2_1_ROADMAP.md), and was implemented in `d861d9f9`
 
 This note binds to the **current 256 capacity** and changes it in neither
 direction. The narrowed remaining scope (section 0) gives every other compiler *limit* the same
-bounded diagnostic. Superseded (historical): the first draft designed full
+bounded diagnostic, and no more (Josh decision (in-session 2026-11-08), item 23). Superseded (historical): the first draft designed full
 categorization of malformed and other failures and asked in section 9 whether that
 remainder was still wanted. The reopened row now answers that.
 
@@ -115,7 +117,7 @@ plus its `constraint`, `stage`, `observed` and `limit`, and where they are known
 `operation_index` and `token_index`. `semantic_leaf_changes` keeps its shipped
 five-field shape and gains only `category`. Every non-limit exit keeps the legacy
 `{"reason": code}` projection. The other category rows, item 4, and path echo are
-optional future scope (section 9).
+not in scope (Josh decision (in-session 2026-11-08), item 23; section 9).
 
 1. **Error model** (`f3_dashboard/errors.py`). Add three optional fields to
    `DashboardFoundationError`, each emitted by `diagnostic_details()` only when set:
@@ -124,10 +126,13 @@ optional future scope (section 9).
    - `token_index`: an int, a 0-based pointer segment.
 
    Validation reuses `_token`/`_count`. Add a closed allow-list for `category`
-   and `constraint`; an unknown value raises at construction (fail closed).
+   and `constraint`; an unknown value raises at construction (fail closed). Under
+   item 23 the `category` allow-list is exactly `{"capacity_exceeded"}` and the
+   `constraint` allow-list is exactly that row's tokens.
 2. **Category enum** (stable). Only the `capacity_exceeded` row is in the narrowed
-   contract. The remaining rows are optional future scope and are kept here as the
-   reserved vocabulary. Each compiler exit gets one fixed `constraint` token:
+   contract. The remaining rows are not in scope (item 23). They are kept only as
+   historical vocabulary: no build emits them, and the allow-list in item 1 refuses
+   them. Each compiler limit exit gets one fixed `constraint` token:
 
 | `category` | Meaning / client action | `constraint` tokens (exits) |
 | --- | --- | --- |
@@ -147,7 +152,7 @@ optional future scope (section 9).
      `limit` only, because their `observed` count is not truthful once the walk aborts.
    - The `json_codec.py:95/97` bound keeps its `PatchValidationError` class and adds
      `stage="compilation"`, so the stage tells the truth without changing the class.
-4. **Capacity enrichment (optional future scope, not in the narrowed contract)**
+4. **Capacity enrichment (not in scope: Josh decision (in-session 2026-11-08), item 23; kept as historical design)**
    (`patch.py:392`). Keep the existing five fields and add:
    - `operation_leaf_changes`: per-operation counts, length at most 16, taken from
      `effect.leaf_change_count`.
@@ -168,8 +173,8 @@ optional future scope (section 9).
    charset also differs from `_DIAGNOSTIC_TOKEN`), keys, values, list lengths or
    exception text. The caller maps `operation_index` and `token_index` back to its
    own request. `result_config_bytes` reveals only a byte count, which the contract
-   already allows (`F3_DASHBOARD_WRITE_CONTRACT.md:98-100`). Echoing the path is
-   section 9 Q2.
+   already allows (`F3_DASHBOARD_WRITE_CONTRACT.md:98-100`). Path echo is not in
+   scope (section 9, item 23).
 7. **Observability.** `planning.patch_validation_failures` records
    `codes=(exc.code, category)`, bounded by `MAX_EVENT_CODES`
    (`constants.py:65`). The `broad_subtree_rejections` trigger stays the same
@@ -185,7 +190,8 @@ optional future scope (section 9).
 - The `create_dashboard_update_plan` input schema (`tools/governance.py:197-212`,
   `459-498`) is unchanged.
 - Output: the error `details` of `CONFIGURATION_VALIDATION_FAILED` gain additive
-  keys on dashboard patch failures only. `reason` values are unchanged.
+  keys on dashboard compiler *limit* failures only. Non-limit failures keep
+  `{"reason": code}`. `reason` values are unchanged.
 - This is a security-sensitive compatibility surface: the error output contract
   changes. It needs the contract-doc update and review.
 
@@ -221,6 +227,11 @@ All of these are required future implementation evidence; none has been run.
   over-capacity total reports operation 3.
 - **Fail closed.** Building a diagnostic with an unknown `category`/`constraint`,
   a negative index or a bool raises an error.
+- **Not expanded (item 23).** No `details` from any exit contains a `path` key, an
+  `operation_leaf_changes` list or a `shifted_array_operations` count. No exit emits a
+  `category` other than `capacity_exceeded`, and no non-limit exit carries `category`
+  at all. Constructing a diagnostic with `category="malformed_operation"` (or any other
+  non-capacity row) raises.
 - **Other errors unchanged.** Non-patch `DashboardFoundationError` subclasses
   still project only `{"reason": code}`. `ProviderAuthorityUnavailableError` still
   maps to `PROVIDER_UNAVAILABLE`.
@@ -253,7 +264,8 @@ All of these are required future implementation evidence; none has been run.
   `F3_DASHBOARD_WRITE_CONTRACT.md`. Its 2.6.0 notes and acceptance go in the
   release PR.
 - These are protected runtime paths, so the PR must authorize them by name.
-- Not built. Register status is Backlog, for a later 2.6 wave.
+- Not built. Register status is Backlog, for a later 2.6 wave (wave 2 in the
+  orchestrator's 2.6 plan). The scope is the narrowed contract only (item 23).
 - No dependency on signing or on a live HA. As of 2026-11-07 the heads of
   #384-#387 do not touch these files. If a 2.5.0 change touches `service.py`,
   2.5.0 wins and this PR merges `main`.
@@ -265,17 +277,17 @@ All of these are required future implementation evidence; none has been run.
 No question blocks the narrowed scope. Superseded (historical): the first draft's Q1
 ("proceed or close as delivered?") is answered by the reopened row and is removed.
 
-Optional future scope, pending Josh. None is needed for the narrowed contract, and the
-default applies unless Josh widens it.
-1. **Path echo.** Should details include the caller's own (already screened) `path`
-   for the failing operation? Default: indices only, matching the existing test that
-   the path is never echoed.
-2. **Capacity enrichment.** Should the per-operation `operation_leaf_changes` list
-   and `shifted_array_operations` count be added? Default: no. The shipped five fields
-   plus `category` stay.
-3. **Non-limit categorization.** Should the `malformed_operation`,
-   `unsupported_operation`, `target_mismatch` and `internal_failure` categories be
-   added? Default: no. Non-limit exits keep `{"reason": code}`.
+**Decided: not expanded.** Josh decision (in-session 2026-11-08), item 23: HAMCP-143 is
+not expanded beyond the limit diagnostics. All three former optional choices are closed
+as "no" for this row:
+1. **Path echo: no.** Indices only, matching the existing test that the path is never
+   echoed.
+2. **Capacity enrichment: no.** The shipped five fields plus `category` stay.
+3. **Non-limit categorization: no.** Non-limit exits keep `{"reason": code}`.
+
+The proving tests are in section 6 ("Not expanded (item 23)"), as required future
+implementation evidence. Superseded (historical): the three were listed as "optional
+future scope, pending Josh" with these same defaults.
 
 ## 10. Codex design review 2026-11-08 — disposition
 
@@ -283,3 +295,12 @@ default applies unless Josh widens it.
 | --- | --- | --- |
 | F2: settled closure question and stale scope | Low | Section 0 gives the dated disposition: reopened and narrowed per the HAMCP-143 row, 256/16 preserved, nothing built. Sections 1 and 3 (narrowed contract, items 2, 4 and 5) restrict the design to compiler-limit diagnostics. Section 9 removes the closure question and lists the remaining choices only as optional. Proving check: reconcile with `register get HAMCP-143`. |
 | F3: compiler runs after a provider preread | Low | Section 2 "Pipeline" and section 3 item 8 now state preread (`planning.py:108`), then compile (`:143`), then setter admission (`:158-195`). A compilation failure creates no plan, task, artifact or provider mutation and keeps the admitted preread. Section 6 requires future evidence: `preread_count == 1`, `write_count == 0`, `best_practice_count == 0`, unchanged state, no persisted work. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 23 | HAMCP-143 is not expanded beyond the narrowed compiler-limit diagnostics (no path echo, no capacity enrichment, no non-limit categorization). | 0 (decided entry), 1, 3 (narrowed-contract note; item 1 allow-list fixed to `capacity_exceeded`; item 2 other rows historical only; item 4 out of scope; item 6), 4 (output line narrowed to limit failures), 6 (new "Not expanded" negative tests), 8 (wave 2 scope), 9 (three choices closed). |
+
+Effect on the Codex corrections in section 10: F2's "lists the remaining choices only as optional" is now "closes
+them as not in scope (item 23)". F3 (preread, then compile, then setter admission) is unchanged.

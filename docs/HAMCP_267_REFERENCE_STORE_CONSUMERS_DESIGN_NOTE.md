@@ -15,8 +15,9 @@ relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a full path i
   partition evidence stays outside governance fingerprints and the helper obligation ledger. Output stays bounded
   and reports partial where the store is partial.
 - **Not claimed.** No live acceptance. RCG-093 live acceptance stays pending.
-- **Deferred or optional.** Q1 (whether `incident_correlation` inherits all unrelated `dependency_index`
-  partiality) is a possible separate follow-up, not part of the merged slice (section 9).
+- **Deferred past 2.6.** Q1 (whether `incident_correlation` inherits all unrelated `dependency_index`
+  partiality) is deferred past 2.6: Josh decision (in-session 2026-11-08), item 24. It is not part of the merged
+  slice (section 9).
 
 ## 1. Register outcome and binding decisions
 
@@ -187,9 +188,9 @@ HAMCP-290 work was not checked (no PR number given). Rollback: revert the PR; no
 
 ## 9. Open questions
 
-None blocks the merged slice. Optional future scope (pending Josh):
+None blocks the merged slice. Deferred past 2.6 (Josh decision (in-session 2026-11-08), item 24):
 
-- Q1 (possible separate follow-up). `incident_correlation`'s scoped `configuration_integrity` row is `complete` unconditionally today
+- Q1 (separate follow-up after 2.6; whether to take it up then stays pending Josh). `incident_correlation`'s scoped `configuration_integrity` row is `complete` unconditionally today
   (`incident/provider.py:313-314`). This design makes it inherit partiality only from the partition. Should it inherit
   every `dependency_index` partiality (for example, a partial automation source)? That is broader than this row's
   outcome, so the design takes no position.
@@ -199,3 +200,13 @@ None blocks the merged slice. Optional future scope (pending Josh):
 | Finding | Severity | Correction in this note |
 | --- | --- | --- |
 | F2: delivered slice not identified | Low | Section 0 records the #400 delivery (reviewed head `9915aa85`, merge `4b7dc781`, ancestry checked). Section 8 marks the build delivered. Section 9 keeps Q1 only as an optional separate follow-up. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-267` and the merged head. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 24 | Q1 (`incident_correlation` inheriting every `dependency_index` partiality) is deferred past 2.6. | 0 (deferred entry), 9 (Q1 deferred). |
+
+Required evidence for item 24 (future, not run here): at the accepted 2.6 head, `incident_correlation`'s scoped
+`configuration_integrity` row still takes partiality only from the reference-store partition, as #400 delivered.
+Effect on the Codex corrections in section 10: none.

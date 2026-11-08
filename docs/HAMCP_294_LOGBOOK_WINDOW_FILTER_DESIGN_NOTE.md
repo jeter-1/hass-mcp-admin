@@ -22,12 +22,17 @@ are Home Assistant Core tag `2026.11.0` (`74cf5a49c63ed8d4d87717844bf14f79c28c9c
   (historical): the draft proposal to change the `hours` default to `null` (section 3) is withdrawn. It would undo
   the reviewed compatibility-preserving public schema.
 - **Implemented defaults** (`clients/logbook.py:27-44` at `1c4c32b3`, labelled there "implementation defaults
-  pending Josh (design note Q1)"):
+  pending Josh (design note Q1)"). Josh decision (in-session 2026-11-08), item 22, confirms the three filter bounds
+  below (10 entities, 512 joined characters, 100-character name) as the 2.6 contract. The other values are as
+  reviewed and merged in #397; item 22 makes no separate decision about them. The source label is now stale for the
+  confirmed bounds; this docs-only note does not edit runtime source, and a later runtime change touching the file
+  may update the label without changing a value:
   - `MAX_FILTER_ENTITIES = 10`, `MAX_FILTER_CHARS = 512` (joined) and `MAX_NAME_CHARS = 100`;
   - the window cap is unchanged at 168 h;
   - `NAME_MATCH_BASIS` is a casefold substring of the current `entity_id` or `friendly_name`.
 - **Not claimed.** No live acceptance; the section 7 live reads still need Josh's authorization.
-- **Deferred or optional.** The `context_id` and device filters stay out of scope (section 9).
+- **Deferred past 2.6.** Josh decision (in-session 2026-11-08), item 24: the `context_id` and device filters are
+  deferred past 2.6 (section 9).
 
 ## 1. Register outcome and binding decisions
 
@@ -182,17 +187,37 @@ No write, service call, new route, new Core command or fallback. Extend `tests/t
 ## 9. Open questions
 
 None blocks the merged slice.
-- Q1 Bounds: implemented as the section 0 defaults (10 entities, 512 joined characters, up to 10 name matches,
-  100-character name, 168 h cap, rows/bytes/timeout unchanged). The source labels them "implementation defaults
-  pending Josh". Confirming them or changing them is optional; changing a value would be a separate runtime change.
+- Q1 Bounds (decided): implemented as the section 0 defaults (10 entities, 512 joined characters, up to 10 name
+  matches, 100-character name, 168 h cap, rows/bytes/timeout unchanged). Josh decision (in-session 2026-11-08),
+  item 22: the 10-entity, 512-character and 100-character-name bounds are confirmed. Changing a value later would be
+  a separate runtime change with its own decision. Superseded (historical): "Confirming them or changing them is
+  optional".
 - Q2 Name semantics: implemented as a case-folded substring over current `entity_id`/`friendly_name`, refusing 0 or
   more than 10 matches. The post-filter alternative stays rejected for the reasons in the draft (row and byte caps,
   no truthful completeness).
-- Q3 Scope: `context_id` and the device filter stay out of scope. The device filter would need a new Core contract
-  and signing. Scoping either as a follow-up is optional and pending Josh.
+- Q3 Scope (decided for 2.6): `context_id` and the device filter are deferred past 2.6. Josh decision (in-session
+  2026-11-08), item 24. The device filter would need a new Core contract and signing, so it would not fit the one
+  combined 2.6 signing in any case. Superseded (historical): "Scoping either as a follow-up is optional and pending
+  Josh".
+
+Required evidence (future, not run here). For item 22, the 2.6 acceptance record cites the tests at the accepted
+head that hold each confirmed bound at its edge: 10 `entity_ids` accepted and 11 refused, 512 joined characters
+accepted and 513 refused, a 100-character `name` accepted and 101 refused. If a bound has no such test at that
+head, acceptance reports it as a gap instead of claiming it. For item 24, the 2.6 `get_logbook` descriptor has no
+`context_id` or device argument, and such an argument is refused as unknown.
 
 ## 10. Codex design review 2026-11-08 — disposition
 
 | Finding | Severity | Correction in this note |
 | --- | --- | --- |
 | F2: proposal to change `hours` to null; delivered slice not identified | Low | Section 0 records the #397 delivery (reviewed head `dda87354`, merge `529d66a0`, ancestry checked) and the preserved `hours: float = 12` descriptor. The null-default proposal is withdrawn in sections 0 and 3 and in the section 4 schema line. The section 6 refusal case is now a non-default `hours` with `start_time`. Section 9 records the implemented defaults; no live acceptance is claimed. Proving check: confirm `get_logbook`'s descriptor at `1c4c32b3` (`tools/compatibility.py:424`) is the reviewed one, and reconcile with `register get HAMCP-294`. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 22 | The shipped filter bounds are confirmed: 10 entities, 512 joined characters, 100-character name. | 0 (confirmed bounds; stale source label noted, not edited), 9 (Q1 decided; required bound evidence). |
+| 24 | The `context_id` and device filters are deferred past 2.6. | 0 (deferred entry), 9 (Q3 decided for 2.6; required no-argument evidence). |
+
+Effect on the Codex corrections in section 10: none. The preserved `hours: float = 12` descriptor and the #397
+delivery record are unchanged.

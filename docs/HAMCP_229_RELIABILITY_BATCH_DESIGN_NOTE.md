@@ -14,8 +14,11 @@ This is a docs-only note. It changes no runtime, schema, test, or protected file
   `release/2.6.0`. Reviewed head `504107150759b0cd243edc7f455a281f0a00b734`, merge commit `57400bdc`.
   `git merge-base --is-ancestor 50410715 origin/release/2.6.0` passes. The existing single tool
   `automation_reliability_analysis` is unchanged, and per-item partiality is still reported truthfully.
-- **Implemented defaults** (citations at `1c4c32b3`). `E/reliability/batch.py:9` labels these "implementation
-  defaults pending Josh (design note Q4)".
+- **Implemented defaults, confirmed** (citations at `1c4c32b3`). Josh decision (in-session 2026-11-08), item 22:
+  the shipped defaults are confirmed as the 2.6 contract: 20 ids, 45 s, concurrency 2 and `trace_limit` at most 10.
+  `E/reliability/batch.py:9` still labels them "implementation defaults pending Josh (design note Q4)". That source
+  comment is now stale; this docs-only note does not edit runtime source, and a later runtime change that touches
+  the file may update the label without changing any value.
   - A **new tool**, `automation_reliability_batch_analysis(automation_ids, lookback_hours, trace_limit)`
     (`E/tools/analysis.py:201-205`).
   - **Explicit list only.** `automation_ids` takes 1-20 internal automation IDs, as returned by `list_automations`;
@@ -26,8 +29,9 @@ This is a docs-only note. It changes no runtime, schema, test, or protected file
     `MAX_BATCH_RESPONSE_CHARS = 60000` (`E/reliability/batch.py:29-38`).
   - **Continuation:** stateless `remaining_automation_ids`; there is no server-side cursor.
 - **Not claimed.** No live acceptance.
-- **Deferred or optional.** Tier selectors, `query` or "all loaded" selectors, entity-ID input and resume cursors
-  would each be separate scope (section 9).
+- **Deferred past 2.6.** Josh decision (in-session 2026-11-08), item 24: the selector follow-ups (tier, `query`
+  or "all loaded" selectors) are deferred past 2.6. Entity-ID input and resume cursors stay separate scope and are
+  not in 2.6 either (section 9).
 
 ## 1. Register outcome and binding decisions
 
@@ -292,18 +296,38 @@ with synthetic loopback fixtures:
 None blocks the merged slice. Superseded (historical) as build gates, answered by the #402 implementation (section 0):
 - **Q1** New tool. Implemented as `automation_reliability_batch_analysis`; the existing schema is unchanged.
 - **Q3** Explicit list only.
-- **Q4** 20 items, 45 s, concurrency 2, `trace_limit` at most 10. The source labels these "implementation
-  defaults pending Josh". Confirming or changing them is optional; changing them would be separate runtime scope.
+- **Q4 (decided)** 20 items, 45 s, concurrency 2, `trace_limit` at most 10. Josh decision (in-session
+  2026-11-08), item 22: confirmed. Changing a value later would be a separate runtime change with its own decision.
+  Superseded (historical): "Confirming or changing them is optional".
 - **Q5** Internal IDs only, as in the single tool.
 - **Q6** Stateless `remaining_automation_ids`.
 
-Optional future scope (pending Josh; not needed for the merged slice):
-- **Q2** "Tier" has no source definition. A tier selector, and a `query` or "all loaded automations" selector, would
-  each be a separate scope choice.
+Deferred past 2.6 (Josh decision (in-session 2026-11-08), item 24):
+- **Q2** "Tier" has no source definition. A tier selector, and a `query` or "all loaded automations" selector, are
+  not in 2.6. Taking one up later is a separate scope choice.
+
+Not in 2.6, separate scope if ever wanted (no decision requested):
 - Entity-ID input or a server-side resume cursor would each be a separate scope choice.
+
+Required evidence for item 22 (future, not run here): the 2.6 acceptance record cites the tests at the accepted
+head that hold each confirmed bound at its edge: 20 ids accepted and 21 refused, `trace_limit` 10 accepted and 11
+refused, the 45 s batch deadline returning a truthful partial with `remaining_automation_ids`, and no more than two
+items in flight. If a bound has no such test at that head, acceptance reports it as a gap instead of claiming it.
+Required evidence for item 24: the 2.6 tool descriptor for `automation_reliability_batch_analysis` has no
+selector argument (`tier`, `query` or "all"), and an unknown argument is still refused.
 
 ## 10. Codex design review 2026-11-08 — disposition
 
 | Finding | Severity | Correction in this note |
 | --- | --- | --- |
 | F2: delivered slice and implemented defaults not recorded | Low | Section 0 records the #402 delivery (reviewed head `50410715`, merge `57400bdc`, ancestry checked) and the implemented defaults. Section 8 marks the build delivered. Section 9 turns Q1 and Q3-Q6 from build gates into recorded implementation, and keeps the tier, selector and cursor choices as optional separate scope. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-229` and `E/reliability/batch.py` / `E/tools/analysis.py:201-205` at `1c4c32b3`. |
+
+## 11. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
+| --- | --- | --- |
+| 22 | The shipped defaults are confirmed: 20 ids, 45 s, concurrency 2, `trace_limit` at most 10. | 0 (defaults marked confirmed; stale source label noted, not edited), 9 (Q4 decided; required bound evidence). |
+| 24 | The 229 selector follow-ups (tier, `query`, "all loaded") are deferred past 2.6. | 0 (deferred entry), 9 (Q2 deferred; required no-selector evidence). |
+
+Effect on the Codex corrections in section 10: none. The #402 delivery record is unchanged; only the status of the
+defaults (confirmed) and of the selectors (deferred past 2.6) changes.
