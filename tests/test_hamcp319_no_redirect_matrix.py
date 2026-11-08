@@ -128,6 +128,7 @@ class RecordingBinding(NoRedirectBinding):
         self.latch_writes = 0
         self.hook_calls = 0
         self.hook_redirects = 0
+        self.request_hook_calls = 0
         cell = _CELL_BINDINGS.get()
         if cell is not None:
             cell.append(self)
@@ -140,6 +141,10 @@ class RecordingBinding(NoRedirectBinding):
         if before is None and self.latch_code is not None:
             self.latch_writes += 1
         return error
+
+    async def request_hook(self, request):
+        self.request_hook_calls += 1
+        return await super().request_hook(request)
 
     async def response_hook(self, response):
         self.hook_calls += 1
@@ -962,6 +967,156 @@ class NoRedirectAnalysisFence(part1._NoRedirectAssertions, unittest.TestCase):
                 self.assertEqual(counters.destination_total(), 0)
                 self._assert_balanced(run)
                 self.assert_no_canary(capture.lines, url=run.url)
+
+    def test_no_redirect_analysis_client_from_no_redirect_factory(self):
+        """Section 3.3 analysis row: the session's client comes from the shared
+        no-redirect factory ("the same hooks and max_redirects=0").
+
+        The fence's own 3xx branch would refuse a redirect even on a plain
+        client, so the latch alone cannot show which client carried the
+        session. The binding's diagnostics can: the factory recorded building
+        the client, and both hooks saw every exchange that reached the origin.
+        """
+
+        for version, form in peer_configurations():
+            for inject in (None, Injection("notifications/initialized", 307, LOCATION_KINDS[0])):
+                label = "useful" if inject is None else "latched"
+                with self.subTest(version=version, form=form, run=label):
+                    kwargs = dict(version=version, form=form)
+                    if inject is not None:
+                        kwargs["inject"] = inject
+                    with recording_bindings():
+                        run = asyncio.run(run_analysis(kwargs))
+                    counters = run.peer.counters
+                    self.assertEqual(len(run.bindings), 1)
+                    binding = run.bindings[0]
+                    self.assertTrue(binding.factory_installed)
+                    self.assertTrue(binding.client_created, "client not built by the factory")
+                    origin = counters.origin_total()
+                    self.assertGreater(origin, 0)
+                    # The request hook saw every request that reached the
+                    # origin; the response hook every non-3xx answer the fence
+                    # handed back (a 3xx never leaves the fence).
+                    self.assertGreaterEqual(binding.request_hook_calls, origin)
+                    self.assertGreaterEqual(binding.hook_calls, origin - counters.injected)
+                    self.assertEqual(binding.hook_redirects, 0)
+                    self.assertEqual(binding.delete_used, counters.origin["delete"] == 1)
+                    if inject is None:
+                        self.assertIsNone(run.error, part1._category(run.error))
+                        self.assertIsNone(binding.latch_code)
+                        self.assertEqual(counters.origin["delete"], 1)
+                    else:
+                        self.assertEqual(run.error.category, UPSTREAM_REDIRECT_REFUSED)
+                        self._assert_fence_latched(run, "operation")
+                    self.assertEqual(counters.destination_total(), 0)
+
+
+class NoRedirectAnalysisProviderReason(part1._NoRedirectAssertions, unittest.TestCase):
+    """Architect ruling 2026-11-07, item 4: a refused redirect on the analysis
+    transport reaches the analysis surface as its own reason code,
+    upstream_redirect_refused, set through the binding latch (the fence's 3xx
+    branch calls binding.refuse_redirect), never authority_unavailable."""
+
+    _assert_fence_latched = NoRedirectAnalysisFence._assert_fence_latched
+
+    def test_analysis_redirect_reports_upstream_redirect_refused_via_latch(self):
+        from ha_mcp_engineering.dashboard_analysis import contracts as analysis_contracts
+        from ha_mcp_engineering.errors import ErrorCode, map_exception
+
+        async def analysis(peer_kwargs):
+            bindings: list[RecordingBinding] = []
+            _CELL_BINDINGS.set(bindings)
+            _telemetry, token = begin_request("synthetic-analysis-reason")
+            peer = RedirectPeer(tool_names=DASHBOARD_TOOLS, **peer_kwargs)
+            error = None
+            with peer.serve():
+                provider = UpstreamDashboardProvider()
+                provider.configure(part1._settings(peer.url))
+                try:
+                    with patch.object(UpstreamDashboardProvider, "analysis_authority",
+                                      lambda _self: ("synthetic-authority",)):
+                        await provider.get_analysis_configuration(
+                            url_path=part1.DASHBOARD_ARGUMENTS["url_path"],
+                            authorize=lambda: None, budget=CollectionBudget())
+                except Exception as exc:  # noqa: BLE001
+                    error = exc
+                finally:
+                    end_request(token)
+            return SimpleNamespace(peer=peer, url=peer.url, bindings=bindings, error=error)
+
+        # Rows before admission and the cleanup. tools/call follows the
+        # provider's admission of the handshake, which this harness does not
+        # model (synthetic authority); its fence row is covered at transport
+        # level by test_no_redirect_analysis_rows_latched_by_fence.
+        rows = (("initialize", "operation"), ("notifications/initialized", "operation"),
+                ("tools/list:first", "operation"), ("delete", "cleanup"))
+        for version, form in peer_configurations():
+            for request_type, phase in rows:
+                for status in (307, 308):
+                    with self.subTest(version=version, form=form, row=request_type,
+                                      status=status):
+                        with recording_bindings(), part1.capture_all_logs() as capture:
+                            run = asyncio.run(analysis(dict(
+                                version=version, form=form,
+                                inject=Injection(request_type, status, LOCATION_KINDS[0]))))
+                        self.assertIsInstance(run.error, analysis_contracts.AnalysisError)
+                        self.assertEqual(run.error.reason, UPSTREAM_REDIRECT_REFUSED)
+                        self.assertNotEqual(run.error.reason, "authority_unavailable")
+                        self.assertEqual(run.error.code, ErrorCode.PROVIDER_UNAVAILABLE)
+                        self.assertFalse(run.error.retryable)
+                        self.assertEqual(run.error.details, {
+                            "reason": UPSTREAM_REDIRECT_REFUSED,
+                            "operator_remediation": UPSTREAM_REDIRECT_OPERATOR_MESSAGE})
+                        _code, _message, retryable, details = map_exception(run.error)
+                        self.assertFalse(retryable)
+                        self.assertEqual(details["reason"], UPSTREAM_REDIRECT_REFUSED)
+                        # Through the latch: set once, by the fence's 3xx branch.
+                        self._assert_fence_latched(run, phase)
+                        self.assertEqual(run.peer.counters.destination_total(), 0)
+                        self.assert_no_canary(
+                            part1._sinks(run.error, None) + capture.lines,
+                            url=run.url, location=run.peer.location_for(LOCATION_KINDS[0]))
+
+    def test_analysis_redirect_reason_requires_the_latch(self):
+        """Negative: without the latch the same 3xx is not reported as a
+        refused redirect; the reason is the latch's, not a local rename."""
+
+        from ha_mcp_engineering.dashboard_analysis import contracts as analysis_contracts
+
+        original = NoRedirectBinding.refuse_redirect
+
+        def unlatched(self, phase="operation"):
+            return DashboardTransportError("protocol_error", retryable=False)
+
+        async def analysis(peer_kwargs):
+            _CELL_BINDINGS.set([])
+            _telemetry, token = begin_request("synthetic-analysis-unlatched")
+            peer = RedirectPeer(tool_names=DASHBOARD_TOOLS, **peer_kwargs)
+            error = None
+            with peer.serve():
+                provider = UpstreamDashboardProvider()
+                provider.configure(part1._settings(peer.url))
+                try:
+                    with patch.object(UpstreamDashboardProvider, "analysis_authority",
+                                      lambda _self: ("synthetic-authority",)):
+                        await provider.get_analysis_configuration(
+                            url_path=part1.DASHBOARD_ARGUMENTS["url_path"],
+                            authorize=lambda: None, budget=CollectionBudget())
+                except Exception as exc:  # noqa: BLE001
+                    error = exc
+                finally:
+                    end_request(token)
+            return error
+
+        version, form = peer_configurations()[0]
+        with patch.object(NoRedirectBinding, "refuse_redirect", unlatched):
+            error = asyncio.run(analysis(dict(
+                version=version, form=form,
+                inject=Injection("notifications/initialized", 307, LOCATION_KINDS[0]))))
+        self.assertIs(NoRedirectBinding.refuse_redirect, original)
+        self.assertIsInstance(error, analysis_contracts.AnalysisError)
+        self.assertNotEqual(error.reason, UPSTREAM_REDIRECT_REFUSED)
+        self.assertNotIn("operator_remediation", error.details)
 
 
 # -- operator message and the 8.5 legacy behavior change -------------------------

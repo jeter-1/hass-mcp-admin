@@ -39,7 +39,7 @@ REASONS = frozenset({"invalid_arguments", "invalid_cursor", "snapshot_expired",
     "capacity_busy", "authority_unavailable", "authority_drift", "access_denied",
     "source_unavailable", "malformed_response", "response_limit", "structural_limit",
     "timeout", "output_limit", "identity_mismatch", "hash_mismatch", "source_gate_pending",
-    "source_rejected"})
+    "source_rejected", "upstream_redirect_refused"})
 
 
 class AnalysisError(GovernanceError):
@@ -50,6 +50,9 @@ class AnalysisError(GovernanceError):
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
                 ErrorCode.INVALID_CURSOR if reason in {"invalid_cursor", "snapshot_expired"} else
                 ErrorCode.PROVIDER_UNAVAILABLE if reason.startswith("authority_") else
+                # HAMCP-319 section 3.3: the refused redirect keeps the code the
+                # analysis surface used for it before and reports its own reason.
+                ErrorCode.PROVIDER_UNAVAILABLE if reason == "upstream_redirect_refused" else
                 ErrorCode.ANALYSIS_UNAVAILABLE)
         details = {"reason": reason}
         # HAMCP-319 section 3.3: only a fixed ha-mcp endpoint operator constant

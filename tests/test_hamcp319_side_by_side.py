@@ -58,6 +58,7 @@ import json
 import socketserver
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 import uuid
 from copy import deepcopy
@@ -609,7 +610,31 @@ class SideBySideTests(_Assertions, unittest.TestCase):
         contract_91 = POWER_RELEASES["9.1.0"][2]
         self.assertNotEqual(contract_91, POWER_RELEASES["8.5.0"][2])
 
-        async def session(version, form, root, clock, core, *, drop_write=False, task_id=None):
+        class RecordingAudit:
+            """The gateway audit sink: every projected entry, in order."""
+
+            def __init__(self):
+                self.entries = []
+
+            def write_batch(self, entries):
+                self.entries.extend(json.loads(json.dumps(entries)))
+                return len(entries)
+
+        def records(service, task_id):
+            """Section 8.3 rollback: the three durable records of one task."""
+            execution = service.executions._read_unlocked(task_id)
+            return {
+                # Task record: the durable declaration, byte-exact.
+                "task": service._path(task_id).read_bytes(),
+                "declaration": service.load(task_id),
+                # Intent record: the persisted dispatch intent and its count.
+                "intent": json.loads(json.dumps(execution.dispatch_intent)),
+                "dispatch_count": execution.dispatch_count,
+                "events": [event["event_type"] for event in execution.events],
+            }
+
+        async def session(version, form, root, clock, core, audit, *, drop_write=False,
+                          task_id=None):
             state = typed_fixtures.Peer("power", version)
 
             def handler(name, arguments):
@@ -625,7 +650,8 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 transport = part1.CLIENTS["power"][0](peer.url)
                 provider = PowerProvider(transport, lambda *_args: "synthetic-current")
                 service = PowerService(
-                    root, provider, PowerCoreAuthority(core), now=clock, sleep=clock.sleep
+                    root, provider, PowerCoreAuthority(core), now=clock, sleep=clock.sleep,
+                    audit=audit,
                 )
                 telemetry, token = begin_request("synthetic-hamcp319-rollback-record")
                 try:
@@ -637,14 +663,17 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                         )
                         setattr(telemetry, family.binding, digest(request.model_dump()))
                         outcome = await service.control(request)
+                        outcome = (outcome, records(service, outcome["task_id"]))
                     else:
+                        stored = records(service, task_id)
                         before = service.receipt(task_id)
                         # Past every claim and authorization window.
                         clock.advance(3600)
                         reconciled = await service.reconcile(task_id)
                         await service.recover_once()
                         after = service.receipt(task_id)
-                        outcome = (before, reconciled, after)
+                        outcome = ((before, reconciled, after), stored,
+                                   records(service, task_id))
                 finally:
                     end_request(token)
                     await service.close()
@@ -655,19 +684,25 @@ class SideBySideTests(_Assertions, unittest.TestCase):
             scratch.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(dir=scratch) as root:
                 clock, core = Clock(), Core()
-                written, calls_91 = await session(
-                    "9.1.0", "strict_full", root, clock, core, drop_write=drop_write
+                audit_91, audit_85 = RecordingAudit(), RecordingAudit()
+                (written, records_91), calls_91 = await session(
+                    "9.1.0", "strict_full", root, clock, core, audit_91, drop_write=drop_write
                 )
                 task_id = written["task_id"]
-                reads, calls_85 = await session(
-                    "8.5.0", "legacy", root, clock, core, task_id=task_id
+                (reads, stored_85, records_85), calls_85 = await session(
+                    "8.5.0", "legacy", root, clock, core, audit_85, task_id=task_id
                 )
-            return written, calls_91, reads, calls_85
+            return SimpleNamespace(
+                written=written, calls_91=calls_91, reads=reads, calls_85=calls_85,
+                records_91=records_91, stored_85=stored_85, records_85=records_85,
+                audit_91=audit_91.entries, audit_85=audit_85.entries,
+            )
 
         with patch.object(socketserver.BaseServer, "handle_error", lambda *_a: None):
             outcomes = {drop: asyncio.run(scenario(drop)) for drop in (False, True)}
 
-        for drop_write, (written, calls_91, reads, calls_85) in outcomes.items():
+        for drop_write, run in outcomes.items():
+            written, calls_91, reads, calls_85 = run.written, run.calls_91, run.reads, run.calls_85
             label = "non_terminal" if drop_write else "terminal"
             with self.subTest(record=label):
                 # Written under 9.1.0 with exactly one write dispatch.
@@ -696,6 +731,70 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                     final["state"],
                     "manual_review_required" if drop_write else "succeeded_verified",
                 )
+                self._assert_rollback_records(run, contract_91)
+
+    def _assert_rollback_records(self, run, contract_91):
+        """Section 8.3 rollback: the 9.1-written task, intent and audit records,
+        read under the 8.5 configuration, keep their recorded 9.1 contract and
+        are never re-dispatched."""
+
+        written_records, stored, after = run.records_91, run.stored_85, run.records_85
+        # Task record: the 8.5 configuration reads the same bytes the 9.1
+        # session wrote, never rewrites them, and loads the recorded contract.
+        self.assertEqual(stored["task"], written_records["task"])
+        self.assertEqual(after["task"], written_records["task"])
+        for record in (written_records, stored, after):
+            self.assertEqual(record["declaration"].provider_contract, contract_91)
+            self.assertEqual(record["declaration"].request.task_id, run.written["task_id"])
+        # Intent record: one committed intent, unchanged by the 8.5 reads; no
+        # second intent and no second dispatch. Read-only recovery may move
+        # the lock tokens to its own claim (recovery_locks_transferred); every
+        # other intent field, including the provider operation and argument
+        # hash, is the 9.1 session's.
+        def intent(record):
+            return {k: v for k, v in record["intent"].items() if k != "lock_tokens"}
+
+        self.assertIsNotNone(written_records["intent"])
+        self.assertEqual(written_records["dispatch_count"], 1)
+        self.assertEqual(stored["intent"], written_records["intent"])
+        self.assertEqual(intent(after), intent(written_records))
+        self.assertEqual(after["dispatch_count"], 1)
+        self.assertEqual(after["events"].count("dispatch_intent_committed"), 1)
+        self.assertEqual(after["events"][: len(written_records["events"])],
+                         written_records["events"])
+        # Audit records: every entry, from either session, names the task by
+        # the operation hash the 9.1 session wrote. That hash is computed over
+        # the 9.1 contract (the declaration loader recovers the contract from
+        # it), so it is the recorded version; a core-bound task additionally
+        # carries provider_contract, which must then be the 9.1 contract.
+        self.assertTrue(run.audit_91)
+        operation_hash = written_records["declaration"].prepared_operation_hash
+        self.assertEqual(operation_hash, run.written["operation_hash"])
+        for entry in run.audit_91 + run.audit_85:
+            self.assertEqual(entry["operation_hash"], operation_hash)
+            self.assertEqual(entry.get("provider_contract", contract_91), contract_91)
+            self.assertIs(entry["redispatch_prohibited"], True)
+            self.assertEqual(entry["fallback"], "none")
+            self.assertEqual(entry["task_id"], run.written["task_id"])
+        intents = {entry["audit_event_id"] for entry in run.audit_91 + run.audit_85
+                   if entry["event"] == "power_dispatch_intent_committed"}
+        self.assertEqual(len(intents), 1)
+        # Under 8.5: displayed by the recorded version, read-only recovery,
+        # never a new intent or a second attempt.
+        self.assertTrue(run.audit_85)
+        new_events = [entry for entry in run.audit_85
+                      if entry["audit_event_id"] not in
+                      {old["audit_event_id"] for old in run.audit_91}]
+        if not run.written["terminal"]:
+            # The non-terminal record is recovered read-only under 8.5.
+            self.assertIn("power_recovery_claimed", {e["event"] for e in new_events})
+        for entry in new_events:
+            self.assertNotEqual(entry["event"], "power_dispatch_intent_committed")
+            if entry["event"] == "power_execution_snapshot":
+                self.assertEqual(entry["provider_attempt_count"], 1)
+                self.assertIs(entry["dispatch_intent_recorded"], True)
+            else:
+                self.assertIs(entry["read_only_recovery"], True)
 
 
 if __name__ == "__main__":
