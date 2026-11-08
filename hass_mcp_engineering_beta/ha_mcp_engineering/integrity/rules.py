@@ -251,6 +251,13 @@ def classify_integrity(
                 "Orphan registry candidates were omitted because source filtering excluded configuration source types."
             )
         elif bundle.states_available and bundle.registry_available:
+            if bundle.incomplete_inbound_sources:
+                # HAMCP-267: an unread reference cannot clear a candidate.
+                warnings.append(
+                    "Orphan registry candidates may include entities referenced by incompletely read sources: "
+                    + ", ".join(sorted(set(bundle.incomplete_inbound_sources)))
+                    + "."
+                )
             inbound_targets = {
                 str(item.get("target_entity_id") or "").lower()
                 for item in bundle.exact_references

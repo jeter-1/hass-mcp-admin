@@ -1840,6 +1840,9 @@ class ToolCompatibilityTests(unittest.TestCase):
             parameters = current[name].parameters
             if name == "list_capabilities":
                 parameters = without_hamcp247_detail_section(self, parameters)
+            if name == "get_logbook":  # + HAMCP-294
+                from hamcp294_descriptor_changes import without_hamcp294_inputs
+                parameters = without_hamcp294_inputs(self, parameters)
             digest = hashlib.sha256(
                 json.dumps(
                     parameters,
