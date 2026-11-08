@@ -9,6 +9,15 @@ head `e025778d`. Section 11 lists each finding and where it is corrected.
 Reference rewriting with verified undo is now mandatory scope (section 1.3);
 the new rename profile is signed for Core 2026.11.0 only (Signing impact).
 
+Revision 2026-11-08 (Josh decisions): the former Remaining Josh choices J1-J3
+are decided (Josh decision (in-session 2026-11-08), items 6-8). The schedule is
+2.6.0 with a hard cutoff to 3.0, superseding HAMCP-109's recorded "build IN
+3.0" target (sections 1.3, 5 and 9). One plan-level acknowledgement is
+required whenever any identified reference is not rewritten, without waiting
+for HAMCP-264 (section 3.3). Rename plans are `elevated_admin` for actuator
+entities only and `standard_admin` otherwise (section 3.1). Section 12 lists
+each decision and the sections it changed. Nothing is pending Josh.
+
 - Register: HAMCP-295 (governed entity ID rename), HAMCP-109
   (dependency-bound multi-operation execution).
 - Base: `origin/release/2.6.0` =
@@ -79,10 +88,13 @@ sequenced operation must be admitted individually."
 
 | Decision | Source | Effect on this design |
 | --- | --- | --- |
-| **Recorded owner decision (HAMCP-109 register Next Action, 2026-11-07, design-complete scoping):** HAMCP-109 is "IN 3.0, designed and built around entity rename (HAMCP-295) as its concrete driver: dependent steps verified in order with rollback of earlier steps on later failure. Next: design with 295 in the 2.6.0 feature milestone." | HAMCP-109 register Next Action | Requires an execution mode in which a later failure causes the earlier verified steps to be reversed. This supersedes, for that mode only, the shipped "never roll back automatically" contract (section 2.1). The recorded "build IN 3.0" target stands; the delivery schedule is Remaining Josh choice J3 (section 10). |
+| **Recorded owner decision (HAMCP-109 register Next Action, 2026-11-07, design-complete scoping):** HAMCP-109 is "IN 3.0, designed and built around entity rename (HAMCP-295) as its concrete driver: dependent steps verified in order with rollback of earlier steps on later failure. Next: design with 295 in the 2.6.0 feature milestone." | HAMCP-109 register Next Action | Requires an execution mode in which a later failure causes the earlier verified steps to be reversed. This supersedes, for that mode only, the shipped "never roll back automatically" contract (section 2.1). Its recorded "build IN 3.0" target is **superseded** by Josh decision (in-session 2026-11-08), item 6 (row below): 2.6.0 with a hard cutoff to 3.0. |
 | **Josh direction (register 2026-11-07; confirmed in-session 2026-11-08):** the HAMCP-295 rename **rewrites references with verified undo**. Disclose-only is not a deliverable. | HAMCP-295 / HAMCP-109 register rows; 2.6.0 correction brief | Reference rewriting (section 3.3) and verified undo (sections 3.2 and 3.4) are mandatory acceptance (section 7). A rename-only implementation does **not** complete HAMCP-295. This supersedes the earlier open question Q1 (section 10, Superseded). |
 | **Josh direction (register 2026-11-07; confirmed in-session 2026-11-08):** additive profiles only; new 2.6 profiles are signed for **Core 2026.11.0 only**, in **one combined 2.6 signing** (one `extend-capabilities` extension of the existing 2026.11.0 entry). No 10.x targets for new profiles. | HAMCP-329 register row; 2.6.0 correction brief | One new additive rename profile on 2026.11.0 only (Signing impact). No existing profile or fingerprint changes. |
-| **Recorded owner decision (2026-11-03):** HAMCP-295 is feature lane position 2 after HAMCP-253, 267 and 264. | HAMCP-295 register Next Action | Build order. HAMCP-264 (template reads) is ranked ahead of 295; template coverage is part of Remaining Josh choice J1. |
+| **Recorded owner decision (2026-11-03):** HAMCP-295 is feature lane position 2 after HAMCP-253, 267 and 264. | HAMCP-295 register Next Action | Build order. HAMCP-264 (template reads) is ranked ahead of 295. It is **no longer a gate**: Josh decision (in-session 2026-11-08), item 7, says HAMCP-295 does not wait for HAMCP-264 and ships truthful `unavailable` template disclosure (section 3.3). |
+| **Josh decision (in-session 2026-11-08), item 6:** schedule (c), "2.6, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled." | 2.6.0 Josh choices, item 6 (former J3) | HAMCP-295 and HAMCP-109 target 2.6.0 and ship together. This supersedes the recorded HAMCP-109 "build IN 3.0" target (first row). Section 9 defines "frozen" and the cutoff. The cutoff never delays the combined 2.6 signing. |
+| **Josh decision (in-session 2026-11-08), item 7:** (b), "one plan-level acknowledgement when any reference isn't rewritten; do NOT wait for HAMCP-264." | 2.6.0 Josh choices, item 7 (former J1) | Section 3.3, "Not-rewritten acknowledgement": what counts, what the acknowledgement binds to (the plan hash), and the tests. |
+| **Josh decision (in-session 2026-11-08), item 8:** (b), "elevated for actuators only (069A E1 pattern)." | 2.6.0 Josh choices, item 8 (former J2) | Section 3.1, "Policy class": the actuator definition from current source, `elevated_admin` for actuators, `standard_admin` otherwise. |
 | Design a new, distinct dependency-bound mode; do not silently change existing multi-operation behaviour; stop and report if the decision cannot be met within existing safety constraints. | Task prompt | Section 3.2. Result: the decision **can** be met without weakening an existing safety constraint (section 3.2.6). It still needs a recorded ADR amendment, because the shipped ADR-018 text forbids exactly this behaviour. |
 | HAMCP-069 excluded renames until change-impact analysis existed. | HAMCP-295 outcome | `change_impact_analysis` already models `rename_entity` (section 2.4). |
 | Each sequenced operation must be admitted individually (HAMCP-222). | HAMCP-109 Notes | Every forward step and every compensation step passes its own Core admission at dispatch time (section 3.6). |
@@ -152,7 +164,8 @@ loop `break`s on the first child whose terminal outcome is not
 3. There is no execution mode in which a later failure reverses earlier
    verified steps. Every rule in section 2.1 forbids it.
 4. Templates have no reference read path: HAMCP-264 is in Backlog, and UI
-   template helpers have no read path. Script reference enumeration covers
+   template helpers have no read path. HAMCP-295 does not wait for it
+   (Josh decision (in-session 2026-11-08), item 7). Script reference enumeration covers
    loaded scripts only. Group membership is the loaded membership from the
    `entity_id` state attribute (HAMCP-227).
 5. No governed write adapter exists for groups or templates. Dashboard writes
@@ -409,7 +422,8 @@ projection show the following:
 - Every reference found through the `rename_entity` impact evidence:
   automations, scripts (loaded only, labelled partial), scenes, groups
   (loaded membership), dashboards (reviewed list, bounded), and templates
-  (`unavailable` with the HAMCP-264 reason until that lands). Each reference
+  (`unavailable` with the HAMCP-264 reason until that lands; HAMCP-295 does
+  not wait for it, section 3.3). Each reference
   carries its completeness label.
 - For each reference, whether a dependent step of this plan rewrites it
   (section 3.3) or it is **not rewritten** with its exact reason. A plain
@@ -427,11 +441,66 @@ projection show the following:
 
 Disclosure never downgrades risk and is not fingerprinted beyond the existing
 HAMCP-270 rules. Consequence labels stay decision support (HAMCP-109 Notes).
+The not-rewritten set of section 3.3 is not disclosure: it is plan contract,
+bound into the plan hash and the policy subject, because it decides the
+acknowledgement.
 
-**Policy class.** The F2 policy class of a rename step is undecided. It is
-Remaining Josh choice J2 and is not set here. The mechanics support either
-`standard_admin` (one approval action) or `elevated_admin` (plan approval plus
-`elevated_risk_acknowledgement`).
+**Policy class (Josh decision (in-session 2026-11-08), item 8: elevated for actuators only, the 069A E1
+pattern).** The rename step reuses the 069A E1 rule as it is implemented at
+the base:
+
+- **Actuator, defined.** The entity is an actuator when its domain (the domain
+  of `<old>`, which equals the domain of `<new>`; cross-domain renames are
+  refused, N3) is in `_HELPER_DIRECT_EFFECT_DOMAINS`
+  (`governance/risk.py:79-91`: alarm_control_panel, climate, cover, fan,
+  light, lock, switch, valve, water_heater) or in
+  `_HELPER_TRANSITIVE_EFFECT_DOMAINS` (`governance/risk.py:95-97`:
+  automation, scene, script). This is exactly the set the 069A E1 classifier
+  uses (`governance/entity_metadata_planning.py:319-326`, basis
+  `e1_actuator_membership_change`;
+  [`HAMCP_069A_ENTITY_METADATA_DESIGN.md`](HAMCP_069A_ENTITY_METADATA_DESIGN.md)
+  section 5, E1). The rename classifier imports these frozensets and does not
+  copy them, so the two classifiers cannot drift (C8). Device class is not
+  consulted: the 069A D4 cover device-class rule covers alias changes only.
+  Every other domain is a non-actuator, including sensors, binary sensors,
+  `input_*` helpers and any physical domain outside the reviewed set.
+- **Actuator rename:** `elevated_admin` with basis `e1_actuator_entity_rename`,
+  risk `high`, and physical consequence `safety_critical` for
+  `_HELPER_SAFETY_CRITICAL_DOMAINS` (`governance/risk.py:92-94`:
+  alarm_control_panel, lock, valve) and `indirect` otherwise. This is the 069A
+  E1 classification (`entity_metadata_planning.py:319-322`). The approval is
+  `plan_approval` plus `elevated_risk_acknowledgement`, the shape that
+  `_entity_metadata_operation_policy` returns for E1
+  (`governance/policy.py:609-689`). As in 069A, the `safety_critical` label
+  alone does not add the HAMCP-213 safety-critical acknowledgement. That
+  acknowledgement belongs to the recomputed physical-effect comparison of
+  configuration changes (`policy.py:385-405`), which the rename step does not
+  perform.
+- **Any other rename:** `standard_admin` (one `plan_approval`), risk `low`,
+  physical consequence `none`, unless the not-rewritten basis of section 3.3
+  applies.
+- **Rewrite children** keep their own existing configuration-update
+  classification. The plan's policy is the existing aggregate over all its
+  operations.
+- **Exactly one second action.** When the actuator basis, the section 3.3
+  not-rewritten basis, or both apply, the plan requires exactly one
+  `elevated_risk_acknowledgement`, with every applicable basis code in
+  `reason_codes`. If a rewrite child requires the HAMCP-213 safety-critical
+  acknowledgement, that acknowledgement subsumes the elevated one (D1,
+  `policy.py:2247-2256`), so there is still one second administrator action.
+  No new approval action kind, persisted acknowledgement slot or approval-page
+  mechanism is added (the existing single ordered second action,
+  `governance/service.py:347-361`).
+- **No exactness shortcut.** The `exact_owner_authoritative` shortcut
+  (`policy.py:2208-2233`) must never remove the acknowledgement from a rename
+  forward plan (N35). An owner rollback plan (section 3.4) is classified by
+  the same actuator rule. It keeps the acknowledgement unless the build proves
+  that it meets the existing HAMCP-135 exact-inverse contract that the
+  shortcut already recognizes (`inverse_eligibility.bound`); no new shortcut is
+  added.
+- **Never a refusal.** Neither basis produces `prohibited`. As for 069A, only
+  an incomplete execution contract does (`policy.py:618-623`). An exact,
+  owner-authorized actuator rename stays actionable (ADR-022; acceptance A1).
 
 ### 3.2 Dependency-bound execution mode (HAMCP-109)
 
@@ -445,7 +514,8 @@ plan hash:
   change at all: the section 2.1 contract still applies word for word to
   these plans.
 - **`dependency_bound_compensating_v1`.** The new mode. Only the rename
-  planner produces it, in the release that ships HAMCP-295 complete (J3).
+  planner produces it, in the release that ships HAMCP-295 complete (2.6.0,
+  or 3.0 if the section 9 cutoff fires; Josh decision (in-session 2026-11-08), item 6).
   `create_configuration_plan` never accepts
   it as caller input. A caller-supplied `execution_mode` is refused with
   `execution_mode_not_caller_selectable`.
@@ -468,7 +538,8 @@ The approval page shows each forward step **and** its compensation, with
 exact payloads. Both are covered by the one plan hash, so the owner approves
 the compensation together with the forward steps. No write that the owner did
 not approve can occur. Approval semantics are unchanged: one hash-bound
-external approval, plus the elevated acknowledgement if the policy class
+external approval, plus the single `elevated_risk_acknowledgement` when the
+actuator basis (section 3.1) or the not-rewritten basis (section 3.3)
 requires it.
 
 #### 3.2.2 Forward execution
@@ -589,7 +660,7 @@ deterministic attempt (as HAMCP-135). A failed compensation is not retried.
 | Exact target and authority | Same targets, same locks, same Core admission per child (HAMCP-222). |
 | No overwrite of foreign changes | The full-bundle check runs before every compensation child. |
 | No silent change to existing plans | Existing plans keep `ordered_stop_on_failure`. The mode is not caller-selectable. |
-| Consequence labels are not policy | No new policy class or risk program. Compensation is triggered by execution outcome, not by a consequence label. |
+| Consequence labels are not policy | No new policy class or risk program. Compensation is triggered by execution outcome, not by a consequence label. The policy class (section 3.1) uses the existing `elevated_admin` class and the existing 069A E1 domain set, and never refuses. |
 
 The one rule that does change is ADR-018 "does not compensate a sequence
 implicitly". In the new mode, compensation is **explicit**: it is shown and
@@ -736,10 +807,67 @@ only when **all** of the following hold:
 A holder can be partly rewritten: its B-boundary occurrences are rewritten and
 its other occurrences are listed as not rewritten. Free-text fields (`alias`,
 `description` and similar `FREE_TEXT_KEYS`) are neither rewritten nor counted
-as breakage. Whether a plan with any not-rewritten occurrence proceeds with
-disclosure or is refused is Remaining Josh choice J1. Until J1 is answered the
-build contract defaults to **proceed with per-occurrence disclosure and a
-count on the approval page**, and the plan never claims full coverage.
+as breakage.
+
+**Not-rewritten acknowledgement (Josh decision (in-session 2026-11-08), item 7: one plan-level acknowledgement when
+any reference is not rewritten; no HAMCP-264 wait).** A plan with any
+not-rewritten occurrence proceeds, with per-occurrence disclosure, the count,
+and one plan-level acknowledgement. It is never refused for that reason. The
+plan never claims full coverage.
+
+- *What counts as not rewritten.* Any identified occurrence of `<old>` that
+  the plan does not rewrite: every occurrence listed with a reason code in the
+  table above (`template_occurrence_not_rewritten`,
+  `blueprint_input_not_rewritten`, `event_data_occurrence_not_rewritten`,
+  `unsupported_value_shape`, `holder_coverage_incomplete`,
+  `rewrite_evidence_mismatch`, `no_governed_writer`,
+  `holder_adapter_not_admitted`). That includes every dashboard and group
+  reference the `rename_entity` impact evidence reports. Free-text
+  occurrences are not counted (above). `not_rewritten_count` is the exact
+  total from the evidence, not the bounded number displayed
+  (`MAX_REFERENCES = 8`, section 8).
+- *What does not count by itself.* A coverage gap with no identified
+  occurrence does not count: template coverage `unavailable` (HAMCP-264),
+  loaded-only script enumeration, loaded group membership, and
+  `no_known_impacts_with_incomplete_coverage`. Each stays disclosed as
+  incomplete coverage, with the statement that unlisted references may exist.
+  The acknowledgement covers a stated set of references, and an unavailable
+  source supplies none. HAMCP-295 ships with truthful `unavailable` template
+  disclosure and does not wait for HAMCP-264. If HAMCP-264 later supplies
+  template reads, each template occurrence it identifies counts as not
+  rewritten (`no_governed_writer`), with no change to this rule.
+- *The acknowledgement.* When `not_rewritten_count > 0`, the plan is
+  `elevated_admin` with basis `entity_rename_references_not_rewritten` and
+  requires the existing `elevated_risk_acknowledgement`, with plan approval
+  first. On its own, this basis sets risk `moderate`. The physical consequence
+  stays as section 3.1 classifies the rename (`none` for a non-actuator). The
+  break is disclosed and is never a refusal reason (ADR-022). If the actuator
+  basis also applies, or a rewrite child needs the safety-critical
+  acknowledgement, there is still exactly one second administrator action
+  (section 3.1). When the count is zero and no other basis applies, the plan
+  stays `standard_admin`.
+- *What it binds to.* The acknowledgement is bound to the exact plan hash
+  through the existing mechanism. `required_acknowledgements` is carried in
+  the approval reference and enforced at dispatch, as in
+  `f3_runtime/runtime.py:4634-4647`. A missing acknowledgement refuses with
+  `elevated_risk_acknowledgement_required` (`errors.py:45-47`). The plan
+  persists:
+  - `not_rewritten_references`: holder type, holder id, position and reason
+    code, sorted;
+  - `not_rewritten_count`.
+
+  Both are in the plan hash material and in the policy subject
+  (`policy_subject_payload`, `policy.py:2078`). Any change to the set
+  therefore changes the plan hash and invalidates the approval and the
+  acknowledgement. They are persisted only on
+  `dependency_bound_compensating_v1` plans (section 8 hash rule).
+- *Apply-time recheck.* At final preflight (after locks, before the first
+  intent), the `rename_entity` impact evidence is re-derived through the same
+  admitted reads as at planning. If the identified not-rewritten set differs
+  from the persisted set, the plan refuses with
+  `entity_rename_reference_set_changed`, with zero writes and the approval not
+  consumed; a new plan is required. An acknowledgement never covers a
+  reference it did not list.
 
 This design adds no dashboard delegation, no group or template writer, and no
 textual Jinja replacement. Each would be new provider or write scope with its
@@ -772,7 +900,7 @@ never reversed by this plan.
 | Scene | HAMCP-071 `scene_configuration` | `core_scene_configuration_operation_v1` (canonical registry seq 16 and 17) | Yes (B1, B2, B4-B6) |
 | Dashboard | Delegated ha-mcp setter under `ChangeOperation.UPDATE_DASHBOARD`, not a configuration-plan child | n/a | No: `no_governed_writer` (disclosed) |
 | Group | None | n/a | No: `no_governed_writer` (disclosed) |
-| Template | No read path (HAMCP-264) and no write adapter | n/a | No: disclosed as `unavailable` |
+| Template | No read path (HAMCP-264) and no write adapter | n/a | No: disclosed as `unavailable` coverage, with no HAMCP-264 wait. Coverage alone does not trigger the acknowledgement; occurrences identified once a read path exists count as not rewritten |
 
 Each rewrite child is still admitted individually at dispatch (section 3.6).
 
@@ -855,11 +983,11 @@ profile of its own. This follows HAMCP-222 ("no Core signing by itself").
 | Static tools | **+1 against the design base** (81 → 82 at `7246f2d2`): new `create_entity_rename_plan` | Computed from `tools/registry.py:240` at base. This is not a frozen release total: the build derives the total at the integrated implementation revision. The delegated ha-mcp tool count is unaffected |
 | `create_entity_metadata_plan` | Unchanged | `new_entity_id` stays refused |
 | `create_configuration_plan` input | Unchanged | `execution_mode` is not accepted (refused if supplied) |
-| `apply_change_plan`, `get_change_plan`, `get_execution_task`, `list_execution_tasks` output | Additive: `execution_mode`, per-step `compensation` projection, new `terminal_outcome` codes | Security-sensitive compatibility surface. Existing plans project `ordered_stop_on_failure` and no compensation |
+| `apply_change_plan`, `get_change_plan`, `get_execution_task`, `list_execution_tasks` output | Additive: `execution_mode`, per-step `compensation` projection, `not_rewritten_references` / `not_rewritten_count`, new `terminal_outcome` codes | Security-sensitive compatibility surface. Existing plans project `ordered_stop_on_failure` and no compensation |
 | `rollback_change` | Accepts verified rename plans | New refusal reasons listed in section 6 |
 | Server instructions (`mcp_server.py:15-16`), tool descriptions (`tools/governance.py:1060/1201/1312`), approval page (`approval_web.py:1974`) | Wording: the non-atomic, no-automatic-rollback rule stays for every plan **except** dependency-bound rename plans, which state their pre-approved compensation | These are protected runtime paths. They change only in the build PRs that name them |
 | F3 identities | +1 `rename_entity_registry_entry` | The routes table counts F3 identities, so that pin changes |
-| Persisted records | `ConfigurationOperation.compensation`, plan `execution_mode`, compensation child records, `compensation_decided` record | Storage format change. Section 8 gives the downgrade requirement |
+| Persisted records | `ConfigurationOperation.compensation`, plan `execution_mode`, plan `not_rewritten_references` and `not_rewritten_count`, compensation child records, `compensation_decided` record | Storage format change. Section 8 gives the downgrade requirement |
 | Provider registry | +1 contract `direct-ha-exact-entity-registry-rename-v1`, fallback none | No ha-mcp change |
 
 ## 5. Signing impact
@@ -872,7 +1000,7 @@ Exactly one new additive profile. Naming follows `ha_core_readmission/profiles.p
 
 | Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Can it batch with other 2.6 profiles |
 | --- | --- | --- | --- | --- | --- |
-| `core_entity_registry_rename_operation_v1` (capability id `core.entity_registry_rename_operation`) | **New, additive** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the rename compensation and rename rollback steps | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes, and only there:** signed for **Core 2026.11.0 only**, inside the one combined 2.6 signing (one `extend-capabilities` extension of the existing 2026.11.0 entry), once the compiled contract and its evidence are final. No 10.0, 10.1 or 10.3 entry. No separate or later 2.6 ceremony. If the contract is not final in time for that signing, it is not signed in 2.6 (J3). Unsigned, the profile stays dormant and the tool refuses |
+| `core_entity_registry_rename_operation_v1` (capability id `core.entity_registry_rename_operation`) | **New, additive** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the rename compensation and rename rollback steps | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes, and only there:** signed for **Core 2026.11.0 only**, inside the one combined 2.6 signing (one `extend-capabilities` extension of the existing 2026.11.0 entry), once the compiled contract and its evidence are final. No 10.0, 10.1 or 10.3 entry. No separate or later 2.6 ceremony. If the contract is not frozen (section 9 cutoff criteria F1-F4) when that signing is assembled, it is not signed in 2.6 and the whole of HAMCP-295/109 moves to 3.0 (Josh decision (in-session 2026-11-08), item 6). Unsigned, the profile stays dormant and the tool refuses |
 | `core_entity_registry_metadata_operation_v1` (`core.entity_registry_metadata_operation`) | Unchanged | None | `new_entity_id` is deliberately **not** added to the metadata closed fields | None: stays `sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767` | n/a |
 | `core_governed_configuration_operation_v1` (`core.governed_configuration_operation`) | Unchanged | None | Automation and script rewrite, compensation and rollback steps use the existing adapter and its existing 2026.11.0 admission | None | n/a |
 | `core_scene_configuration_operation_v1` (`core.scene_configuration_operation`) | Unchanged; existing signed coverage stays as it is | None | Scene rewrite, compensation and rollback steps use the existing adapter and its existing 2026.11.0 admission. No historic-version expansion is proposed | None | n/a |
@@ -920,7 +1048,7 @@ as well as the refusal code.
 | N14 | Existing multi-operation plan fails at child 2 | Stops; child 1 **not** reversed; outcome unchanged from base | New regression guard on the old mode |
 | N15 | Restart mid-compensation, then apply without the matching `expected_plan_hash` | `APPROVAL_HASH_MISMATCH`, no dispatch | New |
 | N16 | `rollback_change` on a rename when old id is occupied or state drifted | `rollback_not_available` with reason; no plan | New |
-| N17 | Rewrite holder with the old id only inside a template string | Holder not rewritten; listed `template_occurrence_not_rewritten`; plan proceeds or refuses per J1 | New |
+| N17 | Rewrite holder with the old id only inside a template string | Holder not rewritten; listed `template_occurrence_not_rewritten`; counted in `not_rewritten_count`; the plan proceeds as `elevated_admin` and needs the one acknowledgement (N32, C2) | New |
 | N18 | More than 7 dependent rewrites | `entity_rename_dependent_steps_exceed_limit` | New |
 | N19 | Dashboard reference | Never becomes a dispatching child; disclosed `no_governed_writer` | New |
 | N20 | Exact shipped older Engineering reader loads a plan or task written by the new writer (downgrade) | Refused or held, never executed as `ordered_stop_on_failure` | Writer-provenance downgrade test (section 8) |
@@ -935,10 +1063,35 @@ as well as the refusal code.
 | N29 | Rewrite holder with occurrences outside B1-B6 (template string, blueprint input, event data, comma-separated string, nested value), or a dashboard or group holder | No mutation of those positions or holders; each listed with its reason code; B5/B6 mismatch leaves the holder unwritten | New |
 | N30 | Rename profile unsigned on Core 2026.10.0, 2026.10.1, 2026.10.3 | Tool refuses before plan creation; zero dispatch | New |
 | N31 | Metadata profile fingerprint after the build | Unchanged (`sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767`) | New pin |
+| N32 | Non-actuator rename with one not-rewritten dashboard reference, applied with plan approval only | `elevated_risk_acknowledgement_required`; zero dispatch | New |
+| N33 | Same plan with an acknowledgement bound to a different plan hash, or copied from another plan | Refused (hash-bound acknowledgement mismatch); zero dispatch | New |
+| N34 | Not-rewritten set changes between plan and apply: a new dashboard reference appears, or a holder edit moves an occurrence outside B1-B6 | `entity_rename_reference_set_changed`; zero writes; approval not consumed | New |
+| N35 | Rename forward plan constructed to match each branch of the `exact_owner_authoritative` shortcut (`policy.py:2208-2233`) | The acknowledgement is still required; zero dispatch without it | New |
+| N36 | Persisted `not_rewritten_references` or `not_rewritten_count` altered after hashing | Plan hash mismatch; zero dispatch | New |
+| N37 | Actuator rename (each actuator domain) applied with plan approval only | `elevated_risk_acknowledgement_required`; zero dispatch | New |
+
+### 6.1 Classification and schedule tests (Josh decisions, items 6-8)
+
+Each is a required future test or release check. None has been run.
+
+| # | Case | Required result |
+| --- | --- | --- |
+| C1 | Non-actuator (for example `sensor.*`, `input_boolean.*`), every identified reference rewritten | `standard_admin`; `required_acknowledgements == [plan_approval]`; no rename elevation basis code; applies after one approval and verifies |
+| C2 | Non-actuator with one not-rewritten dashboard reference | `elevated_admin`, basis `entity_rename_references_not_rewritten`, `not_rewritten_count == 1`, risk `moderate`, physical consequence `none`; applies after approval plus the acknowledgement |
+| C3 | Each of the 12 actuator domains, every reference rewritten | `elevated_admin`, basis `e1_actuator_entity_rename`, risk `high`; consequence `safety_critical` for alarm_control_panel, lock and valve and `indirect` for the other nine; applies after approval plus the acknowledgement |
+| C4 | Actuator rename with a not-rewritten reference | Exactly one second action (`elevated_risk_acknowledgement`), with both basis codes in `reason_codes` |
+| C5 | Rewrite child whose configuration-update classification requires the safety-critical acknowledgement | Exactly one second action: the safety-critical acknowledgement (D1); never two |
+| C6 | Safety-critical actuator rename with every reference not rewritten | Still actionable (`elevated_admin`, never `prohibited`); only an incomplete execution-contract marker gives `prohibited` |
+| C7 | Coverage gaps only (template `unavailable`, loaded-only scripts), zero identified not-rewritten occurrences, non-actuator | `standard_admin`; coverage disclosed as incomplete; no acknowledgement required |
+| C8 | Actuator set identity | The rename classifier's set equals `_HELPER_DIRECT_EFFECT_DOMAINS \| _HELPER_TRANSITIVE_EFFECT_DOMAINS` imported from `governance/risk.py`, the same objects the 069A classifier uses |
+| C9 | Ten dashboard references | `not_rewritten_count == 10`; the displayed list is bounded (`MAX_REFERENCES`); the count is in the plan hash |
+| C10 | Owner rollback of an actuator rename | Classified by the actuator rule; the acknowledgement is kept unless the existing HAMCP-135 exact-inverse contract is proven |
+| R1 | Combined 2.6 signing request (release check) | Lists `core_entity_registry_rename_operation_v1` only if F1-F4 (section 9) hold at assembly, with the fingerprint equal to the compiled one |
+| R2 | Cutoff fired (release check) | The 2.6.0 release candidate's registration pins contain no `create_entity_rename_plan`, no `rename_entity_registry_entry` F3 identity, and no planner that produces `dependency_bound_compensating_v1`; there is no second 2.6 signing |
 
 ## 7. Acceptance
 
-**Completion rule.** HAMCP-295 is complete only when A1-A3 and A5 pass
+**Completion rule.** HAMCP-295 is complete only when A1-A3, A5 and A11 pass
 together: rename **with** generated reference rewrites, pre-approved
 compensation, and separately approved owner rollback, all verified. A
 rename-only implementation, or one whose rewrites or verified undo are absent
@@ -949,10 +1102,10 @@ Josh can rename an entity without hand-editing:
 
 - A1. An owner-approved rename of an actuator entity with known references
   applies once, verifies by exact readback, and reports the re-add or
-  in-place move observation. This includes the 069A E1-style case where the
-  policy class is elevated: an exact owner-authorized operation stays
-  actionable despite a high consequence label
-  (`hass_mcp_engineering_beta/AGENTS.md`).
+  in-place move observation. The actuator rename is `elevated_admin`
+  (section 3.1, Josh decision (in-session 2026-11-08), item 8) and applies after plan approval plus the one elevated
+  acknowledgement: an exact owner-authorized operation stays actionable
+  despite a high consequence label (`hass_mcp_engineering_beta/AGENTS.md`).
 - A2. The same rename plan carries generated rewrites of at least two
   automations and one script (and a scene where one references the entity),
   including a holder with more than one exact B-boundary occurrence. Every
@@ -986,11 +1139,19 @@ Josh can rename an entity without hand-editing:
 - A10. The approval page shows the following for each holder:
   - every forward step and every compensation payload;
   - the references, each marked rewritten or not rewritten with its reason
-    code, with completeness labels and the not-rewritten count;
+    code, with completeness labels and the exact not-rewritten count;
+  - whether the plan-level acknowledgement is required, with its basis codes
+    (actuator, not-rewritten references, or both);
   - the "will break" statement;
   - the recorder, helper and deleted-id consequences.
 
   The plan hash changes if any forward or compensation payload changes.
+
+- A11. Josh decisions, items 7 and 8 (Josh decision (in-session 2026-11-08), item 7; Josh decision (in-session 2026-11-08), item 8): a non-actuator rename
+  whose identified references are all rewritten applies with one approval
+  (C1). A non-actuator rename with a not-rewritten dashboard reference applies
+  after approval plus the one acknowledgement (C2). In both cases the template
+  coverage gap is disclosed as `unavailable`. N32-N37 and C1-C10 pass.
 
 **Live acceptance.** Live acceptance on a real Home Assistant is a separate,
 later, owner-authorized activity. It is not part of this design or of any
@@ -1024,17 +1185,21 @@ agent PR. It needs a disposable test entity, chosen by Josh.
 - **Physical consequence.** Renaming an actuator entity breaks every
   reference the plan does not rewrite (dashboards, groups, templates, and
   not-rewritten occurrences, section 3.3) until it is fixed by hand.
-  This is disclosed, not used as a refusal reason (ADR-022). Recorder
-  migration failure loses the history link and is disclosed, not verifiable.
+  This is disclosed, not used as a refusal reason (ADR-022). An actuator
+  rename is `elevated_admin` (section 3.1). Any identified not-rewritten
+  reference requires the one plan-level acknowledgement, bound to the plan
+  hash (section 3.3). Neither is a refusal. Recorder migration failure loses
+  the history link and is disclosed, not verifiable.
 - **Persistence and downgrade.** New persisted fields and records. Frozen
   rules for the build (contract freeze, not open):
-  - *Discriminator.* The plan key `execution_mode` and the operation key
-    `compensation` are persisted **only** for
+  - *Discriminator.* The plan keys `execution_mode`,
+    `not_rewritten_references` and `not_rewritten_count`, and the operation
+    key `compensation`, are persisted **only** for
     `dependency_bound_compensating_v1` plans. Absence means
     `ordered_stop_on_failure`. Existing planners never write either key, so
     their persisted bytes are unchanged.
-  - *Hash rule.* Plan hash material includes `execution_mode` and each
-    `compensation` only when present. No default value is inserted into the
+  - *Hash rule.* Plan hash material includes `execution_mode`, the
+    not-rewritten set and count, and each `compensation` only when present. No default value is inserted into the
     hash material of an existing plan, so every existing plan hash stays
     byte-identical.
   - *New writer to exact old reader.* With plan and task records written by
@@ -1069,20 +1234,43 @@ agent PR. It needs a disposable test entity, chosen by Josh.
 
 ## 9. Build plan
 
-The recorded HAMCP-109 target is "build IN 3.0" (section 1.3). The delivery
-schedule is Remaining Josh choice J3; the slice order below is the same under
-every J3 option. HAMCP-295 and HAMCP-109 ship together in one release: no
-release ships S1 without S2 and S3, because a rename-only or disclose-only
-release is not a deliverable.
+**Schedule (Josh decision (in-session 2026-11-08), item 6): 2.6.0, with a hard cutoff to 3.0.** This supersedes the
+recorded HAMCP-109 "build IN 3.0" target (section 1.3). HAMCP-295 and
+HAMCP-109 ship together in one release: no release ships S1 without S2 and S3,
+because a rename-only or disclose-only release is not a deliverable.
+
+**What "frozen" means.** The contract is frozen when, at the moment the
+combined 2.6 `extend-capabilities` signing request is assembled (its profile
+list fixed for Josh's owner signing), all of the following hold:
+
+- F1. S1-S3 exist as one stable integrated head, with every section 6 and 6.1
+  test and every signing-scope test passing under Full/Evidence validation
+  (S4).
+- F2. Acceptance A1-A11 passes on that head, with the non-live Core 2026.11.0
+  lane evidence that the combined signing plan requires of every 2.6 profile.
+  This design does not name that evidence group; the signing plan defines it.
+- F3. The compiled contract fingerprint of
+  `core_entity_registry_rename_operation_v1` has been computed at that head and
+  recorded. The bounded independent review of S1-S3 is complete, with no
+  unresolved Critical or High finding.
+- F4. No change after the fingerprint was computed alters it.
+
+**The cutoff.** If any of F1-F4 fails at assembly, the profile is left out of
+the combined 2.6 signing. The whole of HAMCP-295/109 then moves to 3.0, with
+no rename-only or disclose-only release, no second 2.6 signing, and no 10.x
+target. S1-S3 do not merge into the 2.6.0 release line before F1-F4 can be
+met, so a cutoff leaves no registered or reachable HAMCP-295/109 behaviour in
+2.6.0 (R2). The cutoff never delays the combined 2.6 signing. The slice order
+below is the same in 2.6.0 and in 3.0.
 
 | Slice | Content | Depends on | Protected paths named |
 | --- | --- | --- | --- |
-| S0 | New ADR (next free number): scoped dependency-bound compensating execution, recording the 2026-11-07 HAMCP-109 decision and the Josh direction in section 1.3; amends the three ADR-018 statements in section 3.2.6 for this mode only; matching [`CHANGE_GOVERNANCE.md`](CHANGE_GOVERNANCE.md) text | J1, J2 answered (contract freeze) | None (docs) |
+| S0 | New ADR (next free number): scoped dependency-bound compensating execution, recording the 2026-11-07 HAMCP-109 decision and the Josh direction in section 1.3; amends the three ADR-018 statements in section 3.2.6 for this mode only; matching [`CHANGE_GOVERNANCE.md`](CHANGE_GOVERNANCE.md) text | None open: J1-J3 decided 2026-11-08 (items 6-8, section 12) | None (docs) |
 | S1 | Rename resource, planner, tool `create_entity_rename_plan` (+1 static tool against the base; derive the release total at the integrated revision), F3 identity, dormant runtime-only profile, provider contract, preflight, readback, V9 three-case rule, `rollback_change` support for the rename step | S0; 2.5.0 landed | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | S2 | Generic `dependency_bound_compensating_v1` in F3: persisted compensation candidates, section 3.2.2a ownership classes and accounting, lock-union transfer, crash-consistent decision records, compensation phase, outcomes, restart rules, frozen discriminator/hash rules and the two-direction downgrade proof | S1 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
-| S3 | **Mandatory** dependent rewrite steps (section 3.3): B1-B6 rewriter, re-extraction check, fixed order, per-occurrence disclosure, owner rollback of rewrites | S2 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
-| S4 | Full/Evidence validation and acceptance A1-A10 on the integrated head; compiled rename-contract fingerprint frozen | S3 | None |
-| S5 | Owner signing: `core_entity_registry_rename_operation_v1` for Core **2026.11.0 only**, inside the one combined signing of the release that ships HAMCP-295 (the combined 2.6 signing if J3 places it in 2.6.0) | S4 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
+| S3 | **Mandatory** dependent rewrite steps (section 3.3): B1-B6 rewriter, re-extraction check, fixed order, per-occurrence disclosure, the not-rewritten set and plan-level acknowledgement (item 7), the actuator policy classifier (item 8), owner rollback of rewrites | S2 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
+| S4 | Full/Evidence validation and acceptance A1-A11 on the integrated head; compiled rename-contract fingerprint frozen (F1-F4) | S3 | None |
+| S5 | Owner signing: `core_entity_registry_rename_operation_v1` for Core **2026.11.0 only**, inside the one combined signing of the release that ships HAMCP-295: the combined 2.6 signing when F1-F4 hold at its assembly, otherwise the 3.0 signing (cutoff) | S4 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
 | S6 | Version transition and release documents | Josh's release decision | `.release/`, `config.yaml` |
 
 **Overlap with in-flight 2.5.0 work.** 2.5.0 wins shared files, and S1-S3 will
@@ -1108,42 +1296,27 @@ merge `main` after 2.5.0 lands (never rebase):
 - Removing the tool alone leaves the metadata, configuration and rollback
   paths unchanged.
 
-## 10. Remaining Josh choices — pending Josh
+## 10. Decided owner choices (formerly J1-J3)
 
 Settled and not asked again: references are rewritten with verified undo
 (section 1.3); additive profile, Core 2026.11.0 only, one combined 2.6 signing;
 rewrite order (section 3.3, author proposal: rename first); the existing
 eight-operation bound is kept (rename plus up to 7 rewrites).
 
-**J1. Rewrite coverage and acceptable incomplete coverage.** The rewrite
-boundary is B1-B6 (automation, script, scene; structural `entity_id` leaves
-and scene keys). Template occurrences, blueprint inputs, event data,
-dashboards and groups are not rewritten and are disclosed.
+**Decided: J1, not-rewritten references.** Josh decision (in-session 2026-11-08), item 7: (b), "one plan-level
+acknowledgement when any reference isn't rewritten; do NOT wait for
+HAMCP-264." The contract is in section 3.3, "Not-rewritten acknowledgement".
 
-- (a) Proceed with per-occurrence disclosure and a not-rewritten count on the
-  approval page (build default until answered).
-- (b) Proceed, but require an explicit plan-level acknowledgement whenever
-  any occurrence is not rewritten.
-- (c) Refuse the whole plan when any known occurrence is not rewritten.
-- Sub-choice: wait for HAMCP-264 (template read coverage) before HAMCP-295
-  ships, or ship with truthful `unavailable` template disclosure.
+**Decided: J2, policy class.** Josh decision (in-session 2026-11-08), item 8: (b), "elevated for actuators only (069A
+E1 pattern)." The contract, including the actuator definition, is in section
+3.1, "Policy class".
 
-**J2. Rename policy class and acknowledgement.** `standard_admin` (one
-approval action); `elevated_admin` for actuator domains (069A E1 pattern);
-or `elevated_admin` for every rename plan. Classification is decision support
-only and never makes an exact owner-authorized rename non-actionable.
+**Decided: J3, schedule.** Josh decision (in-session 2026-11-08), item 6: (c), "2.6, with a hard cutoff to 3.0 if the
+contract is not frozen when the combined signing is assembled." It supersedes
+HAMCP-109's recorded "build IN 3.0" target. The contract, including what
+"frozen" means, is in section 9.
 
-**J3. Delivery schedule versus HAMCP-109's recorded 3.0 target.** Concrete
-order under every option: S0 → S1 → S2 → S3 → S4 → S5 → S6, shipped together.
-
-- (a) Keep the recorded 3.0 target for both HAMCP-109 and HAMCP-295; the rename
-  profile is then not in the 2.6 signing.
-- (b) Move both into 2.6.0; the rename profile joins the combined 2.6
-  signing, which waits for S4.
-- (c) Target 2.6.0 with a hard cutoff: if S4 has not frozen the compiled
-  contract when the combined 2.6 signing is assembled, the whole of
-  HAMCP-295/109 moves to 3.0, with no rename-only release and no second 2.6
-  signing.
+**Pending Josh:** none.
 
 ### Superseded (historical)
 
@@ -1153,6 +1326,15 @@ the Josh direction in section 1.3 and the fixed order in section 3.3; option A
 is not a deliverable, and option B2 (dashboard delegation) is not in scope.
 Q1(b) and Q2 are folded into J1, Q3 is J2, Q4 is J3. Q5 (raise the plan size)
 is withdrawn: the eight-operation bound is kept.
+
+The revision at head `786f4a4d` listed J1-J3 as pending. None of the
+alternatives that were not chosen is a live choice:
+
+- J1: (a) disclosure only, the earlier build default; (c) refuse the plan; and
+  waiting for HAMCP-264.
+- J2: (a) `standard_admin` for every rename; (c) `elevated_admin` for every
+  rename.
+- J3: (a) 3.0 only; (b) 2.6.0 with no cutoff.
 
 ## 11. Codex design review 2026-11-08 — disposition
 
@@ -1165,4 +1347,15 @@ after corrections).
 | 2. Materialize the settled rewrite requirement | Medium | Section 1.3 records the Josh direction; 3.1 removes the caller rewrite field; 3.3 rewritten as mandatory with the exact B1-B6 boundary, never-rewritten reason codes, fixed order (rename first), no dashboard/group/template writer and no textual Jinja replacement; 3.4 verified undo; section 7 completion rule (rename-only does not complete HAMCP-295), A2, A9; section 9 S3 mandatory; section 10 option A superseded; test N29 |
 | 3. Signing scope contradicts 11.0-only | Medium | Header, section 3.1 Core commands, Signing impact (one additive `core_entity_registry_rename_operation_v1`, capability id `core.entity_registry_rename_operation`, Core 2026.11.0 only, one combined 2.6 signing; 10.x targets and historic scene expansion removed); signing-scope tests; N30, N31; section 9 S5 |
 | Non-finding gates | n/a | 3.2.8 crash-consistent authority records (audit is not authority), reconciliation never dispatches, crash-point tests; 3.2.6 ADR-018 amendment includes forward-approval nonreuse for this mode only; section 8 frozen discriminator/hash rules and two-direction writer-provenance downgrade proof |
-| Remaining Josh decisions | n/a | Section 10 J1-J3; order proposed; eight-operation bound kept |
+| Remaining Josh decisions | n/a | Section 10 J1-J3; order proposed; eight-operation bound kept. **Changed by the Josh decisions of 2026-11-08 (section 12):** J1-J3 are now decided and section 10 records them. No Codex correction above is altered. |
+
+## 12. Josh decisions 2026-11-08 — disposition
+
+| Item | Decision (Josh decision (in-session 2026-11-08)) | Sections changed |
+| --- | --- | --- |
+| 6 (J3) | (c) 2.6.0, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled. Supersedes HAMCP-109's recorded "build IN 3.0" target | Header; 1.3 (row 1 superseded, new row); 3.2.1; 5 (signing row); 6.1 (R1, R2); 9 (schedule, F1-F4 freeze criteria, cutoff, S0, S3-S5); 10; 11 (last row) |
+| 7 (J1) | (b) one plan-level acknowledgement when any reference is not rewritten; no HAMCP-264 wait | Header; 1.3 (2026-11-03 row, new row); 2.3 item 4; 3.1 (disclosure); 3.2.1; 3.3 (not-rewritten acknowledgement: what counts, binding to the plan hash, apply-time recheck; template eligibility row); 4 (projection and persisted fields); 6 (N17, N32-N36); 6.1 (C1, C2, C4, C7, C9); 7 (A10, A11, completion rule); 8 (physical consequence, discriminator and hash rule); 10 |
+| 8 (J2) | (b) elevated for actuators only (069A E1 pattern); `standard_admin` otherwise | Header; 1.3 (new row); 3.1 (policy class and actuator definition); 3.2.1; 3.2.6; 6 (N35, N37); 6.1 (C1, C3-C6, C8, C10); 7 (A1, A11); 8; 9 (S3); 10 |
+
+The section 11 Codex disposition is unchanged except for its last row, as
+noted there.
