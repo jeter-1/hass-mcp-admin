@@ -202,6 +202,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         "control_power",
                         "control_helper",
                         "control_fan",
+                        "automation_reliability_batch_analysis",
                         "create_dashboard_update_plan",
                         "create_helper_state_plan",
                         "create_entity_metadata_plan",
@@ -462,7 +463,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 81)
+        self.assertEqual(len(classifications), 82)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

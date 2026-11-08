@@ -792,6 +792,16 @@ System Log errors, dynamic-reference gaps, missing blueprint evidence, and absen
 evidence. It does not speculate about trigger events, delays, retries, thresholds,
 manual overrides, or physical safety without direct evidence.
 
+### `automation_reliability_batch_analysis`
+
+HAMCP-229 adds a bounded, read-only batch over the unchanged single-item analysis:
+1-20 explicit internal automation IDs, one 45-second budget, per-item digests and
+failures, and truthful partial coverage (`skipped_budget`, `remaining_automation_ids`).
+It uses the same reliability provider and Core profiles as
+`automation_reliability_analysis` under the `bounded_automation_set_reliability_read`
+policy, with no fallback and no write. See
+[the batch contract](docs/AUTOMATION_RELIABILITY_ANALYSIS.md#bounded-batch-analysis-hamcp-229).
+
 ### `analyze_change_impact`
 
 Evaluates proposed renames, removals, integration changes, and automation edits before execution.
