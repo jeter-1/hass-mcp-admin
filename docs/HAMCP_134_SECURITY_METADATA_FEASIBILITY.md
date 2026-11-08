@@ -1,8 +1,9 @@
 # HAMCP-134: Security and Effective-Permission Metadata — Feasibility and Privacy Check
 
 Status: feasibility and privacy check (2.6.0 design wave, docs only), corrected after the
-Codex design review of 2026-11-08 (section 13). Not an implementation plan, not an
-acceptance record, and not a security-policy change.
+Codex design review of 2026-11-08 (section 12), and updated to record Josh's decisions
+of 2026-11-08 on the remaining choices (sections 10 and 13). Not an implementation
+plan, not an acceptance record, and not a security-policy change.
 
 All upstream evidence is pinned source read from verified archives plus the official
 developer documentation. Nothing in this document came from a live Home Assistant, a
@@ -23,7 +24,8 @@ deployed MCP endpoint, or any credential.
   extension of the existing 2026.11.0 registry entry. There are no separate or phased
   2.6 signings.
 
-These points are settled. They are not open questions (section 10).
+These points are settled. They are not open questions. Josh's 2026-11-08 decisions on
+the three remaining choices (items 9-11) are recorded in section 10.
 
 ### 1.2 Row notes that still bind this check
 
@@ -33,7 +35,8 @@ Register row `HAMCP-134` (read with `register get HAMCP-134`, 2026-11-07):
   unnecessarily broad identity data.
 - This is metadata visibility, not a security-policy change.
 - HAMCP-048 (Host/Origin enforcement) is separate and is not touched here.
-- Parts the API cannot provide go back to Josh (section 10).
+- Parts the API cannot provide go back to Josh (section 10). Answered: Josh decision (in-session 2026-11-08),
+  item 10 (explicit `not_provided`, no session defaults).
 
 ### 1.3 Superseded (historical)
 
@@ -51,7 +54,8 @@ This document records, for each metadata area:
 - what the API exposes, at Core 2026.11.0;
 - under which permission;
 - which fields must be dropped or reduced;
-- which areas are **not provided by the API** and so go back to Josh (section 10).
+- which areas are **not provided by the API**. They are reported as explicit
+  `not_provided` omissions (section 10, item 10).
 
 ## 2. Identity and method
 
@@ -224,7 +228,8 @@ Classification key:
 - **S** — technically feasible only via a new Supervisor read (outside the Core
   registry). Feasible is not authorized: each S read needs its own provider review;
 - **X** — not provided by the API (or provided only through a path this design
-  excludes), so it goes back to Josh.
+  excludes). Per Josh decision (in-session 2026-11-08), item 10, each X area is reported
+  as an explicit `not_provided` omission.
 
 ### 4.1 Users, roles and groups, admin, owner, system-generated, active
 
@@ -296,8 +301,8 @@ projected fields is a new use and needs the new profile.
     Supervisor system user. It says nothing about people.
   - `other_connection_user` or `unknown`: **withheld** by default
     (`connection_user_enrolment: not_reported`, reason
-    `connection_identity_not_supervisor`). Whether to report it is part of remaining
-    choice 1 (section 10). It is never labelled Supervisor MFA.
+    `connection_identity_not_supervisor`). It stays withheld: Josh decision (in-session 2026-11-08),
+    item 9 (section 10). It is never labelled Supervisor MFA.
 
 **Classification:**
 
@@ -337,8 +342,10 @@ or count is not exposed.
 **Classification:**
 
 - **X** for per-user session and long-lived-token existence.
-- Session defaults could be reported only as **documentary source constants**, labelled
-  "pinned source, not observed". Whether to report them is part of remaining choice 2.
+- Session defaults are **not reported**, not even as labelled documentary source
+  constants: constants are not observations. Josh decision (in-session 2026-11-08),
+  item 10 (section 10). The session/token area appears only as a `not_provided`
+  omission.
 
 ### 4.4 Voice assistant, Assist exposure and conversation-agent authority
 
@@ -388,6 +395,11 @@ gateway's `NEVER_SENT_COMMANDS` entry is a per-contract choice for that gateway.
 separate counts-only read in the new profile, with the stored-true caveat, therefore
 does not contradict 069B. The 069B signed contract and its never-sent list stay
 unchanged.
+
+**Not in the first build.** The stored-true count read is feasible as analysed above,
+but Josh decision (in-session 2026-11-08), item 11, keeps it out of the first build. The
+new profile does not admit `homeassistant/expose_entity/list`. Adding it later needs its
+own reviewed additive change; the analysis above is the record for that change.
 
 **`homeassistant/expose_new_entities/get`** (`:480-495`):
 
@@ -479,7 +491,7 @@ It is not a per-user permission set.
 - Permission: not admin; one `entity_id` per call.
 - Fields: wake words, `pipeline_entity_id`, `vad_entity_id`.
 
-This could map satellites to pipelines. It is optional (remaining choice 3).
+This could map satellites to pipelines. It is not in the first build (Josh decision (in-session 2026-11-08), item 11), and the new profile does not admit it.
 
 There is no API that states which user, if any, a satellite acts as.
 
@@ -657,7 +669,8 @@ Supervisor `GET /core/info` (`supervisor/api/homeassistant.py:93-111`) returns `
 **Role check:** the add-on role `homeassistant` permits `/core/.+` and `/.+/info`
 (`supervisor/api/middleware/security.py:121-126`).
 
-**Classification: S**, optional, and redundant with `http/config` for TLS presence.
+**Classification: S**, optional, and redundant with `http/config` for TLS presence. Not
+in the first build (Josh decision (in-session 2026-11-08), item 11).
 
 The same `/core/.+` grant also permits Core lifecycle writes. That grant exists today;
 any new Supervisor read must be a fixed `GET` with a positive projection.
@@ -673,7 +686,8 @@ any new Supervisor read must be a fixed `GET` with a positive projection.
 
 The existing `supervisor_self` path already projects positively and excludes options.
 
-**Classification: S**, as an optional projection extension.
+**Classification: S**, as an optional projection extension. Not in the first build
+(item 11).
 
 #### Other add-ons: per-slug ingress metadata versus inventory (corrects finding M4)
 
@@ -690,8 +704,8 @@ Three things are separate:
    (`config.addon`), so no inventory call and no role escalation is needed. A bounded
    per-slug read with a positive projection that **always excludes `options`** is
    therefore feasible. Feasible does not authorize it: it needs its own Supervisor
-   provider review and is optional (remaining choice 3). It is not part of the Core
-   profile.
+   provider review and is optional. It is not in the first build (Josh decision (in-session 2026-11-08),
+   item 11), and it is not part of the Core profile.
 2. **Complete add-on inventory — not available (X).** `/addons` does not match `/.+/info`,
    `/core/.+` or `/homeassistant/.+`, so the role cannot list add-ons. Add-ons without an
    ingress panel are not discoverable on this path. Coverage for any per-slug slice is
@@ -747,10 +761,10 @@ identical in 2026.11.0):
 | Users, roles, groups, admin, owner, system-generated, active, local_only, credential types | N | `config/auth/list` (projected) |
 | MFA module catalog | N (reduced) | `auth/current_user` → `mfa_modules[].{id,name}`; connection-user `enabled` only as `service_user_enrolled` when identity is `supervisor_system_user` |
 | MFA enrolment per user | **X** | none |
-| Session/token policy per user; long-lived token existence | **X** | none; defaults are source constants only |
+| Session/token policy per user; long-lived token existence | **X** | none; defaults are source constants only and are not reported (item 10) |
 | Per-entity assistant exposure | E | delegated `ha_get_entity_exposure` |
 | Expose-new-entities defaults | N | `homeassistant/expose_new_entities/get` (one call per known assistant) |
-| Per-assistant stored-true exposure counts (optional) | N, partial by construction | `homeassistant/expose_entity/list` (counts; stored true only) |
+| Per-assistant stored-true exposure counts (optional; not in the first build, item 11) | N, partial by construction | `homeassistant/expose_entity/list` (counts; stored true only) |
 | Complete effective exposure | **X** | no read evaluates defaults without writing |
 | Pipelines and preferred pipeline | N | `assist_pipeline/pipeline/list` |
 | Conversation agents | N | `conversation/agent/list` |
@@ -761,8 +775,8 @@ identical in 2026.11.0):
 | Panel listing and ingress panels (effective `require_admin`, `show_in_sidebar`) | N | `get_panels` |
 | HTTP proxy/TLS/ban boundary of the **active** slot, plus labelled configured slots | N (partial for `default_legacy_port`) | `http/config` (projected) |
 | External/internal URL posture | N | `get_config` URL fields (reduced) |
-| Core API TLS/port as Supervisor sees it; own ingress | S (optional; separate provider review) | Supervisor `GET /core/info`; `/addons/self/info` projection |
-| Per-slug ingress/capability metadata for known panel slugs, options excluded | S (optional; separate provider review) | Supervisor `GET /addons/<slug>/info` |
+| Core API TLS/port as Supervisor sees it; own ingress | S (optional; separate provider review; not in the first build, item 11) | Supervisor `GET /core/info`; `/addons/self/info` projection |
+| Per-slug ingress/capability metadata for known panel slugs, options excluded | S (optional; separate provider review; not in the first build, item 11) | Supervisor `GET /addons/<slug>/info` |
 | Complete add-on inventory; other add-ons' options | **X** / excluded | `/addons` not permitted for the role; options never projected |
 | Nabu Casa remote state | E | delegated `ha_get_system_health` |
 
@@ -780,9 +794,9 @@ read.
 
 | Source command | Field | Decision | How / reason |
 |---|---|---|---|
-| `config/auth/list` | `id` | reduce | per-response ordinal pseudonym (`user-1`...) by default; the raw Core id is a stable cross-system identifier. Keeping raw ids is remaining choice 1 |
+| `config/auth/list` | `id` | reduce | per-response ordinal pseudonym (`user-1`...); the raw Core id is a stable cross-system identifier and is never output (Josh decision (in-session 2026-11-08), item 9) |
 | `config/auth/list` | `username` | drop | login identifier; a credential half |
-| `config/auth/list` | `name` | drop (default) | personal display name; "unnecessarily broad identity data" per row note. Keeping it is remaining choice 1 |
+| `config/auth/list` | `name` | drop | personal display name; "unnecessarily broad identity data" per row note. Not output (item 9) |
 | `config/auth/list` | `is_owner`, `is_active`, `local_only`, `system_generated` | keep | role/posture booleans, the purpose of the read |
 | `config/auth/list` | `group_ids` | reduce | map to `admin` / `user` / `read_only` for the three `system-*` ids; any other group is counted as `other_group_count`, never named |
 | `config/auth/list` | derived `is_admin` | keep | computed with Core's rule (`auth/models.py:92-96`) |
@@ -793,7 +807,7 @@ read.
 | `auth/current_user` | `id`, `name`, `credentials[]` contents, `is_owner` | drop | identity data; `id` used only for the in-process `system_generated` match when `users` is also read |
 | `http/config` (each projected slot) | `ssl_certificate`, `ssl_key`, `ssl_peer_certificate` | reduce | booleans `tls_configured`, `client_cert_required`; paths dropped (filesystem layout) |
 | `http/config` (each projected slot) | `ssl_profile`, `use_x_forwarded_for`, `ip_ban_enabled`, `login_attempts_threshold`, `use_x_frame_options`, `server_port` | keep | boundary posture |
-| `http/config` (each projected slot) | `trusted_proxies` | reduce | count, plus `includes_loopback`, `includes_private`, `includes_public` booleans; exact CIDRs are network topology. Exact CIDRs are remaining choice 1 |
+| `http/config` (each projected slot) | `trusted_proxies` | reduce | count, plus `includes_loopback`, `includes_private`, `includes_public` booleans; exact CIDRs are network topology and are never output (item 9) |
 | `http/config` (each projected slot) | `cors_allowed_origins` | reduce | count only |
 | `http/config` (each projected slot) | `server_host` | reduce | `bind: default` when absent; otherwise `bind: explicit`, `explicit_bind_count`, `explicit_bind_includes_wildcard` (`0.0.0.0` or `::`) |
 | `http/config` (each projected slot) | `error` | reduce | `none` / `apply_failed` / `not_promoted` / `other` |
@@ -804,7 +818,7 @@ read.
 | `http/config` | `revert_at` | keep | `pending_trial_revert_at`, `pending_trial_active` |
 | `get_config` | `external_url`, `internal_url` | reduce | per URL: `present`, `scheme`, `https`, `is_nabu_casa_domain` (`*.ui.nabu.casa`), `uses_default_port`; hostnames and paths dropped. Absent `external_url` key → `unknown` (local-only user) |
 | `get_config` | `latitude`, `longitude`, `elevation`, `location_name`, `config_dir`, `allowlist_*`, `components`, and the rest | drop | location and filesystem data; not in scope |
-| `homeassistant/expose_entity/list` | per-entity map | reduce | per-assistant `stored_true_count` only; coverage always `partial`, reason `stored_true_only`; entity ids never output (detail is available per entity via `ha_get_entity_exposure`). Optional: remaining choice 3 |
+| `homeassistant/expose_entity/list` | per-entity map | reduce | per-assistant `stored_true_count` only; coverage always `partial`, reason `stored_true_only`; entity ids never output (detail is available per entity via `ha_get_entity_exposure`). Not in the first build (item 11): the command is not admitted by the new profile |
 | `homeassistant/expose_new_entities/get` | `expose_new` per assistant | keep | posture boolean |
 | `assist_pipeline/pipeline/list` | `id`, `name`, `conversation_engine`, `stt_engine`, `tts_engine`, `wake_word_entity`, `language`, `prefer_local_intents`, `preferred_pipeline` | keep | engine and agent ids are entity or integration ids, not secrets; `name` is capped and email-masked |
 | `assist_pipeline/pipeline/list` | `tts_voice`, `wake_word_id`, `acknowledge_media_id`, `*_language` | drop | not authority-relevant |
@@ -812,9 +826,9 @@ read.
 | `conversation/agent/list` | `supported_languages` | drop | not authority-relevant |
 | `get_panels` | `url_path`, `component_name`, `require_admin` (as `panel_listing_require_admin`), `show_in_sidebar`, `config.addon` (app panels only) | keep | visibility boundary; not an enforcement claim (section 4.5) |
 | `get_panels` | `title`, `icon`, `config` (other than `addon`), `default_visible`, `config_panel_domain` | drop / cap | `title` capped; other `config` may carry integration data, so drop |
-| `person/list` | everything | not read | `user_id`, `device_trackers` and `picture` are personal and location-linked; a user-to-person mapping is not needed for posture (remaining choice 1) |
+| `person/list` | everything | not read | `user_id`, `device_trackers` and `picture` are personal and location-linked; a user-to-person mapping is not needed for posture and is not provided (item 9) |
 | `auth/refresh_tokens` | everything | never sent | session ids, IPs, connection user only |
-| Supervisor `GET /addons/<slug>/info` (S, optional, separate review) | `slug`, `state`, `ingress`, `ingress_panel`, `hassio_api`, `hassio_role`, `homeassistant_api`, `auth_api`, `protected`, `full_access`, `host_network`, `privileged` (count) | candidate keep | ingress and capability posture; final field list belongs to that provider review |
+| Supervisor `GET /addons/<slug>/info` (S, optional, separate review; not in the first build, item 11) | `slug`, `state`, `ingress`, `ingress_panel`, `hassio_api`, `hassio_role`, `homeassistant_api`, `auth_api`, `protected`, `full_access`, `host_network`, `privileged` (count) | candidate keep | ingress and capability posture; final field list belongs to that provider review |
 | Supervisor `GET /addons/<slug>/info` (S) | `options` | **always drop** | can carry secrets; redacted by Supervisor for our role, dropped anyway |
 | Supervisor `GET /addons/<slug>/info` (S) | `ingress_entry`, `ingress_url`, `hostname`, `ip_address`, `devices`, `network`, descriptions, and the rest | drop | ingress URLs embed the ingress token path; network and device data are topology |
 
@@ -880,6 +894,9 @@ Further rules:
 - `auth/current_user` is sent once per call, whatever the sections, to establish
   `connection_identity` (section 2.5). `config/auth/list` is sent only when `users` is
   requested.
+- The first build sends no optional read: no `homeassistant/expose_entity/list`, no
+  `assist_satellite/get_configuration`, and no Supervisor request (Josh decision (in-session 2026-11-08),
+  item 11).
 
 ### 7.2 Output, bounded by a fixed byte cap
 
@@ -894,9 +911,10 @@ Further rules:
   - `commands`: exact Core command names used;
   - `reason_code`: from a fixed enumeration;
 - `omissions`: a fixed list naming every **X** area from section 4.8 as
-  `not_provided_by_api`, so absence is never silent;
+  `not_provided_by_api`, so absence is never silent. The session/token omission carries
+  no default values (Josh decision (in-session 2026-11-08), item 10);
 - `permission_limits`: for example `mfa.connection_user_only`,
-  `exposure.stored_true_only`, `panels.listing_not_enforcement`,
+  `panels.listing_not_enforcement`,
   `http.default_legacy_port_not_returned`;
 - `related_tools`: pointers to `ha_get_system_health` (cloud), `ha_get_entity_exposure`
   (per-entity), and `ha_get_integration` (companion apps). They are not called
@@ -934,13 +952,13 @@ Further rules:
 - No change to existing tool schemas.
 - Optional Supervisor `S` items (Core API TLS/port; own ingress projection; per-slug
   ingress metadata) are separate, optional, and need their own provider review. They
-  are not part of the Core profile.
+  are not part of the Core profile, and none is in the first build (item 11).
 
 ## 8. Signing impact
 
 | Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Signing placement |
 |---|---|---|---|---|---|
-| `core.security_metadata_read` (HAMCP-222 plan name `core.security_posture_metadata_read`; final id at build) | New (from none) | `auth/current_user` (identity corroboration and `mfa_modules` only); `config/auth/list` (projected per section 5); `http/config` (active-slot projection per section 4.6); `get_config` (URL posture fields only); `homeassistant/expose_new_entities/get`; `homeassistant/expose_entity/list` (stored-true counts only, if remaining choice 3 includes it); `assist_pipeline/pipeline/list`; `conversation/agent/list`; `get_panels` (app, effective `require_admin`, `show_in_sidebar`). The section 6 list goes in the contract's `never_sent`. New `CoreCapabilityClass` value (`ha_core_readmission/models.py:46-77`) | No signed profile admits these commands for a tool read. `get_config` is admitted only for `version` (`profiles.py:178-181`); `auth/current_user` only for the baseline contract (`profiles.py:479-488`); `config/auth/list` only as an unnamed internal approver check | New profile fingerprint. Runtime-only, like `CORE_NOVEMBER_BATCH_PROFILES` (`profiles.py:633-638`, not in `CORE_CAPABILITY_PROFILES`), so the signed probe fingerprint and all existing profile fingerprints stay byte-identical. Existing registry entries are unchanged | **Core 2026.11.0 only**, in the **one combined 2.6 signing** (one `extend-capabilities` extension of the existing 2026.11.0 entry) — Josh direction (register 2026-11-07; confirmed in-session 2026-11-08). No 10.x target. Dormant until that signing selects it |
+| `core.security_metadata_read` (HAMCP-222 plan name `core.security_posture_metadata_read`; final id at build) | New (from none) | `auth/current_user` (identity corroboration and `mfa_modules` only); `config/auth/list` (projected per section 5); `http/config` (active-slot projection per section 4.6); `get_config` (URL posture fields only); `homeassistant/expose_new_entities/get`; `assist_pipeline/pipeline/list`; `conversation/agent/list`; `get_panels` (app, effective `require_admin`, `show_in_sidebar`). The section 6 list goes in the contract's `never_sent`. `homeassistant/expose_entity/list` and `assist_satellite/get_configuration` are not admitted in the first build (Josh decision (in-session 2026-11-08), item 11). New `CoreCapabilityClass` value (`ha_core_readmission/models.py:46-77`) | No signed profile admits these commands for a tool read. `get_config` is admitted only for `version` (`profiles.py:178-181`); `auth/current_user` only for the baseline contract (`profiles.py:479-488`); `config/auth/list` only as an unnamed internal approver check | New profile fingerprint. Runtime-only, like `CORE_NOVEMBER_BATCH_PROFILES` (`profiles.py:633-638`, not in `CORE_CAPABILITY_PROFILES`), so the signed probe fingerprint and all existing profile fingerprints stay byte-identical. Existing registry entries are unchanged | **Core 2026.11.0 only**, in the **one combined 2.6 signing** (one `extend-capabilities` extension of the existing 2026.11.0 entry) — Josh direction (register 2026-11-07; confirmed in-session 2026-11-08). No 10.x target. Dormant until that signing selects it |
 
 **Deliberately unchanged:**
 
@@ -968,8 +986,10 @@ HAMCP-134 is delivered in 2.6.0 (section 1.1). This section gives slicing, not d
 3. **Slice C — Assist and panels:** sections `assist`, `panels`.
 4. **Signing:** the profile enters the single combined 2.6 signing after Slices A–C and
    their evidence are complete.
-5. **Optional Slice D:** Supervisor `S` reads, only if Josh selects them (remaining
-   choice 3), each with its own provider review.
+5. **No Slice D in 2.6.** Josh decision (in-session 2026-11-08), item 11: the first
+   build has no optional reads (no stored-true exposure counts, no satellite-to-pipeline
+   mapping, no Supervisor `S` reads). Any of them later is a separate, reviewed additive
+   change, with its own provider review where Supervisor is involved.
 
 **Required implementation evidence** (none of this has been run; it is the proof the
 build must supply):
@@ -977,8 +997,8 @@ build must supply):
 - **Exact version (finding M1).** For each admitted command, a fixture generated from
   Core 2026.11.0 source (`74cf5a49`) and disposable-lane evidence against an exact
   2026.11.0 Core: `auth/current_user`, `config/auth/list`, `http/config`, `get_config`,
-  `homeassistant/expose_new_entities/get`, `homeassistant/expose_entity/list` (if
-  included), `assist_pipeline/pipeline/list`, `conversation/agent/list`, `get_panels`.
+  `homeassistant/expose_new_entities/get`, `assist_pipeline/pipeline/list`,
+  `conversation/agent/list`, `get_panels`.
   The tool is refused before Core I/O on 2026.10.0, 2026.10.1 and 2026.10.3. The signed
   probe fingerprint, every existing profile fingerprint and every existing registry
   entry are byte-identical before and after.
@@ -1001,23 +1021,38 @@ build must supply):
   unknown identity (corroboration fails, `auth/current_user` fails, token source
   unknown) → `unknown`; `sections=["mfa"]` without `users` → identity from topology plus
   `auth/current_user` only, and `config/auth/list` is not sent.
-- **Ingress and forwarder (finding M4), only if Slice D is selected.** Per-slug
-  `GET /addons/<slug>/info` projection with `options` excluded even when the fixture
-  carries synthetic secret options; `/addons` inventory refused before I/O;
-  partial-inventory coverage (`panel_slugs_only`). Independently of Slice D:
+- **Ingress and forwarder (finding M4).** Slice D is not in 2.6 (item 11). Required
+  now: the tool makes no Supervisor request at all (spy), and `/addons` is refused
+  before I/O. The per-slug cases (`GET /addons/<slug>/info` projection with `options`
+  excluded even when the fixture carries synthetic secret options; partial-inventory
+  coverage `panel_slugs_only`) become required evidence for any later change that adds
+  that read. Independently of Slice D:
   `supervisor/api` and every `supervisor/*` / `hassio/*` type refused before Engineering
   I/O, and shown blocked by the exact Supervisor `40e3ee76` proxy (proxy-level test or
   disposable lane).
-- **Exposure (finding M5), if the count read is included.** Entities with stored true,
-  stored false and unset settings, plus non-registry (legacy) entities; correct
-  per-assistant `stored_true_count` and `partial` coverage; registries byte-unchanged
-  after the call; zero `async_should_expose` calls (spy).
+- **Exposure (finding M5).** The count read is not in the first build (item 11).
+  Required now: `homeassistant/expose_entity/list` and
+  `assist_satellite/get_configuration` are refused before I/O as non-admitted commands;
+  registries byte-unchanged after the call; zero `async_should_expose` calls (spy). The
+  stored-true cases (stored true, stored false, unset, non-registry legacy entities;
+  per-assistant `stored_true_count`; `partial` coverage) become required evidence for
+  any later change that admits the count read.
+- **Privacy (item 9).** Fixtures with synthetic user ids, names and usernames: output
+  carries only per-response ordinal pseudonyms, and the same users listed in a
+  different order get different pseudonyms (not derived from the id); trusted proxies
+  appear only as a count and the three class booleans; `person/list` is never sent;
+  MFA `enabled` appears only as `service_user_enrolled` for `supervisor_system_user` and
+  is `not_reported` for every other identity.
+- **Coverage (item 10).** `omissions` names every X area of section 4.8 with
+  `not_provided_by_api`; no session-default constant (30 min, 5 min, 90 days) appears in
+  any output field; no non-API source is read.
 - **No echo (error, audit, truncation).** A Core error result with synthetic sensitive
   text in `message`; a transport exception whose text carries a synthetic host and path;
   an over-cap response forcing truncation. In each, output, MCP error results, logs and
   audit contain only fixed reason codes, statuses and counts.
 - **Drift tests.** No tool path calls `async_should_expose`; path fields never appear;
-  `name` and `username` never appear unless remaining choice 1 selects them.
+  raw user ids, `name`, `username`, exact trusted-proxy CIDRs and person data never
+  appear (item 9).
 
 **Dependencies:**
 
@@ -1025,32 +1060,39 @@ build must supply):
   cited files, except shared registry and profile files at build time, where 2.5.0 wins.
 - HAMCP-048 is independent.
 
-## 10. Remaining choices — pending Josh
+## 10. Decided choices (formerly pending Josh)
 
 Release placement, Core target and signing batching are settled (section 1.1). The old
-OQ-1 (sign dormant in 2.6 or wait for 3.0) is closed by that direction. The other old
-questions are grouped into three decisions. The proposal in each is the conservative
-default; it is not a decision.
+OQ-1 (sign dormant in 2.6 or wait for 3.0) is closed by that direction. The three
+grouped choices of the previous revision are now decided. Nothing in this document
+remains pending Josh.
 
-1. **Privacy and detail** (old OQ-3, OQ-5, OQ-8, OQ-10). Keep per-response user
-   pseudonyms, trusted-proxy counts and classes, no user-to-person mapping, and MFA as
-   catalog plus Supervisor-service-user enrolment only? Or select more: raw Core user
-   ids and/or display names, exact trusted-proxy CIDRs, a person mapping, MFA catalog
-   only (drop service-user enrolment), or connection-user enrolment for a non-Supervisor
-   connection? Proposed: the conservative set.
-2. **Coverage** (old OQ-2, OQ-4). Accept the source-bounded omissions in section 4.8
-   (per-user MFA enrolment, per-user session/token existence, device/kiosk/satellite
-   acting user, agent LLM API and tool scope, complete add-on inventory, complete
-   effective exposure) as explicit `not_provided` omissions? Omit session defaults as
-   not observed, or report them as labelled documentary constants (30 min, 90 days,
-   5 min)? Any non-API source, such as owner-maintained documentation, is a separate
-   scope decision. Proposed: accept the omissions; omit the session defaults.
-3. **Optional reads** (old OQ-6, OQ-7, OQ-9). Include any of: stored-true exposure
-   counts (with the section 4.4 caveat); the satellite-to-pipeline mapping
-   (`assist_satellite/get_configuration`, one bounded call per satellite entity);
-   separately reviewed Supervisor reads (`/core/info`, `/addons/self/info` ingress
-   projection, per-slug `/addons/<slug>/info` for panel slugs)? Proposed: leave them
-   out of the first build.
+1. **Privacy and detail** (old OQ-3, OQ-5, OQ-8, OQ-10). **Decided: (a) conservative.**
+   Josh decision (in-session 2026-11-08), item 9. Per-response user pseudonyms;
+   trusted-proxy counts and classes; no user-to-person mapping; MFA as the module
+   catalog plus Supervisor-service-user enrolment only. Raw Core user ids, display
+   names, exact trusted-proxy CIDRs, a person mapping, and connection-user enrolment for
+   a non-Supervisor connection are not output. Sections: 4.2, 5, 9.
+2. **Coverage** (old OQ-2, OQ-4). **Decided: (a).** Josh decision (in-session 2026-11-08),
+   item 10. The source-bounded omissions in section 4.8 (per-user MFA enrolment,
+   per-user session/token existence, device/kiosk/satellite acting user, agent LLM API
+   and tool scope, complete add-on inventory, complete effective exposure) are reported
+   as explicit `not_provided` omissions. Session defaults are not reported, not even as
+   labelled pinned constants: constants are not observations. No non-API source is in
+   scope. Sections: 1.2, 4 (classification key), 4.3, 4.8, 7.2, 9.
+3. **Optional reads in the first build** (old OQ-6, OQ-7, OQ-9). **Decided: (a) none.**
+   Josh decision (in-session 2026-11-08), item 11. The first build has no stored-true
+   exposure counts, no satellite-to-pipeline mapping (`assist_satellite/get_configuration`)
+   and no Supervisor reads (`/core/info`, `/addons/self/info`, `/addons/<slug>/info`).
+   The feasibility analysis for each stays in section 4 as the record for a possible
+   later, separately reviewed additive change. Sections: 4.4, 4.6, 4.8, 5, 7.1, 7.2,
+   7.4, 8, 9, 11.
+
+**Superseded (historical).** The previous revision (head `e052cee8`) offered, for each
+group: (b) raw ids or names, (c) exact CIDRs or a person mapping, (d) MFA catalog only;
+session defaults as labelled pinned constants, or a separate non-API scope; and
+stored-true counts, the satellite mapping or Supervisor reads in the first build. None
+of these is a live choice.
 
 ## 11. Security section
 
@@ -1075,6 +1117,8 @@ default; it is not a decision.
   corroborated Supervisor connection.
 - **Accurate slot labelling.** HTTP posture is reported for the active slot only;
   configured slots are labelled as such; an unestablished active slot is `unknown`.
+- **Narrow first build.** No optional read is admitted (section 10, item 11): no
+  exposure listing, no satellite configuration read, and no Supervisor request.
 - **No fallback.** There is no fallback to ha-mcp for this tool. Delegated reads stay on
   their existing reviewed paths and profiles.
 - **Metadata visibility only.** This is not a security-policy change. Nothing here
@@ -1101,3 +1145,22 @@ Also corrected while rebinding to 2026.11.0 (not separately raised): `get_panels
 reports the effective, override-adjusted `require_admin` and `show_in_sidebar`, and
 `frontend/update_panel` joins `never_sent` (section 4.5); `get_config` absence of
 `external_url` for local-only users is `unknown`, not absent (section 4.6).
+
+## 13. Josh decisions 2026-11-08 — disposition
+
+Josh answered the remaining choices in-session on 2026-11-08 (choices file items 9-11).
+Each is recorded as "Josh decision (in-session 2026-11-08), item N".
+
+| Item | Decision | Sections changed |
+|---|---|---|
+| 9 | (a) Conservative privacy and detail: per-response user pseudonyms, trusted-proxy counts and classes, no person mapping, MFA catalog plus Supervisor service-user enrolment | 4.2 (enrolment stays withheld for other identities), 5 (`id`, `name`, `trusted_proxies`, `person/list` rows), 9 (privacy evidence; drift test), 10 |
+| 10 | (a) Source-bounded omissions are explicit `not_provided`; no session defaults | 1.2, 4 (classification key), 4.3 (defaults not reported), 4.8, 7.2 (`omissions` without values), 9 (coverage evidence), 10 |
+| 11 | (a) No optional reads in the first build | 4.4 (exposure listing and satellite read not admitted), 4.6 (Supervisor S reads not in the first build), 4.8, 5, 7.1, 7.2 (`exposure.stored_true_only` limit removed), 7.4, 8 (`homeassistant/expose_entity/list` removed from the admitted list), 9 (no Slice D; M4/M5 evidence split into required-now negatives and later-change positives), 10, 11 |
+
+**Effect on the Codex corrections (section 12).** M1 and M2 are unchanged. M3's rule
+that MFA enrolment is withheld for a non-Supervisor identity is confirmed by item 9. M4
+and M5 stay correct as feasibility findings (section 4), but item 11 removes the
+per-slug Supervisor read and the stored-true count read from the first build. Their
+positive evidence therefore becomes required only for a later change that adds them;
+the negative evidence (refusal before I/O, no Supervisor request, no
+`async_should_expose` call, `supervisor/*` and `hassio/*` refused) stays required now.
