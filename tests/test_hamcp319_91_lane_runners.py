@@ -299,7 +299,8 @@ def synthetic_plan(plan_id: str, status: str, writer: str) -> dict:
             "identity_sha256": sha(b"identity-" + plan_id.encode()),
             "content_sha256": sha(b"content-" + plan_id.encode()),
             "approval_sha256": sha(b"approval-" + status.encode() + plan_id.encode()),
-            "events": events, "provider": None, "dispatch_sha256": None, "writer_versions": [writer]}
+            "events": events, "provider": None, "dispatch_sha256": None, "writer_versions": [writer],
+            "reconcile_notification_sha256": None}
 
 
 def previous_release_entries(writer: str = runners.ROLLBACK_ENGINEERING_VERSION) -> dict:
@@ -375,7 +376,8 @@ def persisted_snapshot_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
     image = runners.PERSISTED_CASES[case][0]
     writer = runners.ROLLBACK_ENGINEERING_VERSION if image == runners.ROLLBACK_ENGINEERING_IMAGE else LANE_VERSION
     return {"status": "passed", "image": image, "mount_source": MOUNT, "writer_version": writer,
-            "seed": synthetic_seed(), "counters": dict(ZERO_COUNTERS), "entries": previous_release_entries(writer)}
+            "seed": synthetic_seed(), "counters": dict(ZERO_COUNTERS), "notification_tags": [],
+            "entries": previous_release_entries(writer)}
 
 
 def persisted_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
@@ -386,7 +388,8 @@ def persisted_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
     reader = LANE_VERSION if writer == runners.ROLLBACK_ENGINEERING_VERSION else runners.ROLLBACK_ENGINEERING_VERSION
     at_restart = restarted_entries(writer, reader, accepted=False)
     restart = {"status": "passed", "image": runners.PERSISTED_CASES[case][1], "mount_source": MOUNT,
-               "counters": dict(ZERO_COUNTERS), "entries": at_restart, "display": display_of(snapshot, at_restart)}
+               "counters": dict(ZERO_COUNTERS), "notification_tags": [], "entries": at_restart,
+               "display": display_of(snapshot, at_restart)}
     return {"snapshot": snapshot, "restart": restart, "current": restarted_entries(writer, reader),
             "mount_source": MOUNT}
 
@@ -1287,16 +1290,16 @@ _PACKAGES: dict[str, str] = {}
 _SCRATCH: list[str] = []
 
 
-def _cleanup_scratch() -> None:
+def tearDownModule() -> None:  # noqa: N802 - unittest module fixture
+    """Remove this module's scratch before the shard's scratch session checks for leaks (not at exit)."""
+
     import shutil
-    for directory in _SCRATCH:
-        shutil.rmtree(directory, ignore_errors=True)
+    while _SCRATCH:
+        shutil.rmtree(_SCRATCH.pop(), ignore_errors=True)
+    _PACKAGES.clear()
 
 
 def scratch(prefix: str) -> Path:
-    if not _SCRATCH:
-        import atexit
-        atexit.register(_cleanup_scratch)
     directory = tempfile.mkdtemp(prefix=prefix)
     _SCRATCH.append(directory)
     return Path(directory)
@@ -1358,7 +1361,8 @@ def build_transition(case: str, *, traces: bool = True) -> dict:
     before = root.parent / "before"
     shutil.copytree(root, before)
     snapshot = {"status": "passed", "image": runners.PERSISTED_CASES[case][0], "mount_source": MOUNT,
-                "writer_version": writer, "seed": seed, "counters": dict(ZERO_COUNTERS), "entries": entries}
+                "writer_version": writer, "seed": seed, "counters": dict(ZERO_COUNTERS), "notification_tags": [],
+                "entries": entries}
     prefix = runners.prefix_sizes(entries)
     at_restart = read_inventory(root, packages[reader], prefix)
     accepted = write_records(root, packages[reader], plans=[fixture_plan(FIXTURE_B)],
@@ -1367,7 +1371,7 @@ def build_transition(case: str, *, traces: bool = True) -> dict:
     current = read_inventory(root, packages[reader], prefix)
     display = display_of(snapshot, at_restart) if traces else {}
     restart = {"status": "passed", "image": runners.PERSISTED_CASES[case][1], "mount_source": MOUNT,
-               "counters": dict(ZERO_COUNTERS), "entries": at_restart, "display": display}
+               "counters": dict(ZERO_COUNTERS), "notification_tags": [], "entries": at_restart, "display": display}
     return {"root": root, "before": before, "writer": writer, "reader": reader, "prefix": prefix,
             "persisted": {"snapshot": snapshot, "restart": restart, "current": current, "mount_source": MOUNT}}
 
@@ -1576,7 +1580,8 @@ PERSISTED_MUTATIONS = {
         version=W6),
     "persisted_data_not_same_mount": lambda p: p["restart"].update(mount_source="/home/runner/work/_temp/fresh"),
     "persisted_dispatch_counters_unobserved": lambda p: p["restart"]["counters"].pop("http_mutations"),
-    "persisted_transition_redispatched": lambda p: p["restart"]["counters"].update(approval_notification_calls=1),
+    "persisted_transition_redispatched": lambda p: (p["restart"]["counters"].update(approval_notification_calls=1),
+                                                    p["restart"]["notification_tags"].append(sha(b"unattributed"))),
     "persisted_reader_not_restarted_release": lambda p: p["current"][runners.READER_KEY].update(version="2.4.2"),
     "persisted_entry_unreadable": lambda p: p["current"][PLAN_A].update(error="ValueError"),
     "persisted_audit_not_preserved": lambda p: p["current"]["audit.jsonl"].update(server_versions={W7: 2}),
@@ -2429,3 +2434,248 @@ class PersistedTransitionMutationTests(unittest.TestCase):
         mutant = _disable_every_guard("persisted_entry_unreadable")
         self.assertNotEqual(mutant.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
                             "persisted_entry_unreadable")
+
+
+# ---------------------------------------------------------------------------
+# CI on bbc36aeb: both releases re-send the advisory notification of every
+# still-active approval challenge at startup (reconcile_pending), under the
+# same tag. The only dispatch a restart may add is that, attributed by the
+# tag to a challenge both releases' own readers report active, once.
+# ---------------------------------------------------------------------------
+
+CHALLENGE_ID = "synthetic-pending-challenge"
+CHALLENGE_TAG = sha(("ha_mcp_approval_" + sha(CHALLENGE_ID.encode())[:24]).encode())
+
+# Test-local writer: puts fixture B's awaiting plan under one external-pending
+# plan-approval challenge through the given release's own model and
+# repository, binding the release's own plan hash.
+CHALLENGE_SCRIPT = r"""
+import json, os, sys
+from datetime import datetime, timedelta, timezone
+config = json.loads(sys.argv[1])
+sys.path.insert(0, config["package_root"])
+from ha_mcp_engineering.version import SERVER_VERSION
+from ha_mcp_engineering.governance.models import ApprovalState, ChangePlan
+from ha_mcp_engineering.governance.service import (APPROVAL_AUTHORITY_VERSION, APPROVAL_CHANNEL,
+                                                    ChangeGovernanceService as Service)
+from ha_mcp_engineering.governance.storage import ChangePlanRepository
+plan = ChangePlan.from_dict(config["plan"])
+now = datetime.now(timezone.utc)
+approval = plan.approval
+approval.state = ApprovalState.EXTERNAL_PENDING
+approval.bundle_state = "pending_plan_approval"
+approval.authority_version = APPROVAL_AUTHORITY_VERSION
+approval.channel = APPROVAL_CHANNEL
+approval.approval_kind = "apply"
+approval.challenge_id = config["challenge_id"]
+approval.challenge_requested_at = now.isoformat()
+approval.challenge_expires_at = (now + timedelta(seconds=config["expires_in"])).isoformat()
+approval.challenge_plan_version = plan.plan_version
+approval.challenge_target_type = plan.target_type
+approval.challenge_target_id = plan.target_id
+approval.challenge_operation = plan.operation.value
+approval.challenge_risk_level = plan.risk.level.value
+approval.bound_plan_hash = Service.plan_hash(plan)
+store = os.path.join(config["root"], "governance", "change_plans")
+os.makedirs(store, exist_ok=True)
+ChangePlanRepository(store).save(plan)
+print(json.dumps({"writer_version": SERVER_VERSION}))
+"""
+
+
+def write_challenge(root: Path, package: str, *, expires_in: int = 3600) -> str:
+    written = json.loads(run_script(CHALLENGE_SCRIPT, {"root": str(root), "package_root": package,
+                                                       "plan": awaiting_fixture_b(), "challenge_id": CHALLENGE_ID,
+                                                       "expires_in": expires_in}))
+    return written["writer_version"]
+
+
+def renotified(persisted: dict, tag: str = CHALLENGE_TAG, *, before: int = 1, snapshot_tag: str | None = None,
+               restart_tag: str | None = None, added: list | None = None) -> dict:
+    """``persisted`` after a restart that re-notified PLAN_B's pending challenge (the CI shape: 1 -> 2)."""
+
+    persisted["snapshot"]["entries"][PLAN_B]["plan"]["reconcile_notification_sha256"] = snapshot_tag or tag
+    persisted["restart"]["entries"][PLAN_B]["plan"]["reconcile_notification_sha256"] = restart_tag or tag
+    tags_before = [tag] * before
+    tags_after = tags_before + (added if added is not None else [tag])
+    persisted["snapshot"].update(counters={**ZERO_COUNTERS, "approval_notification_calls": len(tags_before)},
+                                 notification_tags=tags_before)
+    persisted["restart"].update(counters={**ZERO_COUNTERS, "approval_notification_calls": len(tags_after)},
+                                notification_tags=tags_after)
+    return persisted
+
+
+def _set(record: dict, **values) -> None:
+    record.update(values)
+
+
+# One counterexample per guard branch in reconciled_notification_problem,
+# keyed by the condition line that refuses it.
+RENOTIFICATION_COUNTEREXAMPLES = {
+    "len(tags_before) != before[NOTIFICATION_COUNTER]": (
+        "persisted_dispatch_counters_unobserved",
+        lambda p: _set(p["restart"], counters={**ZERO_COUNTERS, "approval_notification_calls": 1},
+                       notification_tags=[])),
+    "if any(before[key] != after[key] for key in DISPATCH_COUNTERS if key != NOTIFICATION_COUNTER):": (
+        "persisted_transition_redispatched",
+        lambda p: renotified(p)["restart"]["counters"].update(http_mutations=1)),
+    "if tags_after[:len(tags_before)] != tags_before:": (
+        "persisted_transition_redispatched",
+        lambda p: renotified(p)["restart"].update(notification_tags=[sha(b"rewritten"), CHALLENGE_TAG])),
+    "if len(set(added)) != len(added):": (
+        "persisted_transition_redispatched",
+        lambda p: renotified(p, added=[CHALLENGE_TAG, CHALLENGE_TAG])),
+    "if not set(added) <= active(snapshot.get(\"entries\")) & active(restart.get(\"entries\")):": (
+        "persisted_transition_redispatched",
+        lambda p: renotified(p, added=[sha(b"unattributed")])),
+}
+
+
+def _disable_condition(condition: str):
+    """The runner module with only the guard on ``condition`` (its next line returns) disabled."""
+
+    source = (ROOT / "scripts" / "exact_image_admission_91_runners.py").read_text(encoding="utf-8")
+    lines = source.splitlines()
+    hits = [index for index, line in enumerate(lines) if condition in line]
+    assert len(hits) == 1, (condition, hits)
+    index = next(i for i in range(hits[0], hits[0] + 4) if lines[i].strip().startswith("return "))
+    lines[index] = lines[index].split("return ")[0] + "pass"
+    module = type(sys)("exact_image_admission_91_runners_renotification_mutant")
+    module.__file__ = str(ROOT / "scripts" / "exact_image_admission_91_runners.py")
+    sys.modules[module.__name__] = module
+    exec(compile("\n".join(lines) + "\n", module.__file__, "exec"), module.__dict__)  # noqa: S102
+    return module
+
+
+class StartupRenotificationTests(unittest.TestCase):
+    """CI 42448416725: a pending challenge's startup re-notification is attributed, not re-dispatch."""
+
+    def test_an_attributed_startup_renotification_passes_in_both_directions(self) -> None:
+        for case in runners.PERSISTED_CASES:
+            with self.subTest(case=case):
+                persisted = renotified(persisted_ok(case))
+                self.assertIsNone(runners.persisted_data_problem(persisted, case=case))
+                summary = runners.persisted_summary(persisted, case)
+                self.assertEqual(summary["startup_renotified_challenges"], 1)
+                self.assertEqual(summary["dispatch_counters_after_restart"]["approval_notification_calls"], 2)
+                status, reason, observed = gateway_case("side_by_side", case, persisted=persisted)
+                self.assertEqual((status, reason), ("passed", ""))
+                self.assertEqual(observed["persisted_transition"]["startup_renotified_challenges"], 1)
+
+    def test_every_other_dispatch_or_unattributed_notification_still_fails(self) -> None:
+        other = sha(b"other-challenge")
+        for name, mutate, reason in (
+                ("unattributed tag", lambda p: renotified(p, added=[other]), "persisted_transition_redispatched"),
+                ("same challenge twice", lambda p: renotified(p, added=[CHALLENGE_TAG] * 2),
+                 "persisted_transition_redispatched"),
+                ("active only in the incoming view", lambda p: renotified(p, snapshot_tag=other),
+                 "persisted_transition_redispatched"),
+                ("inactive or expired after restart", lambda p: renotified(p, restart_tag=other),
+                 "persisted_transition_redispatched"),
+                ("no pending challenge at all", lambda p: renotified(p).__setitem__("restart", {
+                    **p["restart"], "entries": restarted_entries(*_versions(p), accepted=False)}),
+                 "persisted_transition_redispatched"),
+                ("notification history rewritten", lambda p: renotified(p)["restart"].update(
+                    notification_tags=[other, CHALLENGE_TAG]), "persisted_transition_redispatched"),
+                ("notification history shrank", lambda p: renotified(p, before=2, added=[])["restart"].update(
+                    counters={**ZERO_COUNTERS, "approval_notification_calls": 1},
+                    notification_tags=[CHALLENGE_TAG]), "persisted_transition_redispatched"),
+                ("HTTP mutation alongside", lambda p: renotified(p)["restart"]["counters"].update(http_mutations=1),
+                 "persisted_transition_redispatched"),
+                ("websocket mutation alongside", lambda p: renotified(p)["restart"]["counters"].update(
+                    websocket_mutations=1), "persisted_transition_redispatched"),
+                ("backup alongside", lambda p: renotified(p)["restart"]["counters"].update(
+                    operational_backup_creates=1), "persisted_transition_redispatched"),
+                ("tags missing", lambda p: renotified(p)["restart"].pop("notification_tags"),
+                 "persisted_dispatch_counters_unobserved"),
+                ("tags disagree with the count", lambda p: renotified(p)["snapshot"].update(notification_tags=[]),
+                 "persisted_dispatch_counters_unobserved"),
+                ("tag not a hash", lambda p: renotified(p)["restart"]["notification_tags"].__setitem__(1, "tag"),
+                 "persisted_dispatch_counters_unobserved")):
+            for case in runners.PERSISTED_CASES:
+                with self.subTest(name=name, case=case):
+                    persisted = persisted_ok(case)
+                    mutate(persisted)
+                    self.assertEqual(runners.persisted_data_problem(persisted, case=case), reason)
+                    self.assertEqual(gateway_case("side_by_side", case, persisted=persisted)[:2], ("failed", reason))
+
+    def test_each_renotification_guard_is_load_bearing(self) -> None:
+        for condition, (reason, mutate) in RENOTIFICATION_COUNTEREXAMPLES.items():
+            with self.subTest(guard=condition):
+                persisted = persisted_ok()
+                mutate(persisted)
+                self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE), reason)
+                mutant = _disable_condition(condition)
+                try:
+                    verdict = mutant.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE)
+                except Exception:  # noqa: BLE001 - a crashing mutant is also killed
+                    verdict = "crashed"
+                self.assertNotEqual(verdict, reason)
+
+    def test_notification_tags_come_from_the_synthetic_core_and_fail_closed(self) -> None:
+        stats = {key: [] for key in runners.DISPATCH_COUNTERS}
+        stats["approval_notification_calls"] = [{"tag_sha256": CHALLENGE_TAG}, {"tag_sha256": CHALLENGE_TAG}]
+        self.assertEqual(runners.notification_tags(stats), [CHALLENGE_TAG, CHALLENGE_TAG])
+        for broken in (None, {}, {"approval_notification_calls": {}},
+                       {"approval_notification_calls": [{}]}, {"approval_notification_calls": [{"tag_sha256": "x"}]},
+                       {"approval_notification_calls": ["tag"]}):
+            with self.subTest(broken=broken), self.assertRaises(runners.LaneFailure):
+                runners.notification_tags(broken)
+
+    def test_snapshot_and_restart_records_carry_the_notification_tags(self) -> None:
+        commands = PersistedTransitionCommandTests()
+        stats = {key: [] for key in runners.DISPATCH_COUNTERS}
+        stats["approval_notification_calls"] = [{"tag_sha256": CHALLENGE_TAG}]
+        code, value, _ = commands.run_snapshot(stats=stats)
+        self.assertEqual((code, value["status"], value["notification_tags"]), (0, "passed", [CHALLENGE_TAG]))
+        self.assertEqual(value["counters"]["approval_notification_calls"], 1)
+        code, value, _ = commands.run_snapshot(stats={**stats, "approval_notification_calls": [{"id": 1}]})
+        self.assertEqual((code, value["status"], value["reason"]), (1, "failed", "fixture_notification_tag_missing"))
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+            snapshot = Path(directory) / "snapshot.json"
+            snapshot.write_text(json.dumps(persisted_snapshot_ok()))
+            args = argparse.Namespace(engineering_container="engineering-admission-sbs",
+                                      engineering_endpoint=commands.ENDPOINT, persisted_snapshot=str(snapshot),
+                                      fixture_stats_url="http://127.0.0.1:18123/__stats",
+                                      output=str(Path(directory) / "restart.json"))
+            runners.command_persisted_restart(
+                args, inventory=lambda c, prefix: {"x": 1}, mount=lambda _c: MOUNT,
+                image=lambda _c: runners.LANE_ENGINEERING_IMAGE, stats=lambda _url: stats,
+                display=lambda endpoint, value: {"plans": {}})
+            value = json.loads(Path(args.output).read_text())
+            self.assertEqual((value["status"], value["notification_tags"]), ("passed", [CHALLENGE_TAG]))
+
+    def test_each_release_reports_the_challenge_its_startup_reconciles(self) -> None:
+        """Real writers put a pending challenge on disk; each release's own predicate names its tag, both ways."""
+
+        packages = release_packages()
+        for writer in (W6, W7):
+            for expires_in, expected in ((3600, CHALLENGE_TAG), (-60, None)):
+                root = scratch("hamcp319-challenge-") / "data"
+                root.mkdir()
+                self.assertEqual(write_challenge(root, packages[writer], expires_in=expires_in), writer)
+                for reader in (W6, W7):
+                    with self.subTest(writer=writer, reader=reader, expires_in=expires_in):
+                        entries = read_inventory(root, packages[reader])
+                        self.assertEqual(entries[runners.READER_KEY]["version"], reader)
+                        plan = entries[REAL_PLAN_B]["plan"]
+                        self.assertEqual((plan["status"], plan["reconcile_notification_sha256"]),
+                                         ("awaiting_approval", expected))
+
+    def test_a_challenge_on_another_plan_hash_is_not_reconciled(self) -> None:
+        packages = release_packages()
+        root = scratch("hamcp319-challenge-") / "data"
+        root.mkdir()
+        write_challenge(root, packages[W7])
+        path = root / "governance" / "change_plans" / "b2000000000000000000000000000001.json"
+        rewrite_json(path, lambda value: value["approval"].update(bound_plan_hash=sha(b"other plan")))
+        for reader in (W6, W7):
+            with self.subTest(reader=reader):
+                plan = read_inventory(root, packages[reader])[REAL_PLAN_B]
+                self.assertIsNone(plan["plan"]["reconcile_notification_sha256"])
+
+
+def _versions(persisted: dict) -> tuple[str, str]:
+    writer = persisted["snapshot"]["writer_version"]
+    return writer, (LANE_VERSION if writer == runners.ROLLBACK_ENGINEERING_VERSION
+                    else runners.ROLLBACK_ENGINEERING_VERSION)

@@ -119,6 +119,7 @@ ENGINEERING_OPTIONS = {
 }
 ENGINEERING_CONTAINER = re.compile(r"engineering-admission-[a-z0-9-]{1,40}")
 PEER_REQUEST = re.compile(r'"POST (?P<path>/[^ "]*) HTTP/1\.[01]" (?P<status>\d{3})')
+SHA256 = re.compile(r"[0-9a-f]{64}")
 
 EXPECTATIONS = {
     "admitted_strict_91": ("91_only", "91_strict_admission_positive"),
@@ -185,12 +186,34 @@ import hashlib, json, os, re, sys
 config = json.loads(sys.argv[1])
 sys.path.insert(0, config["package_root"])
 from ha_mcp_engineering.version import SERVER_VERSION
+from datetime import datetime, timezone
 from ha_mcp_engineering.governance.models import ChangePlan
+from ha_mcp_engineering.governance.service import ChangeGovernanceService as Service
+from ha_mcp_engineering.governance import approval_notifications as notices
 from ha_mcp_engineering.governance.task_models import ExecutionTask
 from ha_mcp_engineering.trace_snapshots.store import TraceSnapshotStore
 from ha_mcp_engineering.tools.compatibility import _parsed_audit_record
 root, prefix = config["root"], config["prefix"]
 plan_file, task_file = re.compile(config["plan_file"]), re.compile(config["task_file"])
+
+class _Clock:
+    # Just what the release's own active-challenge predicate reads from the service.
+    _active_challenge_projection = staticmethod(Service._active_challenge_projection)
+    def now(self):
+        return datetime.now(timezone.utc)
+    def _challenge_has_expired(self, plan):
+        return Service._challenge_has_expired(self, plan)
+
+def reconcile_notification(plan):
+    # The tag this release's startup reconciliation notifies for the plan, or
+    # None: pending_external_reviews keeps plans whose active challenge
+    # matches, reconcile_pending enqueues a notify for each notified action.
+    action, challenge_id = Service._active_challenge_projection(plan)[:2]
+    if (not isinstance(challenge_id, str) or action not in notices._NOTIFIED_ACTIONS
+            or not Service._active_challenge_matches(_Clock(), plan, Service.plan_hash(plan))):
+        return None
+    key = notices.ApprovalNotificationManager._notification_key(challenge_id[:256])
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -243,6 +266,7 @@ def plan_summary(key, data):
         "events": [[str(event.get("event")), digest(event)] for event in events],
         "provider": None if operational is None else operational.provider,
         "dispatch_sha256": None if operational is None else digest(operational.dispatch),
+        "reconcile_notification_sha256": reconcile_notification(plan),
         "writer_versions": (sorted(request_writers.get(created[0], ()))
                             if len(created) == 1 and isinstance(created[0], str) else []),
     }
@@ -574,6 +598,53 @@ def dispatch_counters(stats: Any) -> dict[str, int]:
     return counts
 
 
+# Both releases re-send the advisory notification of each still-active approval
+# challenge at startup (ApprovalNotificationManager.reconcile_pending, "Replace
+# notifications for active persisted challenges after restart"), under the same
+# tag, so the device replaces it. That is the only dispatch a restart may add.
+NOTIFICATION_COUNTER = "approval_notification_calls"
+
+
+def notification_tags(stats: Any) -> list[str]:
+    """The tag hash of every approval notification the synthetic Core recorded, in order."""
+
+    if not isinstance(stats, dict) or not isinstance(stats.get(NOTIFICATION_COUNTER), list):
+        raise LaneFailure("fixture_dispatch_counter_missing")
+    tags = [call.get("tag_sha256") if isinstance(call, dict) else None for call in stats[NOTIFICATION_COUNTER]]
+    if not all(isinstance(tag, str) and SHA256.fullmatch(tag) is not None for tag in tags):
+        raise LaneFailure("fixture_notification_tag_missing")
+    return tags
+
+
+def reconciled_notification_problem(snapshot: dict[str, Any], restart: dict[str, Any]) -> str | None:
+    """Every dispatch the restart added is one startup re-notification of a challenge active on both sides."""
+
+    before, after = snapshot.get("counters"), restart.get("counters")
+    tags_before, tags_after = snapshot.get("notification_tags"), restart.get("notification_tags")
+    if (not isinstance(tags_before, list) or not isinstance(tags_after, list)
+            or len(tags_before) != before[NOTIFICATION_COUNTER] or len(tags_after) != after[NOTIFICATION_COUNTER]
+            or not all(isinstance(tag, str) and SHA256.fullmatch(tag) for tag in (*tags_before, *tags_after))):
+        return "persisted_dispatch_counters_unobserved"
+    if any(before[key] != after[key] for key in DISPATCH_COUNTERS if key != NOTIFICATION_COUNTER):
+        return "persisted_transition_redispatched"
+    if tags_after[:len(tags_before)] != tags_before:
+        return "persisted_transition_redispatched"
+    added = tags_after[len(tags_before):]
+
+    def active(entries: Any) -> set[str]:
+        return {entry["plan"]["reconcile_notification_sha256"] for entry in (entries or {}).values()
+                if isinstance(entry, dict) and isinstance(entry.get("plan"), dict)
+                and isinstance(entry["plan"].get("reconcile_notification_sha256"), str)}
+
+    # At most one re-notification per challenge, and only for challenges both
+    # releases' own readers report active (the tag names the challenge).
+    if len(set(added)) != len(added):
+        return "persisted_transition_redispatched"
+    if not set(added) <= active(snapshot.get("entries")) & active(restart.get("entries")):
+        return "persisted_transition_redispatched"
+    return None
+
+
 def _stem(path: str) -> str:
     return path.rsplit("/", 1)[-1][:-len(".json")]
 
@@ -844,8 +915,9 @@ def persisted_data_problem(persisted: Any, *, case: str) -> str | None:
             or sorted(before) != sorted(DISPATCH_COUNTERS) or sorted(after) != sorted(DISPATCH_COUNTERS)
             or not all(type(value) is int for value in (*before.values(), *after.values()))):
         return "persisted_dispatch_counters_unobserved"
-    if before != after:
-        return "persisted_transition_redispatched"
+    problem = reconciled_notification_problem(snapshot, restart)
+    if problem is not None:
+        return problem
     for current in (restart.get("entries"), persisted.get("current")):
         problem = persisted_entries_problem(entries, current, to_version)
         if problem is not None:
@@ -871,6 +943,8 @@ def persisted_summary(persisted: dict[str, Any], case: str) -> dict[str, Any]:
         "written_trace_records": len(entries[PERSISTED_TRACE_INDEX]["trace"]["snapshots"]),
         "seed": snapshot["seed"],
         "dispatch_counters": snapshot["counters"],
+        "dispatch_counters_after_restart": restart["counters"],
+        "startup_renotified_challenges": len(restart["notification_tags"]) - len(snapshot["notification_tags"]),
         "plan_status_transitions": {_stem(path): [entries[path]["plan"]["status"],
                                                   current[path]["plan"]["status"]]
                                     for path in plans
@@ -1610,7 +1684,8 @@ def command_persisted_snapshot(args: argparse.Namespace,
         require(task.get("writer_version") == args.expected_engineering_version,
                 "persisted_writer_version_mismatch")
         require(task.get("task_state") == TASK_STATE_CANCELLED, "persisted_seed_task_not_terminal")
-        counters = dispatch_counters(stats(args.fixture_stats_url))
+        observed = stats(args.fixture_stats_url)
+        counters, tags = dispatch_counters(observed), notification_tags(observed)
         entries = inventory(args.engineering_container, {})
         seed = {"task_id": task.get("task_id"), "plan_id": task.get("plan_id"), "snapshot_id": snapshot_id,
                 "automation_id": args.seed_automation}
@@ -1618,7 +1693,7 @@ def command_persisted_snapshot(args: argparse.Namespace,
         require(problem is None, problem or "")
         result.update(status="passed", image=observed_image, mount_source=source,
                       writer_version=args.expected_engineering_version, seed=seed, counters=counters,
-                      entries=entries)
+                      notification_tags=tags, entries=entries)
     except LaneFailure as error:
         result["reason"] = str(error)
     except Exception as error:  # noqa: BLE001 - any observation failure fails closed
@@ -1647,12 +1722,13 @@ def command_persisted_restart(args: argparse.Namespace,
     display = display or persisted_display
     result: dict[str, Any] = {"status": "failed", "container": args.engineering_container}
     try:
-        counters = dispatch_counters(stats(args.fixture_stats_url))
+        observed = stats(args.fixture_stats_url)
+        counters, tags = dispatch_counters(observed), notification_tags(observed)
         snapshot = load_identity(args.persisted_snapshot)
         require(isinstance(snapshot, dict) and snapshot.get("status") == "passed"
                 and isinstance(snapshot.get("entries"), dict), "persisted_snapshot_not_previous_release")
         result.update(image=image(args.engineering_container), mount_source=mount(args.engineering_container),
-                      counters=counters,
+                      counters=counters, notification_tags=tags,
                       entries=inventory(args.engineering_container, prefix_sizes(snapshot["entries"])))
         result.update(display=display(args.engineering_endpoint, snapshot), status="passed")
     except LaneFailure as error:
