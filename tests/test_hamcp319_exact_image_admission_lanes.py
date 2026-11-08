@@ -9,8 +9,10 @@ or reads a live system; image identity uses an injected command runner.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 from pathlib import Path
 import re
@@ -18,6 +20,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import yaml
 
@@ -570,14 +573,11 @@ class CaseRunnerTests(unittest.TestCase):
         with self.assertRaises(LANES.LaneFailure) as caught:
             LANES.evaluate_fail_closed([(0, "")] * 5, (503, "{}"), None)
         self.assertEqual(str(caught.exception), "fail_closed_engineering_never_answered")
-        ready = [(503, "{}"), (200, "{}")]
-        observed = LANES.evaluate_fail_closed(ready, None, {"names": ["get_server_health"],
-                                                            "health_text": '{"admission_status":"unavailable"}'})
-        self.assertEqual(observed["path"], "ready_without_delegated_reads")
-        with self.assertRaises(LANES.LaneFailure):
-            LANES.evaluate_fail_closed(ready, None, {"names": ["ha_get_state"], "health_text": ""})
-        with self.assertRaises(LANES.LaneFailure):
-            LANES.evaluate_fail_closed(ready, None, {"names": [], "health_text": '"admitted_exact"'})
+        # The ready path needs a catalog; its full contract (#404 F1) is in
+        # RollbackReadyPathTests below.
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            LANES.evaluate_fail_closed([(503, "{}"), (200, "{}")], None, None)
+        self.assertEqual(str(caught.exception), "fail_closed_ready_without_catalog")
 
     def test_record_wraps_existing_acceptance_result(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -644,6 +644,318 @@ class CaseRunnerTests(unittest.TestCase):
             self.assertEqual((value["status"], value["reason"]), ("failed", "identity_peer_absent"))
             args.peers = json.dumps({"baseline": row})
             self.assertEqual(LANES.command_identity(args, runner()), 0)
+
+
+ROLLBACK_CASE = "85_strict_full_engineering_fails_closed"
+STRICT_URL = "http://127.0.0.1:18086/synthetic-upstream-secret/catalog/full"
+READY = [(503, "{}"), (200, "{}")]
+
+
+def gateway_health(*, failure=None, mutate=None, dynamic=0):
+    """A real ``get_server_health`` envelope around the real gateway projection.
+
+    ``failure`` drives the gateway's own disable-delegation path; ``mutate``
+    edits the decoded ``data`` to build each bad observation.
+    """
+
+    from ha_mcp_engineering.models.responses import SuccessResponse
+    from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+
+    gateway = UpstreamReadGateway()
+    if failure:
+        gateway._record_failure(failure, disable_delegation=True)
+    data = {"upstream_read_gateway": gateway.health_projection(), "dynamic_upstream_tool_count": dynamic}
+    if mutate:
+        mutate(data)
+    return SuccessResponse(operation="get_server_health", summary="Returned safe beta operational health.",
+                           data=data).to_json()
+
+
+def set_gateway(**fields):
+    return lambda data: data["upstream_read_gateway"].update(fields)
+
+
+class FakeSession:
+    """``tools/list`` pages behind cursors, for the bounded catalog reader."""
+
+    def __init__(self, pages, cursors):
+        self.pages, self.cursors, self.requested = pages, cursors, []
+
+    async def list_tools(self, cursor=None, *, params=None):
+        assert cursor is None, "the deprecated positional cursor is never used"
+        requested = params.cursor if params is not None else None
+        self.requested.append(requested)
+        index = 0 if requested is None else int(requested.removeprefix("p"))
+        tools = [LANES.argparse.Namespace(name=name) for name in self.pages[index % len(self.pages)]]
+        return LANES.argparse.Namespace(tools=tools, nextCursor=self.cursors(index))
+
+
+class RollbackReadyPathTests(unittest.TestCase):
+    """#404 F1: the strict-full rollback probe needs positive fail-closed evidence.
+
+    Each bad observation fails the probe, the case writer, the manifest writer
+    (``FAIL``) and the aggregate gate (``85_only`` NOT ACCEPTED). The two
+    supported success paths stay accepted.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.static = LANES.engineering_static_tool_names()
+        cls.matrix = current_matrix()
+        cls.rows = {(r["configuration"], r["architecture"]): r for r in cls.matrix["include"]}
+        policy = json.loads((ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/"
+                             "upstream_tool_policy_8_5_0.json").read_text(encoding="utf-8"))
+        cls.policy_85_names = sorted({tool["exposed_name"] for tool in policy["tools"]})
+
+    def catalog(self, *, pages=None, complete=True, is_error=False, health=None):
+        return {"pages": [sorted(self.static)] if pages is None else pages, "catalog_complete": complete,
+                "health_is_error": is_error, "health_text": gateway_health() if health is None else health}
+
+    def refused(self, catalog, category, static=None):
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            LANES.evaluate_fail_closed(READY, None, catalog, self.static if static is None else static)
+        self.assertEqual(str(caught.exception), category)
+
+    # -- probe level ---------------------------------------------------------
+
+    def test_valid_unadmitted_health_and_exact_empty_delegated_set_passes(self):
+        for failure in (None, "invalid_response", "http_error"):
+            observed = LANES.evaluate_fail_closed(READY, None, self.catalog(health=gateway_health(failure=failure)),
+                                                  self.static)
+            self.assertEqual(observed["path"], "ready_without_delegated_reads")
+            self.assertEqual(observed["delegated_read_count"], 0)
+            self.assertIn(observed["admission_status"], LANES.UNADMITTED_STATUSES)
+        # Static names spread over several complete pages are one catalog.
+        names = sorted(self.static)
+        observed = LANES.evaluate_fail_closed(READY, None, self.catalog(pages=[names[:40], names[40:]]), self.static)
+        self.assertEqual(observed["catalog_pages"], 2)
+
+    def test_never_ready_with_authenticated_refusal_still_passes(self):
+        observed = LANES.evaluate_fail_closed([(503, "{}")] * 3, (503, "{}"), None)
+        self.assertEqual(observed["path"], "never_ready")
+
+    def test_expected_delegated_set_is_empty_and_static_catalog_is_source_frozen(self):
+        self.assertEqual(LANES.ROLLBACK_EXPECTED_DELEGATED_READS, frozenset())
+        self.assertIn("get_server_health", self.static)
+        # Every 8.5.0 upstream name is outside the frozen static catalog, so
+        # exposing any of them is a delegated read.
+        self.assertTrue(self.policy_85_names)
+        self.assertFalse(set(self.policy_85_names) & self.static)
+
+    def test_extra_delegated_read_other_than_ha_get_state_fails(self):
+        self.refused(self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]),
+                     "fail_closed_delegated_read_exposed")
+        for name in self.policy_85_names:
+            with self.subTest(name=name):
+                self.refused(self.catalog(pages=[sorted(self.static) + [name]]), "fail_closed_delegated_read_exposed")
+        # Any non-static name is unexpected, whatever it is called.
+        self.refused(self.catalog(pages=[sorted(self.static) + ["synthetic_unknown_tool"]]),
+                     "fail_closed_delegated_read_exposed")
+
+    def test_missing_expected_delegated_read_fails(self):
+        # The rollback expected set is empty; the comparison is still exact in
+        # both directions, so a non-empty expectation that is absent fails.
+        with unittest.mock.patch.object(LANES, "ROLLBACK_EXPECTED_DELEGATED_READS", frozenset({"ha_get_state"})):
+            self.refused(self.catalog(), "fail_closed_expected_delegated_read_missing")
+            observed = LANES.evaluate_fail_closed(
+                READY, None, self.catalog(pages=[sorted(self.static) + ["ha_get_state"]]), self.static)
+            self.assertEqual(observed["delegated_read_count"], 1)
+
+    def test_delegated_read_on_later_catalog_page_fails(self):
+        self.refused(self.catalog(pages=[sorted(self.static), ["ha_get_history"]]),
+                     "fail_closed_delegated_read_exposed")
+        session = FakeSession([sorted(self.static), ["ha_get_history"]], lambda i: "p1" if i == 0 else None)
+        collected = LANES.asyncio.run(LANES.collect_catalog(session))
+        self.assertEqual(session.requested, [None, "p1"])
+        self.assertTrue(collected["catalog_complete"])
+        self.refused({**self.catalog(), **collected}, "fail_closed_delegated_read_exposed")
+
+    def test_incomplete_or_malformed_catalog_fails(self):
+        self.refused(self.catalog(complete=False), "fail_closed_catalog_incomplete")
+        self.refused({k: v for k, v in self.catalog().items() if k != "catalog_complete"},
+                     "fail_closed_catalog_incomplete")
+        # A cursor that repeats, or pages past the bound, never completes.
+        looping = FakeSession([sorted(self.static)], lambda i: "p0")
+        collected = LANES.asyncio.run(LANES.collect_catalog(looping))
+        self.assertFalse(collected["catalog_complete"])
+        self.refused({**self.catalog(), **collected}, "fail_closed_catalog_incomplete")
+        endless = FakeSession([sorted(self.static), []], lambda i: f"p{i + 1}")
+        collected = LANES.asyncio.run(LANES.collect_catalog(endless))
+        self.assertEqual(len(collected["pages"]), LANES.MAX_CATALOG_PAGES)
+        self.assertFalse(collected["catalog_complete"])
+        self.refused({**self.catalog(), **collected}, "fail_closed_catalog_incomplete")
+        self.refused(self.catalog(pages=[["x"]] * (LANES.MAX_CATALOG_PAGES + 1)), "fail_closed_catalog_incomplete")
+        self.refused(self.catalog(pages=[sorted(self.static) + [f"t{i}" for i in range(LANES.MAX_CATALOG_TOOLS)]]),
+                     "fail_closed_catalog_incomplete")
+        self.refused(self.catalog(pages=[]), "fail_closed_catalog_malformed")
+        self.refused(self.catalog(pages=[sorted(self.static), None]), "fail_closed_catalog_malformed")
+        self.refused(self.catalog(pages=[sorted(self.static) + [7]]), "fail_closed_catalog_malformed")
+        self.refused(self.catalog(pages=[sorted(self.static), ["get_server_health"]]),
+                     "fail_closed_catalog_duplicate_name")
+        for static in (None, frozenset(), set(self.static)):
+            with self.assertRaises(LANES.LaneFailure) as caught:
+                LANES.evaluate_fail_closed(READY, None, self.catalog(), static)
+            self.assertEqual(str(caught.exception), "fail_closed_static_catalog_unknown")
+
+    def test_missing_health_fails(self):
+        self.refused(self.catalog(health=""), "fail_closed_health_missing")
+        self.refused(self.catalog(health="  \n"), "fail_closed_health_missing")
+        self.refused({k: v for k, v in self.catalog().items() if k != "health_text"}, "fail_closed_health_missing")
+
+    def test_errored_health_fails(self):
+        from ha_mcp_engineering.models.responses import FailureResponse
+
+        self.refused(self.catalog(is_error=True), "fail_closed_health_error")
+        self.refused(self.catalog(is_error=True, health="Error executing tool get_server_health: boom"),
+                     "fail_closed_health_error")
+        self.refused({k: v for k, v in self.catalog().items() if k != "health_is_error"}, "fail_closed_health_error")
+        failure = FailureResponse(operation="get_server_health", error="RuntimeError", error_code="internal_error",
+                                  message="synthetic failure").to_json()
+        self.refused(self.catalog(health=failure), "fail_closed_health_error")
+        envelope = json.loads(gateway_health())
+        envelope["error_code"] = "internal_error"
+        self.refused(self.catalog(health=json.dumps(envelope)), "fail_closed_health_error")
+
+    def test_malformed_health_fails(self):
+        envelope = json.loads(gateway_health())
+        for text in ("not json", "[]", '"admission unavailable"',
+                     json.dumps({**envelope, "operation": "list_capabilities"}),
+                     json.dumps({k: v for k, v in envelope.items() if k != "data"}),
+                     gateway_health(mutate=lambda d: d.pop("upstream_read_gateway")),
+                     gateway_health(mutate=lambda d: d.update(upstream_read_gateway="unavailable")),
+                     gateway_health(mutate=set_gateway(dynamically_exposed_count="0")),
+                     gateway_health(mutate=set_gateway(dynamically_exposed_count=False)),
+                     gateway_health(mutate=lambda d: d.pop("dynamic_upstream_tool_count"))):
+            with self.subTest(text=text[:60]):
+                self.refused(self.catalog(health=text), "fail_closed_health_malformed")
+
+    def test_admitted_health_fails(self):
+        for status in ("admitted_exact", "partially_admitted"):
+            self.refused(self.catalog(health=gateway_health(mutate=set_gateway(admission_status=status))),
+                         "fail_closed_gateway_admitted")
+
+    def test_unadmission_must_be_positively_established(self):
+        # No admitted marker is not evidence: a missing, unknown or
+        # unconfigured status, or anything exposed, fails.
+        unconfigured = {"configured": False, "initialized": False, "generic_delegation_available": False,
+                        "dynamically_exposed_count": 0, "writes_allowed": False, "direct_ha_fallback_allowed": False}
+        for health, category in (
+                (gateway_health(mutate=lambda d: d["upstream_read_gateway"].pop("admission_status")),
+                 "fail_closed_gateway_unadmission_unproven"),
+                (gateway_health(mutate=set_gateway(admission_status="not_evaluated")),
+                 "fail_closed_gateway_unadmission_unproven"),
+                (gateway_health(mutate=lambda d: d.update(upstream_read_gateway=unconfigured)),
+                 "fail_closed_gateway_unadmission_unproven"),
+                (gateway_health(mutate=set_gateway(dynamically_exposed_count=1)), "fail_closed_gateway_exposes_reads"),
+                (gateway_health(dynamic=1), "fail_closed_gateway_exposes_reads"),
+                (gateway_health(mutate=set_gateway(generic_delegation_available=True)),
+                 "fail_closed_gateway_exposes_reads"),
+                (gateway_health(mutate=lambda d: d["upstream_read_gateway"].pop("generic_delegation_available")),
+                 "fail_closed_gateway_exposes_reads")):
+            with self.subTest(category=category):
+                self.refused(self.catalog(health=health), category)
+
+    # -- case writer, manifest writer and aggregate gate ---------------------
+
+    def run_case(self, directory, *, ready_status=200, catalog=None, session=(503, "{}")):
+        cases = directory / "cases"
+        cases.mkdir(exist_ok=True)
+        args = LANES.argparse.Namespace(case=ROLLBACK_CASE, configured_url=STRICT_URL, form="strict_full",
+                                        ready_url="http://127.0.0.1:18200/ready",
+                                        engineering_endpoint="http://127.0.0.1:18200/synthetic-access/mcp",
+                                        observe_seconds=0.0, output=str(cases / f"{ROLLBACK_CASE}.json"))
+
+        async def fake_catalog(url):
+            return copy.deepcopy(catalog)
+
+        patch = unittest.mock.patch.object
+        with patch(LANES, "http_get", lambda url: (ready_status, "{}")), \
+                patch(LANES, "http_post_initialize", lambda url: session), \
+                patch(LANES, "engineering_catalog", fake_catalog), \
+                patch(LANES, "engineering_static_tool_names", lambda: self.static):
+            code = LANES.command_fail_closed(args)
+        return code, json.loads((cases / f"{ROLLBACK_CASE}.json").read_text())
+
+    def propagate(self, directory):
+        """Write the amd64 manifest around the case result, then gate all six lanes."""
+
+        row = self.rows["85_only", "amd64"]
+        for name, value in passing_results(row).items():
+            if name != ROLLBACK_CASE:
+                LANES.write_json(directory / "cases" / f"{name}.json", value)
+        manifests = directory / "manifests"
+        writer = LANES.main(["write-manifest", "--row", json.dumps(row), "--engineering-commit", COMMIT,
+                             "--cases-dir", str(directory / "cases"),
+                             "--output", str(manifests / "85_only-amd64.json")])
+        for other in manifests_for(self.matrix):
+            if (other["configuration"], other["architecture"]) != ("85_only", "amd64"):
+                LANES.write_json(manifests / f"{other['configuration']}-{other['architecture']}.json", other)
+        gate = LANES.main(["gate", "--manifests-dir", str(manifests), "--admission-matrix", json.dumps(self.matrix),
+                           "--engineering-commit", COMMIT, "--output", str(directory / "gate.json")])
+        manifest = json.loads((manifests / "85_only-amd64.json").read_text())
+        return writer, manifest, gate, json.loads((directory / "gate.json").read_text())
+
+    def assert_propagates_failure(self, category, **observation):
+        with tempfile.TemporaryDirectory() as raw, contextlib.redirect_stdout(io.StringIO()):
+            directory = Path(raw)
+            code, case = self.run_case(directory, **observation)
+            self.assertEqual((code, case["status"], case["reason"]), (1, "failed", category))
+            writer, manifest, gate, summary = self.propagate(directory)
+        self.assertEqual((writer, manifest["result"]), (1, "FAIL"))
+        self.assertEqual(gate, 1)
+        self.assertEqual(summary["result"], "FAIL")
+        self.assertEqual(summary["acceptance"]["85_only"], "NOT ACCEPTED")
+        self.assertTrue(any("85_only amd64" in error and ROLLBACK_CASE in error for error in summary["errors"]))
+
+    def test_success_paths_pass_writer_and_gate(self):
+        for observation in ({"catalog": self.catalog()},
+                            {"catalog": self.catalog(health=gateway_health(failure="invalid_response"))},
+                            {"ready_status": 503, "session": (503, "{}")}):
+            with self.subTest(observation=sorted(observation)), tempfile.TemporaryDirectory() as raw, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                directory = Path(raw)
+                code, case = self.run_case(directory, **observation)
+                self.assertEqual((code, case["status"]), (0, "passed"), case)
+                writer, manifest, gate, summary = self.propagate(directory)
+                self.assertEqual((writer, manifest["result"], gate, summary["errors"]), (0, "PASS", 0, []))
+                self.assertEqual(summary["acceptance"]["85_only"], "ACCEPTED")
+
+    def test_extra_delegated_read_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_delegated_read_exposed",
+                                       catalog=self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]))
+
+    def test_later_page_delegated_read_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_delegated_read_exposed",
+                                       catalog=self.catalog(pages=[sorted(self.static), ["ha_get_history"]]))
+
+    def test_incomplete_catalog_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_catalog_incomplete", catalog=self.catalog(complete=False))
+
+    def test_missing_expected_read_fails_writer_and_gate(self):
+        with unittest.mock.patch.object(LANES, "ROLLBACK_EXPECTED_DELEGATED_READS", frozenset({"ha_get_state"})):
+            self.assert_propagates_failure("fail_closed_expected_delegated_read_missing", catalog=self.catalog())
+
+    def test_missing_health_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_health_missing", catalog=self.catalog(health=""))
+
+    def test_errored_health_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_health_error",
+                                       catalog=self.catalog(is_error=True, health="Error executing tool"))
+
+    def test_malformed_health_fails_writer_and_gate(self):
+        self.assert_propagates_failure("fail_closed_health_malformed", catalog=self.catalog(health="not json"))
+
+    def test_admitted_health_fails_writer_and_gate(self):
+        self.assert_propagates_failure(
+            "fail_closed_gateway_admitted",
+            catalog=self.catalog(health=gateway_health(mutate=set_gateway(admission_status="admitted_exact"))))
+
+    def test_codex_reproduction_fails_writer_and_gate(self):
+        # #404 F1 reproduction: readiness 200, ha_get_history exposed, health
+        # reporting unavailable. It no longer certifies fail-closed.
+        self.assert_propagates_failure(
+            "fail_closed_delegated_read_exposed",
+            catalog=self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]))
 
 
 class WorkflowWiringTests(unittest.TestCase):
