@@ -1414,5 +1414,500 @@ class FailClosedPreservationTests(unittest.TestCase):
         self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
 
 
+
+HIGH_ENTITIES = (
+    LOCK,
+    "cover.synthetic_garage",
+    "alarm_control_panel.synthetic_home",
+)
+CARD = f"{GLANCE_CARDS}/0"
+
+
+class EffectiveDefaultActionTests(_PlanOnlyHarness):
+    """HAMCP-337 F1 residual (Codex delta review of 0397095a).
+
+    Each shape follows the pinned frontend's effective default and fallback
+    rules (frontend a67b691a, pinned by Core 2026.11.0) instead of a
+    key-presence approximation.  At 0397095a every positive below planned
+    with high count 0.
+    """
+
+    async def plan_card(self, card: dict):
+        return await self.plan(background_dashboard(0), insert_cards([card]))
+
+    async def assert_high_at(self, card: dict, path: str) -> None:
+        created, stored, update = await self.plan_card(card)
+        self.assertIn("high_consequence_action", self.changed_at(update, path))
+        self.assertGreaterEqual(update["risk"]["high_consequence_action_count"], 1)
+        self.assert_elevated(created, stored, update)
+        self.assertIn("high_consequence_action", self.flags(update))
+
+    async def assert_no_high(self, card: dict) -> dict:
+        created, stored, update = await self.plan_card(card)
+        self.assertEqual(update["risk"]["high_consequence_action_count"], 0)
+        self.assertNotIn(
+            "high_consequence_action",
+            {finding["category"] for finding in update["risk"]["findings"]},
+        )
+        return update
+
+    async def fresh(self) -> None:
+        await self.asyncTearDown()
+        await self.asyncSetUp()
+
+    async def test_header_footer_hold_or_double_tap_keeps_default_tap_toggle(self):
+        # hui-buttons-header-footer.ts merges {tap_action: toggle,
+        # hold_action: more-info, ...chip}: only a chip's own tap_action
+        # replaces the default tap.
+        overrides = (
+            {"hold_action": {"action": "more-info"}},
+            {"double_tap_action": {"action": "none"}},
+            {"hold_action": {"action": "none"}, "double_tap_action": {"action": "more-info"}},
+        )
+        for slot in ("header", "footer"):
+            for entity in HIGH_ENTITIES:
+                for extra in overrides:
+                    with self.subTest(slot=slot, entity=entity, extra=json.dumps(extra)):
+                        await self.fresh()
+                        await self.assert_high_at(
+                            {
+                                "type": "entities",
+                                "entities": [],
+                                slot: {
+                                    "type": "buttons",
+                                    "entities": [{"entity": entity, **extra}],
+                                },
+                            },
+                            f"{CARD}/{slot}/entities/0",
+                        )
+
+    async def test_header_footer_explicit_tap_override_is_preserved(self):
+        for tap in ({"action": "more-info"}, {"action": "none"}):
+            with self.subTest(tap=json.dumps(tap)):
+                await self.fresh()
+                update = await self.assert_no_high(
+                    {
+                        "type": "entities",
+                        "entities": [],
+                        "footer": {
+                            "type": "buttons",
+                            "entities": [
+                                {
+                                    "entity": LOCK,
+                                    "tap_action": tap,
+                                    "hold_action": {"action": "more-info"},
+                                }
+                            ],
+                        },
+                    }
+                )
+                self.assertEqual(update["risk"]["disposition"], "standard_review")
+
+    async def test_service_row_uses_the_falsy_action_fallback(self):
+        # hui-call-service-row.ts: perform_action = action || service.
+        for unused in (None, "", False, 0):
+            with self.subTest(action=json.dumps(unused)):
+                await self.fresh()
+                await self.assert_high_at(
+                    {
+                        "type": "entities",
+                        "entities": [
+                            {
+                                "type": "call-service",
+                                "name": "Synthetic unlock",
+                                "action": unused,
+                                "service": "lock.unlock",
+                            }
+                        ],
+                    },
+                    f"{CARD}/entities/0/service",
+                )
+
+    async def test_service_row_explicit_tap_override_is_preserved(self):
+        # The row's own tap_action is spread over the synthesized one.
+        for tap in ({"action": "none"}, {"action": "more-info"}):
+            with self.subTest(tap=json.dumps(tap)):
+                await self.fresh()
+                await self.assert_no_high(
+                    {
+                        "type": "entities",
+                        "entities": [
+                            {
+                                "type": "call-service",
+                                "name": "Synthetic unlock",
+                                "action": "lock.unlock",
+                                "tap_action": tap,
+                            }
+                        ],
+                    }
+                )
+        # A service row naming no service renders an error row.
+        await self.fresh()
+        created, stored, update = await self.plan_card(
+            {
+                "type": "entities",
+                "entities": [
+                    {"type": "call-service", "name": "Nothing", "action": "", "service": None}
+                ],
+            }
+        )
+        self.assertEqual(self.changed(update), [])
+        self.assert_standard(created, stored, update)
+
+    async def test_service_element_uses_the_nullish_action_fallback(self):
+        # hui-service-button-element.ts: action ?? service.
+        for element_type in ("service-button", "action-button"):
+            with self.subTest(element_type=element_type):
+                await self.fresh()
+                await self.assert_high_at(
+                    {
+                        "type": "picture-elements",
+                        "image": "/local/synthetic.png",
+                        "elements": [
+                            {
+                                "type": element_type,
+                                "title": "Unlock",
+                                "action": None,
+                                "service": "lock.unlock",
+                            }
+                        ],
+                    },
+                    f"{CARD}/elements/0/service",
+                )
+                # An empty action is selected (not nullish) and names no
+                # domain, so the element renders an error, not the service.
+                await self.fresh()
+                await self.assert_no_high(
+                    {
+                        "type": "picture-elements",
+                        "image": "/local/synthetic.png",
+                        "elements": [
+                            {
+                                "type": element_type,
+                                "title": "Unlock",
+                                "action": "",
+                                "service": "lock.unlock",
+                            }
+                        ],
+                    }
+                )
+
+    async def test_area_control_strings_that_are_not_domains_are_entities(self):
+        # hui-area-controls-card-feature.ts _normalizeControl: a string
+        # outside AREA_CONTROL_DOMAINS is an entity ID.
+        for entity in ("cover.synthetic_garage", LOCK, "alarm_control_panel.synthetic"):
+            for control in (entity, {"entity_id": entity}):
+                with self.subTest(control=json.dumps(control)):
+                    await self.fresh()
+                    await self.assert_high_at(
+                        {
+                            "type": "area",
+                            "area": "synthetic_room_a",
+                            "features": [{"type": "area-controls", "controls": [control]}],
+                        },
+                        f"{CARD}/features/0",
+                    )
+
+    async def test_falsy_area_controls_use_the_default_domains(self):
+        # this._config?.controls || DEFAULT_AREA_CONTROLS
+        for controls in (False, 0, ""):
+            with self.subTest(controls=json.dumps(controls)):
+                await self.fresh()
+                await self.assert_high_at(
+                    {
+                        "type": "area",
+                        "area": "synthetic_room_a",
+                        "features": [{"type": "area-controls", "controls": controls}],
+                    },
+                    f"{CARD}/features/0",
+                )
+        # An empty list is truthy: no control is rendered.
+        await self.fresh()
+        await self.assert_no_high(
+            {
+                "type": "area",
+                "area": "synthetic_room_a",
+                "features": [{"type": "area-controls", "controls": []}],
+            }
+        )
+
+    async def test_falsy_row_type_uses_the_domain_default_row(self):
+        # create-element-base.ts: !config.type && config.entity selects the
+        # domain row.
+        for row_type in (None, "", False, 0):
+            for entity in HIGH_ENTITIES:
+                with self.subTest(row_type=json.dumps(row_type), entity=entity):
+                    await self.fresh()
+                    await self.assert_high_at(
+                        {
+                            "type": "entities",
+                            "entities": [{"type": row_type, "entity": entity}],
+                        },
+                        f"{CARD}/entities/0",
+                    )
+
+    async def test_entity_filter_inner_card_type_follows_the_spread_default(self):
+        # hui-entity-filter-card.ts: {type: "entities", ...config.card}.
+        for inner in (None, {}, [], 5, True, "synthetic"):
+            with self.subTest(card=json.dumps(inner)):
+                await self.fresh()
+                card = {
+                    "type": "entity-filter",
+                    "entities": [LOCK],
+                    "state_filter": ["unlocked"],
+                }
+                if inner is not None:
+                    card["card"] = inner
+                await self.assert_high_at(card, f"{CARD}/entities/0")
+        for inner in ({"type": None}, {"type": "glance"}):
+            with self.subTest(card=json.dumps(inner)):
+                await self.fresh()
+                await self.assert_no_high(
+                    {
+                        "type": "entity-filter",
+                        "entities": [LOCK],
+                        "state_filter": ["unlocked"],
+                        "card": inner,
+                    }
+                )
+
+
+def area_card(**extra) -> dict:
+    return {
+        "type": "area",
+        "area": "synthetic_room_a",
+        "name": "Synthetic room",
+        "features": [{"type": "area-controls", "controls": ["cover-garage"]}],
+        **extra,
+    }
+
+
+class AreaControlContextIdentityTests(_PlanOnlyHarness):
+    """HAMCP-337 D1: an area-controls feature dispatches to the entities of
+    its card's area minus ``exclude_entities`` (hui-area-card.ts feature
+    context), so a change of either is a changed high-consequence control.
+    At 0397095a retargeting planned medium/standard_admin with the stored
+    finding marked unchanged."""
+
+    FEATURE = f"{CARD}/features/0"
+
+    async def plan_change(self, card: dict, operations: list[dict]):
+        return await self.plan(background_dashboard(0, [card]), operations)
+
+    def assert_changed_high(self, created, stored, update) -> None:
+        self.assertEqual(self.changed_at(update, self.FEATURE), {"high_consequence_action"})
+        self.assertEqual(update["risk"]["high_consequence_action_count"], 1)
+        self.assert_elevated(created, stored, update)
+
+    async def test_area_retarget_is_a_changed_high_consequence_control(self):
+        created, stored, update = await self.plan_change(
+            area_card(),
+            [
+                {
+                    "operation_id": "retarget",
+                    "operation": "replace",
+                    "path": f"{CARD}/area",
+                    "value": "synthetic_room_b",
+                }
+            ],
+        )
+        self.assert_changed_high(created, stored, update)
+        # The changed finding is reported at the feature it binds; diff-entry
+        # flags keep the existing path-overlap rule (as for a tile whose
+        # ``entity`` is retargeted under an unchanged ``tap_action``).
+        self.assertEqual(self.flags(update), set())
+
+    async def test_exclusion_changes_are_changed_high_consequence_controls(self):
+        cases = (
+            (area_card(), "add", ["cover.synthetic_garage"]),
+            (area_card(exclude_entities=["cover.synthetic_garage"]), "remove", None),
+            (area_card(exclude_entities=["cover.synthetic_garage"]), "replace", []),
+        )
+        for card, operation, value in cases:
+            with self.subTest(operation=operation):
+                await self.asyncTearDown()
+                await self.asyncSetUp()
+                patch = {
+                    "operation_id": "exclusion",
+                    "operation": operation,
+                    "path": f"{CARD}/exclude_entities",
+                }
+                if value is not None:
+                    patch["value"] = value
+                created, stored, update = await self.plan_change(card, [patch])
+                self.assert_changed_high(created, stored, update)
+
+    async def test_unrelated_edits_leave_the_control_unchanged(self):
+        for path, value in (
+            (f"{CARD}/name", "Renamed synthetic room"),
+            ("/title", "Renamed synthetic dashboard"),
+        ):
+            with self.subTest(path=path):
+                await self.asyncTearDown()
+                await self.asyncSetUp()
+                created, stored, update = await self.plan_change(
+                    area_card(),
+                    [
+                        {
+                            "operation_id": "rename",
+                            "operation": "replace",
+                            "path": path,
+                            "value": value,
+                        }
+                    ],
+                )
+                self.assertEqual(self.changed(update), [])
+                self.assertEqual(update["risk"]["high_consequence_action_count"], 0)
+                self.assert_standard(created, stored, update)
+                self.assertIn(
+                    "high_consequence_action",
+                    {finding["category"] for finding in update["risk"]["findings"]},
+                )
+
+
+def custom_card(schema: dict) -> dict:
+    return {
+        "type": "custom:synthetic-card",
+        "entity": "sensor.synthetic_reading",
+        "schema": schema,
+    }
+
+
+class NestedTypeDataPlanningTests(_PlanOnlyHarness):
+    """HAMCP-337 D2 regression: dashboard data is arbitrary JSON, so a
+    nested non-string ``type`` must not turn analyzable input into
+    provider unavailability.  At 0397095a each existing configuration
+    below refused an unrelated title edit with
+    ``dashboard_provider_identity_unavailable``; at 50e127e5 it planned."""
+
+    ODD_TYPES = ({"description": "synthetic"}, ["synthetic"], 5, True)
+
+    async def plan_or_fail(self, current: dict, operations: list[dict]):
+        # A refusal or crash must fail by assertion, not error the test.
+        try:
+            return await self.plan(current, operations)
+        except GovernanceError as error:
+            self.fail(f"analyzable dashboard data was refused: {error.code} {error.details}")
+
+    def risk_or_fail(self, current: dict, proposed: dict):
+        try:
+            return analyze_dashboard_risk(current, proposed)
+        except Exception as error:  # noqa: BLE001 - the regression is any crash
+            self.fail(f"analyzable dashboard data crashed: {type(error).__name__}: {error}")
+
+    def configurations(self):
+        for odd in self.ODD_TYPES:
+            yield "custom schema", custom_card({"type": odd})
+            yield "row", {"type": "entities", "entities": [{"type": odd, "entity": LOCK}]}
+            yield "conditional row", {
+                "type": "entities",
+                "entities": [
+                    {"type": "conditional", "conditions": [], "row": {"type": odd, "entity": LOCK}}
+                ],
+            }
+            yield "entity-filter card", {
+                "type": "entity-filter",
+                "entities": [LOCK],
+                "state_filter": ["unlocked"],
+                "card": {"type": odd},
+            }
+            yield "element", {
+                "type": "picture-elements",
+                "image": "/local/synthetic.png",
+                "elements": [{"type": odd, "action": "lock.unlock"}],
+            }
+            yield "feature", {
+                "type": "area",
+                "area": "synthetic_room_a",
+                "features": [{"type": odd, "controls": ["cover-garage"]}],
+            }
+            yield "header chip", {
+                "type": "entities",
+                "entities": [],
+                "header": {"type": odd, "entities": [LOCK]},
+            }
+            yield "action type", {
+                "type": "tile",
+                "entity": "sensor.synthetic_reading",
+                "tap_action": {"action": odd},
+            }
+            yield "area control", {
+                "type": "area",
+                "area": "synthetic_room_a",
+                "features": [{"type": "area-controls", "controls": [odd]}],
+            }
+
+    async def test_existing_nested_type_data_still_plans_unrelated_edits(self):
+        for label, card in self.configurations():
+            with self.subTest(label=label, card=json.dumps(card)):
+                await self.asyncTearDown()
+                await self.asyncSetUp()
+                created, stored, update = await self.plan_or_fail(
+                    background_dashboard(0, [card]),
+                    [
+                        {
+                            "operation_id": "retitle",
+                            "operation": "replace",
+                            "path": "/title",
+                            "value": "Renamed synthetic dashboard",
+                        }
+                    ],
+                )
+                self.assertEqual(self.changed(update), [])
+                self.assert_standard(created, stored, update)
+
+    async def test_new_nested_type_data_plans_with_its_own_review(self):
+        for label, card in self.configurations():
+            with self.subTest(label=label, card=json.dumps(card)):
+                await self.asyncTearDown()
+                await self.asyncSetUp()
+                created, stored, update = await self.plan_or_fail(
+                    background_dashboard(0), insert_cards([card])
+                )
+                self.assertIn(
+                    update["risk"]["disposition"],
+                    {"standard_review", "elevated_manual_review", "manual_review_required"},
+                )
+                self.assertEqual(update["risk"]["high_consequence_action_count"], 0)
+
+    def test_malformed_types_are_unclassified_and_valid_types_still_classify(self):
+        for odd in self.ODD_TYPES:
+            with self.subTest(odd=json.dumps(odd)):
+                risk = self.risk_or_fail(
+                    {"views": [{"cards": []}]},
+                    {
+                        "views": [
+                            {
+                                "cards": [
+                                    {"type": "entities", "entities": [{"type": odd, "entity": LOCK}]},
+                                    {
+                                        "type": "picture-elements",
+                                        "elements": [{"type": odd, "action": "lock.unlock"}],
+                                    },
+                                ]
+                            }
+                        ]
+                    },
+                )
+                self.assertEqual(risk.high_consequence_action_count, 0)
+        risk = analyze_dashboard_risk(
+            {"views": [{"cards": []}]},
+            {
+                "views": [
+                    {
+                        "cards": [
+                            {"type": "entities", "entities": [{"type": "lock-entity", "entity": LOCK}]},
+                            {
+                                "type": "picture-elements",
+                                "elements": [{"type": "service-button", "action": "lock.unlock"}],
+                            },
+                        ]
+                    }
+                ]
+            },
+        )
+        self.assertEqual(risk.high_consequence_action_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

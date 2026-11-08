@@ -49,7 +49,9 @@ F2_WRAPPERS = "StructuralCardPathTests.test_wrappers_are_kept_only_for_object_va
 
 shutil.rmtree(OUT, ignore_errors=True)
 OUT.mkdir(parents=True)
-HEAD = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+# Pinned to the corrected head this evidence was recorded at; later rounds
+# have their own scripts (run_delta2_mutations.py).
+HEAD = "e26e6ae8c9cf21cad4b75682f9d55bb3137a7b0a"
 COPY = OUT / "copy"
 subprocess.check_call(["git", "clone", "-q", "--shared", "--no-checkout", str(ROOT), str(COPY)])
 

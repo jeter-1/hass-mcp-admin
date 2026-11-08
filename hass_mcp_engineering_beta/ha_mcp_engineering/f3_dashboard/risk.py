@@ -96,8 +96,27 @@ _CONDITIONAL_ROW_TYPE = "conditional"
 # Shapes whose own configuration names the service a tap performs: the
 # ``call-service``/``perform-action`` entities row and the picture-elements
 # ``service-button``/``action-button`` element.
-_SERVICE_CONTROL_TYPES = frozenset(
-    {"call-service", "perform-action", "service-button", "action-button"}
+_SERVICE_ROW_TYPES = frozenset({"call-service", "perform-action"})
+_SERVICE_ELEMENT_TYPES = frozenset({"service-button", "action-button"})
+# HAMCP-337 F1: the area-controls feature's domain controls
+# (AREA_CONTROL_DOMAINS, frontend a67b691a).  Any other control string is
+# an entity ID.
+_AREA_CONTROL_DOMAINS = frozenset(
+    {
+        "light",
+        "fan",
+        "cover-shutter",
+        "cover-blind",
+        "cover-curtain",
+        "cover-shade",
+        "cover-awning",
+        "cover-garage",
+        "cover-gate",
+        "cover-door",
+        "cover-window",
+        "cover-damper",
+        "switch",
+    }
 )
 _HEADER_FOOTER_KEYS = frozenset({"header", "footer"})
 _AREA_CONTROLS_FEATURE = "area-controls"
@@ -186,6 +205,18 @@ def _entity_domain(value: Any) -> str | None:
         return None
     domain, _ = value.split(".", 1)
     return domain if domain else None
+
+
+def _js_falsy(value: Any) -> bool:
+    """Whether the frontend's ``||`` and ``!`` treat a JSON value as false."""
+
+    if value is None or value is False or value == "":
+        return True
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == 0
+    )
 
 
 def _contains_template(value: Any) -> bool:
@@ -334,7 +365,11 @@ def _action_findings(
             )
         )
 
-    if action_name in {None, "none"}:
+    if action_name is not None and not isinstance(action_name, str):
+        # HAMCP-337 D2: arbitrary JSON is data, never a crash.
+        category = RiskCategory.UNKNOWN
+        reason = "unknown_frontend_action_type"
+    elif action_name in {None, "none"}:
         category = RiskCategory.UNKNOWN if action_name is None else RiskCategory.DISPLAY_ONLY
         reason = "action_type_missing" if action_name is None else "explicit_no_action"
     elif action_name == "more-info":
@@ -402,6 +437,12 @@ def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
     domain = _entity_domain(entity)
     if domain is None:
         return None
+    # create-element-base.ts: a falsy ``type`` selects the domain default
+    # row; any other non-string type renders an error row.
+    if _js_falsy(row_type):
+        row_type = None
+    elif not isinstance(row_type, str):
+        return None
     if row_type in _ENTITY_ROW_TYPE_CONTROLS:
         return (
             entity,
@@ -409,7 +450,7 @@ def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
             RiskCategory.HIGH_CONSEQUENCE,
             _ENTITY_ROW_TYPE_CONTROLS[row_type],
         )
-    if row_type in {None, "", _ENTITY_ROW_TOGGLE_TYPE}:
+    if row_type in {None, _ENTITY_ROW_TOGGLE_TYPE}:
         if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
             return None
         category = _domain_control_category(domain)
@@ -442,11 +483,14 @@ def _row_containers(card: dict[str, Any]) -> list[Any]:
     if card_type == "entities":
         return rows
     if card_type == "entity-filter":
-        # The entity-filter card renders an entities card unless its own
-        # ``card`` names another type.
+        # hui-entity-filter-card.ts renders ``{type: "entities",
+        # ...config.card}``: only an object ``card`` carrying its own
+        # ``type`` key replaces the entities card.
         inner = card.get("card")
-        inner_type = inner.get("type") if isinstance(inner, dict) else None
-        if inner is None or (isinstance(inner, dict) and inner_type in {None, "entities"}):
+        inner_type = (
+            inner.get("type", "entities") if isinstance(inner, dict) else "entities"
+        )
+        if inner_type == "entities":
             return rows
     return []
 
@@ -547,7 +591,10 @@ def _default_control_findings(
             classified.add(location)
 
     # ``buttons`` header/footer: every chip toggles on tap by default, with
-    # no domain filter (hui-buttons-header-footer.ts).
+    # no domain filter (hui-buttons-header-footer.ts merges ``{tap_action:
+    # toggle, hold_action: more-info, ...chip}``).  Only the chip's own
+    # ``tap_action`` replaces the default tap; its other gestures are
+    # classified through ``_ACTION_KEYS`` as well.
     if (
         tokens
         and tokens[-1] in _HEADER_FOOTER_KEYS
@@ -556,7 +603,7 @@ def _default_control_findings(
     ):
         for index, chip in enumerate(value["entities"]):
             if isinstance(chip, dict):
-                if any(key in chip for key in _ACTION_KEYS):
+                if "tap_action" in chip:
                     continue
                 entity = chip.get("entity")
             else:
@@ -601,8 +648,11 @@ def _default_control_findings(
                 ),
             )
 
-    # Area-controls feature: toggles whole domains of the area; without
-    # ``controls`` it shows every default domain, cover classes included.
+    # Area-controls feature: toggles whole domains of the area; with falsy
+    # ``controls`` it shows every default domain, cover classes included
+    # (``controls || DEFAULT_AREA_CONTROLS``).  An object control with an
+    # ``entity_id`` key and any string outside AREA_CONTROL_DOMAINS name an
+    # entity (``_normalizeControl``).
     features = value.get("features")
     if isinstance(features, list):
         for index, feature in enumerate(features):
@@ -613,16 +663,18 @@ def _default_control_findings(
                 continue
             controls = feature.get("controls")
             domains: set[str] = set()
-            if controls is None:
+            if _js_falsy(controls):
                 domains.add("cover")
             elif isinstance(controls, list):
                 for control in controls:
-                    if isinstance(control, str):
-                        domains.add(control.split("-", 1)[0])
-                    elif isinstance(control, dict):
-                        entity_domain = _entity_domain(control.get("entity_id"))
-                        if entity_domain is not None:
-                            domains.add(entity_domain)
+                    if isinstance(control, dict) and "entity_id" in control:
+                        entity_domain = _entity_domain(control["entity_id"])
+                    elif isinstance(control, str) and control in _AREA_CONTROL_DOMAINS:
+                        entity_domain = control.split("-", 1)[0]
+                    else:
+                        entity_domain = _entity_domain(control)
+                    if entity_domain is not None:
+                        domains.add(entity_domain)
             if domains & _HIGH_ENTITY_DOMAINS & _ENTITY_ROW_CONTROL_DOMAINS:
                 category = RiskCategory.HIGH_CONSEQUENCE
             elif domains & _ENTITY_ROW_CONTROL_DOMAINS:
@@ -639,6 +691,15 @@ def _default_control_findings(
                     shape="area_controls_feature",
                     complete_control=feature,
                     control_entity=None,
+                    # HAMCP-337 D1: the feature acts on the entities of the
+                    # card's area minus its exclusions (hui-area-card.ts
+                    # feature context), so those are part of the control.
+                    container_card_type=value.get("type"),
+                    area={"present": "area" in value, "value": value.get("area")},
+                    exclude_entities={
+                        "present": "exclude_entities" in value,
+                        "value": value.get("exclude_entities"),
+                    },
                 ),
             )
 
@@ -664,9 +725,32 @@ def _default_control_findings(
 def _service_control_action(value: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     """The tap action of a shape whose configuration names its service."""
 
-    if value.get("type") not in _SERVICE_CONTROL_TYPES:
+    control_type = value.get("type")
+    if not isinstance(control_type, str):
         return None
-    key = "action" if "action" in value else "service" if "service" in value else None
+    if control_type in _SERVICE_ROW_TYPES:
+        # hui-call-service-row.ts: ``perform_action: action || service``,
+        # and the row's own ``tap_action`` replaces that synthesized tap.
+        if "tap_action" in value:
+            return None
+        key = (
+            "action"
+            if not _js_falsy(value.get("action"))
+            else "service"
+            if not _js_falsy(value.get("service"))
+            else None
+        )
+    elif control_type in _SERVICE_ELEMENT_TYPES:
+        # hui-service-button-element.ts: ``action ?? service``.
+        key = (
+            "action"
+            if value.get("action") is not None
+            else "service"
+            if value.get("service") is not None
+            else None
+        )
+    else:
+        return None
     if key is None:
         return None
     action: dict[str, Any] = {
