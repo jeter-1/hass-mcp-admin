@@ -20,9 +20,12 @@ for _path in (ROOT / "scripts", ROOT / "hass_mcp_engineering_beta"):
         sys.path.insert(0, str(_path))
 
 governed = importlib.import_module("exact_image_admission_91_governed")
+runners = importlib.import_module("exact_image_admission_91_runners")
 
 PROTOCOL = "2025-03-26"
 CORE_VERSION = "2099.1.0-synthetic"
+ENGINEERING_VERSION = "9.9.9-synthetic"
+ARCHITECTURE = "amd64"
 PLAN_ID = "a" * 32
 TASK_ID = "b" * 32
 PLAN_HASH = "c" * 64
@@ -30,12 +33,17 @@ RECEIPT = "I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd"
 RECEIPT_SHA256 = hashlib.sha256(RECEIPT.encode()).hexdigest()
 
 
+def version_of(case: str) -> str:
+    return governed.CASE_STAGE[case].upstream_version
+
+
 def bps_log(*, guide: bool = True, arguments: dict | None = None, key: str | None = RECEIPT_SHA256,
-            setters: int = 1) -> list[dict[str, Any]]:
+            setters: int = 1, version: str = governed.UPSTREAM_VERSION) -> list[dict[str, Any]]:
     log: list[dict[str, Any]] = [{"tool": "ha_get_dashboard_config", "status": 200}]
     if guide:
         log.append({"tool": governed.GUIDE_TOOL, "status": 200,
-                    "arguments": dict(governed.GUIDE_ARGUMENTS if arguments is None else arguments),
+                    "arguments": dict(governed.GUIDE_ARGUMENTS_BY_VERSION[version] if arguments is None
+                                      else arguments),
                     "receipt_sha256": [RECEIPT_SHA256]})
     for _ in range(setters):
         log.append({"tool": governed.SETTER_TOOL, "status": 200, "best_practice_key_sha256": key,
@@ -43,7 +51,7 @@ def bps_log(*, guide: bool = True, arguments: dict | None = None, key: str | Non
     return log
 
 
-def dashboard_specs() -> dict[str, dict[str, Any]]:
+def dashboard_specs(version: str = governed.UPSTREAM_VERSION) -> dict[str, dict[str, Any]]:
     """Operation id -> {readback, facts} for a fully successful governed dashboard run."""
 
     awaiting = {"plan_status": "awaiting_approval"}
@@ -71,7 +79,7 @@ def dashboard_specs() -> dict[str, dict[str, Any]]:
             "readback": {"setter_calls": 1},
             "facts": {"success": True, "status": "applied", "task_state": "succeeded_verified",
                       "provider_dispatch_occurred": True, "redispatch_performed": False, "task_id": TASK_ID}},
-        "dashboard_bps_guide_read": {"readback": bps_log(), "facts": {}},
+        "dashboard_bps_guide_read": {"readback": bps_log(version=version), "facts": {}},
         "dashboard_verify": {"readback": copy.deepcopy(governed.PATCHED_CONFIG),
                              "facts": {"task_state": "succeeded_verified", "terminal": True,
                                        "expected": copy.deepcopy(governed.PATCHED_CONFIG)}},
@@ -80,7 +88,8 @@ def dashboard_specs() -> dict[str, dict[str, Any]]:
     }
 
 
-def typed_specs(core_version: str = CORE_VERSION) -> dict[str, dict[str, Any]]:
+def typed_specs(core_version: str = CORE_VERSION,
+                version: str = governed.UPSTREAM_VERSION) -> dict[str, dict[str, Any]]:
     specs = {}
     counters: dict[str, int] = {}
     for op, (tool, arguments, expected) in governed.TYPED_TABLE.items():
@@ -91,7 +100,8 @@ def typed_specs(core_version: str = CORE_VERSION) -> dict[str, dict[str, Any]]:
         want = dict(expected, **extra)
         specs[op] = {"readback": dict(want), "facts": {
             "tool": tool, "arguments": dict(arguments), "success": True, "outcome": "succeeded_verified",
-            "terminal": True, "provider": governed.PROVIDERS[tool], "provider_contract_exact": True,
+            "terminal": True, "provider": governed.PROVIDERS[tool],
+            "provider_contract": governed.PROVIDER_CONTRACTS[version][tool],
             "provider_attempt_count": 1, "dispatch_intent_recorded": True, "core_binding_version": core_version,
             "upstream_dispatches": 1, "duplicate_dispatches": 0, "duplicate_same": True,
             "expected_extra": extra, "expected": dict(want), "confirmation_reason": None}}
@@ -99,11 +109,13 @@ def typed_specs(core_version: str = CORE_VERSION) -> dict[str, dict[str, Any]]:
 
 
 def specs_for(case: str, core_version: str = CORE_VERSION) -> dict[str, dict[str, Any]]:
-    return dashboard_specs() if case == governed.CASE_DASHBOARD else typed_specs(core_version)
+    if case in governed.DASHBOARD_CASES:
+        return dashboard_specs(version_of(case))
+    return typed_specs(core_version, version_of(case))
 
 
 def binding_for(case: str, core_version: str = CORE_VERSION) -> dict[str, Any]:
-    if case == governed.CASE_DASHBOARD:
+    if case in governed.DASHBOARD_CASES:
         return {"plan_hash": PLAN_HASH, "url_path": governed.DASHBOARD_URL_PATH,
                 "seed_config": copy.deepcopy(governed.SEED_CONFIG),
                 "patched_config": copy.deepcopy(governed.PATCHED_CONFIG)}
@@ -122,24 +134,65 @@ def records(case: str, specs: dict[str, dict[str, Any]] | None = None,
             for op, spec in specs.items()]
 
 
-def evidence(dashboard: list | None = None, typed: list | None = None, *, protocols=None,
-             peer_log=None, core_version: str = CORE_VERSION) -> dict[str, Any]:
-    """A runner evidence dict (as ``run_lane`` fills it)."""
+def rollback_identity(architecture: str = ARCHITECTURE) -> dict[str, Any]:
+    """The rollback-identity file the digest verification step writes when it passes."""
 
-    return {
-        governed.CASE_DASHBOARD: {"operations": records(governed.CASE_DASHBOARD) if dashboard is None else dashboard,
-                                  "binding": binding_for(governed.CASE_DASHBOARD), "diagnostics": []},
-        governed.CASE_TYPED: {"operations": records(governed.CASE_TYPED, core_version=core_version)
-                              if typed is None else typed,
-                              "binding": binding_for(governed.CASE_TYPED, core_version), "diagnostics": []},
-        "protocols": [PROTOCOL, PROTOCOL] if protocols is None else protocols,
-        "peer_log": {"forwarded": 40, "peer_posts": 40} if peer_log is None else peer_log,
-    }
+    return {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE,
+            "image_digest": runners.ROLLBACK_ENGINEERING_INDEX_DIGEST,
+            "version": runners.ROLLBACK_ENGINEERING_VERSION, "revision": runners.ROLLBACK_ENGINEERING_REVISION,
+            "architecture": architecture,
+            "manifest_digest": runners.ROLLBACK_ENGINEERING_PLATFORM_DIGESTS[architecture]}
+
+
+def identity_for(stage, architecture: str = ARCHITECTURE,
+                 engineering_version: str = ENGINEERING_VERSION) -> dict[str, Any]:
+    """The stage identity ``run_stage`` records for a correct deployment."""
+
+    ident = {"key": stage.key, "upstream_version": stage.upstream_version, "endpoint_path": stage.endpoint_path,
+             "architecture": architecture, "engineering_image_id": "sha256:" + "9" * 64}
+    if stage.rollback:
+        ident.update(engineering_image=governed.ROLLBACK_IMAGE, engineering_version=governed.ROLLBACK_VERSION,
+                     rollback_identity=rollback_identity(architecture))
+    else:
+        ident.update(engineering_image=governed.LANE_IMAGE, engineering_version=engineering_version)
+    return ident
+
+
+def evidence(configuration: str = "91_only", operations: dict[str, list] | None = None, *,
+             dashboard: list | None = None, typed: list | None = None, protocols=None, peer_log=None,
+             identities: dict[str, Any] | None = None, core_version: str = CORE_VERSION,
+             architecture: str = ARCHITECTURE, engineering_version: str = ENGINEERING_VERSION) -> dict[str, Any]:
+    """A runner evidence dict (as ``run_lane`` fills it) for every stage of ``configuration``.
+
+    ``operations`` maps a case to replacement records; ``dashboard``/``typed``
+    are the 91_only shorthands. ``identities`` maps a stage key to a
+    replacement identity (``None`` removes it).
+    """
+
+    operations = dict(operations or {})
+    if dashboard is not None:
+        operations[governed.CASE_DASHBOARD] = dashboard
+    if typed is not None:
+        operations[governed.CASE_TYPED] = typed
+    identities = identities or {}
+    out: dict[str, Any] = {"stages": {}}
+    for stage in governed.STAGES_BY_CONFIGURATION[configuration]:
+        for case in stage.cases:
+            out[case] = {"operations": records(case, core_version=core_version) if case not in operations
+                         else operations[case], "binding": binding_for(case, core_version), "diagnostics": []}
+        ident = identities[stage.key] if stage.key in identities \
+            else identity_for(stage, architecture, engineering_version)
+        out["stages"][stage.key] = {
+            "protocols": [PROTOCOL, PROTOCOL] if protocols is None else list(protocols),
+            "peer_log": {"forwarded": 40, "peer_posts": 40} if peer_log is None else dict(peer_log),
+            "identity": {} if ident is None else ident}
+    return out
 
 
 def passing_observed(case: str) -> dict[str, Any]:
-    """The ``observed`` block of a passing governed case file (no plan: no image fields)."""
+    """The ``observed`` block of a passing governed case file (no plan: lane fields added here)."""
 
-    observed = governed.build_observed(None, evidence(), case)
-    observed["core_version"] = CORE_VERSION
+    configuration = governed.CASE_STAGE[case].configuration
+    observed = governed.build_observed(None, evidence(configuration), case)
+    observed.update(core_version=CORE_VERSION, architecture=ARCHITECTURE, engineering_version=ENGINEERING_VERSION)
     return observed

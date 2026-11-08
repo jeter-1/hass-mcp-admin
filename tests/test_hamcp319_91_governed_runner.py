@@ -75,9 +75,13 @@ def omitted(case: str, op: str, core_version: str) -> list[dict]:
     return [r for r in ev.records(case, core_version=core_version) if r["id"] != op]
 
 
+def is_typed(case: str) -> bool:
+    return case not in governed.DASHBOARD_CASES
+
+
 def failed(case: str, op: str, core_version: str) -> list[dict]:
     specs = ev.specs_for(case, core_version)
-    if case == TYPED:
+    if is_typed(case):
         specs[op]["facts"]["success"] = False
     elif op == "dashboard_bps_guide_read":
         specs[op]["readback"] = ev.bps_log(setters=0)
@@ -90,17 +94,18 @@ def failed(case: str, op: str, core_version: str) -> list[dict]:
 
 def mismatched(case: str, op: str, core_version: str) -> list[dict]:
     specs = ev.specs_for(case, core_version)
-    if case == TYPED:
+    if is_typed(case):
         specs[op]["readback"] = dict(specs[op]["readback"], state="unavailable")
     else:
         specs[op]["readback"] = copy.deepcopy(DASHBOARD_MISMATCH[op])
     return rebuild(case, specs, core_version)
 
 
-def no_guide(core_version: str, **log) -> list[dict]:
-    specs = ev.specs_for(DASH, core_version)
-    specs["dashboard_bps_guide_read"]["readback"] = ev.bps_log(**({"guide": False} if not log else log))
-    return rebuild(DASH, specs, core_version)
+def no_guide(core_version: str, case: str = DASH, **log) -> list[dict]:
+    specs = ev.specs_for(case, core_version)
+    log = {"guide": False} if not log else log
+    specs["dashboard_bps_guide_read"]["readback"] = ev.bps_log(version=ev.version_of(case), **log)
+    return rebuild(case, specs, core_version)
 
 
 def other_results(row: dict) -> dict[str, dict]:
@@ -154,19 +159,45 @@ class Harness(unittest.TestCase):
                 raise raise_exc
         return run
 
-    def command(self, evidence: dict, cases: Path, *, architecture="amd64", raise_exc=None, argv_extra=()) -> int:
-        row = self.row("91_only", architecture)
+    def command(self, evidence: dict, cases: Path, *, configuration="91_only", architecture="amd64",
+                raise_exc=None, argv_extra=(), rollback=True) -> int:
+        row = self.row(configuration, architecture)
         argv = ["--peers", json.dumps(row["peers"]), "--architecture", architecture, "--cases-dir", str(cases),
-                "--expected-engineering-version", "9.9.9-synthetic", "--work-dir", str(self.base / "work"),
-                *argv_extra]
+                "--configuration", configuration, "--expected-engineering-version", ev.ENGINEERING_VERSION,
+                "--work-dir", str(self.base / "work"), *argv_extra]
+        if configuration == "side_by_side" and rollback:
+            path = self.base / f"rollback-identity-{architecture}.json"
+            path.write_text(json.dumps(ev.rollback_identity(architecture)))
+            argv += ["--rollback-identity", str(path)]
         with redirect_stdout(io.StringIO()):
             return governed.main(argv, runner=self.runner(evidence, raise_exc), environ={})
 
-    def good(self, **changes) -> dict:
-        return ev.evidence(core_version=self.core_version, **changes)
+    def good(self, configuration="91_only", **changes) -> dict:
+        return ev.evidence(configuration, core_version=self.core_version, **changes)
 
-    def pipeline(self, evidence: dict, *, forge=None) -> dict:
-        """command -> case files -> write-manifest (every lane) -> gate; returns everything observed."""
+    def evidence_for(self, evidence: dict, configuration: str, row: dict) -> dict:
+        """The evidence under test for its configuration (architecture-bound); good evidence elsewhere."""
+
+        if row["configuration"] != configuration:
+            return self.good(row["configuration"], architecture=row["architecture"])
+        evidence = copy.deepcopy(evidence)
+        for section in evidence.get("stages", {}).values():
+            ident = section.get("identity")
+            # The synthetic identity names amd64; on the arm64 row the same deployment names arm64.
+            if isinstance(ident, dict) and ident.get("architecture") == ev.ARCHITECTURE \
+                    and row["architecture"] != ev.ARCHITECTURE:
+                ident["architecture"] = row["architecture"]
+                if isinstance(ident.get("rollback_identity"), dict) \
+                        and ident["rollback_identity"].get("architecture") == ev.ARCHITECTURE:
+                    ident["rollback_identity"] = ev.rollback_identity(row["architecture"])
+        return evidence
+
+    def pipeline(self, evidence: dict, *, configuration="91_only", forge=None) -> dict:
+        """command -> case files -> write-manifest (every lane) -> gate; returns everything observed.
+
+        ``evidence`` is the runner evidence of ``configuration``; the other
+        governed configuration runs with fully passing evidence.
+        """
 
         manifests_dir = self.base / "manifests"
         manifests_dir.mkdir(exist_ok=True)
@@ -178,11 +209,15 @@ class Harness(unittest.TestCase):
             cases.mkdir(parents=True)
             for name, value in other_results(row).items():
                 lanes.write_json(cases / f"{name}.json", value)
-            if row["configuration"] == "91_only":
-                codes[key] = self.command(evidence, cases, architecture=row["architecture"])
-                case_files[key] = {c: json.loads((cases / f"{c}.json").read_text()) for c in governed.CASES}
-                if forge is not None:
-                    forge(cases)
+            if row["configuration"] in governed.CONFIGURATIONS:
+                code = self.command(self.evidence_for(evidence, configuration, row), cases,
+                                    configuration=row["configuration"], architecture=row["architecture"])
+                if row["configuration"] == configuration:
+                    codes[key] = code
+                    case_files[key] = {c: json.loads((cases / f"{c}.json").read_text())
+                                       for c in governed.CASES_BY_CONFIGURATION[configuration]}
+                    if forge is not None:
+                        forge(cases)
             out = manifests_dir / f"{key}.json"
             with redirect_stdout(io.StringIO()):
                 lanes.main(["write-manifest", "--row", json.dumps(row), "--engineering-commit", COMMIT,
@@ -192,19 +227,21 @@ class Harness(unittest.TestCase):
             gate_code = lanes.main(["gate", "--manifests-dir", str(manifests_dir), "--admission-matrix",
                                     json.dumps(self.matrix), "--engineering-commit", COMMIT,
                                     "--output", str(summary)])
-        manifest = json.loads((manifests_dir / "91_only-amd64.json").read_text())
-        return {"codes": codes, "cases": case_files["91_only-amd64"], "manifest": manifest,
-                "gate_code": gate_code, "gate": json.loads(summary.read_text())}
+        manifest = json.loads((manifests_dir / f"{configuration}-amd64.json").read_text())
+        return {"codes": codes, "cases": case_files[f"{configuration}-amd64"], "manifest": manifest,
+                "gate_code": gate_code, "gate": json.loads(summary.read_text()), "configuration": configuration}
 
     def assert_rejected(self, result: dict, case: str, fragment: str = ""):
+        configuration = governed.CASE_STAGE[case].configuration
+        self.assertEqual(result["configuration"], configuration)
         file = result["cases"][case]
         self.assertEqual(file["status"], "failed", file["reason"])
         self.assertIn(fragment, file["reason"])
-        self.assertNotEqual(result["codes"]["91_only-amd64"], 0)
+        self.assertNotEqual(result["codes"][f"{configuration}-amd64"], 0)
         entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
         self.assertEqual(entry["status"], "failed")
         self.assertEqual(result["manifest"]["result"], "FAIL")
-        self.assertEqual(result["gate"]["acceptance"]["91_only"], "NOT ACCEPTED")
+        self.assertEqual(result["gate"]["acceptance"][configuration], "NOT ACCEPTED")
         self.assertNotEqual(result["gate_code"], 0)
 
 
@@ -212,6 +249,7 @@ class PositiveTests(Harness):
     def test_every_required_operation_verified_is_accepted_end_to_end(self):
         result = self.pipeline(self.good())
         self.assertEqual(result["codes"], {"91_only-amd64": 0, "91_only-arm64": 0})
+        self.assertEqual(result["gate"]["acceptance"]["side_by_side"], "ACCEPTED")
         for case in governed.CASES:
             self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
             self.assertEqual(result["cases"][case]["endpoint_form"], "strict_full")
@@ -359,7 +397,7 @@ class BindingNegativeTests(Harness):
     def test_typed_wrong_provider_contract_duplicate_or_extra_dispatch_fails(self):
         breaks = {
             "provider": ("upstream_read_gateway", "reviewed 9.1.0 provider"),
-            "provider_contract_exact": (False, "reviewed 9.1.0 provider"),
+            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.1.0 provider"),
             "provider_attempt_count": (2, "single recorded attempt"),
             "upstream_dispatches": (2, "exactly one ha_call_service"),
             "duplicate_dispatches": (1, "duplicate request"),
@@ -436,13 +474,14 @@ class BindingNegativeTests(Harness):
             self.command(self.good(), self.base / "cases", argv_extra=("--engineering-image", "ghcr.io/x:latest"))
         with self.assertRaises(governed.LaneFailure):
             plan = governed.Plan("amd64", {}, {}, "ghcr.io/x:latest", "1", self.base, "governed91-1-amd64")
-            governed.engineering_command(plan, self.base, self.base / "env")
+            governed.engineering_command(plan, governed.STAGES[0], self.base, self.base / "env")
 
     def test_ci_job_gate(self):
         cases = self.base / "cases"
         with redirect_stdout(io.StringIO()):
             code = governed.main(["--peers", json.dumps(self.row()["peers"]), "--architecture", "amd64",
-                                  "--cases-dir", str(cases), "--expected-engineering-version", "1"],
+                                  "--cases-dir", str(cases), "--configuration", "91_only",
+                                  "--expected-engineering-version", "1"],
                                  runner=self.runner(self.good()),
                                  environ={"GITHUB_ACTIONS": "true", "GITHUB_JOB": "other"})
         self.assertEqual(code, 1)
@@ -641,6 +680,342 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertNotIn("91_parity_dashboard_gateway_acceptance", text)
         self.assertNotIn("dashboard gateway acceptance", text)
         self.assertNotIn("91_parity_dashboard_gateway_acceptance", lanes.case_names("91_only"))
+
+SBS = "side_by_side"
+SBS_CASES = governed.CASES_BY_CONFIGURATION[SBS]
+STAGE = {s.key: s for s in governed.STAGES}
+ROLLBACK_CASES = STAGE["rollback"].cases
+
+
+class SideBySideStageTests(Harness):
+    """Stage A, the beta.6 rollback and stage A again, each on the 8.5.0 peer's legacy value."""
+
+    def sbs(self, **changes) -> dict:
+        return self.pipeline(self.good(SBS, **changes), configuration=SBS)
+
+    def sbs_break(self, case: str, operations: list[dict]) -> dict:
+        return self.sbs(operations={case: operations})
+
+    def test_every_stage_verified_is_accepted_end_to_end(self):
+        result = self.sbs()
+        self.assertEqual(result["codes"], {"side_by_side-amd64": 0, "side_by_side-arm64": 0})
+        for case in SBS_CASES:
+            with self.subTest(case=case):
+                file = result["cases"][case]
+                self.assertEqual(file["status"], "passed", file["reason"])
+                self.assertEqual(file["endpoint_form"], "legacy")
+                stage = governed.CASE_STAGE[case]
+                self.assertEqual(file["observed"]["stage"]["key"], stage.key)
+                self.assertEqual(file["observed"]["upstream_version"], "8.5.0")
+                self.assertEqual(file["observed"]["endpoint_path"], governed.SECRET_PATH)
+                entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
+                self.assertEqual([o["id"] for o in entry["operations"]], list(governed.REQUIRED_OPERATIONS[case]))
+                self.assertTrue(all(o["verified"] for o in entry["operations"]))
+        self.assertEqual(result["manifest"]["result"], "PASS")
+        self.assertEqual(result["gate"]["errors"], [])
+        self.assertEqual(set(result["gate"]["acceptance"].values()), {"ACCEPTED"})
+
+    def test_stage_table_covers_stage_a_beta6_rollback_and_stage_a_again(self):
+        stages = governed.STAGES_BY_CONFIGURATION[SBS]
+        self.assertEqual([s.key for s in stages], ["stage_a", "rollback", "stage_a_again"])
+        self.assertEqual([s.rollback for s in stages], [False, True, False])
+        self.assertTrue(all(s.upstream_version == "8.5.0" and s.endpoint_form == "legacy" for s in stages))
+        self.assertEqual(governed.ROLLBACK_VERSION, "2.4.2-beta.6")
+        plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, "x", self.base, "governed91-1-amd64",
+                             configuration=SBS)
+        self.assertEqual(governed.stage_image(plan, STAGE["rollback"]), governed.runners.ROLLBACK_ENGINEERING_IMAGE)
+        self.assertEqual(governed.stage_image(plan, STAGE["stage_a"]), governed.LANE_IMAGE)
+        with self.assertRaises(governed.LaneFailure):
+            # A stage of another configuration never runs in this lane.
+            governed.stage_image(plan, STAGE["91_only"])
+        names = lanes.case_names(SBS)
+        for case in SBS_CASES:
+            self.assertIn(case, names)
+            self.assertEqual(lanes.case_form(SBS, case), "legacy")
+            self.assertNotIn(case, lanes.case_names("91_only"))
+            self.assertNotIn(case, lanes.case_names("85_only"))
+        self.assertEqual(set(governed.REQUIRED_OPERATIONS), set(governed.ALL_CASES))
+
+    def test_each_omitted_failed_or_mismatched_operation_fails_its_case_and_the_gate(self):
+        for case in SBS_CASES:
+            for op in governed.REQUIRED_OPERATIONS[case]:
+                for label, broken, fragment in (
+                        ("omitted", omitted(case, op, self.core_version), f"operation {op} was not executed"),
+                        ("failed", failed(case, op, self.core_version), f"operation {op}:"),
+                        ("mismatch", mismatched(case, op, self.core_version), f"operation {op}:")):
+                    with self.subTest(case=case, op=op, kind=label):
+                        self.setUp()
+                        try:
+                            result = self.sbs_break(case, broken)
+                            self.assert_rejected(result, case, fragment)
+                            for other in SBS_CASES:
+                                if other != case:
+                                    self.assertEqual(result["cases"][other]["status"], "passed")
+                        finally:
+                            self.tearDown()
+
+    def test_missing_guide_read_fails_every_sbs_dashboard_case(self):
+        for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
+            case = stage.dashboard_case
+            for label, log, fragment in (("absent", {}, "missing guide read"),
+                                         ("key not the receipt", {"key": "f" * 64}, "BestPracticeKey")):
+                with self.subTest(case=case, variant=label):
+                    self.setUp()
+                    try:
+                        result = self.sbs_break(case, no_guide(self.core_version, case, **log))
+                        self.assert_rejected(result, case, fragment)
+                    finally:
+                        self.tearDown()
+
+    def test_9_1_guide_read_or_contract_on_the_8_5_peer_fails(self):
+        for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
+            with self.subTest(stage=stage.key, kind="guide"):
+                self.setUp()
+                try:
+                    result = self.sbs_break(stage.dashboard_case,
+                                            no_guide(self.core_version, stage.dashboard_case,
+                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"]))
+                    self.assert_rejected(result, stage.dashboard_case, "guide read arguments")
+                finally:
+                    self.tearDown()
+            with self.subTest(stage=stage.key, kind="contract"):
+                self.setUp()
+                try:
+                    specs = ev.typed_specs(self.core_version, "9.1.0")
+                    result = self.sbs_break(stage.typed_case, rebuild(stage.typed_case, specs, self.core_version))
+                    self.assert_rejected(result, stage.typed_case, "reviewed 8.5.0 provider")
+                finally:
+                    self.tearDown()
+        # And the reverse: an 8.5.0 guide read or contract does not satisfy the 9.1 stage.
+        self.setUp()
+        result = self.pipeline(self.good(dashboard=no_guide(self.core_version, DASH,
+                                                             arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"])))
+        self.assert_rejected(result, DASH, "guide read arguments")
+        self.tearDown()
+        self.setUp()
+        result = self.pipeline(self.good(typed=rebuild(TYPED, ev.typed_specs(self.core_version, "8.5.0"),
+                                                       self.core_version)))
+        self.assert_rejected(result, TYPED, "reviewed 9.1.0 provider")
+
+    def identity_break(self, stage: str, mutate) -> dict:
+        ident = ev.identity_for(STAGE[stage])
+        ident = mutate(ident)
+        return self.sbs(identities={stage: ident})
+
+    def assert_only_stage_rejected(self, result: dict, stage: str, fragment: str):
+        for case in STAGE[stage].cases:
+            self.assert_rejected(result, case, fragment)
+        for case in SBS_CASES:
+            if case not in STAGE[stage].cases:
+                self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
+
+    def test_rollback_stage_must_run_the_pinned_beta6_release_with_verified_identity(self):
+        breaks = {
+            "lane image instead": (lambda i: dict(i, engineering_image=governed.LANE_IMAGE),
+                                   "did not run the pinned 2.4.2-beta.6"),
+            "lane version instead": (lambda i: dict(i, engineering_version=ev.ENGINEERING_VERSION),
+                                     "did not run the pinned 2.4.2-beta.6"),
+            "identity missing": (lambda i: {k: v for k, v in i.items() if k != "rollback_identity"},
+                                 "rollback identity: rollback_identity_not_verified"),
+            "identity not passed": (lambda i: dict(i, rollback_identity=dict(i["rollback_identity"],
+                                                                            status="failed")),
+                                    "rollback identity: rollback_identity_not_verified"),
+            "identity digest mismatch": (lambda i: dict(i, rollback_identity=dict(
+                i["rollback_identity"], manifest_digest="sha256:" + "0" * 64)),
+                "rollback identity: rollback_identity_mismatch"),
+            "identity of another architecture": (lambda i: dict(i, rollback_identity=ev.rollback_identity("arm64")),
+                                                 "verified for another architecture"),
+        }
+        for label, (mutate, fragment) in breaks.items():
+            with self.subTest(case=label):
+                self.setUp()
+                try:
+                    self.assert_only_stage_rejected(self.identity_break("rollback", mutate), "rollback", fragment)
+                finally:
+                    self.tearDown()
+
+    def test_current_build_stages_must_run_the_lane_image_at_the_expected_version(self):
+        for stage in ("stage_a", "stage_a_again"):
+            breaks = {
+                "beta6 image": (lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE),
+                                "did not run the lane-built Engineering image"),
+                "beta6 version": (lambda i: dict(i, engineering_version=governed.ROLLBACK_VERSION),
+                                  "not the lane build's expected version"),
+                "other version": (lambda i: dict(i, engineering_version="2.4.2-beta.5"),
+                                  "not the lane build's expected version"),
+                "no version": (lambda i: {k: v for k, v in i.items() if k != "engineering_version"},
+                               "not the lane build's expected version"),
+            }
+            for label, (mutate, fragment) in breaks.items():
+                with self.subTest(stage=stage, case=label):
+                    self.setUp()
+                    try:
+                        self.assert_only_stage_rejected(self.identity_break(stage, mutate), stage, fragment)
+                    finally:
+                        self.tearDown()
+
+    def test_stage_identity_must_name_its_own_stage_peer_endpoint_and_architecture(self):
+        breaks = {
+            "missing": (lambda i: None, "stage identity was not recorded"),
+            "other stage": (lambda i: dict(i, key="91_only" if i["key"] != "91_only" else "stage_a"),
+                            "evidence belongs to another stage"),
+            "9.1 peer": (lambda i: dict(i, upstream_version="9.1.0"), "stage peer is not ha-mcp 8.5.0"),
+            "strict endpoint": (lambda i: dict(i, endpoint_path=governed.STRICT_PATH),
+                                "stage endpoint is not the legacy value"),
+            "other architecture": (lambda i: dict(i, architecture="arm64"), "stage architecture"),
+        }
+        for stage in ("stage_a", "rollback", "stage_a_again"):
+            for label, (mutate, fragment) in breaks.items():
+                with self.subTest(stage=stage, case=label):
+                    self.setUp()
+                    try:
+                        self.assert_only_stage_rejected(self.identity_break(stage, mutate), stage, fragment)
+                    finally:
+                        self.tearDown()
+
+    def test_91_only_identity_must_name_the_strict_9_1_stage(self):
+        for label, mutate, fragment in (
+                ("legacy endpoint", lambda i: dict(i, endpoint_path=governed.SECRET_PATH), "strict_full value"),
+                ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.1.0"),
+                ("rollback image", lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE), "lane-built")):
+            with self.subTest(case=label):
+                self.setUp()
+                try:
+                    ident = mutate(ev.identity_for(STAGE["91_only"]))
+                    result = self.pipeline(self.good(identities={"91_only": ident}))
+                    for case in governed.CASES:
+                        self.assert_rejected(result, case, fragment)
+                finally:
+                    self.tearDown()
+
+    def test_a_stage_failure_fails_only_that_stage(self):
+        evidence = self.good(SBS)
+        evidence["stages"]["rollback"]["failure"] = "engineering_version_mismatch"
+        result = self.pipeline(evidence, configuration=SBS)
+        self.assert_only_stage_rejected(result, "rollback", "stage refused: engineering_version_mismatch")
+
+    def test_stage_peer_log_disagreement_fails_only_that_stage(self):
+        evidence = self.good(SBS)
+        evidence["stages"]["stage_a_again"]["peer_log"] = {"forwarded": 12, "peer_posts": 11}
+        self.assert_only_stage_rejected(self.pipeline(evidence, configuration=SBS), "stage_a_again",
+                                        "peer access log")
+
+    def test_lane_failure_fails_every_sbs_case(self):
+        cases = self.base / "cases"
+        code = self.command(self.good(SBS), cases, configuration=SBS,
+                            raise_exc=governed.LaneFailure("peer_role_unexpected"))
+        self.assertEqual(code, 1)
+        for case in SBS_CASES:
+            value = json.loads((cases / f"{case}.json").read_text())
+            self.assertEqual(value["status"], "failed")
+            self.assertEqual(value["endpoint_form"], "legacy")
+            self.assertIn("peer_role_unexpected", value["reason"])
+
+    def test_sbs_command_writes_exactly_its_six_cases(self):
+        cases = self.base / "cases"
+        self.command({}, cases, configuration=SBS)
+        self.assertEqual(sorted(p.stem for p in cases.glob("*.json")), sorted(SBS_CASES))
+        for case in SBS_CASES:
+            self.assertEqual(json.loads((cases / f"{case}.json").read_text())["status"], "failed")
+
+    def test_lane_image_claiming_the_rollback_version_is_refused(self):
+        cases = self.base / "cases"
+        argv = ["--peers", json.dumps(self.row(SBS)["peers"]), "--architecture", "amd64", "--cases-dir", str(cases),
+                "--configuration", SBS, "--expected-engineering-version", governed.ROLLBACK_VERSION]
+        with redirect_stdout(io.StringIO()):
+            code = governed.main(argv, runner=self.runner(self.good(SBS, engineering_version=governed.ROLLBACK_VERSION)),
+                                 environ={})
+        self.assertEqual(code, 1)
+        for case in SBS_CASES:
+            self.assertIn("engineering_version_is_the_rollback_release",
+                          json.loads((cases / f"{case}.json").read_text())["reason"])
+
+    def test_rollback_stage_refuses_to_start_without_a_verified_identity(self):
+        lane = unittest.mock.MagicMock()
+        for identity, fragment in ((None, "rollback_identity_not_verified"),
+                                   (dict(ev.rollback_identity(), status="failed"), "rollback_identity_not_verified"),
+                                   (ev.rollback_identity("arm64"), "rollback_identity_architecture_mismatch")):
+            with self.subTest(identity=identity and identity.get("status")):
+                plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, ev.ENGINEERING_VERSION, self.base,
+                                     "governed91-1-amd64", governed.empty_evidence(SBS), SBS, identity)
+                with unittest.mock.patch.object(governed, "docker", side_effect=AssertionError("docker reached")):
+                    with self.assertRaises(governed.LaneFailure) as raised:
+                        __import__("asyncio").run(governed.run_stage(plan, STAGE["rollback"], lane))
+                self.assertIn(fragment, str(raised.exception))
+                self.assertEqual(plan.evidence["stages"]["rollback"]["identity"], {})
+
+
+class SideBySideSourceBindingTests(unittest.TestCase):
+    def test_peer_selection_is_the_reviewed_row_for_each_configuration(self):
+        sw = support_window()
+        matrix = sw.admission_matrix(sw.load(ROOT), registry_matrix())
+        typed = __import__("exact_image_admission_91_typed")
+        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.1.0")):
+            row = next(r for r in matrix["include"] if r["configuration"] == configuration)
+            peer = governed.select_peer(row["peers"], configuration, "amd64", typed.reviewed_release)
+            self.assertEqual((peer["role"], peer["version"]), (role, version))
+            self.assertEqual(peer["image"], row["peers"][role]["upstream_image"])
+            with self.assertRaises(governed.LaneFailure):
+                bad = copy.deepcopy(row["peers"])
+                bad[role]["image_index_digest"] = "sha256:" + "0" * 64
+                governed.select_peer(bad, configuration, "amd64", typed.reviewed_release)
+        with self.assertRaises(governed.LaneFailure):
+            row = next(r for r in matrix["include"] if r["configuration"] == "91_only")
+            governed.select_peer(row["peers"], SBS, "amd64", typed.reviewed_release)
+
+    def test_version_bound_guide_reads_and_contracts_equal_the_runtime_source(self):
+        from ha_mcp_engineering.clients import mcp as client
+        from ha_mcp_engineering.fan.contracts import FAN_SEMANTIC_CONTRACTS
+        from ha_mcp_engineering.helper_value.contracts import HELPER_SEMANTIC_CONTRACTS
+        from ha_mcp_engineering.power.contracts import POWER_SEMANTIC_CONTRACTS
+        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"], dict(client.BEST_PRACTICES_GUIDE_ARGUMENTS))
+        self.assertNotIn(("8.5.0", governed.GUIDE_TOOL), client._BEST_PRACTICES_ARGUMENT_REWRITES)
+        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"],
+                         dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.1.0", governed.GUIDE_TOOL)]))
+        for version in ("8.5.0", "9.1.0"):
+            self.assertEqual(governed.PROVIDER_CONTRACTS[version], {
+                "control_power": POWER_SEMANTIC_CONTRACTS[version], "control_fan": FAN_SEMANTIC_CONTRACTS[version],
+                "control_helper": HELPER_SEMANTIC_CONTRACTS[version]})
+
+    def test_peer_access_log_pattern_matches_only_the_stage_endpoint(self):
+        legacy = governed.peer_post_pattern(governed.SECRET_PATH)
+        strict = governed.peer_post_pattern(governed.STRICT_PATH)
+        line = '"POST {} HTTP/1.1" 200'
+        self.assertTrue(legacy.search(line.format(governed.SECRET_PATH)))
+        self.assertTrue(legacy.search(line.format(governed.SECRET_PATH + "/")))
+        self.assertFalse(legacy.search(line.format(governed.STRICT_PATH)))
+        self.assertTrue(strict.search(line.format(governed.STRICT_PATH)))
+        self.assertFalse(strict.search(line.format(governed.SECRET_PATH)))
+
+    def test_side_by_side_workflow_step_runs_after_stage_a_again_with_the_rollback_identity(self):
+        import yaml
+        steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))[
+            "jobs"]["exact-image-admission-lanes"]["steps"]
+        names = [str(s.get("name", "")) for s in steps]
+        index = names.index("Cases side-by-side governed dashboard and public typed controls "
+                            "(stage A, beta.6 rollback, stage A again)")
+        step = steps[index]
+        self.assertGreater(index, names.index("Case side-by-side stage A again, current build with 8.5 on the "
+                                              "legacy value"))
+        self.assertGreater(index, names.index("Verify the previous Engineering release by digest"))
+        self.assertLess(index, names.index("Write section 5.1 acceptance manifest"))
+        self.assertEqual(step["if"], "${{ !cancelled() && matrix.state == 'active' && "
+                                     "matrix.configuration == 'side_by_side' }}")
+        self.assertEqual(step["timeout-minutes"], 20)
+        for key in ("uses", "env", "continue-on-error"):
+            self.assertNotIn(key, step)
+        run = step["run"]
+        for fragment in ("--configuration side_by_side", "--engineering-image engineering-admission-lane:test",
+                         '--rollback-identity "$RUNNER_TEMP/admission-rollback-identity.json"',
+                         '--expected-engineering-version "$ENGINEERING_LANE_VERSION"'):
+            self.assertIn(fragment, run)
+        self.assertNotIn("|| true", run)
+        self.assertNotIn("secrets.", run)
+        ninety_one = steps[names.index("Cases 9.1 governed dashboard and public typed controls through the built "
+                                       "image")]
+        self.assertIn("--configuration 91_only", ninety_one["run"])
+        self.assertNotIn("--rollback-identity", ninety_one["run"])
+
 
 import unittest.mock  # noqa: E402  (used by test_engineering_image_must_be_the_lane_image)
 

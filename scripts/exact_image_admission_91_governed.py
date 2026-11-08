@@ -1,30 +1,39 @@
 """HAMCP-319 #407 Part C (F2): governed dashboard and typed controls through the built image.
 
 Section 5.1 cases ``91_governed_dashboard_verified_readback`` and
-``91_typed_public_verified_readback`` (91_only). Unlike the in-process typed
-case, every operation here goes through the BUILT Engineering image's public
-MCP endpoint, the same one a client uses:
+``91_typed_public_verified_readback`` (``--configuration 91_only``), and the
+side_by_side rollback stages (``--configuration side_by_side``): stage A
+(current build with the 8.5.0 peer on the legacy endpoint), the digest-pinned
+2.4.2-beta.6 rollback image with the same peer, and stage A again, each with a
+governed dashboard case and a public typed case. Unlike the in-process typed
+case, every operation here goes through the Engineering image's public MCP
+endpoint, the same one a client uses:
 
 * the Engineering lane image (``engineering-admission-lane:test``, built from
   this commit) runs with host networking against
 * a digest-pinned disposable Home Assistant Core from the reviewed support
   window (published on 127.0.0.1 only) and
 * the digest-pinned ha-mcp 9.1.0 peer from the lane's reviewed registry row on
-  the strict ``/synthetic-upstream-secret/mcp/catalog/full`` endpoint, reached
+  the strict ``/synthetic-upstream-secret/mcp/catalog/full`` endpoint (or the
+  8.5.0 baseline peer on the legacy endpoint for side_by_side), reached
   through a loopback recording proxy that is this runner's peer request log.
 
 The Core typed authority is a signed registry cache written by the image's own
 ``CoreReleaseRegistry`` from an envelope signed with an Ed25519 key generated
 in memory for this run (never written, never logged). External approval goes
 through the image's real Ingress approval page from the Supervisor Ingress peer
-address (172.30.32.2) on a disposable Docker network.
+address (172.30.32.2) on a disposable Docker network. The key reaches the image
+only through the lane-written ``options.json``; the approval page's peer,
+Ingress-path and administrator checks are reproduced, never configured.
 
 Each required operation is recorded with the SHA-256 of its request, its
 response and its readback plus the raw facts its verdict is derived from. The
 same pure validator re-derives every verdict when the case file is written,
 when the lane manifest is written and when the gate reads the manifest, so a
-missing, failed or unverified operation can never be reported as a pass. The
-script writes exactly two case files and never writes ``skipped``.
+missing, failed or unverified operation can never be reported as a pass. An
+operation or stage that cannot run is NOT ACCEPTED with its reason. The script
+writes exactly the configuration's case files (two for 91_only, six for
+side_by_side) and never writes ``skipped``.
 """
 
 from __future__ import annotations
@@ -56,18 +65,69 @@ for _path in (ROOT / "scripts", ROOT / "hass_mcp_engineering_beta"):
 from exact_image_admission_lanes import (  # noqa: E402
     EXPECTED_PROTOCOL, LaneFailure, bounded, case_result, require, write_json,
 )
+import exact_image_admission_91_runners as runners  # noqa: E402  (stdlib-only at import)
 
 CASE_DASHBOARD = "91_governed_dashboard_verified_readback"
 CASE_TYPED = "91_typed_public_verified_readback"
-CASES = (CASE_DASHBOARD, CASE_TYPED)
 FORM = "strict_full"
 JOB = "exact-image-admission-lanes"
 UPSTREAM_VERSION = "9.1.0"
+BASELINE_VERSION = "8.5.0"
 SECRET_PATH = "/synthetic-upstream-secret/mcp"
 STRICT_PATH = SECRET_PATH + "/catalog/full"
 ACCESS_SECRET = "synthetic-engineering-access-secret"
 LANE_IMAGE = "engineering-admission-lane:test"
+ROLLBACK_IMAGE = runners.ROLLBACK_ENGINEERING_IMAGE
+ROLLBACK_VERSION = runners.ROLLBACK_ENGINEERING_VERSION
+# Only the lane image is selectable from the command line; the previous release
+# comes from its digest-pinned constant and only for a rollback stage.
 ENGINEERING_IMAGES = (LANE_IMAGE,)
+STAGE_IMAGES = (LANE_IMAGE, ROLLBACK_IMAGE)
+
+
+@dataclass(frozen=True)
+class Stage:
+    """One Engineering deployment the governed operations run against."""
+
+    key: str
+    configuration: str
+    upstream_version: str
+    endpoint_form: str
+    rollback: bool
+    dashboard_case: str
+    typed_case: str
+
+    @property
+    def endpoint_path(self) -> str:
+        return STRICT_PATH if self.endpoint_form == "strict_full" else SECRET_PATH
+
+    @property
+    def cases(self) -> tuple[str, str]:
+        return (self.dashboard_case, self.typed_case)
+
+
+# Order is execution order. The side_by_side stages share one persisted data
+# directory and one ha-mcp 8.5.0 peer on the legacy value: the current build,
+# then the previous release (rollback), then the current build again.
+STAGES: tuple[Stage, ...] = (
+    Stage("91_only", "91_only", UPSTREAM_VERSION, "strict_full", False, CASE_DASHBOARD, CASE_TYPED),
+    Stage("stage_a", "side_by_side", BASELINE_VERSION, "legacy", False,
+          "sbs_governed_dashboard_stage_a_85_legacy", "sbs_typed_public_stage_a_85_legacy"),
+    Stage("rollback", "side_by_side", BASELINE_VERSION, "legacy", True,
+          "sbs_governed_dashboard_rollback_beta6_85_legacy", "sbs_typed_public_rollback_beta6_85_legacy"),
+    Stage("stage_a_again", "side_by_side", BASELINE_VERSION, "legacy", False,
+          "sbs_governed_dashboard_stage_a_again_85_legacy", "sbs_typed_public_stage_a_again_85_legacy"),
+)
+CONFIGURATIONS = ("91_only", "side_by_side")
+STAGES_BY_CONFIGURATION = {c: tuple(s for s in STAGES if s.configuration == c) for c in CONFIGURATIONS}
+CASES_BY_CONFIGURATION = {c: tuple(case for s in STAGES_BY_CONFIGURATION[c] for case in s.cases)
+                          for c in CONFIGURATIONS}
+CASES = CASES_BY_CONFIGURATION["91_only"]
+ALL_CASES = tuple(case for s in STAGES for case in s.cases)
+CASE_STAGE = {case: s for s in STAGES for case in s.cases}
+DASHBOARD_CASES = frozenset(s.dashboard_case for s in STAGES)
+PEER_ROLE = {"91_only": "candidate", "side_by_side": "baseline"}
+PEER_VERSION = {"91_only": UPSTREAM_VERSION, "side_by_side": BASELINE_VERSION}
 ADDON_HOST = "abcdef12-ha-mcp"
 CORE_PORT, PEER_PORT, PROXY_PORT, MCP_PORT, INGRESS_PORT = 18450, 18451, 18452, 18453, 18454
 PREFIX = "governed91"
@@ -77,7 +137,15 @@ INGRESS_PATH = "/api/hassio_ingress/hamcpGoverned91LaneToken"
 DASHBOARD_URL_PATH = "hamcp-governed"
 NEW_TITLE = "After governed apply"
 GUIDE_TOOL, SETTER_TOOL, SERVICE_TOOL = "ha_get_skill_guide", "ha_config_set_dashboard", "ha_call_service"
-GUIDE_ARGUMENTS = {"file": "references/dashboard-guide.md"}
+# The exact internal guide read per upstream release: 8.5.0 is the reviewed
+# pass-through (skill + file); 9.1.0 is the compiled file-only rewrite
+# (clients/mcp.py BEST_PRACTICES_GUIDE_ARGUMENTS / _BEST_PRACTICES_ARGUMENT_REWRITES,
+# unchanged for 8.5.0 since 2.4.2-beta.6).
+GUIDE_ARGUMENTS_BY_VERSION = {
+    BASELINE_VERSION: {"skill": "home-assistant-best-practices", "file": "references/dashboard-guide.md"},
+    UPSTREAM_VERSION: {"file": "references/dashboard-guide.md"},
+}
+GUIDE_ARGUMENTS = GUIDE_ARGUMENTS_BY_VERSION[UPSTREAM_VERSION]
 GUIDE_RECEIPT = re.compile(r"I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -127,9 +195,15 @@ TYPED_TABLE: dict[str, tuple[str, dict[str, Any], dict[str, Any]]] = {
                                                              "action": "select_option", "value": "Away"},
                                           {"state": "Away"}),
 }
+# Reviewed typed semantic contract per upstream release and public tool
+# (power/fan/helper_value contracts.py; asserted equal to the source by tests).
+PROVIDER_CONTRACTS = {version: {"control_power": "ha-mcp-" + version + "-single-power-v2",
+                                "control_fan": "ha-mcp-" + version + "-single-fan-v2",
+                                "control_helper": "ha-mcp-" + version + "-single-helper-value-v1"}
+                      for version in (BASELINE_VERSION, UPSTREAM_VERSION)}
 TYPED_OPERATIONS = tuple(TYPED_TABLE)
-REQUIRED_OPERATIONS: dict[str, tuple[str, ...]] = {CASE_DASHBOARD: DASHBOARD_OPERATIONS,
-                                                   CASE_TYPED: TYPED_OPERATIONS}
+REQUIRED_OPERATIONS: dict[str, tuple[str, ...]] = {
+    case: DASHBOARD_OPERATIONS if case in DASHBOARD_CASES else TYPED_OPERATIONS for case in ALL_CASES}
 COMPACT_KEYS = ("id", "request_sha256", "response_sha256", "readback_sha256", "verified")
 
 
@@ -227,7 +301,7 @@ def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: d
             return "readback: peer request log does not show exactly one setter call"
         return None
     if op == "dashboard_bps_guide_read":
-        return bps_problem(readback)
+        return bps_problem(readback, context.get("guide_arguments"))
     if op == "dashboard_verify":
         if facts.get("task_state") != "succeeded_verified" or facts.get("terminal") is not True:
             return "execution task is not terminal succeeded_verified"
@@ -241,9 +315,16 @@ def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: d
     return "unknown operation"
 
 
-def bps_problem(log: Any) -> str | None:
-    """The internal guide read precedes the single setter, whose key is that receipt."""
+def bps_problem(log: Any, expected_arguments: Any = None) -> str | None:
+    """The internal guide read precedes the single setter, whose key is that receipt.
 
+    ``expected_arguments`` is the stage's compiled guide read for its exact
+    upstream release (default: the 9.1.0 file-only read).
+    """
+
+    expected_arguments = GUIDE_ARGUMENTS if expected_arguments is None else expected_arguments
+    if not isinstance(expected_arguments, dict) or not expected_arguments:
+        return "no reviewed guide read for this upstream release"
     if not isinstance(log, list) or not all(isinstance(item, dict) for item in log):
         return "readback: peer request log is unreadable"
     setters = [i for i, item in enumerate(log) if item.get("tool") == SETTER_TOOL]
@@ -254,7 +335,7 @@ def bps_problem(log: Any) -> str | None:
     if not guides:
         return "missing guide read: no ha_get_skill_guide call precedes the setter"
     guide = guides[-1]
-    if guide.get("arguments") != GUIDE_ARGUMENTS:
+    if guide.get("arguments") != expected_arguments:
         return "guide read arguments are not exactly the dashboard guide"
     receipts = guide.get("receipt_sha256")
     if not isinstance(receipts, list) or not receipts or not all(HEX64.fullmatch(str(r)) for r in receipts):
@@ -275,8 +356,11 @@ def _typed_problem(op: str, facts: dict[str, Any], readback: Any, context: dict[
         return "public typed call did not succeed"
     if facts.get("outcome") != "succeeded_verified" or facts.get("terminal") is not True:
         return "typed task is not terminal succeeded_verified"
-    if facts.get("provider") != PROVIDERS[tool] or facts.get("provider_contract_exact") is not True:
-        return "typed provider or contract is not the reviewed 9.1.0 provider"
+    version = context.get("upstream_version")
+    contract = (context.get("provider_contracts") or {}).get(tool)
+    if facts.get("provider") != PROVIDERS[tool] or not isinstance(contract, str) \
+            or facts.get("provider_contract") != contract:
+        return f"typed provider or contract is not the reviewed {version} provider"
     if facts.get("provider_attempt_count") != 1 or facts.get("dispatch_intent_recorded") is not True:
         return "typed dispatch is not a single recorded attempt"
     if facts.get("core_binding_version") != context.get("core_version") or not context.get("core_version"):
@@ -311,15 +395,63 @@ def operation_problem(record: Any, context: dict[str, Any]) -> str | None:
 
 
 def case_context(case: str, observed: Any) -> dict[str, Any]:
-    """Validation context: fixed expectations, never values the evidence chose for itself."""
+    """Validation context: fixed expectations, never values the evidence chose for itself.
+
+    The upstream release, and with it the guide read and the typed contracts,
+    comes from the case's compiled stage, not from the evidence.
+    """
 
     binding = observed.get("binding") if isinstance(observed, dict) and isinstance(observed.get("binding"), dict) \
         else {}
-    if case == CASE_DASHBOARD:
+    stage = CASE_STAGE.get(case)
+    version = stage.upstream_version if stage is not None else None
+    if case in DASHBOARD_CASES:
         return {"plan_hash": binding.get("plan_hash"), "url_path": DASHBOARD_URL_PATH,
-                "seed_config": SEED_CONFIG, "patched_config": PATCHED_CONFIG}
+                "seed_config": SEED_CONFIG, "patched_config": PATCHED_CONFIG,
+                "guide_arguments": GUIDE_ARGUMENTS_BY_VERSION.get(version)}
     core_version = observed.get("core_version") if isinstance(observed, dict) else None
-    return {"core_version": core_version if binding.get("core_version") == core_version else None}
+    return {"core_version": core_version if binding.get("core_version") == core_version else None,
+            "upstream_version": version, "provider_contracts": PROVIDER_CONTRACTS.get(version)}
+
+
+def stage_problem(case: str, observed: dict[str, Any]) -> str | None:
+    """The Engineering deployment that ran this case is exactly the case's stage.
+
+    A rollback stage counts only on the digest-pinned previous release whose
+    identity verified on this runner's architecture; every other stage only on
+    the lane-built image at the lane's expected version.
+    """
+
+    stage = CASE_STAGE[case]
+    ident = observed.get("stage")
+    if not isinstance(ident, dict) or not ident:
+        return "stage identity was not recorded"
+    if ident.get("key") != stage.key:
+        return "evidence belongs to another stage"
+    if ident.get("upstream_version") != stage.upstream_version:
+        return f"stage peer is not ha-mcp {stage.upstream_version}"
+    if ident.get("endpoint_path") != stage.endpoint_path:
+        return f"stage endpoint is not the {stage.endpoint_form} value"
+    architecture = observed.get("architecture")
+    if architecture not in ("amd64", "arm64") or ident.get("architecture") != architecture:
+        return "stage architecture is not the lane architecture"
+    version = ident.get("engineering_version")
+    if stage.rollback:
+        if ident.get("engineering_image") != ROLLBACK_IMAGE or version != ROLLBACK_VERSION:
+            return f"rollback stage did not run the pinned {ROLLBACK_VERSION} release"
+        rollback = ident.get("rollback_identity")
+        problem = runners.rollback_identity_problem(rollback)
+        if problem is not None:
+            return "rollback identity: " + problem
+        if rollback.get("architecture") != architecture:
+            return "rollback identity: verified for another architecture"
+        return None
+    if ident.get("engineering_image") != LANE_IMAGE:
+        return "stage did not run the lane-built Engineering image"
+    if not isinstance(version, str) or not version or version == ROLLBACK_VERSION \
+            or version != observed.get("engineering_version"):
+        return "stage Engineering version is not the lane build's expected version"
+    return None
 
 
 def case_problem(case: str, observed: Any) -> str | None:
@@ -329,6 +461,9 @@ def case_problem(case: str, observed: Any) -> str | None:
         return "not a governed case"
     if not isinstance(observed, dict):
         return "no observed evidence"
+    problem = stage_problem(case, observed)
+    if problem is not None:
+        return problem
     context = case_context(case, observed)
     operations = observed.get("operations")
     if not isinstance(operations, list):
@@ -421,33 +556,86 @@ class Plan:
     work_root: Path
     identity: str
     evidence: dict[str, Any] = field(default_factory=dict)
+    configuration: str = "91_only"
+    rollback_identity: dict[str, Any] | None = None
+
+    @property
+    def stages(self) -> tuple[Stage, ...]:
+        return STAGES_BY_CONFIGURATION[self.configuration]
 
 
-def empty_evidence() -> dict[str, Any]:
-    return {case: {"operations": [], "binding": {}, "diagnostics": []} for case in CASES} | {
-        "protocols": [], "peer_log": {}}
+def empty_evidence(configuration: str = "91_only") -> dict[str, Any]:
+    stages = STAGES_BY_CONFIGURATION[configuration]
+    return {case: {"operations": [], "binding": {}, "diagnostics": []} for s in stages for case in s.cases} | {
+        "stages": {s.key: {"protocols": [], "peer_log": {}, "identity": {}} for s in stages}}
+
+
+def stage_section(evidence: dict[str, Any], stage: Stage) -> dict[str, Any]:
+    stages = evidence.get("stages") if isinstance(evidence.get("stages"), dict) else {}
+    section = stages.get(stage.key)
+    return section if isinstance(section, dict) else {}
 
 
 def build_observed(plan: Plan | None, evidence: dict[str, Any], case: str) -> dict[str, Any]:
+    stage = CASE_STAGE[case]
     section = evidence.get(case) or {}
+    staged = stage_section(evidence, stage)
+    protocols = staged.get("protocols") or []
     observed: dict[str, Any] = {
         "operations": section.get("operations", []), "binding": section.get("binding", {}),
-        "protocols": evidence.get("protocols", []), "peer_log": evidence.get("peer_log", {}),
-        "diagnostics": section.get("diagnostics", [])[:20],
+        "protocols": staged.get("protocols", []), "peer_log": staged.get("peer_log", {}),
+        "stage": staged.get("identity", {}), "diagnostics": section.get("diagnostics", [])[:20],
     }
-    protocols = evidence.get("protocols") or []
     observed["negotiated_protocol"] = protocols[0] if protocols and len(set(protocols)) == 1 else None
     observed["required_operations"] = list(REQUIRED_OPERATIONS[case])
+    observed["upstream_version"] = stage.upstream_version
+    observed["endpoint_path"] = stage.endpoint_path
     if plan is not None:
-        observed.update(endpoint_path=STRICT_PATH, architecture=plan.architecture,
-                        engineering_image=plan.engineering_image, engineering_version=plan.engineering_version,
+        observed.update(architecture=plan.architecture,
+                        engineering_image=ROLLBACK_IMAGE if stage.rollback else plan.engineering_image,
+                        engineering_version=plan.engineering_version,
                         peer_image_index_digest=plan.peer["image_index_digest"],
                         peer_platform_manifest_digest=plan.peer["platform_manifest_digest"],
                         core_version=plan.core["version"], core_image_index_digest=plan.core["image_index_digest"])
     for key in ("engineering_image_id", "peer_image_id", "core_compatible_count", "failure"):
         if key in evidence:
             observed[key] = evidence[key]
+    if isinstance(staged.get("failure"), str):
+        observed["stage_failure"] = staged["failure"]
     return observed
+
+
+def select_peer(peers: Any, configuration: str, architecture: str,
+                release_for: Callable[[str], Any]) -> dict[str, str]:
+    """The configuration's peer from its reviewed registry row only (91_only: 9.1.0 candidate;
+    side_by_side: the 8.5.0 baseline the stages run against)."""
+
+    import exact_image_admission_91_typed as typed
+    role, version = PEER_ROLE[configuration], PEER_VERSION[configuration]
+    require(architecture in ("amd64", "arm64"), "peer_architecture_invalid")
+    require(isinstance(peers, dict) and isinstance(peers.get(role), dict), "peer_row_absent")
+    row = peers[role]
+    image, index = row.get("upstream_image"), row.get("image_index_digest")
+    platforms = row.get("architecture_image_digests")
+    require(row.get("upstream_version") == version, "peer_version_unexpected")
+    require(isinstance(image, str) and typed.PEER_IMAGE.fullmatch(image) is not None, "peer_image_not_digest_pinned")
+    require(isinstance(index, str) and typed.DIGEST.fullmatch(index) is not None
+            and image == typed.PEER_REPOSITORY + "@" + index, "peer_image_index_mismatch")
+    require(isinstance(platforms, dict) and set(platforms) == {"linux/amd64", "linux/arm64"}
+            and all(isinstance(v, str) and typed.DIGEST.fullmatch(v) for v in platforms.values()),
+            "peer_platform_digests_malformed")
+    revision, source = row.get("image_revision"), row.get("source_commit")
+    require(isinstance(revision, str) and typed.COMMIT.fullmatch(revision) is not None
+            and isinstance(source, str) and typed.COMMIT.fullmatch(source) is not None, "peer_revision_malformed")
+    release = release_for(version)
+    require(release is not None and not getattr(release, "revoked", False), "peer_release_unreviewed")
+    require(release.image_index_digest == index
+            and dict(release.architecture_image_digests_by_platform) == platforms
+            and release.image_revision == revision and release.source_commit == source,
+            "peer_row_differs_from_reviewed_registry")
+    return {"image": image, "image_index_digest": index, "platform": "linux/" + architecture,
+            "platform_manifest_digest": platforms["linux/" + architecture],
+            "image_revision": revision, "source_commit": source, "version": version, "role": role}
 
 
 def job_gate(environ: dict[str, str]) -> None:
@@ -469,24 +657,29 @@ def main(argv: list[str] | None = None, runner: Runner | None = None,
     parser.add_argument("--cases-dir", required=True, type=Path)
     parser.add_argument("--engineering-image", default=LANE_IMAGE, choices=ENGINEERING_IMAGES)
     parser.add_argument("--expected-engineering-version", required=True)
+    parser.add_argument("--configuration", required=True, choices=CONFIGURATIONS)
+    parser.add_argument("--rollback-identity", type=Path)
     parser.add_argument("--work-dir", type=Path)
     args = parser.parse_args(argv)
     environ = dict(os.environ) if environ is None else environ
     runner = run_lane if runner is None else runner
     plan: Plan | None = None
-    evidence = empty_evidence()
+    evidence = empty_evidence(args.configuration)
     failure = ""
     try:
         job_gate(environ)
         require(re.fullmatch(r"[0-9A-Za-z.+-]{1,64}", args.expected_engineering_version) is not None,
                 "engineering_version_malformed")
+        require(args.expected_engineering_version != ROLLBACK_VERSION, "engineering_version_is_the_rollback_release")
         peers = json.loads(args.peers)
-        peer = typed.select_peer_image(peers, args.architecture, release_for or typed.reviewed_release)
+        peer = select_peer(peers, args.configuration, args.architecture, release_for or typed.reviewed_release)
         core = typed.core_image(window_loader)
         work_root = args.work_dir or Path(environ.get("RUNNER_TEMP") or tempfile.gettempdir())
         identity = f"{PREFIX}-{os.getpid()}-{args.architecture}"
+        # Read only; whether it verifies is decided per rollback case, never here.
+        rollback_identity = runners.load_identity(str(args.rollback_identity)) if args.rollback_identity else None
         plan = Plan(args.architecture, peer, core, args.engineering_image, args.expected_engineering_version,
-                    Path(work_root), identity, evidence)
+                    Path(work_root), identity, evidence, args.configuration, rollback_identity)
         previous = signal.getsignal(signal.SIGTERM)
 
         def terminated(signum, frame):
@@ -505,20 +698,23 @@ def main(argv: list[str] | None = None, runner: Runner | None = None,
         failure = "lane error: " + type(exc).__name__[:64]
     exit_code = 0
     summary = []
-    for case in CASES:
+    for case in CASES_BY_CONFIGURATION[args.configuration]:
         try:
             observed = build_observed(plan, evidence, case)
             status, reason = evaluate(case, observed)
         except Exception:
             observed, status, reason = {"negotiated_protocol": None}, "failed", "evidence_unbuildable"
-        if failure:
-            observed["failure"] = failure
+        stage_failure = stage_section(evidence, CASE_STAGE[case]).get("failure")
+        for problem in (failure, "stage refused: " + bounded(str(stage_failure), 120) if stage_failure else ""):
+            if not problem:
+                continue
+            observed["failure"] = problem
             if status == "passed":
-                status, reason = "failed", failure
+                status, reason = "failed", problem
             else:
-                reason = bounded(failure + "; " + reason)
+                reason = bounded(problem + "; " + reason)
         write_json(args.cases_dir / (case + ".json"),
-                   case_result(case, status, form=FORM, reason=reason if status != "passed" else "",
+                   case_result(case, status, form=CASE_STAGE[case].endpoint_form, reason=reason if status != "passed" else "",
                                observed=observed))
         summary.append({"case": case, "status": status, "reason": reason})
         exit_code |= 0 if status == "passed" else 1
@@ -794,14 +990,24 @@ def engineering_options(public_key: str) -> dict[str, Any]:
             "ha_core_release_registry_public_key": public_key}
 
 
-def engineering_command(plan: Plan, data: Path, env_file: Path) -> list[str]:
+def stage_image(plan: Plan, stage: Stage) -> str:
+    """Only the lane-built image, or the digest-pinned previous release for a rollback stage."""
+
     require(plan.engineering_image in ENGINEERING_IMAGES, "engineering_image_not_allowed")
-    return ["run", "-d", "--name", plan.identity + "-engineering", "--network", "host",
+    require(stage in plan.stages, "stage_not_in_configuration")
+    image = ROLLBACK_IMAGE if stage.rollback else plan.engineering_image
+    require(image in STAGE_IMAGES, "engineering_image_not_allowed")
+    return image
+
+
+def engineering_command(plan: Plan, stage: Stage, data: Path, env_file: Path) -> list[str]:
+    image = stage_image(plan, stage)
+    return ["run", "-d", "--name", f"{plan.identity}-engineering-{stage.key}", "--network", "host",
             "--label", f"{LABEL}={plan.identity}", "--security-opt", "no-new-privileges:true",
             "--add-host", f"{ADDON_HOST}:127.0.0.1",
             # The real registry host resolves to loopback: refresh fails closed and keeps the seeded cache.
             "--add-host", "raw.githubusercontent.com:127.0.0.1",
-            "--memory", "1g", "-v", f"{data}:/data", "--env-file", str(env_file), plan.engineering_image]
+            "--memory", "1g", "-v", f"{data}:/data", "--env-file", str(env_file), image]
 
 
 async def mcp_call(session, tool: str, arguments: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -896,17 +1102,18 @@ async def plan_status(session, plan_id: str) -> Any:
     return find_key(data_of(response), "status")
 
 
-async def dashboard_flow(plan: Plan, session, proxy: RecordingProxy, socket: CoreSocket,
+async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, socket: CoreSocket,
                          ingress: Callable[[str], Awaitable[dict[str, Any]]],
                          host_probe: Callable[[str], Awaitable[int]]) -> None:
-    section = plan.evidence[CASE_DASHBOARD]
+    case = stage.dashboard_case
+    section = plan.evidence[case]
     context = section["binding"]
     context.update(url_path=DASHBOARD_URL_PATH, seed_config=SEED_CONFIG, patched_config=PATCHED_CONFIG)
     ops = section["operations"]
 
     def record(op, request, response, readback, facts):
         ops.append(operation_record(op, request=request, response=response, readback=readback,
-                                    facts=facts, context=context))
+                                    facts=facts, context=case_context(case, {"binding": context})))
         if not ops[-1]["verified"]:
             section["diagnostics"].append({"operation": op, "shape": shape(response)
                                            if isinstance(response, dict) and "success" in response else None})
@@ -994,18 +1201,12 @@ async def dashboard_flow(plan: Plan, session, proxy: RecordingProxy, socket: Cor
     record("dashboard_core_readback", core_request, config, config, {"expected": PATCHED_CONFIG})
 
 
-async def typed_flow(plan: Plan, session, proxy: RecordingProxy, core_url: str, token: str) -> None:
+async def typed_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, core_url: str, token: str) -> None:
     import aiohttp
-    from ha_mcp_engineering.fan.contracts import FAN_SEMANTIC_CONTRACTS
-    from ha_mcp_engineering.power.contracts import POWER_SEMANTIC_CONTRACTS
-    from ha_mcp_engineering.helper_value.contracts import HELPER_SEMANTIC_CONTRACTS
     from exact_image_admission_91_typed import operation_id
-    contracts = {"control_power": POWER_SEMANTIC_CONTRACTS[UPSTREAM_VERSION],
-                 "control_fan": FAN_SEMANTIC_CONTRACTS[UPSTREAM_VERSION],
-                 "control_helper": HELPER_SEMANTIC_CONTRACTS[UPSTREAM_VERSION]}
-    section = plan.evidence[CASE_TYPED]
-    context = section["binding"]
-    context["core_version"] = plan.core["version"]
+    section = plan.evidence[stage.typed_case]
+    section["binding"]["core_version"] = plan.core["version"]
+    context = case_context(stage.typed_case, {"binding": section["binding"], "core_version": plan.core["version"]})
     calls_seen: dict[str, int] = {}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
         for entity in (LIGHT, SWITCH):
@@ -1045,7 +1246,7 @@ async def typed_flow(plan: Plan, session, proxy: RecordingProxy, core_url: str, 
             facts = {"tool": tool, "arguments": base, "success": response.get("success"),
                      "outcome": receipt.get("state") if tool != "control_helper" else receipt.get("status"),
                      "terminal": receipt.get("terminal"), "provider": receipt.get("provider"),
-                     "provider_contract_exact": receipt.get("provider_contract") == contracts[tool],
+                     "provider_contract": receipt.get("provider_contract"),
                      "provider_attempt_count": receipt.get("provider_attempt_count"),
                      "dispatch_intent_recorded": receipt.get("dispatch_intent_recorded"),
                      "core_binding_version": (receipt.get("core_binding") or {}).get("version"),
@@ -1072,10 +1273,17 @@ async def guarded(plan: Plan, case: str, step: Awaitable[None]) -> None:
         plan.evidence[case]["diagnostics"].append({"failure": type(exc).__name__[:64]})
 
 
-def peer_posts(container: str) -> int:
+def peer_post_pattern(path: str) -> re.Pattern[str]:
+    """Access-log POST lines for exactly this endpoint (the legacy value does not count strict ones)."""
+
+    tail = r'[^ "]*' if path == STRICT_PATH else r'/?(?:\?[^ "]*)?'
+    return re.compile(r'"POST ' + re.escape(path) + tail + r' HTTP/1\.[01]" \d{3}')
+
+
+def peer_posts(container: str, path: str = STRICT_PATH) -> int:
     logs = docker("logs", container, check=False, timeout=60)
     text = (logs.stdout or "") + (logs.stderr or "")
-    return len(re.findall(r'"POST ' + re.escape(STRICT_PATH) + r'[^ "]* HTTP/1\.[01]" \d{3}', text))
+    return len(peer_post_pattern(path).findall(text))
 
 
 def cleanup(plan: Plan, work: Path | None, core_image_ref: str) -> None:
@@ -1094,11 +1302,124 @@ def cleanup(plan: Plan, work: Path | None, core_image_ref: str) -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+@dataclass
+class LaneContext:
+    """What every stage of one lane shares: one Core, one peer, one persisted data directory."""
+
+    work: Path
+    data: Path
+    core_url: str
+    token: str
+    rest: Any
+    socket: CoreSocket
+    proxy: RecordingProxy
+    peer_container: str
+    upstream_version: str
+    ingress: Callable[[str], Awaitable[dict[str, Any]]]
+    host_probe: Callable[[str], Awaitable[int]]
+
+
+CORE_RESET = (
+    ("light", "turn_off", {"entity_id": LIGHT}),
+    ("switch", "turn_off", {"entity_id": SWITCH}),
+    ("fan", "turn_off", {"entity_id": FAN}),
+    ("input_boolean", "turn_off", {"entity_id": "input_boolean.hamcp_seq17"}),
+    ("input_number", "set_value", {"entity_id": "input_number.hamcp_seq17", "value": 20.0}),
+    ("input_select", "select_option", {"entity_id": "input_select.hamcp_seq17", "option": "Home"}),
+)
+FIXTURE_STATES = {FAN: "off", LIGHT: "off", SWITCH: "off", "input_boolean.hamcp_seq17": "off",
+                  "input_number.hamcp_seq17": "20.0", "input_select.hamcp_seq17": "Home"}
+
+
+async def reset_core(lane: LaneContext) -> None:
+    """Return the disposable Core fixtures and dashboard to their seed before the next stage."""
+
+    import aiohttp
+    import exact_image_admission_91_typed as typed
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
+        for domain, service, data in CORE_RESET:
+            async with client.post(f"{lane.core_url}/api/services/{domain}/{service}", json=data,
+                                   headers={"Authorization": f"Bearer {lane.token}"}) as response:
+                require(response.status == 200, "core_fixture_reset_failed")
+    await typed.wait_states(lane.rest, FIXTURE_STATES)
+    await lane.socket.command({"type": "lovelace/config/save", "url_path": DASHBOARD_URL_PATH,
+                               "config": SEED_CONFIG})
+    require(await lane.socket.command({"type": "lovelace/config", "url_path": DASHBOARD_URL_PATH, "force": True})
+            == SEED_CONFIG, "core_dashboard_reset_mismatch")
+
+
+async def run_stage(plan: Plan, stage: Stage, lane: LaneContext) -> None:
+    """One Engineering deployment on the shared data: governed dashboard, then public typed controls."""
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    staged = plan.evidence["stages"][stage.key]
+    arch = plan.architecture
+    image = stage_image(plan, stage)
+    expected_version = plan.engineering_version
+    if stage.rollback:
+        # The previous release runs only after its digest identity verified on this runner.
+        problem = runners.rollback_identity_problem(plan.rollback_identity)
+        require(problem is None, problem or "rollback_identity_not_verified")
+        require(plan.rollback_identity.get("architecture") == arch, "rollback_identity_architecture_mismatch")
+        if docker("image", "inspect", "--format", "{{.Id}}", image, check=False).returncode != 0:
+            docker("pull", "--platform", "linux/" + arch, image, timeout=600)
+        expected_version = ROLLBACK_VERSION
+    require(docker("image", "inspect", "--format", "{{.Architecture}}", image).stdout.strip() == arch,
+            "engineering_architecture_mismatch")
+    image_id = docker("image", "inspect", "--format", "{{.Id}}", image).stdout.strip()
+    identity: dict[str, Any] = {"key": stage.key, "upstream_version": lane.upstream_version,
+                                "endpoint_path": stage.endpoint_path, "architecture": arch,
+                                "engineering_image": image, "engineering_image_id": image_id}
+    if stage.rollback:
+        identity["rollback_identity"] = plan.rollback_identity
+    staged["identity"] = identity
+    mark, forwarded = lane.proxy.mark(), lane.proxy.forwarded
+    posts = peer_posts(lane.peer_container, stage.endpoint_path)
+    container = f"{plan.identity}-engineering-{stage.key}"
+    env_file = lane.work / f"engineering-{stage.key}.env"
+    with env_file.open("x", encoding="utf-8") as stream:
+        os.chmod(env_file, 0o600)
+        stream.write("\n".join((
+            f"HA_URL={lane.core_url}", f"HA_TOKEN={lane.token}", f"SUPERVISOR_TOKEN={lane.token}",
+            f"MCP_PORT={MCP_PORT}", f"APPROVAL_INGRESS_PORT={INGRESS_PORT}",
+            f"UPSTREAM_DASHBOARD_MCP_URL=http://{ADDON_HOST}:{PROXY_PORT}{stage.endpoint_path}")) + "\n")
+    try:
+        docker(*engineering_command(plan, stage, lane.data, env_file), timeout=120)
+    finally:
+        env_file.unlink(missing_ok=True)
+    require(docker("inspect", "--format", "{{.Image}}", container).stdout.strip() == image_id,
+            "engineering_running_image_mismatch")
+    ready = await asyncio.to_thread(_wait_ready, f"http://127.0.0.1:{MCP_PORT}/ready", 240)
+    if not ready:
+        logs = docker("logs", "--tail", "40", container, check=False)
+        plan.evidence[stage.dashboard_case]["diagnostics"].append(
+            {"engineering_log_tail_sha256": hashlib.sha256((logs.stderr or "").encode()).hexdigest()})
+        raise LaneFailure("engineering_not_ready")
+    endpoint = f"http://127.0.0.1:{MCP_PORT}/{ACCESS_SECRET}/mcp"
+    try:
+        async with streamablehttp_client(endpoint, timeout=60, sse_read_timeout=300) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                _, health = await mcp_call(session, "get_server_health", {"check_ha": False})
+                server = find_key(health, "server") or {}
+                observed = server.get("version") if isinstance(server, dict) else None
+                require(observed == expected_version, "engineering_version_mismatch")
+                identity["engineering_version"] = observed
+                await guarded(plan, stage.dashboard_case,
+                              dashboard_flow(plan, stage, session, lane.proxy, lane.socket,
+                                             lane.ingress, lane.host_probe))
+                await guarded(plan, stage.typed_case,
+                              typed_flow(plan, stage, session, lane.proxy, lane.core_url, lane.token))
+    finally:
+        staged["protocols"] = [item["protocol"] for item in lane.proxy.since(mark) if "protocol" in item]
+        staged["peer_log"] = {"forwarded": lane.proxy.forwarded - forwarded,
+                              "peer_posts": peer_posts(lane.peer_container, stage.endpoint_path) - posts}
+
+
 async def run_lane(plan: Plan) -> None:
     logging.disable(logging.CRITICAL)
     import aiohttp
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
     import real_ha_contract_tests as existing
     import exact_image_admission_91_typed as typed
     from ha_mcp_engineering.clients import HomeAssistantRestClient
@@ -1134,9 +1455,7 @@ async def run_lane(plan: Plan) -> None:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
             await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
             await existing._advance_config_flow(client, token, "power_contract_fixture", [{}])
-        await typed.wait_states(rest, {FAN: "off", LIGHT: "off", SWITCH: "off",
-                                       "input_boolean.hamcp_seq17": "off", "input_number.hamcp_seq17": "20.0",
-                                       "input_select.hamcp_seq17": "Home"})
+        await typed.wait_states(rest, FIXTURE_STATES)
         async with CoreSocket(f"ws://127.0.0.1:{CORE_PORT}/api/websocket", token) as socket:
             user = await socket.command({"type": "auth/current_user"})
             require(isinstance(user, dict) and user.get("is_owner") is True
@@ -1164,60 +1483,51 @@ async def run_lane(plan: Plan) -> None:
                     "core_registry_seed_failed")
             (data / "options.json").write_text(json.dumps(engineering_options(public_key)) + "\n", encoding="utf-8")
 
-            # Exact ha-mcp 9.1.0 peer from the reviewed registry row.
+            # Exact peer from the reviewed registry row (9.1.0 candidate or 8.5.0 baseline).
             image = plan.peer["image"]
+            role = plan.peer.get("role", PEER_ROLE[plan.configuration])
+            require(role == PEER_ROLE[plan.configuration]
+                    and plan.peer.get("version") == PEER_VERSION[plan.configuration], "peer_role_mismatch")
             docker("pull", "--platform", plan.peer["platform"], image, timeout=600)
             require(docker("image", "inspect", "--format", "{{.Architecture}}", image).stdout.strip() == arch,
                     "peer_architecture_mismatch")
             labels = json.loads(docker("image", "inspect", "--format", "{{json .Config.Labels}}", image).stdout
                                 or "null") or {}
-            require(labels.get("org.opencontainers.image.version") == UPSTREAM_VERSION
+            require(labels.get("org.opencontainers.image.version") == plan.peer["version"]
                     and labels.get("org.opencontainers.image.revision") == plan.peer["image_revision"],
                     "peer_label_mismatch")
             plan.evidence["peer_image_id"] = docker("image", "inspect", "--format", "{{.Id}}", image).stdout.strip()
             env_file = work / "peer.env"
             with env_file.open("x", encoding="utf-8") as stream:
                 os.chmod(env_file, 0o600)
-                stream.write("\n".join((
-                    f"HOMEASSISTANT_URL={core_url}", f"HOMEASSISTANT_TOKEN={token}",
-                    "MCP_HOST=127.0.0.1", f"MCP_PORT={PEER_PORT}", f"MCP_SECRET_PATH={SECRET_PATH}",
-                    "HA_MCP_DISABLE_SETTINGS_UI=true", "ENABLE_TOOL_SEARCH=true", "ENABLE_BETA_FEATURES=true",
-                    "HAMCP_ENABLE_FILESYSTEM_TOOLS=true", "READ_ONLY_MODE=false")) + "\n")
+                lines = [f"HOMEASSISTANT_URL={core_url}", f"HOMEASSISTANT_TOKEN={token}",
+                         "MCP_HOST=127.0.0.1", f"MCP_PORT={PEER_PORT}", f"MCP_SECRET_PATH={SECRET_PATH}",
+                         "HA_MCP_DISABLE_SETTINGS_UI=true"]
+                if role == "candidate":
+                    # The 9.1 app options of the lane contract (runners.peer_command); the
+                    # 8.5.0 baseline keeps its defaults exactly as the side_by_side peer does.
+                    lines += ["ENABLE_TOOL_SEARCH=true", "ENABLE_BETA_FEATURES=true",
+                              "HAMCP_ENABLE_FILESYSTEM_TOOLS=true", "READ_ONLY_MODE=false"]
+                stream.write("\n".join(lines) + "\n")
+            peer_container = plan.identity + "-peer"
             try:
-                docker("run", "-d", "--name", plan.identity + "-peer", "--network", "host", *common,
+                docker("run", "-d", "--name", peer_container, "--network", "host", *common,
                        "--memory", "1g", "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/home/mcpuser/.ha-mcp",
                        "--env-file", str(env_file), image, "ha-mcp-web", timeout=120)
             finally:
                 env_file.unlink(missing_ok=True)
-            require(docker("inspect", "--format", "{{.Image}}", plan.identity + "-peer").stdout.strip()
+            require(docker("inspect", "--format", "{{.Image}}", peer_container).stdout.strip()
                     == plan.evidence["peer_image_id"], "peer_running_image_mismatch")
-            await typed.wait_http(f"http://127.0.0.1:{PEER_PORT}{STRICT_PATH}")
-            package = docker("exec", plan.identity + "-peer", "python", "-c",
+            await typed.wait_http(f"http://127.0.0.1:{PEER_PORT}{plan.stages[0].endpoint_path}")
+            package = docker("exec", peer_container, "python", "-c",
                              "from importlib.metadata import version; print(version('ha-mcp'))").stdout.strip()
-            require(package == UPSTREAM_VERSION, "peer_package_version_mismatch")
+            require(package == plan.peer["version"], "peer_package_version_mismatch")
             proxy = RecordingProxy(PROXY_PORT, PEER_PORT)
             proxy.start()
 
-            # The BUILT Engineering image, with the Supervisor Ingress peer network beside it.
+            # The Supervisor Ingress peer network beside every Engineering stage.
             docker("network", "create", "--subnet", INGRESS_SUBNET, "--gateway", INGRESS_GATEWAY,
                    "--label", f"{LABEL}={plan.identity}", plan.identity + "-ingress")
-            env_file = work / "engineering.env"
-            with env_file.open("x", encoding="utf-8") as stream:
-                os.chmod(env_file, 0o600)
-                stream.write("\n".join((
-                    f"HA_URL={core_url}", f"HA_TOKEN={token}", f"SUPERVISOR_TOKEN={token}",
-                    f"MCP_PORT={MCP_PORT}", f"APPROVAL_INGRESS_PORT={INGRESS_PORT}",
-                    f"UPSTREAM_DASHBOARD_MCP_URL=http://{ADDON_HOST}:{PROXY_PORT}{STRICT_PATH}")) + "\n")
-            try:
-                docker(*engineering_command(plan, data, env_file), timeout=120)
-            finally:
-                env_file.unlink(missing_ok=True)
-            ready = await asyncio.to_thread(_wait_ready, f"http://127.0.0.1:{MCP_PORT}/ready", 240)
-            if not ready:
-                logs = docker("logs", "--tail", "40", plan.identity + "-engineering", check=False)
-                plan.evidence[CASE_DASHBOARD]["diagnostics"].append(
-                    {"engineering_log_tail_sha256": hashlib.sha256((logs.stderr or "").encode()).hexdigest()})
-                raise LaneFailure("engineering_not_ready")
             client_script = work / "client.py"
             client_script.write_text(APPROVAL_CLIENT, encoding="utf-8")
 
@@ -1244,20 +1554,21 @@ async def run_lane(plan: Plan) -> None:
                         return error.code
                 return await asyncio.to_thread(fetch)
 
-            endpoint = f"http://127.0.0.1:{MCP_PORT}/{ACCESS_SECRET}/mcp"
-            async with streamablehttp_client(endpoint, timeout=60, sse_read_timeout=300) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    _, health = await mcp_call(session, "get_server_health", {"check_ha": False})
-                    server = find_key(health, "server") or {}
-                    require(isinstance(server, dict) and server.get("version") == plan.engineering_version,
-                            "engineering_version_mismatch")
-                    await guarded(plan, CASE_DASHBOARD,
-                                  dashboard_flow(plan, session, proxy, socket, ingress, host_probe))
-                    await guarded(plan, CASE_TYPED, typed_flow(plan, session, proxy, core_url, token))
-            plan.evidence["protocols"] = proxy.protocols()
-            plan.evidence["peer_log"] = {"forwarded": proxy.forwarded,
-                                         "peer_posts": peer_posts(plan.identity + "-peer")}
+            lane = LaneContext(work=work, data=data, core_url=core_url, token=token, rest=rest, socket=socket,
+                               proxy=proxy, peer_container=peer_container, upstream_version=package,
+                               ingress=ingress, host_probe=host_probe)
+            for index, stage in enumerate(plan.stages):
+                staged = plan.evidence["stages"][stage.key]
+                try:
+                    if index:
+                        await reset_core(lane)
+                    await run_stage(plan, stage, lane)
+                except LaneFailure as exc:
+                    staged["failure"] = bounded(str(exc), 120)
+                except Exception as exc:  # bounded category only; one stage never hides another
+                    staged["failure"] = type(exc).__name__[:64]
+                finally:
+                    docker("rm", "-f", f"{plan.identity}-engineering-{stage.key}", check=False, timeout=120)
     finally:
         if proxy is not None:
             proxy.stop()

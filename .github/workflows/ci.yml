@@ -1341,6 +1341,7 @@ jobs:
           python scripts/exact_image_admission_91_governed.py \
             --peers "$LANE_PEERS" \
             --architecture "$LANE_ARCHITECTURE" \
+            --configuration 91_only \
             --cases-dir "$RUNNER_TEMP/admission-cases" \
             --engineering-image engineering-admission-lane:test \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
@@ -1518,6 +1519,21 @@ jobs:
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
             --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_a_again_85_legacy_useful.json"
+      - name: Cases side-by-side governed dashboard and public typed controls (stage A, beta.6 rollback, stage A again)
+        if: ${{ !cancelled() && matrix.state == 'active' && matrix.configuration == 'side_by_side' }}
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          python scripts/exact_image_admission_91_governed.py \
+            --peers "$LANE_PEERS" \
+            --architecture "$LANE_ARCHITECTURE" \
+            --configuration side_by_side \
+            --cases-dir "$RUNNER_TEMP/admission-cases" \
+            --engineering-image engineering-admission-lane:test \
+            --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
+            --rollback-identity "$RUNNER_TEMP/admission-rollback-identity.json" \
+            --work-dir "$RUNNER_TEMP/governed91"
       - name: Write section 5.1 acceptance manifest
         if: always()
         shell: bash

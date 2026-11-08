@@ -87,7 +87,7 @@ def produced_cases(step: dict, configuration: str) -> list[str]:
     if "exact_image_admission_91_typed.py" in text:
         produced.append(typed.CASE)
     if "exact_image_admission_91_governed.py" in text:
-        produced += list(governed91_evidence.governed.CASES)
+        produced += list(governed91_evidence.governed.CASES_BY_CONFIGURATION.get(configuration, ()))
     return produced
 
 

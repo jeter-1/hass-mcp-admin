@@ -103,6 +103,15 @@ CASES: dict[str, tuple[Case, ...]] = {
         Case("sbs_rollback_85_legacy_useful", "legacy"),
         Case("sbs_stage_a_again_85_legacy_useful", "legacy"),
         Case("sbs_engineering_rollback_91_refused", "strict_full"),
+        # HAMCP-319 #407 Part C: executed governed dashboard and public typed
+        # operations with readback on each 8.5 legacy stage (current build,
+        # 2.4.2-beta.6 rollback, current build again).
+        Case("sbs_governed_dashboard_stage_a_85_legacy", "legacy"),
+        Case("sbs_typed_public_stage_a_85_legacy", "legacy"),
+        Case("sbs_governed_dashboard_rollback_beta6_85_legacy", "legacy"),
+        Case("sbs_typed_public_rollback_beta6_85_legacy", "legacy"),
+        Case("sbs_governed_dashboard_stage_a_again_85_legacy", "legacy"),
+        Case("sbs_typed_public_stage_a_again_85_legacy", "legacy"),
     ),
 }
 MANIFEST_KEYS = frozenset({
