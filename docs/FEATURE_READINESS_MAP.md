@@ -199,6 +199,9 @@ These apply to every row and are not repeated:
 - **Effort:** S.
 - **Verdict:** **ready** for the store-consumer work, with truthful partial
   reporting.
+- **Status:** implemented in source on `release/2.6.0` (draft PR, review
+  pending). Not released or deployed. Live dashboard coverage is still not
+  promised until HAMCP-277's acceptance.
 
 ### HAMCP-270: governed plans disclose scene, group and dashboard references
 

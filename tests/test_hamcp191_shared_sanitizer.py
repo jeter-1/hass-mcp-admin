@@ -624,7 +624,9 @@ SANITIZER_SITES = {
     ("integration_inspection/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._current_states", "sanitize_untrusted_data"): (1, "analysis"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._entity_registry", "sanitize_untrusted_data"): (1, "analysis"),
-    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
+    # HAMCP-267: the third collect site sanitizes partition (scene, group,
+    # dashboard) references with the same keys, secrets, bound and registry.
+    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (3, "analysis"),
     ("logging_config.py", "JsonFormatter.format", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),

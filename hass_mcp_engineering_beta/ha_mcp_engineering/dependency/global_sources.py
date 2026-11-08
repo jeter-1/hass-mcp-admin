@@ -3,8 +3,10 @@
 These references are kept outside the helper obligation ledger, the snapshot
 findings and the snapshot fingerprint, like ``ScriptDiagnostics``. Governance
 therefore cannot be downgraded by them, and a dashboard edit does not change an
-approval-bound fingerprint. Only ``entity_dependency_analysis`` and
-``change_impact_analysis`` merge them.
+approval-bound fingerprint. ``entity_dependency_analysis`` and
+``change_impact_analysis`` merge them; ``configuration_integrity_analysis``,
+``incident_correlation`` and ``handoff_generation`` consume them with their
+completeness (HAMCP-267). None of these changes a governance binding.
 
 - Scenes and groups: the loaded membership in the ``entity_id`` attribute of
   the states the build already read. No extra request is made, and the evidence
@@ -721,3 +723,66 @@ async def collect_global_sources(
          ("template", "none"), ("dashboard", dashboards["coverage"].provider)),
         tuple(terminals),
     )
+
+
+# HAMCP-267: shared reading rules for the analyses that consume the partition
+# (configuration integrity, incident correlation, handoff generation). Each
+# caller reads ``visible()`` once and passes that view here.
+CONSUMED_SOURCE_TYPES = ("scene", "group", "dashboard")
+# The consumers' bounds: at most this many scoped references are selected for
+# one request, and at most ``PARTITION_EMISSION_LIMIT`` of them are emitted as
+# relationship events or handoff items. A reference beyond either bound is
+# disclosed as an omission (a coverage limitation, never a read failure).
+PARTITION_SELECTION_LIMIT = 500
+PARTITION_EMISSION_LIMIT = 200
+PARTITION_REFERENCE_LIMIT_ID = "partition_reference_limit_exceeded"
+
+
+def scoped_partition_findings(
+    partition: GlobalSourceDiagnostics | None, entity_ids, *,
+    limit: int = PARTITION_SELECTION_LIMIT,
+) -> tuple[list[DependencyFinding], int]:
+    """The first ``limit`` visible partition findings whose target is one of
+    ``entity_ids``, and how many such findings there are in total."""
+    if partition is None:
+        return [], 0
+    scope = set(entity_ids)
+    matched = [
+        item for item in partition.findings
+        if item.source_type in CONSUMED_SOURCE_TYPES and item.target_entity_id in scope
+    ]
+    return matched[:max(0, int(limit))], len(matched)
+
+
+def partition_omission_warning(omitted: int, kept: int, consequence: str = "omitted") -> str:
+    """A bounded, count-bearing description of a consumer omission."""
+    return (f"partition_reference_limit: {int(omitted)} scoped scene, group or dashboard "
+            f"reference(s) {consequence} beyond the bounded {int(kept)}.")[:240]
+
+
+def incomplete_partition_rows(
+    partition: GlobalSourceDiagnostics | None,
+) -> list[SourceCoverageItem]:
+    """The consumed partition rows that are not complete, in source order."""
+    if partition is None:
+        return []
+    return [
+        row for source_type in CONSUMED_SOURCE_TYPES
+        if (row := partition.coverage_for(source_type)) is not None and row.completeness != "complete"
+    ]
+
+
+def partition_limitations(partition: GlobalSourceDiagnostics | None, prefix: str) -> list[str]:
+    """``<prefix>_<source>_partial`` or ``<prefix>_<source>_unavailable`` per incomplete row."""
+    return [
+        f"{prefix}_{row.source_type}_{'partial' if row.completeness == 'partial' else 'unavailable'}"
+        for row in incomplete_partition_rows(partition)
+    ]
+
+
+def partition_summary(item: DependencyFinding) -> str:
+    """A one-line description that keeps loaded membership distinct from configuration."""
+    if item.match_type == "loaded_membership":
+        return (f"{item.source_type} {item.source_id} lists {item.target_entity_id} in its loaded membership "
+                "(state attributes; stored configuration is not read).")
+    return f"{item.source_type} {item.source_id} references {item.target_entity_id} at {item.config_path}."

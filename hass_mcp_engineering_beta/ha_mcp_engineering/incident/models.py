@@ -205,6 +205,8 @@ class IncidentEvidenceBundle:
     collection_duration_ms: float = 0.0
     evidence_truncated: bool = False
     timeline_truncated: bool = False
+    # HAMCP-267: the visible diagnostic partition (pagination binding only).
+    diagnostic_fingerprint: str = ""
 
     @property
     def source_partial(self) -> bool:
