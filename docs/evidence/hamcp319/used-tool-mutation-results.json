@@ -1,5 +1,5 @@
 {
-  "head": "ad53a6848abac57de5f26175f0c8bd8985b19111",
+  "head": "e83af4829f1fddfaf6b891820aef8a23aefa993b",
   "python": "3.12.14",
   "module": "tests.test_hamcp319_used_tool_exact_admission",
   "mutants": [
@@ -88,6 +88,6 @@
     "name": "control (unmutated copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 27 tests in 44.473s"
+    "ran": "Ran 27 tests in 45.883s"
   }
 }
