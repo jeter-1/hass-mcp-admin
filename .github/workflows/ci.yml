@@ -1421,12 +1421,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Roll back to the previous release on the SAME persisted data: the
+          # current build writes a trace and a terminal task and records its
+          # own reader view, then beta.6's readers record theirs on restart.
+          python scripts/exact_image_admission_91_runners.py persisted-snapshot \
+            --engineering-container engineering-admission-sbs \
+            --engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --data-dir "$RUNNER_TEMP/admission-data-sbs" \
+            --writer-image engineering-admission-lane:test \
+            --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
+            --seed-automation gateway_fixture \
+            --fixture-stats-url "$FIXTURE_STATS_URL" \
+            --output "$RUNNER_TEMP/admission-persisted-current-release.json"
           python scripts/exact_image_admission_91_runners.py start-peer --peers "$LANE_PEERS" --role baseline
           python scripts/exact_image_admission_91_runners.py start-engineering \
             --name engineering-admission-sbs --stop engineering-admission-sbs \
             --image "$ROLLBACK_ENGINEERING_IMAGE" \
             --data-dir "$RUNNER_TEMP/admission-data-sbs" \
             --mcp-port 18300 --approval-port 18310 --upstream-url "$LEGACY_UPSTREAM_URL"
+          python scripts/exact_image_admission_91_runners.py persisted-restart \
+            --engineering-container engineering-admission-sbs \
+            --engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --persisted-snapshot "$RUNNER_TEMP/admission-persisted-current-release.json" \
+            --fixture-stats-url "$FIXTURE_STATS_URL" \
+            --output "$RUNNER_TEMP/admission-persisted-rollback-restart.json"
           python scripts/exact_image_read_gateway_acceptance.py \
             --upstream-endpoint "$PEER_LEGACY_URL" \
             --configured-upstream-endpoint "$LEGACY_UPSTREAM_URL" \
@@ -1445,6 +1463,8 @@ jobs:
             --upstream-endpoint "$PEER_LEGACY_URL" \
             --expected-engineering-version "$ROLLBACK_ENGINEERING_VERSION" \
             --rollback-identity "$RUNNER_TEMP/admission-rollback-identity.json" \
+            --persisted-snapshot "$RUNNER_TEMP/admission-persisted-current-release.json" \
+            --persisted-restart "$RUNNER_TEMP/admission-persisted-rollback-restart.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_rollback_85_legacy_useful.json"
       - name: Case side-by-side previous release refuses 9.1 on the strict-full value
         if: matrix.state == 'active' && matrix.configuration == 'side_by_side'
@@ -1474,11 +1494,17 @@ jobs:
         run: |
           set -euo pipefail
           # Roll forward from the previous release on the SAME persisted data,
-          # with no state reset: record what beta.6 wrote or left while it is
-          # still running, then restart the lane image on that data directory.
+          # with no state reset: beta.6 writes a trace and a terminal task and
+          # records its own reader view while it is still running, then the
+          # current build's readers record theirs on restart.
           python scripts/exact_image_admission_91_runners.py persisted-snapshot \
             --engineering-container engineering-admission-sbs \
+            --engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --data-dir "$RUNNER_TEMP/admission-data-sbs" \
+            --writer-image "$ROLLBACK_ENGINEERING_IMAGE" \
+            --expected-engineering-version "$ROLLBACK_ENGINEERING_VERSION" \
+            --seed-automation gateway_fixture_unreadable \
+            --fixture-stats-url "$FIXTURE_STATS_URL" \
             --output "$RUNNER_TEMP/admission-persisted-previous-release.json"
           python scripts/exact_image_admission_91_runners.py start-peer --peers "$LANE_PEERS" --role baseline
           python scripts/exact_image_admission_91_runners.py start-engineering \
@@ -1486,6 +1512,12 @@ jobs:
             --image engineering-admission-lane:test \
             --data-dir "$RUNNER_TEMP/admission-data-sbs" \
             --mcp-port 18300 --approval-port 18310 --upstream-url "$LEGACY_UPSTREAM_URL"
+          python scripts/exact_image_admission_91_runners.py persisted-restart \
+            --engineering-container engineering-admission-sbs \
+            --engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
+            --fixture-stats-url "$FIXTURE_STATS_URL" \
+            --output "$RUNNER_TEMP/admission-persisted-roll-forward-restart.json"
           python scripts/exact_image_read_gateway_acceptance.py \
             --upstream-endpoint "$PEER_LEGACY_URL" \
             --configured-upstream-endpoint "$LEGACY_UPSTREAM_URL" \
@@ -1504,6 +1536,7 @@ jobs:
             --upstream-endpoint "$PEER_LEGACY_URL" \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
             --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
+            --persisted-restart "$RUNNER_TEMP/admission-persisted-roll-forward-restart.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_a_again_85_legacy_useful.json"
       - name: Write section 5.1 acceptance manifest
         if: always()

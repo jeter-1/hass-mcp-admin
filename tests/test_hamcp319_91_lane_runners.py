@@ -258,65 +258,132 @@ def gateway_case(configuration: str, name: str, **overrides):
         container_image=runners.ROLLBACK_ENGINEERING_IMAGE if rollback else runners.LANE_ENGINEERING_IMAGE,
         rollback_identity=rollback_identity_ok() if rollback else None,
         health=gateway_health(version, optional, engineering),
-        persisted=persisted_ok() if name == runners.ROLL_FORWARD_CASE else None,
+        persisted=persisted_ok(name) if name in runners.PERSISTED_CASES else None,
     )
     arguments.update(overrides)
     return runners.evaluate_gateway_case(configuration, name, **arguments)
 
 
 MOUNT = "/home/runner/work/_temp/admission-data-sbs"
-PLAN_A = "governance/change_plans/" + "a" * 32 + ".json"
-PLAN_B = "governance/change_plans/" + "b" * 32 + ".json"
+STORE = "governance/change_plans"
+PLAN_A = f"{STORE}/{'a' * 32}.json"
+PLAN_B = f"{STORE}/{'b' * 32}.json"
+SEED_TASK_ID = "d" * 32
+SEED_SNAPSHOT_ID = "e" * 32
+TASK_A = f"{STORE}/execution-tasks-v1/{'a' * 32}.{SEED_TASK_ID}.json"
+TRACE_INDEX = f"{STORE}/trace-snapshots-v1/index.json"
+TRACE_RECORD = f"{STORE}/trace-snapshots-v1/records/{SEED_SNAPSHOT_ID}.json"
+CORE_VERSION = "2026.7.2"
 AUDIT_BYTES = b'{"event":"tool_call"}\n{"event":"tool_call"}\n'
+ZERO_COUNTERS = {key: 0 for key in runners.DISPATCH_COUNTERS}
 
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def previous_release_entries() -> dict:
-    """What 2.4.2-beta.6 left in the lane data directory (shape from a real lane run)."""
+def synthetic_plan(plan_id: str, status: str, writer: str) -> dict:
+    """An inventory plan summary, in the shape INVENTORY_SCRIPT's real reader emits."""
+
+    events = [["change_plan_created", sha(b"created-" + plan_id.encode())]]
+    if status == "superseded":
+        events.append(["change_plan_superseded", sha(b"superseded-" + plan_id.encode())])
+    return {"plan_id": plan_id, "status": status,
+            "approval_state": "invalidated" if status == "superseded" else "required",
+            "contract_version": 2, "plan_family": None, "operation": "configuration_plan",
+            "identity_sha256": sha(b"identity-" + plan_id.encode()),
+            "content_sha256": sha(b"content-" + plan_id.encode()),
+            "approval_sha256": sha(b"approval-" + status.encode() + plan_id.encode()),
+            "events": events, "provider": None, "dispatch_sha256": None, "writer_versions": [writer]}
+
+
+def previous_release_entries(writer: str = runners.ROLLBACK_ENGINEERING_VERSION) -> dict:
+    """What the outgoing release left in the lane data directory, read by its own readers (offline shape)."""
 
     return {
+        runners.READER_KEY: {"kind": "reader", "version": writer},
         "options.json": {"kind": "file", "size": 288, "sha256": sha(b"options")},
-        "audit.jsonl": {"kind": "file", "size": len(AUDIT_BYTES), "sha256": sha(AUDIT_BYTES), "records": 2},
+        "audit.jsonl": {"kind": "file", "size": len(AUDIT_BYTES), "sha256": sha(AUDIT_BYTES), "records": 2,
+                        "server_versions": {writer: 2}},
         "audit.jsonl.lock": {"kind": "file", "size": 0, "sha256": sha(b"")},
         "governance": {"kind": "dir", "listable": True},
-        "governance/change_plans": {"kind": "dir", "listable": True},
+        STORE: {"kind": "dir", "listable": True},
         PLAN_A: {"kind": "file", "size": 4623, "sha256": sha(b"plan-a"),
-                 "plan": {"plan_id": "a" * 32, "status": "superseded", "identity_sha256": sha(b"identity-a")}},
+                 "plan": synthetic_plan("a" * 32, "superseded", writer)},
         PLAN_B: {"kind": "file", "size": 4196, "sha256": sha(b"plan-b"),
-                 "plan": {"plan_id": "b" * 32, "status": "awaiting_approval", "identity_sha256": sha(b"identity-b")}},
-        "governance/change_plans/trace-snapshots-v1": {"kind": "dir", "listable": True},
-        "governance/change_plans/trace-snapshots-v1/.transaction.lock": {"kind": "file", "size": 0, "sha256": sha(b"")},
-        "governance/change_plans/trace-snapshots-v1/records": {"kind": "dir", "listable": True},
-        "governance/change_plans/trace-snapshots-v1/records/t1.json": {"kind": "file", "size": 5, "sha256": sha(b"trace")},
+                 "plan": synthetic_plan("b" * 32, "awaiting_approval", writer)},
+        f"{STORE}/execution-tasks-v1": {"kind": "dir", "listable": True},
+        TASK_A: {"kind": "file", "size": 3699, "sha256": sha(b"task-a"),
+                 "task": {"task_id": SEED_TASK_ID, "plan_id": "a" * 32, "state": "cancelled_pre_dispatch",
+                          "dispatched": False, "provider_attempts": 0, "events": 2, "writer_versions": []}},
+        f"{STORE}/trace-snapshots-v1": {"kind": "dir", "listable": True},
+        f"{STORE}/trace-snapshots-v1/.transaction.lock": {"kind": "file", "size": 0, "sha256": sha(b"")},
+        f"{STORE}/trace-snapshots-v1/records": {"kind": "dir", "listable": True},
+        TRACE_RECORD: {"kind": "file", "size": 198, "sha256": sha(b"trace")},
+        TRACE_INDEX: {"kind": "file", "size": 500, "sha256": sha(b"index"),
+                      "trace": {"snapshots": {SEED_SNAPSHOT_ID: {
+                          "sha256": sha(b"trace"), "bytes": 198, "automation_id": "gateway_fixture",
+                          "run_id": "run-1", "core_version": CORE_VERSION, "writer_versions": [writer]}},
+                          "watches": 0}},
     }
 
 
-def restarted_entries() -> dict:
-    """The lane image after restarting on that data: audit appended, plan B superseded, a new plan."""
+def restarted_entries(writer: str = runners.ROLLBACK_ENGINEERING_VERSION, reader: str = LANE_VERSION,
+                      *, accepted: bool = True) -> dict:
+    """The restarted release's own-reader view: untouched at restart; audit grown and plan B superseded after."""
 
-    entries = json.loads(json.dumps(previous_release_entries()))
-    grown = AUDIT_BYTES + b'{"event":"tool_call"}\n'
-    entries["audit.jsonl"] = {"kind": "file", "size": len(grown), "sha256": sha(grown),
-                              "prefix_sha256": sha(AUDIT_BYTES), "records": 2}
-    entries[PLAN_B]["plan"]["status"] = "superseded"
-    entries[PLAN_B]["sha256"] = sha(b"plan-b-superseded")
-    entries["governance/change_plans/" + "c" * 32 + ".json"] = {
-        "kind": "file", "size": 4196, "sha256": sha(b"plan-c"),
-        "plan": {"plan_id": "c" * 32, "status": "awaiting_approval", "identity_sha256": sha(b"identity-c")}}
-    del entries["audit.jsonl.lock"]
+    entries = json.loads(json.dumps(previous_release_entries(writer)))
+    entries[runners.READER_KEY]["version"] = reader
+    entries["audit.jsonl"]["prefix_sha256"] = sha(AUDIT_BYTES)
+    if accepted:
+        grown = AUDIT_BYTES + b'{"event":"tool_call"}\n'
+        entries["audit.jsonl"].update(size=len(grown), sha256=sha(grown))
+        superseded = synthetic_plan("b" * 32, "superseded", writer)
+        entries[PLAN_B].update(sha256=sha(b"plan-b-superseded"), plan=superseded)
+        entries[f"{STORE}/{'c' * 32}.json"] = {"kind": "file", "size": 4196, "sha256": sha(b"plan-c"),
+                                               "plan": synthetic_plan("c" * 32, "awaiting_approval", reader)}
+        del entries["audit.jsonl.lock"]
     return entries
 
 
-def persisted_snapshot_ok() -> dict:
-    return {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE, "mount_source": MOUNT,
-            "entries": previous_release_entries()}
+def synthetic_seed() -> dict:
+    return {"task_id": SEED_TASK_ID, "plan_id": "a" * 32, "snapshot_id": SEED_SNAPSHOT_ID,
+            "automation_id": "gateway_fixture"}
 
 
-def persisted_ok() -> tuple:
-    return persisted_snapshot_ok(), restarted_entries(), MOUNT
+def display_of(snapshot: dict, restarted: dict) -> dict:
+    """What the restarted release's public reads return for the outgoing release's records (as recorded)."""
+
+    seed = snapshot["seed"]
+    stored_trace = restarted[TRACE_INDEX]["trace"]["snapshots"][seed["snapshot_id"]]
+    return {
+        "audit_captures": [{"server_version": snapshot["writer_version"], "snapshot_ids": [seed["snapshot_id"]]}],
+        "task": {"task_id": seed["task_id"], "plan_id": seed["plan_id"], "state": "cancelled_pre_dispatch"},
+        "plans": {plan_id: {"status": restarted[f"{STORE}/{plan_id}.json"]["plan"]["status"]}
+                  for plan_id in runners.displayed_plan_ids(snapshot["entries"])},
+        "trace": {"snapshot_id": seed["snapshot_id"], "automation_id": seed["automation_id"],
+                  "core_version": stored_trace["core_version"]},
+    }
+
+
+def persisted_snapshot_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
+    image = runners.PERSISTED_CASES[case][0]
+    writer = runners.ROLLBACK_ENGINEERING_VERSION if image == runners.ROLLBACK_ENGINEERING_IMAGE else LANE_VERSION
+    return {"status": "passed", "image": image, "mount_source": MOUNT, "writer_version": writer,
+            "seed": synthetic_seed(), "counters": dict(ZERO_COUNTERS), "entries": previous_release_entries(writer)}
+
+
+def persisted_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
+    """``{"snapshot", "restart", "current", "mount_source"}`` for one transition case (offline)."""
+
+    snapshot = persisted_snapshot_ok(case)
+    writer = snapshot["writer_version"]
+    reader = LANE_VERSION if writer == runners.ROLLBACK_ENGINEERING_VERSION else runners.ROLLBACK_ENGINEERING_VERSION
+    at_restart = restarted_entries(writer, reader, accepted=False)
+    restart = {"status": "passed", "image": runners.PERSISTED_CASES[case][1], "mount_source": MOUNT,
+               "counters": dict(ZERO_COUNTERS), "entries": at_restart, "display": display_of(snapshot, at_restart)}
+    return {"snapshot": snapshot, "restart": restart, "current": restarted_entries(writer, reader),
+            "mount_source": MOUNT}
 
 
 PEER_VERSIONS = {"baseline": "8.5.0", "candidate": "9.1.0"}
@@ -535,9 +602,14 @@ class RollbackStageTests(unittest.TestCase):
         self.assertIn("--role baseline", rollback)
         self.assertIn('--upstream-url "$LEGACY_UPSTREAM_URL"', rollback)
         for name, text in steps.items():
-            if "ROLLBACK_ENGINEERING_IMAGE" in text:
+            if '--image "$ROLLBACK_ENGINEERING_IMAGE"' in text:
                 self.assertIn(name, ("Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5",
                                      "Case side-by-side previous release refuses 9.1 on the strict-full value"))
+            elif "ROLLBACK_ENGINEERING_IMAGE" in text:
+                # Stage A again only names it as the outgoing writer it verifies; it never runs it.
+                self.assertEqual(name, "Case side-by-side stage A again, current build with 8.5 on the legacy value")
+                self.assertEqual(text.count("ROLLBACK_ENGINEERING_IMAGE"), 1)
+                self.assertIn('--writer-image "$ROLLBACK_ENGINEERING_IMAGE"', text)
 
     def test_rollback_acceptance_passes_only_on_the_previous_release(self) -> None:
         status, reason, observed = gateway_case("side_by_side", "sbs_rollback_85_legacy_useful")
@@ -1060,188 +1132,760 @@ class StrictCatalogExactnessTests(unittest.TestCase):
                           and "health-case" in s.get("run", "")], [step])
 
 
-class RollForwardPersistedDataTests(unittest.TestCase):
-    """Josh, 2026-11-07: stage A again restarts on beta.6's persisted data, fail closed."""
+# ---------------------------------------------------------------------------
+# HAMCP-319 #407 F3: transitions between releases on the same persisted data.
+# Records are generated by each release's real writers, read by each actual
+# release's readers in both directions (this checkout's runtime package and
+# 2.4.2-beta.6's, extracted from its exact commit), and the oracle allows
+# only the legitimate awaiting_approval -> superseded plan transition.
+# ---------------------------------------------------------------------------
 
-    def problem(self, snapshot=None, current=None, mount=MOUNT):
-        return runners.persisted_data_problem(snapshot if snapshot is not None else persisted_snapshot_ok(),
-                                              current if current is not None else restarted_entries(), mount)
+W6 = runners.ROLLBACK_ENGINEERING_VERSION
+W7 = LANE_VERSION
+DIRECTIONS = {runners.ROLL_FORWARD_CASE: (W6, W7), runners.ROLLBACK_PERSISTED_CASE: (W7, W6)}
+FIXTURE_A = ROOT / "tests" / "fixtures" / "beta6_prohibited_superseded_contract_v2_a.json"
+FIXTURE_B = ROOT / "tests" / "fixtures" / "beta6_prohibited_superseded_contract_v2_b.json"
+# Both shipped fixtures record this request as their change_plan_created event.
+FIXTURE_REQUEST = "beta6-compat-fixture-request"
+REAL_PLAN_A = f"{STORE}/a1000000000000000000000000000001.json"
+REAL_PLAN_B = f"{STORE}/b2000000000000000000000000000001.json"
 
-    def test_present_and_readable_previous_release_data_passes(self) -> None:
-        self.assertIsNone(self.problem())
-        status, reason, observed = gateway_case("side_by_side", runners.ROLL_FORWARD_CASE)
-        self.assertEqual((status, reason), ("passed", ""))
-        summary = observed["persisted_from_previous_release"]
-        self.assertEqual(summary["previous_release_audit_records"], 2)
-        self.assertEqual(summary["previous_release_plans"], 2)
-        self.assertEqual(summary["previous_release_trace_records"], 1)
-        self.assertEqual(summary["plan_status_after_restart"]["b" * 32], ["awaiting_approval", "superseded"])
+# Test-local writer: every record goes through the given release's own
+# writer classes (AuditLogger, ChangePlanRepository, ExecutionTaskRepository,
+# TraceSnapshotStore), the way that release's runtime writes them.
+WRITER_SCRIPT = r"""
+import json, os, sys, uuid
+from datetime import datetime, timezone
+config = json.loads(sys.argv[1])
+sys.path.insert(0, config["package_root"])
+from ha_mcp_engineering.version import SERVER_VERSION
+from ha_mcp_engineering.audit import AuditLogger, AuditRecord
+from ha_mcp_engineering.governance.models import ChangePlan
+from ha_mcp_engineering.governance.service import ChangeGovernanceService as Service
+from ha_mcp_engineering.governance.storage import ChangePlanRepository
+from ha_mcp_engineering.governance.task_models import ExecutionTaskState, new_execution_task
+from ha_mcp_engineering.governance.task_storage import ExecutionTaskRepository
+from ha_mcp_engineering.trace_snapshots import contracts as c
+from ha_mcp_engineering.trace_snapshots.store import TraceSnapshotStore, empty_index
+root = config["root"]
+store = os.path.join(root, "governance", "change_plans")
+os.makedirs(store, exist_ok=True)
+plans = ChangePlanRepository(store)
+for raw in config.get("plans", []):
+    plans.save(ChangePlan.from_dict(raw))
+logger = AuditLogger(os.path.join(root, "audit.jsonl"), "synthetic-access-secret")
+for record in config.get("audit", []):
+    if not logger.write(AuditRecord(**record)):
+        raise SystemExit("audit_write_failed")
+written = {"writer_version": SERVER_VERSION, "tasks": []}
+for plan_id in config.get("tasks", []):
+    plan = plans.get(plan_id)
+    plan_hash = Service.plan_hash(plan)
+    now = datetime.now(timezone.utc).isoformat()
+    task = new_execution_task(
+        task_id=uuid.uuid4().hex, plan_id=plan.plan_id, plan_hash=plan_hash,
+        operation=plan.operation.value, target=Service._task_target(plan), timestamp=now,
+        execution_request_id="synthetic-task-request-" + uuid.uuid4().hex[:16],
+        idempotency_key=Service._task_idempotency_key(Service, plan, plan_hash),
+        approval_reference=Service._task_approval_reference(plan),
+        legacy_projection={"record_kind": "f1_execution_task", "plan_status": plan.status.value,
+                           "execution_outcome": plan.execution_outcome})
+    tasks = ExecutionTaskRepository(store)
+    tasks.save(task)
+    task.append_event("task_cancelled_pre_dispatch", now, new_state=ExecutionTaskState.CANCELLED_PRE_DISPATCH,
+                      changes={"completed_at": now, "terminal_outcome": "cancelled_pre_dispatch",
+                               "legacy_projection": {**task.legacy_projection, "task_state": "cancelled_pre_dispatch"}})
+    tasks.save(task)
+    written["tasks"].append([plan.plan_id, task.task_id])
+traces = TraceSnapshotStore(store)
+if config.get("empty_trace_store"):
+    with traces.transaction():
+        traces.write_index(empty_index())
+for trace in config.get("traces", []):
+    raw = c.canonical({"model": c.RECORD_MODEL, "snapshot_id": trace["snapshot_id"],
+                       "automation_id": trace["automation_id"], "run_id": trace["run_id"],
+                       "core": {"version": trace["core_version"]}, "trace": {"state": "stopped"}})
+    with traces.transaction():
+        traces.write_record(trace["snapshot_id"], raw)
+        index = traces.load_index()
+        index["snapshots"].append({
+            "snapshot_id": trace["snapshot_id"], "automation_id": trace["automation_id"],
+            "run_id": trace["run_id"], "origin": "manual", "watch_id": None,
+            "captured_at_ms": 1785000000000, "captured_by": "synthetic-caller", "completeness": "complete",
+            "bytes": len(raw), "sha256": c.sha256(raw), "state": "stopped",
+            "script_execution": "finished", "started_at": "2026-07-31T12:00:00+00:00"})
+        traces.write_index(index)
+print(json.dumps(written, sort_keys=True))
+"""
 
-    def test_missing_previous_release_data_fails(self) -> None:
-        for path in ("audit.jsonl", PLAN_A, "governance/change_plans/trace-snapshots-v1",
-                     "governance/change_plans/trace-snapshots-v1/records",
-                     "governance/change_plans/trace-snapshots-v1/records/t1.json", "options.json"):
-            with self.subTest(path=path):
-                current = restarted_entries()
-                del current[path]
-                self.assertEqual(self.problem(current=current), "persisted_entry_missing")
 
-    def test_unreadable_previous_release_data_fails(self) -> None:
-        for path in ("audit.jsonl", PLAN_A, "governance/change_plans/trace-snapshots-v1/records/t1.json"):
-            with self.subTest(path=path):
-                current = restarted_entries()
-                current[path] = {**current[path], "error": "PermissionError"}
-                self.assertEqual(self.problem(current=current), "persisted_entry_unreadable")
-        current = restarted_entries()
-        current["governance/change_plans/trace-snapshots-v1/records"]["listable"] = False
-        self.assertEqual(self.problem(current=current), "persisted_entry_unreadable")
-        current = restarted_entries()
-        current["<walk>"] = {"kind": "dir", "listable": False, "error": "PermissionError"}
-        self.assertEqual(self.problem(current=current), "persisted_data_unreadable_after_restart")
-        self.assertEqual(self.problem(current={}), "persisted_entry_missing")
+def literal_inventory_config(root: str, prefix: dict, package_root: str) -> dict:
+    """INVENTORY_SCRIPT's configuration, spelled out (a superset of every earlier revision's keys)."""
 
-    def test_rewritten_or_changed_previous_release_records_fail(self) -> None:
-        current = restarted_entries()
-        current["audit.jsonl"]["prefix_sha256"] = sha(b"rewritten")
-        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
-        current = restarted_entries()
-        current["audit.jsonl"].update(size=3, prefix_sha256=None)
-        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
-        current = restarted_entries()
-        current["audit.jsonl"]["records"] = 1
-        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
-        current = restarted_entries()
-        current[PLAN_A]["plan"]["identity_sha256"] = sha(b"other")
-        self.assertEqual(self.problem(current=current), "persisted_plan_identity_changed")
-        current = restarted_entries()
-        del current[PLAN_A]["plan"]
-        self.assertEqual(self.problem(current=current), "persisted_plan_identity_changed")
-        current = restarted_entries()
-        current["governance/change_plans/trace-snapshots-v1/records/t1.json"]["sha256"] = sha(b"other")
-        self.assertEqual(self.problem(current=current), "persisted_record_changed")
-        current = restarted_entries()
-        current[PLAN_A] = {"kind": "dir", "listable": True}
-        self.assertEqual(self.problem(current=current), "persisted_entry_kind_changed")
+    return {"root": root, "prefix": prefix, "package_root": package_root, "audit": "audit.jsonl",
+            "plan_file": r"governance/change_plans/(?:operational-administration-v3/)?[0-9a-f]{32}\.json",
+            "task_file": r"governance/change_plans/execution-tasks-v1/[0-9a-f]{32}\.[0-9a-f]{32}\.json",
+            "plan_identity": ["plan_id", "created_at", "operation", "target", "proposed_config_hash"],
+            "plan_lifecycle": ["status", "updated_at", "approval", "events"], "event_limit": 256,
+            "capture_tool": "capture_automation_trace", "governance_root": "governance/change_plans",
+            "trace_index": "governance/change_plans/trace-snapshots-v1/index.json"}
 
-    def test_fresh_or_other_data_directory_fails(self) -> None:
-        self.assertEqual(self.problem(mount="/home/runner/work/_temp/fresh"), "persisted_data_not_same_mount")
-        self.assertEqual(self.problem(mount=None), "persisted_data_not_same_mount")
-        fresh = {"options.json": previous_release_entries()["options.json"]}
-        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "entries": fresh}),
-                         "previous_release_audit_absent")
 
-    def test_snapshot_must_come_from_the_previous_release_and_be_complete(self) -> None:
-        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "image": runners.LANE_ENGINEERING_IMAGE}),
-                         "persisted_snapshot_not_previous_release")
-        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "status": "failed"}),
-                         "persisted_snapshot_not_previous_release")
-        cases = {
-            "previous_release_audit_absent": lambda e: e["audit.jsonl"].update(records=0),
-            "previous_release_plan_store_absent": lambda e: e.pop("governance/change_plans"),
-            "previous_release_plans_absent": lambda e: (e.pop(PLAN_A), e.pop(PLAN_B)),
-            "previous_release_plan_unparseable": lambda e: e[PLAN_A]["plan"].update(plan_id="b" * 32),
-            "previous_release_trace_store_absent": lambda e: e.pop("governance/change_plans/trace-snapshots-v1/records"),
-            "previous_release_data_unreadable": lambda e: e[PLAN_B].update(error="JSONDecodeError"),
+def run_script(script: str, config: dict) -> str:
+    completed = subprocess.run([sys.executable, "-I", "-c", script, json.dumps(config)],
+                               capture_output=True, text=True, timeout=300, check=False)
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout[-1000:] + completed.stderr[-3000:])
+    return completed.stdout
+
+
+def read_inventory(root: Path, package: str, prefix: dict | None = None) -> dict:
+    """``INVENTORY_SCRIPT`` with one release's own reader classes, exactly as the container runs it."""
+
+    return json.loads(run_script(runners.INVENTORY_SCRIPT, literal_inventory_config(str(root), prefix or {}, package)))
+
+
+def write_records(root: Path, package: str, **records) -> dict:
+    return json.loads(run_script(WRITER_SCRIPT, {"root": str(root), "package_root": package, **records}))
+
+
+def fixture_plan(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def awaiting_fixture_b() -> dict:
+    """Fixture B before its supersession: only the lifecycle fields differ from the shipped record."""
+
+    plan = fixture_plan(FIXTURE_B)
+    plan["status"] = "awaiting_approval"
+    plan["approval"].update(state="required", bundle_state="pending_plan_approval")
+    plan["events"] = plan["events"][:1]
+    return plan
+
+
+def audit_call(tool: str, request_id: str, **extra) -> dict:
+    return dict(request_id=request_id, tool_name=tool, capability_classification=None, operation_category=None,
+                access=None, authenticated=True, caller_id="synthetic-caller", result_status="success", **extra)
+
+
+def rewrite_json(path: Path, change) -> None:
+    """Replace a stored record with still-valid JSON that differs only by ``change``."""
+
+    value = json.loads(path.read_text(encoding="utf-8"))
+    change(value)
+    path.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+
+_PACKAGES: dict[str, str] = {}
+_SCRATCH: list[str] = []
+
+
+def _cleanup_scratch() -> None:
+    import shutil
+    for directory in _SCRATCH:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def scratch(prefix: str) -> Path:
+    if not _SCRATCH:
+        import atexit
+        atexit.register(_cleanup_scratch)
+    directory = tempfile.mkdtemp(prefix=prefix)
+    _SCRATCH.append(directory)
+    return Path(directory)
+
+
+def release_packages() -> dict[str, str]:
+    """Each release's runtime package root: this checkout's, and 2.4.2-beta.6's from its exact commit."""
+
+    if _PACKAGES:
+        return _PACKAGES
+    import os
+    import tarfile
+    revision = runners.ROLLBACK_ENGINEERING_REVISION
+    present = subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", revision + "^{commit}"],
+                             capture_output=True, check=False).returncode == 0
+    if not present:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            raise AssertionError("the 2.4.2-beta.6 commit is absent from the CI checkout; its readers cannot run")
+        raise unittest.SkipTest("2.4.2-beta.6 commit not available in this clone")
+    archive = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", revision,
+                              "hass_mcp_engineering_beta/ha_mcp_engineering"],
+                             capture_output=True, check=True, timeout=300).stdout
+    directory = scratch("hamcp319-beta6-")
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(directory, filter="data")
+    _PACKAGES.update({W6: str(directory / "hass_mcp_engineering_beta"), W7: str(ROOT / "hass_mcp_engineering_beta")})
+    return _PACKAGES
+
+
+def build_transition(case: str, *, traces: bool = True) -> dict:
+    """One transition on one data directory, as the lane runs it, with real writers and readers.
+
+    The outgoing release writes plans, audit, an execution task and a trace
+    record; its own readers take the snapshot. The restarted release's
+    readers take the restart record; then, as its acceptance run does, it
+    appends to the audit log and supersedes the awaiting plan with its own
+    writer, and its readers take the current inventory.
+    """
+
+    import shutil
+    writer, reader = DIRECTIONS[case]
+    packages = release_packages()
+    root = scratch("hamcp319-persisted-") / "data"
+    root.mkdir()
+    snapshot_id = hashlib.sha256(case.encode()).hexdigest()[:32]
+    written = write_records(
+        root, packages[writer], plans=[fixture_plan(FIXTURE_A), awaiting_fixture_b()],
+        audit=[audit_call("create_change_plan", FIXTURE_REQUEST),
+               audit_call(runners.CAPTURE_TOOL, "synthetic-capture-request",
+                          analysis_summary={"snapshot_ids": [snapshot_id]})],
+        tasks=["a1000000000000000000000000000001"],
+        traces=[{"snapshot_id": snapshot_id, "automation_id": "gateway_fixture", "run_id": "run-1",
+                 "core_version": CORE_VERSION}] if traces else [],
+        empty_trace_store=not traces)
+    assert written["writer_version"] == writer, written
+    (plan_id, task_id), = written["tasks"]
+    seed = {"task_id": task_id, "plan_id": plan_id, "snapshot_id": snapshot_id, "automation_id": "gateway_fixture"}
+    entries = read_inventory(root, packages[writer])
+    before = root.parent / "before"
+    shutil.copytree(root, before)
+    snapshot = {"status": "passed", "image": runners.PERSISTED_CASES[case][0], "mount_source": MOUNT,
+                "writer_version": writer, "seed": seed, "counters": dict(ZERO_COUNTERS), "entries": entries}
+    prefix = runners.prefix_sizes(entries)
+    at_restart = read_inventory(root, packages[reader], prefix)
+    accepted = write_records(root, packages[reader], plans=[fixture_plan(FIXTURE_B)],
+                             audit=[audit_call("get_server_health", "synthetic-acceptance-request")])
+    assert accepted["writer_version"] == reader, accepted
+    current = read_inventory(root, packages[reader], prefix)
+    display = display_of(snapshot, at_restart) if traces else {}
+    restart = {"status": "passed", "image": runners.PERSISTED_CASES[case][1], "mount_source": MOUNT,
+               "counters": dict(ZERO_COUNTERS), "entries": at_restart, "display": display}
+    return {"root": root, "before": before, "writer": writer, "reader": reader, "prefix": prefix,
+            "persisted": {"snapshot": snapshot, "restart": restart, "current": current, "mount_source": MOUNT}}
+
+
+class PersistedTransitionReadersTests(unittest.TestCase):
+    """Codex #407 F3: real writers before the transition, each actual release's readers after, both directions."""
+
+    layouts: dict = {}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.layouts = {case: build_transition(case) for case in DIRECTIONS}
+
+    def persisted(self, case: str) -> dict:
+        return json.loads(json.dumps(self.layouts[case]["persisted"]))
+
+    def reread(self, case: str, mutate, *, before: bool = False) -> tuple[dict, dict]:
+        """Mutate a copy of the data directory and read it again with the relevant release's own readers."""
+
+        import shutil
+        layout = self.layouts[case]
+        copy = scratch("hamcp319-mutated-") / "data"
+        shutil.copytree(layout["before"] if before else layout["root"], copy)
+        mutate(copy)
+        persisted = self.persisted(case)
+        if before:
+            entries = read_inventory(copy, release_packages()[layout["writer"]])
+            persisted["snapshot"]["entries"] = entries
+            return entries, persisted
+        current = read_inventory(copy, release_packages()[layout["reader"]], layout["prefix"])
+        persisted["current"] = current
+        return current, persisted
+
+    def case(self, case: str, persisted) -> tuple:
+        return gateway_case("side_by_side", case, persisted=persisted)[:2]
+
+    def test_codex_f3_synthetic_invalid_status_is_unreadable_and_fails_the_case(self) -> None:
+        # Codex's counterexample: only a shipped-code plan's status changed to
+        # a value the actual ChangePlan.from_dict rejects (still valid JSON).
+        for case in DIRECTIONS:
+            with self.subTest(case=case):
+                current, persisted = self.reread(case, lambda root: rewrite_json(
+                    root / REAL_PLAN_A, lambda plan: plan.update(status="synthetic_invalid_status")))
+                self.assertEqual(current[REAL_PLAN_A].get("error"), "ValueError")
+                self.assertNotIn("plan", current[REAL_PLAN_A])
+                self.assertEqual(self.case(case, persisted), ("failed", "persisted_entry_unreadable"))
+                self.assertEqual(self.case(case, self.persisted(case)), ("passed", ""))
+
+    def test_inventory_configuration_is_the_literal_reader_configuration(self) -> None:
+        self.assertEqual(runners.inventory_config("/data", {"audit.jsonl": 3}, "/app"),
+                         literal_inventory_config("/data", {"audit.jsonl": 3}, "/app"))
+        self.assertEqual((runners.PERSISTED_ROOT, runners.PERSISTED_PACKAGE_ROOT), ("/data", "/app"))
+        self.assertEqual(runners.seed_config("/data", "/app"),
+                         {"root": "/data", "package_root": "/app", "plan_store": "governance/change_plans",
+                          "request_prefix": "hamcp319-persisted-seed-"})
+
+    def test_each_release_reads_the_other_releases_records_in_both_directions(self) -> None:
+        for case, (writer, reader) in DIRECTIONS.items():
+            with self.subTest(case=case):
+                persisted = self.persisted(case)
+                snapshot, restart, current = persisted["snapshot"], persisted["restart"], persisted["current"]
+                self.assertEqual(snapshot["entries"][runners.READER_KEY], {"kind": "reader", "version": writer})
+                self.assertEqual(restart["entries"][runners.READER_KEY], {"kind": "reader", "version": reader})
+                self.assertEqual(current[runners.READER_KEY], {"kind": "reader", "version": reader})
+                for inventory in (snapshot["entries"], restart["entries"], current):
+                    self.assertFalse([path for path, entry in inventory.items() if "error" in entry])
+                    for path in (REAL_PLAN_A, REAL_PLAN_B):
+                        plan = inventory[path]["plan"]
+                        self.assertEqual(sorted(plan), sorted(synthetic_plan("a" * 32, "superseded", writer)))
+                        self.assertEqual((plan["writer_versions"], plan["provider"], plan["contract_version"]),
+                                         ([writer], None, 2))
+                self.assertEqual(snapshot["entries"]["audit.jsonl"]["server_versions"], {writer: 2})
+                self.assertEqual(current["audit.jsonl"]["server_versions"], {writer: 2})
+                task_path = f"{STORE}/execution-tasks-v1/{snapshot['seed']['plan_id']}.{snapshot['seed']['task_id']}.json"
+                self.assertEqual(current[task_path]["task"]["state"], "cancelled_pre_dispatch")
+                self.assertEqual((current[task_path]["task"]["dispatched"],
+                                  current[task_path]["task"]["provider_attempts"]), (False, 0))
+                traces = current[TRACE_INDEX]["trace"]["snapshots"]
+                self.assertEqual(list(traces), [snapshot["seed"]["snapshot_id"]])
+                self.assertEqual(traces[snapshot["seed"]["snapshot_id"]]["writer_versions"], [writer])
+                self.assertEqual(traces[snapshot["seed"]["snapshot_id"]]["core_version"], CORE_VERSION)
+                status, reason, observed = gateway_case("side_by_side", case, persisted=persisted)
+                self.assertEqual((status, reason), ("passed", ""))
+                summary = observed["persisted_transition"]
+                self.assertEqual(summary["direction"], [writer, reader])
+                self.assertEqual(summary["written_trace_records"], 1)
+                self.assertEqual(summary["plan_status_transitions"],
+                                 {"b2000000000000000000000000000001": ["awaiting_approval", "superseded"]})
+                self.assertEqual(summary["dispatch_counters"], ZERO_COUNTERS)
+
+    def test_awaiting_to_superseded_is_allowed_only_as_the_shipped_writer_records_it(self) -> None:
+        # The legitimate transition (shipped bytes of fixture B) passes above;
+        # a reader-valid status other than superseded is refused, and an
+        # unreadable approval is never accepted as part of the transition.
+        for case in DIRECTIONS:
+            with self.subTest(case=case, change="applied"):
+                current, persisted = self.reread(case, lambda root: rewrite_json(
+                    root / REAL_PLAN_B, lambda plan: plan.update(status="expired")))
+                self.assertNotIn("error", current[REAL_PLAN_B])
+                self.assertEqual(self.case(case, persisted), ("failed", "persisted_plan_status_transition_refused"))
+            with self.subTest(case=case, change="invalid approval"):
+                current, persisted = self.reread(case, lambda root: rewrite_json(
+                    root / REAL_PLAN_B, lambda plan: plan["approval"].update(state="synthetic_invalid_state")))
+                self.assertIn("error", current[REAL_PLAN_B])
+                self.assertEqual(self.case(case, persisted), ("failed", "persisted_entry_unreadable"))
+            with self.subTest(case=case, change="superseded without its event"):
+                current, persisted = self.reread(case, lambda root: rewrite_json(
+                    root / REAL_PLAN_B, lambda plan: plan.update(events=plan["events"][:1])))
+                self.assertEqual(self.case(case, persisted), ("failed", "persisted_plan_transition_unrecorded"))
+            with self.subTest(case=case, change="superseded plan revived"):
+                current, persisted = self.reread(case, lambda root: rewrite_json(
+                    root / REAL_PLAN_A, lambda plan: plan.update(status="awaiting_approval")))
+                self.assertEqual(self.case(case, persisted), ("failed", "persisted_plan_status_transition_refused"))
+
+    def test_malformed_but_valid_json_records_are_unreadable(self) -> None:
+        def task_file(root: Path) -> Path:
+            return next((root / STORE / "execution-tasks-v1").glob("*.json"))
+
+        def wrong_model(root: Path) -> None:
+            records = root / STORE / "trace-snapshots-v1"
+            record = next((records / "records").glob("*.json"))
+            raw = json.dumps({**json.loads(record.read_bytes()), "model": "synthetic-other-model"}).encode()
+            record.write_bytes(raw)
+            rewrite_json(records / "index.json", lambda index: index["snapshots"][0].update(
+                bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+
+        def damaged(root: Path) -> None:
+            record = next((root / STORE / "trace-snapshots-v1" / "records").glob("*.json"))
+            record.write_bytes(record.read_bytes().replace(b"stopped", b"running"))
+
+        mutations = {
+            "task state": (lambda root: rewrite_json(task_file(root),
+                                                     lambda task: task.update(state="synthetic_invalid_state")),
+                           lambda root: str(task_file(root).relative_to(root))),
+            "trace record model": (wrong_model, lambda _root: TRACE_INDEX),
+            "trace record digest": (damaged, lambda _root: TRACE_INDEX),
+            "plan status": (lambda root: rewrite_json(root / REAL_PLAN_B,
+                                                      lambda plan: plan.update(status="synthetic_invalid_status")),
+                            lambda _root: REAL_PLAN_B),
         }
-        for expected, mutate in cases.items():
-            with self.subTest(expected=expected):
-                entries = previous_release_entries()
-                mutate(entries)
-                self.assertEqual(runners.persisted_snapshot_problem(entries), expected)
-                self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "entries": entries}), expected)
+        for case in DIRECTIONS:
+            for label, (mutate, path) in mutations.items():
+                with self.subTest(case=case, record=label, side="restarted release"):
+                    seen = {}
+                    current, persisted = self.reread(case, lambda root: (mutate(root), seen.update(path=path(root))))
+                    self.assertIn("error", current[seen["path"]])
+                    self.assertEqual(self.case(case, persisted)[0], "failed")
+                with self.subTest(case=case, record=label, side="outgoing release"):
+                    seen = {}
+                    entries, persisted = self.reread(
+                        case, lambda root: (mutate(root), seen.update(path=path(root))), before=True)
+                    self.assertIn("error", entries[seen["path"]])
+                    self.assertEqual(self.case(case, persisted), ("failed", "previous_release_data_unreadable"))
+            with self.subTest(case=case, record="audit line that is a JSON array"):
+                def array_line(root: Path) -> None:
+                    with open(root / "audit.jsonl", "a", encoding="utf-8") as handle:
+                        handle.write("[]\n")
 
-    def test_roll_forward_case_requires_the_check_and_no_other_case_carries_it(self) -> None:
-        self.assertEqual(gateway_case("side_by_side", runners.ROLL_FORWARD_CASE, persisted=None)[:2],
-                         ("failed", "persisted_snapshot_missing"))
-        missing = restarted_entries()
-        del missing[PLAN_A]
-        self.assertEqual(gateway_case("side_by_side", runners.ROLL_FORWARD_CASE,
-                                      persisted=(persisted_snapshot_ok(), missing, MOUNT))[:2],
-                         ("failed", "persisted_entry_missing"))
+                entries, persisted = self.reread(case, array_line, before=True)
+                self.assertEqual(entries["audit.jsonl"].get("error"), "ValueError")
+                self.assertEqual(self.case(case, persisted), ("failed", "previous_release_data_unreadable"))
+
+    def test_an_empty_trace_store_is_not_trace_coverage(self) -> None:
+        # CI's earlier A-again evidence: trace store present, zero records.
+        empty = build_transition(runners.ROLL_FORWARD_CASE, traces=False)["persisted"]
+        self.assertEqual(empty["snapshot"]["entries"][TRACE_INDEX]["trace"]["snapshots"], {})
+        self.assertEqual(self.case(runners.ROLL_FORWARD_CASE, empty),
+                         ("failed", "previous_release_trace_records_absent"))
+
+    def test_the_real_seed_script_writes_a_terminal_never_dispatched_task_with_each_writer(self) -> None:
+        for case, (writer, _reader) in DIRECTIONS.items():
+            with self.subTest(writer=writer):
+                root = scratch("hamcp319-seed-") / "data"
+                write_records(root, release_packages()[writer],
+                              plans=[fixture_plan(FIXTURE_A), awaiting_fixture_b()])
+                config = runners.seed_config(str(root), release_packages()[writer])
+                seeded = json.loads(run_script(runners.SEED_SCRIPT, config))
+                self.assertEqual((seeded["writer_version"], seeded["task_state"], seeded["plan_id"]),
+                                 (writer, "cancelled_pre_dispatch", "a1000000000000000000000000000001"))
+                again = json.loads(run_script(runners.SEED_SCRIPT, config))
+                self.assertEqual(again["plan_id"], "b2000000000000000000000000000001")
+                with self.assertRaises(AssertionError):
+                    run_script(runners.SEED_SCRIPT, config)  # every stored plan already has a task
+                task = read_inventory(root, release_packages()[writer])[
+                    f"{STORE}/execution-tasks-v1/{seeded['plan_id']}.{seeded['task_id']}.json"]["task"]
+                self.assertEqual((task["state"], task["dispatched"], task["provider_attempts"]),
+                                 ("cancelled_pre_dispatch", False, 0))
+
+
+PERSISTED_MUTATIONS = {
+    # reason: mutation of an otherwise passing persisted record (offline shape)
+    "persisted_snapshot_not_previous_release": lambda p: p["snapshot"].update(image=runners.LANE_ENGINEERING_IMAGE),
+    "previous_release_reader_not_writer": lambda p: p["snapshot"]["entries"][runners.READER_KEY].update(version=W7),
+    "previous_release_audit_version_unrecorded": lambda p: p["snapshot"]["entries"]["audit.jsonl"].update(
+        server_versions={W7: 2}),
+    "previous_release_plan_writer_unrecorded": lambda p: [p["snapshot"]["entries"][path]["plan"].update(
+        writer_versions=[]) for path in (PLAN_A, PLAN_B)],
+    "previous_release_tasks_absent": lambda p: p["snapshot"]["entries"].pop(TASK_A),
+    "previous_release_trace_records_absent": lambda p: p["snapshot"]["entries"][TRACE_INDEX]["trace"].update(
+        snapshots={}),
+    "previous_release_trace_unparseable": lambda p: p["snapshot"]["entries"][TRACE_RECORD].update(sha256=sha(b"x")),
+    "previous_release_seed_unobserved": lambda p: p["snapshot"]["entries"][TASK_A]["task"].update(dispatched=True),
+    "persisted_restart_missing": lambda p: p.update(restart=None),
+    "persisted_restart_not_restarted_release": lambda p: p["restart"].update(image=runners.ROLLBACK_ENGINEERING_IMAGE),
+    "persisted_transition_not_between_releases": lambda p: p["restart"]["entries"][runners.READER_KEY].update(
+        version=W6),
+    "persisted_data_not_same_mount": lambda p: p["restart"].update(mount_source="/home/runner/work/_temp/fresh"),
+    "persisted_dispatch_counters_unobserved": lambda p: p["restart"]["counters"].pop("http_mutations"),
+    "persisted_transition_redispatched": lambda p: p["restart"]["counters"].update(approval_notification_calls=1),
+    "persisted_reader_not_restarted_release": lambda p: p["current"][runners.READER_KEY].update(version="2.4.2"),
+    "persisted_entry_unreadable": lambda p: p["current"][PLAN_A].update(error="ValueError"),
+    "persisted_audit_not_preserved": lambda p: p["current"]["audit.jsonl"].update(server_versions={W7: 2}),
+    "persisted_plan_provider_changed": lambda p: p["current"][PLAN_A]["plan"].update(provider="upstream_read_gateway"),
+    "persisted_plan_redispatched": lambda p: p["current"][PLAN_A]["plan"].update(dispatch_sha256=sha(b"dispatch")),
+    "persisted_plan_content_changed": lambda p: p["current"][PLAN_A]["plan"].update(content_sha256=sha(b"x")),
+    "persisted_plan_lifecycle_changed": lambda p: p["current"][PLAN_A]["plan"].update(approval_sha256=sha(b"x")),
+    "persisted_plan_status_transition_refused": lambda p: p["current"][PLAN_B]["plan"].update(status="applied"),
+    "persisted_plan_history_rewritten": lambda p: p["current"][PLAN_B]["plan"]["events"].pop(0),
+    "persisted_plan_transition_unrecorded": lambda p: p["current"][PLAN_B]["plan"]["events"].pop(),
+    "persisted_plan_approval_not_invalidated": lambda p: p["current"][PLAN_B]["plan"].update(approval_state="required"),
+    "persisted_task_redispatched": lambda p: p["current"][TASK_A].update(
+        sha256=sha(b"x"), task={**p["current"][TASK_A]["task"], "provider_attempts": 1}),
+    "persisted_task_changed": lambda p: p["current"][TASK_A].update(sha256=sha(b"x")),
+    "persisted_trace_record_lost": lambda p: p["current"][TRACE_INDEX]["trace"].update(snapshots={}),
+    "persisted_trace_record_changed": lambda p: p["current"][TRACE_INDEX]["trace"]["snapshots"][
+        SEED_SNAPSHOT_ID].update(core_version="2026.8.0"),
+    "persisted_display_unavailable": lambda p: p["restart"].update(display=None),
+    "persisted_audit_not_displayed": lambda p: p["restart"]["display"].update(audit_captures=[]),
+    "persisted_task_not_displayed": lambda p: p["restart"]["display"]["task"].update(state="dispatched"),
+    "persisted_plan_not_displayed": lambda p: p["restart"]["display"]["plans"].pop("b" * 32),
+    "persisted_trace_not_displayed": lambda p: p["restart"]["display"]["trace"].update(automation_id="other"),
+}
+
+
+class PersistedTransitionOracleTests(unittest.TestCase):
+    """The transition oracle, offline: every guard has a counterexample, in both directions."""
+
+    def test_the_offline_transition_passes_in_both_directions(self) -> None:
+        for case in runners.PERSISTED_CASES:
+            with self.subTest(case=case):
+                self.assertIsNone(runners.persisted_data_problem(persisted_ok(case), case=case))
+                status, reason, observed = gateway_case("side_by_side", case)
+                self.assertEqual((status, reason), ("passed", ""))
+                self.assertEqual(observed["persisted_transition"]["plan_status_transitions"],
+                                 {"b" * 32: ["awaiting_approval", "superseded"]})
+
+    def test_each_guard_refuses_its_counterexample(self) -> None:
+        for case in runners.PERSISTED_CASES:
+            for reason, mutate in PERSISTED_MUTATIONS.items():
+                with self.subTest(case=case, reason=reason):
+                    persisted = persisted_ok(case)
+                    if reason in ("previous_release_reader_not_writer", "persisted_transition_not_between_releases"):
+                        mutate = {"previous_release_reader_not_writer": lambda p: p["snapshot"]["entries"][
+                                      runners.READER_KEY].update(version="2.4.2-beta.5"),
+                                  "persisted_transition_not_between_releases": lambda p: p["restart"]["entries"][
+                                      runners.READER_KEY].update(version=p["snapshot"]["writer_version"])}[reason]
+                    if reason == "persisted_snapshot_not_previous_release":
+                        mutate = lambda p, c=case: p["snapshot"].update(image=runners.PERSISTED_CASES[c][1])
+                    if reason == "persisted_restart_not_restarted_release":
+                        mutate = lambda p, c=case: p["restart"].update(image=runners.PERSISTED_CASES[c][0])
+                    if reason == "previous_release_audit_version_unrecorded":
+                        mutate = lambda p: p["snapshot"]["entries"]["audit.jsonl"].update(server_versions={"x": 2})
+                    if reason == "persisted_audit_not_preserved":
+                        mutate = lambda p: p["current"]["audit.jsonl"].update(server_versions={"x": 2})
+                    mutate(persisted)
+                    self.assertEqual(runners.persisted_data_problem(persisted, case=case), reason)
+                    self.assertEqual(gateway_case("side_by_side", case, persisted=persisted)[:2], ("failed", reason))
+
+    def test_same_mount_and_byte_preservation_checks_are_retained(self) -> None:
+        for change, reason in (
+                (lambda p: p["current"].pop(PLAN_A), "persisted_entry_missing"),
+                (lambda p: p["current"].pop(TRACE_RECORD), "persisted_entry_missing"),
+                (lambda p: p["current"].update({PLAN_A: {"kind": "dir", "listable": True}}),
+                 "persisted_entry_kind_changed"),
+                (lambda p: p["current"]["audit.jsonl"].update(prefix_sha256=sha(b"rewritten")),
+                 "persisted_audit_not_preserved"),
+                (lambda p: p["current"]["audit.jsonl"].update(size=3), "persisted_audit_not_preserved"),
+                (lambda p: p["current"]["audit.jsonl"].update(records=1), "persisted_audit_not_preserved"),
+                (lambda p: p["current"][TRACE_RECORD].update(sha256=sha(b"other")), "persisted_record_changed"),
+                (lambda p: p["current"].update({"<walk>": {"kind": "dir", "listable": False, "error": "OSError"}}),
+                 "persisted_data_unreadable_after_restart"),
+                (lambda p: p["restart"]["entries"].pop(PLAN_B), "persisted_entry_missing"),
+                (lambda p: p.update(mount_source=None), "persisted_data_not_same_mount"),
+                (lambda p: p["snapshot"].update(mount_source=None), "persisted_data_not_same_mount")):
+            with self.subTest(reason=reason):
+                persisted = persisted_ok()
+                change(persisted)
+                self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE), reason)
+
+    def test_seed_must_be_terminal_pre_dispatch_and_its_trace_attributable(self) -> None:
+        for change in (lambda p: p["snapshot"].update(seed=None),
+                       lambda p: p["snapshot"]["seed"].update(task_id="f" * 32),
+                       lambda p: p["snapshot"]["entries"][TASK_A]["task"].update(state="dispatched"),
+                       lambda p: p["snapshot"]["entries"][TASK_A]["task"].update(provider_attempts=1),
+                       lambda p: p["snapshot"]["seed"].update(automation_id="gateway_fixture_unreadable"),
+                       lambda p: p["snapshot"]["entries"][TRACE_INDEX]["trace"]["snapshots"][
+                           SEED_SNAPSHOT_ID].update(writer_versions=[])):
+            persisted = persisted_ok()
+            change(persisted)
+            self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
+                             "previous_release_seed_unobserved")
+
+    def test_both_transition_cases_require_the_check_and_no_other_case_carries_it(self) -> None:
+        for case in runners.PERSISTED_CASES:
+            self.assertEqual(gateway_case("side_by_side", case, persisted=None)[:2],
+                             ("failed", "persisted_snapshot_missing"))
+        self.assertEqual(set(runners.PERSISTED_CASES), {runners.ROLL_FORWARD_CASE, runners.ROLLBACK_PERSISTED_CASE})
+        self.assertEqual(runners.PERSISTED_CASES[runners.ROLLBACK_PERSISTED_CASE],
+                         (runners.LANE_ENGINEERING_IMAGE, runners.ROLLBACK_ENGINEERING_IMAGE))
+        self.assertEqual(runners.PERSISTED_CASES[runners.ROLL_FORWARD_CASE],
+                         (runners.ROLLBACK_ENGINEERING_IMAGE, runners.LANE_ENGINEERING_IMAGE))
         self.assertEqual(gateway_case("side_by_side", "sbs_stage_a_85_legacy_useful", persisted=persisted_ok())[:2],
-                         ("failed", "persisted_check_outside_roll_forward"))
+                         ("failed", "persisted_check_outside_transition"))
+        swapped = persisted_ok(runners.ROLLBACK_PERSISTED_CASE)
+        self.assertEqual(gateway_case("side_by_side", runners.ROLL_FORWARD_CASE, persisted=swapped)[:2],
+                         ("failed", "persisted_snapshot_not_previous_release"))
 
-    def test_inventory_script_reads_real_files_and_flags_unparseable_ones(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            plans = root / "governance" / "change_plans"
-            (plans / "trace-snapshots-v1" / "records").mkdir(parents=True)
-            (root / "audit.jsonl").write_bytes(AUDIT_BYTES)
-            plan = {"plan_id": "a" * 32, "created_at": "t", "operation": "update_automation",
-                    "target": {"id": "x"}, "proposed_config_hash": "h", "status": "awaiting_approval"}
-            (plans / ("a" * 32 + ".json")).write_text(json.dumps(plan))
+    def test_dispatch_counters_are_counted_independently_from_the_synthetic_core(self) -> None:
+        stats = {"http_mutations": {"POST /api/x": 2}, "websocket_mutations": {}, "operational_backup_creates": [],
+                 "approval_notification_calls": [{"id": 1}], "rest_reads": {"GET /api/": 9}}
+        self.assertEqual(runners.dispatch_counters(stats), {"http_mutations": 2, "websocket_mutations": 0,
+                                                            "operational_backup_creates": 0,
+                                                            "approval_notification_calls": 1})
+        for broken in ({k: v for k, v in stats.items() if k != "approval_notification_calls"},
+                       {**stats, "http_mutations": 3}, {**stats, "websocket_mutations": {"x": "1"}}):
+            with self.assertRaises(runners.LaneFailure):
+                runners.dispatch_counters(broken)
+        with self.assertRaises(runners.LaneFailure):
+            runners.dispatch_counters(None)
 
-            def inventory(prefix: dict) -> dict:
-                config = {"root": directory, "prefix": prefix, "plan_file": runners.PERSISTED_PLAN_FILE,
-                          "plan_identity": list(runners.PERSISTED_PLAN_IDENTITY)}
-                completed = subprocess.run([sys.executable, "-I", "-c", runners.INVENTORY_SCRIPT, json.dumps(config)],
-                                           capture_output=True, text=True, check=True)
-                return json.loads(completed.stdout)
 
-            before = inventory({})
-            self.assertIsNone(runners.persisted_snapshot_problem(before))
-            self.assertEqual(before["audit.jsonl"]["records"], 2)
-            snapshot = {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE, "mount_source": directory,
-                        "entries": before}
-            sizes = {path: entry["size"] for path, entry in before.items() if entry["kind"] == "file"}
+class _FakeCalls:
+    def __init__(self, results):
+        self.results, self.seen = results, []
 
-            with open(root / "audit.jsonl", "ab") as handle:
-                handle.write(b'{"event":"later"}\n')
-            (plans / ("a" * 32 + ".json")).write_text(json.dumps({**plan, "status": "superseded"}))
-            self.assertIsNone(runners.persisted_data_problem(snapshot, inventory(sizes), directory))
+    async def __call__(self, endpoint, calls):
+        self.seen.append((endpoint, calls))
+        return [self.results(name, arguments) for name, arguments in calls]
 
-            (plans / ("a" * 32 + ".json")).write_text("{truncated")
-            after = inventory(sizes)
-            self.assertIn("error", after[f"governance/change_plans/{'a' * 32}.json"])
-            self.assertEqual(runners.persisted_data_problem(snapshot, after, directory), "persisted_entry_unreadable")
 
-            (root / "audit.jsonl").write_bytes(b'{"event":"replaced"}\n')
-            (plans / ("a" * 32 + ".json")).write_text(json.dumps(plan))
-            self.assertEqual(runners.persisted_data_problem(snapshot, inventory(sizes), directory),
-                             "persisted_audit_not_preserved")
+class PersistedTransitionCommandTests(unittest.TestCase):
+    """The snapshot and restart commands: real writers first, then own-reader records; fail closed."""
 
-    def test_snapshot_command_fails_closed_and_records_only_the_previous_release(self) -> None:
-        def run(image=runners.ROLLBACK_ENGINEERING_IMAGE, mount=MOUNT, data_dir=MOUNT, entries=None, error=None):
-            def inventory(_container, _prefix):
-                if error:
-                    raise error
-                return entries if entries is not None else previous_release_entries()
+    ENDPOINT = "http://127.0.0.1:18300/x/mcp"
 
-            with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
-                args = argparse.Namespace(engineering_container="engineering-admission-sbs", data_dir=data_dir,
-                                          output=str(Path(directory) / "snapshot.json"))
-                code = runners.command_persisted_snapshot(args, inventory=inventory, mount=lambda _c: mount,
-                                                          image=lambda _c: image)
+    def snapshot_args(self, directory: str, **overrides) -> argparse.Namespace:
+        values = dict(engineering_container="engineering-admission-sbs", engineering_endpoint=self.ENDPOINT,
+                      data_dir=MOUNT, writer_image=runners.ROLLBACK_ENGINEERING_IMAGE,
+                      expected_engineering_version=W6, seed_automation="gateway_fixture",
+                      fixture_stats_url="http://127.0.0.1:18123/__stats",
+                      output=str(Path(directory) / "snapshot.json"))
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def run_snapshot(self, *, image=runners.ROLLBACK_ENGINEERING_IMAGE, mount=MOUNT, task=None, entries=None,
+                     stats=None, capture=None, **overrides):
+        calls = []
+
+        def seed_task(container):
+            calls.append("seed")
+            return task if task is not None else {"writer_version": W6, "task_id": SEED_TASK_ID,
+                                                  "plan_id": "a" * 32, "task_state": "cancelled_pre_dispatch"}
+
+        def captured(endpoint, automation):
+            calls.append(("capture", automation))
+            if capture is not None:
+                raise capture
+            return SEED_SNAPSHOT_ID
+
+        def inventory(container, prefix):
+            calls.append(("inventory", prefix))
+            return entries if entries is not None else previous_release_entries(W6)
+
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+            args = self.snapshot_args(directory, **overrides)
+            code = runners.command_persisted_snapshot(
+                args, inventory=inventory, mount=lambda _c: mount, image=lambda _c: image, seed_task=seed_task,
+                capture=captured, stats=lambda _url: stats if stats is not None else {
+                    key: [] for key in runners.DISPATCH_COUNTERS})
+            return code, json.loads(Path(args.output).read_text()), calls
+
+    def test_snapshot_writes_with_the_outgoing_release_then_records_its_own_reader_view(self) -> None:
+        code, value, calls = self.run_snapshot()
+        self.assertEqual((code, value["status"]), (0, "passed"))
+        self.assertEqual(calls, [("capture", "gateway_fixture"), "seed", ("inventory", {})])
+        self.assertEqual(value["seed"], synthetic_seed())
+        self.assertEqual((value["writer_version"], value["image"], value["mount_source"], value["counters"]),
+                         (W6, runners.ROLLBACK_ENGINEERING_IMAGE, MOUNT, ZERO_COUNTERS))
+
+    def test_snapshot_fails_closed(self) -> None:
+        for overrides, reason in (
+                (dict(writer_image="ghcr.io/other/image:latest"), "persisted_writer_image_unlisted"),
+                (dict(image=runners.LANE_ENGINEERING_IMAGE), "persisted_snapshot_not_previous_release"),
+                (dict(mount=None), "persisted_data_mount_missing"),
+                (dict(data_dir="/home/runner/work/_temp/fresh"), "persisted_data_not_lane_data_dir"),
+                (dict(seed_automation="other_automation"), "persisted_seed_automation_unlisted"),
+                (dict(capture=runners.LaneFailure("persisted_seed_trace_not_captured")),
+                 "persisted_seed_trace_not_captured"),
+                (dict(task={"writer_version": W7, "task_id": SEED_TASK_ID, "plan_id": "a" * 32,
+                            "task_state": "cancelled_pre_dispatch"}), "persisted_writer_version_mismatch"),
+                (dict(task={"writer_version": W6, "task_id": SEED_TASK_ID, "plan_id": "a" * 32,
+                            "task_state": "pending"}), "persisted_seed_task_not_terminal"),
+                (dict(stats={"http_mutations": []}), "fixture_dispatch_counter_missing"),
+                (dict(entries={}), "previous_release_data_unobserved"),
+                (dict(expected_engineering_version=W7, task={"writer_version": W7, "task_id": SEED_TASK_ID,
+                                                             "plan_id": "a" * 32,
+                                                             "task_state": "cancelled_pre_dispatch"}),
+                 "previous_release_reader_not_writer")):
+            with self.subTest(reason=reason):
+                code, value, _ = self.run_snapshot(**overrides)
+                self.assertEqual((code, value["status"], value.get("reason")), (1, "failed", reason))
+                self.assertNotIn("entries", value)
+
+    def test_restart_counts_dispatch_before_anything_else_and_never_passes_by_itself(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+            snapshot = Path(directory) / "snapshot.json"
+            snapshot.write_text(json.dumps(persisted_snapshot_ok()))
+            calls = []
+
+            def run(snapshot_path=str(snapshot), display_error=None):
+                def display(endpoint, value):
+                    calls.append("display")
+                    if display_error:
+                        raise display_error
+                    return {"plans": {}}
+
+                args = argparse.Namespace(engineering_container="engineering-admission-sbs",
+                                          engineering_endpoint=self.ENDPOINT, persisted_snapshot=snapshot_path,
+                                          fixture_stats_url="http://127.0.0.1:18123/__stats",
+                                          output=str(Path(directory) / "restart.json"))
+                code = runners.command_persisted_restart(
+                    args, inventory=lambda c, prefix: calls.append(("inventory", prefix)) or {"x": 1},
+                    mount=lambda _c: MOUNT, image=lambda _c: runners.LANE_ENGINEERING_IMAGE,
+                    stats=lambda _url: calls.append("stats") or {key: [] for key in runners.DISPATCH_COUNTERS},
+                    display=display)
                 return code, json.loads(Path(args.output).read_text())
 
-        code, value = run()
-        self.assertEqual((code, value["status"], value["mount_source"]), (0, "passed", MOUNT))
-        self.assertEqual(value["entries"], previous_release_entries())
-        self.assertEqual(run(image=runners.LANE_ENGINEERING_IMAGE)[1]["reason"], "persisted_snapshot_not_previous_release")
-        self.assertEqual(run(mount=None)[1]["reason"], "persisted_data_mount_missing")
-        self.assertEqual(run(data_dir="/home/runner/work/_temp/fresh")[1]["reason"], "persisted_data_not_lane_data_dir")
-        self.assertEqual(run(entries={})[1]["reason"], "previous_release_data_unobserved")
-        code, value = run(error=subprocess.CalledProcessError(1, "docker"))
-        self.assertEqual((code, value["status"]), (1, "failed"))
-        self.assertTrue(value["reason"].startswith("observation_failed"))
-        self.assertNotIn("entries", value)
+            code, value = run()
+            self.assertEqual((code, value["status"]), (0, "passed"))
+            self.assertEqual(calls, ["stats", ("inventory", runners.prefix_sizes(previous_release_entries())),
+                                     "display"])
+            self.assertEqual(value["counters"], ZERO_COUNTERS)
+            code, value = run(snapshot_path=str(Path(directory) / "absent.json"))
+            self.assertEqual((code, value["status"], value["reason"]),
+                             (0, "failed", "persisted_snapshot_not_previous_release"))
+            code, value = run(display_error=RuntimeError("boom"))
+            self.assertEqual((code, value["status"]), (0, "failed"))
+            self.assertTrue(value["reason"].startswith("observation_failed"))
+            # A failed restart record fails the case.
+            persisted = persisted_ok()
+            persisted["restart"] = value
+            self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
+                             "persisted_restart_missing")
 
-    def test_gateway_runner_observes_the_restarted_container_against_the_snapshot(self) -> None:
+    def test_capture_requires_exactly_one_new_snapshot(self) -> None:
+        def calls(runs):
+            return _FakeCalls(lambda name, arguments: {"success": True, "data": {"runs": runs}})
+
+        fake = calls([{"run_id": "r1", "outcome": "captured", "snapshot_id": SEED_SNAPSHOT_ID}])
+        self.assertEqual(runners.capture_seed_trace(self.ENDPOINT, "gateway_fixture", calls=fake), SEED_SNAPSHOT_ID)
+        self.assertEqual(fake.seen, [(self.ENDPOINT, [(runners.CAPTURE_TOOL, {"automation_id": "gateway_fixture"})])])
+        for runs in ([], [{"run_id": "r1", "outcome": "already_captured", "snapshot_id": SEED_SNAPSHOT_ID}],
+                     [{"outcome": "captured", "snapshot_id": "e" * 32}, {"outcome": "captured", "snapshot_id": "f" * 32}],
+                     [{"outcome": "captured", "snapshot_id": "not-hex"}]):
+            with self.subTest(runs=runs), self.assertRaises(runners.LaneFailure):
+                runners.capture_seed_trace(self.ENDPOINT, "gateway_fixture", calls=calls(runs))
+        with self.assertRaises(runners.LaneFailure):
+            runners.capture_seed_trace(self.ENDPOINT, "gateway_fixture", calls=_FakeCalls(lambda n, a: None))
+
+    def test_display_reads_each_outgoing_record_through_the_public_tools(self) -> None:
+        snapshot = persisted_snapshot_ok()
+        audit_line = json.dumps({"tool_name": runners.CAPTURE_TOOL, "server_version": W6,
+                                 "analysis_summary": {"snapshot_ids": [SEED_SNAPSHOT_ID]}})
+
+        def results(name, arguments):
+            if name == "get_audit_log":
+                return {"text": "not json\n" + audit_line + "\n"}
+            if name == "get_execution_task":
+                return {"success": True, "data": {"task_id": arguments["task_id"], "plan_id": "a" * 32,
+                                                  "state": "cancelled_pre_dispatch", "other": "x"}}
+            if name == "get_trace_snapshot":
+                return {"success": True, "data": {"snapshot": {"snapshot_id": arguments["snapshot_id"],
+                                                               "automation_id": "gateway_fixture"},
+                                                  "core": {"version": CORE_VERSION}}}
+            if arguments["plan_id"] == "b" * 32:
+                return {"success": False, "error_code": "plan_not_found"}
+            return {"success": True, "data": {"canonical_summary": {"plan_id": arguments["plan_id"],
+                                                                    "status": "superseded"}}}
+
+        fake = _FakeCalls(results)
+        shown = runners.persisted_display(self.ENDPOINT, snapshot, calls=fake)
+        self.assertEqual([name for name, _ in fake.seen[0][1]],
+                         ["get_audit_log", "get_execution_task", "get_trace_snapshot", "get_change_plan",
+                          "get_change_plan"])
+        self.assertEqual(shown["audit_captures"], [{"server_version": W6, "snapshot_ids": [SEED_SNAPSHOT_ID]}])
+        self.assertEqual(shown["task"], {"task_id": SEED_TASK_ID, "plan_id": "a" * 32,
+                                         "state": "cancelled_pre_dispatch"})
+        self.assertEqual(shown["trace"], {"snapshot_id": SEED_SNAPSHOT_ID, "automation_id": "gateway_fixture",
+                                          "core_version": CORE_VERSION})
+        self.assertEqual(shown["plans"], {"a" * 32: {"status": "superseded"}, "b" * 32: {"error": "plan_not_found"}})
+        persisted = persisted_ok()
+        persisted["restart"]["display"] = shown
+        self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
+                         "persisted_plan_not_displayed")
+
+    def test_gateway_runner_observes_the_restarted_container_against_both_records(self) -> None:
         async def session(*_args, **_kwargs):
             return gateway_health("8.5.0", None, LANE_VERSION), [], None
 
+        persisted = persisted_ok()
         with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
             source = Path(directory) / "gw.json"
             source.write_text(json.dumps(gateway_source("8.5.0", None)))
             snapshot = Path(directory) / "snapshot.json"
-            snapshot.write_text(json.dumps(persisted_snapshot_ok()))
+            snapshot.write_text(json.dumps(persisted["snapshot"]))
+            restart = Path(directory) / "restart.json"
+            restart.write_text(json.dumps(persisted["restart"]))
 
             def args(**overrides):
                 values = dict(configuration="side_by_side", case=runners.ROLL_FORWARD_CASE, source=str(source),
-                              engineering_endpoint="http://127.0.0.1:18300/x/mcp", configured_url=LEGACY,
+                              engineering_endpoint=self.ENDPOINT, configured_url=LEGACY,
                               upstream_endpoint=PEER_LEGACY, expected_engineering_version=LANE_VERSION,
                               engineering_container="engineering-admission-sbs", rollback_identity=None,
-                              persisted_snapshot=str(snapshot), output=str(Path(directory) / "case.json"))
+                              persisted_snapshot=str(snapshot), persisted_restart=str(restart),
+                              output=str(Path(directory) / "case.json"))
                 values.update(overrides)
                 return argparse.Namespace(**values)
 
@@ -1249,40 +1893,112 @@ class RollForwardPersistedDataTests(unittest.TestCase):
 
             def inventory(container, prefix):
                 seen.update(container=container, prefix=prefix)
-                return restarted_entries()
+                return persisted["current"]
+
+            def result():
+                value = json.loads(Path(args().output).read_text())
+                return value["status"], value.get("reason", "")
 
             with mock.patch.object(runners, "container_image", return_value=runners.LANE_ENGINEERING_IMAGE), \
                     mock.patch.object(runners, "container_inventory", side_effect=inventory), \
                     mock.patch.object(runners, "container_data_mount", return_value=MOUNT):
-                self.assertEqual(runners.command_gateway_case(args(), session=session), 0)
+                self.assertEqual(runners.command_gateway_case(args(), session=session), 0, result())
                 self.assertEqual(seen["prefix"]["audit.jsonl"], len(AUDIT_BYTES))
+                self.assertEqual(runners.command_gateway_case(args(persisted_restart=None), session=session), 1)
+                self.assertEqual(result(), ("failed", "persisted_restart_missing"))
                 self.assertEqual(runners.command_gateway_case(args(persisted_snapshot=None), session=session), 1)
-                value = json.loads(Path(args().output).read_text())
-                self.assertEqual((value["status"], value["reason"]), ("failed", "persisted_snapshot_missing"))
+                self.assertEqual(result(), ("failed", "persisted_snapshot_missing"))
                 snapshot.unlink()
                 self.assertEqual(runners.command_gateway_case(args(), session=session), 1)
-                value = json.loads(Path(args().output).read_text())
-                self.assertEqual((value["status"], value["reason"]), ("failed", "persisted_snapshot_not_previous_release"))
+                self.assertEqual(result(), ("failed", "persisted_snapshot_not_previous_release"))
 
-    def test_workflow_rolls_forward_on_the_beta6_data_without_a_reset(self) -> None:
+    def test_parser_requires_every_transition_argument(self) -> None:
+        parser = runners.parser()
+        snapshot = ["persisted-snapshot", "--engineering-container", "engineering-admission-sbs",
+                    "--engineering-endpoint", self.ENDPOINT, "--data-dir", MOUNT,
+                    "--writer-image", runners.LANE_ENGINEERING_IMAGE, "--expected-engineering-version", W7,
+                    "--seed-automation", "gateway_fixture", "--fixture-stats-url", "http://127.0.0.1:18123/__stats",
+                    "--output", "/tmp/x.json"]
+        self.assertEqual(parser.parse_args(snapshot).seed_automation, "gateway_fixture")
+        for index in range(1, len(snapshot), 2):
+            with self.subTest(missing=snapshot[index]), redirect_stdout(io.StringIO()), \
+                    mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+                parser.parse_args(snapshot[:index] + snapshot[index + 2:])
+        with redirect_stdout(io.StringIO()), mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args([*snapshot[:-4], "--seed-automation", "other", "--output", "/tmp/x.json"])
+        restart = parser.parse_args(["persisted-restart", "--engineering-container", "engineering-admission-sbs",
+                                     "--engineering-endpoint", self.ENDPOINT, "--persisted-snapshot", "/tmp/s.json",
+                                     "--fixture-stats-url", "http://127.0.0.1:18123/__stats",
+                                     "--output", "/tmp/r.json"])
+        self.assertEqual(restart.persisted_snapshot, "/tmp/s.json")
+
+
+class PersistedTransitionWorkflowTests(unittest.TestCase):
+    """Both transitions run on the same data directory, with each record taken at its boundary."""
+
+    TRANSITIONS = {
+        "Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5": dict(
+            case=runners.ROLLBACK_PERSISTED_CASE, writer='--writer-image engineering-admission-lane:test',
+            version='--expected-engineering-version "$ENGINEERING_LANE_VERSION"', automation="gateway_fixture",
+            snapshot="admission-persisted-current-release.json", restart="admission-persisted-rollback-restart.json"),
+        "Case side-by-side stage A again, current build with 8.5 on the legacy value": dict(
+            case=runners.ROLL_FORWARD_CASE, writer='--writer-image "$ROLLBACK_ENGINEERING_IMAGE"',
+            version='--expected-engineering-version "$ROLLBACK_ENGINEERING_VERSION"',
+            automation="gateway_fixture_unreadable", snapshot="admission-persisted-previous-release.json",
+            restart="admission-persisted-roll-forward-restart.json"),
+    }
+
+    def test_each_transition_snapshots_before_and_records_after_the_restart(self) -> None:
+        steps = {step.get("name", ""): step.get("run", "") for step in workflow_job()["steps"]}
+        endpoint = '--engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp"'
+        for name, expected in self.TRANSITIONS.items():
+            with self.subTest(step=name):
+                script = steps[name]
+                snap = script.index("persisted-snapshot")
+                restart = script.index("persisted-restart")
+                engineering = script.index("start-engineering")
+                acceptance = script.index("exact_image_read_gateway_acceptance.py")
+                case = script.index("gateway-case")
+                self.assertLess(snap, script.index("start-peer"))
+                self.assertLess(snap, engineering)
+                self.assertLess(engineering, restart)
+                self.assertLess(restart, acceptance)
+                self.assertLess(acceptance, case)
+                snapshot_args = script[snap:script.index("start-peer")]
+                for text in (endpoint, '--data-dir "$RUNNER_TEMP/admission-data-sbs"', expected["writer"],
+                             expected["version"], f'--seed-automation {expected["automation"]}',
+                             '--fixture-stats-url "$FIXTURE_STATS_URL"', "--engineering-container engineering-admission-sbs",
+                             f'--output "$RUNNER_TEMP/{expected["snapshot"]}"'):
+                    self.assertIn(text, snapshot_args)
+                restart_args = script[restart:acceptance]
+                for text in (endpoint, f'--persisted-snapshot "$RUNNER_TEMP/{expected["snapshot"]}"',
+                             '--fixture-stats-url "$FIXTURE_STATS_URL"',
+                             f'--output "$RUNNER_TEMP/{expected["restart"]}"'):
+                    self.assertIn(text, restart_args)
+                case_args = script[case:]
+                self.assertIn(f"--case {expected['case']}", case_args)
+                self.assertIn(f'--persisted-snapshot "$RUNNER_TEMP/{expected["snapshot"]}"', case_args)
+                self.assertIn(f'--persisted-restart "$RUNNER_TEMP/{expected["restart"]}"', case_args)
+
+    def test_the_data_directory_is_never_reset_across_the_side_by_side_stages(self) -> None:
         steps = workflow_job()["steps"]
         names = [step.get("name", "") for step in steps]
         again = next(i for i, name in enumerate(names) if "stage A again" in name)
         refusal = next(i for i, name in enumerate(names) if "previous release refuses 9.1" in name)
+        rollback = next(i for i, name in enumerate(names) if "side-by-side rollback" in name)
         self.assertEqual(again, refusal + 1, "no step may run between the beta.6 stage and stage A again")
-        script = steps[again]["run"]
-        snap = script.index("persisted-snapshot")
-        self.assertLess(snap, script.index("start-peer"))
-        self.assertLess(snap, script.index("start-engineering"))
-        self.assertIn('--data-dir "$RUNNER_TEMP/admission-data-sbs"', script[snap:script.index("start-peer")])
-        self.assertIn('--persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json"', script)
-        sbs = [step["run"] for step in steps if "side_by_side" in str(step.get("if", ""))
-               and "start-engineering" in step.get("run", "")]
-        for run in sbs:
-            for match in re.finditer(r"--data-dir \"([^\"]+)\"", run):
-                self.assertEqual(match.group(1), "$RUNNER_TEMP/admission-data-sbs")
+        self.assertEqual(refusal, rollback + 1)
+        for step in steps:
+            if "side_by_side" in str(step.get("if", "")):
+                for match in re.finditer(r"--data-dir \"([^\"]+)\"", step.get("run", "")):
+                    self.assertEqual(match.group(1), "$RUNNER_TEMP/admission-data-sbs")
         for step in steps[:again + 1]:
             self.assertNotRegex(step.get("run", ""), r"rm[^\n]*admission-data")
+        for name in names:
+            if name not in self.TRANSITIONS:
+                run = steps[names.index(name)].get("run", "")
+                self.assertNotIn("persisted-snapshot", run)
+                self.assertNotIn("persisted-restart", run)
 
 
 # ---------------------------------------------------------------------------
@@ -1646,3 +2362,63 @@ class StrictCatalogOrderInsensitiveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _disable_every_guard(reason: str):
+    """The runner module with every guard that reports ``reason`` disabled."""
+
+    source = (ROOT / "scripts" / "exact_image_admission_91_runners.py").read_text(encoding="utf-8")
+    lines = [line for line in source.splitlines()
+             if (f'"{reason}")' in line and "require(" in line) or line.strip() == f'return "{reason}"']
+    assert lines, reason
+    for line in set(lines):
+        new = (line.replace("require(", "require(True or ", 1) if "require(" in line
+               else line.replace(f'return "{reason}"', "pass"))
+        source = source.replace(line + "\n", new + "\n")
+    module = type(sys)("exact_image_admission_91_runners_persisted_mutant")
+    module.__file__ = str(ROOT / "scripts" / "exact_image_admission_91_runners.py")
+    sys.modules[module.__name__] = module
+    exec(compile(source, module.__file__, "exec"), module.__dict__)  # noqa: S102 - local mutation testing
+    return module
+
+
+class PersistedTransitionMutationTests(unittest.TestCase):
+    """F3: removing any one transition guard changes the verdict on its counterexample."""
+
+    def test_each_transition_guard_is_load_bearing(self) -> None:
+        for reason, mutate in PERSISTED_MUTATIONS.items():
+            with self.subTest(guard=reason):
+                persisted = persisted_ok()
+                if reason == "persisted_snapshot_not_previous_release":
+                    mutate = lambda p: p["snapshot"].update(image=runners.LANE_ENGINEERING_IMAGE)  # noqa: E731
+                elif reason == "previous_release_reader_not_writer":
+                    mutate = lambda p: p["snapshot"]["entries"][runners.READER_KEY].update(  # noqa: E731
+                        version="2.4.2-beta.5")
+                elif reason == "persisted_transition_not_between_releases":
+                    mutate = lambda p: p["restart"]["entries"][runners.READER_KEY].update(version=W6)  # noqa: E731
+                elif reason in ("previous_release_audit_version_unrecorded", "persisted_audit_not_preserved"):
+                    side = "snapshot" if reason.startswith("previous") else "current"
+                    mutate = lambda p, s=side: (p[s]["entries"] if s == "snapshot" else p[s])[  # noqa: E731
+                        "audit.jsonl"].update(server_versions={"x": 2})
+                mutate(persisted)
+                self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE), reason)
+                mutant = _disable_every_guard(reason)
+                try:
+                    verdict = mutant.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE)
+                except Exception as error:  # noqa: BLE001 - a crashing mutant is killed too
+                    verdict = f"raised {type(error).__name__}"
+                self.assertNotEqual(verdict, reason)
+
+    def test_codex_counterexample_passes_once_the_readability_guard_is_removed(self) -> None:
+        # The real-reader record of Codex's synthetic_invalid_status plan is
+        # refused only by the readability guard: without it the case passes,
+        # which is exactly the pre-correction behavior Codex demonstrated.
+        layout = build_transition(runners.ROLL_FORWARD_CASE)
+        rewrite_json(layout["root"] / REAL_PLAN_A, lambda plan: plan.update(status="synthetic_invalid_status"))
+        persisted = json.loads(json.dumps(layout["persisted"]))
+        persisted["current"] = read_inventory(layout["root"], release_packages()[W7], layout["prefix"])
+        self.assertEqual(runners.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
+                         "persisted_entry_unreadable")
+        mutant = _disable_every_guard("persisted_entry_unreadable")
+        self.assertNotEqual(mutant.persisted_data_problem(persisted, case=runners.ROLL_FORWARD_CASE),
+                            "persisted_entry_unreadable")
