@@ -408,7 +408,8 @@ def case_context(case: str, observed: Any) -> dict[str, Any]:
     if case in DASHBOARD_CASES:
         return {"plan_hash": binding.get("plan_hash"), "url_path": DASHBOARD_URL_PATH,
                 "seed_config": SEED_CONFIG, "patched_config": PATCHED_CONFIG,
-                "guide_arguments": GUIDE_ARGUMENTS_BY_VERSION.get(version)}
+                # An unknown release has no reviewed guide read: never another release's.
+                "guide_arguments": GUIDE_ARGUMENTS_BY_VERSION.get(version, {})}
     core_version = observed.get("core_version") if isinstance(observed, dict) else None
     return {"core_version": core_version if binding.get("core_version") == core_version else None,
             "upstream_version": version, "provider_contracts": PROVIDER_CONTRACTS.get(version)}
@@ -461,6 +462,9 @@ def case_problem(case: str, observed: Any) -> str | None:
         return "not a governed case"
     if not isinstance(observed, dict):
         return "no observed evidence"
+    if observed.get("stage_failure"):
+        # A stage that refused never proves its cases, whatever the operations show.
+        return "stage refused: " + bounded(str(observed["stage_failure"]), 120)
     problem = stage_problem(case, observed)
     if problem is not None:
         return problem
@@ -711,7 +715,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None,
             observed["failure"] = problem
             if status == "passed":
                 status, reason = "failed", problem
-            else:
+            elif not reason.startswith(problem):
                 reason = bounded(problem + "; " + reason)
         write_json(args.cases_dir / (case + ".json"),
                    case_result(case, status, form=CASE_STAGE[case].endpoint_form, reason=reason if status != "passed" else "",

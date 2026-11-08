@@ -797,6 +797,23 @@ class SideBySideStageTests(Harness):
                                                        self.core_version)))
         self.assert_rejected(result, TYPED, "reviewed 9.1.0 provider")
 
+    def test_a_release_without_a_reviewed_guide_read_is_not_accepted(self):
+        # Neither an unknown release nor an empty compiled read falls back to another release's guide read.
+        evidence = self.good(SBS)
+        tables = {"unknown release": {k: v for k, v in governed.GUIDE_ARGUMENTS_BY_VERSION.items() if k != "8.5.0"},
+                  "empty compiled read": dict(governed.GUIDE_ARGUMENTS_BY_VERSION, **{"8.5.0": {}})}
+        for label, table in tables.items():
+            with self.subTest(variant=label):
+                self.setUp()
+                try:
+                    with unittest.mock.patch.dict(governed.GUIDE_ARGUMENTS_BY_VERSION, table, clear=True):
+                        result = self.pipeline(evidence, configuration=SBS)
+                    for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
+                        self.assert_rejected(result, stage.dashboard_case, "no reviewed guide read")
+                        self.assertEqual(result["cases"][stage.typed_case]["status"], "passed")
+                finally:
+                    self.tearDown()
+
     def identity_break(self, stage: str, mutate) -> dict:
         ident = ev.identity_for(STAGE[stage])
         ident = mutate(ident)
@@ -893,6 +910,29 @@ class SideBySideStageTests(Harness):
         evidence["stages"]["rollback"]["failure"] = "engineering_version_mismatch"
         result = self.pipeline(evidence, configuration=SBS)
         self.assert_only_stage_rejected(result, "rollback", "stage refused: engineering_version_mismatch")
+        for case in STAGE["rollback"].cases:
+            self.assertEqual(result["cases"][case]["observed"]["stage_failure"], "engineering_version_mismatch")
+            self.assertEqual(result["cases"][case]["reason"], "stage refused: engineering_version_mismatch")
+
+    def test_forged_passed_case_of_a_refused_stage_is_flipped_by_the_manifest_writer(self):
+        def forge(cases):
+            for case in STAGE["rollback"].cases:
+                path = cases / f"{case}.json"
+                value = json.loads(path.read_text())
+                value["observed"]["stage_failure"] = "engineering_version_mismatch"
+                value.update(status="passed", reason="")
+                path.write_text(json.dumps(value))
+        result = self.pipeline(self.good(SBS), configuration=SBS, forge=forge)
+        for case in SBS_CASES:
+            entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
+            if case in STAGE["rollback"].cases:
+                self.assertEqual(entry["status"], "failed")
+                self.assertIn("stage refused: engineering_version_mismatch", entry["reason"])
+            else:
+                self.assertEqual(entry["status"], "passed", entry.get("reason"))
+        self.assertEqual(result["manifest"]["result"], "FAIL")
+        self.assertEqual(result["gate"]["acceptance"][SBS], "NOT ACCEPTED")
+        self.assertNotEqual(result["gate_code"], 0)
 
     def test_stage_peer_log_disagreement_fails_only_that_stage(self):
         evidence = self.good(SBS)
