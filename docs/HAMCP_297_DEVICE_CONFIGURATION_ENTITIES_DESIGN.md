@@ -6,7 +6,8 @@ not a plan. The Codex design review 2026-11-08 corrections are kept and
 reshaped where item 25 required it (§14). Q8 (empty first-build safety
 trigger) and Q9 (compiled `(domain, platform, translation_key)` allowlist) are
 decided, and the first build is narrowed to three source-confirmed Matter
-target kinds (B14–B16, §4.1). Remaining owner choices: §13.2.** This
+target kinds (B14–B17, §4.1). Q10 (breadth of the power-on triple) is
+decided (B17); nothing is pending Josh (§13.2).** This
 document changes no runtime code, schema, tool registration, policy, workflow,
 signed registry, release declaration or version. It is the one new file in its
 pull request.
@@ -81,6 +82,7 @@ Register Outcome (HAMCP-297, verbatim):
 | B14 | No safety confirmations in the first build. The `confirmation_required` mechanism ships with an **empty trigger**, and the build PR proves it end to end with a test-only trigger: `dispatch: no_dispatch`, `task_created: false`, no send; a later call with `acknowledge_safety_critical` dispatches; audit `safety_gate` / `safety_confirmation`; `external_approval: false` | Josh, in session | **Josh decision (in-session 2026-11-08)** (Q8 option (a)) |
 | B15 | The first build admits targets through a compiled **`(domain, platform, translation_key)` allowlist inside the signed contract**. Each `translation_key` is confirmed from integration source at the pinned Core (2026.11.0, commit `74cf5a49`) and at the pinned integration version. Any target with no `translation_key` is **dropped** from the first build | Josh, in session | **Josh decision (in-session 2026-11-08)** (Q9 option (a)) |
 | B16 | Follow-up after the source read: (i) **drop the Aqara sensitivity `select`**, because its triple `(select, matter, sensitivity_level)` is shared with the smoke/CO alarm smoke-sensitivity select; (ii) **accept the breadth** of the two generic triples kept, `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)`, and disclose it (§4.1, §11) | Josh, in session | **Josh decision (in-session 2026-11-08)** (follow-up to Q9) |
+| B17 | **Accept and disclose the breadth of `(select, matter, startup_on_off)`**, kept as is with no device-type filter. The triple admits the power-on behavior of any Matter endpoint that exposes `OnOff.StartUpOnOff` (`core:components/matter/select.py:426-450`, required attribute `:447`), for example Matter lights and wall switches, not only the 5 plugs. Disclosed in §4.1 and §11. It does not block the contract freeze, and the B15 three-triple contract is unchanged | Josh, in session | **Josh decision (in-session 2026-11-08)** (Q10 option (a)) |
 
 Everything else in this document is a design proposal, not a recorded decision.
 In particular the tool name `control_device_configuration` (§5.1) is this
@@ -371,11 +373,12 @@ The first slice is **`select.select_option`, `switch.turn_on`/`switch.turn_off`
 and `number.set_value` on registry-proven config-category device entities
 whose target kind is admitted for the first build (§4.1).**
 
-### 4.1 First-build targets (B9, B15, B16) and target-kind admission
+### 4.1 First-build targets (B9, B15, B16, B17) and target-kind admission
 
 Josh's item-1 decision (B9) named the first-build targets from the
 keyword-based inventory. That list is kept below as history. Q9 (B15) and its
-follow-up (B16) narrow it to three source-confirmed Matter target kinds.
+follow-up (B16) narrow it to three source-confirmed Matter target kinds, and
+B17 accepts the breadth of the power-on triple.
 
 #### Historical (B9, item 1): the inventory list
 
@@ -407,11 +410,11 @@ custom integration). That read did not expose `translation_key` or
   `6d2c8adb81f3551070ec62fd9590f26254df145a`, 2026-10-23). Nothing from it is
   admitted, so the unknown version changes no admitted kind.
 
-#### Compiled allowlist (B15, B16): exactly three admitted triples
+#### Compiled allowlist (B15, B16, B17): exactly three admitted triples
 
 | Triple `(domain, platform, translation_key)` | Household targets | Pinned source | Contract facts from source | Breadth beyond the household targets (disclosed) |
 |---|---|---|---|---|
-| `(select, matter, startup_on_off)` | Power-on behavior on the 5 plugs | `core:components/matter/select.py:426-450` (`MatterStartUpOnOff`); name "Power-on behavior" (`matter/strings.json:394-395`) | `entity_category=CONFIG`; options `on`/`off`/`toggle`/`previous` (a device `None` reads as `previous`); the only Matter select with this key | Not vendor- or device-type-gated: the one required attribute is `OnOff.StartUpOnOff` (`:447`), so any Matter endpoint that exposes it is admitted (for example Matter lights and wall switches as well as plugs). B16 (ii) did not cover this triple; §13.2 Q10 |
+| `(select, matter, startup_on_off)` | Power-on behavior on the 5 plugs | `core:components/matter/select.py:426-450` (`MatterStartUpOnOff`); name "Power-on behavior" (`matter/strings.json:394-395`) | `entity_category=CONFIG`; options `on`/`off`/`toggle`/`previous` (a device `None` reads as `previous`); the only Matter select with this key | Not vendor- or device-type-gated: the one required attribute is `OnOff.StartUpOnOff` (`:447`), so any Matter endpoint that exposes it is admitted (for example Matter lights and wall switches as well as plugs). Accepted and disclosed, with no device-type filter (B17, Q10 option (a)); power-on behavior stays disclosure only on every admitted entity (B11) |
 | `(switch, matter, child_lock)` | Child lock on the 4 Eve plugs | `core:components/matter/switch.py:536-545` (`EveChildLock`); name "Child lock" (`matter/strings.json:737-738`) | `entity_category=CONFIG`; `MatterNumericSwitch` | Also admits `EveTrvChildLock` (`switch.py:472-490`: Eve vendor 4874, thermostat `KeypadLockout`), the Eve thermostat valve's keypad lock. Accepted and disclosed (B16 (ii)) |
 | `(number, matter, sensitivity_level)` | Aqara back-porch sensor sensitivity | `core:components/matter/number.py:539-563` (`BooleanStateConfigurationCurrentSensitivityLevel`); name "Sensitivity" (`matter/strings.json:283-284`) | `entity_category=CONFIG`; `MatterRangeNumber`, `native_min_value=1`, `native_step=1`, maximum from the device's `SupportedSensitivityLevels` attribute, `device_to_ha` is x+1, slider mode, no device class; the only Matter number with this key | Any Matter `BooleanStateConfiguration` device with the sensitivity-level feature (`featuremap_contains`, `:559-561`), for example water-leak, rain and contact sensors, not only Aqara. Accepted and disclosed (B16 (ii)). The range (1..3 in the inventory) is device-supplied, so it is confirmed from state and registry capabilities at runtime (§5.5.1), never compiled |
 
@@ -1496,7 +1499,7 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
   and the legacy vendor sensitivity selects (their shared triple
   `(select, matter, sensitivity_level)` is not admitted), every `tapo_control`
   entity (no `translation_key`), and any `null`-key entity.
-- **Disclosed breadth (B16 (ii)):** a triple admits every entity that carries
+- **Disclosed breadth (B16 (ii), B17):** a triple admits every entity that carries
   it, not only the household targets. `(switch, matter, child_lock)` also
   admits the Eve thermostat valve keypad lock (`EveTrvChildLock`).
   `(number, matter, sensitivity_level)` admits any Matter
@@ -1504,8 +1507,10 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
   water-leak, rain and contact sensors; lowering a leak sensor's sensitivity
   can make it miss a leak (§5.6 disclosure). `(select, matter,
   startup_on_off)` admits the power-on behavior of any Matter endpoint exposing
-  `OnOff.StartUpOnOff`, lights and wall switches included; that breadth was
-  not part of the B16 (ii) acceptance and is §13.2 Q10, pending Josh. Every
+  `OnOff.StartUpOnOff`, lights and wall switches included, not only the 5
+  plugs; that breadth is accepted and disclosed with no device-type filter
+  (B17, Josh decision (in-session 2026-11-08), Q10 option (a)), and power-on
+  behavior is disclosure only on every admitted entity (B11). Every
   admitted entity still needs the full §5.5 proof on every call.
 - **Concurrency:** the new tool shares `control_power`'s exclusive
   `entity:<entity_id>` key in the one durable lock store, so two Engineering
@@ -1548,8 +1553,8 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
 1. **Prerequisites (done 2026-11-08):** the read-only registry read
    confirmed platform and descriptor for the §4.1 targets, `translation_key`
    and `entity_category` were confirmed from pinned source, Q8 is decided
-   (B14, empty trigger) and Q9 is decided (B15, B16, three triples). Q10
-   (§13.2) affects the allowlist only if Josh declines option (a).
+   (B14, empty trigger), Q9 is decided (B15, B16, three triples) and Q10 is
+   decided (B17, power-on triple breadth accepted; the allowlist is unchanged).
 2. Build PR on the 2.6.0 line (protected Engineering runtime path, named and
    authorized in that task), in the `control_helper` file layout:
    `E/device_configuration/contracts.py` (closed input, statuses, refusals),
@@ -1608,16 +1613,15 @@ that point. This design PR itself shares no file with them.
 | Q8 | First-build safety trigger | (a) none: the mechanism ships with an empty trigger, and the build PR proves it end to end with a test-only trigger (`dispatch: no_dispatch`, `task_created: false`, no send; the acknowledged call dispatches; audit `safety_gate` / `safety_confirmation`; `external_approval: false`) (B14, §5.6, §8 S7–S8) | Josh decision (in-session 2026-11-08) |
 | Q9 | Target admission | (a) a compiled `(domain, platform, translation_key)` allowlist inside the signed contract, each key confirmed from integration source at the pinned Core and integration version; a target with no `translation_key` is dropped (B15, §4.1) | Josh decision (in-session 2026-11-08) |
 | Q9 follow-up | Shared and generic triples | (i) drop the Aqara sensitivity `select` (its triple is shared with the smoke/CO smoke-sensitivity select); (ii) accept and disclose the breadth of `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)` (B16, §4.1, §11) | Josh decision (in-session 2026-11-08) |
+| Q10 | Breadth of `(select, matter, startup_on_off)` | (a) accept and disclose: keep the triple as is with no device-type filter; it admits the power-on behavior of any Matter endpoint exposing `OnOff.StartUpOnOff` (lights, wall switches and so on), not only the 5 plugs. Does not block the contract freeze (B17, §4.1, §11) | Josh decision (in-session 2026-11-08) |
 | — | Registry confirmation | Done 2026-11-08 by the architect's read-only registry read (register HAMCP-297): platform `matter` with descriptors `MatterStartUpOnOff`, `EveChildLock`, the Aqara select and number descriptors; platform `tapo_control` for the camera numbers. `translation_key` and `entity_category` were not exposed and are confirmed from source (§4.1). The resulting first build is Matter only, exactly three triples | Architect's register record (HAMCP-297, 2026-11-08); source reads in this design |
 | — | Shape | Switch-like ordinary typed control with exact readback and undo, chat confirmation only when safety-critical, no approval panel and no plan (B8) | Josh decision (in-session 2026-11-08), item 25 |
 
 ### 13.2 Pending Josh
 
-| # | Question | Options | Recommendation | Blocks |
-|---|---|---|---|---|
-| Q10 | `(select, matter, startup_on_off)` is not vendor- or device-type-gated: it admits the power-on behavior of every Matter endpoint that exposes `OnOff.StartUpOnOff` (`core:components/matter/select.py:426-450`), for example Matter lights and wall switches, not only the 5 plugs. B16 (ii) accepted the breadth of the other two triples only. Accept this breadth too? | (a) accept and disclose, as for the other two triples (B11 already makes power-on behavior disclosure only on every target); (b) narrow it, which needs an admission rule beyond the triple (for example a Matter device-type filter; the descriptor key does not help, because plugs and lights share `MatterStartUpOnOff`) and so changes the B15 contract | (a) | Contract freeze only for (b); (a) blocks nothing |
+None. Every owner question raised by this design is decided (§13.1).
 
-#### Superseded (historical): Q8 and Q9 as pending questions
+#### Superseded (historical): Q8, Q9 and Q10 as pending questions
 
 The bda3ace0 revision listed Q8 (first-build safety trigger; options (a)
 empty trigger, (b) extend the `control_helper` dependency-evidence builder,
@@ -1625,10 +1629,13 @@ empty trigger, (b) extend the `control_helper` dependency-evidence builder,
 triple allowlist, (b) admit every config-category kind and deny only Tapo
 detection, (c) owner-configured exact entity ids) as pending Josh, with the
 registry confirmation as the next human action. All three are now resolved
-(§13.1).
+(§13.1). The cb38e75c revision then listed Q10 (breadth of
+`(select, matter, startup_on_off)`; options (a) accept and disclose, (b) narrow
+it with an admission rule beyond the triple, such as a Matter device-type
+filter; recommended (a)) as pending Josh. It is resolved as (a) (B17, §13.1).
 
-**Next human action:** answer Q10. Nothing else in this design is pending
-Josh. The build itself, signing, release, deployment and deployed acceptance
+**Next human action:** none is pending Josh on this design. The build
+itself, signing, release, deployment and deployed acceptance
 remain separately authorized actions (§12).
 
 ## 14. Codex design review 2026-11-08 — disposition
@@ -1666,12 +1673,13 @@ approval hash mismatch). Counts in §7 remain base-local deltas.
 | Q8 | (a) no safety confirmations in the first build: the mechanism ships with an empty trigger and is proven end to end with a test-only trigger | Header; §1 B14; §2.5 (confirmation row); §5.6 (decided; historical Q8 note); §8 S7, S8; §11 (chat confirmation); §12 steps 1–2; §13 (Q8 decided, historical note) |
 | Q9 | (a) compiled `(domain, platform, translation_key)` allowlist in the signed contract, keys confirmed from source at the pinned Core and integration version; targets without a `translation_key` dropped (the Tapo digital-sensitivity `number`) | Header and provenance note; §1 B15 (B9 status note); §4 select row; §4.1 (allowlist, dropped list, registry confirmation, rejected descriptor-key alternative); §5.5 item 5; §5.5.1 E1 note; §6 signing row; §8 T1–T6 and success tests; §9.1; §9.2 residual; §9.3; §10 (Matter and `tapo_control` citations); §11; §12; §13 |
 | Q9 follow-up | (i) drop the Aqara sensitivity `select` (triple shared with the smoke/CO smoke-sensitivity select); (ii) accept and disclose the breadth of the `child_lock` switch and `sensitivity_level` number triples | §1 B16; §4.1; §5.6 (smoke unreachable; sensing disclosure); §8 T1, T3, T4; §9.3 (Aqara select acceptance removed, historical note); §11 (disclosed breadth); §13 (Q9 follow-up decided; Q10 new) |
+| Q10 | (a) accept and disclose the breadth of `(select, matter, startup_on_off)`: kept as is with no device-type filter; it admits power-on behavior on any Matter endpoint with `OnOff.StartUpOnOff` (lights, wall switches and so on), not only the 5 plugs; does not block the contract freeze | Header; §1 B17; §4.1 (heading, intro, allowlist breadth column); §11 (disclosed breadth); §12 step 1; §13 (Q10 decided; §13.2 empty; historical note) |
 
 The registry confirmation of the §4.1 targets (platform and descriptor) is
 the architect's read-only register record of 2026-11-08, not a Josh decision;
 `translation_key` and `entity_category` come from the pinned source cited in
-§4.1 and §10. One question remains from the source read: §13.2 Q10 (breadth
-of the power-on triple), pending Josh.
+§4.1 and §10. The one question the source read raised, Q10 (breadth of the
+power-on triple), is decided (B17); nothing is pending Josh.
 
 No decision conflicted with the stated architecture or safety constraints.
 Undo is newly specified, because the shipped `control_*` tools have none
