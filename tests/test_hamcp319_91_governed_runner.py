@@ -55,11 +55,12 @@ DASHBOARD_FAILED = {
 DASHBOARD_MISMATCH = {
     "dashboard_list": ["energy"],
     "dashboard_get": copy.deepcopy(governed.PATCHED_CONFIG),
-    "dashboard_plan": {"plan_status": "approved"},
-    "dashboard_apply_before_approval_refused": {"plan_status": "awaiting_approval", "setter_calls": 1},
-    "dashboard_approval_request": {"plan_status": "approved"},
-    "dashboard_ingress_non_supervisor_refused": {"plan_status": "approved"},
-    "dashboard_ingress_approval": {"plan_status": "awaiting_approval"},
+    "dashboard_plan": {"plan_status": "approved", "plan_read_ok": True},
+    "dashboard_apply_before_approval_refused": {"plan_status": "awaiting_approval", "plan_read_ok": True,
+                                                "setter_calls": 1},
+    "dashboard_approval_request": {"plan_status": "approved", "plan_read_ok": True},
+    "dashboard_ingress_non_supervisor_refused": {"plan_status": "approved", "plan_read_ok": True},
+    "dashboard_ingress_approval": {"plan_status": "awaiting_approval", "plan_read_ok": True},
     "dashboard_apply": {"setter_calls": 2},
     "dashboard_bps_guide_read": ev.bps_log(setters=2),
     "dashboard_verify": copy.deepcopy(governed.SEED_CONFIG),
@@ -913,6 +914,9 @@ class SideBySideStageTests(Harness):
         for case in STAGE["rollback"].cases:
             self.assertEqual(result["cases"][case]["observed"]["stage_failure"], "engineering_version_mismatch")
             self.assertEqual(result["cases"][case]["reason"], "stage refused: engineering_version_mismatch")
+            # The stored case also names the stage refusal it carries, not only the re-derived reason.
+            self.assertEqual(result["cases"][case]["observed"].get("failure"),
+                             "stage refused: engineering_version_mismatch")
 
     def test_forged_passed_case_of_a_refused_stage_is_flipped_by_the_manifest_writer(self):
         def forge(cases):
@@ -1057,7 +1061,458 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         self.assertNotIn("--rollback-identity", ninety_one["run"])
 
 
+import asyncio  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
 import unittest.mock  # noqa: E402  (used by test_engineering_image_must_be_the_lane_image)
+
+# --------------------------------------------------------------------------
+# F2 residual (#407 combined review, comment 6725224530): an errored public MCP
+# envelope must never become verified governed evidence. These tests drive the
+# ACTUAL dashboard_flow / typed_flow and mcp_call against a bounded synthetic
+# MCP session (as Codex's pr407-combined-*-probes.py do), then the real
+# command -> case file -> manifest -> gate pipeline.
+# --------------------------------------------------------------------------
+
+ROLLBACK_STAGE = governed.STAGES[2]
+NINETY_ONE_STAGE = governed.STAGES[0]
+
+
+async def _no_sleep(_seconds):
+    return None
+
+
+class FakeProxy:
+    def __init__(self):
+        self.entries = []
+
+    def mark(self):
+        return len(self.entries)
+
+    def since(self, mark):
+        return self.entries[mark:]
+
+
+def mcp_result(payload: dict, is_error: bool):
+    return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))], isError=is_error)
+
+
+class FakeDashboardSession:
+    """Synthetic Engineering MCP for the governed dashboard flow.
+
+    ``bad`` names which reads return an MCP error (isError=true, success=false,
+    an error code) alongside plausible data: ``task`` (final task read),
+    ``config`` (final config read), ``both``, ``plan_status`` (every
+    get_change_plan), ``refused_plan_status`` (only the read after the refused
+    apply), ``list``, ``seed_config`` (first config read), ``poll`` (the task
+    poll after an accepted apply). ``accepted`` makes apply return
+    ``accepted`` so the flow polls get_execution_task.
+    """
+
+    def __init__(self, proxy, stage, bad="none", accepted=False):
+        self.proxy, self.stage, self.bad, self.accepted = proxy, stage, bad, accepted
+        self.state, self.gets, self.applies, self.plan_reads, self.task_reads = "awaiting_approval", 0, 0, 0, 0
+        self.errors = []
+
+    async def call_tool(self, name, args):
+        err = False
+        if name == "list_dashboards":
+            data = {"dashboards": [{"url_path": governed.DASHBOARD_URL_PATH}]}
+            err = self.bad == "list"
+        elif name == "get_dashboard_config":
+            self.gets += 1
+            data = {"configuration": governed.SEED_CONFIG if self.gets == 1 else governed.PATCHED_CONFIG,
+                    "config_hash": "0" * 16}
+            err = (self.gets == 1 and self.bad == "seed_config") or (self.gets > 1 and self.bad in ("config", "both"))
+        elif name == "create_dashboard_update_plan":
+            data = {"plan_id": ev.PLAN_ID, "plan_hash": ev.PLAN_HASH, "status": "awaiting_approval"}
+        elif name == "get_change_plan":
+            self.plan_reads += 1
+            data = {"status": self.state}
+            err = self.bad == "plan_status" or (self.bad == "refused_plan_status" and self.plan_reads == 2)
+        elif name == "approve_change_plan":
+            data = {"status": "approval_pending", "approval_action": "plan_approval", "challenge_id": "synthetic",
+                    "bound_plan_hash": ev.PLAN_HASH}
+        elif name == "apply_change_plan":
+            self.applies += 1
+            if self.applies == 1:
+                return mcp_result({"success": False, "error_code": "approval_required"}, False)
+            self.proxy.entries.extend([dict(x, method="tools/call")
+                                       for x in ev.bps_log(version=self.stage.upstream_version)])
+            data = {"status": "accepted", "task_id": ev.TASK_ID, "provider_dispatch_occurred": True,
+                    "redispatch_performed": False} if self.accepted else \
+                {"status": "applied", "task_state": "succeeded_verified", "provider_dispatch_occurred": True,
+                 "redispatch_performed": False, "task_id": ev.TASK_ID}
+        elif name == "get_execution_task":
+            self.task_reads += 1
+            data = {"state": "succeeded_verified", "terminal": True}
+            polled = self.accepted and self.task_reads == 1
+            err = (self.bad == "poll" and polled) or (not polled and self.bad in ("task", "both"))
+        else:
+            raise AssertionError(name)
+        payload = {"success": not err, "data": data}
+        if err:
+            payload["error_code"] = "synthetic_read_failure"
+            self.errors.append(name)
+        return mcp_result(payload, err)
+
+
+class FakeCoreSocket:
+    async def command(self, request):
+        return copy.deepcopy(governed.PATCHED_CONFIG)
+
+
+class FakeTypedSession:
+    """Synthetic Engineering MCP for the public typed flow.
+
+    ``bad="duplicate"``: every duplicate public call returns an MCP error with
+    the matching receipt. ``bad="poll"``: the first call returns a non-terminal
+    receipt and the get_execution_task poll returns an MCP error carrying a
+    plausible terminal receipt. ``polled`` alone makes the flow poll
+    successfully (positive control).
+    """
+
+    def __init__(self, proxy, stage, core_version, bad="none", polled=False):
+        self.proxy, self.stage, self.core, self.bad = proxy, stage, core_version, bad
+        self.polled = polled or bad == "poll"
+        self.calls, self.current, self.counts, self.errors = {}, None, {}, []
+
+    def receipt(self, name, terminal=True):
+        receipt = {"task_id": ev.TASK_ID, "state": "succeeded_verified", "status": "succeeded_verified",
+                   "terminal": True, "provider": governed.PROVIDERS[name],
+                   "provider_contract": governed.PROVIDER_CONTRACTS[self.stage.upstream_version][name],
+                   "provider_attempt_count": 1, "dispatch_intent_recorded": True,
+                   "core_binding": {"version": self.core}}
+        if not terminal:
+            receipt.update(state="accepted", status="accepted", terminal=False)
+        return receipt
+
+    async def call_tool(self, name, args):
+        if name == "get_execution_task":
+            tool = governed.TYPED_TABLE[self.current][0]
+            err = self.bad == "poll"
+            payload = {"success": not err, "data": self.receipt(tool)}
+            if err:
+                payload["error_code"] = "synthetic_poll_failure"
+                self.errors.append(name)
+            return mcp_result(payload, err)
+        key = args["operation_id"]
+        n = self.calls.get(key, 0) + 1
+        self.calls[key] = n
+        base = {k: v for k, v in args.items() if k != "operation_id"}
+        self.current = next(k for k, v in governed.TYPED_TABLE.items() if v[0] == name and v[1] == base)
+        if n == 1:
+            self.proxy.entries.append({"method": "tools/call", "tool": governed.SERVICE_TOOL})
+            self.counts[base["entity_id"]] = self.counts.get(base["entity_id"], 0) + 1
+        err = n > 1 and self.bad == "duplicate"
+        payload = {"success": not err, "data": self.receipt(name, terminal=not (n == 1 and self.polled))}
+        if err:
+            payload["error_code"] = "synthetic_duplicate_failure"
+            self.errors.append(name)
+        return mcp_result(payload, err)
+
+    async def state(self, client, url, token, entity):
+        if self.current is None:
+            return {"state": "off", "attributes": {"synthetic_service_calls": 0}}
+        tool, _base, expected = governed.TYPED_TABLE[self.current]
+        state = {"state": expected["state"], "attributes": {k: v for k, v in expected.items() if k != "state"}}
+        if tool == "control_power":
+            state["attributes"]["synthetic_service_calls"] = self.counts[entity]
+        return state
+
+
+class EnvelopeFlowTests(Harness):
+    """Codex's 10 F2 demonstrations + 4 positive controls, through the real flows and pipeline."""
+
+    def flow_plan(self, stage, case):
+        evidence = ev.evidence(stage.configuration, core_version=self.core_version)
+        evidence[case] = {"operations": [], "binding": {}, "diagnostics": []}
+        plan = governed.Plan("amd64", {}, {"version": self.core_version}, governed.LANE_IMAGE,
+                             ev.ENGINEERING_VERSION, self.base / "work", "synthetic", evidence, stage.configuration)
+        return plan, evidence
+
+    def run_dashboard(self, stage, bad="none", accepted=False):
+        plan, evidence = self.flow_plan(stage, stage.dashboard_case)
+        proxy = FakeProxy()
+        session = FakeDashboardSession(proxy, stage, bad, accepted)
+
+        async def ingress(_plan_id):
+            session.state = "approved"
+            return {"rounds": [{"get_status": 200, "post_status": 200, "decision": "approved"}]}
+
+        async def host_probe(_plan_id):
+            return 403
+
+        flow = governed.dashboard_flow(plan, stage, session, proxy, FakeCoreSocket(), ingress, host_probe)
+        with unittest.mock.patch.object(governed.asyncio, "sleep", _no_sleep):
+            asyncio.run(governed.guarded(plan, stage.dashboard_case, flow))
+        return self.pipeline(evidence, configuration=stage.configuration), evidence, session
+
+    def run_typed(self, stage, bad="none", polled=False):
+        plan, evidence = self.flow_plan(stage, stage.typed_case)
+        proxy = FakeProxy()
+        session = FakeTypedSession(proxy, stage, self.core_version, bad, polled)
+        flow = governed.typed_flow(plan, stage, session, proxy, "http://127.0.0.1:1", "synthetic-token")
+        with unittest.mock.patch.object(governed, "core_state", session.state), \
+                unittest.mock.patch.object(governed.asyncio, "sleep", _no_sleep):
+            asyncio.run(governed.guarded(plan, stage.typed_case, flow))
+        return self.pipeline(evidence, configuration=stage.configuration), evidence, session
+
+    def assert_accepted(self, result, case):
+        file = result["cases"][case]
+        self.assertEqual(file["status"], "passed", file["reason"])
+        self.assertEqual(len(file["observed"]["operations"]), 11)
+        self.assertEqual(result["gate"]["acceptance"][result["configuration"]], "ACCEPTED")
+        self.assertEqual(result["gate_code"], 0)
+
+    def assert_error_refused(self, result, evidence, session, case, op, flag, *, where="facts", fragment=""):
+        self.assertTrue(session.errors, "the synthetic session injected no MCP error")
+        # The flow stops at the failed operation, so the case names the first unexecuted one.
+        self.assert_rejected(result, case, "operation ")
+        observed = result["cases"][case]["observed"]
+        self.assertIn({"failure": f"{op}_not_verified"}, observed["diagnostics"])
+        record = next(r for r in evidence[case]["operations"] if r["id"] == op)
+        self.assertFalse(record["verified"])
+        # The failed envelope is carried in the stored record, so every re-derivation refuses it.
+        self.assertIs((record[where] or {}).get(flag), False, record[where])
+        stored = next(r for r in observed["operations"] if r["id"] == op)
+        problem = governed.operation_problem(stored, governed.case_context(case, observed))
+        self.assertIsNotNone(problem)
+        self.assertIn(fragment, problem)
+        entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
+        compact = {o["id"]: o["verified"] for o in entry.get("operations") or []}
+        self.assertIs(compact.get(op), False, compact)
+
+    # -- Codex's 8 dashboard demonstrations: {task, config, both, plan_status} x {91_only, rollback}
+    def test_codex_dashboard_task_error_91_only_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "task")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_verify", "task_read_ok",
+                                  fragment="error-free")
+
+    def test_codex_dashboard_config_error_91_only_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "config")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_verify", "config_read_ok",
+                                  fragment="error-free")
+
+    def test_codex_dashboard_both_error_91_only_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "both")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_verify", "task_read_ok",
+                                  fragment="error-free")
+
+    def test_codex_dashboard_plan_status_error_91_only_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "plan_status")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_plan", "plan_read_ok",
+                                  where="readback", fragment="get_change_plan")
+
+    def test_codex_dashboard_task_error_rollback_not_accepted(self):
+        stage = ROLLBACK_STAGE
+        result, evidence, session = self.run_dashboard(stage, "task")
+        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
+                                  "task_read_ok", fragment="error-free")
+
+    def test_codex_dashboard_config_error_rollback_not_accepted(self):
+        stage = ROLLBACK_STAGE
+        result, evidence, session = self.run_dashboard(stage, "config")
+        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
+                                  "config_read_ok", fragment="error-free")
+
+    def test_codex_dashboard_both_error_rollback_not_accepted(self):
+        stage = ROLLBACK_STAGE
+        result, evidence, session = self.run_dashboard(stage, "both")
+        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
+                                  "config_read_ok", fragment="error-free")
+
+    def test_codex_dashboard_plan_status_error_rollback_not_accepted(self):
+        stage = ROLLBACK_STAGE
+        result, evidence, session = self.run_dashboard(stage, "plan_status")
+        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_plan",
+                                  "plan_read_ok", where="readback", fragment="get_change_plan")
+
+    # -- Codex's 2 typed demonstrations: duplicate_MCP_error x {91_only, rollback}
+    def test_codex_typed_duplicate_error_91_only_not_accepted(self):
+        result, evidence, session = self.run_typed(NINETY_ONE_STAGE, "duplicate")
+        self.assert_error_refused(result, evidence, session, TYPED, governed.TYPED_OPERATIONS[0],
+                                  "duplicate_read_ok", fragment="error-free")
+
+    def test_codex_typed_duplicate_error_rollback_not_accepted(self):
+        stage = ROLLBACK_STAGE
+        result, evidence, session = self.run_typed(stage, "duplicate")
+        self.assert_error_refused(result, evidence, session, stage.typed_case, governed.TYPED_OPERATIONS[0],
+                                  "duplicate_read_ok", fragment="error-free")
+
+    # -- Codex's 4 positive controls: error-free envelopes stay ACCEPTED
+    def test_control_dashboard_no_error_91_only_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE)
+        self.assertEqual(session.errors, [])
+        self.assert_accepted(result, DASH)
+        # The deliberately refused pre-approval apply stays a failed envelope (negative control) ...
+        refused = next(r for r in evidence[DASH]["operations"]
+                       if r["id"] == "dashboard_apply_before_approval_refused")
+        self.assertIs(refused["facts"]["success"], False)
+        # ... while its plan-status readback came from an error-free read.
+        self.assertIs(refused["readback"].get("plan_read_ok"), True)
+
+    def test_control_dashboard_no_error_rollback_accepted(self):
+        result, _evidence, session = self.run_dashboard(ROLLBACK_STAGE)
+        self.assertEqual(session.errors, [])
+        self.assert_accepted(result, ROLLBACK_STAGE.dashboard_case)
+
+    def test_control_typed_positive_91_only_accepted(self):
+        result, _evidence, session = self.run_typed(NINETY_ONE_STAGE)
+        self.assertEqual(session.errors, [])
+        self.assert_accepted(result, TYPED)
+
+    def test_control_typed_positive_rollback_accepted(self):
+        result, _evidence, session = self.run_typed(ROLLBACK_STAGE)
+        self.assertEqual(session.errors, [])
+        self.assert_accepted(result, ROLLBACK_STAGE.typed_case)
+
+    # -- Every other required public read, and every poll
+    def test_dashboard_list_error_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "list")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_list", "success",
+                                  fragment="list_dashboards did not succeed")
+
+    def test_dashboard_seed_config_error_not_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "seed_config")
+        self.assert_error_refused(result, evidence, session, DASH, "dashboard_get", "success",
+                                  fragment="bound configuration")
+
+    def test_refused_apply_plan_status_must_come_from_an_error_free_read(self):
+        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+            with self.subTest(stage=stage.key):
+                self.setUp()
+                try:
+                    result, evidence, session = self.run_dashboard(stage, "refused_plan_status")
+                    self.assertEqual(session.errors, ["get_change_plan"])
+                    self.assert_error_refused(result, evidence, session, stage.dashboard_case,
+                                              "dashboard_apply_before_approval_refused", "plan_read_ok",
+                                              where="readback", fragment="refused apply")
+                finally:
+                    self.tearDown()
+
+    def test_dashboard_poll_error_is_a_failure_not_retried_into_success(self):
+        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+            with self.subTest(stage=stage.key):
+                self.setUp()
+                try:
+                    result, evidence, session = self.run_dashboard(stage, "poll", accepted=True)
+                    self.assertEqual(session.errors, ["get_execution_task"])
+                    self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_apply",
+                                              "poll_reads_ok", fragment="error-free")
+                finally:
+                    self.tearDown()
+
+    def test_control_dashboard_successful_poll_accepted(self):
+        result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, accepted=True)
+        self.assertEqual((session.errors, session.task_reads), ([], 2))
+        self.assert_accepted(result, DASH)
+        apply = next(r for r in evidence[DASH]["operations"] if r["id"] == "dashboard_apply")
+        self.assertIs(apply["facts"].get("poll_reads_ok"), True)
+
+    def test_typed_poll_error_not_accepted(self):
+        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+            with self.subTest(stage=stage.key):
+                self.setUp()
+                try:
+                    result, evidence, session = self.run_typed(stage, "poll")
+                    self.assertEqual(session.errors, ["get_execution_task"])
+                    self.assert_error_refused(result, evidence, session, stage.typed_case,
+                                              governed.TYPED_OPERATIONS[0], "poll_reads_ok", fragment="error-free")
+                finally:
+                    self.tearDown()
+
+    def test_control_typed_successful_poll_accepted(self):
+        result, evidence, session = self.run_typed(NINETY_ONE_STAGE, polled=True)
+        self.assertEqual(session.errors, [])
+        self.assert_accepted(result, TYPED)
+        self.assertTrue(all(r["facts"].get("poll_reads_ok") is True for r in evidence[TYPED]["operations"]))
+
+
+class EnvelopeRecordTests(Harness):
+    """A passing stored record whose envelope flag is flipped is refused by every re-derivation."""
+
+    # (case, operation, location, flag, reason fragment)
+    FLAGS = (
+        (DASH, "dashboard_list", "facts", "success", "list_dashboards did not succeed"),
+        (DASH, "dashboard_get", "facts", "success", "bound configuration"),
+        (DASH, "dashboard_plan", "readback", "plan_read_ok", "get_change_plan"),
+        (DASH, "dashboard_apply_before_approval_refused", "readback", "plan_read_ok", "refused apply"),
+        (DASH, "dashboard_approval_request", "readback", "plan_read_ok", "before the Ingress decision"),
+        (DASH, "dashboard_ingress_non_supervisor_refused", "readback", "plan_read_ok", "refused peer"),
+        (DASH, "dashboard_ingress_approval", "readback", "plan_read_ok", "after the Ingress decision"),
+        (DASH, "dashboard_apply", "facts", "poll_reads_ok", "error-free"),
+        (DASH, "dashboard_verify", "facts", "task_read_ok", "error-free"),
+        (DASH, "dashboard_verify", "facts", "config_read_ok", "error-free"),
+        (TYPED, "power_light_turn_on", "facts", "success", "public typed call did not succeed"),
+        (TYPED, "power_light_turn_on", "facts", "poll_reads_ok", "error-free"),
+        (TYPED, "fan_turn_on", "facts", "duplicate_read_ok", "error-free"),
+        (TYPED, "helper_input_select_select_option", "facts", "duplicate_read_ok", "error-free"),
+    )
+
+    def test_flipped_envelope_flag_in_a_forged_passed_case_is_refused_by_manifest_and_gate(self):
+        for case, op, where, flag, fragment in self.FLAGS:
+            with self.subTest(op=op, flag=flag):
+                self.setUp()
+                try:
+                    def forge(cases, case=case, op=op, where=where, flag=flag):
+                        path = cases / f"{case}.json"
+                        value = json.loads(path.read_text())
+                        record = next(r for r in value["observed"]["operations"] if r["id"] == op)
+                        self.assertIs(record[where].get(flag), True)
+                        record[where][flag] = False
+                        # Keep every digest binding intact: only the envelope flag changed.
+                        record["readback_sha256"] = governed.sha256(record["readback"])
+                        record["verified"] = True
+                        value.update(status="passed", reason="")
+                        path.write_text(json.dumps(value))
+                    result = self.pipeline(self.good(), forge=forge)
+                    self.assertEqual(result["cases"][case]["status"], "passed")  # runner verdict before forgery
+                    entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
+                    self.assertEqual(entry["status"], "failed")
+                    self.assertTrue(entry["reason"].startswith("evidence: "), entry["reason"])
+                    self.assertIn(f"operation {op}:", entry["reason"])
+                    self.assertIn(fragment, entry["reason"])
+                    self.assertIs({o["id"]: o["verified"] for o in entry["operations"]}[op], False)
+                    self.assertEqual(result["manifest"]["result"], "FAIL")
+                    self.assertEqual(result["gate"]["acceptance"]["91_only"], "NOT ACCEPTED")
+                    self.assertNotEqual(result["gate_code"], 0)
+                finally:
+                    self.tearDown()
+
+    def test_missing_envelope_flag_is_refused(self):
+        for case, op, where, flag, _fragment in self.FLAGS:
+            with self.subTest(op=op, flag=flag):
+                records = ev.records(case, core_version=self.core_version)
+                record = next(r for r in records if r["id"] == op)
+                self.assertIn(flag, record[where])
+                record[where].pop(flag)
+                record["readback_sha256"] = governed.sha256(record["readback"])
+                context = governed.case_context(case, {"binding": ev.binding_for(case, self.core_version),
+                                                       "core_version": self.core_version})
+                self.assertIsNotNone(governed.operation_problem(record, context))
+                compact = governed.compact_operations(case, {"operations": records,
+                                                             "binding": ev.binding_for(case, self.core_version),
+                                                             "core_version": self.core_version})
+                self.assertIs({o["id"]: o["verified"] for o in compact}[op], False)
+
+    def test_envelope_ok_requires_a_decoded_successful_non_error_envelope(self):
+        envelope_ok = getattr(governed, "envelope_ok", None)
+        self.assertIsNotNone(envelope_ok, "the runner has no envelope check")
+        self.assertTrue(envelope_ok({"success": True, "data": {}}))
+        for response in ({"success": False, "data": {}}, {"success": True, "mcp_is_error": True},
+                         {"success": "true"}, {"data": {}}, {"success": False, "error_code": "undecodable_response"},
+                         None, [], "success"):
+            with self.subTest(response=response):
+                self.assertFalse(envelope_ok(response))
+
+        async def decode(text, is_error):
+            async def call_tool(_name, _args):
+                return SimpleNamespace(content=[SimpleNamespace(text=text)], isError=is_error)
+            return (await governed.mcp_call(SimpleNamespace(call_tool=call_tool), "get_change_plan", {}))[1]
+        self.assertTrue(envelope_ok(asyncio.run(decode('{"success": true, "data": {}}', False))))
+        self.assertFalse(envelope_ok(asyncio.run(decode('{"success": true, "data": {}}', True))))
+        self.assertFalse(envelope_ok(asyncio.run(decode("not json", False))))
+
 
 if __name__ == "__main__":
     unittest.main()

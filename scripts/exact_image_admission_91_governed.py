@@ -230,7 +230,11 @@ def operation_record(op_id: str, *, request: Any, response: Any, readback: Any,
 
 
 def _plan_status(readback: Any) -> Any:
-    return readback.get("plan_status") if isinstance(readback, dict) else None
+    """The recorded get_change_plan status, only when that read was an error-free envelope."""
+
+    if not isinstance(readback, dict) or readback.get("plan_read_ok") is not True:
+        return None
+    return readback.get("plan_status")
 
 
 def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: dict[str, Any]) -> str | None:
@@ -260,7 +264,7 @@ def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: d
         if facts.get("success") is not False or not facts.get("error_code"):
             return "apply before approval was not refused"
         if not isinstance(readback, dict) or readback.get("setter_calls") != 0 \
-                or readback.get("plan_status") != "awaiting_approval":
+                or _plan_status(readback) != "awaiting_approval":
             return "readback: refused apply reached the setter or moved the plan"
         return None
     if op == "dashboard_approval_request":
@@ -291,6 +295,8 @@ def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: d
             return "readback: plan is not approved after the Ingress decision"
         return None
     if op == "dashboard_apply":
+        if facts.get("poll_reads_ok") is not True:
+            return "get_execution_task polls were not all error-free envelopes"
         if facts.get("success") is not True or facts.get("status") != "applied" \
                 or facts.get("task_state") != "succeeded_verified" \
                 or facts.get("provider_dispatch_occurred") is not True \
@@ -303,6 +309,8 @@ def _dashboard_problem(op: str, facts: dict[str, Any], readback: Any, context: d
     if op == "dashboard_bps_guide_read":
         return bps_problem(readback, context.get("guide_arguments"))
     if op == "dashboard_verify":
+        if facts.get("task_read_ok") is not True or facts.get("config_read_ok") is not True:
+            return "get_execution_task or get_dashboard_config was not an error-free envelope"
         if facts.get("task_state") != "succeeded_verified" or facts.get("terminal") is not True:
             return "execution task is not terminal succeeded_verified"
         if facts.get("expected") != context.get("patched_config") or readback != facts.get("expected"):
@@ -354,6 +362,8 @@ def _typed_problem(op: str, facts: dict[str, Any], readback: Any, context: dict[
         return "public tool or arguments differ from the required operation"
     if facts.get("success") is not True:
         return "public typed call did not succeed"
+    if facts.get("poll_reads_ok") is not True:
+        return "get_execution_task polls were not all error-free envelopes"
     if facts.get("outcome") != "succeeded_verified" or facts.get("terminal") is not True:
         return "typed task is not terminal succeeded_verified"
     version = context.get("upstream_version")
@@ -369,6 +379,8 @@ def _typed_problem(op: str, facts: dict[str, Any], readback: Any, context: dict[
         return "peer request log does not show exactly one ha_call_service"
     if facts.get("duplicate_dispatches") != 0 or facts.get("duplicate_same") is not True:
         return "duplicate request dispatched again or returned a different receipt"
+    if facts.get("duplicate_read_ok") is not True:
+        return "duplicate request was not an error-free envelope"
     want = dict(expected, **(facts.get("expected_extra") or {}))
     if facts.get("expected") != want or readback != want:
         return "readback mismatch: Core state differs from the expected state"
@@ -1031,6 +1043,18 @@ async def mcp_call(session, tool: str, arguments: dict[str, Any]) -> tuple[dict[
     return request, value
 
 
+def envelope_ok(response: Any) -> bool:
+    """A decoded, positive, error-free MCP envelope.
+
+    Every required read, poll and duplicate check must pass this before its
+    data counts: a failed or ``isError`` envelope keeps its ``data`` (see
+    ``mcp_call``), so reading ``data`` alone would let an errored read verify.
+    """
+
+    return isinstance(response, dict) and response.get("success") is True \
+        and response.get("mcp_is_error") is not True
+
+
 def data_of(response: dict[str, Any]) -> dict[str, Any]:
     return response.get("data") if isinstance(response.get("data"), dict) else {}
 
@@ -1101,9 +1125,11 @@ def durable(receipt: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in receipt.items() if key != "safety"}
 
 
-async def plan_status(session, plan_id: str) -> Any:
+async def plan_status(session, plan_id: str) -> dict[str, Any]:
+    """Recorded plan readback: the raw status and whether its read was an error-free envelope."""
+
     _, response = await mcp_call(session, "get_change_plan", {"plan_id": plan_id, "detail_section": "summary"})
-    return find_key(data_of(response), "status")
+    return {"plan_status": find_key(data_of(response), "status"), "plan_read_ok": envelope_ok(response)}
 
 
 async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, socket: CoreSocket,
@@ -1126,13 +1152,13 @@ async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProx
     request, response = await mcp_call(session, "list_dashboards", {"limit": 100})
     listed = sorted({str(item.get("url_path")) for item in (find_key(data_of(response), "dashboards") or [])
                      if isinstance(item, dict) and item.get("url_path")})
-    record("dashboard_list", request, response, listed, {"success": response.get("success")})
+    record("dashboard_list", request, response, listed, {"success": envelope_ok(response)})
 
     request, response = await mcp_call(session, "get_dashboard_config",
                                        {"url_path": DASHBOARD_URL_PATH, "force_reload": True})
     data = data_of(response)
     record("dashboard_get", request, response, data.get("configuration"),
-           {"success": response.get("success"), "config_hash": data.get("config_hash"), "expected": SEED_CONFIG})
+           {"success": envelope_ok(response), "config_hash": data.get("config_hash"), "expected": SEED_CONFIG})
 
     request, response = await mcp_call(session, "create_dashboard_update_plan", {
         "title": "HAMCP-319 governed lane retitle", "description": "Disposable lane dashboard update.",
@@ -1140,33 +1166,33 @@ async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProx
     data = data_of(response)
     plan_id, plan_hash = str(data.get("plan_id") or ""), str(data.get("plan_hash") or "")
     context["plan_hash"] = plan_hash
-    record("dashboard_plan", request, response, {"plan_status": await plan_status(session, plan_id)},
-           {"success": response.get("success"), "status": data.get("status"), "plan_id": plan_id,
+    record("dashboard_plan", request, response, await plan_status(session, plan_id),
+           {"success": envelope_ok(response), "status": data.get("status"), "plan_id": plan_id,
             "plan_hash": plan_hash, "next_required_operation": data.get("next_required_operation")})
 
     mark = proxy.mark()
     request, response = await mcp_call(session, "apply_change_plan",
                                        {"plan_id": plan_id, "expected_plan_hash": plan_hash})
     record("dashboard_apply_before_approval_refused", request, response,
-           {"plan_status": await plan_status(session, plan_id), "setter_calls": calls(proxy.since(mark), SETTER_TOOL)},
+           dict(await plan_status(session, plan_id), setter_calls=calls(proxy.since(mark), SETTER_TOOL)),
            {"success": response.get("success"), "error_code": response.get("error_code")})
 
     request, response = await mcp_call(session, "approve_change_plan",
                                        {"plan_id": plan_id, "expected_plan_hash": plan_hash,
                                         "approval_note": "HAMCP-319 disposable lane"})
     data = data_of(response)
-    record("dashboard_approval_request", request, response, {"plan_status": await plan_status(session, plan_id)},
-           {"success": response.get("success"), "status": data.get("status"),
+    record("dashboard_approval_request", request, response, await plan_status(session, plan_id),
+           {"success": envelope_ok(response), "status": data.get("status"),
             "approval_action": data.get("approval_action"), "challenge_id": bool(data.get("challenge_id")),
             "bound_plan_hash": data.get("bound_plan_hash")})
 
     status = await host_probe(plan_id)
     record("dashboard_ingress_non_supervisor_refused", {"peer": "127.0.0.1", "plan_id": plan_id},
-           {"http_status": status}, {"plan_status": await plan_status(session, plan_id)}, {"http_status": status})
+           {"http_status": status}, await plan_status(session, plan_id), {"http_status": status})
 
     outcome = await ingress(plan_id)
     record("dashboard_ingress_approval", {"peer": INGRESS_PEER, "plan_id": plan_id}, outcome,
-           {"plan_status": await plan_status(session, plan_id)},
+           await plan_status(session, plan_id),
            {"peer": INGRESS_PEER, "rounds": outcome.get("rounds")})
 
     mark = proxy.mark()
@@ -1174,19 +1200,25 @@ async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProx
                                        {"plan_id": plan_id, "expected_plan_hash": plan_hash})
     data = data_of(response)
     task_id = str(data.get("task_id") or "")
+    poll_ok = True
     for _ in range(30):
         if data.get("status") != "accepted":
             break
         await asyncio.sleep(2)
         _, polled = await mcp_call(session, "get_execution_task", {"task_id": task_id})
+        if not envelope_ok(polled):
+            # Fail closed: an errored poll is recorded, never skipped or retried into success.
+            poll_ok = False
+            break
         state = find_key(data_of(polled), "state")
         if state in ("succeeded_verified", "failed", "verification_failed"):
             data = dict(data, status="applied" if state == "succeeded_verified" else state, task_state=state)
     window = proxy.since(mark)
     record("dashboard_apply", request, response, {"setter_calls": calls(window, SETTER_TOOL)},
-           {"success": response.get("success"), "status": data.get("status"), "task_state": data.get("task_state"),
+           {"success": envelope_ok(response), "status": data.get("status"), "task_state": data.get("task_state"),
             "provider_dispatch_occurred": data.get("provider_dispatch_occurred"),
-            "redispatch_performed": data.get("redispatch_performed"), "task_id": task_id})
+            "redispatch_performed": data.get("redispatch_performed"), "task_id": task_id,
+            "poll_reads_ok": poll_ok})
 
     guide = [item for item in window if item.get("tool") == GUIDE_TOOL]
     record("dashboard_bps_guide_read", {"log_window": [item.get("arguments_sha256") for item in guide]},
@@ -1198,7 +1230,7 @@ async def dashboard_flow(plan: Plan, stage: Stage, session, proxy: RecordingProx
     record("dashboard_verify", request, {"task": task, "config": after}, data_of(after).get("configuration"),
            {"task_state": find_key(task_data, "state"), "terminal": find_key(task_data, "terminal")
             if find_key(task_data, "terminal") is not None else find_key(task_data, "state") == "succeeded_verified",
-            "expected": PATCHED_CONFIG})
+            "expected": PATCHED_CONFIG, "task_read_ok": envelope_ok(task), "config_read_ok": envelope_ok(after)})
 
     core_request = {"type": "lovelace/config", "url_path": DASHBOARD_URL_PATH, "force": True}
     config = await socket.command(core_request)
@@ -1231,11 +1263,16 @@ async def typed_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, c
                 request, response = await mcp_call(session, tool, arguments)
                 receipt = data_of(response)
             task_id = str(receipt.get("task_id") or (response.get("metadata") or {}).get("task_id") or "")
+            poll_ok = True
             for _ in range(15):
                 if receipt.get("terminal") is True or not HEX32.fullmatch(task_id):
                     break
                 await asyncio.sleep(2)
                 _, polled = await mcp_call(session, "get_execution_task", {"task_id": task_id})
+                if not envelope_ok(polled):
+                    # Fail closed: an errored poll is recorded, never skipped or retried into success.
+                    poll_ok = False
+                    break
                 if data_of(polled):
                     receipt = data_of(polled)
             first = calls(proxy.since(mark), SERVICE_TOOL)
@@ -1247,7 +1284,7 @@ async def typed_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, c
                 calls_seen[base["entity_id"]] += 1
                 extra = {"synthetic_service_calls": calls_seen[base["entity_id"]]}
             want = dict(expected, **extra)
-            facts = {"tool": tool, "arguments": base, "success": response.get("success"),
+            facts = {"tool": tool, "arguments": base, "success": envelope_ok(response), "poll_reads_ok": poll_ok,
                      "outcome": receipt.get("state") if tool != "control_helper" else receipt.get("status"),
                      "terminal": receipt.get("terminal"), "provider": receipt.get("provider"),
                      "provider_contract": receipt.get("provider_contract"),
@@ -1256,6 +1293,7 @@ async def typed_flow(plan: Plan, stage: Stage, session, proxy: RecordingProxy, c
                      "core_binding_version": (receipt.get("core_binding") or {}).get("version"),
                      "upstream_dispatches": first, "duplicate_dispatches": repeated,
                      "duplicate_same": durable(data_of(duplicate)) == durable(receipt),
+                     "duplicate_read_ok": envelope_ok(duplicate),
                      "expected_extra": extra, "expected": want, "confirmation_reason": confirmation}
             section["operations"].append(operation_record(op, request=request, response=response,
                                                           readback=project(state, want), facts=facts,

@@ -54,7 +54,8 @@ def bps_log(*, guide: bool = True, arguments: dict | None = None, key: str | Non
 def dashboard_specs(version: str = governed.UPSTREAM_VERSION) -> dict[str, dict[str, Any]]:
     """Operation id -> {readback, facts} for a fully successful governed dashboard run."""
 
-    awaiting = {"plan_status": "awaiting_approval"}
+    # Every plan readback came from an error-free get_change_plan envelope (plan_read_ok).
+    awaiting = {"plan_status": "awaiting_approval", "plan_read_ok": True}
     return {
         "dashboard_list": {"readback": ["energy", governed.DASHBOARD_URL_PATH], "facts": {"success": True}},
         "dashboard_get": {"readback": copy.deepcopy(governed.SEED_CONFIG),
@@ -64,7 +65,7 @@ def dashboard_specs(version: str = governed.UPSTREAM_VERSION) -> dict[str, dict[
                            "facts": {"success": True, "status": "awaiting_approval", "plan_id": PLAN_ID,
                                      "plan_hash": PLAN_HASH}},
         "dashboard_apply_before_approval_refused": {
-            "readback": {"plan_status": "awaiting_approval", "setter_calls": 0},
+            "readback": {"plan_status": "awaiting_approval", "plan_read_ok": True, "setter_calls": 0},
             "facts": {"success": False, "error_code": "approval_required"}},
         "dashboard_approval_request": {
             "readback": dict(awaiting),
@@ -72,17 +73,19 @@ def dashboard_specs(version: str = governed.UPSTREAM_VERSION) -> dict[str, dict[
                       "challenge_id": True, "bound_plan_hash": PLAN_HASH}},
         "dashboard_ingress_non_supervisor_refused": {"readback": dict(awaiting), "facts": {"http_status": 403}},
         "dashboard_ingress_approval": {
-            "readback": {"plan_status": "approved"},
+            "readback": {"plan_status": "approved", "plan_read_ok": True},
             "facts": {"peer": governed.INGRESS_PEER,
                       "rounds": [{"get_status": 200, "post_status": 200, "decision": "approved"}]}},
         "dashboard_apply": {
             "readback": {"setter_calls": 1},
             "facts": {"success": True, "status": "applied", "task_state": "succeeded_verified",
-                      "provider_dispatch_occurred": True, "redispatch_performed": False, "task_id": TASK_ID}},
+                      "provider_dispatch_occurred": True, "redispatch_performed": False, "task_id": TASK_ID,
+                      "poll_reads_ok": True}},
         "dashboard_bps_guide_read": {"readback": bps_log(version=version), "facts": {}},
         "dashboard_verify": {"readback": copy.deepcopy(governed.PATCHED_CONFIG),
                              "facts": {"task_state": "succeeded_verified", "terminal": True,
-                                       "expected": copy.deepcopy(governed.PATCHED_CONFIG)}},
+                                       "expected": copy.deepcopy(governed.PATCHED_CONFIG),
+                                       "task_read_ok": True, "config_read_ok": True}},
         "dashboard_core_readback": {"readback": copy.deepcopy(governed.PATCHED_CONFIG),
                                     "facts": {"expected": copy.deepcopy(governed.PATCHED_CONFIG)}},
     }
@@ -104,6 +107,7 @@ def typed_specs(core_version: str = CORE_VERSION,
             "provider_contract": governed.PROVIDER_CONTRACTS[version][tool],
             "provider_attempt_count": 1, "dispatch_intent_recorded": True, "core_binding_version": core_version,
             "upstream_dispatches": 1, "duplicate_dispatches": 0, "duplicate_same": True,
+            "poll_reads_ok": True, "duplicate_read_ok": True,
             "expected_extra": extra, "expected": dict(want), "confirmation_reason": None}}
     return specs
 
