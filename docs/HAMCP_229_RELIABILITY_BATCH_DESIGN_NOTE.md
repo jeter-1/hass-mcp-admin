@@ -6,6 +6,29 @@ Register: HAMCP-229 (audit HAAC-E005), under HAMCP-332 wave 1. Base:
 This is a docs-only note. It changes no runtime, schema, test, or protected file.
 `E` = `hass_mcp_engineering_beta/ha_mcp_engineering/`.
 
+## 0. Disposition (2026-11-08): historical baseline, reviewed delivery, deferred options
+
+- **Historical baseline.** Sections 1-9 were written before the build, at design base `7246f2d2`. Where they
+  conflict with the delivery below, the delivery wins.
+- **Reviewed delivery.** [PR #402](https://github.com/jeter-1/hass-mcp-admin/pull/402) is merged into
+  `release/2.6.0`. Reviewed head `504107150759b0cd243edc7f455a281f0a00b734`, merge commit `57400bdc`.
+  `git merge-base --is-ancestor 50410715 origin/release/2.6.0` passes. The existing single tool
+  `automation_reliability_analysis` is unchanged, and per-item partiality is still reported truthfully.
+- **Implemented defaults** (citations at `1c4c32b3`). `E/reliability/batch.py:9` labels these "implementation
+  defaults pending Josh (design note Q4)".
+  - A **new tool**, `automation_reliability_batch_analysis(automation_ids, lookback_hours, trace_limit)`
+    (`E/tools/analysis.py:201-205`).
+  - **Explicit list only.** `automation_ids` takes 1-20 internal automation IDs, as returned by `list_automations`;
+    automation entity IDs are not accepted.
+  - **Duplicates** collapse in request order and are reported.
+  - **Window and traces:** `lookback_hours` 1-720 (default 168); `trace_limit` 1-10 (default 5).
+  - **Bounds:** `MAX_BATCH_ITEMS = 20`, `BATCH_SECONDS = 45`, `ITEM_CONCURRENCY = 2` and
+    `MAX_BATCH_RESPONSE_CHARS = 60000` (`E/reliability/batch.py:29-38`).
+  - **Continuation:** stateless `remaining_automation_ids`; there is no server-side cursor.
+- **Not claimed.** No live acceptance.
+- **Deferred or optional.** Tier selectors, `query` or "all loaded" selectors, entity-ID input and resume cursors
+  would each be separate scope (section 9).
+
 ## 1. Register outcome and binding decisions
 
 > Reliability analysis can run over a bounded set of automations (e.g. a tier or
@@ -257,26 +280,30 @@ with synthetic loopback fixtures:
 
 ## 8. Build slice and dependencies
 
-- One runtime PR (register Effort). No signing dependency and no persisted format.
+- Delivered as #402 (section 0). Historical build plan: one runtime PR (register Effort). No signing dependency and no persisted format.
 - It shares registration files with in-flight 2.5.0 work (HAMCP-319 admission;
   HAMCP-290 Marketplace route; possibly HAMCP-288 if it touches blueprint reads).
   2.5.0 wins shared files, so build after those merge into `release/2.6.0`.
 - The build task must name the protected runtime paths listed in section 4.
 - Rollback: revert the PR. Nothing is stored and the single tool is unaffected.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-- **Q1** New tool (recommended, keeps the existing schema) versus adding
-  `automation_ids` to `automation_reliability_analysis`, which changes a
-  required field.
-- **Q2** "Tier" has no source definition. What defines a tier (audit-sheet tiers,
-  labels, something else)? Is it in scope for 2.6.0? Not built until decided.
-- **Q3** Selectors: explicit list only (satisfies "a list"), or also the existing
-  `list_automations` substring `query`, or "all loaded automations"
-  (`loaded_automation_entities-v1`) with the max cap and `remaining_automation_ids`?
-- **Q4** Bounds: `MAX_BATCH_ITEMS` 20, `BATCH_SECONDS` 45, item concurrency 2,
-  `trace_limit` maximum 10 (all proposed).
-- **Q5** Accept automation entity IDs, resolved through the registry, or internal
-  IDs only, as the single tool does today?
-- **Q6** Continuation: stateless `remaining_automation_ids` (recommended) or a
-  server-side resume cursor?
+None blocks the merged slice. Superseded (historical) as build gates, answered by the #402 implementation (section 0):
+- **Q1** New tool. Implemented as `automation_reliability_batch_analysis`; the existing schema is unchanged.
+- **Q3** Explicit list only.
+- **Q4** 20 items, 45 s, concurrency 2, `trace_limit` at most 10. The source labels these "implementation
+  defaults pending Josh". Confirming or changing them is optional; changing them would be separate runtime scope.
+- **Q5** Internal IDs only, as in the single tool.
+- **Q6** Stateless `remaining_automation_ids`.
+
+Optional future scope (pending Josh; not needed for the merged slice):
+- **Q2** "Tier" has no source definition. A tier selector, and a `query` or "all loaded automations" selector, would
+  each be a separate scope choice.
+- Entity-ID input or a server-side resume cursor would each be a separate scope choice.
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F2: delivered slice and implemented defaults not recorded | Low | Section 0 records the #402 delivery (reviewed head `50410715`, merge `57400bdc`, ancestry checked) and the implemented defaults. Section 8 marks the build delivered. Section 9 turns Q1 and Q3-Q6 from build gates into recorded implementation, and keeps the tier, selector and cursor choices as optional separate scope. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-229` and `E/reliability/batch.py` / `E/tools/analysis.py:201-205` at `1c4c32b3`. |

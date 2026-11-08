@@ -4,6 +4,23 @@ Status: design note only (HAMCP-332 wave 1). No runtime, test, schema, version o
 Base: `origin/release/2.6.0` = `7246f2d21693f039504542574569f03b71476489` (2.4.2-beta.7). Citations are at that base,
 relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a full path is given.
 
+## 0. Disposition (2026-11-08): historical baseline, reviewed delivery, deferred options
+
+- **Historical baseline.** Sections 1-9 were written before the build, at design base `7246f2d2`. Where they
+  conflict with the delivered contract below, the delivered contract wins. Superseded text is kept only under
+  "Superseded (historical)" labels.
+- **Reviewed delivery.** HAMCP-296 is merged into `release/2.6.0` as
+  [PR #401](https://github.com/jeter-1/hass-mcp-admin/pull/401): reviewed head
+  `5bf1398cf5cef669b72da94155a88eb962fa1056`, merge commit `1c4c32b3c2da152bd42f25178b077c62c13af7d4`.
+  `git merge-base --is-ancestor 5bf1398c origin/release/2.6.0` passes. The capacity, persistence and reset
+  decisions merged in #401 stand: Josh direction (register 2026-11-07; confirmed in-session 2026-11-08). This note
+  makes no new capacity decision. The delivered contract is in sections 3.5 and 3.6, and the downgrade warning is in
+  section 8. Its citations are at `1c4c32b3`, in `trace_snapshots/contracts.py` and `trace_snapshots/store.py`.
+- **Not claimed.** This note claims no live acceptance. Live polling-load and storage measurement at 2.6 acceptance
+  needs Josh's separate authorization (HAMCP-296 row).
+- **Deferred or optional.** No HAMCP-296 option is still open for the merged slice. Script traces stay out of scope
+  (O1).
+
 ## 1. Register outcome and binding decisions
 
 HAMCP-296 Outcome (register, quoted): "Automation trace watches (HAMCP-225) no longer lapse silently: health or a
@@ -19,7 +36,8 @@ Binding decisions:
   10, and every response returns the current list
   ([HAMCP-225 design](HAMCP_225_226_228_AUDIT_TOOLING_DESIGN.md), lines 26-50).
 - Josh, 2026-10-26 (HAMCP-225 row, O1): automation traces only. Script traces are out of scope here.
-- Not decided by any row or prompt: raise the cap versus manage it by priority (section 9, Q1).
+- Capacity (Q1): decided and merged in #401 (section 3.6). Superseded (historical): at the design base no row or
+  prompt had yet chosen between raising the cap and managing it by priority.
 
 ## 2. Current state at base
 
@@ -104,32 +122,78 @@ refreshes it (the 30 s tick, the watch tool and capture), so health does no disk
 Before the first transaction it reports `status: "not_yet_observed"`; a summary failure degrades only this block
 (`status: "unavailable"`) and health still succeeds.
 
-**3.5 Persistence (rollback-safe).** The v1 index format does not change. Lapsed records, `renewed_at` and any
-priority field live in a sidecar file, `trace-snapshots-v1/watch-lifecycle.json`. It is written under the same
-`flock`, with the same `O_NOFOLLOW`, 0600, fsync and rename discipline, a closed-schema validator and a 64 KiB
-bound. Write order: sidecar first, then index. If the index write fails, the next sweep re-records the lapse
-idempotently by `(watch_id, expired_at)`. A missing sidecar reads as empty. A damaged one is replaced by an empty
-one, reported as `lifecycle_store: "reset"`, and never blocks the snapshot store. Shipped 2.4.x/2.5.0 code ignores
-the sidecar (section 2), so a downgrade keeps working while the cap stays at 10.
+**3.5 Persistence (delivered contract, #401).** Citations here are at `1c4c32b3`. The v1 `index.json` schema does
+not change, and the store follows the existing discipline: one `flock`, `O_NOFOLLOW` reads of regular files, mode
+0600, and a temporary file plus fsync plus rename (`trace_snapshots/store.py`, module docstring).
 
-**3.6 Slot capacity (Q1).** The outcome needs a raise with a stated bound, priority, or both. Facts at base:
+- **Legacy index kept within v1 bounds.** `index.json` never exceeds what the shipped 2.4.x/2.5.0 v1 reader accepts:
+  10 watches, 200 snapshot entries and 32 MiB of entry bytes (`V1_INDEX_MAX_WATCHES`, `V1_INDEX_MAX_SNAPSHOTS`,
+  `V1_INDEX_MAX_BYTES` in `contracts.py`). It holds the first 10 watches in `watch_order`, high priority first, and
+  the snapshot entries that `v1_snapshot_ids` selects: manual captures first, then the newest watch captures
+  (`keep_order`).
+- **Two digest-bound A/B slots for overflow and lifecycle state.** Everything past the v1 bounds is one
+  closed-schema sidecar state (model `trace-watch-sidecar-v1`, at most 4 MiB, `SIDECAR_BYTES`). That covers watches
+  11-20, the priority and renewal rows, the lapsed records with `lapsed_dropped`, and the snapshot entries the index
+  does not keep. The state is written to one of two slot files, `watch-sidecar-a.json` or `watch-sidecar-b.json`,
+  and never to the committed one. Each slot carries a generation and the sha256 of the exact `index.json` bytes it
+  pairs with. Shipped code opens only `index.json`, `records/` and the lock file, so a slot cannot make the v1 reader
+  fail.
+- **Single commit point.** `write_index` writes the new state to the uncommitted slot, bound to the new index bytes,
+  and then replaces `index.json`. The index rename is the single commit point. When the index bytes do not change,
+  the slot rename is the commit point instead. A load uses only a slot bound to the index on disk; of two bound
+  slots, the higher generation wins. A failed write therefore leaves the prior index and slot pair, and a slot from
+  a failed transaction is never combined with the prior index. If a failure happens after a commit-point rename, the
+  outcome is unknown: the store sets `commit_unknown` and refuses every later transaction until a restart reloads it.
+- **Damaged copy: reset to empty, never older-copy fallback.** The sidecar state resets to empty in three cases:
+  either slot is damaged, or slots exist but none is bound to the index on disk (for example, a downgraded server
+  rewrote `index.json`). A damaged slot resets the state even when the other slot is valid and bound. After a
+  sidecar-only commit both slots name the same index bytes, so the older slot could revive a state that a completed
+  watch change replaced (Codex D1 on #401, `_read_slots`). A reset never blocks the snapshot store: v1 watches and
+  v1 snapshot entries stay readable. An I/O error refuses with `store_unavailable` and does not reset. The reset is
+  reported as `lifecycle_store: "reset"` in the `lifecycle` block of every watch result and in the
+  `get_server_health` `trace_watches` block.
+- **What a reset loses.** It loses watches 11-20, the priority and renewal rows, the lapsed records and the
+  overflow snapshot entries. Nothing names those record files any more, so the next committed transaction's tidy
+  removes them.
 
-| Option | Core read load | Store effect | Persistence and rollback | Schema |
-| --- | --- | --- | --- | --- |
-| S1: raise to N (for example 20) | 2N `trace/list` a minute (40 at N=20, 20 today), plus `trace/get` per matching run. The read share per watch per tick falls from 1.6 s to 16/N s (0.8 s at 20). Live `trace/list` latency is unknown, with no live measurement allowed. | The quota sum 20N exceeds `MAX_SNAPSHOTS = 200` (exactly 10 x 20 today). Either raise `MAX_SNAPSHOTS` (bytes stay capped at 32 MiB, and a live trace is about 8 KB) or lower `WATCH_QUOTA`. Otherwise full watches crowd out manual captures (E1 `store_full`). The index grows by about 13 KB a watch (100 seen run IDs), well inside 2 MiB. | The v1 validator rejects more than 10 watches (`trace_snapshots/store.py:127`). A downgrade with more than 10 active watches makes the whole trace store `store_invalid` until watches are cut to 10. | `bounded_poller.max_watches` metadata (`capabilities.py:152-160`, `881-889`) and the coverage matrix fingerprints change. |
-| S2: keep 10, add priority | Unchanged. Priority orders the tick, so `high` watches are polled first when time runs short. | Unchanged. | New sidecar field only; rollback-safe. | `priority: "high" or "normal"` on add and renew. `add` at capacity with `displace: true` replaces the lowest-priority, soonest-expiring `normal` watch, which is recorded as lapsed with `reason: displaced`. It is never silent, and a `high` watch is never displaced. |
-| S3: S1 and S2 | As S1 | As S1 | As S1 | As S1 and S2 |
+Superseded (historical): the pre-build proposal was one 64 KiB `trace-snapshots-v1/watch-lifecycle.json` sidecar,
+written before the index and re-recorded idempotently after a failed index write. It also predicted that a
+downgrade above ten watches would make the v1 store `store_invalid`. Neither describes the delivered store. The
+delivered `index.json` never exceeds the v1 bounds, so the delivered downgrade risk is silent data loss, not an
+invalid store (section 8).
+
+**3.6 Slot capacity (delivered contract, #401).** These are the decisions merged in #401 (`contracts.py` at
+`1c4c32b3`). This note does not reopen them.
+
+- **Watches and quota.** `MAX_WATCHES = 20` watches with `WATCH_QUOTA = 20` snapshots each. E2 is kept: a watch
+  evicts only its own oldest snapshot.
+- **Watch reservation.** Watch captures together, whether from active, ended or lapsed watches, never exceed a
+  reservation of 400 snapshots and 100 MiB (`WATCH_STORE_SNAPSHOTS = 20 x 20`, `WATCH_STORE_BYTES`). A watch capture
+  past the reservation is refused `store_full`, and nothing is evicted for it (refuse at capacity).
+- **Overall cap.** `MAX_SNAPSHOTS = 500` and `STORE_BYTES = 128 MiB`. At least 100 snapshots and 28 MiB therefore
+  always stay available for manual captures, which are still refused at capacity (E1).
+- **Priority.** `priority` is `"high"` or `"normal"`. New watches are `normal`, and the poller reads `high` watches
+  first.
+- **Explicit displacement.** An `add` at 20 watches is refused `watch_limit` unless it carries `displace: true`.
+  With it, the `normal` watch that expires soonest is ended, recorded as lapsed with `reason: "displaced"`, audited
+  and returned as `displaced`. A `high` watch is never displaced. If no `normal` watch exists, the add is still
+  refused.
+- **Core read load.** At most 40 `trace/list` reads a minute at the 30 s poll (20 at the old cap of 10). Each
+  watch's share of a tick's 16 s read time is 0.8 s (1.6 s before). Live latency was not measured (section 0).
+
+Superseded (historical): the pre-build options table offered S1 (raise to N), S2 (keep 10 and add priority with
+displacement) and S3 (both) as open choices. The merged decision is S3 with N = 20 and the reservation above.
 
 ## 4. Public schema and tool-registration impact
 
 - Tool count is unchanged: the action and fields go on the existing tool, and no tool is added. Changed public
-  input: `action` gains `renew`, plus `include_lapsed`, and with S2 `priority` and `displace`. Every change needs the
+  input: `action` gains `renew`, plus `include_lapsed`, `priority` and `displace` (all delivered in #401). Every change needs the
   same closed validation in `trace_snapshots/contracts.py`, `routing.py:222` and the `TraceSnapshotTool` raw check.
   Changed output: additive watch fields plus `lifecycle`, `lapsed` and `renewed`. `get_server_health` gains the
   additive `trace_watches` block.
 - Security-sensitive surfaces touched: the public schema, the audit projection (`routing.py:203-210`, extended for
   the new fields with the same withheld-identifier rule), capability metadata, `docs/read_coverage_matrix.json`
-  fingerprints, persistence (the sidecar), and health output. Unchanged: provider routing (`engineering_native`,
+  fingerprints, persistence (the two digest-bound sidecar slots, section 3.5), and health output. Unchanged: provider routing (`engineering_native`,
   `fallback: none`), Core independence (`ha_core_readmission/routes.py:411-416`), and the `idempotentHint=False`
   annotation (add/remove are not idempotent).
 - 2.5.0 overlap: none in `trace_snapshots/`, `health.py` or `tools/compatibility.py` (#387 touches only a health
@@ -139,8 +203,8 @@ the sidecar (section 2), so a downgrade keeps working while the cap stays at 10.
 
 None. No signed Core profile is new or changed. Renew, lapsed records, warnings and the health block are local
 store and in-memory work with no Core call. The poller keeps the same `trace/list` and `trace/get` commands under
-the already-admitted `core.automation_trace_read`. Raising the cap (S1) changes only how often those admitted
-commands are sent, not which commands are admitted.
+the already-admitted `core.automation_trace_read`. The cap raised to 20 in #401 changes only how often those
+admitted commands are sent, not which commands are admitted.
 
 | Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Can it batch with other 2.6 profiles |
 | --- | --- | --- | --- | --- | --- |
@@ -159,14 +223,23 @@ No new Home Assistant write, service call or Core command shape. Tests extend `t
   at capacity returns a per-watch `watch_limit` and changes nothing else. A lapsed record past 7 days, or dropped by
   the count bound, gives `watch_not_found`. The sidecar never holds more than 20 records, and the health lists never
   more than 10 items.
-- Failure preservation: an audit write failure commits no renewal, and the watch list and sidecar are unchanged.
-  `store_busy` changes nothing and is retryable. A sidecar write failure leaves the index unchanged and the lapse is
-  re-recorded at the next sweep. A damaged sidecar is reset, and snapshots and watches stay readable. A health
-  summary failure fails only the block.
+- Failure preservation (delivered contract, section 3.5): an audit write failure commits no renewal or
+  displacement, and the index and both slots are unchanged. `store_busy` changes nothing and is retryable. A fault
+  at every write stage leaves either the prior pair or the committed pair, and a slot from a failed transaction is
+  never combined with the prior index. A damaged or unbound slot resets the sidecar state to empty and never loads
+  the older slot. The reset is reported as `lifecycle_store: "reset"` in watch results and health, and v1 watches
+  and snapshots stay readable. A health summary failure fails only the block. Superseded (historical): the
+  pre-build text said a sidecar write failure is re-recorded at the next sweep; the delivered store is transactional
+  instead.
 - Sanitization: a withheld identifier's lapsed record holds only the digest; a needle planted in the sidecar is withheld.
-- Rollback: an index written by the new code is accepted by the unchanged v1 `validate_index` (cap 10). With S1,
-  a test proves an index with more than 10 watches is rejected by the v1 rule, which documents the downgrade step.
-- With S2: `displace` never removes a `high` watch or acts without `displace: true`, and always records and audits it.
+- Rollback: with 20 watches and more than 200 snapshots, `index.json` still passes the shipped v1 rule (10
+  watches, 200 entries, 32 MiB). A fixture generated by the shipped beta.6 code, with recorded provenance, is read
+  by the current code. The v1 rule still rejects an eleven-watch index, which is why `index.json` never holds one.
+- `displace` never removes a `high` watch, never acts without `displace: true`, and always records and audits the
+  displaced watch. A watch capture past the 400-snapshot / 100 MiB reservation is `store_full` and evicts nothing.
+- Evidence status: #401 delivered these checks (`tests/test_hamcp296_trace_watch_lifecycle.py` at `1c4c32b3`:
+  `CoherentCommitTests`, `OverflowStoreTests`, `StoreTests`, `Beta6FixtureTests`, `PriorityTests`, plus the D1 test
+  `test_a_damaged_slot_never_revives_an_older_sidecar_state`). This note cites them and did not run them.
 
 ## 7. Acceptance
 
@@ -180,22 +253,38 @@ No new Home Assistant write, service call or Core command shape. Tests extend `t
 
 ## 8. Build slice and dependencies
 
-- One runtime PR for a 2.6.0 beta. It touches the protected path `hass_mcp_engineering_beta/ha_mcp_engineering/`
+- Delivered (section 0): #401, merge `1c4c32b3`. Historical build plan: one runtime PR for a 2.6.0 beta. It touches the protected path `hass_mcp_engineering_beta/ha_mcp_engineering/`
   (`trace_snapshots/`, `tools/trace_snapshots.py`, `routing.py`, `health.py` and `application.py` health wiring,
   `capabilities.py`), so the build task must authorize it explicitly. It also touches tests, the regenerated
   `docs/read_coverage_matrix.json`, `docs/READ_COVERAGE_MATRIX.md`, `TOOL_AUDIT.md` and the changelog. Security
   section required (persistence, public schema).
-- Dependencies: Q1 before build (it fixes schema and bounds); no signing or unlanded-2.5.0 dependency. Lane order per
-  the row: after HAMCP-277 (Josh's ranking, 2026-11-03).
-- Rollback: revert the PR. Shipped code ignores the sidecar. With S1, cut the watch list to 10 or fewer before
-  downgrading, or the v1 reader reports `store_invalid`. That step goes in the release notes.
+- Dependencies: no signing or unlanded-2.5.0 dependency. Superseded (historical): "Q1 before build" was resolved
+  before #401 was built.
+- **Downgrade warning (required in the 2.6.0 release notes).** A shipped 2.5.0 (or 2.4.x) server reads only
+  `index.json`. It ignores both sidecar slots and deletes the record files of every snapshot entry that `index.json`
+  does not name. A downgrade therefore drops watches 11-20 and deletes every overflow snapshot. Priority, renewal
+  and lapsed records are lost too. On a later upgrade, slots no longer bound to the rewritten index reset to empty
+  and are reported as `lifecycle_store: "reset"`.
+- **Before downgrading**, cut back to at most 10 watches and at most 200 snapshots totalling at most 32 MiB.
+  Reducing watches alone is not enough. The release notes must carry this pre-downgrade step in those words.
+- Rollback: reverting #401 is a code rollback with the same data consequence. Apply the pre-downgrade step first.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-- **Q1 (capacity), pending Josh:** S1 raise the cap (state N, and whether `MAX_SNAPSHOTS` is raised to 20N or
-  `WATCH_QUOTA` is cut), S2 keep 10 with priority and explicit displacement, or S3 both. The row allows either and
-  decides neither. Costs are in section 3.6.
-- **Q2, pending Josh:** confirm the 24 h / half-term warning window and the 20-record / 7-day lapsed retention, or
-  give other values. These are the author's proposed defaults, not recorded decisions.
-- **Q3, pending Josh:** is bulk reinstatement (`include_lapsed`) wanted, or only a named per-watch reinstatement?
-  Both meet "without re-creating each watch". The bulk form is the one that fits the 2026-11-02 six-watch lapse.
+None is open for the merged slice. The pre-build questions are resolved as follows.
+
+- **Q1 (capacity): resolved and merged in #401.** S3 with 20 watches x 20 snapshots, the 400-snapshot reservation,
+  a 500-snapshot / 128 MiB overall cap, priority, explicit displacement, and refuse at capacity (section 3.6).
+- **Q2 (warning window and lapsed retention): as merged in #401.** The values are 24 h / half-term, 20 records and
+  7 days. `contracts.py` labels them implementation defaults. Under Josh direction (register 2026-11-07; confirmed
+  in-session 2026-11-08) the #401 decisions stand. This note does not reopen them; changing a value would be
+  separate scope.
+- **Q3 (bulk reinstatement): delivered in #401** as `include_lapsed` on `renew` with `automation_id: ""`, alongside
+  named per-watch reinstatement.
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F1: obsolete persistence and downgrade contract | Medium | Sections 3.5 and 3.6 now state the merged #401 contract. The old single 64 KiB file, the S1/S2/S3 options and the invalid-old-reader prediction are kept only as "Superseded (historical)". Section 6 states transactional failure preservation, the reported reset and the delivered evidence. Section 8 carries the release-note downgrade warning: at most 10 watches and at most 200 snapshots / 32 MiB, because watches alone are not enough. Section 9 has no build blocker. Proving check: compare against `trace_snapshots/contracts.py` and `store.py` at `1c4c32b3` and the #401 failure, reset and legacy-writer tests. No runtime change or new capacity decision is requested. |
+| F2: dated disposition | Low | Section 0 separates the historical baseline from the reviewed delivery (#401, head `5bf1398c`, merge `1c4c32b3`, ancestry checked) and the deferred options. It claims no live acceptance. |

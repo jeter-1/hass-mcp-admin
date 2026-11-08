@@ -1,7 +1,8 @@
 # HAMCP-149 Approval Completion Signal: Design Note (2.6.0 wave 1)
 
-Status: design note only (HAMCP-332 wave 1). No runtime, test, schema, version or protected-path change. Selects no
-implementation: the register requires the compatibility fixture first.
+Status: design note only (HAMCP-332 wave 1). No runtime, test, schema, version or protected-path change. The S0
+fixture is delivered (#396) and the signal choice is recorded (section 0). Superseded (historical): "selects no
+implementation: the register requires the compatibility fixture first".
 Base: `origin/release/2.6.0` = `7246f2d21693f039504542574569f03b71476489` (2.4.2-beta.7). Engineering citations are at
 that base, relative to `hass_mcp_engineering_beta/ha_mcp_engineering/`. SDK citations are the pinned `mcp==1.30.0`
 (`hass_mcp_engineering_beta/requirements.txt:1`), wheel sha256 `666edb50…84d0` matching `requirements.lock:59-60`,
@@ -9,6 +10,31 @@ upstream tag `v1.30.0` = `8c2fa6eabacde869d75568e33b9d466b58c2f512`, paths under
 `modelcontextprotocol/modelcontextprotocol` at commit `c4c367f9f58296a7053f5c78a52fd02bfbb56a49`, revision
 `2025-11-25` (the SDK's `LATEST_PROTOCOL_VERSION`, `types.py:27`), per
 [ADR-021](architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md).
+
+## 0. Disposition (2026-11-08): historical baseline, reviewed delivery, deferred options
+
+- **Historical baseline.** Sections 1-9 were written before the fixture was built, at design base `7246f2d2`. The
+  "selects no implementation" status and the open Q1-Q3 in that draft are superseded by the recorded choices below.
+- **Reviewed delivery (S0 fixture).** [PR #396](https://github.com/jeter-1/hass-mcp-admin/pull/396) is merged into
+  `release/2.6.0`. Reviewed head `f4a7173e752af1f4c4e0e19d9d8a5c59dbe0240a`, merge commit `0ead041b`.
+  `git merge-base --is-ancestor f4a7173e origin/release/2.6.0` passes. It delivered the Layer A fixture
+  (`tests/test_hamcp149_approval_completion_fixture.py`) and the capability matrix
+  (`docs/HAMCP_149_CLIENT_CAPABILITY_MATRIX.md`). It made no runtime change.
+- **Recorded choices.** These are recorded in register HAMCP-149 Next Action (2026-11-07) and in the #396 matrix's
+  "Josh decisions (2026-11-07)" section. This note does not reopen them.
+  - The signal is **S0**: no runtime change. The persisted `get_change_plan` re-read is the completion check.
+  - The requesting-client binding is the **plan id and plan hash held by the conversation**. No client identity is
+    persisted.
+  - **One real-client (Layer B) observation at 2.6 acceptance.** Josh approves a harmless plan while a client session
+    waits.
+  - **S1** (an additive `approval_completion` block) is built **only if** that observation shows that sessions miss
+    approvals.
+  - **S2 is deferred.**
+- **Not claimed.** No live acceptance. The Layer B rows stay unobserved until that separately authorized live
+  observation. Signals stay advisory. An authoritative re-read and the guarded apply path stay mandatory. Automatic
+  ended-turn continuation is not claimed without Layer B evidence.
+- **Deferred or optional.** Q4 (typed-task, F3 and record approvals) and Q5 (stateful transport) are optional future
+  scope. Q6 (mobile completion push) stays out of scope (section 9).
 
 ## 1. Register outcome and binding decisions
 
@@ -163,20 +189,33 @@ matches HAMCP-222 §3.9.
 
 ## 8. Build slice and dependencies
 
-1. PR-0: Layer A tests plus a capability-matrix template (tests and docs only).
-2. Layer B: manual observation, separately authorized (§9 Q1).
-3. PR-1: S1 only if Josh selects it after Phase 0; needs authorization naming the protected runtime paths.
+1. PR-0: Layer A tests plus a capability-matrix template (tests and docs only). **Delivered as #396** (section 0).
+2. Layer B: one real-client observation at 2.6 acceptance against the deployed 2.6 beta. Josh approves a harmless plan
+   while a session waits. It is a separate live action that Josh must authorize, and it is not done.
+3. PR-1: S1 only if the Layer B observation shows missed approvals. It needs authorization naming the protected
+   runtime paths. Not started. S2 is deferred.
 
 No signing or Core dependency. The in-flight 2.5.0 PRs #384-#387 touch none of the files cited here. Rollback: PR-0
 is test-only; S1 reverts as one additive field.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-- Q1. Authorize Layer B: who runs it, which clients, and a disposable reachable probe endpoint separate from production.
-- Q2. After Phase 0, choose S0, S1 or S2, or ship only the fixture in 2.6.0.
-- Q3. Requesting-client binding: accept plan id plus plan hash in the conversation, or persist a client identity
-  (a persistence and schema change)?
+Resolved (recorded in register HAMCP-149 and the #396 matrix, section 0). Superseded (historical) as questions:
+- Q1 (Layer B): one observation at 2.6 acceptance, with Josh approving a harmless plan while a session waits. The
+  draft's "disposable probe endpoint separate from production" is superseded by the recorded choice (the deployed
+  2.6 beta). Running it still needs its own live-action authorization.
+- Q2 (signal): S0. S1 only if Layer B shows missed approvals. S2 deferred.
+- Q3 (binding): the plan id and plan hash held by the conversation. No client identity is persisted.
+
+Optional future scope (pending Josh; none blocks 2.6):
 - Q4. Typed-task release, F3 and record approvals (`approval_web.py:413-421`): in scope, or change plans only?
+  Default: change plans only.
 - Q5. Stateful transport independent of the registry flag is an architecture change. Consider it only if Layer B
   shows a client benefits.
 - Q6. Completion push to mobile stays out of scope unless Josh names that write (HAMCP-222 §7.2).
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F2: settled S0/S1/S2 and binding choices still asked | Low | Section 0 records the #396 delivery (reviewed head `f4a7173e`, merge `0ead041b`, ancestry checked) and the recorded choices (register HAMCP-149, 2026-11-07). The status line and section 8 mark PR-0 delivered and Layer B and S1 conditional. Section 9 removes Q1-Q3 as open questions; Q4-Q6 stay optional or out of scope. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-149` and `docs/HAMCP_149_CLIENT_CAPABILITY_MATRIX.md` at `1c4c32b3`. |

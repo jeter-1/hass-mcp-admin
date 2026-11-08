@@ -4,6 +4,20 @@ Status: design note only (HAMCP-332 wave 1). No runtime, test, schema, version o
 Base: `origin/release/2.6.0` = `7246f2d21693f039504542574569f03b71476489` (2.4.2-beta.7). Citations are at that base,
 relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a full path is given.
 
+## 0. Disposition (2026-11-08): historical baseline, reviewed delivery, deferred options
+
+- **Historical baseline.** Sections 1-9 were written before the build, at design base `7246f2d2`. Where they
+  conflict with the delivery below, the delivery wins.
+- **Reviewed delivery.** [PR #400](https://github.com/jeter-1/hass-mcp-admin/pull/400) is merged into
+  `release/2.6.0`. Reviewed head `9915aa85f37db41e3e580d99e39314898372e580`, merge commit `4b7dc781`.
+  `git merge-base --is-ancestor 9915aa85 origin/release/2.6.0` passes. All three consumers now merge the HAMCP-227
+  diagnostic partition: `configuration_integrity_analysis`, `incident_correlation` and `handoff_generation`. The
+  partition evidence stays outside governance fingerprints and the helper obligation ledger. Output stays bounded
+  and reports partial where the store is partial.
+- **Not claimed.** No live acceptance. RCG-093 live acceptance stays pending.
+- **Deferred or optional.** Q1 (whether `incident_correlation` inherits all unrelated `dependency_index`
+  partiality) is a possible separate follow-up, not part of the merged slice (section 9).
+
 ## 1. Register outcome and binding decisions
 
 HAMCP-267 Outcome (register, quoted): "configuration_integrity_analysis, incident_correlation and handoff_generation
@@ -159,7 +173,7 @@ New file `tests/test_hamcp267_reference_store_consumers.py`, offline synthetic f
 
 ## 8. Build slice and dependencies
 
-One runtime PR (protected path, needs `-AuthorizedProtectedPath` for each file): `integrity/provider.py`,
+Delivered as #400 (section 0). Historical build plan: one runtime PR (protected path, needs `-AuthorizedProtectedPath` for each file): `integrity/provider.py`,
 `integrity/rules.py`, `integrity/service.py`, `incident/provider.py`, `incident/service.py`, `handoff/provider.py`,
 `handoff/service.py`, an optional shared identity helper in `dependency/global_sources.py` (the module docstring
 updated), the new test file, and docs: [configuration integrity](CONFIGURATION_INTEGRITY_ANALYSIS.md) (lines 66-71),
@@ -171,9 +185,17 @@ limited by HAMCP-273 (large dashboards), HAMCP-264 (templates) and loaded-member
 reports those as partial. 2.5.0 overlap: open PRs #384-#387 touch none of these files (checked with `gh pr view`); the
 HAMCP-290 work was not checked (no PR number given). Rollback: revert the PR; no persisted format changes.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-- Q1. `incident_correlation`'s scoped `configuration_integrity` row is `complete` unconditionally today
+None blocks the merged slice. Optional future scope (pending Josh):
+
+- Q1 (possible separate follow-up). `incident_correlation`'s scoped `configuration_integrity` row is `complete` unconditionally today
   (`incident/provider.py:313-314`). This design makes it inherit partiality only from the partition. Should it inherit
   every `dependency_index` partiality (for example, a partial automation source)? That is broader than this row's
   outcome, so the design takes no position.
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F2: delivered slice not identified | Low | Section 0 records the #400 delivery (reviewed head `9915aa85`, merge `4b7dc781`, ancestry checked). Section 8 marks the build delivered. Section 9 keeps Q1 only as an optional separate follow-up. No live acceptance is claimed. Proving check: reconcile with `register get HAMCP-267` and the merged head. |

@@ -5,6 +5,26 @@ by this note. Base: `origin/release/2.6.0` =
 `7246f2d21693f039504542574569f03b71476489`. All `file:line` references are at
 that base; runtime paths are under `hass_mcp_engineering_beta/ha_mcp_engineering/`.
 
+## 0. Disposition (2026-11-08): historical baseline, current scope, deferred options
+
+- **Historical baseline.** Sections 1-9 were first written at design base `7246f2d2`, before the row was reopened.
+  The broad five-category proposal and the closure question in that draft are superseded by the narrowed scope
+  below. Superseded text is kept only under "Superseded (historical)" labels.
+- **Current scope (register HAMCP-143, Next Action as of 2026-11-08).** The row is *reopened and narrowed*
+  (2026-11-07). Codex confirmed that PR #213 delivers the semantic-leaf limit diagnostic, but not clear diagnostics
+  for every compiler limit. The remaining scope is a clear refusal diagnostic for each remaining dashboard
+  compiler limit: operation count, byte bounds, pointer and JSON depth, node counts, and traversal and growth
+  bounds. The live limits stay **256 semantic leaves and 16 patch operations**, and neither changes. Status:
+  Backlog, a later 2.6 wave, nothing built. No delivery is claimed.
+- **Not reopened.** Whether to close HAMCP-143 is not a question any more; the row answers it. The question is
+  removed from section 9.
+- **Deferred, optional.** These are optional future scope, not part of the narrowed contract:
+  - categorizing the non-limit exits (`malformed_operation`, `unsupported_operation`, `target_mismatch`,
+    `internal_failure`);
+  - per-operation capacity enrichment;
+  - path echo.
+  The current index/token-only default is enough for the narrowed scope (section 9).
+
 ## 1. Register outcome and binding decisions
 
 > A dashboard change that exceeds compiler limits returns a bounded, actionable
@@ -31,18 +51,24 @@ and [2_1_ROADMAP.md](2_1_ROADMAP.md), and was implemented in `d861d9f9`
   (`governance/service.py:5604-5605`, `tests/test_dashboard_update_mvp.py:781-812`).
 
 This note binds to the **current 256 capacity** and changes it in neither
-direction. It designs only the remaining part of the Outcome: malformed input and
-other compilation failures are still not told apart. Whether that remainder is
-still wanted is listed in section 9.
+direction. The narrowed remaining scope (section 0) gives every other compiler *limit* the same
+bounded diagnostic. Superseded (historical): the first draft designed full
+categorization of malformed and other failures and asked in section 9 whether that
+remainder was still wanted. The reopened row now answers that.
 
 ## 2. Current state at base
 
-- **Pipeline.** `create_dashboard_update_plan` (`governance/service.py:5583-5609`)
-  calls `f3_dashboard/planning.py:143`, which calls `compile_dashboard_patch`
-  (`f3_dashboard/patch.py:373-423`). The compiler is the only caller of
-  `canonicalize_patch` (`patch.py:138-161`). All of this runs before any plan,
-  artifact, task, lock or provider call. Refusal creates no work
-  (`tests/test_dashboard_update_mvp.py:804-807`).
+- **Pipeline (corrected, Codex F3).** `create_dashboard_update_plan` (`governance/service.py:5583-5609`)
+  enters `f3_dashboard/planning.py`. That module first awaits the admitted, bounded provider preread
+  (`reader.preread`, `planning.py:108`). It then compiles against the preread configuration at `planning.py:143`,
+  which calls `compile_dashboard_patch` (`f3_dashboard/patch.py:373-423`). Setter provider admission
+  (`admit_provider_contract`) comes after that (`planning.py:158-195`). The compiler is the only caller of
+  `canonicalize_patch` (`patch.py:138-161`). So compilation runs **after one provider read** and before any plan,
+  artifact, task, lock, setter admission or provider mutation. A compilation failure creates no plan, task,
+  artifact or provider mutation, and the admitted preread already done stays as it is
+  (`tests/test_dashboard_update_mvp.py:804-808`: no plan, no task, `write_count == 0`,
+  `best_practice_count == 0`, configuration unchanged). Superseded (historical): the first draft said
+  compilation runs "before any … provider call", which wrongly treats no mutation as no read.
 - **Error model.** `DashboardFoundationError` (`f3_dashboard/errors.py:11-66`)
   already carries optional `constraint` and `stage` tokens (`^[a-z][a-z0-9_]{0,63}$`)
   and non-negative `observed`/`limit` integers. Its `diagnostic_details()`
@@ -80,7 +106,16 @@ still wanted is listed in section 9.
 ## 3. Proposed change
 
 Every change is additive and pre-dispatch. Exception classes, `code`, `reason`,
-`ErrorCode`, check order and every bound stay exactly as they are.
+`ErrorCode`, check order and every bound (256 leaves, 16 operations and the rest)
+stay exactly as they are.
+
+**Narrowed contract (current scope).** Only the `capacity_exceeded` row of the table in
+item 2 is in scope. Every compiler *limit* exit carries `category="capacity_exceeded"`
+plus its `constraint`, `stage`, `observed` and `limit`, and where they are known
+`operation_index` and `token_index`. `semantic_leaf_changes` keeps its shipped
+five-field shape and gains only `category`. Every non-limit exit keeps the legacy
+`{"reason": code}` projection. The other category rows, item 4, and path echo are
+optional future scope (section 9).
 
 1. **Error model** (`f3_dashboard/errors.py`). Add three optional fields to
    `DashboardFoundationError`, each emitted by `diagnostic_details()` only when set:
@@ -90,7 +125,9 @@ Every change is additive and pre-dispatch. Exception classes, `code`, `reason`,
 
    Validation reuses `_token`/`_count`. Add a closed allow-list for `category`
    and `constraint`; an unknown value raises at construction (fail closed).
-2. **Category enum** (stable). Each compiler exit gets one fixed `constraint` token:
+2. **Category enum** (stable). Only the `capacity_exceeded` row is in the narrowed
+   contract. The remaining rows are optional future scope and are kept here as the
+   reserved vocabulary. Each compiler exit gets one fixed `constraint` token:
 
 | `category` | Meaning / client action | `constraint` tokens (exits) |
 | --- | --- | --- |
@@ -110,19 +147,22 @@ Every change is additive and pre-dispatch. Exception classes, `code`, `reason`,
      `limit` only, because their `observed` count is not truthful once the walk aborts.
    - The `json_codec.py:95/97` bound keeps its `PatchValidationError` class and adds
      `stage="compilation"`, so the stage tells the truth without changing the class.
-4. **Capacity enrichment** (`patch.py:392`). Keep the existing five fields and add:
+4. **Capacity enrichment (optional future scope, not in the narrowed contract)**
+   (`patch.py:392`). Keep the existing five fields and add:
    - `operation_leaf_changes`: per-operation counts, length at most 16, taken from
      `effect.leaf_change_count`.
    - `shifted_array_operations`: an int count of effects that used suffix accounting.
 
    Together these tell the caller *why* the count is high without changing how it
    is counted. `diagnostic_details` is widened to allow this one bounded integer list.
-5. **Projection** (`service.py:5602-5609`). For `PatchValidationError` and
-   `PatchCompilationError` emit `{**exc.diagnostic_details(), "reason": exc.code}`.
-   Every other `DashboardFoundationError` keeps `{"reason": exc.code}`. This
-   supersedes the contract sentence "Other compilation failures retain their prior
-   error details". The contract doc and `test_unrelated_compiler_error_keeps_legacy_details`
-   change in the same PR.
+5. **Projection** (`service.py:5602-5609`). For a `PatchValidationError` or
+   `PatchCompilationError` whose `category` is `capacity_exceeded`, emit
+   `{**exc.diagnostic_details(), "reason": exc.code}`. Every non-limit exit, and every
+   other `DashboardFoundationError`, keeps `{"reason": exc.code}`. The contract sentence
+   "Other compilation failures retain their prior error details" is narrowed to
+   non-limit failures in the same PR. `test_unrelated_compiler_error_keeps_legacy_details`
+   (a `target_absent` exit) stays unchanged. Superseded (historical): the first draft
+   projected details for every patch error and changed that test.
 6. **Safe-detail rule.** Only fixed tokens and non-negative integers are returned.
    Never returned: pointer strings, `operation_id` strings (caller tokens; their
    charset also differs from `_DIAGNOSTIC_TOKEN`), keys, values, list lengths or
@@ -134,9 +174,10 @@ Every change is additive and pre-dispatch. Exception classes, `code`, `reason`,
    `codes=(exc.code, category)`, bounded by `MAX_EVENT_CODES`
    (`constants.py:65`). The `broad_subtree_rejections` trigger stays the same
    (`planning.py:148-149`).
-8. **Provider routing.** Unchanged. The compiler is Engineering-native and runs
-   before ha-mcp `ha_config_set_dashboard` admission (`planning.py:158-195`). No
-   delegated call, fallback or Core command is added.
+8. **Provider routing.** Unchanged. The compiler is Engineering-native. It runs after
+   the existing admitted ha-mcp dashboard preread (`planning.py:108`) and before ha-mcp
+   `ha_config_set_dashboard` admission (`planning.py:158-195`). No delegated call,
+   extra read, fallback or Core command is added.
 
 ## 4. Public schema / tool-registration impact
 
@@ -160,14 +201,20 @@ fingerprint changes, and nothing joins a signing batch.
 ## 6. Negative reachability and refusal tests
 
 The change adds no write, service, reload or fallback path. Tests:
-- **One row per exit.** A table-driven test asserts the exact `details` for every
-  exit in section 2, including `category`, `constraint`, `stage` and indices.
+All of these are required future implementation evidence; none has been run.
+- **One row per limit exit.** A table-driven test asserts the exact `details` for every
+  compiler limit exit in section 2, including `category`, `constraint`, `stage`,
+  `observed`/`limit` and indices. A second table asserts that every non-limit exit
+  still returns exactly `{"reason": code}`.
   Each case uses a synthetic private marker in its path, key and value, and
   asserts that marker is absent from `details` and from `audit.jsonl` (the
   pattern at `test_dashboard_update_mvp.py:809-812`).
-- **Same work refused.** For every category: no plan, no task, `write_count == 0`,
-  `best_practice_count == 0`, configuration unchanged
-  (`test_dashboard_update_mvp.py:804-808`).
+- **Same work refused, preread preserved (Codex F3).** For every limit exit, the test
+  observes exactly one bounded admitted preread (`preread_count == 1`) and zero setter
+  and guide calls (`write_count == 0`, `best_practice_count == 0`). It also asserts no
+  plan, no task, no persisted work and an unchanged configuration
+  (`test_dashboard_update_mvp.py:701`, `:804-808`). The test must not assume zero
+  provider calls.
 - **Order unchanged.** Validation runs before compilation, compilation stops at
   the first failing operation in caller order, and the capacity check comes before
   the size and growth checks. A patch with both a bad operation 3 and an
@@ -185,15 +232,18 @@ The change adds no write, service, reload or fallback path. Tests:
   still reaches `succeeded_verified` (`:762-779`). Leaf counts stay
   `[8, 2, 4, 40]` (`test_f3_dashboard_patch.py:401-403`).
 - **Capacity refusal.** 257 and 300 leaves return the existing five fields plus
-  `category="capacity_exceeded"`, `operation_leaf_changes` and
-  `shifted_array_operations`. `observed` is the actual total.
-- **Other refusals.** Malformed, unsupported and target-mismatch inputs each
-  return their own category and the failing `operation_index`.
+  `category="capacity_exceeded"`. `observed` is the actual total. A 17-operation
+  patch, an over-bound value, patch, pointer, JSON depth or node count, and a result
+  or growth overrun each return `category="capacity_exceeded"` with their own
+  `constraint`, `stage` and `limit`. `observed` is included where it is truthful.
+  Where it applies, `operation_index` is included too.
+- **Other refusals.** Malformed, unsupported and target-mismatch inputs keep the legacy
+  `{"reason": code}` under the narrowed scope.
 - **Failure preservation.** Every `ErrorCode`, `reason`, exception class, bound
   and check order is unchanged. Stale-state refusal, approval-projection binding,
   one-dispatch and exact readback tests pass unmodified.
-- **Recovery.** Nothing changes for recovery: refusal is pre-plan, so the client
-  corrects the request and plans again.
+- **Recovery.** Nothing changes for recovery. Refusal happens after the read-only
+  preread and before any plan, so the client corrects the request and plans again.
 
 ## 8. Build slice and dependencies
 
@@ -203,20 +253,33 @@ The change adds no write, service, reload or fallback path. Tests:
   `F3_DASHBOARD_WRITE_CONTRACT.md`. Its 2.6.0 notes and acceptance go in the
   release PR.
 - These are protected runtime paths, so the PR must authorize them by name.
+- Not built. Register status is Backlog, for a later 2.6 wave.
 - No dependency on signing or on a live HA. As of 2026-11-07 the heads of
   #384-#387 do not touch these files. If a 2.5.0 change touches `service.py`,
   2.5.0 wins and this PR merges `main`.
 - Rollback: revert the PR. It changes no persisted record or artifact schema,
   because diagnostics are never stored in plans.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-1. **Is the remaining scope still wanted?** PR #213 already delivered the capacity
-   diagnostic. Should HAMCP-143 proceed with only the non-capacity categorization
-   in section 3, or close as delivered and have its row corrected (it still says
-   16 leaves)?
-2. **Path echo.** Should details include the caller's own (already screened)
-   `path` for the failing operation? This note defaults to indices only, matching
-   the existing test that the path is never echoed.
-3. **Capacity enrichment.** Is the per-operation `operation_leaf_changes` list
-   acceptable public detail, or should capacity keep only `observed`/`limit`?
+No question blocks the narrowed scope. Superseded (historical): the first draft's Q1
+("proceed or close as delivered?") is answered by the reopened row and is removed.
+
+Optional future scope, pending Josh. None is needed for the narrowed contract, and the
+default applies unless Josh widens it.
+1. **Path echo.** Should details include the caller's own (already screened) `path`
+   for the failing operation? Default: indices only, matching the existing test that
+   the path is never echoed.
+2. **Capacity enrichment.** Should the per-operation `operation_leaf_changes` list
+   and `shifted_array_operations` count be added? Default: no. The shipped five fields
+   plus `category` stay.
+3. **Non-limit categorization.** Should the `malformed_operation`,
+   `unsupported_operation`, `target_mismatch` and `internal_failure` categories be
+   added? Default: no. Non-limit exits keep `{"reason": code}`.
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F2: settled closure question and stale scope | Low | Section 0 gives the dated disposition: reopened and narrowed per the HAMCP-143 row, 256/16 preserved, nothing built. Sections 1 and 3 (narrowed contract, items 2, 4 and 5) restrict the design to compiler-limit diagnostics. Section 9 removes the closure question and lists the remaining choices only as optional. Proving check: reconcile with `register get HAMCP-143`. |
+| F3: compiler runs after a provider preread | Low | Section 2 "Pipeline" and section 3 item 8 now state preread (`planning.py:108`), then compile (`:143`), then setter admission (`:158-195`). A compilation failure creates no plan, task, artifact or provider mutation and keeps the admitted preread. Section 6 requires future evidence: `preread_count == 1`, `write_count == 0`, `best_practice_count == 0`, unchanged state, no persisted work. |

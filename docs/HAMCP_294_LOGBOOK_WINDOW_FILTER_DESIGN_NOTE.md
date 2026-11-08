@@ -6,6 +6,29 @@ at that base, relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless
 are Home Assistant Core tag `2026.11.0` (`74cf5a49c63ed8d4d87717844bf14f79c28c9cea`), `homeassistant/components/logbook/`.
 `rest_api.py` is byte-identical at the signed sequence-15 release `2026.10.3` (`1f214b84`).
 
+## 0. Disposition (2026-11-08): historical baseline, reviewed delivery, deferred options
+
+- **Historical baseline.** Sections 1-9 were written before the build, at design base `7246f2d2`. Where they
+  conflict with the delivered contract below, the delivered contract wins.
+- **Reviewed delivery.** [PR #397](https://github.com/jeter-1/hass-mcp-admin/pull/397) is merged into
+  `release/2.6.0`. Reviewed head `dda873547d0b60af911b68f254e93887384c28f4`, merge commit `529d66a0`.
+  `git merge-base --is-ancestor dda87354 origin/release/2.6.0` passes. It delivered the window, `entity_ids` and
+  `name` filtering through the existing native bounded logbook route. It uses the same provider and the existing
+  `core.basic_rest_read`.
+- **Compatibility-preserving descriptor (delivered, kept).** The reviewed implementation deliberately keeps
+  `hours: float = 12`. The signature is `get_logbook(hours: float = 12, entity_id="", start_time=None,
+  end_time=None, entity_ids=None, name=None)` (`tools/compatibility.py:424` at `1c4c32b3`). With `start_time`,
+  `hours` must stay at its default 12 and is ignored; any other `hours` with `start_time` is refused. Superseded
+  (historical): the draft proposal to change the `hours` default to `null` (section 3) is withdrawn. It would undo
+  the reviewed compatibility-preserving public schema.
+- **Implemented defaults** (`clients/logbook.py:27-44` at `1c4c32b3`, labelled there "implementation defaults
+  pending Josh (design note Q1)"):
+  - `MAX_FILTER_ENTITIES = 10`, `MAX_FILTER_CHARS = 512` (joined) and `MAX_NAME_CHARS = 100`;
+  - the window cap is unchanged at 168 h;
+  - `NAME_MATCH_BASIS` is a casefold substring of the current `entity_id` or `friendly_name`.
+- **Not claimed.** No live acceptance; the section 7 live reads still need Josh's authorization.
+- **Deferred or optional.** The `context_id` and device filters stay out of scope (section 9).
+
 ## 1. Register outcome and binding decisions
 
 HAMCP-294 Outcome (register, quoted): "get_logbook accepts an explicit bounded start/end window and an entity or name
@@ -16,8 +39,8 @@ Binding decisions:
 - Josh, 2026-11-07 brief: HAMCP-294 is a 2.6.0 wave-1 feature; designs first.
 - Josh, 2026-11-03 ranking (row Next Action): fix-lane position 4 after HAMCP-277, batched with HAMCP-292. HAMCP-292
   is unrelated in content (plan sensitive-data guard), so the batch is a lane, not a shared change.
-- Not decided by any row or prompt: the numeric bounds, the name-match semantics, and whether `context_id` or a
-  device filter belongs here (section 9). The HA Admin E024 case text is not in the repository; the row is the scope.
+- Superseded (historical): at the design base no row or prompt had decided the numeric bounds, the name-match
+  semantics, or whether `context_id` or a device filter belongs here. Section 0 records what #397 implemented. The HA Admin E024 case text is not in the repository; the row is the scope.
 
 ## 2. Current state at base
 
@@ -64,8 +87,10 @@ allowlist and inside `core.basic_rest_read` (`ha_core_readmission/profiles.py:15
 **Inputs** (all optional; at most one of `entity_id`, `entity_ids`, `name`):
 - `start_time`, `end_time`: ISO-8601 with an explicit offset (`Z` or `±HH:MM`), matching the existing timestamp
   segment grammar (`clients/paths.py:44-46`); naive times are refused. Normalized to UTC before the request.
-- `hours`: default changes from `12` to `null` so an explicit start is unambiguous. Without `start_time` the window
-  is `[end - (hours or 12), end]`; with `start_time`, `hours` must be null.
+- `hours` (delivered, compatibility-preserving): the default stays `12` (`hours: float = 12`). Without `start_time`
+  the window is `[end - hours, end]`. With `start_time`, `hours` must equal its default 12 and is ignored; any other
+  value is refused. Superseded (historical): the draft changed the default to `null` and required a null `hours`
+  with `start_time`. That proposal is withdrawn (section 0).
 - `entity_ids`: 1-10 unique valid IDs; the comma-joined value must fit the 512-character query bound. Sent as the
   existing `entity` query parameter. Legacy `entity_id` keeps its exact current rule (comma still refused).
 - `name`: 1-100 characters, case-folded substring of `entity_id` or `friendly_name` over current states, the same
@@ -96,7 +121,7 @@ matched_count}, continuation, completeness_notes, required_action}`. `truncated:
 ## 4. Public schema and tool-registration impact
 
 - Tool count unchanged (`ENGINEERING_STATIC_TOOL_COUNT` 81, `tests/test_alarmo_inspection_catalog_continuity.py:109`).
-  Changed public input: four new optional arguments and the `hours` default. Changed output: additive object only
+  Changed public input: four new optional arguments. The `hours` default is unchanged at 12 (section 0). Changed output: additive object only
   when a new argument is used. The descriptor digest changes, so the build adds a reviewed
   `tests/hamcp294_descriptor_changes.py` strip helper, as for HAMCP-311.
 - Security-sensitive surfaces: public schema, the fixed logbook route and transport guard, read-policy text,
@@ -125,7 +150,7 @@ Observation, not a change: Core's logbook component is not in the measured Core 
 
 No write, service call, new route, new Core command or fallback. Extend `tests/test_logbook_bounds.py`:
 - Refused with zero HTTP calls and the busy slot released: naive or malformed timestamps, `start >= end`, window over
-  168 h, future `start_time`, `hours` with `start_time`, two of `entity_id`/`entity_ids`/`name`, 11 entity IDs,
+  168 h, future `start_time`, a non-default `hours` with `start_time`, two of `entity_id`/`entity_ids`/`name`, 11 entity IDs,
   duplicates, invalid IDs, a joined list over 512 characters, empty or 101-character `name`, non-string types.
 - Legacy: `entity_id="a.b,c.d"` and the existing invalid-input matrix stay refused; legacy calls stay byte-identical.
 - Name: 0 and 11 matches refuse with no logbook GET; exactly 10 sends one GET with the 10 IDs; a malformed states
@@ -150,16 +175,24 @@ No write, service call, new route, new Core command or fallback. Extend `tests/t
   possibly `models/responses.py` sizing), so the build task must authorize it explicitly. Plus tests, the descriptor
   helper, regenerated coverage matrix, `docs/LOGBOOK_READS.md`, `TOOL_AUDIT.md` and the changelog. Security section
   required (public schema, read path).
-- Dependencies: answers to Q1-Q3. No signing dependency, no dependency on unlanded 2.5.0 code. Rollback: revert the
+- Delivered as #397 (section 0). Superseded (historical): "Dependencies: answers to Q1-Q3" (the build used the
+  section 0 defaults). No signing dependency, no dependency on unlanded 2.5.0 code. Rollback: revert the
   PR; there is no persistence, and legacy calls are unchanged.
 
-## 9. Open questions — pending Josh
+## 9. Open questions
 
-- Q1 Bounds: up to 10 entities (and 512 joined characters), up to 10 name matches, a 100-character name, the window
-  cap kept at 168 h, and rows/bytes/timeout unchanged (raising them stays with RCG-077). Accept or set other values.
-- Q2 Name semantics: case-folded substring over current `entity_id`/`friendly_name` (parity with `search_entities`),
-  with refusal on 0 or more than 10 matches, versus exact `friendly_name` match or a post-filter on returned row
-  `name`. A post-filter would read the unfiltered window and hit the 10,000-row and 1 MiB caps sooner, and a match
-  limited to the returned prefix could not be reported complete, so this note does not propose it.
-- Q3 Scope: `context_id` (REST-supported, exclusive with `entity`) and a device filter (WebSocket only, new Core
-  contract and signing) are left out as beyond "entity or name". Confirm, or scope them as follow-ups.
+None blocks the merged slice.
+- Q1 Bounds: implemented as the section 0 defaults (10 entities, 512 joined characters, up to 10 name matches,
+  100-character name, 168 h cap, rows/bytes/timeout unchanged). The source labels them "implementation defaults
+  pending Josh". Confirming them or changing them is optional; changing a value would be a separate runtime change.
+- Q2 Name semantics: implemented as a case-folded substring over current `entity_id`/`friendly_name`, refusing 0 or
+  more than 10 matches. The post-filter alternative stays rejected for the reasons in the draft (row and byte caps,
+  no truthful completeness).
+- Q3 Scope: `context_id` and the device filter stay out of scope. The device filter would need a new Core contract
+  and signing. Scoping either as a follow-up is optional and pending Josh.
+
+## 10. Codex design review 2026-11-08 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| F2: proposal to change `hours` to null; delivered slice not identified | Low | Section 0 records the #397 delivery (reviewed head `dda87354`, merge `529d66a0`, ancestry checked) and the preserved `hours: float = 12` descriptor. The null-default proposal is withdrawn in sections 0 and 3 and in the section 4 schema line. The section 6 refusal case is now a non-default `hours` with `start_time`. Section 9 records the implemented defaults; no live acceptance is claimed. Proving check: confirm `get_logbook`'s descriptor at `1c4c32b3` (`tools/compatibility.py:424`) is the reviewed one, and reconcile with `register get HAMCP-294`. |
