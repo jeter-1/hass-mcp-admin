@@ -1241,6 +1241,7 @@ jobs:
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --engineering-container engineering-admission-91-strict \
             --configured-url "$STRICT_FULL_UPSTREAM_URL" \
+            --upstream-endpoint "$PEER_STRICT_FULL_URL" \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
             --fixture-stats-url "$FIXTURE_STATS_URL" \
             --output "$RUNNER_TEMP/admission-cases/91_strict_admission_positive.json"
@@ -1472,6 +1473,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Roll forward from the previous release on the SAME persisted data,
+          # with no state reset: record what beta.6 wrote or left while it is
+          # still running, then restart the lane image on that data directory.
+          python scripts/exact_image_admission_91_runners.py persisted-snapshot \
+            --engineering-container engineering-admission-sbs \
+            --data-dir "$RUNNER_TEMP/admission-data-sbs" \
+            --output "$RUNNER_TEMP/admission-persisted-previous-release.json"
           python scripts/exact_image_admission_91_runners.py start-peer --peers "$LANE_PEERS" --role baseline
           python scripts/exact_image_admission_91_runners.py start-engineering \
             --name engineering-admission-sbs --stop engineering-admission-sbs \
@@ -1495,6 +1503,7 @@ jobs:
             --configured-url "$LEGACY_UPSTREAM_URL" \
             --upstream-endpoint "$PEER_LEGACY_URL" \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
+            --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_a_again_85_legacy_useful.json"
       - name: Write section 5.1 acceptance manifest
         if: always()

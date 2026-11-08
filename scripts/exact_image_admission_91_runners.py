@@ -62,6 +62,15 @@ PROBE_ARGUMENTS = {"entity_id": "sun.sun"}
 YAML_READER = "ha_config_get_yaml"
 YAML_SIBLINGS = ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file")
 OPTIONAL_NAMES = (YAML_READER, *YAML_SIBLINGS)
+# Josh, 2026-11-07 (ruling 3): the strict 9.1 check compares every reviewed
+# tool exactly and requires exact set equality with no duplicates. The runtime
+# compares only its automatic-read routes per tool and tolerates unreviewed
+# extras, so the case also lists the peer's raw strict-full catalog and
+# compares it with the reviewed capture the runtime's fingerprint is bound to.
+REVIEWED_91_CAPTURE = (Path(__file__).resolve().parent.parent / "docs" / "evidence"
+                       / "upstream-read-compatibility" / "ha-mcp-9.1.0.json")
+DESCRIPTOR_FIELDS = ("name", "title", "description", "inputSchema", "outputSchema", "annotations", "_meta")
+MAX_PEER_CATALOG_PAGES = 32
 FIXTURE_READ_KEYS = ("rest_reads", "websocket_reads")
 FIXTURE_MUTATION_KEYS = ("http_mutations", "websocket_mutations")
 # Engineering rollback stage (architect ruling 2026-11-07): the actual
@@ -113,6 +122,74 @@ GATEWAY_CASES = {
     ("side_by_side", "sbs_rollback_85_legacy_useful"): (BASELINE_VERSION, None),
     ("side_by_side", "sbs_stage_a_again_85_legacy_useful"): (BASELINE_VERSION, None),
 }
+# Roll-forward from the previous release (Josh, 2026-11-07): stage A again
+# restarts the lane image on the SAME persisted data the beta.6 stages ran on,
+# with no state reset, and fails closed unless everything beta.6 wrote or left
+# (audit records, change plans, the trace store) is still present and
+# readable by the restarted runtime.
+ROLL_FORWARD_CASE = "sbs_stage_a_again_85_legacy_useful"
+PERSISTED_ROOT = "/data"
+PERSISTED_AUDIT = "audit.jsonl"
+PERSISTED_PLAN_STORE = "governance/change_plans"
+PERSISTED_TRACE_STORE = PERSISTED_PLAN_STORE + "/trace-snapshots-v1"
+PERSISTED_TRACE_RECORDS = PERSISTED_TRACE_STORE + "/records"
+PERSISTED_PLAN_FILE = r"governance/change_plans/[0-9a-f]{32}\.json"
+# A plan's identity cannot change; its lifecycle (status, approval, events)
+# legitimately moves on, for example to superseded when a newer plan for the
+# same target is created by the restarted runtime.
+PERSISTED_PLAN_IDENTITY = ("plan_id", "created_at", "operation", "target", "proposed_config_hash")
+PERSISTED_ENTRY_LIMIT = 10_000
+# Runs inside the Engineering container (python3 -I -c), so "readable" means
+# readable by that runtime's own user and interpreter. Prints one JSON object.
+INVENTORY_SCRIPT = r"""
+import hashlib, json, os, re, sys
+config = json.loads(sys.argv[1])
+root, prefix = config["root"], config["prefix"]
+plan_file = re.compile(config["plan_file"])
+entries, walk_errors = {}, []
+for current, dirs, files in os.walk(root, onerror=lambda error: walk_errors.append(error)):
+    dirs.sort()
+    rel = os.path.relpath(current, root)
+    if rel != ".":
+        entries[rel] = {"kind": "dir", "listable": os.access(current, os.R_OK | os.X_OK)}
+    for name in sorted(files):
+        path = os.path.join(current, name)
+        key = os.path.relpath(path, root)
+        entry = {"kind": "file"}
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+            entry["size"] = len(data)
+            entry["sha256"] = hashlib.sha256(data).hexdigest()
+            if key in prefix:
+                head = data[:prefix[key]] if len(data) >= prefix[key] else None
+                entry["prefix_sha256"] = None if head is None else hashlib.sha256(head).hexdigest()
+            if key.endswith(".jsonl"):
+                region = data[:prefix[key]] if key in prefix else data
+                lines = [line for line in region.split(b"\n") if line.strip()]
+                for line in lines:
+                    if not isinstance(json.loads(line), dict):
+                        raise ValueError("record_not_object")
+                entry["records"] = len(lines)
+            elif key.endswith(".json"):
+                value = json.loads(data)
+                if plan_file.fullmatch(key):
+                    if not isinstance(value, dict):
+                        raise ValueError("plan_not_object")
+                    identity = {field: value.get(field) for field in config["plan_identity"]}
+                    entry["plan"] = {
+                        "plan_id": value.get("plan_id"),
+                        "status": value.get("status"),
+                        "identity_sha256": hashlib.sha256(
+                            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                    }
+        except Exception as error:
+            entry["error"] = type(error).__name__
+        entries[key] = entry
+if walk_errors:
+    entries["<walk>"] = {"kind": "dir", "listable": False, "error": type(walk_errors[0]).__name__}
+print(json.dumps(entries, sort_keys=True))
+"""
 
 
 # --------------------------------------------------------------------------
@@ -251,14 +328,175 @@ def peer_delta_problem(requests: list[tuple[str, int]], *, refused_path: str, al
     return None
 
 
+def is_lock_file(path: str) -> bool:
+    return path.rsplit("/", 1)[-1].endswith(".lock")
+
+
+def persisted_snapshot_problem(entries: Any) -> str | None:
+    """What the previous release left must be complete and readable before it counts."""
+
+    if not isinstance(entries, dict) or not entries or len(entries) > PERSISTED_ENTRY_LIMIT:
+        return "previous_release_data_unobserved"
+    if not all(isinstance(entry, dict) for entry in entries.values()):
+        return "previous_release_data_unobserved"
+    if any("error" in entry or (entry.get("kind") == "dir" and entry.get("listable") is not True)
+           for entry in entries.values()):
+        return "previous_release_data_unreadable"
+    audit = entries.get(PERSISTED_AUDIT, {})
+    if audit.get("kind") != "file" or not isinstance(audit.get("records"), int) or audit["records"] < 1:
+        return "previous_release_audit_absent"
+    if entries.get(PERSISTED_PLAN_STORE, {}).get("kind") != "dir":
+        return "previous_release_plan_store_absent"
+    plans = {path: entry for path, entry in entries.items() if re.fullmatch(PERSISTED_PLAN_FILE, path)}
+    if not plans:
+        return "previous_release_plans_absent"
+    for path, entry in plans.items():
+        plan = entry.get("plan")
+        if (not isinstance(plan, dict) or plan.get("plan_id") != path.rsplit("/", 1)[-1][:-len(".json")]
+                or not isinstance(plan.get("identity_sha256"), str)):
+            return "previous_release_plan_unparseable"
+    if any(entries.get(path, {}).get("kind") != "dir" for path in (PERSISTED_TRACE_STORE, PERSISTED_TRACE_RECORDS)):
+        return "previous_release_trace_store_absent"
+    return None
+
+
+def persisted_data_problem(snapshot: Any, current: Any, mount_source: str | None) -> str | None:
+    """Stage A again must run on the previous release's data, all of it present and readable."""
+
+    if (not isinstance(snapshot, dict) or snapshot.get("status") != "passed"
+            or snapshot.get("image") != ROLLBACK_ENGINEERING_IMAGE):
+        return "persisted_snapshot_not_previous_release"
+    source = snapshot.get("mount_source")
+    if not isinstance(source, str) or not source or source != mount_source:
+        return "persisted_data_not_same_mount"
+    entries = snapshot.get("entries")
+    problem = persisted_snapshot_problem(entries)
+    if problem is not None:
+        return problem
+    if not isinstance(current, dict) or "<walk>" in current:
+        return "persisted_data_unreadable_after_restart"
+    for path, before in sorted(entries.items()):
+        if is_lock_file(path):
+            continue  # lock files are coordination, not data
+        after = current.get(path)
+        if not isinstance(after, dict):
+            return "persisted_entry_missing"
+        if after.get("kind") != before.get("kind"):
+            return "persisted_entry_kind_changed"
+        if "error" in after or (after.get("kind") == "dir" and after.get("listable") is not True):
+            return "persisted_entry_unreadable"
+        if before.get("kind") != "file":
+            continue
+        if path.endswith(".jsonl"):
+            # Append-only: every byte and record the previous release wrote is
+            # the unchanged prefix of the file the restarted runtime holds.
+            if (not isinstance(after.get("size"), int) or after["size"] < before["size"]
+                    or after.get("prefix_sha256") != before.get("sha256")
+                    or after.get("records") != before.get("records")):
+                return "persisted_audit_not_preserved"
+        elif re.fullmatch(PERSISTED_PLAN_FILE, path):
+            plan, previous = after.get("plan"), before.get("plan")
+            if not isinstance(plan, dict) or plan.get("identity_sha256") != previous.get("identity_sha256"):
+                return "persisted_plan_identity_changed"
+        elif path.startswith(PERSISTED_PLAN_STORE + "/"):
+            if after.get("sha256") != before.get("sha256"):
+                return "persisted_record_changed"
+    return None
+
+
+def persisted_summary(snapshot: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    entries = snapshot["entries"]
+    plans = sorted(path for path in entries if re.fullmatch(PERSISTED_PLAN_FILE, path))
+    return {
+        "mount_source": snapshot.get("mount_source"),
+        "previous_release_entries": len(entries),
+        "previous_release_audit_records": entries[PERSISTED_AUDIT]["records"],
+        "previous_release_plans": len(plans),
+        "previous_release_trace_records": sum(1 for path, entry in entries.items()
+                                              if path.startswith(PERSISTED_TRACE_RECORDS + "/")
+                                              and entry.get("kind") == "file"),
+        "plan_status_after_restart": {path.rsplit("/", 1)[-1][:-len(".json")]:
+                                      [entries[path]["plan"].get("status"), current[path]["plan"].get("status")]
+                                      for path in plans},
+        "audit_records_after_restart": current[PERSISTED_AUDIT].get("records"),
+    }
+
+
+def canonical_fingerprint(value: Any) -> str:
+    """The runtime's ``schema_fingerprint``: SHA-256 over canonical JSON."""
+
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                                     allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def load_reviewed_91_capture(path: Path = REVIEWED_91_CAPTURE) -> list[dict[str, Any]]:
+    capture = json.loads(path.read_text(encoding="utf-8"))
+    require(isinstance(capture, dict) and capture.get("server_version") == CANDIDATE_VERSION,
+            "reviewed_capture_not_91")
+    tools = capture.get("tools")
+    require(isinstance(tools, list) and len(tools) == capture.get("tool_count")
+            and all(isinstance(tool, dict) and isinstance(tool.get("name"), str) for tool in tools),
+            "reviewed_capture_unreadable")
+    names = [tool["name"] for tool in tools]
+    require(len(set(names)) == len(names) and not set(names) & set(OPTIONAL_NAMES), "reviewed_capture_invalid")
+    return tools
+
+
+def strict_catalog_problem(observed: Any, reviewed: list[dict[str, Any]], *,
+                           reviewed_fingerprint: Any, optional_names: tuple[str, ...]) -> str | None:
+    """Exact comparison of the peer's strict-full catalog with the reviewed capture.
+
+    Every reviewed tool must be advertised exactly once with a descriptor equal
+    to the reviewed one on every field (name, title, description, inputSchema,
+    outputSchema, annotations, _meta, and no other key). The advertised set
+    must equal the reviewed set plus exactly ``optional_names``. The reviewed
+    capture, taken in the advertised order, must reproduce the runtime's
+    reviewed strict-full fingerprint, which binds this capture to the
+    runtime's registry and the advertised order to the reviewed order.
+    """
+
+    if not isinstance(observed, list) or not all(isinstance(tool, dict) and isinstance(tool.get("name"), str)
+                                                  for tool in observed):
+        return "peer_catalog_unreadable"
+    names = [tool["name"] for tool in observed]
+    if len(set(names)) != len(names):
+        return "peer_catalog_duplicate_tool"
+    by_name = {tool["name"]: tool for tool in reviewed}
+    if set(by_name) - set(names):
+        return "peer_catalog_missing_reviewed_tool"
+    if set(names) - set(by_name) - set(optional_names):
+        return "peer_catalog_extra_tool"
+    if set(optional_names) - set(names):
+        return "peer_catalog_optional_tool_missing"
+    for tool in observed:
+        expected = by_name.get(tool["name"])
+        if expected is None:
+            continue
+        if set(tool) != set(expected):
+            return "peer_catalog_descriptor_keys_mismatch"
+        for field in DESCRIPTOR_FIELDS:
+            if field in expected and canonical_fingerprint(tool[field]) != canonical_fingerprint(expected[field]):
+                return f"peer_catalog_{field.strip('_')}_mismatch"
+    ordered = [by_name[name] for name in names if name in by_name]
+    if canonical_fingerprint({"tools": ordered}) != reviewed_fingerprint:
+        return "peer_catalog_order_or_reviewed_contract_mismatch"
+    return None
+
+
 def evaluate_health_case(expect: str, *, configured_url: str, engineering_version: str,
                          container_image: str | None, rollback_identity: dict[str, Any] | None,
                          health_before: dict[str, Any],
                          health_after: dict[str, Any], tool_names: list[str],
                          probe: dict[str, Any] | None, fixture_before: dict[str, int] | None,
                          fixture_after: dict[str, int] | None,
-                         peer_requests: list[tuple[str, int]] | None) -> tuple[str, str, dict[str, Any]]:
-    """Return ``(status, reason, observed)`` for one Engineering health case."""
+                         peer_requests: list[tuple[str, int]] | None,
+                         peer_tools: list[dict[str, Any]] | None = None,
+                         reviewed_tools: list[dict[str, Any]] | None = None) -> tuple[str, str, dict[str, Any]]:
+    """Return ``(status, reason, observed)`` for one Engineering health case.
+
+    ``peer_tools`` is the peer's raw strict-full catalog and ``reviewed_tools``
+    the reviewed capture; both are required for ``admitted_strict_91`` only.
+    """
 
     configuration, name = EXPECTATIONS[expect]
     form = case_form(configuration, name)
@@ -312,14 +550,64 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
             require(view.get("catalog_admission_mode") == "reviewed_per_tool_contract_subset",
                     "catalog_admission_mode_unexpected")
             require(view.get("catalog_comparison_status") == "exact", "catalog_comparison_not_exact")
-            require(view.get("runtime_contract_mismatch_count") == 0
-                    and view.get("output_contract_mismatch_count") == 0, "contract_mismatch_observed")
+            require(all(view.get(key) == 0 for key in (
+                "runtime_contract_mismatch_count", "output_contract_mismatch_count", "schema_mismatch_count",
+                "schema_mismatched_automatic_read_count", "description_semantics_mismatch_count",
+                "annotation_mismatch_count")), "contract_mismatch_observed")
             observed["reviewed_strict_full_contract_fingerprint"] = fingerprint
             observed["observed_strict_full_contract_fingerprint"] = view.get(
                 "observed_strict_full_contract_fingerprint")
             require(view.get("reviewed_tool_accounting_valid") is True, "tool_accounting_invalid")
-            require(isinstance(view.get("dynamically_exposed_count"), int)
-                    and view["dynamically_exposed_count"] > 0, "no_delegated_reads_exposed")
+            # Every reviewed automatic read matched exactly; nothing quarantined
+            # (catalog structure, order and duplicates surface only there),
+            # missing, unreviewed, or different in the catalog diff.
+            reads = view.get("reviewed_automatic_read_count")
+            require(isinstance(reads, int) and reads > 0
+                    and (view.get("policy_classifications") or {}).get("automatic_read") == reads
+                    and view.get("exact_matched_automatic_read_count") == reads
+                    and view.get("accounted_automatic_read_count") == reads
+                    and view.get("automatic_read_accounting_valid") is True
+                    and view.get("admission_complete") is True, "automatic_reads_not_all_exact")
+            require(view.get("quarantined_automatic_read_count") == 0
+                    and view.get("quarantine_reason_counts") == {}, "automatic_read_quarantined")
+            require(view.get("missing_reviewed_read_count") == 0 and view.get("missing_automatic_read_count") == 0,
+                    "reviewed_tool_missing")
+            require(view.get("unreviewed_tool_count") == 0 and view.get("unreviewed_observed_tool_count") == 0,
+                    "unreviewed_tool_observed")
+            require(view.get("catalog_diff_field_counts") == {}, "catalog_diff_observed")
+            # The optional filesystem tools are on the wire (enabled toggle):
+            # the reader is admitted on its reviewed descriptor and every
+            # sibling is withheld with no drift from its reviewed binding.
+            states = view.get("optional_tools")
+            require(isinstance(states, dict) and states.get(YAML_READER) == "admitted"
+                    and all(states.get(key) == "prohibited_withheld" for key in YAML_SIBLINGS)
+                    and view.get("optional_sibling_drift") == []
+                    and view.get("optional_reviewed_accounting_valid") is True, "optional_tools_not_reviewed_exact")
+            require(view.get("writes_allowed") is False and view.get("direct_ha_fallback_allowed") is False
+                    and view.get("stock_catalog_match_is_informational") is True, "gateway_safety_flags_unexpected")
+            require(isinstance(reviewed_tools, list), "reviewed_capture_missing")
+            require(peer_tools is not None, "peer_catalog_unobserved")
+            problem = strict_catalog_problem(peer_tools, reviewed_tools, reviewed_fingerprint=fingerprint,
+                                             optional_names=OPTIONAL_NAMES)
+            require(problem is None, problem or "")
+            require(view.get("reviewed_accounted_tool_count") == len(reviewed_tools)
+                    and view.get("reviewed_policy_entry_count") == len(reviewed_tools)
+                    and view.get("upstream_advertised_tool_count") == len(peer_tools),
+                    "catalog_size_not_reviewed")
+            # What the runner listed is what Engineering observed.
+            wire = canonical_fingerprint({"tools": peer_tools})
+            require(view.get("observed_strict_full_contract_fingerprint") == wire,
+                    "peer_catalog_not_engineering_observation")
+            observed["peer_catalog"] = {
+                "advertised": len(peer_tools), "reviewed_exact": len(reviewed_tools),
+                "optional_on_wire": sorted(name for name in (tool["name"] for tool in peer_tools)
+                                           if name in OPTIONAL_NAMES),
+                "duplicates": 0, "extras": 0, "missing": 0, "wire_fingerprint": wire,
+            }
+            # One optional exposure: the admitted reader.
+            require(view.get("exact_matched_automatic_read_count") is not None
+                    and view.get("dynamically_exposed_count") == reads + 1
+                    and view.get("core_withheld_read_count") == 0, "no_delegated_reads_exposed")
             require(PROBE_TOOL in names, "probe_tool_not_listed")
             require(result["success"], "probe_read_not_useful")
             require(result["provider"] == "upstream_read_gateway", "probe_not_via_read_gateway")
@@ -384,8 +672,13 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
 def evaluate_gateway_case(configuration: str, name: str, *, source: dict[str, Any] | None,
                           configured_url: str, upstream_endpoint: str, engineering_version: str,
                           container_image: str | None, rollback_identity: dict[str, Any] | None,
-                          health: dict[str, Any] | None) -> tuple[str, str, dict[str, Any]]:
-    """Return ``(status, reason, observed)`` for one gateway-acceptance case."""
+                          health: dict[str, Any] | None,
+                          persisted: tuple[Any, Any, str | None] | None = None) -> tuple[str, str, dict[str, Any]]:
+    """Return ``(status, reason, observed)`` for one gateway-acceptance case.
+
+    ``persisted`` is ``(snapshot, current_inventory, current_mount_source)``;
+    it is required for the roll-forward case and refused for every other.
+    """
 
     observed: dict[str, Any] = {}
     try:
@@ -410,6 +703,13 @@ def evaluate_gateway_case(configuration: str, name: str, *, source: dict[str, An
         require(problem is None, problem or "")
         observed["engineering_version"] = engineering_version
         observed["engineering_image"] = container_image
+        if name == ROLL_FORWARD_CASE:
+            require(persisted is not None, "persisted_snapshot_missing")
+            problem = persisted_data_problem(*persisted)
+            require(problem is None, problem or "")
+            observed["persisted_from_previous_release"] = persisted_summary(persisted[0], persisted[1])
+        else:
+            require(persisted is None, "persisted_check_outside_roll_forward")
         view = gateway_view(health)
         require(view.get("admission_status") == "admitted_exact", "admission_not_exact")
         require(view.get("observed_upstream_server_version") == version, "health_version_mismatch")
@@ -462,6 +762,29 @@ def container_image(container: str) -> str | None:
     return completed.stdout.strip() or None
 
 
+def container_inventory(container: str, prefix: dict[str, int]) -> dict[str, Any]:
+    """Inventory ``/data`` from inside the running Engineering container."""
+
+    require(ENGINEERING_CONTAINER.fullmatch(container) is not None, "engineering_container_name_invalid")
+    config = {"root": PERSISTED_ROOT, "prefix": prefix, "plan_file": PERSISTED_PLAN_FILE,
+              "plan_identity": list(PERSISTED_PLAN_IDENTITY)}
+    completed = subprocess.run(["docker", "exec", container, "python3", "-I", "-c", INVENTORY_SCRIPT,
+                                json.dumps(config)], capture_output=True, text=True, timeout=300, check=True)
+    value = json.loads(completed.stdout)
+    require(isinstance(value, dict), "persisted_inventory_not_object")
+    return value
+
+
+def container_data_mount(container: str) -> str | None:
+    require(ENGINEERING_CONTAINER.fullmatch(container) is not None, "engineering_container_name_invalid")
+    completed = subprocess.run(["docker", "inspect", "--format", "{{json .Mounts}}", container],
+                               capture_output=True, text=True, timeout=60, check=True)
+    mounts = json.loads(completed.stdout or "null")
+    sources = [mount.get("Source") for mount in mounts or [] if isinstance(mount, dict)
+               and mount.get("Destination") == PERSISTED_ROOT]
+    return sources[0] if len(sources) == 1 and isinstance(sources[0], str) else None
+
+
 def load_identity(path: str | None) -> dict[str, Any] | None:
     if not path or not Path(path).is_file():
         return None
@@ -491,6 +814,28 @@ def tool_text(result: Any) -> dict[str, Any] | None:
     except ValueError:
         return None
     return value if isinstance(value, dict) else None
+
+
+async def peer_catalog(endpoint: str) -> list[dict[str, Any]]:
+    """Every descriptor the loopback peer advertises on ``endpoint``, all pages."""
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    require(urlsplit(endpoint).hostname == "127.0.0.1", "peer_not_loopback")
+    tools: list[dict[str, Any]] = []
+    async with streamablehttp_client(endpoint) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            cursor = None
+            for _ in range(MAX_PEER_CATALOG_PAGES):
+                result = await session.list_tools(cursor)
+                tools.extend(tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+                             for tool in result.tools)
+                cursor = result.nextCursor
+                if not cursor:
+                    return tools
+    raise LaneFailure("peer_catalog_unbounded")
 
 
 async def engineering_session(endpoint: str, *, probe: bool) -> tuple[dict[str, Any], list[str], dict[str, Any] | None]:
@@ -527,7 +872,8 @@ def settled(expect: str, view: dict[str, Any]) -> bool:
 
 
 def command_health_case(args: argparse.Namespace,
-                        session: Callable[..., Any] = engineering_session) -> int:
+                        session: Callable[..., Any] = engineering_session,
+                        catalog: Callable[..., Any] = peer_catalog) -> int:
     configuration, name = EXPECTATIONS[args.expect]
     require(args.configuration == configuration and args.case == name, "health_case_mismatch")
     form = case_form(configuration, name)
@@ -548,13 +894,25 @@ def command_health_case(args: argparse.Namespace,
         requests = None
         if args.peer_container:
             requests = parse_peer_requests(peer_log(args.peer_container))[mark.get("peer_requests", 0):]
+        peer_tools = reviewed_tools = None
+        upstream = getattr(args, "upstream_endpoint", None)
+        if args.expect == "admitted_strict_91":
+            # Listed after the observation window closes, so it is not counted in it.
+            require(upstream is not None, "peer_endpoint_missing")
+            problem = endpoint_problem(upstream, form)
+            require(problem is None, problem or "")
+            reviewed_tools = load_reviewed_91_capture()
+            peer_tools = asyncio.run(catalog(upstream))
+        else:
+            require(upstream is None, "peer_catalog_outside_strict_admission")
         status, reason, observed = evaluate_health_case(
             args.expect, configured_url=args.configured_url,
             engineering_version=args.expected_engineering_version,
             container_image=container_image(args.engineering_container),
             rollback_identity=load_identity(args.rollback_identity), health_before=health_before,
             health_after=health_after, tool_names=names, probe=probe,
-            fixture_before=mark.get("fixture"), fixture_after=fixture_after, peer_requests=requests)
+            fixture_before=mark.get("fixture"), fixture_after=fixture_after, peer_requests=requests,
+            peer_tools=peer_tools, reviewed_tools=reviewed_tools)
     except LaneFailure as error:
         status, reason, observed = "failed", str(error), {}
     except Exception as error:  # noqa: BLE001 - any observation failure fails the case
@@ -572,14 +930,18 @@ def command_gateway_case(args: argparse.Namespace,
         path = Path(args.source)
         source = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
         health = None
+        persisted = None
         if isinstance(source, dict) and source.get("result") == "PASS":
             health, _, _ = asyncio.run(session(args.engineering_endpoint, probe=False))
+            snapshot_path = getattr(args, "persisted_snapshot", None)
+            if snapshot_path:
+                persisted = observe_persisted(snapshot_path, args.engineering_container)
         status, reason, observed = evaluate_gateway_case(
             args.configuration, args.case, source=source, configured_url=args.configured_url,
             upstream_endpoint=args.upstream_endpoint,
             engineering_version=args.expected_engineering_version,
             container_image=container_image(args.engineering_container),
-            rollback_identity=load_identity(args.rollback_identity), health=health)
+            rollback_identity=load_identity(args.rollback_identity), health=health, persisted=persisted)
     except LaneFailure as error:
         status, reason, observed = "failed", str(error), {}
     except Exception as error:  # noqa: BLE001 - any observation failure fails the case
@@ -587,6 +949,52 @@ def command_gateway_case(args: argparse.Namespace,
     write_json(Path(args.output), case_result(args.case, status, form=form, reason=reason, observed=observed))
     print(f"{args.configuration} {args.case}: {status}{(' (' + reason + ')') if reason else ''}")
     return 0 if status == "passed" else 1
+
+
+def observe_persisted(snapshot_path: str, container: str,
+                      inventory: Callable[[str, dict[str, int]], dict[str, Any]] | None = None,
+                      mount: Callable[[str], str | None] | None = None) -> tuple[Any, Any, str | None]:
+    """Re-inventory the restarted container against the previous release's snapshot."""
+
+    inventory = inventory or container_inventory
+    mount = mount or container_data_mount
+    snapshot = load_identity(snapshot_path)
+    entries = snapshot.get("entries") if isinstance(snapshot, dict) else None
+    if not isinstance(entries, dict):
+        return snapshot, None, None
+    sizes = {path: entry["size"] for path, entry in entries.items()
+             if isinstance(entry, dict) and entry.get("kind") == "file" and isinstance(entry.get("size"), int)}
+    return snapshot, inventory(container, sizes), mount(container)
+
+
+def command_persisted_snapshot(args: argparse.Namespace,
+                               inventory: Callable[[str, dict[str, int]], dict[str, Any]] | None = None,
+                               mount: Callable[[str], str | None] | None = None,
+                               image: Callable[[str], str | None] | None = None) -> int:
+    """Record what the running previous release wrote or left in its data directory."""
+
+    inventory = inventory or container_inventory
+    mount = mount or container_data_mount
+    image = image or container_image
+    result: dict[str, Any] = {"status": "failed", "container": args.engineering_container}
+    try:
+        observed_image = image(args.engineering_container)
+        require(observed_image == ROLLBACK_ENGINEERING_IMAGE, "persisted_snapshot_not_previous_release")
+        source = mount(args.engineering_container)
+        require(isinstance(source, str) and source != "", "persisted_data_mount_missing")
+        require(Path(source).resolve() == Path(args.data_dir).resolve(), "persisted_data_not_lane_data_dir")
+        entries = inventory(args.engineering_container, {})
+        problem = persisted_snapshot_problem(entries)
+        require(problem is None, problem or "")
+        result.update(status="passed", image=observed_image, mount_source=source, entries=entries)
+    except LaneFailure as error:
+        result["reason"] = str(error)
+    except Exception as error:  # noqa: BLE001 - any observation failure fails closed
+        result["reason"] = "observation_failed: " + bounded(type(error).__name__, 64)
+    write_json(Path(args.output), result)
+    print(f"previous release persisted data: {result['status']}"
+          f"{(' (' + result['reason'] + ')') if result.get('reason') else ''}")
+    return 0 if result["status"] == "passed" else 1
 
 
 def rollback_identity(architecture: str, run: Runner = run_command,
@@ -749,6 +1157,8 @@ def parser() -> argparse.ArgumentParser:
     health.add_argument("--rollback-identity")
     health.add_argument("--fixture-stats-url")
     health.add_argument("--peer-container")
+    health.add_argument("--upstream-endpoint",
+                        help="loopback strict-full peer endpoint; admitted_strict_91 only")
     health.add_argument("--mark")
     health.add_argument("--wait-seconds", type=float, default=90.0)
     health.add_argument("--output", required=True)
@@ -764,8 +1174,16 @@ def parser() -> argparse.ArgumentParser:
     gateway.add_argument("--expected-engineering-version", required=True)
     gateway.add_argument("--engineering-container", required=True)
     gateway.add_argument("--rollback-identity")
+    gateway.add_argument("--persisted-snapshot", help="roll-forward case: the previous release's data snapshot")
     gateway.add_argument("--output", required=True)
     gateway.set_defaults(handler=command_gateway_case)
+
+    persisted = commands.add_parser("persisted-snapshot",
+                                    help="record the previous release's persisted data before rolling forward")
+    persisted.add_argument("--engineering-container", required=True)
+    persisted.add_argument("--data-dir", required=True)
+    persisted.add_argument("--output", required=True)
+    persisted.set_defaults(handler=command_persisted_snapshot)
 
     identity = commands.add_parser("rollback-identity", help="verify the pinned previous Engineering release")
     identity.add_argument("--architecture", required=True, choices=sorted(ROLLBACK_ENGINEERING_PLATFORM_DIGESTS))

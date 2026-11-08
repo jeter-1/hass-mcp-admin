@@ -21,6 +21,7 @@ import importlib.util
 import io
 import json
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -89,17 +90,46 @@ def health(version: str = LANE_VERSION, **view) -> dict:
     return {"success": True, "data": {"server": {"version": version}, "upstream_read_gateway": view}}
 
 
+# The reviewed 9.1.0 capture the runtime's strict-full fingerprint is bound to,
+# and the five optional filesystem descriptors as the 9.1.0 image advertises
+# them with the toggle enabled (HAMCP-319 phase 1 capture).
+REVIEWED_91 = runners.load_reviewed_91_capture()
+OPTIONAL_91 = [tool for tool in json.loads((ROOT / "docs" / "evidence" / "hamcp319" / "phase1" / "catalogs"
+                                            / "full-1.json").read_text(encoding="utf-8"))["tools"]
+               if tool["name"] in runners.OPTIONAL_NAMES]
+AUTOMATIC_READS = 27
+
+
+def peer_tools_91() -> list:
+    return json.loads(json.dumps(REVIEWED_91[:40] + OPTIONAL_91 + REVIEWED_91[40:]))
+
+
 def strict_91_view(**overrides) -> dict:
     view = {
         "initialized": True, "admission_status": "admitted_exact", "version_status": "reviewed_exact",
         "observed_identity_status": "accepted", "observed_upstream_server_version": "9.1.0",
         "selected_compatibility_entry_id": "ha-mcp-v9.1.0-reviewed",
-        "reviewed_strict_full_contract_fingerprint": "5" * 64,
-        "observed_strict_full_contract_fingerprint": "8" * 64,
+        "reviewed_strict_full_contract_fingerprint": runners.canonical_fingerprint({"tools": REVIEWED_91}),
+        "observed_strict_full_contract_fingerprint": runners.canonical_fingerprint({"tools": peer_tools_91()}),
         "catalog_admission_mode": "reviewed_per_tool_contract_subset",
         "catalog_comparison_status": "exact", "runtime_contract_mismatch_count": 0,
-        "output_contract_mismatch_count": 0, "reviewed_tool_accounting_valid": True,
-        "dynamically_exposed_count": 28, "observed_protocol_version": PROTOCOL,
+        "output_contract_mismatch_count": 0, "schema_mismatch_count": 0,
+        "schema_mismatched_automatic_read_count": 0, "description_semantics_mismatch_count": 0,
+        "annotation_mismatch_count": 0, "reviewed_tool_accounting_valid": True,
+        "reviewed_automatic_read_count": AUTOMATIC_READS,
+        "policy_classifications": {"automatic_read": AUTOMATIC_READS, "persistent_write": 32},
+        "exact_matched_automatic_read_count": AUTOMATIC_READS, "accounted_automatic_read_count": AUTOMATIC_READS,
+        "automatic_read_accounting_valid": True, "admission_complete": True,
+        "quarantined_automatic_read_count": 0, "quarantine_reason_counts": {},
+        "missing_reviewed_read_count": 0, "missing_automatic_read_count": 0,
+        "unreviewed_tool_count": 0, "unreviewed_observed_tool_count": 0, "catalog_diff_field_counts": {},
+        "optional_tools": {runners.YAML_READER: "admitted",
+                           **{name: "prohibited_withheld" for name in runners.YAML_SIBLINGS}},
+        "optional_sibling_drift": [], "optional_reviewed_accounting_valid": True,
+        "writes_allowed": False, "direct_ha_fallback_allowed": False, "stock_catalog_match_is_informational": True,
+        "reviewed_accounted_tool_count": 77, "reviewed_policy_entry_count": 77, "upstream_advertised_tool_count": 82,
+        "dynamically_exposed_count": AUTOMATIC_READS + 1, "core_withheld_read_count": 0,
+        "observed_protocol_version": PROTOCOL,
     }
     view.update(overrides)
     return view
@@ -151,7 +181,8 @@ def health_case(expect: str, **overrides):
     )
     if expect == "admitted_strict_91":
         arguments.update(health_before=health(**strict_91_view()), health_after=health(**strict_91_view()),
-                         tool_names=[runners.PROBE_TOOL], probe=served_probe(), peer_requests=None)
+                         tool_names=[runners.PROBE_TOOL], probe=served_probe(), peer_requests=None,
+                         peer_tools=peer_tools_91(), reviewed_tools=REVIEWED_91)
     elif expect == "catalog_mode_unadmitted_at_startup":
         view = {"initialized": False, "admission_status": "pending_discovery", "dynamically_exposed_count": 0,
                 "observed_upstream_server_version": None, "discovery_attempt_count": 2,
@@ -208,9 +239,65 @@ def gateway_case(configuration: str, name: str, **overrides):
         container_image=runners.ROLLBACK_ENGINEERING_IMAGE if rollback else runners.LANE_ENGINEERING_IMAGE,
         rollback_identity=rollback_identity_ok() if rollback else None,
         health=gateway_health(version, optional, engineering),
+        persisted=persisted_ok() if name == runners.ROLL_FORWARD_CASE else None,
     )
     arguments.update(overrides)
     return runners.evaluate_gateway_case(configuration, name, **arguments)
+
+
+MOUNT = "/home/runner/work/_temp/admission-data-sbs"
+PLAN_A = "governance/change_plans/" + "a" * 32 + ".json"
+PLAN_B = "governance/change_plans/" + "b" * 32 + ".json"
+AUDIT_BYTES = b'{"event":"tool_call"}\n{"event":"tool_call"}\n'
+
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def previous_release_entries() -> dict:
+    """What 2.4.2-beta.6 left in the lane data directory (shape from a real lane run)."""
+
+    return {
+        "options.json": {"kind": "file", "size": 288, "sha256": sha(b"options")},
+        "audit.jsonl": {"kind": "file", "size": len(AUDIT_BYTES), "sha256": sha(AUDIT_BYTES), "records": 2},
+        "audit.jsonl.lock": {"kind": "file", "size": 0, "sha256": sha(b"")},
+        "governance": {"kind": "dir", "listable": True},
+        "governance/change_plans": {"kind": "dir", "listable": True},
+        PLAN_A: {"kind": "file", "size": 4623, "sha256": sha(b"plan-a"),
+                 "plan": {"plan_id": "a" * 32, "status": "superseded", "identity_sha256": sha(b"identity-a")}},
+        PLAN_B: {"kind": "file", "size": 4196, "sha256": sha(b"plan-b"),
+                 "plan": {"plan_id": "b" * 32, "status": "awaiting_approval", "identity_sha256": sha(b"identity-b")}},
+        "governance/change_plans/trace-snapshots-v1": {"kind": "dir", "listable": True},
+        "governance/change_plans/trace-snapshots-v1/.transaction.lock": {"kind": "file", "size": 0, "sha256": sha(b"")},
+        "governance/change_plans/trace-snapshots-v1/records": {"kind": "dir", "listable": True},
+        "governance/change_plans/trace-snapshots-v1/records/t1.json": {"kind": "file", "size": 5, "sha256": sha(b"trace")},
+    }
+
+
+def restarted_entries() -> dict:
+    """The lane image after restarting on that data: audit appended, plan B superseded, a new plan."""
+
+    entries = json.loads(json.dumps(previous_release_entries()))
+    grown = AUDIT_BYTES + b'{"event":"tool_call"}\n'
+    entries["audit.jsonl"] = {"kind": "file", "size": len(grown), "sha256": sha(grown),
+                              "prefix_sha256": sha(AUDIT_BYTES), "records": 2}
+    entries[PLAN_B]["plan"]["status"] = "superseded"
+    entries[PLAN_B]["sha256"] = sha(b"plan-b-superseded")
+    entries["governance/change_plans/" + "c" * 32 + ".json"] = {
+        "kind": "file", "size": 4196, "sha256": sha(b"plan-c"),
+        "plan": {"plan_id": "c" * 32, "status": "awaiting_approval", "identity_sha256": sha(b"identity-c")}}
+    del entries["audit.jsonl.lock"]
+    return entries
+
+
+def persisted_snapshot_ok() -> dict:
+    return {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE, "mount_source": MOUNT,
+            "entries": previous_release_entries()}
+
+
+def persisted_ok() -> tuple:
+    return persisted_snapshot_ok(), restarted_entries(), MOUNT
 
 
 PEER_VERSIONS = {"baseline": "8.5.0", "candidate": "9.1.0"}
@@ -556,8 +643,15 @@ class HealthCaseTests(unittest.TestCase):
     def test_strict_admission_records_one_protocol_and_both_fingerprints(self) -> None:
         _, _, observed = health_case("admitted_strict_91")
         self.assertEqual(observed["negotiated_protocol"], PROTOCOL)
-        self.assertEqual(observed["reviewed_strict_full_contract_fingerprint"], "5" * 64)
-        self.assertEqual(observed["observed_strict_full_contract_fingerprint"], "8" * 64)
+        self.assertEqual(observed["reviewed_strict_full_contract_fingerprint"],
+                         strict_91_view()["reviewed_strict_full_contract_fingerprint"])
+        self.assertEqual(observed["observed_strict_full_contract_fingerprint"],
+                         strict_91_view()["observed_strict_full_contract_fingerprint"])
+        self.assertNotEqual(observed["reviewed_strict_full_contract_fingerprint"],
+                            observed["observed_strict_full_contract_fingerprint"])
+        self.assertEqual(observed["peer_catalog"]["advertised"], 82)
+        self.assertEqual(observed["peer_catalog"]["reviewed_exact"], 77)
+        self.assertEqual(observed["peer_catalog"]["optional_on_wire"], sorted(runners.OPTIONAL_NAMES))
 
     def test_strict_admission_negatives(self) -> None:
         negatives = {
@@ -662,7 +756,7 @@ class NonExecutionTests(unittest.TestCase):
                 engineering_endpoint="http://127.0.0.1:18100/x/mcp", configured_url=STRICT,
                 expected_engineering_version=LANE_VERSION, engineering_container="engineering-admission-91-strict",
                 rollback_identity=None, fixture_stats_url=None, peer_container=None, mark=None, wait_seconds=0,
-                output=str(output))
+                upstream_endpoint=PEER_STRICT, output=str(output))
             self.assertEqual(runners.command_health_case(args, session=session), 1)
             value = json.loads(output.read_text())
         self.assertEqual(value["status"], "failed")
@@ -755,6 +849,426 @@ class NonExecutionTests(unittest.TestCase):
             dormant_rows = {(configuration, architecture): "dormant" for architecture in lanes.ARCHITECTURES}
             acceptance, _ = lanes.verify_manifests(manifests(dormant_rows), matrix, COMMIT)
             self.assertNotEqual(acceptance[configuration], "ACCEPTED")
+
+
+class StrictCatalogExactnessTests(unittest.TestCase):
+    """Josh, 2026-11-07 (ruling 3): every tool exact on every field, exact set, no duplicates."""
+
+    def strict(self, peer=None, **view):
+        tools = peer if peer is not None else peer_tools_91()
+        return health_case("admitted_strict_91", peer_tools=tools,
+                           health_after=health(**strict_91_view(**view)))[:2]
+
+    def test_reviewed_capture_is_the_exact_9_1_contract(self) -> None:
+        self.assertEqual(len(REVIEWED_91), 77)
+        self.assertEqual(sorted(tool["name"] for tool in OPTIONAL_91), sorted(runners.OPTIONAL_NAMES))
+        self.assertEqual(self.strict(), ("passed", ""))
+
+    def test_every_descriptor_field_of_every_reviewed_tool_is_compared(self) -> None:
+        # Not only the automatic-read routes: a write tool, a physical action,
+        # and the held canary tool are compared field by field too.
+        for name in ("ha_get_state", "ha_restart", "ha_config_set_automation", "ha_get_operation_status"):
+            index = next(i for i, tool in enumerate(peer_tools_91()) if tool["name"] == name)
+            for field in runners.DESCRIPTOR_FIELDS[1:]:
+                with self.subTest(name=name, field=field):
+                    peer = peer_tools_91()
+                    if field not in peer[index]:
+                        continue
+                    peer[index][field] = {"changed": True} if isinstance(peer[index][field], dict) else "changed"
+                    self.assertEqual(self.strict(peer), ("failed", f"peer_catalog_{field.strip('_')}_mismatch"))
+
+    def test_nested_and_type_level_differences_are_mismatches(self) -> None:
+        peer = peer_tools_91()
+        tool = next(tool for tool in peer if tool["name"] == "ha_restart")
+        tool["annotations"]["destructiveHint"] = 1 if tool["annotations"].get("destructiveHint") is True else True
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_annotations_mismatch"))
+        peer = peer_tools_91()
+        tool = next(tool for tool in peer if tool["name"] == "ha_get_state")
+        tool["inputSchema"].setdefault("properties", {})["extra"] = {"type": "string"}
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_inputSchema_mismatch"))
+        peer = peer_tools_91()
+        tool = next(tool for tool in peer if tool["name"] == "ha_get_state")
+        tool["description"] += " "
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_description_mismatch"))
+
+    def test_added_or_removed_descriptor_keys_are_mismatches(self) -> None:
+        peer = peer_tools_91()
+        peer[0]["icons"] = []
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_descriptor_keys_mismatch"))
+        peer = peer_tools_91()
+        tool = next(tool for tool in peer if "outputSchema" in tool and tool["name"] in
+                    {item["name"] for item in REVIEWED_91})
+        del tool["outputSchema"]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_descriptor_keys_mismatch"))
+
+    def test_set_must_equal_reviewed_plus_exactly_the_optional_tools(self) -> None:
+        peer = [tool for tool in peer_tools_91() if tool["name"] != "ha_restart"]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_missing_reviewed_tool"))
+        peer = peer_tools_91()
+        next(tool for tool in peer if tool["name"] == "ha_get_state")["name"] = "ha_get_state_v2"
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_missing_reviewed_tool"))
+        peer = peer_tools_91() + [{**OPTIONAL_91[0], "name": "ha_unreviewed_tool"}]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_extra_tool"))
+        peer = [tool for tool in peer_tools_91() if tool["name"] != "ha_write_file"]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_optional_tool_missing"))
+        peer = [tool for tool in peer_tools_91() if tool["name"] not in runners.OPTIONAL_NAMES]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_optional_tool_missing"))
+
+    def test_duplicates_fail(self) -> None:
+        for name in ("ha_get_state", "ha_restart", runners.YAML_READER, "ha_delete_file"):
+            with self.subTest(name=name):
+                peer = peer_tools_91()
+                peer.append(json.loads(json.dumps(next(tool for tool in peer if tool["name"] == name))))
+                self.assertEqual(self.strict(peer), ("failed", "peer_catalog_duplicate_tool"))
+
+    def test_order_and_reviewed_binding_are_checked_without_the_wire_fingerprint(self) -> None:
+        peer = peer_tools_91()
+        peer[0], peer[1] = peer[1], peer[0]
+        self.assertEqual(self.strict(peer), ("failed", "peer_catalog_order_or_reviewed_contract_mismatch"))
+        self.assertEqual(self.strict(reviewed_strict_full_contract_fingerprint="5" * 64),
+                         ("failed", "peer_catalog_order_or_reviewed_contract_mismatch"))
+        # The optional tools may sit anywhere in the wire order; only the
+        # reviewed tools' relative order is bound.
+        peer = peer_tools_91()
+        moved = [tool for tool in peer if tool["name"] in runners.OPTIONAL_NAMES]
+        peer = [tool for tool in peer if tool["name"] not in runners.OPTIONAL_NAMES] + moved
+        self.assertEqual(self.strict(peer, observed_strict_full_contract_fingerprint=runners.canonical_fingerprint(
+            {"tools": peer})), ("passed", ""))
+        self.assertEqual(self.strict(observed_strict_full_contract_fingerprint="8" * 64),
+                         ("failed", "peer_catalog_not_engineering_observation"))
+
+    def test_unreadable_or_unobserved_catalog_fails(self) -> None:
+        self.assertEqual(health_case("admitted_strict_91", peer_tools=None)[:2], ("failed", "peer_catalog_unobserved"))
+        self.assertEqual(health_case("admitted_strict_91", reviewed_tools=None)[:2],
+                         ("failed", "reviewed_capture_missing"))
+        self.assertEqual(self.strict([{"name": 1}]), ("failed", "peer_catalog_unreadable"))
+        self.assertEqual(self.strict({"tools": []}), ("failed", "peer_catalog_unreadable"))
+
+    def test_runtime_completeness_fields_are_required(self) -> None:
+        negatives = {
+            "contract_mismatch_observed": [dict(schema_mismatch_count=1), dict(description_semantics_mismatch_count=1),
+                                           dict(annotation_mismatch_count=1), dict(output_contract_mismatch_count=1),
+                                           dict(schema_mismatched_automatic_read_count=1)],
+            "automatic_reads_not_all_exact": [dict(exact_matched_automatic_read_count=26),
+                                              dict(accounted_automatic_read_count=26),
+                                              dict(automatic_read_accounting_valid=False),
+                                              dict(admission_complete=False), dict(reviewed_automatic_read_count=0),
+                                              dict(policy_classifications={"automatic_read": 26})],
+            "automatic_read_quarantined": [dict(quarantined_automatic_read_count=1),
+                                           dict(quarantine_reason_counts={"catalog_order_mismatch": 27})],
+            "reviewed_tool_missing": [dict(missing_reviewed_read_count=1), dict(missing_automatic_read_count=1)],
+            "unreviewed_tool_observed": [dict(unreviewed_tool_count=1), dict(unreviewed_observed_tool_count=1)],
+            "catalog_diff_observed": [dict(catalog_diff_field_counts={"/tool_descriptor_count": 1})],
+            "optional_tools_not_reviewed_exact": [
+                dict(optional_sibling_drift=[["ha_write_file", "descriptor"]]),
+                dict(optional_reviewed_accounting_valid=False),
+                dict(optional_tools={runners.YAML_READER: "quarantined:descriptor_mismatch",
+                                     **{name: "prohibited_withheld" for name in runners.YAML_SIBLINGS}}),
+                dict(optional_tools={runners.YAML_READER: "admitted", "ha_write_file": "admitted"})],
+            "gateway_safety_flags_unexpected": [dict(writes_allowed=True), dict(direct_ha_fallback_allowed=True),
+                                                dict(stock_catalog_match_is_informational=False)],
+            "catalog_size_not_reviewed": [dict(upstream_advertised_tool_count=83), dict(reviewed_accounted_tool_count=76),
+                                          dict(reviewed_policy_entry_count=78)],
+            "no_delegated_reads_exposed": [dict(dynamically_exposed_count=27), dict(core_withheld_read_count=1)],
+        }
+        for category, changes in negatives.items():
+            for change in changes:
+                with self.subTest(category=category, change=change):
+                    self.assertEqual(self.strict(**change), ("failed", category))
+
+    def test_load_reviewed_capture_fails_closed(self) -> None:
+        capture = json.loads(runners.REVIEWED_91_CAPTURE.read_text(encoding="utf-8"))
+        bad = {
+            "reviewed_capture_not_91": {**capture, "server_version": "8.5.0"},
+            "reviewed_capture_unreadable": {**capture, "tool_count": 76},
+            "reviewed_capture_invalid": {**capture, "tools": capture["tools"] + [capture["tools"][0]],
+                                         "tool_count": 78},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for category, value in bad.items():
+                with self.subTest(category=category):
+                    path = Path(directory) / "capture.json"
+                    path.write_text(json.dumps(value))
+                    with self.assertRaisesRegex(runners.LaneFailure, category):
+                        runners.load_reviewed_91_capture(path)
+
+    def test_health_runner_lists_the_peer_only_for_strict_admission(self) -> None:
+        async def session(_endpoint, *, probe):
+            return health(**strict_91_view()), [runners.PROBE_TOOL], served_probe() if probe else None
+
+        listed = []
+
+        async def catalog(endpoint):
+            listed.append(endpoint)
+            return peer_tools_91()
+
+        def args(directory, **overrides):
+            values = dict(configuration="91_only", case="91_strict_admission_positive", expect="admitted_strict_91",
+                          engineering_endpoint="http://127.0.0.1:18100/x/mcp", configured_url=STRICT,
+                          expected_engineering_version=LANE_VERSION,
+                          engineering_container="engineering-admission-91-strict", rollback_identity=None,
+                          fixture_stats_url=None, peer_container=None, mark=None, wait_seconds=0,
+                          upstream_endpoint=PEER_STRICT, output=str(Path(directory) / "case.json"))
+            values.update(overrides)
+            return argparse.Namespace(**values)
+
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()), \
+                mock.patch.object(runners, "container_image", return_value=runners.LANE_ENGINEERING_IMAGE), \
+                mock.patch.object(runners, "snapshot", return_value={}):
+            self.assertEqual(runners.command_health_case(args(directory), session=session, catalog=catalog), 0)
+            self.assertEqual(listed, [PEER_STRICT])
+            for overrides, reason in ((dict(upstream_endpoint=None), "peer_endpoint_missing"),
+                                      (dict(upstream_endpoint=PEER_LEGACY), "endpoint_form_mismatch"),
+                                      (dict(upstream_endpoint=STRICT.replace("abcdef12-ha-mcp", "example.com")),
+                                       "endpoint_not_loopback_peer")):
+                with self.subTest(reason=reason):
+                    self.assertEqual(runners.command_health_case(args(directory, **overrides), session=session,
+                                                                 catalog=catalog), 1)
+                    value = json.loads(Path(args(directory).output).read_text())
+                    self.assertEqual((value["status"], value["reason"]), ("failed", reason))
+            self.assertEqual(listed, [PEER_STRICT])
+            refused = args(directory, configuration="side_by_side", case="sbs_engineering_rollback_91_refused",
+                           expect="unsupported_version_rollback")
+            self.assertEqual(runners.command_health_case(refused, session=session, catalog=catalog), 1)
+            value = json.loads(Path(refused.output).read_text())
+            self.assertEqual(value["reason"], "peer_catalog_outside_strict_admission")
+            self.assertEqual(listed, [PEER_STRICT])
+
+    def test_workflow_lists_the_strict_peer_with_the_filesystem_tools_enabled(self) -> None:
+        steps = workflow_job()["steps"]
+        step = next(step for step in steps if "--expect admitted_strict_91" in step.get("run", ""))
+        self.assertIn('--upstream-endpoint "$PEER_STRICT_FULL_URL"', step["run"])
+        index = steps.index(step)
+        peers = [s.get("run", "") for s in steps[:index + 1] if "start-peer" in s.get("run", "")
+                 and "91_only" in str(s.get("if", ""))]
+        self.assertTrue(peers and "--filesystem enabled" in peers[-1])
+        self.assertEqual([s for s in steps if "--upstream-endpoint" in s.get("run", "")
+                          and "health-case" in s.get("run", "")], [step])
+
+
+class RollForwardPersistedDataTests(unittest.TestCase):
+    """Josh, 2026-11-07: stage A again restarts on beta.6's persisted data, fail closed."""
+
+    def problem(self, snapshot=None, current=None, mount=MOUNT):
+        return runners.persisted_data_problem(snapshot if snapshot is not None else persisted_snapshot_ok(),
+                                              current if current is not None else restarted_entries(), mount)
+
+    def test_present_and_readable_previous_release_data_passes(self) -> None:
+        self.assertIsNone(self.problem())
+        status, reason, observed = gateway_case("side_by_side", runners.ROLL_FORWARD_CASE)
+        self.assertEqual((status, reason), ("passed", ""))
+        summary = observed["persisted_from_previous_release"]
+        self.assertEqual(summary["previous_release_audit_records"], 2)
+        self.assertEqual(summary["previous_release_plans"], 2)
+        self.assertEqual(summary["previous_release_trace_records"], 1)
+        self.assertEqual(summary["plan_status_after_restart"]["b" * 32], ["awaiting_approval", "superseded"])
+
+    def test_missing_previous_release_data_fails(self) -> None:
+        for path in ("audit.jsonl", PLAN_A, "governance/change_plans/trace-snapshots-v1",
+                     "governance/change_plans/trace-snapshots-v1/records",
+                     "governance/change_plans/trace-snapshots-v1/records/t1.json", "options.json"):
+            with self.subTest(path=path):
+                current = restarted_entries()
+                del current[path]
+                self.assertEqual(self.problem(current=current), "persisted_entry_missing")
+
+    def test_unreadable_previous_release_data_fails(self) -> None:
+        for path in ("audit.jsonl", PLAN_A, "governance/change_plans/trace-snapshots-v1/records/t1.json"):
+            with self.subTest(path=path):
+                current = restarted_entries()
+                current[path] = {**current[path], "error": "PermissionError"}
+                self.assertEqual(self.problem(current=current), "persisted_entry_unreadable")
+        current = restarted_entries()
+        current["governance/change_plans/trace-snapshots-v1/records"]["listable"] = False
+        self.assertEqual(self.problem(current=current), "persisted_entry_unreadable")
+        current = restarted_entries()
+        current["<walk>"] = {"kind": "dir", "listable": False, "error": "PermissionError"}
+        self.assertEqual(self.problem(current=current), "persisted_data_unreadable_after_restart")
+        self.assertEqual(self.problem(current={}), "persisted_entry_missing")
+
+    def test_rewritten_or_changed_previous_release_records_fail(self) -> None:
+        current = restarted_entries()
+        current["audit.jsonl"]["prefix_sha256"] = sha(b"rewritten")
+        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
+        current = restarted_entries()
+        current["audit.jsonl"].update(size=3, prefix_sha256=None)
+        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
+        current = restarted_entries()
+        current["audit.jsonl"]["records"] = 1
+        self.assertEqual(self.problem(current=current), "persisted_audit_not_preserved")
+        current = restarted_entries()
+        current[PLAN_A]["plan"]["identity_sha256"] = sha(b"other")
+        self.assertEqual(self.problem(current=current), "persisted_plan_identity_changed")
+        current = restarted_entries()
+        del current[PLAN_A]["plan"]
+        self.assertEqual(self.problem(current=current), "persisted_plan_identity_changed")
+        current = restarted_entries()
+        current["governance/change_plans/trace-snapshots-v1/records/t1.json"]["sha256"] = sha(b"other")
+        self.assertEqual(self.problem(current=current), "persisted_record_changed")
+        current = restarted_entries()
+        current[PLAN_A] = {"kind": "dir", "listable": True}
+        self.assertEqual(self.problem(current=current), "persisted_entry_kind_changed")
+
+    def test_fresh_or_other_data_directory_fails(self) -> None:
+        self.assertEqual(self.problem(mount="/home/runner/work/_temp/fresh"), "persisted_data_not_same_mount")
+        self.assertEqual(self.problem(mount=None), "persisted_data_not_same_mount")
+        fresh = {"options.json": previous_release_entries()["options.json"]}
+        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "entries": fresh}),
+                         "previous_release_audit_absent")
+
+    def test_snapshot_must_come_from_the_previous_release_and_be_complete(self) -> None:
+        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "image": runners.LANE_ENGINEERING_IMAGE}),
+                         "persisted_snapshot_not_previous_release")
+        self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "status": "failed"}),
+                         "persisted_snapshot_not_previous_release")
+        cases = {
+            "previous_release_audit_absent": lambda e: e["audit.jsonl"].update(records=0),
+            "previous_release_plan_store_absent": lambda e: e.pop("governance/change_plans"),
+            "previous_release_plans_absent": lambda e: (e.pop(PLAN_A), e.pop(PLAN_B)),
+            "previous_release_plan_unparseable": lambda e: e[PLAN_A]["plan"].update(plan_id="b" * 32),
+            "previous_release_trace_store_absent": lambda e: e.pop("governance/change_plans/trace-snapshots-v1/records"),
+            "previous_release_data_unreadable": lambda e: e[PLAN_B].update(error="JSONDecodeError"),
+        }
+        for expected, mutate in cases.items():
+            with self.subTest(expected=expected):
+                entries = previous_release_entries()
+                mutate(entries)
+                self.assertEqual(runners.persisted_snapshot_problem(entries), expected)
+                self.assertEqual(self.problem(snapshot={**persisted_snapshot_ok(), "entries": entries}), expected)
+
+    def test_roll_forward_case_requires_the_check_and_no_other_case_carries_it(self) -> None:
+        self.assertEqual(gateway_case("side_by_side", runners.ROLL_FORWARD_CASE, persisted=None)[:2],
+                         ("failed", "persisted_snapshot_missing"))
+        missing = restarted_entries()
+        del missing[PLAN_A]
+        self.assertEqual(gateway_case("side_by_side", runners.ROLL_FORWARD_CASE,
+                                      persisted=(persisted_snapshot_ok(), missing, MOUNT))[:2],
+                         ("failed", "persisted_entry_missing"))
+        self.assertEqual(gateway_case("side_by_side", "sbs_stage_a_85_legacy_useful", persisted=persisted_ok())[:2],
+                         ("failed", "persisted_check_outside_roll_forward"))
+
+    def test_inventory_script_reads_real_files_and_flags_unparseable_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plans = root / "governance" / "change_plans"
+            (plans / "trace-snapshots-v1" / "records").mkdir(parents=True)
+            (root / "audit.jsonl").write_bytes(AUDIT_BYTES)
+            plan = {"plan_id": "a" * 32, "created_at": "t", "operation": "update_automation",
+                    "target": {"id": "x"}, "proposed_config_hash": "h", "status": "awaiting_approval"}
+            (plans / ("a" * 32 + ".json")).write_text(json.dumps(plan))
+
+            def inventory(prefix: dict) -> dict:
+                config = {"root": directory, "prefix": prefix, "plan_file": runners.PERSISTED_PLAN_FILE,
+                          "plan_identity": list(runners.PERSISTED_PLAN_IDENTITY)}
+                completed = subprocess.run([sys.executable, "-I", "-c", runners.INVENTORY_SCRIPT, json.dumps(config)],
+                                           capture_output=True, text=True, check=True)
+                return json.loads(completed.stdout)
+
+            before = inventory({})
+            self.assertIsNone(runners.persisted_snapshot_problem(before))
+            self.assertEqual(before["audit.jsonl"]["records"], 2)
+            snapshot = {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE, "mount_source": directory,
+                        "entries": before}
+            sizes = {path: entry["size"] for path, entry in before.items() if entry["kind"] == "file"}
+
+            with open(root / "audit.jsonl", "ab") as handle:
+                handle.write(b'{"event":"later"}\n')
+            (plans / ("a" * 32 + ".json")).write_text(json.dumps({**plan, "status": "superseded"}))
+            self.assertIsNone(runners.persisted_data_problem(snapshot, inventory(sizes), directory))
+
+            (plans / ("a" * 32 + ".json")).write_text("{truncated")
+            after = inventory(sizes)
+            self.assertIn("error", after[f"governance/change_plans/{'a' * 32}.json"])
+            self.assertEqual(runners.persisted_data_problem(snapshot, after, directory), "persisted_entry_unreadable")
+
+            (root / "audit.jsonl").write_bytes(b'{"event":"replaced"}\n')
+            (plans / ("a" * 32 + ".json")).write_text(json.dumps(plan))
+            self.assertEqual(runners.persisted_data_problem(snapshot, inventory(sizes), directory),
+                             "persisted_audit_not_preserved")
+
+    def test_snapshot_command_fails_closed_and_records_only_the_previous_release(self) -> None:
+        def run(image=runners.ROLLBACK_ENGINEERING_IMAGE, mount=MOUNT, data_dir=MOUNT, entries=None, error=None):
+            def inventory(_container, _prefix):
+                if error:
+                    raise error
+                return entries if entries is not None else previous_release_entries()
+
+            with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+                args = argparse.Namespace(engineering_container="engineering-admission-sbs", data_dir=data_dir,
+                                          output=str(Path(directory) / "snapshot.json"))
+                code = runners.command_persisted_snapshot(args, inventory=inventory, mount=lambda _c: mount,
+                                                          image=lambda _c: image)
+                return code, json.loads(Path(args.output).read_text())
+
+        code, value = run()
+        self.assertEqual((code, value["status"], value["mount_source"]), (0, "passed", MOUNT))
+        self.assertEqual(value["entries"], previous_release_entries())
+        self.assertEqual(run(image=runners.LANE_ENGINEERING_IMAGE)[1]["reason"], "persisted_snapshot_not_previous_release")
+        self.assertEqual(run(mount=None)[1]["reason"], "persisted_data_mount_missing")
+        self.assertEqual(run(data_dir="/home/runner/work/_temp/fresh")[1]["reason"], "persisted_data_not_lane_data_dir")
+        self.assertEqual(run(entries={})[1]["reason"], "previous_release_data_unobserved")
+        code, value = run(error=subprocess.CalledProcessError(1, "docker"))
+        self.assertEqual((code, value["status"]), (1, "failed"))
+        self.assertTrue(value["reason"].startswith("observation_failed"))
+        self.assertNotIn("entries", value)
+
+    def test_gateway_runner_observes_the_restarted_container_against_the_snapshot(self) -> None:
+        async def session(*_args, **_kwargs):
+            return gateway_health("8.5.0", None, LANE_VERSION), [], None
+
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+            source = Path(directory) / "gw.json"
+            source.write_text(json.dumps(gateway_source("8.5.0", None)))
+            snapshot = Path(directory) / "snapshot.json"
+            snapshot.write_text(json.dumps(persisted_snapshot_ok()))
+
+            def args(**overrides):
+                values = dict(configuration="side_by_side", case=runners.ROLL_FORWARD_CASE, source=str(source),
+                              engineering_endpoint="http://127.0.0.1:18300/x/mcp", configured_url=LEGACY,
+                              upstream_endpoint=PEER_LEGACY, expected_engineering_version=LANE_VERSION,
+                              engineering_container="engineering-admission-sbs", rollback_identity=None,
+                              persisted_snapshot=str(snapshot), output=str(Path(directory) / "case.json"))
+                values.update(overrides)
+                return argparse.Namespace(**values)
+
+            seen = {}
+
+            def inventory(container, prefix):
+                seen.update(container=container, prefix=prefix)
+                return restarted_entries()
+
+            with mock.patch.object(runners, "container_image", return_value=runners.LANE_ENGINEERING_IMAGE), \
+                    mock.patch.object(runners, "container_inventory", side_effect=inventory), \
+                    mock.patch.object(runners, "container_data_mount", return_value=MOUNT):
+                self.assertEqual(runners.command_gateway_case(args(), session=session), 0)
+                self.assertEqual(seen["prefix"]["audit.jsonl"], len(AUDIT_BYTES))
+                self.assertEqual(runners.command_gateway_case(args(persisted_snapshot=None), session=session), 1)
+                value = json.loads(Path(args().output).read_text())
+                self.assertEqual((value["status"], value["reason"]), ("failed", "persisted_snapshot_missing"))
+                snapshot.unlink()
+                self.assertEqual(runners.command_gateway_case(args(), session=session), 1)
+                value = json.loads(Path(args().output).read_text())
+                self.assertEqual((value["status"], value["reason"]), ("failed", "persisted_snapshot_not_previous_release"))
+
+    def test_workflow_rolls_forward_on_the_beta6_data_without_a_reset(self) -> None:
+        steps = workflow_job()["steps"]
+        names = [step.get("name", "") for step in steps]
+        again = next(i for i, name in enumerate(names) if "stage A again" in name)
+        refusal = next(i for i, name in enumerate(names) if "previous release refuses 9.1" in name)
+        self.assertEqual(again, refusal + 1, "no step may run between the beta.6 stage and stage A again")
+        script = steps[again]["run"]
+        snap = script.index("persisted-snapshot")
+        self.assertLess(snap, script.index("start-peer"))
+        self.assertLess(snap, script.index("start-engineering"))
+        self.assertIn('--data-dir "$RUNNER_TEMP/admission-data-sbs"', script[snap:script.index("start-peer")])
+        self.assertIn('--persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json"', script)
+        sbs = [step["run"] for step in steps if "side_by_side" in str(step.get("if", ""))
+               and "start-engineering" in step.get("run", "")]
+        for run in sbs:
+            for match in re.finditer(r"--data-dir \"([^\"]+)\"", run):
+                self.assertEqual(match.group(1), "$RUNNER_TEMP/admission-data-sbs")
+        for step in steps[:again + 1]:
+            self.assertNotRegex(step.get("run", ""), r"rm[^\n]*admission-data")
 
 
 if __name__ == "__main__":
