@@ -863,7 +863,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 81)
+        self.assertEqual(health["registered_tool_count"], 82)  # HAMCP-290: + ha_get_hacs_info
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]

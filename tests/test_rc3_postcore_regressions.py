@@ -482,7 +482,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         static = registered_tools(get_registered_server())
         McpSdkToolRegistry(server).replace({name: static[name]
                                             for name in ENGINEERING_STATIC_TOOL_NAMES})
-        self.assertEqual(len(registered_tools(server)), 81)  # HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper
+        self.assertEqual(len(registered_tools(server)), 82)  # HAMCP-290: +1 ha_get_hacs_info; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(len(baseline), 109)  # HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper
@@ -491,8 +491,10 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
         self.assertEqual(len(registered_tools(server)), 104)  # HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1
+        # HAMCP-290: the native-owned ha_get_hacs_info is withheld throughout,
+        # so it joins the device-dependent reads (82 + 28 - 6 = 104).
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
-                         set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS))
+                         set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS) | {"ha_get_hacs_info"})
         result = json.loads(await registered_tools(server)["ha_get_state"].run(
             {"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])
