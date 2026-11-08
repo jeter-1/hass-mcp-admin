@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -173,3 +173,216 @@ async def make_proposal(
         plan_id=plan_id,
     )
     return proposal, reader
+
+
+# HAMCP-143: one synthetic boundary pair per publicly reachable compiler
+# limit.  Every case carries a private marker in its keys, paths or values so
+# tests can prove the refusal diagnostics never echo caller or dashboard data.
+PRIVATE_KEY = "synthetic_private_marker"
+PRIVATE_TEXT = "synthetic-private-text"
+
+
+@dataclass(frozen=True)
+class CompilerLimitCase:
+    constraint: str
+    stage: str
+    code: str
+    limit: int
+    observed: int | None
+    configuration: dict[str, Any]
+    over_operations: list[dict[str, Any]]
+    at_limit_operations: list[dict[str, Any]]
+    # None when the at-limit patch compiles; otherwise the different reviewed
+    # constraint that refuses it first (the tested bound itself is not hit).
+    at_limit_refusal: str | None = None
+    # The at-limit dashboard when the boundary is set by its size.
+    at_limit_configuration: dict[str, Any] | None = None
+
+    @property
+    def at_limit_config(self) -> dict[str, Any]:
+        if self.at_limit_configuration is None:
+            return self.configuration
+        return self.at_limit_configuration
+
+    def expected_details(self) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "reason": self.code,
+            "dashboard_error_code": self.code,
+            "constraint": self.constraint,
+            "stage": self.stage,
+            "limit": self.limit,
+        }
+        if self.observed is not None:
+            details["observed"] = self.observed
+        return details
+
+
+def _patch_op(
+    operation_id: str, kind: str, path: str, value: Any = ...
+) -> dict[str, Any]:
+    row: dict[str, Any] = {"operation_id": operation_id, "operation": kind, "path": path}
+    if value is not ...:
+        row["value"] = value
+    return row
+
+
+def _nested(depth: int) -> Any:
+    value: Any = PRIVATE_TEXT
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+def _nested_mapping(levels: int) -> dict[str, Any]:
+    root: dict[str, Any] = {}
+    current = root
+    for _ in range(levels):
+        current[PRIVATE_KEY] = {}
+        current = current[PRIVATE_KEY]
+    return root
+
+
+def _size(value: Any, *, ensure_ascii: bool = False) -> int:
+    return len(
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=ensure_ascii
+        ).encode("utf-8")
+    )
+
+
+def _padded_text(target_bytes: int) -> str:
+    """A JSON string whose canonical serialization is exactly target_bytes."""
+
+    return PRIVATE_TEXT + "x" * (target_bytes - 2 - len(PRIVATE_TEXT))
+
+
+def _patch_bytes_operations(target: int) -> list[dict[str, Any]]:
+    operations = [
+        _patch_op(f"bytes_{index}", "add", f"/{PRIVATE_KEY}_{index}", "")
+        for index in range(3)
+    ]
+    remaining = target - _size(operations)
+    for index, row in enumerate(operations):
+        share = remaining // 3 + (1 if index < remaining % 3 else 0)
+        row["value"] = (PRIVATE_TEXT + "x" * share)[:share] if share else ""
+    assert _size(operations) == target
+    return operations
+
+
+def _patch_node_operations(nodes: int) -> list[dict[str, Any]]:
+    # One list node plus, per operation, the row, three strings and a value
+    # list whose own node is counted with its items.
+    items = nodes - 1 - 3 * 5
+    shares = [items // 3 + (1 if index < items % 3 else 0) for index in range(3)]
+    return [
+        _patch_op(
+            f"nodes_{index}", "add", f"/{PRIVATE_KEY}_{index}",
+            [PRIVATE_TEXT] + [0] * (share - 1),
+        )
+        for index, share in enumerate(shares)
+    ]
+
+
+def _result_bytes_case(target: int) -> list[dict[str, Any]]:
+    base = {PRIVATE_KEY: _padded_text(39_000), "value": 0}
+    text = PRIVATE_TEXT
+    result = dict(base, value=text)
+    text += "x" * (target - _size(result, ensure_ascii=True))
+    assert _size(dict(base, value=text), ensure_ascii=True) == target
+    return [_patch_op("result_bytes", "replace", "/value", text)]
+
+
+def _growth_operations(growth: int) -> list[dict[str, Any]]:
+    base = {PRIVATE_KEY: 0}
+    text = "é" * 2_730
+    text += "x" * (growth - (_size({PRIVATE_KEY: text}, ensure_ascii=True) - _size(base)))
+    assert _size({PRIVATE_KEY: text}, ensure_ascii=True) - _size(base) == growth
+    return [_patch_op("growth", "replace", f"/{PRIVATE_KEY}", text)]
+
+
+def compiler_limit_cases() -> tuple[CompilerLimitCase, ...]:
+    invalid = "invalid_dashboard_patch"
+    failed = "dashboard_patch_compilation_failed"
+    pointer_parent = "/" + "/".join([PRIVATE_KEY] * 31)
+    return (
+        CompilerLimitCase(
+            "operation_count", "validation", invalid, 16, 17, {},
+            [_patch_op(f"op_{i}", "add", f"/{PRIVATE_KEY}_{i}", PRIVATE_TEXT) for i in range(17)],
+            [_patch_op(f"op_{i}", "add", f"/{PRIVATE_KEY}_{i}", PRIVATE_TEXT) for i in range(16)],
+        ),
+        CompilerLimitCase(
+            "pointer_length", "validation", invalid, 1_024, 1_025, {},
+            [_patch_op("long", "add", "/" + PRIVATE_KEY + "x" * (1_024 - len(PRIVATE_KEY)), 0)],
+            [_patch_op("long", "add", "/" + PRIVATE_KEY + "x" * (1_023 - len(PRIVATE_KEY)), 0)],
+        ),
+        CompilerLimitCase(
+            "pointer_depth", "validation", invalid, 32, 33, _nested_mapping(32),
+            [_patch_op("deep", "add", pointer_parent + f"/{PRIVATE_KEY}/leaf", PRIVATE_TEXT)],
+            [_patch_op("deep", "add", pointer_parent + "/leaf", PRIVATE_TEXT)],
+        ),
+        CompilerLimitCase(
+            "value_json_depth", "validation", invalid, 48, None, {},
+            [_patch_op("deep_value", "add", f"/{PRIVATE_KEY}", _nested(49))],
+            [_patch_op("deep_value", "add", f"/{PRIVATE_KEY}", _nested(48))],
+            at_limit_refusal="patch_json_depth",
+        ),
+        CompilerLimitCase(
+            "value_json_nodes", "validation", invalid, 10_000, None, {},
+            [_patch_op("wide_value", "add", f"/{PRIVATE_KEY}", [PRIVATE_TEXT] + [0] * 9_999)],
+            [_patch_op("wide_value", "add", f"/{PRIVATE_KEY}", [PRIVATE_TEXT] + [0] * 9_998)],
+            at_limit_refusal="operation_value_bytes",
+        ),
+        CompilerLimitCase(
+            "operation_value_bytes", "validation", invalid, 8_192, 8_193, {},
+            [_patch_op("large_value", "add", f"/{PRIVATE_KEY}", _padded_text(8_193))],
+            [_patch_op("large_value", "add", f"/{PRIVATE_KEY}", _padded_text(8_192))],
+        ),
+        CompilerLimitCase(
+            "patch_json_depth", "validation", invalid, 48, None, {},
+            [_patch_op("deep_patch", "add", f"/{PRIVATE_KEY}", _nested(47))],
+            [_patch_op("deep_patch", "add", f"/{PRIVATE_KEY}", _nested(46))],
+        ),
+        CompilerLimitCase(
+            "patch_json_nodes", "validation", invalid, 10_000, None, {},
+            _patch_node_operations(10_001),
+            _patch_node_operations(10_000),
+            at_limit_refusal="patch_bytes",
+        ),
+        CompilerLimitCase(
+            "patch_bytes", "validation", invalid, 16_384, 16_385, {},
+            _patch_bytes_operations(16_385),
+            _patch_bytes_operations(16_384),
+        ),
+        CompilerLimitCase(
+            "traversal_nodes", "compilation", failed, 10_000, None,
+            {PRIVATE_KEY: [0] * 9_998},
+            [_patch_op("broad", "replace", f"/{PRIVATE_KEY}", PRIVATE_TEXT)],
+            [_patch_op("broad", "replace", f"/{PRIVATE_KEY}", PRIVATE_TEXT)],
+            at_limit_refusal="semantic_leaf_changes",
+            at_limit_configuration={PRIVATE_KEY: [0] * 9_997},
+        ),
+        CompilerLimitCase(
+            "result_json_nodes", "compilation", invalid, 10_000, None,
+            {PRIVATE_KEY: [0] * 9_998},
+            [_patch_op("insert", "add", f"/{PRIVATE_KEY}/0", 0)],
+            [_patch_op("insert", "add", f"/{PRIVATE_KEY}/0", 0)],
+            at_limit_configuration={PRIVATE_KEY: [0] * 9_997},
+        ),
+        CompilerLimitCase(
+            "result_json_depth", "compilation", invalid, 48, None, _nested_mapping(10),
+            [_patch_op("deep_result", "add", "/" + "/".join([PRIVATE_KEY] * 10) + "/leaf", _nested(38))],
+            [_patch_op("deep_result", "add", "/" + "/".join([PRIVATE_KEY] * 10) + "/leaf", _nested(37))],
+        ),
+        CompilerLimitCase(
+            "result_config_bytes", "compilation", failed, 40_000, 40_001,
+            {PRIVATE_KEY: _padded_text(39_000), "value": 0},
+            _result_bytes_case(40_001),
+            _result_bytes_case(40_000),
+        ),
+        CompilerLimitCase(
+            "config_growth_bytes", "compilation", failed, 16_384, 16_385,
+            {PRIVATE_KEY: 0},
+            _growth_operations(16_385),
+            _growth_operations(16_384),
+        ),
+    )

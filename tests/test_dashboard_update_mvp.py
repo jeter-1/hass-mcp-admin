@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from f3_dashboard_support import (  # noqa: E402
+    PRIVATE_KEY,
+    PRIVATE_TEXT,
+    compiler_limit_cases,
     home_dashboard_patch_operations,
     load_home_dashboard,
     make_preread,
@@ -824,6 +827,94 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.repository.list(), [])
         self.assertEqual(self.service.task_repository.list(), [])
         self.assertEqual(self.dashboard.write_count, 0)
+
+    async def _assert_refused_without_work(self, case, configuration, operations):
+        self.dashboard.configuration = deepcopy(configuration)
+        self.dashboard.preread_count = 0
+        plans = self.repository.list()
+        tasks = self.service.task_repository.list()
+        writes = self.dashboard.write_count
+        audit = self.root / "audit.jsonl"
+        audit_before = audit.read_text() if audit.exists() else ""
+        with self.assertRaises(GovernanceError) as caught:
+            await self.service.create_dashboard_update_plan(
+                title="Synthetic limit proposal", description="Offline refusal",
+                url_path="main-operations", expiration_minutes=30,
+                patch_operations=deepcopy(operations),
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        self.assertEqual(self.repository.list(), plans)
+        self.assertEqual(self.service.task_repository.list(), tasks)
+        self.assertEqual(self.dashboard.preread_count, 1)
+        self.assertEqual(self.dashboard.write_count, writes)
+        self.assertEqual(self.dashboard.configuration, configuration)
+        audit_after = audit.read_text() if audit.exists() else ""
+        self.assertTrue(audit_after.startswith(audit_before))
+        public = json.dumps(caught.exception.details) + audit_after[len(audit_before):]
+        self.assertNotIn(PRIVATE_KEY, public)
+        self.assertNotIn(PRIVATE_TEXT, public)
+        return caught.exception.details
+
+    async def test_every_compiler_limit_refusal_is_named_without_creating_work(self):
+        # HAMCP-143: direct service callers (the MCP input schema already
+        # bounds operation count and path length earlier) receive the
+        # reviewed constraint, stage and counts under the unchanged codes.
+        self.dashboard.version = "8.5.0"
+        for case in compiler_limit_cases():
+            with self.subTest(constraint=case.constraint):
+                self.assertEqual(self.repository.list(), [])
+                self.assertEqual(self.dashboard.best_practice_count, 0)
+                self.assertEqual(self.dashboard.write_count, 0)
+                details = await self._assert_refused_without_work(
+                    case, case.configuration, case.over_operations
+                )
+                self.assertEqual(details, case.expected_details())
+                self.assertNotIn("/", json.dumps(details))
+                self.assertEqual(self.dashboard.best_practice_count, 0)
+                self.assertEqual(self.dashboard.write_count, 0)
+                self.assertIsNone(self.dashboard.last_write)
+
+    async def test_every_compiler_limit_boundary_passes_the_compiler(self):
+        self.dashboard.version = "8.5.0"
+        for case in compiler_limit_cases():
+            with self.subTest(constraint=case.constraint):
+                if case.at_limit_refusal is not None:
+                    details = await self._assert_refused_without_work(
+                        case, case.at_limit_config, case.at_limit_operations
+                    )
+                    self.assertEqual(details["constraint"], case.at_limit_refusal)
+                    continue
+                self.dashboard.configuration = deepcopy(case.at_limit_config)
+                self.dashboard.preread_count = 0
+                try:
+                    created = await self.service.create_dashboard_update_plan(
+                        title="Synthetic boundary proposal", description="Offline boundary",
+                        url_path="main-operations", expiration_minutes=30,
+                        patch_operations=deepcopy(case.at_limit_operations),
+                    )
+                except GovernanceError as exc:
+                    # A later, separately bounded planning stage may refuse a
+                    # boundary-sized proposal; the compiler limit itself held.
+                    self.assertNotEqual(exc.details.get("constraint"), case.constraint)
+                    self.assertEqual(self.dashboard.write_count, 0)
+                    continue
+                self.assertEqual(created["status"], "awaiting_approval")
+                self.assertEqual(self.dashboard.write_count, 0)
+                self.assertEqual(self.dashboard.configuration, case.at_limit_config)
+
+    async def test_non_limit_patch_validation_keeps_legacy_details(self):
+        cases = (
+            [],
+            [{"operation_id": "extra", "operation": "add", "path": "/x", "value": 1,
+              "synthetic_private_marker": 1}],
+            [{"operation_id": "a", "operation": "add", "path": "synthetic-private-text"}],
+        )
+        for operations in cases:
+            with self.subTest(operations=operations):
+                details = await self._assert_refused_without_work(
+                    None, {"title": "Before", "views": []}, operations
+                )
+                self.assertEqual(details, {"reason": "invalid_dashboard_patch"})
 
     async def test_disclosed_consequence_classes_remain_owner_actionable(self):
         cases = (

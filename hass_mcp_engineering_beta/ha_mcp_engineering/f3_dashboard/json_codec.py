@@ -9,7 +9,7 @@ import math
 from typing import Any
 
 from .constants import MAX_JSON_DEPTH, MAX_JSON_NODES
-from .errors import PatchValidationError
+from .errors import PatchValidationError, json_bound_error
 
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
@@ -29,9 +29,13 @@ def validate_json_value(
         current, depth = stack.pop()
         remaining -= 1
         if remaining < 0:
-            raise PatchValidationError("JSON node limit exceeded")
+            raise json_bound_error(
+                "JSON node limit exceeded", bound="nodes", limit=max_nodes
+            )
         if depth > max_depth:
-            raise PatchValidationError("JSON depth limit exceeded")
+            raise json_bound_error(
+                "JSON depth limit exceeded", bound="depth", limit=max_depth
+            )
         if current is None or isinstance(current, (str, bool)):
             continue
         if isinstance(current, int) and not isinstance(current, bool):
