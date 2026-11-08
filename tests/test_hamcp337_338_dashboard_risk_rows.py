@@ -384,6 +384,13 @@ class EntitiesRowClassificationTests(unittest.TestCase):
             {"type": "weblink", "name": "Synthetic link", "url": "https://example.invalid"},
             {"type": "attribute", "entity": "light.synthetic_row", "attribute": "brightness"},
             {"type": "simple-entity", "entity": "switch.synthetic_row"},
+            {"type": "sensor-entity", "entity": "switch.synthetic_row"},
+            {"type": "text", "name": "Synthetic text", "text": "Synthetic"},
+            {"type": "button", "entity": "fan.synthetic_row"},
+            {"type": "buttons", "entities": ["fan.synthetic_row"]},
+            {"type": "lock-entity", "entity": "no_domain_separator"},
+            {"type": "toggle-entity", "entity": "fan.synthetic_row"},
+            {"type": "conditional", "row": {"type": "divider"}},
             {"type": "custom:synthetic-row", "entity": "light.synthetic_row"},
             {"name": "Entity missing"},
             {"entity": None},
@@ -485,6 +492,358 @@ class EntitiesRowClassificationTests(unittest.TestCase):
                 (finding,) = self.changed(risk)
                 self.assertIs(finding.category, RiskCategory.HIGH_CONSEQUENCE)
                 self.assertEqual(finding.path, "/views/0/cards/0/card/entities/0")
+
+
+TYPED_ROWS = (
+    ("lock-entity", LOCK, "entity_row_lock_control"),
+    ("cover-entity", "cover.synthetic_garage", "entity_row_cover_control"),
+    ("toggle-entity", LOCK, "entity_row_control_targets_high_consequence_domain"),
+    (
+        "toggle-entity",
+        "cover.synthetic_garage",
+        "entity_row_control_targets_high_consequence_domain",
+    ),
+    (
+        "toggle-entity",
+        "alarm_control_panel.synthetic_home",
+        "entity_row_control_targets_high_consequence_domain",
+    ),
+)
+
+
+class TypedNativeRowPlanningTests(_PlanOnlyHarness):
+    """HAMCP-337 F1: typed native lock and cover rows are high-consequence.
+
+    Before this correction (reviewed head fc88e858) every typed row was
+    skipped, so a ``lock-entity`` row planned standard_review/medium with
+    one ``entity_display_only`` finding.
+    """
+
+    async def test_typed_lock_and_cover_rows_plan_elevated_review(self):
+        for row_type, entity, reason in TYPED_ROWS:
+            for path in (f"{GLANCE_CARDS}/0", f"{GLANCE_CARDS}/-"):
+                with self.subTest(row_type=row_type, entity=entity, path=path):
+                    await self.asyncTearDown()
+                    await self.asyncSetUp()
+                    created, stored, update = await self.plan(
+                        background_dashboard(0),
+                        [
+                            {
+                                "operation_id": "add-typed-row",
+                                "operation": "add",
+                                "path": path,
+                                "value": {
+                                    "type": "entities",
+                                    "entities": [
+                                        {"type": row_type, "entity": entity}
+                                    ],
+                                },
+                            }
+                        ],
+                    )
+                    row_path = f"{GLANCE_CARDS}/0/entities/0"
+                    self.assertEqual(
+                        self.changed_at(update, row_path),
+                        {"high_consequence_action"},
+                    )
+                    (finding,) = self.changed(update)
+                    self.assertEqual(finding["reason_code"], reason)
+                    self.assertEqual(
+                        update["risk"]["high_consequence_action_count"], 1
+                    )
+                    self.assert_elevated(created, stored, update)
+                    if not path.endswith("/-"):
+                        self.assertEqual(
+                            self.flags(update), {"high_consequence_action"}
+                        )
+
+
+class NativeControlShapeTests(unittest.TestCase):
+    """HAMCP-337 F1: every native shape that renders a lock, cover or alarm
+    control without an action key is classified like a tile toggle."""
+
+    @staticmethod
+    def changed(risk):
+        return [item for item in risk.findings if item.introduced_or_changed]
+
+    def card_risk(self, card: dict):
+        return analyze_dashboard_risk(
+            {"views": [{"cards": []}]}, {"views": [{"cards": [card]}]}
+        )
+
+    def assert_single(self, card: dict, path: str, category, reason: str):
+        risk = self.card_risk(card)
+        self.assertEqual(
+            [(item.path, item.category, item.reason_code) for item in self.changed(risk)],
+            [(path, category, reason)],
+        )
+        self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+        self.assertFalse(risk.manual_review_required)
+        self.assertEqual(
+            risk.high_consequence_action_count,
+            1 if category is RiskCategory.HIGH_CONSEQUENCE else 0,
+        )
+        return risk
+
+    def test_typed_row_matrix_for_the_owner_directed_domains(self):
+        cases = []
+        for domain, category in (
+            ("lock", RiskCategory.HIGH_CONSEQUENCE),
+            ("cover", RiskCategory.HIGH_CONSEQUENCE),
+            ("alarm_control_panel", RiskCategory.HIGH_CONSEQUENCE),
+            ("light", RiskCategory.TOGGLE),
+            ("switch", RiskCategory.TOGGLE),
+        ):
+            reason = (
+                "entity_row_control_targets_high_consequence_domain"
+                if category is RiskCategory.HIGH_CONSEQUENCE
+                else "entity_row_toggle_control"
+            )
+            for row_type in ("toggle-entity", None, ""):
+                cases.append((row_type, f"{domain}.synthetic_row", category, reason))
+            cases.append(
+                ("lock-entity", f"{domain}.synthetic_row",
+                 RiskCategory.HIGH_CONSEQUENCE, "entity_row_lock_control")
+            )
+            cases.append(
+                ("cover-entity", f"{domain}.synthetic_row",
+                 RiskCategory.HIGH_CONSEQUENCE, "entity_row_cover_control")
+            )
+        for row_type, entity, category, reason in cases:
+            row = {"type": row_type, "entity": entity}
+            with self.subTest(row=json.dumps(row)):
+                self.assert_single(
+                    {"type": "entities", "entities": [row]},
+                    "/views/0/cards/0/entities/0",
+                    category,
+                    reason,
+                )
+
+    def test_conditional_and_entity_filter_rows_are_classified(self):
+        conditional = {
+            "type": "conditional",
+            "conditions": [{"entity": "sun.sun", "state": "below_horizon"}],
+            "row": {"type": "lock-entity", "entity": LOCK},
+        }
+        self.assert_single(
+            {"type": "entities", "entities": [conditional]},
+            "/views/0/cards/0/entities/0/row",
+            RiskCategory.HIGH_CONSEQUENCE,
+            "entity_row_lock_control",
+        )
+        for inner in (None, {"title": "Filtered"}, {"type": "entities"}):
+            card = {
+                "type": "entity-filter",
+                "entities": [LOCK],
+                "conditions": [{"state": "unlocked"}],
+            }
+            if inner is not None:
+                card["card"] = inner
+            with self.subTest(card=json.dumps(card)):
+                self.assert_single(
+                    card,
+                    "/views/0/cards/0/entities/0",
+                    RiskCategory.HIGH_CONSEQUENCE,
+                    "entity_row_control_targets_high_consequence_domain",
+                )
+        risk = self.card_risk(
+            {"type": "entity-filter", "entities": [LOCK], "card": {"type": "glance"}}
+        )
+        self.assertFalse(
+            any(item.reason_code.startswith("entity_row_") for item in risk.findings)
+        )
+
+    def test_buttons_header_and_footer_toggle_every_chip(self):
+        for slot in ("header", "footer"):
+            for chip in (LOCK, {"entity": LOCK, "name": "Door"}):
+                card = {
+                    "type": "entities",
+                    "entities": [],
+                    slot: {"type": "buttons", "entities": [chip]},
+                }
+                with self.subTest(slot=slot, chip=json.dumps(chip)):
+                    self.assert_single(
+                        card,
+                        f"/views/0/cards/0/{slot}/entities/0",
+                        RiskCategory.HIGH_CONSEQUENCE,
+                        "header_footer_button_targets_high_consequence_domain",
+                    )
+        self.assert_single(
+            {
+                "type": "entity",
+                "entity": "sensor.synthetic_reading",
+                "footer": {"type": "buttons", "entities": ["light.synthetic"]},
+            },
+            "/views/0/cards/0/footer/entities/0",
+            RiskCategory.TOGGLE,
+            "header_footer_button_toggle_control",
+        )
+        # A chip with its own action is classified from that action, not as
+        # a default toggle.
+        risk = self.card_risk(
+            {
+                "type": "entities",
+                "entities": [],
+                "footer": {
+                    "type": "buttons",
+                    "entities": [
+                        {"entity": LOCK, "tap_action": {"action": "more-info"}}
+                    ],
+                },
+            }
+        )
+        self.assertNotIn(
+            RiskCategory.HIGH_CONSEQUENCE, {item.category for item in risk.findings}
+        )
+        self.assertIn(
+            ("/views/0/cards/0/footer/entities/0/tap_action", RiskCategory.MORE_INFO),
+            {(item.path, item.category) for item in self.changed(risk)},
+        )
+        # ``buttons`` outside a header/footer slot is not this shape.
+        risk = self.card_risk(
+            {"type": "entities", "entities": [], "other": {"type": "buttons", "entities": [LOCK]}}
+        )
+        self.assertEqual(self.changed(risk), [])
+
+    def test_toggle_group_card_targets_each_entity(self):
+        risk = self.card_risk(
+            {"type": "toggle-group", "entities": ["light.synthetic", LOCK]}
+        )
+        self.assertEqual(
+            [(item.path, item.category, item.reason_code) for item in self.changed(risk)],
+            [
+                ("/views/0/cards/0/entities/0", RiskCategory.TOGGLE,
+                 "toggle_group_toggle_control"),
+                ("/views/0/cards/0/entities/1", RiskCategory.HIGH_CONSEQUENCE,
+                 "toggle_group_targets_high_consequence_domain"),
+            ],
+        )
+        self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+
+    def test_area_controls_feature_is_classified_from_its_domains(self):
+        cases = (
+            (None, RiskCategory.HIGH_CONSEQUENCE),
+            (["cover-garage"], RiskCategory.HIGH_CONSEQUENCE),
+            (["light", {"entity_id": LOCK}], RiskCategory.HIGH_CONSEQUENCE),
+            ([{"entity_id": "alarm_control_panel.synthetic"}], RiskCategory.HIGH_CONSEQUENCE),
+            (["light", "switch"], RiskCategory.TOGGLE),
+        )
+        for controls, category in cases:
+            feature = {"type": "area-controls"}
+            if controls is not None:
+                feature["controls"] = controls
+            with self.subTest(controls=json.dumps(controls)):
+                self.assert_single(
+                    {"type": "area", "area": "synthetic_area", "features": [feature]},
+                    "/views/0/cards/0/features/0",
+                    category,
+                    "area_controls_feature_targets_high_consequence_domain"
+                    if category is RiskCategory.HIGH_CONSEQUENCE
+                    else "area_controls_feature_toggle_control",
+                )
+        risk = self.card_risk(
+            {
+                "type": "area",
+                "area": "synthetic_area",
+                "features": [{"type": "area-controls", "controls": ["fan"]}],
+            }
+        )
+        self.assertEqual(self.changed(risk), [])
+
+    def test_alarm_panel_card_renders_arm_and_disarm_controls(self):
+        risk = self.assert_single(
+            {"type": "alarm-panel", "entity": "alarm_control_panel.synthetic_home"},
+            "/views/0/cards/0/entity",
+            RiskCategory.HIGH_CONSEQUENCE,
+            "alarm_panel_card_arm_disarm_controls",
+        )
+        self.assertNotIn(
+            RiskCategory.DISPLAY_ONLY, {item.category for item in risk.findings}
+        )
+        # Other cards showing the same alarm entity stay display-only.
+        risk = self.card_risk(
+            {"type": "entity", "entity": "alarm_control_panel.synthetic_home"}
+        )
+        self.assertEqual(
+            [item.category for item in self.changed(risk)], [RiskCategory.DISPLAY_ONLY]
+        )
+
+    def test_service_rows_and_elements_are_classified_by_service(self):
+        for shape in (
+            {"type": "call-service", "name": "Unlock", "action": "lock.unlock",
+             "data": {"entity_id": LOCK}},
+            {"type": "call-service", "name": "Unlock", "service": "lock.unlock"},
+            {"type": "perform-action", "name": "Open", "action": "cover.open_cover"},
+        ):
+            key = "action" if "action" in shape else "service"
+            with self.subTest(shape=json.dumps(shape)):
+                self.assert_single(
+                    {"type": "entities", "entities": [shape]},
+                    f"/views/0/cards/0/entities/0/{key}",
+                    RiskCategory.HIGH_CONSEQUENCE,
+                    "service_is_high_consequence_action",
+                )
+        for element_type in ("service-button", "action-button"):
+            card = {
+                "type": "picture-elements",
+                "image": "/local/synthetic.png",
+                "elements": [
+                    {"type": element_type, "title": "Disarm",
+                     "action": "alarm_control_panel.alarm_disarm"}
+                ],
+            }
+            with self.subTest(element_type=element_type):
+                self.assert_single(
+                    card,
+                    "/views/0/cards/0/elements/0/action",
+                    RiskCategory.HIGH_CONSEQUENCE,
+                    "service_is_high_consequence_action",
+                )
+        self.assert_single(
+            {"type": "entities", "entities": [
+                {"type": "call-service", "name": "Ping", "action": "notify.synthetic"}
+            ]},
+            "/views/0/cards/0/entities/0/action",
+            RiskCategory.SERVICE_ACTION,
+            "frontend_service_action",
+        )
+
+    def test_tile_icon_gestures_are_action_keys(self):
+        for key in ("icon_tap_action", "icon_hold_action", "icon_double_tap_action"):
+            with self.subTest(key=key):
+                risk = self.card_risk(
+                    {"type": "tile", "entity": LOCK, key: {"action": "toggle"}}
+                )
+                self.assertIn(
+                    (
+                        f"/views/0/cards/0/{key}",
+                        RiskCategory.HIGH_CONSEQUENCE,
+                        "toggle_targets_high_consequence_domain",
+                    ),
+                    {
+                        (item.path, item.category, item.reason_code)
+                        for item in self.changed(risk)
+                    },
+                )
+                self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+                self.assertEqual(risk.high_consequence_action_count, 1)
+
+    def test_display_shapes_remain_display_only_negatives(self):
+        for card in (
+            {"type": "entities", "entities": [{"type": "simple-entity", "entity": LOCK}]},
+            {"type": "entities", "entities": [{"type": "attribute", "entity": LOCK,
+                                               "attribute": "battery"}]},
+            {"type": "entities", "entities": [{"type": "sensor-entity", "entity": LOCK}]},
+            {"type": "glance", "entities": [{"entity": LOCK}]},
+        ):
+            with self.subTest(card=json.dumps(card)):
+                risk = self.card_risk(card)
+                self.assertEqual(
+                    {item.category for item in self.changed(risk)},
+                    {RiskCategory.DISPLAY_ONLY},
+                )
+                self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
+                self.assertEqual(risk.high_consequence_action_count, 0)
 
 
 class E031LockTilePlanningTests(_PlanOnlyHarness):
@@ -783,6 +1142,45 @@ class RiskAnalysisRefusalTests(_PlanOnlyHarness):
         self.assert_refusal_creates_no_work()
         self.assertEqual(self.dashboard.configuration, original)
 
+    async def test_digit_only_mapping_key_is_not_echoed_as_an_index(self):
+        """HAMCP-337 F2: Codex's reproduction through real plan creation."""
+
+        rows = [
+            f"light.synthetic_lamp_{index}" for index in range(MAX_RISK_FINDINGS + 1)
+        ]
+        for container in ("cards", "entities", "views", "rows"):
+            for wrapper_key, expected in (
+                (container, f"{GLANCE_CARDS}/0"),
+                ("card", f"{GLANCE_CARDS}/0/card"),
+            ):
+                with self.subTest(container=container, wrapper_key=wrapper_key):
+                    await self.asyncTearDown()
+                    await self.asyncSetUp()
+                    inner = {"type": "entities", "entities": rows}
+                    wrapper = {
+                        "type": "custom:synthetic-wrapper",
+                        wrapper_key: (
+                            {"12345": inner}
+                            if wrapper_key == container
+                            else {container: {"12345": inner}}
+                        ),
+                    }
+                    original = background_dashboard(4)
+                    with self.assertRaises(GovernanceError) as caught:
+                        await self.create(original, insert_cards([wrapper]))
+                    details = caught.exception.details
+                    self.assertEqual(details["constraint"], "changed_risk_findings")
+                    self.assertEqual(details["observed"], MAX_RISK_FINDINGS + 1)
+                    self.assertEqual(details["card_path"], expected)
+                    self.assert_non_echoing(details)
+                    audit = self.root / "audit.jsonl"
+                    public = json.dumps(details) + (
+                        audit.read_text() if audit.exists() else ""
+                    )
+                    self.assertNotIn("12345", public)
+                    self.assert_refusal_creates_no_work()
+                    self.assertEqual(self.dashboard.configuration, original)
+
     async def test_review_bound_is_inclusive(self):
         rows = [f"light.synthetic_lamp_{index}" for index in range(MAX_RISK_FINDINGS)]
         created, stored, update = await self.plan(
@@ -840,31 +1238,96 @@ class RiskAnalysisRefusalTests(_PlanOnlyHarness):
 
 
 class StructuralCardPathTests(unittest.TestCase):
-    def test_card_path_keeps_only_structural_tokens(self):
+    """HAMCP-337 F2: the path walk proves each index is a list position."""
+
+    @staticmethod
+    def document() -> dict:
+        return {
+            "title": "Synthetic",
+            "views": [
+                {"cards": []},
+                {
+                    "cards": [
+                        {"type": "tile"},
+                        {
+                            "type": "conditional",
+                            "card": {"type": "entities", "entities": ["a", "b", "c", "d", "e"]},
+                        },
+                        {"type": "custom:synthetic", "light.synthetic_lamp": {"cards": [{}, {}]}},
+                        {"type": "custom:synthetic", "Synthetic Name": {}},
+                    ]
+                },
+            ],
+        }
+
+    def test_card_path_keeps_only_proven_list_positions(self):
+        document = self.document()
         cases = (
             ((), "/"),
             (("title",), "/"),
-            (("views", "7", "sections", "0", "cards", "3", "tap_action"),
-             "/views/7/sections/0/cards/3"),
-            (("views", "0", "cards", "1", "card", "entities", "4"),
-             "/views/0/cards/1/card/entities/4"),
-            (("views", "0", "cards", "2", "light.synthetic_lamp", "cards", "1"),
-             "/views/0/cards/2"),
-            (("views", "0", "cards", "Synthetic Name"), "/views/0"),
-            (("views", "0", "cards", "-1"), "/views/0"),
-            (("views", "0", "cards", "٣"), "/views/0"),
+            (("views", "1", "cards", "0", "tap_action"), "/views/1/cards/0"),
+            (("views", "1", "cards", "1", "card", "entities", "4"),
+             "/views/1/cards/1/card/entities/4"),
+            (("views", "1", "cards", "2", "light.synthetic_lamp", "cards", "1"),
+             "/views/1/cards/2"),
+            (("views", "1", "cards", "3", "Synthetic Name"), "/views/1/cards/3"),
+            (("views", "1", "cards", "-1"), "/views/1"),
+            (("views", "1", "cards", "٣"), "/views/1"),
+            (("views", "1", "cards", "01"), "/views/1"),
+            (("views", "1", "cards", "4"), "/views/1"),
             (("views", "123456"), "/"),
             (("synthetic_key", "views", "0"), "/"),
+            (("views",), "/"),
         )
         for tokens, expected in cases:
             with self.subTest(tokens=tokens):
-                self.assertEqual(_card_path(tokens), expected)
-                self.assertRegex(_card_path(tokens), STRUCTURAL)
+                self.assertEqual(_card_path(document, tokens), expected)
+                self.assertRegex(_card_path(document, tokens), STRUCTURAL)
+
+    def test_digit_only_mapping_keys_never_appear_as_indexes(self):
+        for container in (
+            "views", "sections", "cards", "badges",
+            "entities", "features", "elements", "rows",
+        ):
+            for key in ("12345", "0", "7", "00042"):
+                with self.subTest(container=container, key=key):
+                    document = {
+                        "views": [
+                            {"cards": [{"type": "custom:synthetic", container: {key: {}}}]}
+                        ]
+                    }
+                    tokens = ("views", "0", "cards", "0", container, key, "tap_action")
+                    self.assertEqual(_card_path(document, tokens), "/views/0/cards/0")
+                    root = {container: {key: {}}}
+                    self.assertEqual(_card_path(root, (container, key)), "/")
+
+    def test_wrappers_are_kept_only_for_object_values(self):
+        for wrapper in ("card", "row"):
+            for value, expected in (
+                ({"12345": {}}, f"/views/0/cards/0/{wrapper}"),
+                ([{}], "/views/0/cards/0"),
+                ("synthetic", "/views/0/cards/0"),
+            ):
+                with self.subTest(wrapper=wrapper, value=json.dumps(value)):
+                    document = {"views": [{"cards": [{wrapper: value}]}]}
+                    tokens = ("views", "0", "cards", "0", wrapper, "12345", "0")
+                    self.assertEqual(_card_path(document, tokens), expected)
+
+    def test_unicode_and_escaped_mapping_keys_stop_the_walk(self):
+        for key in ("~1", "a/b", "~0", "٣", "１２", "12\u0033", "12 ", " 12", ""):
+            with self.subTest(key=key):
+                document = {"views": [{"cards": {key: {"entities": [{}]}}}]}
+                tokens = ("views", "0", "cards", key, "entities", "0")
+                self.assertEqual(_card_path(document, tokens), "/views/0")
 
     def test_card_path_is_bounded(self):
-        tokens = ("cards", "99999") * 40
-        path = _card_path(tokens)
-        self.assertEqual(path, "/cards/99999" * 8)
+        document: dict = {}
+        cursor = document
+        for _ in range(40):
+            cursor["cards"] = [{} for _ in range(3)]
+            cursor = cursor["cards"][2]
+        path = _card_path(document, ("cards", "2") * 40)
+        self.assertEqual(path, "/cards/2" * 8)
         self.assertLessEqual(len(path), 160)
 
     def test_error_rejects_non_structural_card_path(self):

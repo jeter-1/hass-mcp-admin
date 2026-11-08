@@ -27,7 +27,17 @@ from .models import (
 )
 
 
-_ACTION_KEYS = frozenset({"tap_action", "hold_action", "double_tap_action"})
+# HAMCP-337 F1: the tile card's icon gestures are action keys too.
+_ACTION_KEYS = frozenset(
+    {
+        "tap_action",
+        "hold_action",
+        "double_tap_action",
+        "icon_tap_action",
+        "icon_hold_action",
+        "icon_double_tap_action",
+    }
+)
 _HIGH_ENTITY_DOMAINS = frozenset(
     {"lock", "cover", "alarm_control_panel", "garage_door", "valve"}
 )
@@ -58,16 +68,39 @@ _DESTRUCTIVE_ADMIN_SERVICES = frozenset(
     }
 )
 _TEMPLATE_MARKERS = ("{{", "{%", "${")
-# HAMCP-338 (owner direction 2026-11-08): an entities-card row without its
-# own row ``type`` renders a domain control.  Rows for these domains are
+# HAMCP-338 (owner direction 2026-11-08): a native control that the
+# frontend renders for an entity without any action configuration is
 # classified exactly like a toggle of the same entity on a tile, through
 # ``_domain_control_category``: lock, cover and alarm_control_panel are
-# high-consequence, light and switch are toggles.  Other domains, typed rows
-# (section, divider, weblink, buttons, custom and so on) and non-entity rows
-# are not classified here.
+# high-consequence, light and switch are toggles.  Other domains are not
+# classified here.
 _ENTITY_ROW_CONTROL_DOMAINS = frozenset(
     {"lock", "cover", "alarm_control_panel", "light", "switch"}
 )
+# HAMCP-337 F1: native row types, read at frontend 20261028.4 (commit
+# a67b691a, pinned by Core 2026.11.0).  An explicit row ``type`` takes
+# precedence over the domain default.  ``lock-entity`` and ``cover-entity``
+# always render lock and cover controls whatever the entity;
+# ``toggle-entity`` renders a toggle that reaches the domain's toggle
+# service.  Display rows (``simple-entity``, ``sensor-entity``,
+# ``attribute``, ``section``, ``divider``, ``weblink``, ``text``), ``button``
+# and ``buttons`` rows (which toggle only light/switch-class domains by
+# default), custom rows and other types are not classified here; any
+# explicit action they carry is classified through ``_ACTION_KEYS``.
+_ENTITY_ROW_TYPE_CONTROLS = {
+    "lock-entity": "entity_row_lock_control",
+    "cover-entity": "entity_row_cover_control",
+}
+_ENTITY_ROW_TOGGLE_TYPE = "toggle-entity"
+_CONDITIONAL_ROW_TYPE = "conditional"
+# Shapes whose own configuration names the service a tap performs: the
+# ``call-service``/``perform-action`` entities row and the picture-elements
+# ``service-button``/``action-button`` element.
+_SERVICE_CONTROL_TYPES = frozenset(
+    {"call-service", "perform-action", "service-button", "action-button"}
+)
+_HEADER_FOOTER_KEYS = frozenset({"header", "footer"})
+_AREA_CONTROLS_FEATURE = "area-controls"
 _STRUCTURAL_INDEX_MAX_DIGITS = 5
 _RISK_STAGE = "risk_analysis"
 
@@ -96,27 +129,42 @@ def _structural_index(token: str) -> bool:
     )
 
 
-def _card_path(tokens: tuple[str, ...]) -> str:
+def _card_path(document: Any, tokens: tuple[str, ...]) -> str:
     """Return the structural location of ``tokens`` without any data value.
 
-    Only fixed container tokens followed by an ASCII list index and fixed
-    single-card wrapper tokens are kept; the walk stops at the first other
-    token, so mapping keys, entity IDs and names are never included.
+    The walk follows ``tokens`` through ``document`` itself, so each kept
+    index is proven to be a list position rather than inferred from the
+    token's spelling.  Only a fixed container token whose value is a list,
+    followed by a canonical ASCII index of that list, and a fixed single-card
+    wrapper token whose value is an object are kept.  The walk stops at the
+    first other token, so mapping keys (including digit-only keys such as
+    ``"12345"``), entity IDs and names are never included (HAMCP-337 F2).
     """
 
     segments: list[str] = []
+    node = document
     index = 0
     while index < len(tokens) and len(segments) < MAX_STRUCTURAL_CARD_PATH_SEGMENTS:
         token = tokens[index]
-        if (
-            token in STRUCTURAL_CARD_CONTAINERS
-            and index + 1 < len(tokens)
-            and _structural_index(tokens[index + 1])
-        ):
-            segments.append(f"/{token}/{tokens[index + 1]}")
+        if not isinstance(node, dict) or token not in node:
+            break
+        child = node[token]
+        if token in STRUCTURAL_CARD_CONTAINERS:
+            if not isinstance(child, list) or index + 1 >= len(tokens):
+                break
+            position = tokens[index + 1]
+            if (
+                not _structural_index(position)
+                or str(int(position)) != position
+                or int(position) >= len(child)
+            ):
+                break
+            segments.append(f"/{token}/{position}")
+            node = child[int(position)]
             index += 2
-        elif token in STRUCTURAL_CARD_WRAPPERS:
+        elif token in STRUCTURAL_CARD_WRAPPERS and isinstance(child, dict):
             segments.append(f"/{token}")
+            node = child
             index += 1
         else:
             break
@@ -340,8 +388,71 @@ def _action_findings(
     return findings
 
 
-def _entity_row_findings(
-    card: dict[str, Any],
+def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
+    """Return the native control an entities-card row renders, if classified."""
+
+    if isinstance(row, str):
+        entity: Any = row
+        row_type: Any = None
+    elif isinstance(row, dict):
+        entity = row.get("entity")
+        row_type = row.get("type")
+    else:
+        return None
+    domain = _entity_domain(entity)
+    if domain is None:
+        return None
+    if row_type in _ENTITY_ROW_TYPE_CONTROLS:
+        return (
+            entity,
+            domain,
+            RiskCategory.HIGH_CONSEQUENCE,
+            _ENTITY_ROW_TYPE_CONTROLS[row_type],
+        )
+    if row_type in {None, "", _ENTITY_ROW_TOGGLE_TYPE}:
+        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+            return None
+        category = _domain_control_category(domain)
+        return (
+            entity,
+            domain,
+            category,
+            "entity_row_control_targets_high_consequence_domain"
+            if category is RiskCategory.HIGH_CONSEQUENCE
+            else "entity_row_toggle_control",
+        )
+    return None
+
+
+def _domain_reason(category: RiskCategory, shape: str) -> str:
+    return (
+        f"{shape}_targets_high_consequence_domain"
+        if category is RiskCategory.HIGH_CONSEQUENCE
+        else f"{shape}_toggle_control"
+    )
+
+
+def _row_containers(card: dict[str, Any]) -> list[Any]:
+    """Entities-card row lists rendered by ``card``."""
+
+    card_type = card.get("type")
+    rows = card.get("entities")
+    if not isinstance(rows, list):
+        return []
+    if card_type == "entities":
+        return rows
+    if card_type == "entity-filter":
+        # The entity-filter card renders an entities card unless its own
+        # ``card`` names another type.
+        inner = card.get("card")
+        inner_type = inner.get("type") if isinstance(inner, dict) else None
+        if inner is None or (isinstance(inner, dict) and inner_type in {None, "entities"}):
+            return rows
+    return []
+
+
+def _default_control_findings(
+    value: dict[str, Any],
     *,
     tokens: tuple[str, ...],
     custom_card: bool,
@@ -349,32 +460,45 @@ def _entity_row_findings(
     custom_card_configuration: Any,
     conditional_configuration: Any,
 ) -> tuple[list[RiskFinding], set[tuple[str, ...]]]:
-    """Classify the implicit control of each default entities-card row."""
+    """Classify the native controls ``value`` renders without action keys.
 
-    rows = card.get("entities")
-    if card.get("type") != "entities" or not isinstance(rows, list):
-        return [], set()
+    HAMCP-338 rows and HAMCP-337 F1 typed rows, conditional rows,
+    entity-filter rows, ``buttons`` header/footer chips, toggle-group cards,
+    area-controls features and the alarm-panel card.  Returns the findings
+    and the object locations already classified, which are therefore not
+    also reported as display-only entities.
+    """
+
     findings: list[RiskFinding] = []
-    classified_rows: set[tuple[str, ...]] = set()
-    for index, row in enumerate(rows):
-        if isinstance(row, str):
-            entity: Any = row
-        elif isinstance(row, dict) and "type" not in row:
-            entity = row.get("entity")
-        else:
-            continue
-        domain = _entity_domain(entity)
-        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
-            continue
-        row_tokens = (*tokens, "entities", str(index))
-        category = _domain_control_category(domain)
-        binding = engineering_sha256(
+    classified: set[tuple[str, ...]] = set()
+
+    def add(
+        category: RiskCategory,
+        location: tuple[str, ...],
+        domain: str | None,
+        reason: str,
+        binding: str,
+    ) -> None:
+        findings.append(
+            RiskFinding(
+                category,
+                _pointer(location),
+                None,
+                None,
+                domain,
+                False,
+                binding,
+                False,
+                reason,
+            )
+        )
+
+    def context_binding(model: str, **fields: Any) -> str:
+        return engineering_sha256(
             {
-                "model": "f3-dashboard-entity-row-semantic-binding-v1",
+                "model": model,
                 "data_role": "untrusted_data",
-                "card_type": "entities",
-                "complete_row": row,
-                "row_entity": entity,
+                **fields,
                 "custom_card_semantics_inherited": custom_card,
                 "conditional_semantics_inherited": conditional,
                 "custom_card_configuration": (
@@ -385,26 +509,174 @@ def _entity_row_findings(
                 ),
             }
         )
-        findings.append(
-            RiskFinding(
-                category,
-                _pointer(row_tokens),
-                None,
-                None,
-                domain,
-                False,
-                binding,
-                False,
-                (
-                    "entity_row_control_targets_high_consequence_domain"
-                    if category is RiskCategory.HIGH_CONSEQUENCE
-                    else "entity_row_toggle_control"
-                ),
-            )
+
+    # Entities-card rows, including a conditional row's wrapped ``row``.
+    for index, row in enumerate(_row_containers(value)):
+        location = (*tokens, "entities", str(index))
+        wrappers: list[Any] = []
+        while (
+            isinstance(row, dict)
+            and row.get("type") == _CONDITIONAL_ROW_TYPE
+            and isinstance(row.get("row"), dict)
+        ):
+            wrappers.append(row)
+            row = row["row"]
+            location = (*location, "row")
+        control = _row_control(row)
+        if control is None:
+            continue
+        entity, domain, category, reason = control
+        binding_fields: dict[str, Any] = {
+            "card_type": "entities",
+            "complete_row": row,
+            "row_entity": entity,
+        }
+        if wrappers or value.get("type") != "entities":
+            binding_fields["container_card_type"] = value.get("type")
+            binding_fields["conditional_rows"] = wrappers
+        add(
+            category,
+            location,
+            domain,
+            reason,
+            context_binding(
+                "f3-dashboard-entity-row-semantic-binding-v1", **binding_fields
+            ),
         )
         if isinstance(row, dict):
-            classified_rows.add(row_tokens)
-    return findings, classified_rows
+            classified.add(location)
+
+    # ``buttons`` header/footer: every chip toggles on tap by default, with
+    # no domain filter (hui-buttons-header-footer.ts).
+    if (
+        tokens
+        and tokens[-1] in _HEADER_FOOTER_KEYS
+        and value.get("type") == "buttons"
+        and isinstance(value.get("entities"), list)
+    ):
+        for index, chip in enumerate(value["entities"]):
+            if isinstance(chip, dict):
+                if any(key in chip for key in _ACTION_KEYS):
+                    continue
+                entity = chip.get("entity")
+            else:
+                entity = chip
+            domain = _entity_domain(entity)
+            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+                continue
+            location = (*tokens, "entities", str(index))
+            category = _domain_control_category(domain)
+            add(
+                category,
+                location,
+                domain,
+                _domain_reason(category, "header_footer_button"),
+                context_binding(
+                    "f3-dashboard-default-control-semantic-binding-v1",
+                    shape="buttons_header_footer",
+                    complete_control=chip,
+                    control_entity=entity,
+                ),
+            )
+            if isinstance(chip, dict):
+                classified.add(location)
+
+    # Toggle-group card: one tap toggles every listed entity.
+    if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
+        for index, entity in enumerate(value["entities"]):
+            domain = _entity_domain(entity)
+            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+                continue
+            category = _domain_control_category(domain)
+            add(
+                category,
+                (*tokens, "entities", str(index)),
+                domain,
+                _domain_reason(category, "toggle_group"),
+                context_binding(
+                    "f3-dashboard-default-control-semantic-binding-v1",
+                    shape="toggle_group",
+                    complete_control=value["entities"],
+                    control_entity=entity,
+                ),
+            )
+
+    # Area-controls feature: toggles whole domains of the area; without
+    # ``controls`` it shows every default domain, cover classes included.
+    features = value.get("features")
+    if isinstance(features, list):
+        for index, feature in enumerate(features):
+            if not (
+                isinstance(feature, dict)
+                and feature.get("type") == _AREA_CONTROLS_FEATURE
+            ):
+                continue
+            controls = feature.get("controls")
+            domains: set[str] = set()
+            if controls is None:
+                domains.add("cover")
+            elif isinstance(controls, list):
+                for control in controls:
+                    if isinstance(control, str):
+                        domains.add(control.split("-", 1)[0])
+                    elif isinstance(control, dict):
+                        entity_domain = _entity_domain(control.get("entity_id"))
+                        if entity_domain is not None:
+                            domains.add(entity_domain)
+            if domains & _HIGH_ENTITY_DOMAINS & _ENTITY_ROW_CONTROL_DOMAINS:
+                category = RiskCategory.HIGH_CONSEQUENCE
+            elif domains & _ENTITY_ROW_CONTROL_DOMAINS:
+                category = RiskCategory.TOGGLE
+            else:
+                continue
+            add(
+                category,
+                (*tokens, "features", str(index)),
+                None,
+                _domain_reason(category, "area_controls_feature"),
+                context_binding(
+                    "f3-dashboard-default-control-semantic-binding-v1",
+                    shape="area_controls_feature",
+                    complete_control=feature,
+                    control_entity=None,
+                ),
+            )
+
+    # Alarm-panel card: arm and disarm buttons are always rendered.
+    entity = value.get("entity")
+    if value.get("type") == "alarm-panel" and _entity_domain(entity) == "alarm_control_panel":
+        add(
+            RiskCategory.HIGH_CONSEQUENCE,
+            (*tokens, "entity"),
+            "alarm_control_panel",
+            "alarm_panel_card_arm_disarm_controls",
+            context_binding(
+                "f3-dashboard-default-control-semantic-binding-v1",
+                shape="alarm_panel_card",
+                complete_control={"entity": entity, "states": value.get("states")},
+                control_entity=entity,
+            ),
+        )
+        classified.add(tokens)
+    return findings, classified
+
+
+def _service_control_action(value: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    """The tap action of a shape whose configuration names its service."""
+
+    if value.get("type") not in _SERVICE_CONTROL_TYPES:
+        return None
+    key = "action" if "action" in value else "service" if "service" in value else None
+    if key is None:
+        return None
+    action: dict[str, Any] = {
+        "action": "perform-action",
+        "perform_action": value[key],
+    }
+    for name in ("target", "data", "service_data", "confirmation"):
+        if name in value:
+            action[name] = value[name]
+    return key, action
 
 
 def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
@@ -446,7 +718,7 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                 constraint="risk_traversal_nodes",
                 stage=_RISK_STAGE,
                 limit=MAX_JSON_NODES,
-                card_path=_card_path(tokens),
+                card_path=_card_path(configuration, tokens),
             )
         if len(tokens) > MAX_JSON_DEPTH:
             raise RiskAnalysisError(
@@ -454,7 +726,7 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                 constraint="risk_traversal_depth",
                 stage=_RISK_STAGE,
                 limit=MAX_JSON_DEPTH,
-                card_path=_card_path(tokens),
+                card_path=_card_path(configuration, tokens),
             )
         if isinstance(value, list):
             for index in range(len(value) - 1, -1, -1):
@@ -511,7 +783,23 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                 )
             )
 
-        row_findings, row_tokens = _entity_row_findings(
+        service_control = _service_control_action(value)
+        if service_control is not None:
+            service_key, service_action = service_control
+            findings.extend(
+                _action_findings(
+                    service_action,
+                    path=_pointer((*tokens, service_key)),
+                    card_entity=card_entity,
+                    card_type=card_type,
+                    custom_card=custom,
+                    conditional=conditional,
+                    custom_card_configuration=custom_configuration,
+                    conditional_configuration=conditional_configuration,
+                )
+            )
+
+        row_findings, row_tokens = _default_control_findings(
             value,
             tokens=tokens,
             custom_card=custom,
@@ -552,7 +840,7 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     "Dashboard risk binding was not calculated",
                     constraint="risk_semantic_binding",
                     stage=_RISK_STAGE,
-                    card_path=_card_path(tokens),
+                    card_path=_card_path(configuration, tokens),
                 )
             findings.append(
                 RiskFinding(
@@ -573,7 +861,7 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     "Dashboard risk binding was not calculated",
                     constraint="risk_semantic_binding",
                     stage=_RISK_STAGE,
-                    card_path=_card_path(tokens),
+                    card_path=_card_path(configuration, tokens),
                 )
             findings.append(
                 RiskFinding(
@@ -610,7 +898,8 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
             observed=len(findings),
             limit=MAX_RISK_EVIDENCE_FINDINGS,
             card_path=_card_path(
-                _pointer_tokens(findings[MAX_RISK_EVIDENCE_FINDINGS].path)
+                configuration,
+                _pointer_tokens(findings[MAX_RISK_EVIDENCE_FINDINGS].path),
             ),
         )
     return findings
@@ -649,9 +938,10 @@ def analyze_dashboard_risk(
     """Analyze configuration data without executing templates or custom code."""
 
     current_identities = {_identity(finding) for finding in _scan(current)}
+    proposed_configuration = proposed
     proposed = [
         replace(finding, introduced_or_changed=_identity(finding) not in current_identities)
-        for finding in _scan(proposed)
+        for finding in _scan(proposed_configuration)
     ]
     changed = [finding for finding in proposed if finding.introduced_or_changed]
     # HAMCP-337 (E031): the complete-review bound counts only the findings a
@@ -665,7 +955,10 @@ def analyze_dashboard_risk(
             stage=_RISK_STAGE,
             observed=len(changed),
             limit=MAX_RISK_FINDINGS,
-            card_path=_card_path(_pointer_tokens(changed[MAX_RISK_FINDINGS].path)),
+            card_path=_card_path(
+                proposed_configuration,
+                _pointer_tokens(changed[MAX_RISK_FINDINGS].path),
+            ),
         )
     manual_categories = {
         RiskCategory.OPAQUE_CUSTOM,
