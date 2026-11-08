@@ -3,7 +3,10 @@
 Status: **design only. Josh decisions of 2026-11-08 recorded (§15): the
 change path is switch-like ordinary typed control (`control_device_configuration`),
 not a plan. The Codex design review 2026-11-08 corrections are kept and
-reshaped where item 25 required it (§14). Remaining owner choices: §13.** This
+reshaped where item 25 required it (§14). Q8 (empty first-build safety
+trigger) and Q9 (compiled `(domain, platform, translation_key)` allowlist) are
+decided, and the first build is narrowed to three source-confirmed Matter
+target kinds (B14–B16, §4.1). Remaining owner choices: §13.2.** This
 document changes no runtime code, schema, tool registration, policy, workflow,
 signed registry, release declaration or version. It is the one new file in its
 pull request.
@@ -35,14 +38,21 @@ commit (ADR-021). In the text, `core:<path>:<lines>` means
 `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/<path>#L<lines>`.
 §10 lists the full links. Upstream integration examples (Tuya) show that a
 kind of entity exists at the pinned Core. They are not evidence about Josh's
-devices.
+devices. The Matter citations in §4.1 are different: they are the source of
+the descriptors the architect's registry read found on the household
+devices, and they fix each admitted `translation_key` and `entity_category`.
+The `tapo_control` citations are at its latest release, 7.2.13 (tag commit
+`6d2c8adb81f3551070ec62fd9590f26254df145a`), because the installed version
+is unknown (§4.1).
 
 Nothing here came from a live Home Assistant instance or a deployed MCP
-endpoint. No household device, entity or setting was probed by this design.
-The household targets in §4.1 come from the architect's read-only inventory
-recorded in the register (HAMCP-297, 2026-11-08) and Josh's item-1 decision;
-that inventory was keyword-based, so each target still needs registry
-confirmation (§4.1, §13).
+endpoint through this design. No household device, entity or setting was
+probed by it. The household targets in §4.1 come from the architect's
+read-only inventory and read-only registry read, both recorded in the
+register (HAMCP-297, 2026-11-08), and from Josh's decisions. The registry read
+gave each target's platform and integration descriptor but not its
+`translation_key` or `entity_category`; those come from integration source
+at the pinned versions (§4.1).
 
 ## 1. Register outcome and binding decisions
 
@@ -63,16 +73,19 @@ Register Outcome (HAMCP-297, verbatim):
 | B6 | Design document only, one new file, no runtime or protected change | Task prompt and 2.6.0 brief | Task constraint |
 | B7 | Mechanism keys on `entity_category == "config"` entities of typed domains | Task prompt | Task constraint, refined in §3.1 and §4.1 |
 | B8 | Device-configuration changes are **switch-like control, like `control_helper`**: a direct typed control with exact readback and undo, a chat confirmation only when safety-critical, **no approval panel and no plan**. `create_device_configuration_plan` is replaced. The signed profile stays additive | Josh, in session | **Josh decision (in-session 2026-11-08), item 25** |
-| B9 | First-build targets (E1): power-on behavior selects (`on`/`off`/`toggle`/`previous`) on 5 plugs (garage camera smart plug, master bedroom TV Eve, kitchen Eve, garage beer fridge Eve, network cabinet Eve); child-lock switches on 4 Eve plugs; Aqara back-porch light sensor sensitivity (`select`, and `number` 1..3; one stale unavailable duplicate exists); Tapo camera digital sensitivity `number` 1..100. **Not in the first build:** Tapo camera detection selects (`high`/`normal`/`low`/`off`), deferred until there is a rule for when turning detection off needs a safety confirmation. Live acceptance uses the master bedroom TV plug or the kitchen plug, **never** the beer fridge or network cabinet. Every target must be confirmed from the entity registry (`entity_category == "config"`) before build and acceptance | Architect's read-only inventory (register HAMCP-297, 2026-11-08) and Josh | **Josh decision (in-session 2026-11-08), item 1** |
+| B9 | First-build targets (E1): power-on behavior selects (`on`/`off`/`toggle`/`previous`) on 5 plugs (garage camera smart plug, master bedroom TV Eve, kitchen Eve, garage beer fridge Eve, network cabinet Eve); child-lock switches on 4 Eve plugs; Aqara back-porch light sensor sensitivity (`select`, and `number` 1..3; one stale unavailable duplicate exists); Tapo camera digital sensitivity `number` 1..100. **Not in the first build:** Tapo camera detection selects (`high`/`normal`/`low`/`off`), deferred until there is a rule for when turning detection off needs a safety confirmation. Live acceptance uses the master bedroom TV plug or the kitchen plug, **never** the beer fridge or network cabinet. Every target must be confirmed from the entity registry (`entity_category == "config"`) before build and acceptance | Architect's read-only inventory (register HAMCP-297, 2026-11-08) and Josh | **Josh decision (in-session 2026-11-08), item 1**. Historical target list: narrowed by B15 and B16 (the Tapo digital-sensitivity `number` and the Aqara sensitivity `select` are dropped); the acceptance restriction is unchanged |
 | B10 | One entity per change | Josh, in session | **Josh decision (in-session 2026-11-08), item 2** (Q5 option (a)) |
 | B11 | Power-on behavior, including on critical loads, is **disclosure only**; it does not need a safety-critical acknowledgement | Josh, in session | **Josh decision (in-session 2026-11-08), item 3** (Q6 option (a)) |
 | B12 | `control_power` keeps accepting config-category switches (for example child lock), serialized against this path by the shared entity lock | Josh, in session | **Josh decision (in-session 2026-11-08), item 4** (Q3 option (a)) |
 | B13 | Profile name `core.device_configuration_entity_operation` is accepted. The tool name `create_device_configuration_plan` is superseded by B8 | Josh, in session | **Josh decision (in-session 2026-11-08), item 5** (Q7) |
+| B14 | No safety confirmations in the first build. The `confirmation_required` mechanism ships with an **empty trigger**, and the build PR proves it end to end with a test-only trigger: `dispatch: no_dispatch`, `task_created: false`, no send; a later call with `acknowledge_safety_critical` dispatches; audit `safety_gate` / `safety_confirmation`; `external_approval: false` | Josh, in session | **Josh decision (in-session 2026-11-08)** (Q8 option (a)) |
+| B15 | The first build admits targets through a compiled **`(domain, platform, translation_key)` allowlist inside the signed contract**. Each `translation_key` is confirmed from integration source at the pinned Core (2026.11.0, commit `74cf5a49`) and at the pinned integration version. Any target with no `translation_key` is **dropped** from the first build | Josh, in session | **Josh decision (in-session 2026-11-08)** (Q9 option (a)) |
+| B16 | Follow-up after the source read: (i) **drop the Aqara sensitivity `select`**, because its triple `(select, matter, sensitivity_level)` is shared with the smoke/CO alarm smoke-sensitivity select; (ii) **accept the breadth** of the two generic triples kept, `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)`, and disclose it (§4.1, §11) | Josh, in session | **Josh decision (in-session 2026-11-08)** (follow-up to Q9) |
 
 Everything else in this document is a design proposal, not a recorded decision.
 In particular the tool name `control_device_configuration` (§5.1) is this
 design's proposal, chosen to match the `control_*` family; it is not a Josh
-decision. Anything still unresolved is listed in §13 as pending Josh.
+decision. Anything still unresolved is listed in §13.2 as pending Josh.
 
 ## 2. Current state at the base
 
@@ -195,7 +208,7 @@ changes. The source is read-only here (protected path).
 | Selective `entity:` hold on unresolved dispatch; reconciliation to a terminal hold | `E/fan/locks.py:14-65` | Same (§5.12) |
 | HAMCP-192 typed hold release: read-only review, then an owner release recorded in an additive `hold-releases/<task>.json` sidecar (`typed-hold-release-v1`, ≤4096 bytes) with audit and dispatch `none`; Ingress page kinds `TYPED_HOLD_KINDS = ("fan", "power")` | `E/fan/service.py:40`, `:504-700`, `:766-806`; `E/approval_web.py:72`, `:805-840` | Same release path; kind `device_configuration` added (§5.12). Observed: `helper` is not in `TYPED_HOLD_KINDS` at `1c4c32b3` |
 | Signed-only Core authority (no legacy compiled fallback); preparation refuses when no core binding exists | `E/helper_value/service.py:41-60@1c4c32b3`; `E/helper_value/adapter.py:19-39@1c4c32b3`; `E/fan/authority.py:6-45` | Same (§5.3) |
-| Chat confirmation: `acknowledge_safety_critical`, `CONFIRMATION = "model_conveyed_chat_confirmation"`, `confirmation_required` payload with `dispatch: no_dispatch`, `task_created: false`, no `task_id`; gates `acknowledged` / `acknowledged_evidence_unavailable` / `not_safety_critical`; audit `safety_gate`, `safety_confirmation`, `external_approval: false` | `E/helper_value/safety.py:27-56`, `:158-223@1c4c32b3`; `E/helper_value/service.py:68-123@1c4c32b3`, `:182-211@1c4c32b3`; `E/tools/helper.py:42-43`, `:55-59@1c4c32b3` | Mechanism and argument reused verbatim; the trigger is §5.6 / §13 Q8 |
+| Chat confirmation: `acknowledge_safety_critical`, `CONFIRMATION = "model_conveyed_chat_confirmation"`, `confirmation_required` payload with `dispatch: no_dispatch`, `task_created: false`, no `task_id`; gates `acknowledged` / `acknowledged_evidence_unavailable` / `not_safety_critical`; audit `safety_gate`, `safety_confirmation`, `external_approval: false` | `E/helper_value/safety.py:27-56`, `:158-223@1c4c32b3`; `E/helper_value/service.py:68-123@1c4c32b3`, `:182-211@1c4c32b3`; `E/tools/helper.py:42-43`, `:55-59@1c4c32b3` | Mechanism and argument reused verbatim; the first-build trigger is empty (B14, §5.6) |
 | Status vocabulary `succeeded_verified`, `no_change`, `changed_unverified`, `verification_failed`, `confirmation_required`, `refused`, `provider_unavailable`, `in_progress` | `E/helper_value/service.py:133-147@1c4c32b3` | Same |
 | Policy: category `ordinary_runtime_action`, risk `physical_action`, `external_approval_required: False`, `direct_write_allowed: False`; Core independence entry; typed execution provider capability | `E/capabilities.py:223-239@1c4c32b3`; `E/ha_core_readmission/routes.py:184-186`, `:488-497@1c4c32b3`; `E/providers/routing.py:150-151@1c4c32b3` | Same class (§5.3, §7) |
 
@@ -344,7 +357,7 @@ numerically. §5.5.1 makes that the contract.
 
 | Domain / service | First slice? | Why (from source) |
 |---|---|---|
-| `select.select_option` | **Yes** | Absolute, idempotent target value; options are enumerated in state; readback is exact (`state == option`); the prior option, if still offered, is a valid undo target. Covers power-on behavior and enumerated sensitivity |
+| `select.select_option` | **Yes** | Absolute, idempotent target value; options are enumerated in state; readback is exact (`state == option`); the prior option, if still offered, is a valid undo target. Covers power-on behavior (and, in a later kind, enumerated sensitivity; none is admitted in the first build, §4.1) |
 | `select.select_first/last/next/previous` | **No, never sent** | Relative moves; the outcome depends on the current state and on option order |
 | `switch.turn_on` / `switch.turn_off` | **Yes** | Absolute, idempotent; readback is exact (`on`/`off`); the prior state is the undo target. Covers child/physical lock |
 | `switch.toggle` | **No, never sent** | Relative; the outcome depends on the current state |
@@ -358,46 +371,97 @@ The first slice is **`select.select_option`, `switch.turn_on`/`switch.turn_off`
 and `number.set_value` on registry-proven config-category device entities
 whose target kind is admitted for the first build (§4.1).**
 
-### 4.1 First-build targets (B9) and target-kind admission
+### 4.1 First-build targets (B9, B15, B16) and target-kind admission
 
-Josh's item-1 decision (B9) names the first-build targets:
+Josh's item-1 decision (B9) named the first-build targets from the
+keyword-based inventory. That list is kept below as history. Q9 (B15) and its
+follow-up (B16) narrow it to three source-confirmed Matter target kinds.
 
-| Use case (B3) | Domain | Household targets (from the keyword-based inventory) | Values seen in the inventory |
+#### Historical (B9, item 1): the inventory list
+
+| Use case (B3) | Domain | Household targets (from the keyword-based inventory) | Values seen in the inventory | Status after B15/B16 |
+|---|---|---|---|---|
+| Power-on behavior after outages | `select` | 5 plugs: garage camera smart plug, master bedroom TV Eve, kitchen Eve, garage beer fridge Eve, network cabinet Eve | `on`, `off`, `toggle`, `previous` | Admitted |
+| Child/physical lock | `switch` | 4 Eve plugs | `on`/`off` | Admitted |
+| Sensor tuning, enumerated | `select` | Aqara back-porch light sensor sensitivity | (not recorded) | **Dropped** (B16 (i)) |
+| Sensor tuning, numeric | `number` | Aqara back-porch light sensor sensitivity (1..3); Tapo camera digital sensitivity (1..100) | integer ranges | Aqara admitted; Tapo **dropped** (B15) |
+| **Excluded from the first build** | `select` | Tapo camera detection selects | `high`, `normal`, `low`, `off` | Still excluded |
+
+#### Registry confirmation (done 2026-11-08, read-only, by the architect)
+
+The architect's read-only registry read (register HAMCP-297, 2026-11-08)
+found the plugs and the Aqara sensor on platform **`matter`**, with the
+integration descriptors `MatterStartUpOnOff` (power-on selects), `EveChildLock`
+(child-lock switches), `AqaraOccupancySensorBooleanStateConfigurationCurrentSensitivityLevel`
+(the Aqara select) and `BooleanStateConfigurationCurrentSensitivityLevel` (the
+Aqara number). It found the camera numbers on platform **`tapo_control`** (a
+custom integration). That read did not expose `translation_key` or
+`entity_category`, so both come from integration source (B15):
+
+- Matter is in-tree, so its integration version is Core 2026.11.0 itself
+  (`core:components/matter/manifest.json`, requirement
+  `matter-python-client==1.5.5`). The keys below are read at commit
+  `74cf5a49`.
+- The installed `tapo_control` version is **unknown**: the registry read did
+  not expose it. The source read is at its latest release, 7.2.13 (tag commit
+  `6d2c8adb81f3551070ec62fd9590f26254df145a`, 2026-10-23). Nothing from it is
+  admitted, so the unknown version changes no admitted kind.
+
+#### Compiled allowlist (B15, B16): exactly three admitted triples
+
+| Triple `(domain, platform, translation_key)` | Household targets | Pinned source | Contract facts from source | Breadth beyond the household targets (disclosed) |
+|---|---|---|---|---|
+| `(select, matter, startup_on_off)` | Power-on behavior on the 5 plugs | `core:components/matter/select.py:426-450` (`MatterStartUpOnOff`); name "Power-on behavior" (`matter/strings.json:394-395`) | `entity_category=CONFIG`; options `on`/`off`/`toggle`/`previous` (a device `None` reads as `previous`); the only Matter select with this key | Not vendor- or device-type-gated: the one required attribute is `OnOff.StartUpOnOff` (`:447`), so any Matter endpoint that exposes it is admitted (for example Matter lights and wall switches as well as plugs). B16 (ii) did not cover this triple; §13.2 Q10 |
+| `(switch, matter, child_lock)` | Child lock on the 4 Eve plugs | `core:components/matter/switch.py:536-545` (`EveChildLock`); name "Child lock" (`matter/strings.json:737-738`) | `entity_category=CONFIG`; `MatterNumericSwitch` | Also admits `EveTrvChildLock` (`switch.py:472-490`: Eve vendor 4874, thermostat `KeypadLockout`), the Eve thermostat valve's keypad lock. Accepted and disclosed (B16 (ii)) |
+| `(number, matter, sensitivity_level)` | Aqara back-porch sensor sensitivity | `core:components/matter/number.py:539-563` (`BooleanStateConfigurationCurrentSensitivityLevel`); name "Sensitivity" (`matter/strings.json:283-284`) | `entity_category=CONFIG`; `MatterRangeNumber`, `native_min_value=1`, `native_step=1`, maximum from the device's `SupportedSensitivityLevels` attribute, `device_to_ha` is x+1, slider mode, no device class; the only Matter number with this key | Any Matter `BooleanStateConfiguration` device with the sensitivity-level feature (`featuremap_contains`, `:559-561`), for example water-leak, rain and contact sensors, not only Aqara. Accepted and disclosed (B16 (ii)). The range (1..3 in the inventory) is device-supplied, so it is confirmed from state and registry capabilities at runtime (§5.5.1), never compiled |
+
+#### Dropped from the first build
+
+Each refuses `device_configuration_target_kind_not_admitted` after the
+registry read, before any state read or send.
+
+| Target | Kind | Reason | Pinned source |
 |---|---|---|---|
-| Power-on behavior after outages | `select` | 5 plugs: garage camera smart plug, master bedroom TV Eve, kitchen Eve, garage beer fridge Eve, network cabinet Eve | `on`, `off`, `toggle`, `previous` |
-| Child/physical lock | `switch` | 4 Eve plugs | `on`/`off` |
-| Sensor tuning, enumerated | `select` | Aqara back-porch light sensor sensitivity | (not recorded) |
-| Sensor tuning, numeric | `number` | Aqara back-porch light sensor sensitivity (1..3); Tapo camera digital sensitivity (1..100) | integer ranges |
-| **Excluded from the first build** | `select` | Tapo camera detection selects | `high`, `normal`, `low`, `off` |
+| Aqara back-porch sensitivity `select` | `(select, matter, sensitivity_level)` | B16 (i). The triple is shared by `SmokeCOSmokeSensitivityLevel`, the smoke/CO alarm smoke-sensitivity select (`select.py:451-471`, not vendor-gated, enabled by default), and by three legacy vendor selects: the Aqara contact sensor (`:620-648`, vendor 4447 product 8194), the Aqara occupancy sensor (`:649-678`, vendor 4447 products 8197 and 8195, options `low`/`standard`/`high`) and Heiman (`:679-705`). Admitting the triple would make smoke-alarm sensitivity reachable. The vendor selects are disabled by default (`entity_registry_enabled_default=False`) and are kept "until HA 2026.11.0" for migration to the generic number (`:617-619`) | `core:components/matter/select.py` |
+| Tapo camera digital-sensitivity `number` (1..100) | `(number, tapo_control, null)` | B15: no `translation_key`. `TapoMotionDetectionDigitalSensitivity` sets none; the only `translation_key` in the whole integration is `light.py:99` (`nightlight`) | `tapo_control` 7.2.13 `number.py:290-345` |
+| Tapo camera detection selects | `(select, tapo_control, null)` | Excluded by B9 (no rule yet for when turning detection off needs a safety confirmation), and also no `translation_key` (B15) | `tapo_control` 7.2.13 |
+
+Adding Tapo later needs an upstream `translation_key`, or a new admission rule
+decided by Josh, and a new additive profile (B4).
+
+**Rejected alternative: descriptor-key admission.** Matter builds `unique_id`
+as `device_id-endpoint-<descriptor key>-cluster-attribute`
+(`core:components/matter/helpers.py:123-134`), so admission by descriptor key
+could separate `SmokeCOSmokeSensitivityLevel` from the Aqara select, or
+`EveChildLock` from `EveTrvChildLock`. It is not used: it admits on a parse of
+`unique_id` instead of the `translation_key` field B15 names, so it would
+change the Q9 contract. Only Josh can adopt it.
 
 Consequences for the contract:
 
-1. **Registry confirmation before build and acceptance (B9).** The inventory
-   was keyword-based, not category-based. Before the contract is frozen, each
-   target above must be confirmed from the entity registry: `entity_category
-   == "config"`, domain, `platform`, `translation_key`, `device_id`,
-   `disabled_by`, and for `number` the `min`/`max`/`step`, unit and
-   `original_device_class`. That is a separately scoped read-only step this
-   design does not take (§13, next human action). A target that is not
-   `config` category is not a target of this family (it may still be a
-   `control_power` target, B12).
-2. **The excluded kind must be unreachable, not merely unlisted.** Without a
-   mechanism, the generic proof of §5.5 would admit the Tapo detection selects
-   (config-category `select` on a device). The first build therefore needs a
-   target-kind admission rule. This design proposes a compiled allowlist of
-   target kinds `(domain, platform, translation_key)` built from the
-   registry-confirmed values of the targets above and embedded in the
-   profile's response contract (§6), so a kind outside it refuses
-   `device_configuration_target_kind_not_admitted` after the registry read and
-   before any state read or send. Adding a kind later (for example Tapo
-   detection once a safety rule exists) is a new additive profile (B4). The
-   rule is §13 Q9 (pending Josh). If any confirmed target has a `null`
-   `translation_key`, or if the Tapo digital-sensitivity `number` and the
-   excluded detection `select` cannot be told apart by an integration-owned
-   field, the build stops and reports instead of guessing a discriminator.
+1. **Registry confirmation at runtime and before acceptance.** Platform and
+   descriptor were confirmed from the registry, and `translation_key` and
+   `entity_category` from source, on 2026-11-08 (above). Every call still
+   proves `entity_category == "config"`, `platform` and `translation_key` from
+   `config/entity_registry/get` (§5.5 items 2 and 5). A household entity whose
+   registry entry disagrees with the cited source (for example a different
+   key under a later integration version) refuses and is not a target. For
+   `number` the `min`/`max`/`step`, unit and `original_device_class` are
+   runtime facts checked by §5.5.1. A target that is not `config` category is
+   not a target of this family (it may still be a `control_power` target,
+   B12).
+2. **Dropped kinds are unreachable, not merely unlisted.** The allowlist is
+   embedded in the profile's response contract (§6) as exactly the three
+   triples above, so smoke/CO smoke sensitivity, the legacy vendor sensitivity
+   selects, every `tapo_control` entity and every other config-category kind
+   refuse. The build checks the compiled list against the cited source at the
+   pinned versions (§9.1); if they disagree, the build stops and reports
+   instead of guessing a discriminator. Adding a kind is a new additive
+   profile (B4).
 3. **The stale duplicate.** The Aqara sensor has one stale `unavailable`
-   duplicate. It is refused by §5.5 item 6 (`device_configuration_entity_unavailable`,
-   reads only, no send). Test T3 (§8).
+   duplicate. If it is a `number` of the admitted kind, §5.5 item 6 refuses it
+   (`device_configuration_entity_unavailable`, reads only, no send); if it is
+   the dropped `select`, item 5 refuses it first. Test T3 (§8).
 4. **Power-on `toggle` is a value, not the switch service.** On the
    power-on selects, `toggle` is an option string sent through
    `select.select_option`; `switch.toggle` stays never-sent (§5.4).
@@ -542,8 +606,11 @@ gateway requires all of the following. Any failure refuses before dispatch.
 4. Entity `disabled_by` is `null` and the device's `disabled_by` is `null`.
    Otherwise refuse `device_configuration_target_disabled`.
 5. The entity domain is exactly `select`, `switch` or `number`, matching the
-   input pattern, and the target kind `(domain, platform, translation_key)`
-   is admitted (§4.1 item 2, §13 Q9). Otherwise refuse
+   input pattern, and the registry target kind `(domain, platform,
+   translation_key)` is exactly one of the three compiled triples
+   `(select, matter, startup_on_off)`, `(switch, matter, child_lock)` or
+   `(number, matter, sensitivity_level)` (B15, B16, §4.1). A `null`
+   `translation_key` never matches. Otherwise refuse
    `device_configuration_target_kind_not_admitted`.
 6. The state read returns the same `entity_id` and a **valid, restorable
    baseline**. Absence of `unavailable`/`unknown` is not enough:
@@ -618,9 +685,15 @@ before its first signature.
 8. **Undo.** The prior value is restorable only if it passes rules 4–5
    against the attributes current at undo preparation, preflight and send.
 
-E1 note: both household numeric targets (Aqara 1..3, Tapo 1..100) are integer
-ranges in the inventory. Whether their `step`, unit and device class satisfy
-rules 1–2 is part of the registry confirmation (§4.1 item 1).
+E1 note (updated for B15): the only admitted numeric kind is the Matter
+`(number, matter, sensitivity_level)` integer range 1..N, the Aqara
+back-porch sensor in the household (1..3 in the inventory). Its source sets
+`native_min_value=1` and `native_step=1`, takes the maximum from the device's
+`SupportedSensitivityLevels` and sets no device class
+(`core:components/matter/number.py:539-563`), so rule 2 is the identity case.
+`max` is device-supplied: rules 1 and 4 read it from state and registry
+capabilities on every call; nothing about the range is compiled. The Tapo
+1..100 number is dropped (no `translation_key`, §4.1).
 
 ### 5.6 Safety confirmation and risk disclosure
 
@@ -659,16 +732,24 @@ argument are `control_helper`'s, reused verbatim (§2.5):
   helper-specific and not reviewed for `select`/`switch`/`number` device
   entities.
 - **Tapo detection selects** (the one kind whose `off` value raised a safety
-  question) are not in the first build (B9).
+  question) are not in the first build (B9), and no `tapo_control` kind is
+  admitted (B15).
+- **Smoke/CO alarm smoke sensitivity** is unreachable: its triple
+  `(select, matter, sensitivity_level)` is not admitted (B16 (i), §4.1), so it
+  needs no first-build safety rule.
 
-No defensible first-build rule therefore marks any admitted target
-safety-critical. The trigger is §13 **Q8, pending Josh**, with this design's
-recommendation (a): ship the mechanism and argument verbatim with an empty
-first-build trigger (every result `safety_gate: not_safety_critical`; an
-unneeded `acknowledge_safety_critical=true` is accepted and recorded, as in
-`control_helper`), prove the confirmation path with a test-only trigger, and
-add a real trigger only with the kind that needs it (Tapo detection) in a
-later additive profile. This design does not choose the trigger.
+**Decided: the first-build trigger is empty (B14, Josh decision (in-session
+2026-11-08), Q8 option (a)).** The mechanism and argument ship verbatim; every
+first-build result is `safety_gate: not_safety_critical`, and an unneeded
+`acknowledge_safety_critical=true` is accepted and recorded, as in
+`control_helper`. The build PR must prove the mechanism end to end with a
+test-only trigger that is unreachable in a production build (§8 S1, S2, S7):
+the first call returns `confirmation_required` with `dispatch: no_dispatch`,
+`task_created: false` and no send; a later call with
+`acknowledge_safety_critical=true` dispatches; the receipt and audit carry
+`safety_gate` and `safety_confirmation`, with `external_approval: false`. A
+real trigger is added only with the kind that needs it (for example Tapo
+detection), in a later additive profile.
 
 **Disclosures on every result** (unchanged content; now in the control
 result instead of a plan):
@@ -694,7 +775,9 @@ result instead of a plan):
   when the sensor reports motion, presence, light or alarm conditions, and
   therefore what automations, lights or alarms do. Lower sensitivity or longer
   delays can miss events; higher sensitivity can cause false triggers. The
-  result shows the value, unit, `min`, `max` and `step` it relies on.
+  result shows the value, unit, `min`, `max` and `step` it relies on. The
+  admitted Matter sensitivity kind is not Aqara-specific: on a water-leak,
+  rain or contact sensor it changes when that sensor reports (§4.1).
 - **Feedback limits:** Home Assistant state is the integration's report, not
   physical observation (`physical_feedback_verified: false`). If the entity
   reports `assumed_state` (`core:helpers/entity.py:918`), readback proves only
@@ -705,6 +788,13 @@ result instead of a plan):
 
 These are disclosures, not refusals. Consequence evidence does not by itself
 block an exact, owner-authorized change (AGENTS.md product direction; ADR-022).
+
+#### Superseded (historical): Q8 as an open question
+
+The bda3ace0 revision left the trigger as §13 Q8, pending Josh, with
+options (a) empty trigger, (b) extend the `control_helper` dependency-evidence
+builder, (c) an owner-named set of exact targets. Superseded by B14 (option
+(a)).
 
 ### 5.7 Stale-state protection and concurrency
 
@@ -1066,10 +1156,11 @@ service, argument or adapter not named by a signed contract is not admitted):
 
 | Capability id (the signing plan #395 calls its profile id `core_device_configuration_entity_operation_v1`; the build derives the exact id) | New or changed | Core commands / contract added | Why | Fingerprint impact | Signing |
 |---|---|---|---|---|---|
-| `core.device_configuration_entity_operation` (B13) | **New, additive** (no predecessor; first signed for Core 2026.11.0) | Operation class: typed ordinary operation (as `TYPED_ORDINARY_OPERATION`, `profiles.py:425-462@1c4c32b3`), with an explicit `_contract` because the name does not fit the generator; adapter `compiled-core-device-configuration-entity-operation-v1`; provider boundary `direct_ha_api`, provider contract `direct-ha-exact-device-configuration-v1`; REST `GET /api/states/{entity_id}`; WS `config/entity_registry/get`; WS `config/device_registry/list`; WS `call_service` `select.select_option` (`option` only), `switch.turn_on`, `switch.turn_off` (no data), `number.set_value` (`value` only); single exact `entity_id` target; actions including `undo`; the admitted target-kind list (§4.1, Q9); dispatch at most once, recovery read-only with no redispatch; lock identity `entity:<entity_id>` exclusive (§5.7); the numeric exactness contract of §5.5.1 including the embedded 2026.11.0 `UNIT_CONVERTERS` set; restorable-baseline and identity-bound undo rules (§5.5, §5.11); predispatch checks such as `entity_registry_config_category_device_proof`, `device_configuration_target_kind_admitted`, `device_configuration_state_readback_exact`, `device_configuration_number_identity_conversion`; never-sent list per §5.4. **No F3 plan identity** | No signed contract names this adapter, these services on config entities, or registry-bound undo | Adds one new fingerprint, computed by `_contract()` (`profiles.py:109-145`) in the build PR; unknown until then. **No existing profile fingerprint changes** | Appended to the **one combined 2.6 `extend-capabilities` extension of the existing 2026.11.0 entry** (B5), with its Core 2026.11.0 lane receipt (§9.2) among that extension's `review_artifacts_sha256` (`scripts/prepare_core_release_registry.py:108-126`). No other release is extended, so 2026.10.x keeps refusing `device_configuration_core_authority_unavailable` (fail-closed) |
+| `core.device_configuration_entity_operation` (B13) | **New, additive** (no predecessor; first signed for Core 2026.11.0) | Operation class: typed ordinary operation (as `TYPED_ORDINARY_OPERATION`, `profiles.py:425-462@1c4c32b3`), with an explicit `_contract` because the name does not fit the generator; adapter `compiled-core-device-configuration-entity-operation-v1`; provider boundary `direct_ha_api`, provider contract `direct-ha-exact-device-configuration-v1`; REST `GET /api/states/{entity_id}`; WS `config/entity_registry/get`; WS `config/device_registry/list`; WS `call_service` `select.select_option` (`option` only), `switch.turn_on`, `switch.turn_off` (no data), `number.set_value` (`value` only); single exact `entity_id` target; actions including `undo`; the compiled target-kind allowlist of exactly three triples, `(select, matter, startup_on_off)`, `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)`, with `null` `translation_key` never admitted (B15, B16, §4.1); dispatch at most once, recovery read-only with no redispatch; lock identity `entity:<entity_id>` exclusive (§5.7); the numeric exactness contract of §5.5.1 including the embedded 2026.11.0 `UNIT_CONVERTERS` set; restorable-baseline and identity-bound undo rules (§5.5, §5.11); predispatch checks such as `entity_registry_config_category_device_proof`, `device_configuration_target_kind_admitted`, `device_configuration_state_readback_exact`, `device_configuration_number_identity_conversion`; never-sent list per §5.4. **No F3 plan identity** | No signed contract names this adapter, these services on config entities, or registry-bound undo | Adds one new fingerprint, computed by `_contract()` (`profiles.py:109-145`) in the build PR; unknown until then. **No existing profile fingerprint changes** | Appended to the **one combined 2.6 `extend-capabilities` extension of the existing 2026.11.0 entry** (B5), with its Core 2026.11.0 lane receipt (§9.2) among that extension's `review_artifacts_sha256` (`scripts/prepare_core_release_registry.py:108-126`). No other release is extended, so 2026.10.x keeps refusing `device_configuration_core_authority_unavailable` (fail-closed) |
 
-All numeric semantics and the target-kind list are in this profile before its
-first signature. There is no later "number" profile and no change to
+All numeric semantics and the three-triple allowlist are in this profile
+before its first signature; a change to the allowlist changes the
+fingerprint. There is no later "number" profile and no change to
 `core.typed_power_operation`.
 
 **Proving check (build PR and signing preparation):** every preexisting signed
@@ -1153,16 +1244,20 @@ unless the row says otherwise.
 | S4 | `acknowledge_safety_critical=true` with no reason | accepted, recorded, dispatches normally (`control_helper` behavior) |
 | S5 | No-op with the test-only trigger | `no_change`; gate not evaluated |
 | S6 | Undo with the test-only trigger | the same gate as a forward change |
+| S7 | End-to-end mechanism proof (B14): test-only trigger, first call with `acknowledge_safety_critical=false`, then the confirmed call | first call: `confirmation_required`, `dispatch: no_dispatch`, `task_created: false`, zero `call_service` sends; confirmed call: exactly one send, `succeeded_verified`; audit of both calls carries `safety_gate` and `safety_confirmation`, and `external_approval: false` |
+| S8 | Production build, every admitted kind (§4.1) | empty trigger: no `confirmation_required`, `safety_gate: not_safety_critical`; the test-only trigger is not constructible in a production build (asserted) |
 
 **Target admission tests (B9, §4.1).**
 
 | # | Scenario | Expected |
 |---|---|---|
-| T1 | Config-category `select` of the excluded Tapo detection kind | `device_configuration_target_kind_not_admitted`, registry read only, no state read, no send |
-| T2 | Config-category `select`/`switch`/`number` of any kind not in the admitted list | `device_configuration_target_kind_not_admitted` |
-| T3 | The stale `unavailable` Aqara duplicate | `device_configuration_entity_unavailable`, reads only |
-| T4 | Each admitted kind (power-on select, child-lock switch, Aqara select and number, Tapo digital-sensitivity number) with fixture values matching the registry confirmation | admitted and verified |
+| T1 | Config-category `select` of the excluded Tapo detection kind `(select, tapo_control, null)`; a Matter smoke/CO smoke-sensitivity select and the legacy Aqara sensitivity select, both `(select, matter, sensitivity_level)` | `device_configuration_target_kind_not_admitted`, registry reads only, no state read, no send |
+| T1a | Config-category `tapo_control` `number` with a `null` `translation_key` (the Tapo digital-sensitivity kind) | `device_configuration_target_kind_not_admitted`, registry reads only, no send |
+| T2 | Config-category `select`/`switch`/`number` of any kind not in the allowlist: an admitted key on another platform (for example `(switch, tuya, child_lock)`), an admitted platform with another key, and a `matter` entity with a `null` key | `device_configuration_target_kind_not_admitted` |
+| T3 | The stale `unavailable` Aqara duplicate | `device_configuration_entity_unavailable` if it is the admitted `number` kind, reads only; `device_configuration_target_kind_not_admitted` if it is the dropped `select` |
+| T4 | Each of the three admitted kinds with fixture values matching the cited source: `(select, matter, startup_on_off)` options `on`/`off`/`toggle`/`previous`; `(switch, matter, child_lock)`; `(number, matter, sensitivity_level)` with `min` 1, `step` 1 and a device-supplied `max` (3) | admitted and verified; also admitted, proving the disclosed breadth is real: an Eve TRV `child_lock` switch and a non-Aqara `sensitivity_level` number (for example a water-leak sensor) |
 | T5 | Power-on select value `toggle` | sent as `select.select_option` `{"option": "toggle"}`; `switch.toggle` never constructed |
+| T6 | Allowlist regression | the compiled list is exactly the three triples of §4.1, no more, and the build's source check against the pinned Core 2026.11.0 Matter files passes |
 
 **Concurrency tests (Codex D1).** The competing Engineering write never
 dispatches in any of these:
@@ -1211,10 +1306,12 @@ the new writer only.
 | P9 | New runtime loads existing power, fan and helper records and locks | hashes and behavior identical |
 
 **Success tests (required alongside the refusals).** `select` power-on
-behavior change verified and undone (verified); `select` enumerated
-sensitivity verified; `switch` child lock on to off verified and undone;
-`number` sensitivity (integer range) set and undone (verified); `number`
-duration timeout set and undone (verified) with no unit option present; an
+behavior change verified and undone (verified); `switch` child lock on to off
+verified and undone; `number` sensitivity (the Matter 1..N integer range) set
+and undone (verified); through the §9.2 test seam only (no such kind is
+admitted in the first build), a `select` enumerated sensitivity verified and
+a `number` duration timeout set and undone (verified) with no unit option
+present, proving the generic contract; an
 asynchronous readback that succeeds on a later poll; a compensating forward
 change after drift that is verified and not labelled as undo; an exact
 owner-authorized change whose disclosed consequence is high (critical-load
@@ -1232,7 +1329,9 @@ power-on, physical lock) still dispatches without confirmation or approval
 - The never-sent list is asserted against the gateway's payload builder.
 - The embedded `UNIT_CONVERTERS` device-class set equals the pinned Core
   2026.11.0 source.
-- The admitted target-kind list equals the registry-confirmed values (§4.1).
+- The compiled target-kind allowlist is exactly the three triples of §4.1
+  (B15, B16), and each `translation_key` and `entity_category` matches the
+  cited Matter source at Core 2026.11.0 commit `74cf5a49` (T6).
 
 ### 9.2 Core 2026.11.0 disposable-lane acceptance (prerequisite for signing)
 
@@ -1261,14 +1360,15 @@ disposable lane. No household access is needed for this.
   that is fixture setup, never the product path. Installing it in the lane
   needs a workflow overlay step (a protected `.github/workflows/` path that the
   build task must name).
-- **Target-kind residual (Q9).** The fixture's platform is not a household
-  platform, so under Q9 option (a) the signed allowlist does not admit it. The
-  lane then proves the generic mechanism with a build-time test seam that adds
-  the fixture kind (unreachable in a production build, asserted by a test),
-  and separately proves that the production list refuses the fixture kind (T2).
-  The admitted household kinds are proven only at deployed acceptance (§9.3).
-  Codex should judge whether that seam is acceptable lane evidence for
-  signing.
+- **Target-kind residual (Q9 test seam, kept after B15; a review question,
+  not an owner question).** The fixture's platform is not `matter`, so the
+  signed three-triple allowlist (B15) does not admit it. The lane then proves
+  the generic mechanism with a build-time test seam that adds the fixture
+  kind (unreachable in a production build, asserted by a test), and
+  separately proves that the production list refuses the fixture kind (T2).
+  The admitted Matter kinds are proven offline against their cited source
+  (T4, T6) and on real devices only at deployed acceptance (§9.3). Codex
+  should judge whether that seam is acceptable lane evidence for signing.
 - **Lane tests (Codex D4):** registered config entities across `select`,
   `switch` and `number` verified; wrong-domain, disabled, diagnostic,
   non-config, device-less and non-admitted-kind entities refused with no
@@ -1289,20 +1389,34 @@ disposable lane. No household access is needed for this.
 
 ### 9.3 Deployed acceptance (after a separately authorized release, signing and deployment; not part of this design)
 
-Preconditions: each target below is confirmed from the entity registry with
-`entity_category == "config"` and matches the admitted kind list (B9, §4.1).
+Preconditions: each acceptance entity below is checked from the entity
+registry: `entity_category == "config"` and a `(domain, platform,
+translation_key)` equal to one of the three admitted triples (B9, B15, §4.1).
+The 2026-11-08 read confirmed platform and descriptor only, so this check
+reads `translation_key` and `entity_category` from the registry itself.
 
 - **Power-on behavior `select` on the master bedroom TV Eve plug or the
   kitchen Eve plug only** (B9; never the garage beer fridge or network cabinet
   plug): change, readback `succeeded_verified`; then `undo`, readback
   `succeeded_verified` and "original change undone (verified)".
 - **Child-lock `switch` on the same TV or kitchen Eve plug:** the same.
-- **One sensor-tuning entity** (the Aqara back-porch light sensor `select` or
-  `number`, or a Tapo digital-sensitivity `number`): the same.
+- **Sensor-tuning `number`:** the Aqara back-porch sensor's Matter
+  `sensitivity_level` number (the only admitted sensor-tuning kind): the same.
 - Josh confirms the physical device behaves as reported. Home Assistant state is
   not physical proof.
 - Negative live checks: a non-config `switch`, a diagnostic entity and a Tapo
-  detection `select` are refused, with no dispatch in the audit log.
+  detection `select` are refused, with no dispatch in the audit log. The
+  dropped kinds are refused the same way: the Tapo digital-sensitivity
+  `number` (`device_configuration_target_kind_not_admitted`) and the Aqara
+  sensitivity `select` (`device_configuration_target_kind_not_admitted`, or
+  `device_configuration_target_disabled` if it is disabled, as the legacy
+  Matter vendor selects are by default).
+
+#### Superseded (historical): Tapo and Aqara-select acceptance
+
+The bda3ace0 revision allowed the sensor-tuning acceptance on the Aqara
+`select` or a Tapo digital-sensitivity `number`. Both kinds are dropped (B15,
+B16), so neither is an acceptance target.
 
 ## 10. Upstream citations (Core 2026.11.0, commit `74cf5a49`)
 
@@ -1326,6 +1440,24 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
 - [`components/update/entity.py` L128-L140](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/update/entity.py#L128-L140)
 - [`components/sensor/entity.py` L234-L238](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/sensor/entity.py#L234-L238)
 - Upstream examples only: [`components/tuya/switch.py` L100-L104](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/switch.py#L100-L104) (child lock); [`components/tuya/select.py` L83-L86](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/select.py#L83-L86) (relay status / power-on behavior), [L119-L122](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/select.py#L119-L122) (motion sensitivity); [`components/tuya/number.py` L161-L166](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/number.py#L161-L166) (sensitivity), [L227-L240](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/number.py#L227-L240) (arm/alarm delay, duration), [L577-L579](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/tuya/number.py#L577-L579) (bounds from device definition)
+- Household target kinds, Matter (in-tree, so pinned at Core 2026.11.0; B15, §4.1):
+  [`components/matter/manifest.json`](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/manifest.json) (`matter-python-client==1.5.5`);
+  [`components/matter/select.py` L426-L450](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L426-L450) (`MatterStartUpOnOff`, `startup_on_off`, admitted),
+  [L451-L471](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L451-L471) (`SmokeCOSmokeSensitivityLevel`, `sensitivity_level`),
+  [L617-L619](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L617-L619) (legacy vendor selects kept until 2026.11.0),
+  [L620-L648](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L620-L648) (Aqara contact legacy select),
+  [L649-L678](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L649-L678) (Aqara occupancy legacy select),
+  [L679-L705](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/select.py#L679-L705) (Heiman legacy select);
+  [`components/matter/switch.py` L536-L545](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/switch.py#L536-L545) (`EveChildLock`, `child_lock`, admitted),
+  [L472-L490](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/switch.py#L472-L490) (`EveTrvChildLock`, same key);
+  [`components/matter/number.py` L539-L563](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/number.py#L539-L563) (`BooleanStateConfigurationCurrentSensitivityLevel`, `sensitivity_level`, admitted);
+  [`components/matter/strings.json` L283-L285](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/strings.json#L283-L285) ("Sensitivity"),
+  [L394-L395](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/strings.json#L394-L395) ("Power-on behavior"),
+  [L737-L739](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/strings.json#L737-L739) ("Child lock");
+  [`components/matter/helpers.py` L123-L134](https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/matter/helpers.py#L123-L134) (`unique_id` format; rejected descriptor-key alternative)
+- Dropped kinds, `tapo_control` custom integration (not Core), latest release 7.2.13, tag commit `6d2c8adb81f3551070ec62fd9590f26254df145a` (the installed version is unknown, §4.1):
+  [`custom_components/tapo_control/number.py` L290-L345](https://github.com/JurajNyiri/HomeAssistant-Tapo-Control/blob/6d2c8adb81f3551070ec62fd9590f26254df145a/custom_components/tapo_control/number.py#L290-L345) (`TapoMotionDetectionDigitalSensitivity`, no `translation_key`);
+  [`custom_components/tapo_control/light.py` L99](https://github.com/JurajNyiri/HomeAssistant-Tapo-Control/blob/6d2c8adb81f3551070ec62fd9590f26254df145a/custom_components/tapo_control/light.py#L99) (`nightlight`, the integration's only `translation_key`)
 
 ## 11. Security section
 
@@ -1346,7 +1478,10 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
 - **Chat confirmation:** the `control_helper` mechanism, reused verbatim. It
   is model-conveyed, recorded as such (`external_approval: false`), and is
   not an authorization boundary against a misbehaving client; it is a
-  disclosure step. The first-build trigger is pending Josh (§13 Q8).
+  disclosure step. The first-build trigger is **empty** (B14): no admitted
+  target asks for confirmation. The mechanism is still built and proven end
+  to end with a test-only trigger that a production build cannot construct
+  (§8 S7, S8), so a later trigger adds a rule, not new machinery.
 - **No generic forwarding:** the payload is built from closed input. No caller
   string reaches `domain`, `service` or the target type. `call_service` stays
   refused.
@@ -1354,8 +1489,24 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
   route to `call_service`.
 - **Provider admission:** signed profile required, for Core 2026.11.0 only.
   Until signed, refusal happens before HA I/O.
-- **Target-kind admission:** a compiled list in the signed contract keeps the
-  excluded Tapo detection kind (and any other kind) unreachable (§4.1, Q9).
+- **Target-kind admission:** a compiled allowlist of exactly three triples in
+  the signed contract (B15, B16, §4.1): `(select, matter, startup_on_off)`,
+  `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)`.
+  Everything else is unreachable, including smoke/CO alarm smoke sensitivity
+  and the legacy vendor sensitivity selects (their shared triple
+  `(select, matter, sensitivity_level)` is not admitted), every `tapo_control`
+  entity (no `translation_key`), and any `null`-key entity.
+- **Disclosed breadth (B16 (ii)):** a triple admits every entity that carries
+  it, not only the household targets. `(switch, matter, child_lock)` also
+  admits the Eve thermostat valve keypad lock (`EveTrvChildLock`).
+  `(number, matter, sensitivity_level)` admits any Matter
+  `BooleanStateConfiguration` device with the sensitivity feature, such as
+  water-leak, rain and contact sensors; lowering a leak sensor's sensitivity
+  can make it miss a leak (§5.6 disclosure). `(select, matter,
+  startup_on_off)` admits the power-on behavior of any Matter endpoint exposing
+  `OnOff.StartUpOnOff`, lights and wall switches included; that breadth was
+  not part of the B16 (ii) acceptance and is §13.2 Q10, pending Josh. Every
+  admitted entity still needs the full §5.5 proof on every call.
 - **Concurrency:** the new tool shares `control_power`'s exclusive
   `entity:<entity_id>` key in the one durable lock store, so two Engineering
   paths never dispatch concurrently to one entity; unresolved sends hold the
@@ -1394,10 +1545,11 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
 
 ## 12. Build plan
 
-1. **Registry confirmation (prerequisite, separately authorized, read-only):**
-   confirm every §4.1 target's `entity_category == "config"`, domain,
-   `platform`, `translation_key`, device and numeric attributes, and decide Q9
-   with those values. Q8 decided or the recommended default accepted.
+1. **Prerequisites (done 2026-11-08):** the read-only registry read
+   confirmed platform and descriptor for the §4.1 targets, `translation_key`
+   and `entity_category` were confirmed from pinned source, Q8 is decided
+   (B14, empty trigger) and Q9 is decided (B15, B16, three triples). Q10
+   (§13.2) affects the allowlist only if Josh declines option (a).
 2. Build PR on the 2.6.0 line (protected Engineering runtime path, named and
    authorized in that task), in the `control_helper` file layout:
    `E/device_configuration/contracts.py` (closed input, statuses, refusals),
@@ -1412,7 +1564,8 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
    and provider-contract entries in `E/capabilities.py`, and the
    `TYPED_HOLD_KINDS` entry in `E/approval_web.py`. **No change** to
    `E/f3_configuration/locks.py`, the F3 plan tools or `control_power`.
-   Tests per §8.
+   Tests per §8, including the three-triple allowlist (T1–T6) and the
+   test-only-trigger confirmation proof (S7, S8).
 3. Compute and record the new fingerprint. Assert that every existing
    fingerprint is unchanged.
 4. Persisted-state evidence per §5.13 (P1–P9), including the run against the
@@ -1425,8 +1578,8 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
    including this profile and its lane receipt. This is a separate,
    owner-authorized action.
 7. Release and deployment: separately authorized.
-8. Deployed acceptance per §9.3 on the TV or kitchen plug and one sensor-tuning
-   entity (B9).
+8. Deployed acceptance per §9.3 on the TV or kitchen plug and the Aqara
+   back-porch Matter sensitivity `number` (B9, B15).
 
 **2.5.0 overlap:** the build will touch `E/ha_core_readmission/routes.py`,
 `profiles.py`, `E/providers/routing.py`, `E/capabilities.py`,
@@ -1451,20 +1604,32 @@ that point. This design PR itself shares no file with them.
 | Q5 | Per-change bounds | Single entity per change (B10) | Josh decision (in-session 2026-11-08), item 2 |
 | Q6 | Extra confirmation for high-consequence settings | Disclosure only for power-on behavior (B11) | Josh decision (in-session 2026-11-08), item 3 |
 | Q7 | Names | Profile `core.device_configuration_entity_operation` accepted; the tool name `create_device_configuration_plan` is superseded by item 25 (B13). `control_device_configuration` is this design's proposal | Josh decision (in-session 2026-11-08), items 5 and 25 |
-| E1 | First-build targets | §4.1 (B9), with registry confirmation before build and acceptance, Tapo detection selects excluded, acceptance on the TV or kitchen plug only | Josh decision (in-session 2026-11-08), item 1 |
+| E1 | First-build targets | §4.1 (B9), with registry confirmation before build and acceptance, Tapo detection selects excluded, acceptance on the TV or kitchen plug only. Narrowed by B15 and B16 (below) | Josh decision (in-session 2026-11-08), item 1 |
+| Q8 | First-build safety trigger | (a) none: the mechanism ships with an empty trigger, and the build PR proves it end to end with a test-only trigger (`dispatch: no_dispatch`, `task_created: false`, no send; the acknowledged call dispatches; audit `safety_gate` / `safety_confirmation`; `external_approval: false`) (B14, §5.6, §8 S7–S8) | Josh decision (in-session 2026-11-08) |
+| Q9 | Target admission | (a) a compiled `(domain, platform, translation_key)` allowlist inside the signed contract, each key confirmed from integration source at the pinned Core and integration version; a target with no `translation_key` is dropped (B15, §4.1) | Josh decision (in-session 2026-11-08) |
+| Q9 follow-up | Shared and generic triples | (i) drop the Aqara sensitivity `select` (its triple is shared with the smoke/CO smoke-sensitivity select); (ii) accept and disclose the breadth of `(switch, matter, child_lock)` and `(number, matter, sensitivity_level)` (B16, §4.1, §11) | Josh decision (in-session 2026-11-08) |
+| — | Registry confirmation | Done 2026-11-08 by the architect's read-only registry read (register HAMCP-297): platform `matter` with descriptors `MatterStartUpOnOff`, `EveChildLock`, the Aqara select and number descriptors; platform `tapo_control` for the camera numbers. `translation_key` and `entity_category` were not exposed and are confirmed from source (§4.1). The resulting first build is Matter only, exactly three triples | Architect's register record (HAMCP-297, 2026-11-08); source reads in this design |
 | — | Shape | Switch-like ordinary typed control with exact readback and undo, chat confirmation only when safety-critical, no approval panel and no plan (B8) | Josh decision (in-session 2026-11-08), item 25 |
 
 ### 13.2 Pending Josh
 
 | # | Question | Options | Recommendation | Blocks |
 |---|---|---|---|---|
-| Q8 | Which first-build targets, if any, are safety-critical (trigger `confirmation_required`)? Power-on behavior is disclosure only (B11) | (a) none in the first build: ship the mechanism with an empty trigger, prove it with a test-only trigger, add a trigger later with the kind that needs it (Tapo detection); (b) extend the `control_helper` dependency-evidence builder to these entities (needs its own review for `select`/`switch`/`number`; its fail-to-ask behavior would ask on almost every call); (c) an owner-named set of exact targets (for example the four child-lock switches) that always ask | (a) | Contract freeze only for (b) or (c); (a) blocks nothing |
-| Q9 | How the first build admits the B9 targets and keeps Tapo detection selects out (§4.1 item 2) | (a) a compiled `(domain, platform, translation_key)` allowlist in the signed contract, from registry-confirmed values; a `null` `translation_key` or an indistinguishable pair means stop and report; (b) admit every config-category `select`/`switch`/`number` and deny only the detection kind; (c) an owner-configured list of exact entity ids | (a): fails closed for new kinds and needs no new owner configuration surface. Trade-off: the lane fixture is not a household kind, so lane proof uses a test seam (§9.2) | Contract freeze and signing; needs the registry confirmation values |
+| Q10 | `(select, matter, startup_on_off)` is not vendor- or device-type-gated: it admits the power-on behavior of every Matter endpoint that exposes `OnOff.StartUpOnOff` (`core:components/matter/select.py:426-450`), for example Matter lights and wall switches, not only the 5 plugs. B16 (ii) accepted the breadth of the other two triples only. Accept this breadth too? | (a) accept and disclose, as for the other two triples (B11 already makes power-on behavior disclosure only on every target); (b) narrow it, which needs an admission rule beyond the triple (for example a Matter device-type filter; the descriptor key does not help, because plugs and lights share `MatterStartUpOnOff`) and so changes the B15 contract | (a) | Contract freeze only for (b); (a) blocks nothing |
 
-**Next human action:** authorize the separately scoped, read-only registry
-confirmation of the §4.1 targets (through the deployed Engineering read tools,
-limited to those entities' registry entries and state attributes), or supply
-their `platform` and `translation_key` values; and answer Q8 and Q9.
+#### Superseded (historical): Q8 and Q9 as pending questions
+
+The bda3ace0 revision listed Q8 (first-build safety trigger; options (a)
+empty trigger, (b) extend the `control_helper` dependency-evidence builder,
+(c) owner-named exact targets) and Q9 (target admission; options (a) compiled
+triple allowlist, (b) admit every config-category kind and deny only Tapo
+detection, (c) owner-configured exact entity ids) as pending Josh, with the
+registry confirmation as the next human action. All three are now resolved
+(§13.1).
+
+**Next human action:** answer Q10. Nothing else in this design is pending
+Josh. The build itself, signing, release, deployment and deployed acceptance
+remain separately authorized actions (§12).
 
 ## 14. Codex design review 2026-11-08 — disposition
 
@@ -1498,6 +1663,15 @@ approval hash mismatch). Counts in §7 remain base-local deltas.
 | 3 | Q6: disclosure only for power-on behavior | §1 B11; §5.6; §8 S3; §13 (Q8 new for the remaining targets) |
 | 4 | Q3: `control_power` keeps config-category switches, serialized by the shared lock | §1 B12; §5.7; §5.10 (old options superseded); §8 C1–C2; §13 |
 | 5 | Q7: profile name accepted; tool name superseded by item 25 | §1 B13; §5.1; §6; §7; §13 |
+| Q8 | (a) no safety confirmations in the first build: the mechanism ships with an empty trigger and is proven end to end with a test-only trigger | Header; §1 B14; §2.5 (confirmation row); §5.6 (decided; historical Q8 note); §8 S7, S8; §11 (chat confirmation); §12 steps 1–2; §13 (Q8 decided, historical note) |
+| Q9 | (a) compiled `(domain, platform, translation_key)` allowlist in the signed contract, keys confirmed from source at the pinned Core and integration version; targets without a `translation_key` dropped (the Tapo digital-sensitivity `number`) | Header and provenance note; §1 B15 (B9 status note); §4 select row; §4.1 (allowlist, dropped list, registry confirmation, rejected descriptor-key alternative); §5.5 item 5; §5.5.1 E1 note; §6 signing row; §8 T1–T6 and success tests; §9.1; §9.2 residual; §9.3; §10 (Matter and `tapo_control` citations); §11; §12; §13 |
+| Q9 follow-up | (i) drop the Aqara sensitivity `select` (triple shared with the smoke/CO smoke-sensitivity select); (ii) accept and disclose the breadth of the `child_lock` switch and `sensitivity_level` number triples | §1 B16; §4.1; §5.6 (smoke unreachable; sensing disclosure); §8 T1, T3, T4; §9.3 (Aqara select acceptance removed, historical note); §11 (disclosed breadth); §13 (Q9 follow-up decided; Q10 new) |
+
+The registry confirmation of the §4.1 targets (platform and descriptor) is
+the architect's read-only register record of 2026-11-08, not a Josh decision;
+`translation_key` and `entity_category` come from the pinned source cited in
+§4.1 and §10. One question remains from the source read: §13.2 Q10 (breadth
+of the power-on triple), pending Josh.
 
 No decision conflicted with the stated architecture or safety constraints.
 Undo is newly specified, because the shipped `control_*` tools have none
