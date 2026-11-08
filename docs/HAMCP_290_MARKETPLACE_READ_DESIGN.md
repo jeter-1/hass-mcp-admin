@@ -203,7 +203,7 @@ Upstream payloads are **constants**:
 - category and query filtering happen locally.
 
 Acquisition bounds are enforced before parsing, and any breach fails closed
-with no partial page:
+and returns no page at all:
 
 - a dedicated bounded reader, modeled on `read_alarmo_inspection`, with
   `trust_env=False`, no retry, and redirects rejected;
@@ -244,8 +244,18 @@ Output: `success`, `backend`, `results` (sorted by `full_name` casefold, then
 - `has_more`, and `next_offset` (null on the last page);
 - `inventory_fingerprint`, a SHA-256 of the sorted installed projection, so a
   client can detect that the inventory changed between pages;
-- `completeness` (`partial` when the sanitizer withheld or truncation
-  shortened any text), `fallback_occurred` and `commands_sent`.
+- `completeness` and `partial_reasons`. A page is `partial`, never
+  `complete`, when either reason holds:
+  - `sanitized_text`: the sanitizer withheld text anywhere in the installed
+    projection, or truncation shortened any field. Truncation alone is
+    enough.
+  - `more_pages`: `has_more` is true, so the page is not the whole matching
+    inventory.
+
+  The public tool adds one warning per reason, and metadata and telemetry
+  carry the same completeness. Only the last page of a clean inventory is
+  `complete`, with `partial_reasons` empty.
+- `fallback_occurred` and `commands_sent`.
 
 `query` matches the **sanitized** `full_name`, `name`, `domain` and
 `description`, case-insensitively. A search therefore cannot probe text the
@@ -260,7 +270,13 @@ standard `response_size_limit`.
   command produced the accepted result, never by upstream self-description.
 - Metadata is `{"provider": "engineering", "data_providers": ["direct_ha_api"],
   "fallback_occurred": <bool>}`.
-- `fallback_occurred` is true only when the HACS command produced the result.
+- On success, `fallback_occurred` is true only when the HACS command produced
+  the result.
+- On refusal, `fallback_occurred` follows the dispatch ledger: it is true
+  exactly when the HACS command was sent. This holds wherever the refusal
+  arose: in the reader, projection, sanitization or the final authority
+  check. A fallback that was selected but never sent (for example, authority
+  lost just before the second command) is not attributed.
 - `METRICS.record_provider_result("direct_ha_api", ...)` is recorded for each
   command.
 
@@ -316,8 +332,8 @@ Marketplace commands stays reviewed rather than implicit.
 | `transport_unavailable` | unavailable |
 | `provider_error` | upstream API error (any other failure code, an unexpected exception, or an unknown reason) |
 
-Every refusal carries `{"reason", "fallback_occurred"}` and never contains raw
-upstream text.
+Every refusal carries `{"reason", "fallback_occurred"}` (attributed as in §5)
+and never contains raw upstream text.
 
 ## 8. Test matrix (`tests/test_hamcp290_marketplace_inventory.py`)
 
@@ -332,10 +348,12 @@ upstream text.
   - query and category filtering;
   - deterministic order;
   - pagination including the last page, an offset past the end, and
-    `next_offset` / `has_more`;
+    `next_offset` / `has_more`; every page before the last is `partial`
+    (`more_pages`), and the last page of a clean inventory is `complete`;
   - the projection drops `local_path` and the other dropped fields;
   - secret-shaped values are redacted;
-  - truncation;
+  - truncation, including truncation alone, makes the page `partial`
+    (`sanitized_text`), and search never matches discarded text;
   - `inventory_fingerprint` stability.
 - **Negative reachability**:
   - every payload ever sent is one of the two constants;
@@ -439,12 +457,38 @@ written here.
 
 ## 11. Rollback
 
-The change is source-only and dormant until signed. To roll back:
+Source rollback and signed-authority withdrawal are separate actions with
+separate authority. Neither is authorized by this PR.
 
-- revert the PR;
-- before signing, nothing at runtime changes except the static catalog entry,
-  which is unavailable, and the retirement of upstream `ha_get_hacs_info`.
-  That upstream tool already fails on 2026.11 (HAMCP-251 B1). Reverting
-  restores it on Core 2026.7 through 2026.10 with HACS;
-- after a future signing, revoking or omitting the reference in a later signed
-  sequence makes the tool unavailable again without a code change.
+**Before signing.** The change is source-only and dormant. Revert the PR.
+Nothing at runtime changes except two things:
+
+- the static catalog entry, which is unavailable, goes away;
+- the retirement of upstream `ha_get_hacs_info` is undone. That upstream
+  tool already fails on 2026.11 (HAMCP-251 B1). Reverting restores it on
+  Core 2026.7 through 2026.10 with HACS.
+
+**After `core.marketplace_read` is signed for a Core release.** The registry
+tooling cannot remove one capability reference from a signed entry:
+
+- `extend-capabilities` only appends to the exact previous references;
+- `add` renewal cannot change an entry's contracts
+  (`scripts/prepare_core_release_registry.py:163-197`).
+
+That leaves two recovery paths:
+
+- **Source rollback.** Ship a reviewed Engineering release that no longer
+  compiles the profile or registers the tool. The signed reference then
+  enables nothing. Signed references to unknown profiles do not enable them,
+  and a mismatch affects only the capabilities whose prerequisites fail
+  (`docs/CORE_RELEASE_REGISTRY.md`). The reference stays in the signed
+  journal, and the other signed capabilities of that Core release keep
+  working. This is an ordinary release and deployment decision.
+- **Signed withdrawal.** The only signed withdrawal is `revoke`
+  (`scripts/prepare_core_release_registry.py:152-161`). It removes the whole
+  Core release entry, so every signed Core capability for that release is
+  withdrawn, not only the Marketplace read. It also leaves a permanent denial:
+  a revoked release cannot be re-added (`:169-170`). It needs its own reviewed,
+  owner-signed sequence and Josh's separate authorization.
+
+Do not roll a published journal backwards or delete a cache as rollback.

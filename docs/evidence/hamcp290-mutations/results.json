@@ -6,11 +6,11 @@
    "test_hamcp164_core_gate_fail_closed.py"
   ],
   "returncode": 0,
-  "tests": 217,
-  "seconds": 26.2
+  "tests": 232,
+  "seconds": 26.7
  },
- "mutation_count": 69,
- "killed": 66,
+ "mutation_count": 77,
+ "killed": 74,
  "not_killed": [
   "B5-frame-count-unbounded",
   "A9-static-requirement-removed",
@@ -40,7 +40,7 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 15,
+   "assertion_failures": 16,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
@@ -51,7 +51,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F1-any-failure-code-falls-back.log",
-   "seconds": 25.0
+   "seconds": 25.5
   },
   {
    "id": "F2-not-loaded-falls-back",
@@ -66,17 +66,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 2,
+   "assertion_failures": 3,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)",
     "FAIL test_no_fallback_for_any_other_marketplace_failure (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_no_fallback_for_any_other_marketplace_failure)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F2-not-loaded-falls-back.log",
-   "seconds": 25.1
+   "seconds": 25.4
   },
   {
    "id": "F3-message-text-selects-fallback",
@@ -102,7 +103,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F3-message-text-selects-fallback.log",
-   "seconds": 24.9
+   "seconds": 25.5
   },
   {
    "id": "F4-missing-error-mapping-falls-back",
@@ -127,7 +128,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F4-missing-error-mapping-falls-back.log",
-   "seconds": 24.9
+   "seconds": 25.7
   },
   {
    "id": "F5-hacs-unknown-command-read-as-empty",
@@ -151,7 +152,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F5-hacs-unknown-command-read-as-empty.log",
-   "seconds": 25.0
+   "seconds": 25.3
   },
   {
    "id": "F6-success-with-non-list-result",
@@ -176,7 +177,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F6-success-with-non-list-result.log",
-   "seconds": 25.1
+   "seconds": 25.3
   },
   {
    "id": "F7-reply-id-not-matched",
@@ -200,7 +201,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F7-reply-id-not-matched.log",
-   "seconds": 24.8
+   "seconds": 25.3
   },
   {
    "id": "F8-failure-with-result-accepted",
@@ -225,7 +226,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F8-failure-with-result-accepted.log",
-   "seconds": 24.7
+   "seconds": 25.5
   },
   {
    "id": "B1-reply-record-count-unbounded",
@@ -249,7 +250,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B1-reply-record-count-unbounded.log",
-   "seconds": 24.8
+   "seconds": 25.3
   },
   {
    "id": "B2-projection-record-count-unbounded",
@@ -273,7 +274,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B2-projection-record-count-unbounded.log",
-   "seconds": 25.6
+   "seconds": 25.5
   },
   {
    "id": "B3-frame-bytes-unbounded",
@@ -303,7 +304,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B3-frame-bytes-unbounded.log",
-   "seconds": 25.3
+   "seconds": 25.1
   },
   {
    "id": "B4-auth-frame-bound-widened",
@@ -327,7 +328,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B4-auth-frame-bound-widened.log",
-   "seconds": 24.8
+   "seconds": 25.1
   },
   {
    "id": "B5-frame-count-unbounded",
@@ -349,7 +350,7 @@
    "expected_equivalent": true,
    "equivalence_reason": "MarketplaceReader.read calls receive() at most four times by construction (auth_required, auth_ok, at most two command results: one per send, and send runs at most twice), so the frames > MAX_FRAMES guard can never fire. It stays as defense in depth against a future edit; no input can reach it.",
    "log_path": "mutation-logs/B5-frame-count-unbounded.log",
-   "seconds": 25.0
+   "seconds": 25.2
   },
   {
    "id": "B6-duplicate-json-keys-accepted",
@@ -374,7 +375,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B6-duplicate-json-keys-accepted.log",
-   "seconds": 25.0
+   "seconds": 25.1
   },
   {
    "id": "B7-non-finite-constants-accepted",
@@ -398,7 +399,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B7-non-finite-constants-accepted.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "B8-deadline-not-capped",
@@ -500,7 +501,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B11-bool-accepted-as-int.log",
-   "seconds": 24.9
+   "seconds": 25.2
   },
   {
    "id": "B12-query-length-unbounded",
@@ -524,7 +525,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B12-query-length-unbounded.log",
-   "seconds": 25.0
+   "seconds": 25.1
   },
   {
    "id": "B13-control-characters-accepted",
@@ -550,7 +551,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B13-control-characters-accepted.log",
-   "seconds": 24.9
+   "seconds": 25.0
   },
   {
    "id": "B14-unknown-argument-keys-accepted",
@@ -575,7 +576,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B14-unknown-argument-keys-accepted.log",
-   "seconds": 25.0
+   "seconds": 25.1
   },
   {
    "id": "B15-schema-admits-unknown-keys",
@@ -599,7 +600,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B15-schema-admits-unknown-keys.log",
-   "seconds": 25.1
+   "seconds": 25.0
   },
   {
    "id": "B16-page-not-limited",
@@ -614,18 +615,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 5,
+   "assertion_failures": 8,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
-    "FAIL test_sorted_bounded_pages_with_exact_continuation (test_hamcp290_marketplace_inventory.PageTests.test_sorted_bounded_pages_with_exact_continuation)",
-    "FAIL test_admitted_tool_renders_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_admitted_tool_renders_attribution)"
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B16-page-not-limited.log",
-   "seconds": 25.0
+   "seconds": 25.2
   },
   {
    "id": "B17-next-offset-on-last-page",
@@ -649,7 +650,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B17-next-offset-on-last-page.log",
-   "seconds": 25.0
+   "seconds": 25.4
   },
   {
    "id": "P1-uninstalled-records-listed",
@@ -664,7 +665,7 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 5,
+   "assertion_failures": 6,
    "errors": 1,
    "first_assertion_failures": [
     "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
@@ -677,7 +678,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P1-uninstalled-records-listed.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "P2-truthy-installed-accepted",
@@ -692,16 +693,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 4,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)"
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)",
+    "FAIL test_refusal_after_fallback_renders_fallback_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_refusal_after_fallback_renders_fallback_attribution)",
+    "FAIL test_failure_attribution_follows_the_dispatch_ledger (test_hamcp290_marketplace_inventory.ServiceReadTests.test_failure_attribution_follows_the_dispatch_ledger)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P2-truthy-installed-accepted.log",
-   "seconds": 24.8
+   "seconds": 25.1
   },
   {
    "id": "P3-dot-segment-full-name-accepted",
@@ -726,7 +729,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P3-dot-segment-full-name-accepted.log",
-   "seconds": 25.4
+   "seconds": 25.0
   },
   {
    "id": "P4-duplicate-installed-ids-accepted",
@@ -751,7 +754,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P4-duplicate-installed-ids-accepted.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "P5-dropped-field-projected",
@@ -780,7 +783,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P5-dropped-field-projected.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "P6-description-unsanitized",
@@ -795,16 +798,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 5,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)"
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P6-description-unsanitized.log",
-   "seconds": 24.1
+   "seconds": 24.5
   },
   {
    "id": "P7-name-not-truncated",
@@ -819,16 +824,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 4,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)"
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P7-name-not-truncated.log",
-   "seconds": 24.8
+   "seconds": 24.9
   },
   {
    "id": "P8-search-over-unsanitized-text",
@@ -843,16 +850,17 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 2,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)"
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P8-search-over-unsanitized-text.log",
-   "seconds": 24.8
+   "seconds": 25.0
   },
   {
    "id": "P9-known-secrets-dropped",
@@ -876,7 +884,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P9-known-secrets-dropped.log",
-   "seconds": 24.1
+   "seconds": 24.3
   },
   {
    "id": "P10-partial-never-flagged",
@@ -884,23 +892,128 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
-     "    partial = screen.redacted > 0 or screen.failed_closed or screen.collisions > 0",
-     "    partial = False"
+     "    partial_reasons = [reason for reason, present in ((\"sanitized_text\", text_partial),\n                                                      (\"more_pages\", has_more)) if present]",
+     "    partial_reasons = []"
     ]
    ],
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 11,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)"
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P10-partial-never-flagged.log",
-   "seconds": 24.9
+   "seconds": 25.1
+  },
+  {
+   "id": "P14-truncation-alone-complete",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     " or screen.truncated > 0 or screen.failed_closed",
+     " or screen.failed_closed"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 7,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_truncation_alone_is_partial (test_hamcp290_marketplace_inventory.PageTests.test_truncation_alone_is_partial)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P14-truncation-alone-complete.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "P15-more-pages-complete",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "(\"more_pages\", has_more)) if present]",
+     "(\"more_pages\", False)) if present]"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P15-more-pages-complete.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "P16-completeness-ignores-paging",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\"completeness\": \"partial\" if partial_reasons else \"complete\",",
+     "\"completeness\": \"partial\" if text_partial else \"complete\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P16-completeness-ignores-paging.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P17-more-pages-warning-dropped",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "        if \"more_pages\" in value[\"partial_reasons\"]:\n            warnings.append(_MORE_PAGES)\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P17-more-pages-warning-dropped.log",
+   "seconds": 25.2
   },
   {
    "id": "P11-fingerprint-over-page-only",
@@ -925,7 +1038,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P11-fingerprint-over-page-only.log",
-   "seconds": 24.6
+   "seconds": 25.1
   },
   {
    "id": "P12-unsorted-results",
@@ -951,7 +1064,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P12-unsorted-results.log",
-   "seconds": 24.9
+   "seconds": 25.0
   },
   {
    "id": "P13-category-filter-ignored",
@@ -975,7 +1088,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P13-category-filter-ignored.log",
-   "seconds": 25.1
+   "seconds": 25.0
   },
   {
    "id": "A1-anonymous-caller-admitted",
@@ -999,7 +1112,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A1-anonymous-caller-admitted.log",
-   "seconds": 25.0
+   "seconds": 25.3
   },
   {
    "id": "A2-profile-availability-ignored",
@@ -1015,16 +1128,18 @@
    "killed": true,
    "returncode": 1,
    "assertion_failures": 2,
-   "errors": 0,
+   "errors": 1,
    "first_assertion_failures": [
     "FAIL test_unadmitted_service_opens_no_connection (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_unadmitted_service_opens_no_connection)",
     "FAIL test_unadmitted_profile_refuses_even_with_dispatch_authority (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_unadmitted_profile_refuses_even_with_dispatch_authority)"
    ],
-   "first_errors": [],
+   "first_errors": [
+    "ERROR test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)"
+   ],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A2-profile-availability-ignored.log",
-   "seconds": 25.0
+   "seconds": 25.1
   },
   {
    "id": "A3-dispatch-authority-ignored",
@@ -1039,16 +1154,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 1,
+   "assertion_failures": 5,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_missing_dispatch_authority_or_observation_refuses (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_missing_dispatch_authority_or_observation_refuses)"
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A3-dispatch-authority-ignored.log",
-   "seconds": 24.9
+   "seconds": 25.0
   },
   {
    "id": "A4-no-recheck-before-each-command",
@@ -1074,7 +1191,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A4-no-recheck-before-each-command.log",
-   "seconds": 24.8
+   "seconds": 25.1
   },
   {
    "id": "A5-no-recheck-before-publishing",
@@ -1082,24 +1199,27 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
-     "        if self.authority() != authority:\n            raise MarketplaceError(\"authority_unavailable\", fallback_occurred=backend == BACKEND_HACS)",
-     "        if False:\n            raise MarketplaceError(\"authority_unavailable\", fallback_occurred=backend == BACKEND_HACS)"
+     "                if self.authority() != authority:\n                    failure = MarketplaceError(\"authority_unavailable\")",
+     "                if False:\n                    failure = MarketplaceError(\"authority_unavailable\")"
     ]
    ],
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 2,
-   "errors": 0,
+   "assertion_failures": 11,
+   "errors": 1,
    "first_assertion_failures": [
     "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)",
-    "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)"
+    "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)"
    ],
-   "first_errors": [],
+   "first_errors": [
+    "ERROR test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)"
+   ],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A5-no-recheck-before-publishing.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "A6-read-recheck-noop",
@@ -1107,8 +1227,8 @@
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
-     "            if self.authority() != authority:\n                raise MarketplaceError(\"authority_unavailable\", fallback_occurred=len(commands) > 1)",
-     "            if False:\n                raise MarketplaceError(\"authority_unavailable\", fallback_occurred=len(commands) > 1)"
+     "            if self.authority() != authority:\n                raise MarketplaceError(\"authority_unavailable\")",
+     "            if False:\n                raise MarketplaceError(\"authority_unavailable\")"
     ]
    ],
    "verdict": "killed",
@@ -1123,7 +1243,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A6-read-recheck-noop.log",
-   "seconds": 24.8
+   "seconds": 25.1
   },
   {
    "id": "A7-core-identity-unchecked",
@@ -1147,7 +1267,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A7-core-identity-unchecked.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "A8-service-requirement-empty",
@@ -1199,7 +1319,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A9-static-requirement-removed.log",
-   "seconds": 2.2
+   "seconds": 2.3
   },
   {
    "id": "R1-retired-read-exposed",
@@ -1225,7 +1345,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R1-retired-read-exposed.log",
-   "seconds": 24.7
+   "seconds": 25.0
   },
   {
    "id": "R2-retired-read-withheld-only-beside-native-route",
@@ -1251,7 +1371,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R2-retired-read-withheld-only-beside-native-route.log",
-   "seconds": 24.7
+   "seconds": 25.4
   },
   {
    "id": "R3-retired-read-withheld-only-before-9-1",
@@ -1276,7 +1396,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R3-retired-read-withheld-only-before-9-1.log",
-   "seconds": 25.1
+   "seconds": 25.0
   },
   {
    "id": "R4-retirement-disposition-not-distinct",
@@ -1302,7 +1422,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R4-retirement-disposition-not-distinct.log",
-   "seconds": 25.4
+   "seconds": 24.9
   },
   {
    "id": "R5-retired-read-not-recorded-withheld",
@@ -1328,7 +1448,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R5-retired-read-not-recorded-withheld.log",
-   "seconds": 24.8
+   "seconds": 25.0
   },
   {
    "id": "R6-dispatch-guard-removed",
@@ -1352,7 +1472,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/R6-dispatch-guard-removed.log",
-   "seconds": 25.1
+   "seconds": 25.0
   },
   {
    "id": "R7-retired-names-emptied",
@@ -1417,7 +1537,7 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 16,
+   "assertion_failures": 21,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp290_marketplace_inventory.ContractTests.test_payloads_are_the_closed_vocabulary)",
@@ -1428,7 +1548,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C1-marketplace-command-swapped.log",
-   "seconds": 24.8
+   "seconds": 25.0
   },
   {
    "id": "C2-hacs-command-swapped",
@@ -1443,18 +1563,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 5,
+   "assertion_failures": 7,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp290_marketplace_inventory.ContractTests.test_payloads_are_the_closed_vocabulary)",
-    "FAIL test_exact_unknown_command_falls_back_once_on_the_same_connection (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_exact_unknown_command_falls_back_once_on_the_same_connection)",
-    "FAIL test_exact_unknown_command_falls_back_once_on_the_same_connection (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_exact_unknown_command_falls_back_once_on_the_same_connection)"
+    "FAIL test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)",
+    "FAIL test_reader_local_fallback_failure_stays_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_reader_local_fallback_failure_stays_attributed)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C2-hacs-command-swapped.log",
-   "seconds": 25.0
+   "seconds": 25.2
   },
   {
    "id": "C3-argument-forwarded",
@@ -1469,18 +1589,18 @@
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
-   "assertion_failures": 15,
+   "assertion_failures": 20,
    "errors": 0,
    "first_assertion_failures": [
     "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
     "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
-    "FAIL test_auth_frames_have_their_own_smaller_bound (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_auth_frames_have_their_own_smaller_bound)"
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C3-argument-forwarded.log",
-   "seconds": 25.0
+   "seconds": 25.1
   },
   {
    "id": "C4-dispatch-allowlist-skipped",
@@ -1505,7 +1625,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C4-dispatch-allowlist-skipped.log",
-   "seconds": 24.9
+   "seconds": 25.2
   },
   {
    "id": "T1-hacs-answer-labelled-core",
@@ -1529,7 +1649,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T1-hacs-answer-labelled-core.log",
-   "seconds": 25.1
+   "seconds": 25.0
   },
   {
    "id": "T2-fallback-flag-dropped",
@@ -1554,7 +1674,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T2-fallback-flag-dropped.log",
-   "seconds": 24.9
+   "seconds": 25.1
   },
   {
    "id": "T3-tool-metadata-fallback-dropped",
@@ -1578,7 +1698,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T3-tool-metadata-fallback-dropped.log",
-   "seconds": 25.5
+   "seconds": 25.1
   },
   {
    "id": "T4-refusal-after-fallback-unattributed",
@@ -1603,6 +1723,107 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T4-refusal-after-fallback-unattributed.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "T6-ledger-attribution-dropped",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            raise MarketplaceError(failure.reason,\n                                   fallback_occurred=HACS_LIST_COMMAND in commands) from None",
+     "            raise failure"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)",
+    "FAIL test_refusal_after_fallback_renders_fallback_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_refusal_after_fallback_renders_fallback_attribution)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T6-ledger-attribution-dropped.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T7-ledger-only-adds-fallback",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "fallback_occurred=HACS_LIST_COMMAND in commands)",
+     "fallback_occurred=failure.fallback_occurred or HACS_LIST_COMMAND in commands)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_failure_attribution_follows_the_dispatch_ledger (test_hamcp290_marketplace_inventory.ServiceReadTests.test_failure_attribution_follows_the_dispatch_ledger)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T7-ledger-only-adds-fallback.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T8-ledger-counts-first-command",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "fallback_occurred=HACS_LIST_COMMAND in commands)",
+     "fallback_occurred=bool(commands))"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 12,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)",
+    "FAIL test_refusal_after_fallback_renders_fallback_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_refusal_after_fallback_renders_fallback_attribution)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T8-ledger-counts-first-command.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "T9-final-authority-exception-unclosed",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            except Exception:\n                failure = MarketplaceError(\"provider_error\")\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unexpected_failure_in_the_final_authority_check_is_closed (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_unexpected_failure_in_the_final_authority_check_is_closed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T9-final-authority-exception-unclosed.log",
    "seconds": 25.3
   },
   {
@@ -1629,7 +1850,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T5-refused-value-reflected.log",
-   "seconds": 25.3
+   "seconds": 25.2
   },
   {
    "id": "W1-registry-name-reverted",
@@ -1655,7 +1876,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/W1-registry-name-reverted.log",
-   "seconds": 3.7
+   "seconds": 3.6
   },
   {
    "id": "W2-route-constant-reverted",
@@ -1681,7 +1902,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/W2-route-constant-reverted.log",
-   "seconds": 25.1
+   "seconds": 25.4
   },
   {
    "id": "W3-capability-name-reverted",
@@ -1707,7 +1928,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/W3-capability-name-reverted.log",
-   "seconds": 25.0
+   "seconds": 25.2
   },
   {
    "id": "W4-routing-key-reverted",
@@ -1733,7 +1954,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/W4-routing-key-reverted.log",
-   "seconds": 25.2
+   "seconds": 25.1
   },
   {
    "id": "W5-run-structured-name-reverted",

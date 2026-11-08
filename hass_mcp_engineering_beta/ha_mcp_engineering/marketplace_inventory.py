@@ -528,7 +528,12 @@ def build_page(backend: str, store: Any, request: InventoryQuery,
     page = matches[request.offset:request.offset + request.limit]
     end = request.offset + len(page)
     has_more = end < len(matches)
-    partial = screen.redacted > 0 or screen.failed_closed or screen.collisions > 0
+    # Shortened text is withheld text: truncation alone makes the page partial.
+    text_partial = (screen.redacted > 0 or screen.truncated > 0 or screen.failed_closed
+                    or screen.collisions > 0)
+    # A page that leaves matches unreturned is not the complete inventory.
+    partial_reasons = [reason for reason, present in (("sanitized_text", text_partial),
+                                                      ("more_pages", has_more)) if present]
     summary = screen.result()
     return {
         "backend": backend,
@@ -543,7 +548,8 @@ def build_page(backend: str, store: Any, request: InventoryQuery,
         "next_offset": end if has_more else None,
         "results": page,
         "inventory_fingerprint": inventory_fingerprint(backend, records),
-        "completeness": "partial" if partial else "complete",
+        "completeness": "partial" if partial_reasons else "complete",
+        "partial_reasons": partial_reasons,
         "sanitization_failed_closed": screen.failed_closed,
         "redaction": redaction_summary(summary),
         "truncated_field_count": screen.truncated,
@@ -580,7 +586,7 @@ class MarketplaceInventoryService:
         def authorize() -> None:
             # The admission generation and Core identity hold across the read.
             if self.authority() != authority:
-                raise MarketplaceError("authority_unavailable", fallback_occurred=len(commands) > 1)
+                raise MarketplaceError("authority_unavailable")
 
         def on_dispatch(command: str) -> None:
             if command not in COMMANDS or len(commands) >= MAX_COMMANDS:
@@ -599,16 +605,25 @@ class MarketplaceInventoryService:
             failure = exc
         except Exception:
             # Exception text and provider values never enter the result.
-            failure = MarketplaceError("provider_error", fallback_occurred=len(commands) > 1)
+            failure = MarketplaceError("provider_error")
         finally:
             if commands:
                 METRICS.record_provider_result(
                     "direct_ha_api", "failed" if failure else "complete", dispatched=True,
                 )
+        if failure is None:
+            try:
+                if self.authority() != authority:
+                    failure = MarketplaceError("authority_unavailable")
+            except MarketplaceError as exc:
+                failure = exc
+            except Exception:
+                failure = MarketplaceError("provider_error")
         if failure is not None:
-            raise failure
-        if self.authority() != authority:
-            raise MarketplaceError("authority_unavailable", fallback_occurred=backend == BACKEND_HACS)
+            # Attribution follows the dispatch ledger wherever the failure arose:
+            # reader, projection, sanitization or the final authority check.
+            raise MarketplaceError(failure.reason,
+                                   fallback_occurred=HACS_LIST_COMMAND in commands) from None
         telemetry = current_telemetry()
         if telemetry is not None:
             telemetry.completeness = page["completeness"]

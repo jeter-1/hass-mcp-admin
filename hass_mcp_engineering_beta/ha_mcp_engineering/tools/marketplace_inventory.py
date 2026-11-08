@@ -18,7 +18,9 @@ _READ_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
 )
 _PARTIAL = ("Inventory text is partial: Engineering withheld credential-like or unverifiable text "
-            "or shortened long strings; see redaction.")
+            "or shortened long strings; see redaction and truncated_field_count.")
+_MORE_PAGES = ("This page is not the complete inventory: more installed repositories match; "
+               "request next_offset to continue.")
 
 
 async def get_marketplace_inventory(
@@ -55,8 +57,10 @@ async def get_marketplace_inventory(
         metadata["fallback_occurred"] = value["fallback_occurred"]
         metadata["backend"] = value["backend"]
         metadata["completeness"] = value["completeness"]
-        if value["completeness"] != "complete":
+        if "sanitized_text" in value["partial_reasons"]:
             warnings.append(_PARTIAL)
+        if "more_pages" in value["partial_reasons"]:
+            warnings.append(_MORE_PAGES)
         return value
 
     return await run_structured(

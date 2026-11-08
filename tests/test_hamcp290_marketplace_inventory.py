@@ -483,6 +483,32 @@ class PageTests(unittest.TestCase):
         self.assertEqual(first["installed_total"], 8)
         self.assertEqual(first["inventory_fingerprint"], last["inventory_fingerprint"])
 
+    def test_paged_page_is_partial_until_the_last_page(self):
+        # A page that leaves matches unreturned is not the complete inventory.
+        items = [summary(str(i), f"owner/repo-{i:02d}") for i in range(5)]
+        first = self.page(items, limit=2)
+        self.assertEqual((first["has_more"], first["completeness"], first["partial_reasons"]),
+                         (True, "partial", ["more_pages"]))
+        middle = self.page(items, limit=2, offset=2)
+        self.assertEqual((middle["completeness"], middle["partial_reasons"]), ("partial", ["more_pages"]))
+        # Controls: the last page, an exact single page, offsets past the end
+        # and an empty inventory are complete.
+        for arguments, store_items in (({"limit": 2, "offset": 4}, items), ({"limit": 5}, items),
+                                       ({"offset": 100}, items), ({}, [])):
+            with self.subTest(arguments=arguments, empty=not store_items):
+                page = self.page(store_items, **arguments)
+                self.assertEqual((page["has_more"], page["completeness"], page["partial_reasons"]),
+                                 (False, "complete", []))
+        # Both causes are reported together.
+        items[0] = summary("0", "owner/repo-00", description="d" * (mi.DESCRIPTION_CHARS + 1))
+        both = self.page(items, limit=2)
+        self.assertEqual((both["completeness"], both["partial_reasons"]), ("partial", ["sanitized_text", "more_pages"]))
+        # A filter that narrows matches to one page is complete even when the
+        # inventory is larger (the sanitizer screens the whole inventory, so
+        # use clean records here).
+        clean = [summary(str(i), f"owner/repo-{i:02d}") for i in range(5)]
+        self.assertEqual(self.page(clean, limit=2, query="repo-03")["partial_reasons"], [])
+
     def test_ties_sort_by_id_and_casefold(self):
         items = [summary("2", "Same/Name"), summary("1", "same/name")]
         self.assertEqual([r["id"] for r in self.page(items)["results"]], ["1", "2"])
@@ -516,6 +542,33 @@ class PageTests(unittest.TestCase):
         page = self.page(store())
         self.assertEqual(page["completeness"], "complete")
         self.assertEqual(page["truncated_field_count"], 0)
+
+    def test_truncation_alone_is_partial(self):
+        # Codex D1 (#409): shortened text is withheld text even with nothing redacted.
+        for field, bound in (("name", mi.NAME_CHARS), ("description", mi.DESCRIPTION_CHARS),
+                             ("installed_version", mi.VERSION_CHARS), ("available_version", mi.VERSION_CHARS)):
+            with self.subTest(field=field):
+                page = self.page([summary("1", "acme/long", **{field: "v" * (bound + 50)}), summary("2", "acme/short")])
+                self.assertEqual((page["completeness"], page["partial_reasons"]), ("partial", ["sanitized_text"]))
+                self.assertIsNone(page["redaction"])  # nothing redacted, only shortened
+                self.assertFalse(page["sanitization_failed_closed"])
+                self.assertEqual(page["truncated_field_count"], 1)
+        # Clean control: the same records at the bound are complete.
+        for field, bound in (("name", mi.NAME_CHARS), ("description", mi.DESCRIPTION_CHARS),
+                             ("installed_version", mi.VERSION_CHARS)):
+            with self.subTest(control=field):
+                page = self.page([summary("1", "acme/long", **{field: "v" * bound})])
+                self.assertEqual((page["completeness"], page["truncated_field_count"]), ("complete", 0))
+
+    def test_search_never_matches_discarded_text(self):
+        marker = "zqxdiscardedtail"
+        items = [summary("1", "acme/long", description="d" * mi.DESCRIPTION_CHARS + marker),
+                 summary("2", "acme/named", name="n" * mi.NAME_CHARS + marker)]
+        self.assertEqual(self.page(items, query=marker)["total_matches"], 0)
+        self.assertNotIn(marker, json.dumps(self.page(items)))
+        # Positive control: the retained prefix stays searchable.
+        self.assertEqual(self.page(items, query="d" * 20)["total_matches"], 1)
+        self.assertEqual(self.page(items, query="n" * 20)["total_matches"], 1)
 
     def test_fingerprint_tracks_installed_inventory_only(self):
         base = store(3, 2)
@@ -602,6 +655,52 @@ class ServiceAdmissionTests(ServiceTestCase):
                                            "authority_unavailable")
                 self.assertIs(error.fallback_occurred, fallback)
 
+    async def test_authority_loss_after_the_page_keeps_dispatch_attribution(self):
+        # Codex D2 (#409): availability, authorizer or observation lost while
+        # the page is built; authority() itself raises after dispatch.
+        original = mi.build_page
+        losses = {
+            "available": lambda: setattr(self.core, "available", False),
+            "authorizer": lambda: setattr(self.telemetry, "core_dispatch_authorizer", None),
+            "authorizer_denies": lambda: setattr(self.telemetry, "core_dispatch_authorizer", lambda: False),
+            "observation": lambda: setattr(self.core, "current_observation", None),
+        }
+        for backend, fallback in ((mi.BACKEND_MARKETPLACE, False), (mi.BACKEND_HACS, True)):
+            for name, lose in losses.items():
+                self.core = AdmissionCore()
+                self.telemetry.core_dispatch_authorizer = lambda: self.core.available
+
+                def losing(*args, **kwargs):
+                    page = original(*args, **kwargs)
+                    lose()
+                    return page
+
+                with self.subTest(backend=backend, loss=name), mock.patch.object(mi, "build_page", losing):
+                    error = await self.refused(self.service(FakeReader(backend=backend)).inventory(
+                        mi.InventoryQuery()), "authority_unavailable")
+                    self.assertIs(error.fallback_occurred, fallback)
+                    self.assertEqual(error.details, {"reason": "authority_unavailable", "fallback_occurred": fallback,
+                                                     "core_capability": PROFILE})
+
+    async def test_unexpected_failure_in_the_final_authority_check_is_closed(self):
+        original = mi.build_page
+
+        def raising(_requirements):
+            raise RuntimeError(f"SYNTHETIC_PRIVATE {HA_TOKEN}")
+
+        def breaking(*args, **kwargs):
+            page = original(*args, **kwargs)
+            self.core.route_status = raising
+            return page
+
+        with mock.patch.object(mi, "build_page", breaking), self.assertRaises(Exception) as raised:
+            await self.service(FakeReader(backend=mi.BACKEND_HACS)).inventory(mi.InventoryQuery())
+        error = raised.exception
+        self.assertIsInstance(error, mi.MarketplaceError)
+        self.assertEqual(error.reason, "provider_error")
+        self.assertIs(error.fallback_occurred, True)
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(error.details))
+
     async def test_admission_asks_for_exactly_the_marketplace_profile(self):
         # HAMCP-290 mutation A8: never an empty or different requirement set.
         await self.service(FakeReader()).inventory(mi.InventoryQuery())
@@ -648,7 +747,12 @@ class ServiceReadTests(ServiceTestCase):
         self.assertFalse(page["fallback_occurred"])
         self.assertEqual(page["commands_sent"], 1)
         self.assertEqual((page["installed_total"], page["count"], page["has_more"]), (3, 2, True))
-        self.assertEqual(self.telemetry.completeness, "complete")
+        # More installed repositories remain: this page is not the inventory.
+        self.assertEqual((page["completeness"], page["partial_reasons"]), ("partial", ["more_pages"]))
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("partial", "partial"))
+        page = await self.service(FakeReader()).inventory(mi.InventoryQuery(limit=3))
+        self.assertEqual((page["has_more"], page["completeness"]), (False, "complete"))
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("complete", "success"))
 
     async def test_backend_is_decided_by_the_command_that_answered(self):
         page = await self.service(FakeReader(backend=mi.BACKEND_HACS)).inventory(mi.InventoryQuery())
@@ -667,6 +771,31 @@ class ServiceReadTests(ServiceTestCase):
         bad_store[0]["full_name"] = "../escape"
         await self.refused(self.service(FakeReader(result=bad_store)).inventory(mi.InventoryQuery()),
                            "malformed_response")
+
+    async def test_failure_attribution_follows_the_dispatch_ledger(self):
+        # Codex D2 (#409): every post-dispatch failure is attributed to the
+        # command that was actually sent, wherever the failure arose.
+        bad_store = store()
+        bad_store[0]["installed"] = "true"
+        for backend, fallback in ((mi.BACKEND_MARKETPLACE, False), (mi.BACKEND_HACS, True)):
+            with self.subTest(backend=backend, failure="projection"):
+                error = await self.refused(self.service(FakeReader(backend=backend, result=bad_store)).inventory(
+                    mi.InventoryQuery()), "malformed_response")
+                self.assertIs(error.fallback_occurred, fallback)
+                self.assertIs(error.details["fallback_occurred"], fallback)
+            with self.subTest(backend=backend, failure="reader_local"):
+                error = await self.refused(self.service(FakeReader(
+                    backend=backend, error=mi.MarketplaceError("response_too_large"))).inventory(mi.InventoryQuery()),
+                    "response_too_large")
+                self.assertIs(error.fallback_occurred, fallback)
+            with self.subTest(backend=backend, failure="unexpected"):
+                error = await self.refused(self.service(FakeReader(
+                    backend=backend, error=RuntimeError("synthetic"))).inventory(mi.InventoryQuery()), "provider_error")
+                self.assertIs(error.fallback_occurred, fallback)
+        # A reader that over-reports fallback without sending it is corrected.
+        error = await self.refused(self.service(FakeReader(
+            error=mi.MarketplaceError("timeout", fallback_occurred=True))).inventory(mi.InventoryQuery()), "timeout")
+        self.assertIs(error.fallback_occurred, False)
 
 
 class PublicToolTests(ServiceTestCase):
@@ -688,6 +817,60 @@ class PublicToolTests(ServiceTestCase):
         self.assertIs(rendered["metadata"]["fallback_occurred"], True)
         self.assertEqual(rendered["metadata"]["backend"], "hacs")
         self.assertEqual(rendered["data"]["count"], 1)
+
+    async def test_truncation_only_renders_partial_with_warning(self):
+        # Codex D1 (#409): through the registered tool, data, metadata,
+        # warnings and telemetry agree.
+        long = store()
+        long[0]["description"] = "d" * (mi.DESCRIPTION_CHARS + 50)
+        with mock.patch.object(mi.MARKETPLACE_INVENTORY, "service", self.service(FakeReader(result=long))):
+            rendered = json.loads(await public.registered_tool().run({}))
+        self.assertTrue(rendered["success"], rendered)
+        self.assertEqual(rendered["data"]["completeness"], "partial")
+        self.assertEqual(rendered["metadata"]["completeness"], "partial")
+        self.assertIsNone(rendered["data"]["redaction"])
+        self.assertEqual(rendered["data"]["truncated_field_count"], 1)
+        self.assertIn(public._PARTIAL, rendered["warnings"])
+        self.assertNotIn(public._MORE_PAGES, rendered["warnings"])
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("partial", "partial"))
+
+    async def test_paged_result_renders_partial_with_continuation_warning(self):
+        with mock.patch.object(mi.MARKETPLACE_INVENTORY, "service", self.service(FakeReader())):
+            rendered = json.loads(await public.registered_tool().run({"limit": 2}))
+        self.assertTrue(rendered["success"], rendered)
+        self.assertEqual((rendered["data"]["has_more"], rendered["data"]["next_offset"]), (True, 2))
+        self.assertEqual((rendered["data"]["completeness"], rendered["metadata"]["completeness"]),
+                         ("partial", "partial"))
+        self.assertIn(public._MORE_PAGES, rendered["warnings"])
+        self.assertNotIn(public._PARTIAL, rendered["warnings"])
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("partial", "partial"))
+        # Control: the last page is complete and carries no warning.
+        with mock.patch.object(mi.MARKETPLACE_INVENTORY, "service", self.service(FakeReader())):
+            rendered = json.loads(await public.registered_tool().run({"limit": 2, "offset": 2}))
+        self.assertEqual((rendered["data"]["has_more"], rendered["metadata"]["completeness"]), (False, "complete"))
+        self.assertEqual(rendered["warnings"], [])
+
+    async def test_clean_inventory_renders_complete_without_warning(self):
+        with mock.patch.object(mi.MARKETPLACE_INVENTORY, "service", self.service(FakeReader())):
+            rendered = json.loads(await public.registered_tool().run({}))
+        self.assertEqual((rendered["data"]["completeness"], rendered["metadata"]["completeness"]),
+                         ("complete", "complete"))
+        self.assertEqual(rendered["data"]["partial_reasons"], [])
+        self.assertEqual(rendered["warnings"], [])
+        self.assertEqual((self.telemetry.completeness, self.telemetry.result_status), ("complete", "success"))
+
+    async def test_refusal_after_fallback_renders_fallback_attribution(self):
+        # Codex D2 (#409): public details and metadata name the HACS fallback.
+        bad_store = store()
+        bad_store[0]["installed"] = "true"
+        for backend, fallback in ((mi.BACKEND_MARKETPLACE, False), (mi.BACKEND_HACS, True)):
+            with self.subTest(backend=backend), mock.patch.object(
+                    mi.MARKETPLACE_INVENTORY, "service", self.service(FakeReader(backend=backend, result=bad_store))):
+                rendered = json.loads(await public.registered_tool().run({}))
+            self.assertFalse(rendered["success"])
+            self.assertEqual(rendered["details"]["reason"], "malformed_response")
+            self.assertIs(rendered["details"]["fallback_occurred"], fallback)
+            self.assertIs(rendered["metadata"]["fallback_occurred"], fallback)
 
     async def test_unadmitted_tool_renders_closed_refusal(self):
         self.core.available = False
@@ -970,6 +1153,81 @@ class EndToEndLoopbackTests(LoopbackTestCase):
                 await service.inventory(mi.InventoryQuery())
         self.assertEqual(raised.exception.reason, "authority_unavailable")
         self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
+        # The fallback was selected but never sent, so it is not attributed.
+        self.assertIs(raised.exception.fallback_occurred, False)
+
+    async def run_public(self, core):
+        with mock.patch.object(mi.MARKETPLACE_INVENTORY, "service", self.service(core)):
+            return json.loads(await public.registered_tool().run({}))
+
+    async def test_truncation_only_over_the_real_reader_is_partial(self):
+        # Codex D1 (#409), real reader and synthetic WebSocket peer.
+        records = store(2, 0)
+        records[0]["name"] = "n" * (mi.NAME_CHARS + 10)
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, result_frame(0, records))
+        rendered = await self.run_public(AdmissionCore())
+        self.assertTrue(rendered["success"], rendered)
+        self.assertEqual((rendered["data"]["completeness"], rendered["metadata"]["completeness"]),
+                         ("partial", "partial"))
+        self.assertIn(public._PARTIAL, rendered["warnings"])
+
+    async def test_paged_result_over_the_real_reader_is_partial(self):
+        # More installed repositories than the default page: partial, with a
+        # continuation warning; nothing was shortened.
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, result_frame(0, store(25, 0)))
+        rendered = await self.run_public(AdmissionCore())
+        self.assertTrue(rendered["success"], rendered)
+        self.assertEqual((rendered["data"]["count"], rendered["data"]["has_more"], rendered["data"]["next_offset"]),
+                         (20, True, 20))
+        self.assertEqual((rendered["data"]["completeness"], rendered["metadata"]["completeness"]),
+                         ("partial", "partial"))
+        self.assertEqual(rendered["data"]["partial_reasons"], ["more_pages"])
+        self.assertEqual(rendered["warnings"], [public._MORE_PAGES])
+
+    async def test_post_fallback_failures_over_the_real_reader_are_attributed(self):
+        # Codex D2 (#409): both list commands sent, then (a) an invalid
+        # installed record or (b) availability withdrawn while building the page.
+        bad = store(2, 0)
+        bad[1]["id"] = "12a"
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
+        self.reply(mi.HACS_LIST_COMMAND, result_frame(0, bad))
+        rendered = await self.run_public(AdmissionCore())
+        self.assertEqual(rendered["details"]["reason"], "malformed_response")
+        self.assertIs(rendered["details"]["fallback_occurred"], True)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], True)
+
+        self.peer.ledger.clear()
+        self.reply(mi.HACS_LIST_COMMAND, result_frame(0, store(2, 0)))
+        core = AdmissionCore()
+        original = mi.build_page
+
+        def withdrawing(*args, **kwargs):
+            page = original(*args, **kwargs)
+            core.available = False
+            return page
+
+        with mock.patch.object(mi, "build_page", withdrawing):
+            rendered = await self.run_public(core)
+        self.assertEqual(rendered["details"]["reason"], "authority_unavailable")
+        self.assertIs(rendered["details"]["fallback_occurred"], True)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], True)
+        self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND, mi.HACS_LIST_COMMAND])
+
+    async def test_first_command_failure_is_not_attributed_to_fallback(self):
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "not_loaded", "Marketplace not loaded"))
+        rendered = await self.run_public(AdmissionCore())
+        self.assertFalse(rendered["success"])
+        self.assertIs(rendered["details"]["fallback_occurred"], False)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], False)
+        self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
+
+    async def test_reader_local_fallback_failure_stays_attributed(self):
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
+        self.reply(mi.HACS_LIST_COMMAND, error_frame(0, "home_assistant_error", "boom"))
+        rendered = await self.run_public(AdmissionCore())
+        self.assertFalse(rendered["success"])
+        self.assertIs(rendered["details"]["fallback_occurred"], True)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], True)
 
 
 def _retired_entry(reviewed_schema=None, open_world=False):

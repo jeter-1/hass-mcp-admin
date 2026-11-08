@@ -203,8 +203,18 @@ MUTATIONS = [
     m("P9-known-secrets-dropped", P,
       (MI, "known_secrets=known_secrets, max_string=bound", "known_secrets=(), max_string=bound")),
     m("P10-partial-never-flagged", P,
-      (MI, "    partial = screen.redacted > 0 or screen.failed_closed or screen.collisions > 0",
-       "    partial = False")),
+      (MI, "    partial_reasons = [reason for reason, present in ((\"sanitized_text\", text_partial),\n"
+           "                                                      (\"more_pages\", has_more)) if present]",
+       "    partial_reasons = []")),
+    m("P14-truncation-alone-complete", P,  # Codex D1 (#409)
+      (MI, " or screen.truncated > 0 or screen.failed_closed", " or screen.failed_closed")),
+    m("P15-more-pages-complete", P,  # D1 paging (#409)
+      (MI, '("more_pages", has_more)) if present]', '("more_pages", False)) if present]')),
+    m("P16-completeness-ignores-paging", P,  # D1 paging (#409)
+      (MI, '"completeness": "partial" if partial_reasons else "complete",',
+       '"completeness": "partial" if text_partial else "complete",')),
+    m("P17-more-pages-warning-dropped", P,  # D1 paging (#409)
+      (TI, '        if "more_pages" in value["partial_reasons"]:\n            warnings.append(_MORE_PAGES)\n', "")),
     m("P11-fingerprint-over-page-only", P,
       (MI, '"inventory_fingerprint": inventory_fingerprint(backend, records),',
        '"inventory_fingerprint": inventory_fingerprint(backend, page),')),
@@ -226,15 +236,15 @@ MUTATIONS = [
       (MI, '                            authorize()\n                            on_dispatch(payload["type"])',
        '                            on_dispatch(payload["type"])')),
     m("A5-no-recheck-before-publishing", A,
-      (MI, "        if self.authority() != authority:\n"
-           '            raise MarketplaceError("authority_unavailable", fallback_occurred=backend == BACKEND_HACS)',
-       "        if False:\n"
-       '            raise MarketplaceError("authority_unavailable", fallback_occurred=backend == BACKEND_HACS)')),
+      (MI, "                if self.authority() != authority:\n"
+           '                    failure = MarketplaceError("authority_unavailable")',
+       "                if False:\n"
+       '                    failure = MarketplaceError("authority_unavailable")')),
     m("A6-read-recheck-noop", A,
       (MI, "            if self.authority() != authority:\n"
-           '                raise MarketplaceError("authority_unavailable", fallback_occurred=len(commands) > 1)',
+           '                raise MarketplaceError("authority_unavailable")',
        "            if False:\n"
-       '                raise MarketplaceError("authority_unavailable", fallback_occurred=len(commands) > 1)')),
+       '                raise MarketplaceError("authority_unavailable")')),
     m("A7-core-identity-unchecked", A,
       (MI, '                        if auth.get("ha_version") != core_version:', "                        if False:")),
     m("A8-service-requirement-empty", A,
@@ -296,6 +306,18 @@ MUTATIONS = [
        '        metadata["fallback_occurred"] = False')),
     m("T4-refusal-after-fallback-unattributed", T,
       (MI, "            if fallback and not exc.fallback_occurred:", "            if False:")),
+    # Codex D2 (#409): post-dispatch failures follow the dispatch ledger.
+    m("T6-ledger-attribution-dropped", T,
+      (MI, "            raise MarketplaceError(failure.reason,\n"
+           "                                   fallback_occurred=HACS_LIST_COMMAND in commands) from None",
+       "            raise failure")),
+    m("T7-ledger-only-adds-fallback", T,
+      (MI, "fallback_occurred=HACS_LIST_COMMAND in commands)",
+       "fallback_occurred=failure.fallback_occurred or HACS_LIST_COMMAND in commands)")),
+    m("T8-ledger-counts-first-command", T,
+      (MI, "fallback_occurred=HACS_LIST_COMMAND in commands)", "fallback_occurred=bool(commands))")),
+    m("T9-final-authority-exception-unclosed", T,
+      (MI, '            except Exception:\n                failure = MarketplaceError("provider_error")\n', "")),
     m("T5-refused-value-reflected", T,
       (TI, '            async def invalid():\n                raise MarketplaceError("invalid_arguments")',
        '            async def invalid():\n                raise ValueError(repr(arguments))')),
