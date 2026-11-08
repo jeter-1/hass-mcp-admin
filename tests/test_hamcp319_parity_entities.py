@@ -32,6 +32,11 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
 import test_upstream_8_5_compatibility as previous
+# Module imports, not ``from ... import``: a TestCase bound at module level is
+# discovered again under this module's id (duplicate_discovered_test_id).
+from ha_mcp_engineering.providers import upstream_blueprint as blueprint_adapter
+from ha_mcp_engineering.providers import upstream_platform_reads as platform_adapter
+import test_hamcp129_platform_reads as platform_tests
 
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/entities'
 RESPONSES = json.loads((FIXTURES / 'responses.json').read_text(encoding='utf-8'))
@@ -556,6 +561,36 @@ class Parity91Tests(ParityBase):
         self.assertIn('unavailable', guide)
         self.assertIn('SKILL.md', guide)
 
+    async def test_91_skill_guide_description_states_file_only(self):
+        """Architect ruling 2026-11-07 item 3: the 9.1 skill-guide description
+        rewrite is accepted on condition that it states 9.1 is file-only, with
+        the inventory and file-list tiers unavailable. Pinned exactly, both in
+        the reviewed policy and on the exposed MCP tool."""
+
+        expected = (
+            "Read a bundled Home Assistant skill document: supply skill and a file "
+            "path relative to that skill (start with SKILL.md). On this upstream "
+            "version the skill inventory (no arguments) and file-list (skill only) "
+            "modes are unavailable and return an unavailable refusal.")
+        policy = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_1_0.json')
+                            .read_text(encoding='utf-8'))
+        rows = {e['upstream_name']: e for e in policy['tools']}
+        self.assertEqual(rows['ha_get_skill_guide']['description'], expected)
+        exposed = {t.name: t for t in await self.server.list_tools()}
+        guide = exposed['ha_get_skill_guide'].description
+        self.assertEqual(guide, expected)
+        # File-only: the one served mode names both required arguments ...
+        self.assertIn('supply skill and a file path', guide)
+        # ... and both other tiers are named as unavailable.
+        for tier in ('skill inventory (no arguments)', 'file-list (skill only)'):
+            self.assertIn(tier, guide)
+        self.assertIn('modes are unavailable', guide)
+        # The 8.5 description is not reused for 9.1.
+        policy_85 = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_5_0.json')
+                               .read_text(encoding='utf-8'))
+        rows_85 = {e['upstream_name']: e for e in policy_85['tools']}
+        self.assertNotEqual(rows_85['ha_get_skill_guide']['description'], expected)
+
     async def test_91_parity_rows_public_surface_matches_85(self):
         ours = {t.name: t for t in await self.server.list_tools() if t.name in ENT_TOOLS}
         baseline = Transport(previous.capture('8.5.0')['tools'], '8.5.0')
@@ -785,6 +820,139 @@ class F3ReplayTests(ParityBase):
             self.assertNotIn('how_to_use', result['data'])
             self.assertIn('name: home-assistant-best-practices', result['data']['content'])
             self.assert_fixed_warnings(result)
+
+
+# Ledger rows 25-28 (design section 7): the compiled blueprint list/get wrapper
+# and the three platform wrappers, one row-named test per release.
+#
+# Evidence class per row (architect ruling 2026-11-07, item 1):
+# * 8.5.0 row 25 is C: the decoded 8.5.0 standalone captures
+#   tests/fixtures/ha_mcp_8_5_0/read-results.json standalone-call-04/05.
+# * 8.5.0 rows 26-28 are C: tests/fixtures/hamcp129/results-8.5.0.json, the
+#   output of the exact pinned 8.5.0 release run offline against synthetic
+#   Core and Supervisor fakes (tests/fixtures/hamcp129/provenance.json).
+# * 9.1.0 rows 25-28 are S: no 9.1.0 call capture exists for these tools. The
+#   9.1.0 wire input schemas equal 8.6.0 (same adapter fingerprints in
+#   upstream_blueprint.py and upstream_platform_reads.py), so the 8.6.0
+#   recordings are replayed (tests/fixtures/ha_mcp_8_6_0/read-results.json
+#   standalone[11], an empty list, and hamcp129/results-8.6.0.json), plus the
+#   8.5.0 blueprint capture replayed for a non-empty list and a get. The live
+#   9.1.0 proof is the 9.1 exact-image lanes, not these replays.
+READ_85 = json.loads((ROOT / 'tests/fixtures/ha_mcp_8_5_0/read-results.json').read_text(encoding='utf-8'))
+READ_86 = json.loads((ROOT / 'tests/fixtures/ha_mcp_8_6_0/read-results.json').read_text(encoding='utf-8'))
+BLUEPRINT = 'ha_get_blueprint'
+PLATFORM_ROW = {26: platform_adapter.APP, 27: platform_adapter.INTEGRATION, 28: platform_adapter.HEALTH}
+PLATFORM_RESULTS = {'8.5.0': 'results-8.5.0.json', '9.1.0': 'results-8.6.0.json'}
+BLUEPRINT_REFUSALS = (
+    {'action': 'delete'}, {'action': 'import'}, {'url': 'https://example.invalid/x.yaml'},
+    {'path': '../secrets.yaml'}, {'path': 'a/../b.yaml'}, {'path': 'https://example.invalid/x.yaml'},
+    {'path': 'a/*.yaml'}, {'path': 'a/b.txt'}, {'path': ''}, {'domain': 'template'},
+    {'domain': 'automation', 'path': 'x.yaml', 'config': {}},
+)
+
+
+class ParityPlatformRowsTests(unittest.IsolatedAsyncioTestCase):
+    def _blueprint_cases(self, version):
+        captured_list = READ_85['standalone-call-04.json']
+        captured_get = READ_85['standalone-call-05.json']
+        cases = [({}, captured_list), ({'path': 'assessment/read.yaml'}, captured_get)]
+        if version == '9.1.0':
+            replay = READ_86['standalone'][11]
+            self.assertEqual((replay['public_name'], replay['upstream_name']), (BLUEPRINT, 'ha_manage_blueprints'))
+            cases.insert(0, ({'domain': 'automation'}, {'arguments': replay['arguments'], 'result': replay['result']}))
+        return cases
+
+    async def _row_25(self, version):
+        gateway, transport = await platform_tests.make_gateway(version)
+        tool = gateway._registered_tool_registry.snapshot()[BLUEPRINT]
+        self.assertEqual(tool.parameters, blueprint_adapter.PUBLIC_SCHEMA)
+        self.assertIs(tool.annotations.readOnlyHint, True)
+        self.assertNotIn('ha_manage_blueprints', gateway._registered_tool_registry.snapshot())
+        for public, record in self._blueprint_cases(version):
+            with self.subTest(version=version, public=public):
+                transport.sent.clear()
+                transport.respond = lambda name, args, record=record: deepcopy(record['result'])
+                result = await platform_tests.call(gateway, BLUEPRINT, public)
+                self.assertTrue(result['success'], result)
+                self.assertFalse(result['metadata']['fallback_occurred'])
+                self.assertEqual(result['metadata']['upstream_version'], version)
+                self.assertEqual(transport.sent, [('ha_manage_blueprints', record['arguments'])])
+                expected = record['result']['structuredContent']['data']
+                if 'blueprints' in expected:
+                    self.assertEqual([item['path'] for item in result['data']['data']['blueprints']],
+                                     [item['path'] for item in expected['blueprints']])
+                else:
+                    self.assertEqual(result['data']['data']['path'], expected['path'])
+        transport.sent.clear()
+        for arguments in BLUEPRINT_REFUSALS:
+            with self.subTest(version=version, refusal=arguments):
+                platform_tests.refused(self, await platform_tests.call(gateway, BLUEPRINT, arguments))
+        self.assertEqual(transport.sent, [])
+
+    async def _platform_row(self, version, row):
+        tool_name = PLATFORM_ROW[row]
+        cases = json.loads((platform_tests.FIXTURES / PLATFORM_RESULTS[version]).read_text(encoding='utf-8'))
+        gateway, transport = await platform_tests.make_gateway(version)
+        published = gateway._registered_tool_registry.snapshot()[tool_name]
+        self.assertEqual(published.parameters, platform_adapter.PUBLIC_SCHEMAS[tool_name])
+        replayed = 0
+        for case in sorted(cases):
+            name = case.split('@')[0]
+            public_tool, public = platform_tests.FIXTURE_PUBLIC[name]
+            if public_tool != tool_name:
+                continue
+            mode = case[len(name):]
+            fixture = cases[case]
+            by_args = {json.dumps(fixture['arguments'], sort_keys=True): fixture['result']}
+            if fixture['arguments'].get('include_stats'):
+                plain = cases['apps_installed' + mode]
+                by_args[json.dumps(plain['arguments'], sort_keys=True)] = plain['result']
+            with self.subTest(version=version, case=case):
+                transport.sent.clear()
+                transport.respond = lambda _n, args, by_args=by_args: platform_tests.ok(
+                    by_args[json.dumps(args, sort_keys=True)])
+                result = await platform_tests.call(gateway, tool_name, public)
+                self.assertTrue(result['success'], result)
+                self.assertFalse(result['metadata']['fallback_occurred'])
+                self.assertEqual(transport.sent[-1], (fixture['tool'], fixture['arguments']))
+                status, reasons = platform_tests.FIXTURE_COMPLETENESS[name]
+                self.assertEqual(result['data']['completeness'], {'status': status, 'reasons': reasons})
+                text = json.dumps(result)
+                for canary in platform_tests.FIXTURE_CANARIES:
+                    self.assertNotIn(canary, text)
+                replayed += 1
+        self.assertGreater(replayed, 0)
+        transport.sent.clear()
+        for arguments in platform_tests.REFUSALS[tool_name]:
+            with self.subTest(version=version, refusal=arguments):
+                result = await platform_tests.call(gateway, tool_name, arguments)
+                platform_tests.refused(self, result)
+                self.assertIn(result['details']['failure_category'], platform_tests.REFUSED, result)
+        self.assertEqual(transport.sent, [])
+
+    async def test_91_parity_row_25_blueprint(self):
+        await self._row_25('9.1.0')
+
+    async def test_85_parity_row_25_blueprint(self):
+        await self._row_25('8.5.0')
+
+    async def test_91_parity_row_26_app(self):
+        await self._platform_row('9.1.0', 26)
+
+    async def test_85_parity_row_26_app(self):
+        await self._platform_row('8.5.0', 26)
+
+    async def test_91_parity_row_27_integration(self):
+        await self._platform_row('9.1.0', 27)
+
+    async def test_85_parity_row_27_integration(self):
+        await self._platform_row('8.5.0', 27)
+
+    async def test_91_parity_row_28_system_health(self):
+        await self._platform_row('9.1.0', 28)
+
+    async def test_85_parity_row_28_system_health(self):
+        await self._platform_row('8.5.0', 28)
 
 
 class FixtureProvenanceTests(unittest.TestCase):

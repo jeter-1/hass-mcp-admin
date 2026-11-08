@@ -22,7 +22,7 @@ transport, real typed power service) against loopback ``RedirectPeer`` peers:
 * ``test_side_by_side_stage_sequence`` (side by side): one gateway, one
   Engineering build with both registry entries, the configuration generation
   changed without restart through A -> B1 -> B2 -> rollback with the suffix
-  left -> rollback with the suffix removed -> Engineering rollback.
+  left -> rollback with the suffix removed (upstream rollback to 8.5.0).
 * ``test_rollback_record_not_redispatched`` (side by side): a typed power task
   written under 9.1.0 (terminal and non-terminal) is read and reconciled under
   an 8.5.0 configuration, displayed by its recorded 9.1.0 contract, and never
@@ -46,9 +46,16 @@ Fixture provenance (committed evidence only, never hand-edited):
 * Typed power: the TW-area templates through
   ``test_hamcp319_typed_writes.Peer``.
 
-The Engineering-rollback stage is modelled by this build with the 9.1.0 entry
-removed from the loaded registry; the older Engineering binary itself is not
-executed here. Loopback peers only; every secret is synthetic.
+Engineering rollback is NOT accepted here (architect ruling 2026-11-07, item
+2). Its acceptance is the exact-image lane stage that runs the previous
+release, 2.4.2-beta.6, by its published image digest against 8.5.0 (handoff
+Lane contract section E; runner owned by the stacked lanes PR). The separate
+``AdditionalRegistryWithout91Tests`` only checks that the current build's
+version gate refuses 9.1.0 when the 9.1.0 entry is absent from the loaded
+registry; it is an additional unit test and never counts as rollback
+acceptance in tests, ledger, manifests or the PR body.
+
+Loopback peers only; every secret is synthetic.
 """
 
 from __future__ import annotations
@@ -431,10 +438,6 @@ class SideBySideTests(_Assertions, unittest.TestCase):
         registry = load_reviewed_upstream_release_registry()
         self.assertIn("8.5.0", registry.by_version)
         self.assertIn("9.1.0", registry.by_version)
-        engineering_rollback = replace(
-            registry,
-            releases=tuple(item for item in registry.releases if item.version != "9.1.0"),
-        )
         gateway = UpstreamReadGateway()
         abandoned: list[object] = []
         records: dict[str, dict] = {}
@@ -516,14 +519,8 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 stale_tool=b2["tools"][b2["case"].public_tool],
             )
             await stage("rollback_suffix_removed", "8.5.0", "legacy")
-            # Engineering rollback: this build without its 9.1.0 entry, with
-            # the app still on 9.1.0 at the Stage B2 value.
-            await stage(
-                "engineering_rollback",
-                "9.1.0",
-                "strict_full",
-                release_registry=engineering_rollback,
-            )
+            # Engineering rollback (2.4.2-beta.6 by digest) is a lane stage,
+            # not modelled here; see the module docstring.
 
         with patch.object(socketserver.BaseServer, "handle_error", lambda *_a: None):
             asyncio.run(scenario())
@@ -582,13 +579,7 @@ class SideBySideTests(_Assertions, unittest.TestCase):
         self.assertEqual(left["calls"], [])
         # Rollback with the suffix removed: back to the Stage A state.
         admitted("rollback_suffix_removed", "8.5.0", 28)
-        # Engineering rollback: no 9.1.0 entry, the existing unsupported
-        # refusal, zero tools/call.
-        rollback = records["engineering_rollback"]
-        refused("engineering_rollback", category="upstream_version_mismatch", listed=3)
-        self.assertEqual(rollback["health"]["version_status"], "rejected_unreviewed")
-        self.assertNotIn("9.1.0", rollback["health"]["reviewed_supported_versions"])
-        self.assertIn("8.5.0", rollback["health"]["reviewed_supported_versions"])
+        self.assertNotIn("engineering_rollback", records)
         # Every generation change replaced and abandoned the previous
         # transport; the previous snapshot is no longer current.
         order = list(records)
@@ -795,6 +786,55 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 self.assertIs(entry["dispatch_intent_recorded"], True)
             else:
                 self.assertIs(entry["read_only_recovery"], True)
+
+
+class AdditionalRegistryWithout91Tests(_Assertions, unittest.TestCase):
+    """Additional unit test, NOT Engineering rollback acceptance.
+
+    The current build with the 9.1.0 entry removed from its loaded registry
+    refuses a 9.1.0 peer with the existing unsupported-version refusal and
+    dispatches nothing. This exercises the current version gate only. The
+    previous release's own binary (2.4.2-beta.6, by published digest, against
+    8.5.0) is the rollback acceptance and runs only in the exact-image lane
+    (architect ruling 2026-11-07, item 2).
+    """
+
+    def test_current_build_without_91_entry_refuses_91_additional(self):
+        registry = load_reviewed_upstream_release_registry()
+        without_91 = replace(
+            registry,
+            releases=tuple(item for item in registry.releases if item.version != "9.1.0"),
+        )
+        self.assertNotIn("9.1.0", without_91.by_version)
+        self.assertIn("8.5.0", without_91.by_version)
+        case = _delegated_case("9.1.0")
+        calls = []
+
+        def handler(tool, arguments):
+            calls.append((tool, arguments))
+            return deepcopy(case.structured)
+
+        async def scenario():
+            gateway = UpstreamReadGateway()
+            peer = _peer("9.1.0", "strict_full", call_handler=handler)
+            with peer.serve():
+                gateway.configure(_settings(peer.url), release_registry=without_91)
+                await asyncio.wait_for(gateway.initialize(FastMCP("without-91")), DEADLINE)
+                return (gateway.health_snapshot(),
+                        frozenset(gateway._registered_tool_registry.snapshot()), peer)
+
+        with patch.object(socketserver.BaseServer, "handle_error", lambda *_a: None):
+            health, exposed, peer = asyncio.run(scenario())
+        self.assertNotEqual(health["admission_status"], "admitted_exact")
+        self.assertIs(health["admission_complete"], False)
+        self.assertEqual(health["last_discovery_failure_category"], "upstream_version_mismatch")
+        self.assertEqual(health["version_status"], "rejected_unreviewed")
+        self.assertNotIn("9.1.0", health["reviewed_supported_versions"])
+        self.assertIn("8.5.0", health["reviewed_supported_versions"])
+        self.assertEqual(exposed & set(LEDGER), frozenset())
+        self.assertEqual(calls, [])
+        self.assertEqual(peer.counters.executions, 0)
+        self.assertEqual(peer.counters.destination_total(), 0)
 
 
 if __name__ == "__main__":
