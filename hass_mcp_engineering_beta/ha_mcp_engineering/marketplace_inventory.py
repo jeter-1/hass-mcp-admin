@@ -248,8 +248,13 @@ class MarketplaceReader:
     async def read(
         self, *, core_version: str, authorize: Callable[[], None],
         on_dispatch: Callable[[str], None] = lambda _command: None,
+        on_sent: Callable[[str], None] = lambda _command: None,
     ) -> tuple[str, list]:
-        """Return ``(backend, store)`` or raise ``MarketplaceError``."""
+        """Return ``(backend, store)`` or raise ``MarketplaceError``.
+
+        ``on_dispatch`` admits a command before it is written; ``on_sent``
+        records it only after the frame has been written to the transport.
+        """
 
         deadline = min(MAX_SECONDS, float(getattr(self.settings, "ha_timeout_seconds", MAX_SECONDS)))
         if not math.isfinite(deadline) or deadline <= 0:
@@ -338,15 +343,19 @@ class MarketplaceReader:
                             raise MarketplaceError("identity_mismatch")
 
                         async def send(command_id: int, payload: Mapping[str, str]):
+                            nonlocal fallback
                             authorize()
                             on_dispatch(payload["type"])
+                            # With compress=0 aiohttp writes the frame before its
+                            # first await; a closing transport raises instead.
                             await websocket.send_json({"id": command_id, **payload})
+                            on_sent(payload["type"])
+                            fallback = fallback or payload is HACS_PAYLOAD
                             return classify_reply(await receive(), command_id)
 
                         store = await send(1, MARKETPLACE_PAYLOAD)
                         backend = BACKEND_MARKETPLACE
                         if store is None:
-                            fallback = True
                             backend = BACKEND_HACS
                             store = await send(2, HACS_PAYLOAD)
                             if store is None:
@@ -581,7 +590,8 @@ class MarketplaceInventoryService:
         if current_caller_id() == "anonymous":
             raise MarketplaceError("authority_unavailable")
         authority = self.authority()
-        commands: list[str] = []
+        commands: list[str] = []  # admitted for dispatch
+        sent: list[str] = []  # written to the transport
 
         def authorize() -> None:
             # The admission generation and Core identity hold across the read.
@@ -593,10 +603,17 @@ class MarketplaceInventoryService:
                 raise MarketplaceError("provider_error")  # unreachable by construction
             commands.append(command)
 
+        def on_sent(command: str) -> None:
+            # Only an admitted command, in admission order, can be sent.
+            if len(sent) >= len(commands) or commands[len(sent)] != command:
+                raise MarketplaceError("provider_error")  # unreachable by construction
+            sent.append(command)
+
         failure = None
         try:
             backend, store = await self.reader.read(
                 core_version=authority[1], authorize=authorize, on_dispatch=on_dispatch,
+                on_sent=on_sent,
             )
             page = build_page(backend, store, request, self.known_secrets)
         except asyncio.CancelledError:
@@ -620,10 +637,12 @@ class MarketplaceInventoryService:
             except Exception:
                 failure = MarketplaceError("provider_error")
         if failure is not None:
-            # Attribution follows the dispatch ledger wherever the failure arose:
+            # Attribution follows the sent ledger wherever the failure arose:
             # reader, projection, sanitization or the final authority check.
+            # A HACS command admitted but rejected before its frame was
+            # written was never sent.
             raise MarketplaceError(failure.reason,
-                                   fallback_occurred=HACS_LIST_COMMAND in commands) from None
+                                   fallback_occurred=HACS_LIST_COMMAND in sent) from None
         telemetry = current_telemetry()
         if telemetry is not None:
             telemetry.completeness = page["completeness"]

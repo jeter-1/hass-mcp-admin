@@ -309,15 +309,29 @@ MUTATIONS = [
     # Codex D2 (#409): post-dispatch failures follow the dispatch ledger.
     m("T6-ledger-attribution-dropped", T,
       (MI, "            raise MarketplaceError(failure.reason,\n"
-           "                                   fallback_occurred=HACS_LIST_COMMAND in commands) from None",
+           "                                   fallback_occurred=HACS_LIST_COMMAND in sent) from None",
        "            raise failure")),
     m("T7-ledger-only-adds-fallback", T,
-      (MI, "fallback_occurred=HACS_LIST_COMMAND in commands)",
-       "fallback_occurred=failure.fallback_occurred or HACS_LIST_COMMAND in commands)")),
+      (MI, "fallback_occurred=HACS_LIST_COMMAND in sent)",
+       "fallback_occurred=failure.fallback_occurred or HACS_LIST_COMMAND in sent)")),
     m("T8-ledger-counts-first-command", T,
-      (MI, "fallback_occurred=HACS_LIST_COMMAND in commands)", "fallback_occurred=bool(commands))")),
+      (MI, "fallback_occurred=HACS_LIST_COMMAND in sent)", "fallback_occurred=bool(sent))")),
     m("T9-final-authority-exception-unclosed", T,
       (MI, '            except Exception:\n                failure = MarketplaceError("provider_error")\n', "")),
+    # Codex D2 residual (#409): attribution follows the frame written.
+    m("T10-attribution-from-admitted-not-sent", T,
+      (MI, "fallback_occurred=HACS_LIST_COMMAND in sent)", "fallback_occurred=HACS_LIST_COMMAND in commands)")),
+    m("T11-sent-recorded-before-write", T,
+      (MI, '                            await websocket.send_json({"id": command_id, **payload})\n'
+           '                            on_sent(payload["type"])\n',
+       '                            on_sent(payload["type"])\n'
+       '                            await websocket.send_json({"id": command_id, **payload})\n')),
+    m("T12-reader-fallback-on-selection", T,
+      (MI, "                            fallback = fallback or payload is HACS_PAYLOAD\n", ""),
+      (MI, "                            backend = BACKEND_HACS\n",
+       "                            fallback = True\n                            backend = BACKEND_HACS\n")),
+    m("T13-sent-ledger-unordered", T,
+      (MI, "            if len(sent) >= len(commands) or commands[len(sent)] != command:", "            if False:")),
     m("T5-refused-value-reflected", T,
       (TI, '            async def invalid():\n                raise MarketplaceError("invalid_arguments")',
        '            async def invalid():\n                raise ValueError(repr(arguments))')),

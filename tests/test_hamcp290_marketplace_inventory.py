@@ -165,19 +165,25 @@ class AdmissionCore:
 
 
 class FakeReader:
-    def __init__(self, backend=mi.BACKEND_MARKETPLACE, result=None, error=None, during=None):
+    def __init__(self, backend=mi.BACKEND_MARKETPLACE, result=None, error=None, during=None, unsent=False):
         self.backend = backend
         self.result = store() if result is None else result
         self.error = error
         self.during = during
+        # The last command is admitted but its frame is never written.
+        self.unsent = unsent
         self.calls = 0
 
-    async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None):
+    async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None, on_sent=lambda _c: None):
         self.calls += 1
         authorize()
-        on_dispatch(mi.MARKETPLACE_LIST_COMMAND)
+        commands = [mi.MARKETPLACE_LIST_COMMAND]
         if self.backend == mi.BACKEND_HACS:
-            on_dispatch(mi.HACS_LIST_COMMAND)
+            commands.append(mi.HACS_LIST_COMMAND)
+        for index, command in enumerate(commands):
+            on_dispatch(command)
+            if not (self.unsent and index == len(commands) - 1):
+                on_sent(command)
         if self.during is not None:
             self.during()
         authorize()
@@ -716,12 +722,13 @@ class ServiceAdmissionTests(ServiceTestCase):
                 self.commands = commands
                 self.dispatched = []
 
-            async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None):
+            async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None, on_sent=lambda _c: None):
                 self.calls += 1
                 for command in self.commands:
                     authorize()
                     on_dispatch(command)
                     self.dispatched.append(command)
+                    on_sent(command)
                 return self.backend, deepcopy(self.result)
 
         for commands in (["hacs/repository/download"],
@@ -796,6 +803,45 @@ class ServiceReadTests(ServiceTestCase):
         error = await self.refused(self.service(FakeReader(
             error=mi.MarketplaceError("timeout", fallback_occurred=True))).inventory(mi.InventoryQuery()), "timeout")
         self.assertIs(error.fallback_occurred, False)
+
+    async def test_admitted_but_unwritten_fallback_is_not_attributed(self):
+        # Codex D2 residual (#409): attribution follows the frame written, not
+        # the command admitted; a reader over-reporting the attempt is corrected.
+        for reported in (False, True):
+            with self.subTest(reader_reported=reported):
+                error = await self.refused(self.service(FakeReader(
+                    backend=mi.BACKEND_HACS, unsent=True,
+                    error=mi.MarketplaceError("transport_unavailable", fallback_occurred=reported),
+                )).inventory(mi.InventoryQuery()), "transport_unavailable")
+                self.assertIs(error.fallback_occurred, False)
+                self.assertIs(error.details["fallback_occurred"], False)
+        # Control: the same failure after the HACS frame was written.
+        error = await self.refused(self.service(FakeReader(
+            backend=mi.BACKEND_HACS, error=mi.MarketplaceError("transport_unavailable"),
+        )).inventory(mi.InventoryQuery()), "transport_unavailable")
+        self.assertIs(error.fallback_occurred, True)
+
+    async def test_sent_ledger_accepts_only_admitted_commands_in_order(self):
+        class Recording(FakeReader):
+            def __init__(self, script):
+                super().__init__()
+                self.script = script
+
+            async def read(self, *, core_version, authorize, on_dispatch=lambda _c: None, on_sent=lambda _c: None):
+                for kind, command in self.script:
+                    (on_dispatch if kind == "dispatch" else on_sent)(command)
+                return self.backend, deepcopy(self.result)
+
+        for script in (
+            [("sent", mi.HACS_LIST_COMMAND)],
+            [("dispatch", mi.MARKETPLACE_LIST_COMMAND), ("sent", mi.HACS_LIST_COMMAND)],
+            [("dispatch", mi.MARKETPLACE_LIST_COMMAND), ("sent", mi.MARKETPLACE_LIST_COMMAND),
+             ("sent", mi.MARKETPLACE_LIST_COMMAND)],
+        ):
+            with self.subTest(script=script):
+                error = await self.refused(self.service(Recording(script)).inventory(mi.InventoryQuery()),
+                                           "provider_error")
+                self.assertIs(error.fallback_occurred, False)
 
 
 class PublicToolTests(ServiceTestCase):
@@ -892,6 +938,7 @@ class LoopbackPeer:
         self.hold = False
         self.extra_frame: str | None = None
         self.greeting_pad = 0
+        self.drop: str | None = None  # record this command, then close unanswered
 
     async def handler(self, request):
         self.connections += 1
@@ -908,6 +955,8 @@ class LoopbackPeer:
                     break
                 command = json.loads(message.data)
                 self.ledger.append(command)
+                if command.get("type") == self.drop:
+                    break
                 if self.hold:
                     await asyncio.sleep(5)
                 if self.extra_frame is not None:
@@ -919,6 +968,31 @@ class LoopbackPeer:
         finally:
             await ws.close()
         return ws
+
+
+def closing_transport(command: str, *, before_write: bool):
+    """Close the client transport just before or just after ``command`` is written.
+
+    The pinned aiohttp writer itself rejects a write to a closing transport;
+    ``writes`` records only frames that the real ``send_json`` accepted.
+    """
+
+    import aiohttp
+
+    real = aiohttp.ClientWebSocketResponse.send_json
+    writes: list[str] = []
+
+    async def send_json(self, data, *args, **kwargs):
+        if data.get("type") != command:
+            return await real(self, data, *args, **kwargs)
+        if before_write:
+            self._writer.transport.close()
+        await real(self, data, *args, **kwargs)
+        writes.append(command)
+        if not before_write:
+            self._writer.transport.close()
+
+    return mock.patch.object(aiohttp.ClientWebSocketResponse, "send_json", send_json), writes
 
 
 class LoopbackTestCase(unittest.IsolatedAsyncioTestCase):
@@ -985,6 +1059,23 @@ class ReaderLoopbackTests(LoopbackTestCase):
         self.assertEqual(self.peer.ledger, [{"id": 1, "type": "marketplace/repositories/list"},
                                             {"id": 2, "type": "hacs/repositories/list"}])
         self.assertEqual(self.peer.connections, 1)
+
+    async def test_reader_attributes_fallback_only_after_the_hacs_frame_is_written(self):
+        # Codex D2 residual (#409): selecting HACS or entering send_json is not
+        # sending it; the reader's own flag follows the written frame.
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
+        patch, writes = closing_transport(mi.HACS_LIST_COMMAND, before_write=True)
+        with patch:
+            await self.failed("transport_unavailable", fallback=False)
+        self.assertEqual(writes, [])
+        self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
+
+        self.peer.ledger.clear()
+        patch, writes = closing_transport(mi.HACS_LIST_COMMAND, before_write=False)
+        with patch, self.assertRaises(mi.MarketplaceError) as raised:
+            await self.read()
+        self.assertEqual(writes, [mi.HACS_LIST_COMMAND])
+        self.assertIs(raised.exception.fallback_occurred, True)
 
     async def test_hacs_unknown_command_is_unavailable_not_a_third_command(self):
         self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
@@ -1220,6 +1311,43 @@ class EndToEndLoopbackTests(LoopbackTestCase):
         self.assertIs(rendered["details"]["fallback_occurred"], False)
         self.assertIs(rendered["metadata"]["fallback_occurred"], False)
         self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
+
+    async def test_hacs_rejected_before_write_is_not_attributed_to_fallback(self):
+        # Codex D2 residual (#409), real reader, public tool and synthetic peer:
+        # Marketplace answers exact unknown_command, then the client transport
+        # closes before the HACS frame is written. No HACS frame, no fallback.
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
+        self.reply(mi.HACS_LIST_COMMAND, result_frame(0, store()))
+        patch, writes = closing_transport(mi.HACS_LIST_COMMAND, before_write=True)
+        with patch:
+            rendered = await self.run_public(AdmissionCore())
+        self.assertFalse(rendered["success"])
+        self.assertEqual(rendered["details"]["reason"], "transport_unavailable")
+        self.assertIs(rendered["details"]["fallback_occurred"], False)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], False)
+        self.assertEqual(writes, [])
+        self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
+
+    async def test_hacs_failure_after_write_stays_attributed_to_fallback(self):
+        # Positive control: the HACS frame was written, then (a) the client
+        # transport closed or (b) the peer received it and dropped the reply.
+        self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))
+        self.reply(mi.HACS_LIST_COMMAND, result_frame(0, store()))
+        patch, writes = closing_transport(mi.HACS_LIST_COMMAND, before_write=False)
+        with patch:
+            rendered = await self.run_public(AdmissionCore())
+        self.assertFalse(rendered["success"])
+        self.assertEqual(writes, [mi.HACS_LIST_COMMAND])
+        self.assertIs(rendered["details"]["fallback_occurred"], True)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], True)
+
+        self.peer.ledger.clear()
+        self.peer.drop = mi.HACS_LIST_COMMAND
+        rendered = await self.run_public(AdmissionCore())
+        self.assertFalse(rendered["success"])
+        self.assertIs(rendered["details"]["fallback_occurred"], True)
+        self.assertIs(rendered["metadata"]["fallback_occurred"], True)
+        self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND, mi.HACS_LIST_COMMAND])
 
     async def test_reader_local_fallback_failure_stays_attributed(self):
         self.reply(mi.MARKETPLACE_LIST_COMMAND, error_frame(0, "unknown_command"))

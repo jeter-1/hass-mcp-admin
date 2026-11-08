@@ -272,11 +272,23 @@ standard `response_size_limit`.
   "fallback_occurred": <bool>}`.
 - On success, `fallback_occurred` is true only when the HACS command produced
   the result.
-- On refusal, `fallback_occurred` follows the dispatch ledger: it is true
+- On refusal, `fallback_occurred` follows the sent ledger: it is true
   exactly when the HACS command was sent. This holds wherever the refusal
   arose: in the reader, projection, sanitization or the final authority
   check. A fallback that was selected but never sent (for example, authority
   lost just before the second command) is not attributed.
+- The service keeps two ledgers. `on_dispatch` admits a command before it is
+  written; it enforces the closed vocabulary and the two-command ceiling.
+  `on_sent` records the command only after `send_json` returns, which means
+  the frame was written to the transport. Only `on_sent` drives attribution.
+  A transport rejection before the write (for example, a closing transport)
+  is therefore not a fallback. A HACS frame that was written and then failed
+  or lost its reply is a fallback. The reader's own flag follows the same
+  boundary. `on_sent` accepts only an admitted command, in admission order.
+- Limit: with `compress=0`, the pinned aiohttp 3.14.4 writer writes the frame
+  before its first await. Its only later await is the flow-control drain. That
+  drain runs only after 256 KiB of output and only on a paused transport.
+  These frames are far below that, so "returned" and "written" coincide.
 - `METRICS.record_provider_result("direct_ha_api", ...)` is recorded for each
   command.
 
