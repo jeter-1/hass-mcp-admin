@@ -181,6 +181,13 @@ INPUT_SELECT_TARGET_TYPE = "input_select"
 SCRIPT_TRACE_PROFILE = "core.script_trace_read"
 SCRIPT_TRACE_TOOLS = frozenset({"list_script_traces", "get_script_trace"})
 SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
+# HAMCP-290: Engineering-native installed-only Marketplace inventory read.
+# Runtime-only; the same public name as the reviewed ha-mcp HACS read, which
+# the gateway withholds whenever this native route is registered.
+MARKETPLACE_PROFILE = "core.marketplace_read"
+MARKETPLACE_TOOL = "ha_get_hacs_info"
+MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
+ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS = frozenset({MARKETPLACE_TOOL})
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
@@ -309,6 +316,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     SCENE_CONFIGURATION_TOOL: (SCENE_CONFIGURATION_PROFILE,),
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
+    MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -747,6 +755,7 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         ),
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
+        MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
     }
 )
 
@@ -1063,6 +1072,8 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
+        # HAMCP-290: read-only, never an F3 identity; same reason as above.
+        MARKETPLACE_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
@@ -1160,6 +1171,10 @@ __all__ = [
     "SCRIPT_TRACE_PROFILE",
     "SCRIPT_TRACE_RESOURCE_TYPE",
     "SCRIPT_TRACE_TOOLS",
+    "ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS",
+    "MARKETPLACE_PROFILE",
+    "MARKETPLACE_RESOURCE_TYPE",
+    "MARKETPLACE_TOOL",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",

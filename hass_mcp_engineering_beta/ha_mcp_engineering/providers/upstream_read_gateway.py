@@ -58,7 +58,10 @@ from ..ha_mcp_readmission.registry import (
     MISSING_RELEASE_REFRESH_INTERVAL_SECONDS,
     SignedReleaseRegistry,
 )
-from ..ha_core_readmission.routes import delegated_requirements
+from ..ha_core_readmission.routes import (
+    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+    delegated_requirements,
+)
 from ..observability import METRICS
 from ..request_context import (
     begin_request,
@@ -1544,6 +1547,21 @@ class UpstreamReadGateway:
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
+                if (
+                    entry.upstream_name in ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
+                    and entry.upstream_name in base_names
+                ):
+                    # HAMCP-290: an Engineering-native route owns this public
+                    # name.  The delegated read is withheld, never aliased, so
+                    # the client sees one provider and no second HACS route.
+                    core_withheld.append(
+                        {
+                            "tool": entry.upstream_name,
+                            "disposition": "engineering_native_owned",
+                            "reason_codes": ["engineering_native_route_owns_name"],
+                        }
+                    )
+                    continue
                 requirements = delegated_requirements(entry.upstream_name)
                 if self._core_runtime is not None and requirements:
                     core_status = self._core_runtime.route_status(
