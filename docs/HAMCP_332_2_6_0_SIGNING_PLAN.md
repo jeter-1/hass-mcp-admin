@@ -6,14 +6,37 @@ version, or any runtime file. Signing a Core registry sequence is Josh's
 owner action, done through the protected `core-release-registry-signing`
 environment.
 
-**Freeze rule.** This plan freezes only after both of these hold:
+**This plan is NOT FROZEN.** Josh answered the 2.6.0 design choices
+in-session on 2026-11-08 (items 1-25; §9A). Those answers settle the
+extension's membership (§4), but freezing still waits on all of these:
 
-1. the Codex delta reviews of #389, #390, #392, #393 and #394 have settled;
-2. the pending Josh choices in §8 that affect the contents of a 2.6 profile,
-   or whether a profile is in the extension, are answered.
+1. the Codex delta review of each design at the head cited in §4: #389,
+   #390, #392, #393 and #394;
+2. a **full** (not delta) independent review of #389, whose change path was
+   rewritten by item 25 into switch-like ordinary control with a new direct-HA
+   provider contract (§4 N4);
+3. for HAMCP-297: Josh's answers to #389 Q8 and Q9, and the separately
+   authorized read-only registry confirmation of the first-build targets
+   whose `platform` and `translation_key` values Q9 option (a) compiles into
+   the signed contract (§8);
+4. the Codex delta review of this plan, which follows the feature deltas.
 
 Until then the master table (§4) is the current proposal, not a signing
-brief. The Codex delta review of this plan follows the five feature deltas.
+brief. A freeze of this plan is not a freeze of any fingerprint: final ids
+and fingerprints stay unknown until the reviewed implementation is on
+`main` (§2.7).
+
+**Design heads cited** (each read with `git show <sha>:<path>` on
+2026-11-08):
+
+| PR | Register | Head | Document |
+| --- | --- | --- | --- |
+| #389 | HAMCP-297 | `bda3ace08aa5f535dfc0a35a3ce90814a48192f7` | `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md` |
+| #390 | HAMCP-295 / HAMCP-109 | `2eae7a6bc956b8b68be72b42c8f9923a8589bbc7` | `docs/HAMCP_295_109_ENTITY_RENAME_DEPENDENT_EXECUTION_DESIGN.md` |
+| #392 | HAMCP-134 | `924d09b0e6451468e9a32a30c96206d7d7524866` | `docs/HAMCP_134_SECURITY_METADATA_FEASIBILITY.md` |
+| #393 | HAMCP-329 / HAMCP-298 | `fe83111c7f1d2b608832284412f4b3ea5effc4c9` | `docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md` |
+| #394 | HAMCP-231 | `7e566245510f55b64d8cf263cadd81c677ad97dd` | `docs/HAMCP_231_THREAD_MATTER_TOPOLOGY_INVESTIGATION.md` |
+| #391 | wave-1 notes (HAMCP-104, 143, 149, 229, 267, 294, 296) | `258f1e74c7cfda174df822215a67c8920759a599` | cited only for "no signing requirement" (§4) |
 
 - Register: HAMCP-332 (2.6.0 design milestone, signing-plan deliverable).
 - Design base: `origin/release/2.6.0` at
@@ -28,7 +51,8 @@ brief. The Codex delta review of this plan follows the five feature deltas.
 - Canonical journal: `origin/registry` at
   `e486028ed0b06b8a5a737824c829705b403b34d8`, sequence 17.
 - Authored 2026-11-07; corrected 2026-11-08 after the Codex design review
-  (§9). US Central time.
+  (§9); Josh decisions of 2026-11-08 recorded and design heads refreshed the
+  same day (§9A). US Central time.
 
 ## 1. Settled direction
 
@@ -48,6 +72,25 @@ brief. The Codex delta review of this plan follows the five feature deltas.
 - HAMCP-297 use cases: power-on behavior after outages, child or physical
   lock, and sensor tuning (sensitivity, timeouts). Not indicator LEDs.
 - HAMCP-296 decisions stand as merged in #401.
+
+**Josh decisions (in-session 2026-11-08) that bear on signing** (full list
+and dispositions in §9A):
+
+- HAMCP-295/109 target 2.6.0 with a hard cutoff to 3.0 if the rename
+  contract is not frozen when the combined signing is assembled (Josh
+  decision (in-session 2026-11-08), item 6). The cutoff never delays the
+  combined signing, and there is no second 2.6 signing (§4 N1).
+- #393 uses **two** additive profiles, scene create/delete and created-helper
+  delete (Josh decision (in-session 2026-11-08), item 12).
+- HAMCP-297 is switch-like ordinary typed control with exact readback and
+  undo, not a plan; its signed profile stays additive (Josh decision
+  (in-session 2026-11-08), item 25). Its first-build targets are those of
+  item 1, and its profile name `core.device_configuration_entity_operation`
+  is accepted (Josh decision (in-session 2026-11-08), items 1 and 5).
+- HAMCP-134's first build has no optional reads (Josh decision (in-session
+  2026-11-08), item 11), and HAMCP-231's first build sends A1 + A2 only with
+  nothing beyond Core (Josh decision (in-session 2026-11-08), items 16 and
+  19). Both narrow the command lists in §4.
 
 Consequences, from source (§2.6):
 
@@ -211,11 +254,11 @@ and match sequence 17.
 
 | Profile (capability id) | Reused or considered by | Status in 2.6 | Fingerprint |
 | --- | --- | --- | --- |
-| `core.configuration_delete_operation` | #393 (automation and script create rollback and creation-identity capture, under reads it already signs) | Unchanged. Not version-bumped | `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d` |
+| `core.configuration_delete_operation` | #393 (automation and script create rollback and creation-identity capture, under reads it already signs; the item 13 option E elevation) | Unchanged. Not version-bumped. Its compiled contract (`E/ha_core_readmission/profiles.py:603-631`) carries target, resource types, dispatch, absent-target, readback, recovery and predispatch fields, and no policy or elevation field, so the option E elevation basis `created_object_registry_modified_since_create` is governance-side and should not move this fingerprint. #393 §5 proving test 1 must prove it | `sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d` |
 | `core.scene_configuration_operation` | #390 (scene rewrites), #393 | Unchanged; `DELETE` stays never-sent | `sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb` |
 | `core.governed_configuration_operation` | #390 (automation and script rewrites), #393 (creates, helper recreate) | Unchanged | `sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441` |
 | `core.entity_registry_metadata_operation` | #390, #389 | Unchanged; `new_entity_id` is not added | `sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767` |
-| `core.typed_power_operation` | #389 | Unchanged; not reused for configuration entities | `sha256:9242b795a2d5ed3deeb3b8ea46fba13fc299c14fb274e3b29ed97a30b607001a` |
+| `core.typed_power_operation` | #389 | Unchanged; not reused for configuration entities. `control_power` keeps config-category switches, serialized with the new tool by the shared `entity:` lock (Josh decision (in-session 2026-11-08), item 4) | `sha256:9242b795a2d5ed3deeb3b8ea46fba13fc299c14fb274e3b29ed97a30b607001a` |
 | `core.typed_input_select_option_operation` | #389 | Unchanged | `sha256:e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d` |
 | `core.typed_helper_value_operation` | #389 | Unchanged | `sha256:d45ea23b2b7c0ade4c3d4b5ae28602a7d10af72db3dd103f20cffdcea8cc228d` |
 | `core.basic_websocket_read` | #392, #394 | Unchanged; widening it would silently extend existing tools | `sha256:e1c15f0d838c44f40c2bcf7ae9df408c9cd186cea7874ab7976945be405294cc` |
@@ -249,40 +292,61 @@ until the implementation is built and reviewed.**
 
 | # | Source PR, register, corrected head, document | Named by the design (kind) | Derived `profile_id` (proposal) | Tool(s) | Core commands and contract (summary) | Exact 2026.11.0 lane evidence named by the design | Proving tests named by the design (future evidence; none run) | Persisted state | Final id / fingerprint | Inclusion |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| N1 | #390, HAMCP-295 / HAMCP-109, `786f4a4d5c9af0c29d2bd92688d4b4d55daa16d2`, `docs/HAMCP_295_109_ENTITY_RENAME_DEPENDENT_EXECUTION_DESIGN.md` §5 | Both: capability id `core.entity_registry_rename_operation` and profile id `core_entity_registry_rename_operation_v1` | `core_entity_registry_rename_operation_v1` (the design states the same) | `create_entity_rename_plan`; `rollback_change` for verified rename plans | WS `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Dispatch `at_most_once_entity_registry_rename`; readback `authoritative_exact_entity_registry_entry_renamed`; recovery `read_only_no_redispatch`. Dependency-bound execution and rewrites add **no** profile; they use the unchanged governed and scene profiles (§3) | **None named at this head.** Required by this plan (§5 G4, G5) | Exact admission on 2026.11.0 from a signed reference; N30 pre-plan refusal and zero dispatch on 2026.10.0/10.1/10.3; N31 metadata fingerprint pinned; N1 `new_entity_id` still refused by the metadata plan; N20 old reader refuses or holds new plans | New: `execution_mode`, `compensation`, compensation child and decision records. §8 of the design requires a two-direction writer-provenance downgrade proof | unknown | Conditional on #390 J3 (2.6.0 or 3.0). If J3 keeps 3.0, or the contract is not frozen in time, N1 is not in the extension and there is no second 2.6 signing |
-| N2 | #393, HAMCP-329 / HAMCP-298, `3dd4fdf4749864cc53f474d9188631b3cf83ebc3`, `docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md` §3.1, §5 | Capability id `core.scene_create_delete_operation`, with proposed profile id `core_scene_create_delete_operation_v1` and adapter `compiled-core-scene-create-delete-operation-v1` | `core_scene_create_delete_operation_v1` | `create_scene_configuration_plan` `action: create`; `rollback_change` (created-object rollback only) | REST `POST /api/config/scene/config/{config_id}` to an absent id; `GET` of that config; `DELETE` of it (rollback only); WS `config/entity_registry/list`; `GET /api/states/{entity_id}`. Create and delete targets, polled readbacks, concurrency disclosure, `never_sent` `scene.*` services | **None named** (acceptance uses a test-signed registry and fake Core). Required by this plan (G4, G5) | Proving tests 1-5 of design §5: existing 32 references identical; old runtime plus extended registry keeps existing admission; new runtime plus sequence-17 registry refuses only the new identities with zero reads; never admitted on 2026.10.x; probe fingerprints unchanged | New: `created_identity` evidence, rollback plan form, delete intent. Design §8 persistence and downgrade gate | unknown | Current proposal, pending Josh (the two-profile split, §8). Alternative: one profile carrying both N2 and N3 |
-| N3 | #393 (as N2) | Capability id `core.created_helper_delete_operation`, with proposed profile id `core_created_helper_delete_operation_v1` and adapter `compiled-core-created-helper-delete-operation-v1` | `core_created_helper_delete_operation_v1` | `rollback_change` (created-object rollback only) | WS `input_boolean/list`, `input_number/list`, `input_boolean/delete`, `input_number/delete` (exact object id), `config/entity_registry/list`; REST `GET /api/states/{entity_id}`. Identity correspondence, absence readback (runtime, not disk durability) | **None named.** Required by this plan (G4, G5) | As N2 | As N2 | unknown | As N2. Under the one-profile alternative, N3 merges into N2 |
-| N4 | #389, HAMCP-297, `d020118a18af9faf29b8dd5d08a0974a75217b31`, `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md` §5.4, §6, §9.2 | Capability id `core.device_configuration_entity_operation` (its §6 column is headed "Profile id" but holds the dotted capability id), adapter `compiled-core-device-configuration-entity-operation-v1` | `core_device_configuration_entity_operation_v1` | `create_device_configuration_plan` | REST `GET /api/states/{entity_id}`; WS `config/entity_registry/get`, `config/device_registry/list`; `call_service` `select.select_option` (`option` only), `switch.turn_on` / `switch.turn_off` (no data), **`number.set_value` (`value` only)**, one exact `entity_id` target. Numeric exactness contract, identity-bound undo, never-sent list. All numeric semantics are in this one profile before first signature | **Yes:** existing 2026.11.0 lane binding (`scripts/core_lane_bindings.py:62`, image index `sha256:c6c1ca99…e2f69e`, the same as the registry entry); new evidence group `device_configuration_entity`; test-only fixture component; a workflow overlay step (a protected path its build task must name). PASS receipt bound to the final fingerprint is one of the extension's `review_artifacts_sha256` | §6 proving check (every existing id and fingerprint identical; `previous_capabilities` equals the current list; this profile added once); lane tests per §9.2 (D4), N22-N26, C1-C7, R1-R8 | New: the verification record (target identity, post-apply observation fingerprint, restorable prior value) and undo plans. **The design names no downgrade evidence.** Required by this plan (§7.3) | unknown | In the extension once its contract is frozen (§8 choices) |
-| N5 | #392, HAMCP-134, `e052cee86b218ecdaf3e64ed7c61d90693a3ee9b`, `docs/HAMCP_134_SECURITY_METADATA_FEASIBILITY.md` §7, §8, §9 | Capability id `core.security_metadata_read` ("final id at build"; HAMCP-222 plan name `core.security_posture_metadata_read`). A new `CoreCapabilityClass` value | `core_security_metadata_read_v1`, if that capability id stands | `get_security_metadata` | Projected reads: `auth/current_user`, `config/auth/list`, `http/config` (active-slot projection), `get_config` (URL posture), `homeassistant/expose_new_entities/get`, `homeassistant/expose_entity/list` (stored-true counts, only if choice 3 includes it), `assist_pipeline/pipeline/list`, `conversation/agent/list`, `get_panels`. Large `never_sent` | **Yes, per command:** fixtures from Core 2026.11.0 source and disposable-lane evidence against an exact 2026.11.0 Core. No evidence group named; required by this plan (G5) | §9: exact-version evidence (M1); HTTP active-slot cases (M2); connection-identity cases (M3); ingress cases only if Slice D (M4); exposure counts if included (M5); no-echo in errors, audit and truncation; drift tests; refused before Core I/O on 2026.10.x; existing fingerprints and entries byte-identical | None beyond audit (counts, statuses, reason codes). The build must show no new persisted type is introduced | unknown | In the extension once its contract is frozen (§8 choices). Supervisor `S` reads are outside the Core registry and not in this profile |
-| N6 | #394, HAMCP-231, `8917c19a89fb98337f49973d8b54df72b06b564b`, `docs/HAMCP_231_THREAD_MATTER_TOPOLOGY_INVESTIGATION.md` §5.1, §7 | Both: capability id `core.thread_matter_topology_read` and profile id `core_thread_matter_topology_read_v1` (cited to `profiles.py:119`) | `core_thread_matter_topology_read_v1` (the design states the same) | `get_thread_matter_topology` | `thread/list_datasets`; `matter/network_topology` with `refresh: false` fixed; only if J1 approves them, `otbr/info` (projected) and `matter/node_diagnostics` (one registry-validated `device_id`). Projection allowlists, identifier policy, activity classes, caps, typed reasons, `never_sent`, `principal_origin: existing_configured_authenticated_origin_only` | **Partly:** "the existing exact-Core lane and registry process for Core 2026.11.0", plus activity tests against an exact-version Matter Server in a disposable lane (§8 item 6). No evidence group named; required by this plan (G5) | §8 items (refusal, canary privacy, link resolution, network name by type, activity, freshness); §9 acceptance; §11 step 3 candidate preserves every prior reference in order; §11 step 6 rollback proving check | "No persisted state is added" (design). The build must confirm it | unknown | In the extension once its contract is frozen (§8 choices). Direct Matter Server or OTBR access (J4) has no Core profile and cannot be hidden inside this one |
+| N1 | #390, HAMCP-295 / HAMCP-109, `2eae7a6bc956b8b68be72b42c8f9923a8589bbc7`, design §5, §6.1, §9 | Both: capability id `core.entity_registry_rename_operation` and profile id `core_entity_registry_rename_operation_v1` | `core_entity_registry_rename_operation_v1` (the design states the same) | `create_entity_rename_plan`; `rollback_change` for verified rename plans | WS `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Dispatch `at_most_once_entity_registry_rename`; readback `authoritative_exact_entity_registry_entry_renamed`; recovery `read_only_no_redispatch`; predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation`. Dependency-bound execution and the mandatory rewrites add **no** profile; they use the unchanged governed and scene profiles (§3). The item 7 not-rewritten acknowledgement and the item 8 actuator elevation are plan and policy behavior, not contract fields | **Not named by the design.** Its F2 freeze criterion requires "the non-live Core 2026.11.0 lane evidence that the combined signing plan requires" and defers the evidence group to this plan. This plan requires it (G4, G5) | §6 N7, N8, N30, N31 and the rest of §6; §6.1 C1-C10 and the release checks R1 (signing request lists the profile only if F1-F4 hold) and R2 (cutoff fired: no rename tool, F3 identity or compensating planner in the 2.6.0 candidate); A1-A11 | New: `execution_mode`, compensation candidates, ownership classes, decision records. Design §8 and slice S2 require a two-direction writer-provenance downgrade proof | unknown | **In the extension only if F1-F4 (design §9) all hold when the combined signing request is assembled** (Josh decision (in-session 2026-11-08), item 6). Otherwise the cutoff applies (Count, below) |
+| N2 | #393, HAMCP-329 / HAMCP-298, `fe83111c7f1d2b608832284412f4b3ea5effc4c9`, design §3.1, §5, §7, §8 | Capability id `core.scene_create_delete_operation`, with proposed profile id `core_scene_create_delete_operation_v1` and adapter `compiled-core-scene-create-delete-operation-v1` | `core_scene_create_delete_operation_v1` | `create_scene_configuration_plan` `action: create`; `rollback_change` (created-object rollback only) | REST `POST /api/config/scene/config/{config_id}` to an absent id; `GET` of that config; `DELETE` of it (no body; created-object rollback only); WS `config/entity_registry/list`; `GET /api/states/{entity_id}`. Create and delete targets, polled readbacks, loaded-state and concurrent-create disclosures, `never_sent` `scene.apply`, `scene.create`, `scene.delete`, `scene.reload`, `scene.turn_on`; recovery `read_only_no_redispatch`. A created scene stored but never registered within the bound is non-success and not rollback-eligible (Josh decision (in-session 2026-11-08), item 15) | **Not named.** Acceptance (§7) uses a test-signed registry and a fake Core. This plan requires exact-11.0 lane evidence and a group (G4, G5) | §5 proving tests 1-5: existing references identical; old runtime plus extended registry keeps existing admission; new runtime plus sequence-17 registry refuses only the new identities with zero reads; never admitted on 2026.10.x; probe fingerprints unchanged. §6 negative and option E tests | New: `created_identity` evidence, rollback plan form, delete intents. §8 persistence and downgrade gate with exact-historical-writer fixtures | unknown | In the extension. Decided as one of **two** profiles (Josh decision (in-session 2026-11-08), item 12); the one-profile alternative is withdrawn |
+| N3 | #393 (as N2) | Capability id `core.created_helper_delete_operation`, with proposed profile id `core_created_helper_delete_operation_v1` and adapter `compiled-core-created-helper-delete-operation-v1` | `core_created_helper_delete_operation_v1` | `rollback_change` (created-object rollback only) | WS `input_boolean/list`, `input_number/list`, `input_boolean/delete {input_boolean_id}`, `input_number/delete {input_number_id}`, `config/entity_registry/list`; REST `GET /api/states/{entity_id}`. Identity correspondence; dispatch `at_most_once_ws_helper_delete_by_object_id`; absence readback (runtime, not disk durability); `never_sent` every create, update and other `{type}/delete` | **Not named.** As N2 | As N2 | As N2 | unknown | In the extension, as the second of the two profiles (Josh decision (in-session 2026-11-08), item 12) |
+| N4 | #389, HAMCP-297, `bda3ace08aa5f535dfc0a35a3ce90814a48192f7`, design §4.1, §5.3-§5.13, §6, §8, §9.2, §12, §13 | Capability id `core.device_configuration_entity_operation` (name accepted, Josh decision (in-session 2026-11-08), item 5); adapter `compiled-core-device-configuration-entity-operation-v1`. Operation class is the typed ordinary operation, with an **explicit** `_contract` because the name does not fit the `core.typed_<family>_operation` generator (`profiles.py:425-462`) | `core_device_configuration_entity_operation_v1` (C9 still applies to the explicit `_contract`) | `control_device_configuration` (the design's proposed name; `create_device_configuration_plan` is superseded by item 25). Direct typed control with an `undo` action; **no plan, no F3 identity, no approval panel** (Josh decision (in-session 2026-11-08), item 25) | Provider boundary `direct_ha_api`, **new provider contract `direct-ha-exact-device-configuration-v1`**, new `ProviderCapability` member and `CoreIndependence` entry. REST `GET /api/states/{entity_id}`; WS `config/entity_registry/get`, `config/device_registry/list`; `call_service` `select.select_option` (`option` only), `switch.turn_on` / `switch.turn_off` (no data), `number.set_value` (`value` only); one exact `entity_id` per change (item 2). Signed contract also carries: actions including `undo`; the admitted target-kind list (§4.1, pending Q9); at-most-once dispatch and read-only recovery; exclusive lock `entity:<entity_id>` shared with `control_power`; the numeric exactness contract with the embedded 2026.11.0 `UNIT_CONVERTERS` set; identity-bound undo; predispatch checks; never-sent list. Signed-only authority: refuses `device_configuration_core_authority_unavailable` before HA I/O | **Yes** (§9.2): existing 2026.11.0 lane binding (`scripts/core_lane_bindings.py:62`, image index `sha256:c6c1ca99…e2f69e`, the same as the registry entry); new group `device_configuration_entity` naming exactly this capability; a new `run_disposable` module in `scripts/core_evidence_lanes.py`; a test-only fixture component; a workflow overlay step (protected). PASS receipt bound to the final fingerprint and lane image, listed in `review_artifacts_sha256`. **Residual:** under Q9 (a) the fixture kind is not admitted, so the lane proves the mechanism through a build-time test seam and proves the production list refuses the fixture kind; household kinds are proven only at deployed acceptance (§5.2 G4) | §6 proving check; §8 N-series refusals, T1-T5, S-series, C1-C8, R1-R12 and P1-P9; §9.2 lane tests (Codex D4) | Shipped receipt, execution, lock and hold-release formats (unchanged writers) plus two **new** sidecars: `device-configuration-verified-observation-v1` and `device-configuration-undo-claim-v1`. Downgrade expectations and required proof in design §5.13, tests P1-P9 (§7.3) | unknown | In the extension once its contract is frozen. Contract freeze waits on Q9 (and on Q8 only under option (b) or (c)) and on the registry confirmation (§8) |
+| N5 | #392, HAMCP-134, `924d09b0e6451468e9a32a30c96206d7d7524866`, design §7, §8, §9 | Capability id `core.security_metadata_read` ("final id at build"; HAMCP-222 plan name `core.security_posture_metadata_read`). A new `CoreCapabilityClass` value | `core_security_metadata_read_v1`, if that capability id stands | `get_security_metadata` | Projected reads: `auth/current_user` (identity corroboration and `mfa_modules` only), `config/auth/list` (conservative projection, item 9), `http/config` (active-slot projection), `get_config` (URL posture fields only), `homeassistant/expose_new_entities/get`, `assist_pipeline/pipeline/list`, `conversation/agent/list`, `get_panels`. **Not admitted in the first build:** `homeassistant/expose_entity/list`, `assist_satellite/get_configuration` and every Supervisor read (Josh decision (in-session 2026-11-08), item 11). Source-bounded omissions are explicit `not_provided`, with no session defaults (item 10). Large `never_sent` | **Yes, per command:** fixtures from Core 2026.11.0 source and disposable-lane evidence against an exact 2026.11.0 Core. **No evidence group named;** required by this plan (G5) | §9: exact-version evidence (M1); HTTP active-slot cases (M2); connection-identity cases (M3); required-now negatives for the removed optional reads (refused before I/O, no Supervisor request, `supervisor/*` and `hassio/*` refused); no-echo in errors, audit and truncation; drift tests; refused before Core I/O on 2026.10.x; existing fingerprints and entries byte-identical | None beyond audit. The build must show no new persisted record type is introduced | unknown | In the extension once its contract is frozen. Nothing in #392 is pending Josh |
+| N6 | #394, HAMCP-231, `7e566245510f55b64d8cf263cadd81c677ad97dd`, design §5.1, §7, §8, §11 | Both: capability id `core.thread_matter_topology_read` and profile id `core_thread_matter_topology_read_v1` (cited to `profiles.py:119`) | `core_thread_matter_topology_read_v1` (the design states the same) | `get_thread_matter_topology` | Only `thread/list_datasets` and `matter/network_topology` with `refresh: false` fixed (A1 + A2, Josh decision (in-session 2026-11-08), item 16). `otbr/info` and `matter/node_diagnostics` are in `never_sent`. A2's possible border-router discovery start is accepted with disclosure; no `refresh: true`, `thread/discover_routers` or `matter/ping_node` (item 17). Opaque per-response ids for every identifier class (item 18). Projection allowlists, activity classes, caps, typed reasons, `principal_origin: existing_configured_authenticated_origin_only` | **Partly:** "the existing exact-Core lane and registry process for Core 2026.11.0", plus activity tests in a disposable lane with synthetic nodes (§8 item 6). **No evidence group named;** required by this plan (G5) | §8 items (refusal, A1/A2 alias canary privacy, link resolution, network name by type, activity disclosure and absence of class R reads, freshness); §9 acceptance; §11 step 3 candidate preserves every prior reference in order; §11 step 6 rollback proving check | "No persisted state is added" (design §11 step 6). The build must confirm it | unknown | In the extension once its contract is frozen. Nothing beyond Core is in 2.6 (item 19), so no Matter Server or OTBR authority can be hidden inside this profile |
 
-**Count.** The current proposal appends **6** references (N1-N6), or **5**
-under the #393 one-profile alternative, and one fewer if #390 J3 keeps
-HAMCP-295/109 in 3.0. "32 to 33" in #389 §7 is a base-local delta for that
-profile alone, not the combined count. The final count of the extended entry
-is the predecessor's count at preparation plus the finally approved additions.
-It is unknown.
+**Count.** The extension appends **6** references (N1-N6) when every
+included contract is frozen in time. Josh's item 12 fixes N2 and N3 as two
+profiles, so there is no five-profile #393 alternative. The only variable
+is the HAMCP-295 cutoff (Josh decision (in-session 2026-11-08), item 6):
+
+- If any of #390's F1-F4 fails when the combined signing request is
+  assembled, N1 is left out and the extension appends **5** references
+  (N2-N6). The whole of HAMCP-295/109 moves to 3.0. S1-S3 do not merge into
+  the 2.6.0 line before F1-F4 can be met, so 2.6.0 carries no registered or
+  reachable rename behavior (#390 R2).
+- The cutoff never delays the combined signing, there is no second 2.6
+  signing, and no 10.x target is added.
+- The cutoff is the only alternative this plan recognizes. The other five
+  rows are not optional: if one of them is not frozen in time, this plan
+  does not invent a cutoff for it. That would be a scope decision for Josh
+  (§8, new open choice).
+
+"32 to 33" in the earlier #389 §7 was a base-local delta for that profile
+alone, and #389 still labels its §7 counts as base-local deltas; neither is
+the combined count. The final count of the extended
+entry is the predecessor's count at preparation plus 6 or 5. It is unknown.
 
 **Work that needs no new signed profile** (as the designs state):
 
-- #390: the dependency-bound execution mode and the reference rewrites,
-  compensation and rollback steps. They run under the unchanged
+- #390: the dependency-bound execution mode and the mandatory reference
+  rewrites, compensation and rollback steps. They run under the unchanged
   `core.governed_configuration_operation` and
   `core.scene_configuration_operation`.
-- #393: automation and script create rollback, and their creation-identity
-  capture. They run under the unchanged `core.configuration_delete_operation`
-  with reads it already signs. The design adds new runtime route identities
-  that map to that capability. It asks Codex to confirm this reading; the
-  build must prove the fingerprint stays byte-identical.
+- #393: automation and script create rollback, their creation-identity
+  capture and the option E elevation (Josh decision (in-session 2026-11-08),
+  item 13). They run under the unchanged `core.configuration_delete_operation`
+  with reads it already signs (§3). The design adds new runtime route
+  identities that map to that capability; the build must prove the
+  fingerprint stays byte-identical. Legacy contract-1 `CREATE_AUTOMATION`
+  plans keep `unavailable_for_create` and need nothing new (item 14).
+- #389: undo is the `undo` action of the same tool under N4, not a
+  `rollback_change` plan, so it adds no second profile. `control_power` keeps
+  its signed profile unchanged (item 4).
 - #392: the related existing tools (`ha_get_system_health`,
   `ha_get_entity_exposure`, `ha_get_integration`) keep their current profiles.
-  Optional Supervisor reads need their own provider review and are outside the
-  Core registry.
-- #394: the delegated `thread_network` section keeps its current path. A
-  direct Matter Server or OTBR provider (J4) would need a new kind of trust
-  artifact, not a Core profile.
-- #388 (HAMCP-232) and #391 (HAMCP-104, 143, 149, 229, 267, 294, 296): no
-  signing requirement.
+  Supervisor reads are not in the first build (item 11); any later one needs
+  its own provider review and is outside the Core registry.
+- #394: the delegated `thread_network` section keeps its current path and is
+  unchanged by HAMCP-231 (item 20). Nothing beyond Core is in 2.6 (item 19).
+- #388 (HAMCP-232) and #391 at `258f1e74` (HAMCP-104, 143, 149, 229, 267, 294,
+  296): no signing requirement. Items 21-24 (an acceptance-time read-only 296
+  measurement, the 229/294 shipped defaults, no 143 expansion beyond the limit
+  diagnostics, and deferral of the listed follow-ups past 2.6) add none.
 
 ## 5. The combined extension
 
@@ -310,11 +374,11 @@ assigned here.
 
 | Gate | Requirement |
 | --- | --- |
-| G1 | The corrected designs are frozen: Codex delta reviews settled and the §8 choices that affect contents or inclusion answered. A narrower profile is never frozen first on the assumption that a later signing widens it silently |
-| G2 | Each included implementation is merged to `main` with its profile compiled and `auto_eligible` (C4, C5). Changes under `E/ha_core_readmission/` are protected-path changes that the build task names |
+| G1 | The corrected designs are frozen: each Codex delta review settled, the full review of #389 complete, and the §8 items that affect contents or inclusion answered. A narrower profile is never frozen first on the assumption that a later signing widens it silently. For N1, "frozen" is #390's F1-F4 at assembly (§4 Count) |
+| G2 | Each included implementation is merged to `main` with its profile compiled and `auto_eligible` (C4, C5). Changes under `E/ha_core_readmission/` are protected-path changes that the build task names. The designs name further protected paths their build tasks must name: for #389, `E/approval_web.py` (`TYPED_HOLD_KINDS`), `E/providers/routing.py` (new `ProviderCapability`), `E/capabilities.py` (new provider contract `direct-ha-exact-device-configuration-v1`) and a `.github/workflows/` lane overlay step (#389 §9.2, §12). #389's new direct-HA provider contract is a provider-boundary change and needs the security section of its build review |
 | G3 | Fingerprints come from the reviewed code that will be on signing `main`. A regression test compares **all then-current retained references** of every entry, not only the historical 32, with the compiled profiles, and shows them byte-identical; probe fingerprints unchanged |
-| G4 | Each new contract has passing exact Core 2026.11.0 disposable-lane evidence for its actual command, projection and refusal behavior, with its receipt bound to the final fingerprint and lane image. A binding or provenance fixture, or green docs CI, is not lane evidence. Each implementation contract documents its concrete lane path; that is routine evidence plumbing, not a new product decision |
-| G5 | Each new capability is mapped in `ci/core-evidence-groups.json`, with its contract read paths in `ci/core-contract-read-files.json`, before signing. Otherwise the next automated new-release run refuses the predecessor (C7) |
+| G4 | Each new contract has passing exact Core 2026.11.0 disposable-lane evidence for its actual command, projection and refusal behavior, with its receipt bound to the final fingerprint and lane image. A binding or provenance fixture, a test-signed registry with a fake Core, or green docs CI, is not lane evidence. Each implementation contract documents its concrete lane path; that is routine evidence plumbing, not a new product decision. **Open for Codex (#389 Q9 seam):** under Q9 option (a) the signed allowlist admits only household `(domain, platform, translation_key)` kinds, so the lane proves the generic mechanism through a build-time test seam that adds the fixture kind (unreachable in a production build, asserted by a test) and proves separately that the production list refuses the fixture kind; the admitted household kinds are proven only at deployed acceptance (#389 §9.2, §9.3). Whether that satisfies G4 is a judgment the #389 review must make before the contract freezes. This plan does not accept it in advance |
+| G5 | Each new capability is mapped in `ci/core-evidence-groups.json`, with its contract read paths in `ci/core-contract-read-files.json`, before signing. Otherwise the next automated new-release run refuses the predecessor (C7). This plan defines the rule that #390 F2 defers to it: every new capability is in exactly one group; no new capability joins `general`; each design's build contract names its group, its lane module in `scripts/core_evidence_lanes.py` and its read paths, following the base pattern of one group per feature (`ci/core-evidence-groups.json` at the base: `scene_configuration`, `helper_value`, and `availability_exposure` for a two-capability feature). #389 names `device_configuration_entity` (§9.2). #390, #392, #393 and #394 name no group at their cited heads; group names are build-contract plumbing, not a product decision |
 | G6 | The persisted-state gate of §7.3 passes for every included profile |
 | G7 | The actual registry predecessor is re-fetched at preparation. Any intervening signing (for example a separately reviewed 2.5 extension) is preserved: its additions become part of the prefix and its tombstones are retained. Predecessor, hash and time drift refusals stay in force |
 | G8 | Candidate and evidence bytes are reviewed and hashed; the actual combined transition is dry-run; public signing runs from `main` through the protected environment with Josh's approval. Passing source tests do not substitute for that approval |
@@ -325,9 +389,13 @@ assigned here.
    `profile_id`, `profile_version`, `adapter_id` and `contract_fingerprint`.
 2. Old automation and script deletion and scene editing stay available on
    every release where they are signed today.
-3. Each unsigned new operation refuses with
-   `pending_signed_registry_admission`, before any Home Assistant I/O and with
-   no fallback.
+3. Each unsigned new operation refuses before any Home Assistant I/O and
+   with no fallback, using the typed reason its design names:
+   `pending_signed_registry_admission` for #393's new identities (N2, N3;
+   #393 §5 test 3) and `device_configuration_core_authority_unavailable` for
+   #389's ordinary control (N4; #389 §5.13, §8 N1). #390 refuses before plan
+   creation (N1; #390 §6 N7), and #392 and #394 refuse before Core I/O (N5,
+   N6). Their exact reason codes are fixed in each build contract.
 4. The candidate changes exactly one release entry (2026.11.0); all other
    entries are byte-identical; all original references are preserved as the
    ordered prefix.
@@ -403,9 +471,9 @@ writer (root `AGENTS.md`, Persisted Compatibility Fixtures):
 
 | Row | Persisted state | Required evidence | Design coverage |
 | --- | --- | --- | --- |
-| N1 rename | Dependency-bound plans and tasks, compensation records | Old reader refuses or holds new records and never runs them as `ordered_stop_on_failure`; old records load with identical hashes in the new reader | #390 §8, N20 |
-| N2, N3 scene and helper | Creation identity evidence, created-object rollback plans, delete intents | Older runtime rejects new rollback plans and delete intents, never executes them, and still loads records carrying the new evidence keys; old records keep their hashes | #393 §8 |
-| N4 device configuration | Verification records and undo plans | Older runtime refuses or holds new plans and records, with no redispatch; restart tests around intent and readback | **Not in #389 at its head.** Required here |
+| N1 rename | Dependency-bound plans and tasks, compensation records | Old reader refuses or holds new records and never runs them as `ordered_stop_on_failure`; old records load with identical hashes in the new reader | #390 §8, §6 N20, slice S2 (two-direction writer-provenance downgrade proof) |
+| N2, N3 scene and helper | Creation identity evidence (including the option E basis), created-object rollback plans, delete intents | Older runtime rejects new rollback plans and delete intents, never executes them, and still loads records carrying the new evidence keys; old records keep their hashes | #393 §8 (persistence and downgrade gate with exact-historical-writer fixtures) |
+| N4 device configuration | No plans (item 25). Shipped receipt, execution, lock and hold-release formats under the new `ordinary-device-configuration-v1` namespace, plus the new `device-configuration-verified-observation-v1` and `device-configuration-undo-claim-v1` sidecars | The exact preceding shipped image, started on a state directory with writer-generated device-configuration records, reads none of them, redispatches nothing, and does not release, transfer or redispatch the unknown-owner `entity:` lock; roll forward resumes read-only with the hold present; restart at each dispatch and undo boundary; registry-reverted refusal; existing power, fan and helper records load with identical hashes | **Covered by #389 §5.13 and §8 P1-P9** (the gap recorded at `d020118a` is closed in design). Still to be proven, not assumed: the preceding image's F3, fan and power stale recovery never releases, transfers or redispatches a lock whose owner it does not recognize (#389 states this is unknown at its head; P1 must prove it). Disclosed fail-closed residual: after a downgrade the older `control_power` refuses `lock_conflict` on a held or in-flight switch, and the older Ingress page cannot release a `device_configuration` hold, until roll-forward |
 | N5 security metadata | Audit only | Shown that no new persisted record type is introduced | #392 §7.3 (states audit content) |
 | N6 Thread/Matter | None stated | Shown that no persisted state is added | #394 §11 step 6 |
 
@@ -424,40 +492,45 @@ writer (root `AGENTS.md`, Persisted Compatibility Fixtures):
 never be undone (C6). It is a separate, permanent owner decision, not a
 feature rollback, and is not proposed here.
 
-## 8. Choices that block the freeze — pending Josh
+## 8. What still blocks the freeze
 
-None is answered here. One line each; the designs give the options.
+Josh answered items 1-25 in-session on 2026-11-08 (§9A). Every choice that
+§8 listed at `e1dfe1da` is decided; they are recorded in §9A and in each
+design's own disposition section. What remains:
 
-- **#389:** Q5 per-plan bounds (one entity, or up to N of one domain on one
-  device).
-- **#389:** Q6 whether some settings need the safety-critical acknowledgement
-  in the profile.
-- **#389:** Q7 final tool and profile names (blocks only if Josh objects to
-  the proposed names).
-- **#389:** E1 household entities (evidence, not intent); it may adjust the
-  numeric contract before freeze.
-- **#390:** J3 delivery of HAMCP-295/109 in 2.6.0 or 3.0 (decides whether N1
-  is in the extension).
-- **#390:** J1 rewrite coverage and acceptable incomplete coverage (gates the
-  design's contract freeze, S0, before the rename fingerprint is frozen).
-- **#390:** J2 rename policy class and acknowledgement (also gates S0).
-- **#392:** choice 1, privacy and detail of the projection.
-- **#392:** choice 2, coverage and session-default reporting.
-- **#392:** choice 3, optional reads (stored-true exposure counts and the
-  satellite mapping change the command list).
-- **#393:** two profiles (N2, N3) or one combined scene and helper profile.
-- **#393:** Q-A ownership strictness when the registry entry changed after
-  creation.
-- **#393:** Q6 legacy contract-1 `CREATE_AUTOMATION` plans.
-- **#393:** Q7 a created scene stored but never registered.
-- **#394:** J1 initial read subset (A1-A4).
-- **#394:** J2 active discovery, `refresh` and ping.
-- **#394:** J3 LAN-identifier policy across all aliases.
+**Pending Josh, blocking (HAMCP-297 only; #389 §13.2):**
 
-Not blocking this plan's freeze: #389 Q3 (default (a) changes nothing; (b) or
-(c) would need its own additive profile reviewed before the combined signing),
-#394 J4 (outside the Core registry) and #394 J5 (delegated section reason
-codes).
+| Item | Question | Options (#389 §13.2) | Design recommendation | Blocks |
+| --- | --- | --- | --- | --- |
+| Q8 | Which first-build targets, if any, are safety-critical and trigger `confirmation_required` (power-on behavior is disclosure only, item 3) | (a) none in the first build, mechanism proven with a test-only trigger; (b) extend the `control_helper` dependency-evidence builder to these entities; (c) an owner-named set of exact targets that always ask | (a) | N4 contract freeze only under (b) or (c); (a) blocks nothing |
+| Q9 | How the first build admits the item 1 targets and keeps Tapo detection selects out | (a) a compiled `(domain, platform, translation_key)` allowlist in the signed contract, from registry-confirmed values; (b) admit every config-category `select`/`switch`/`number` and deny only the detection kind; (c) an owner-configured list of exact entity ids | (a) | N4 contract freeze and signing |
+| Registry confirmation | The `platform` and `translation_key` values Q9 (a) compiles into the contract | Josh authorizes the separately scoped, read-only registry confirmation of the §4.1 targets, or supplies the values | — | N4 contract freeze under Q9 (a) |
+
+**Pending review, blocking:** the Codex delta review of each design at its
+cited head (header table), the full review of #389 (header item 2), and
+then the Codex delta review of this plan.
+
+**Pending Josh, not blocking the freeze:**
+
+- #394: whether the delegated `thread_network` section, which already
+  returns `extended_address` and `border_agent_id`, should later be aligned
+  with the opaque-id policy in a separate change. HAMCP-231 does not change
+  that section (#394 §12).
+
+**New open choice raised by this plan (not decided):**
+
+- **What happens if a row other than N1 is not frozen when the combined
+  signing is assembled.** Item 6 gives HAMCP-295/109 a cutoff; no decision
+  gives one to N2-N6, and this plan does not invent one.
+  - Options: (a) the combined signing waits until N2-N6 are all frozen;
+    (b) a late row moves to 3.0 the way N1 does, and the signing proceeds
+    without it.
+  - Recommendation: (a). HAMCP-134 and HAMCP-231 are 2.6.0 deliverables by
+    Josh's direction (§1), #393's two profiles and #389's profile are decided
+    2.6.0 scope, and dropping one would be a scope change. The wait is bounded
+    by the predecessor's expiry (2027-02-05 00:16:34 CST, §5.4), after which a
+    renewal comes first.
+  - Blocks: nothing now. It matters only if a row is late at assembly.
 
 **Signing-specific choices: none new.** The additive architecture, the scene
 profile, the 2026.11.0-only target, the single batch and the placement of
@@ -475,20 +548,74 @@ or signing approval).
 | 2 | Medium | The master table and questions did not describe the agreed combined release | §1 settled decisions; §4 rewritten as the one-extension 2026.11.0 table at the corrected design heads, with identifier kinds, lane evidence, proving tests, persisted state and unknown final ids and fingerprints; "32 to 33" restated as a base-local delta; 10.x targets, multi-sequence options, 134/231 placement and 295/297 intent questions removed; §2.3 records the current entry; §5 candidate shape and gates; §8 lists only open feature choices |
 | 3 | Medium | Runtime rollback called safe without separating selection, persisted state and future signing | §7: runtime or image rollback (§7.1) separated from reverting the signing checkout (§7.2); the writer keeps signed contracts compiled; §7.3 persisted-state gate per profile with proving tests; §7.4 revocation as a separate permanent decision |
 | Source conclusions | n/a | No replacement or C4 change needed; one-tap rejects other versions; evidence groups; compare all then-current references; 1-32 artifact hashes; re-fetch the predecessor; no invented sequence number; HAMCP-290 not pulled in; #388 and #391 add nothing; no Supervisor, Matter Server or OTBR authority inside a Core profile; lane path in the implementation contract | §1 consequences; §2.6 C1, C4, C7, C10; §4 notes; §5.2 G3-G8; §2.7 and §5.1 (sequence unknown); §6 |
-| Remaining questions | n/a | No new signing-policy choice; only unresolved feature choices hold freeze | §8 |
+| Remaining questions | n/a | No new signing-policy choice; only unresolved feature choices hold freeze | §8 (after the 2026-11-08 decisions: #389 Q8, Q9 and the registry confirmation; §9A) |
 
 **Cross-document notes for the delta reviews** (the design PRs are not edited
-here):
+here). Re-checked on 2026-11-08 against the heads in the header table:
 
-- #390 §9 says "HAMCP-290 and the other new 2.6 profiles share the one
-  combined 2.6 signing". This plan follows the review: HAMCP-290 is separate
-  2.5 scope and is not pulled into the batch (§6).
-- #390 and #393 name no exact 2026.11.0 lane evidence or evidence group, and
-  #392 and #394 name no evidence group. This plan requires both (G4, G5).
-- #389 names no persisted-state downgrade evidence. This plan requires it
-  (§7.3).
-- #389 §6 labels its id column "Profile id" but gives the dotted capability
-  id.
+| Note (as recorded at `e1dfe1da`) | Status at the cited head | Where |
+| --- | --- | --- |
+| #389 names no persisted-state downgrade evidence | **Closed in design.** One proof remains required, not assumed: the preceding image's stale recovery and the unknown-owner lock (§7.3 N4) | #389 §5.13, §8 P1-P9 |
+| #389 names lane evidence and an evidence group | **Closed in design** (lane, group `device_configuration_entity`, module, fixture, receipt binding). The Q9 test-seam residual is open for the #389 review (§5.2 G4) | #389 §9.2 |
+| #389 §6 labels its id column "Profile id" but gives the dotted capability id | **Closed.** The column is now headed "Capability id" | #389 §6 |
+| #389 uses the same names and paths as this plan | **Minor, open.** §5.13 says "§8 P1–P8" while the §8 table has P1-P9 | #389 §5.13, §8 |
+| #389 build touches more protected paths | **Recorded here** (§5.2 G2): `E/approval_web.py`, `E/providers/routing.py`, `E/capabilities.py`, a workflow overlay; new provider contract `direct-ha-exact-device-configuration-v1` | #389 §5.3, §9.2, §12 |
+| #390 §9 says "HAMCP-290 and the other new 2.6 profiles share the one combined 2.6 signing" | **Open.** The sentence is still at the cited head. This plan keeps the review's position: HAMCP-290 is separate 2.5 scope and is not pulled into the batch (§6) | #390 §9 (build plan, dependencies) |
+| #390 names no exact 2026.11.0 lane evidence or evidence group | **Open in design, addressed here.** F2 now requires the lane evidence this plan requires and defers the group to this plan; §5.2 G5 defines the rule. The build contract must name the group | #390 §9 F2 |
+| #393 names no exact 2026.11.0 lane evidence or evidence group | **Open.** Acceptance still uses a test-signed registry and a fake Core. G4 and G5 apply | #393 §5, §7 |
+| #392 names no evidence group | **Open.** Per-command lane evidence is named | #392 §9 |
+| #394 names no evidence group | **Open.** It names the existing exact-Core lane process and a disposable lane for activity tests | #394 §7, §8 item 6 |
+| #393 one or two profiles | **Closed** by item 12: two | #393 §0.1, §3.1, §10 |
+| #392 optional reads change the command list | **Closed** by item 11: none in the first build | #392 §8, §10 |
+| #394 A3/A4 change the command list | **Closed** by item 16: A1 + A2 only | #394 §5.1, §7, §12 |
+
+## 9A. Josh decisions 2026-11-08 — disposition
+
+Josh answered items 1-25 in-session on 2026-11-08: items 2-24 accept each
+recommendation as written in the choices list, item 1 sets the HAMCP-297
+first-build targets, and item 25 is new. Each is attributed as "Josh decision
+(in-session 2026-11-08), item N". Nothing else in this plan is attributed to
+Josh. This plan records how each answer reaches the signing plan; the design
+documents carry the full text.
+
+| Item | Design | Decision (short) | Effect on this plan | Sections changed |
+| --- | --- | --- | --- | --- |
+| 1 (E1) | #389 | First-build targets: power-on selects on five plugs, child-lock switches on four Eve plugs, Aqara light-sensor sensitivity (select and number), Tapo digital sensitivity numbers; Tapo detection selects excluded; registry confirmation required; live acceptance on the TV or kitchen plug only | N4's admitted target-kind list is part of the signed contract and waits on Q9 and the registry confirmation | §4 N4; §8 |
+| 2 (Q5) | #389 | Single entity per change | N4 contract: one exact `entity_id` | §4 N4 |
+| 3 (Q6) | #389 | Disclosure only for power-on behavior | No acknowledgement field in N4 for power-on; Q8 covers the other targets | §8 |
+| 4 (Q3) | #389 | `control_power` keeps config-category switches, serialized by the shared lock | `core.typed_power_operation` unchanged; shared `entity:` lock | §3; §4 (no-profile list) |
+| 5 (Q7) | #389 | Profile name `core.device_configuration_entity_operation` accepted; tool name superseded by item 25 | N4 capability id accepted (final ids still unknown, §2.7) | §4 N4 |
+| 6 (J3) | #390 | 2.6.0 with a hard cutoff to 3.0 if the contract is not frozen at assembly | N1 included only if F1-F4 hold; otherwise 5 references, no second signing, no delay | §1; §4 N1 and Count; §5.2 G1 |
+| 7 (J1) | #390 | One plan-level acknowledgement when any reference is not rewritten | Plan behavior; no contract field | §4 N1 |
+| 8 (J2) | #390 | Elevated for actuators only | Policy behavior; no contract field | §4 N1 |
+| 9 | #392 | Conservative privacy and detail | N5 projection | §4 N5 |
+| 10 | #392 | Source-bounded omissions as explicit `not_provided`; no session defaults | N5 output, not commands | §4 N5 |
+| 11 | #392 | No optional reads in the first build | N5 command list loses `homeassistant/expose_entity/list`; no satellite or Supervisor read | §4 N5 and no-profile list; §9 notes |
+| 12 | #393 | Two additive profiles | N2 and N3 both included; the five-profile alternative is withdrawn | §1; §4 N2, N3 and Count; §9 notes |
+| 13 (Q-A) | #393 | Option E: `modified_at`-only change included with disclosure and elevated acknowledgement | Governance-side; `core.configuration_delete_operation` should stay byte-identical, to be proven | §3; §4 (no-profile list); §7.3 |
+| 14 (Q6) | #393 | Legacy contract-1 `CREATE_AUTOMATION` plans keep `unavailable_for_create` | None | §4 (no-profile list) |
+| 15 (Q7) | #393 | Stored but never registered scene is non-success, not rollback-eligible | N2 readback contract | §4 N2 |
+| 16 (J1) | #394 | A1 + A2 only | N6 command list; A3/A4 in `never_sent` | §1; §4 N6; §9 notes |
+| 17 (J2) | #394 | Accept A2 discovery with disclosure; no refresh, discover or ping | N6 contract | §4 N6 |
+| 18 (J3) | #394 | Opaque per-response ids | N6 projection | §4 N6 |
+| 19 (J4) | #394 | Nothing beyond Core in 2.6 | No non-Core trust artifact in 2.6 | §1; §4 N6 and no-profile list |
+| 20 (J5) | #394 | HAAC-E009 richer reasons is a separate item | None | §4 (no-profile list) |
+| 21-24 | #391 | Live 296 measurement authorized at acceptance (read-only); 229/294 defaults confirmed; 143 not expanded; follow-ups deferred past 2.6 | None: #391 adds no signing requirement | §4 (no-profile list) |
+| 25 | #389 | Switch-like ordinary typed control with exact readback and undo; no plan, no approval panel; profile stays additive | N4 reshaped: tool `control_device_configuration` (proposed), no F3 identity, new direct-HA provider contract, new sidecars, refusal `device_configuration_core_authority_unavailable`; full review of #389 required before freeze | Header; §1; §4 N4; §5.2 G1, G2, G4; §5.3 test 3; §7.3 N4; §9 notes |
+
+**Earlier direction.** The §1 bullets keep their attribution, "Josh direction
+(register 2026-11-07; confirmed in-session 2026-11-08)".
+
+**Conflicts.** None. No decision conflicts with the additive-only rule, the
+2026.11.0-only target or the single combined signing. Item 25 adds a new
+direct-HA provider contract inside the one additive N4 profile; that is a
+provider-boundary change for review (§5.2 G2), not a signing-policy
+conflict.
+
+**Effect on the Codex corrections (§9).** Findings 1 and 3 are unchanged.
+Finding 2's correction now reflects the decided membership: the table is
+settled at six rows with one recognized cutoff, and §8 lists only the
+remaining HAMCP-297 items.
 
 ## 10. Superseded (historical)
 
@@ -523,6 +650,26 @@ a signing brief:
   adapter id) are corrected at the heads in §4, as each design's own
   disposition section states.
 
+The revision at `e1dfe1da` was written before the Josh decisions of
+2026-11-08 (§9A). These parts of it are no longer live:
+
+- **The #393 one-profile alternative** ("5 under the #393 one-profile
+  alternative"; N3 merging into N2). Withdrawn by item 12.
+- **"One fewer if #390 J3 keeps HAMCP-295/109 in 3.0."** Replaced by the item
+  6 cutoff, defined by #390's F1-F4 at assembly (§4 Count).
+- **The §8 pending list** (#389 Q5, Q6, Q7, E1; #390 J1-J3; #392 choices 1-3;
+  #393 two profiles, Q-A, Q6, Q7; #394 J1-J3) and the non-blocking #389 Q3,
+  #394 J4 and J5. All decided (§9A).
+- **The design heads** `786f4a4d` (#390), `3dd4fdf4` (#393), `d020118a`
+  (#389), `e052cee8` (#392) and `8917c19a` (#394). The rows in §4 now cite
+  the heads in the header table.
+- **N4 as a plan** (`create_device_configuration_plan`, verification records
+  and undo plans, refusal `pending_signed_registry_admission`). Replaced by
+  item 25's ordinary control.
+- **N5's optional `homeassistant/expose_entity/list` read** and **N6's
+  conditional `otbr/info` and `matter/node_diagnostics` reads.** Removed by
+  items 11 and 16.
+
 ## 11. Signing impact
 
 None. This document changes no Core profile, contract, registry entry,
@@ -542,3 +689,6 @@ workflow or fingerprint.
   used. Upstream facts come from the design PRs' exact-version citations.
 - The design PRs were not edited. The cross-document notes in §9 are for
   their owners and for review.
+- No Josh decision beyond items 1-25 and the earlier direction is recorded
+  or implied. The registry confirmation for HAMCP-297 was not performed or
+  requested here.
