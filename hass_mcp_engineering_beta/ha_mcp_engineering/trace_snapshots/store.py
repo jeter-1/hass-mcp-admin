@@ -17,7 +17,7 @@ names the sha256 of the exact ``index.json`` bytes written with it and a
 generation; a load uses only the newest slot bound to the index on disk.
 The index and its sidecar state therefore commit, or fail, as one
 transaction (Codex review F2): a failed write leaves the prior pair, and the
-new slot is ignored. Damage to a slot resets the sidecar state only.
+new slot is ignored. Damage to either slot resets the sidecar state only.
 """
 
 from __future__ import annotations
@@ -365,7 +365,11 @@ class TraceSnapshotStore:
         other bytes and is ignored, so its state is never combined with the
         prior index. Damage, or slots none of which is bound to the index
         (a downgraded server rewrote it), resets the sidecar state, never
-        blocks the store; an I/O error refuses.
+        blocks the store; an I/O error refuses. Damage to either slot resets
+        even when the other is valid and bound (Codex D1): a sidecar-only
+        commit binds both slots to the same index bytes, so the damaged slot
+        may hold the newer state, and loading the other would undo a
+        completed watch change.
         """
 
         digest = c.sha256(index_raw or b"")
@@ -387,7 +391,7 @@ class TraceSnapshotStore:
                 damaged = True
         bound = [(value["generation"], slot) for slot, value in valid.items()
                  if value["index_sha256"] == digest]
-        committed = max(bound)[1] if bound else None
+        committed = max(bound)[1] if bound and not damaged else None
         if damaged or (present and committed is None):
             self.lifecycle_reset = True
         state = empty_state()

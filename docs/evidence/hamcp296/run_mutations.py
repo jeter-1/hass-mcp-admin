@@ -1,4 +1,5 @@
-"""HAMCP-296 delta evidence: Codex review F1 and F2 (both High) on PR #401.
+"""HAMCP-296 delta evidence: Codex review F1 and F2 (both High) and Codex
+delta review D1 (Medium) on PR #401.
 
 Run from the repository root with the test interpreter, after committing:
 
@@ -9,8 +10,9 @@ Everything runs in a disposable ``git clone --shared`` of HEAD under
 tests use a temporary store directory, a fake Core and a fake audit sink; no
 Home Assistant, network, configuration or secret is read.
 
-1. Regressions: the corrected test module, run against the reviewed head
-   afd4acce, must fail each named regression test by an assertion.
+1. Regressions: the corrected test module, run against the head each
+   finding was reviewed at (afd4acce for F1/F2, 2f56e2ba for D1), must fail
+   each named regression test by an assertion.
 2. Mutants: each mutant reopens one reviewed defect in the corrected source
    and is killed only by an assertion failure in its named test; an error,
    import failure or survival is not a kill.
@@ -25,6 +27,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 OUT = ROOT / ".artifacts/mutation-hamcp296"
 REVIEWED = "afd4acce61174acc152550a3a09877341a4b37bf"
+DELTA_REVIEWED = "2f56e2ba9be95ebf2ed336ce95bdbd54ec47da73"
 MODULE = "tests.test_hamcp296_trace_watch_lifecycle"
 TEST_FILE = "tests/test_hamcp296_trace_watch_lifecycle.py"
 PACKAGE = "hass_mcp_engineering_beta/ha_mcp_engineering/trace_snapshots/"
@@ -33,6 +36,7 @@ STORE = PACKAGE + "store.py"
 SERVICE = PACKAGE + "service.py"
 F1_TEST = "BudgetTests.test_a_full_watch_split_across_index_and_sidecar_evicts_exactly_one"
 F2_TEST = "CoherentCommitTests.test_every_fault_point_leaves_the_prior_or_the_committed_store"
+D1_TEST = "CoherentCommitTests.test_a_damaged_slot_never_revives_an_older_sidecar_state"
 
 shutil.rmtree(OUT, ignore_errors=True)
 OUT.mkdir(parents=True)
@@ -61,8 +65,9 @@ def assertion_failure(code: int, raw: bytes) -> bool:
 
 
 regressions = [
-    ("F1", F1_TEST),
-    ("F2", F2_TEST),
+    ("F1", F1_TEST, REVIEWED),
+    ("F2", F2_TEST, REVIEWED),
+    ("D1", D1_TEST, DELTA_REVIEWED),
 ]
 BINDING = ('        bound = [(value["generation"], slot) for slot, value in valid.items()\n'
            '                 if value["index_sha256"] == digest]\n')
@@ -84,19 +89,23 @@ mutants = [
      F2_TEST),
     ("F2", "the first sidecar write has no base state bound to the prior index", STORE,
      "            if base is not None:\n", "            if False:\n", F2_TEST),
+    ("D1", "a load picks the highest remaining valid slot beside a damaged one", STORE,
+     "        committed = max(bound)[1] if bound and not damaged else None\n",
+     "        committed = max(bound)[1] if bound else None\n", D1_TEST),
 ]
 
-results = {"head": HEAD, "reviewed_head": REVIEWED, "python": sys.version.split()[0],
+results = {"head": HEAD, "reviewed_head": REVIEWED, "delta_reviewed_head": DELTA_REVIEWED,
+           "python": sys.version.split()[0],
            "regressions": [], "mutants": [], "control": None}
 corrected_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
-checkout(REVIEWED)
-(COPY / TEST_FILE).write_bytes(corrected_tests)
-for index, (finding, test) in enumerate(regressions, 1):
+for index, (finding, test, revision) in enumerate(regressions, 1):
+    checkout(revision)
+    (COPY / TEST_FILE).write_bytes(corrected_tests)
     code, raw = run(test, f"regression-{index:02d}.log")
     classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
-    results["regressions"].append({"id": index, "finding": finding, "revision": REVIEWED, "test": test,
+    results["regressions"].append({"id": index, "finding": finding, "revision": revision, "test": test,
                                    "classification": classification, "exit_code": code})
-    print("regression", index, finding, REVIEWED[:8], classification, flush=True)
+    print("regression", index, finding, revision[:8], classification, flush=True)
 
 checkout(HEAD)
 for index, (finding, name, file, before, after, test) in enumerate(mutants, 1):

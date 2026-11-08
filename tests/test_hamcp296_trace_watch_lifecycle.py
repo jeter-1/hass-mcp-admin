@@ -1067,6 +1067,75 @@ class CoherentCommitTests(LifecycleCase):
         ov = next(w for w in loaded["watches"] if w["automation_id"] == "ov")
         self.assertEqual((ov["captured_count"], ov["seen_run_ids"]), (0, []))
 
+    async def ten_long_and_ten_overflow(self):
+        """Ten primaries expiring after the ten overflow watches (displace takes "o0")."""
+
+        await self.fill(c.V1_INDEX_MAX_WATCHES, mode="failures", duration_hours=48)
+        await self.fill(c.MAX_WATCHES - c.V1_INDEX_MAX_WATCHES, prefix="o", mode="executed")
+
+    # Codex delta review D1: name: (setup, sidecar-only operation, its subject).
+    SIDECAR_ONLY = {
+        "overflow remove": ("ten_and_overflow", "remove_ov", "ov"),
+        "overflow renew": ("ten_and_overflow", "renew_ov", "ov"),
+        "overflow displacement": ("ten_long_and_ten_overflow", "displace", "o0"),
+    }
+
+    async def test_a_damaged_slot_never_revives_an_older_sidecar_state(self):
+        """Codex D1: after a sidecar-only commit both slots name the same index
+        bytes. Damage to either one must reset the sidecar state (the
+        documented outcome), never load the older slot: that would undo the
+        completed remove, renewal or displacement and poll a removed watch."""
+
+        for name, (setup, operation, subject) in self.SIDECAR_ONLY.items():
+            for damaged in ("newest", "older"):
+                with self.subTest(case=name, damaged=damaged):
+                    await self.rebuild(setup)
+                    prior = self.new_service().store.load_index()
+                    index_path = self.root / c.MODEL / "index.json"
+                    index_bytes = index_path.read_bytes()
+                    self.assertIsNone(await self.attempt(operation))
+                    # Sidecar-only: index.json is unchanged and both slots bind to it.
+                    self.assertEqual(index_path.read_bytes(), index_bytes)
+                    paths = [self.root / c.MODEL / n for n in store_module.SIDECAR_SLOTS]
+                    slots = [store_module.validate_sidecar(json.loads(p.read_bytes()))
+                             for p in paths]
+                    self.assertEqual({s["index_sha256"] for s in slots},
+                                     {c.sha256(index_bytes)})
+                    older, newest = sorted(range(2), key=lambda i: slots[i]["generation"])
+                    # The older slot really is the prior state the operation replaced.
+                    self.assertEqual(
+                        [w["automation_id"] for w in slots[older]["overflow"]],
+                        [w["automation_id"] for w in prior["watches"][c.V1_INDEX_MAX_WATCHES:]])
+                    self.assertNotEqual(slots[older]["overflow"], slots[newest]["overflow"])
+                    paths[newest if damaged == "newest" else older].write_text("not json")
+                    primaries = [w["automation_id"] for w in self.index()["watches"]]
+                    service = self.new_service()
+                    value, _ = await service.watch(action="list")
+                    self.assertEqual(value["lifecycle"]["lifecycle_store"], "reset")
+                    loaded = service.store.load_index()
+                    # Reset to empty: only the index.json watches, no metadata,
+                    # no lapsed records.
+                    self.assertEqual([w["automation_id"] for w in loaded["watches"]], primaries)
+                    self.assertEqual(loaded["lifecycle"]["watch_meta"], [])
+                    self.assertEqual(loaded["lifecycle"]["lapsed"], [])
+                    self.assertNotIn(subject, [w["automation_id"] for w in loaded["watches"]])
+                    # The next poll reads only the index.json watches, never the subject.
+                    self.core.sent.clear()
+                    await service.poll_once(authority=AUTHORITY)
+                    lists = [p["item_id"] for p in self.core.sent if p["type"] == "trace/list"]
+                    self.assertNotIn(subject, lists)
+                    self.assertEqual(sorted(lists), sorted(primaries))
+                    # The poll's write replaced the damage: a fresh load is
+                    # clean and the older state stays gone.
+                    for path in paths:
+                        store_module.validate_sidecar(json.loads(path.read_bytes()))
+                    fresh = self.new_service()
+                    value, _ = await fresh.watch(action="list")
+                    self.assertEqual(value["lifecycle"]["lifecycle_store"], "ok")
+                    self.assertEqual(
+                        [w["automation_id"] for w in fresh.store.load_index()["watches"]],
+                        primaries)
+
 
 class StoreTests(LifecycleCase):
     async def test_twenty_watches_keep_index_json_valid_for_the_v1_rule(self):

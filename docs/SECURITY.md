@@ -874,7 +874,9 @@ delegated provider or fallback.
   the two are never mixed across transactions. The slots use the same
   lock, `O_NOFOLLOW`, `0600`, fsync and rename; a damaged or unbound
   sidecar resets to empty (`lifecycle_store: "reset"`) and never blocks
-  the store. A shipped (v1) server ignores the slots and deletes the record
+  the store. Damage to either slot resets it even when the other slot is
+  valid and bound, because after a sidecar-only change that slot holds the
+  older state and loading it would undo a completed watch change. A shipped (v1) server ignores the slots and deletes the record
   files of entries the index does not name, so a downgrade loses every
   overflow snapshot and watches 11-20.
 - **Watch poller.** The only periodic Core read: bounded to 20 watches
