@@ -485,7 +485,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             for tool in tools
             if tool.name
             not in {
-                "ha_get_hacs_info",  # HAMCP-290: additive native read
+                "get_marketplace_inventory",  # HAMCP-290: additive native read
                 "get_integration_inspection",
                 "get_backup_inventory",
                 "get_recorder_settings",
@@ -539,9 +539,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             self, schemas["list_capabilities"])
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(tools), 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

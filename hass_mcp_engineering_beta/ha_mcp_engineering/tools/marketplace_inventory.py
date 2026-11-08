@@ -21,7 +21,7 @@ _PARTIAL = ("Inventory text is partial: Engineering withheld credential-like or 
             "or shortened long strings; see redaction.")
 
 
-async def ha_get_hacs_info(
+async def get_marketplace_inventory(
     query: Annotated[str, Field(max_length=200)] = "",
     category: Literal["integration", "plugin", "template", "theme"] | None = None,
     limit: Annotated[int, Field(ge=1, le=50)] = 20,
@@ -60,7 +60,7 @@ async def ha_get_hacs_info(
         return value
 
     return await run_structured(
-        "ha_get_hacs_info", "Returned a sanitized page of installed Marketplace repositories.",
+        "get_marketplace_inventory", "Returned a sanitized page of installed Marketplace repositories.",
         action, warnings=warnings, metadata=metadata, response_limit=SETTINGS.response_size_limit,
     )
 
@@ -81,6 +81,6 @@ class MarketplaceInventoryTool(Tool):
 
 
 def registered_tool():
-    tool = MarketplaceInventoryTool.from_function(ha_get_hacs_info, annotations=_READ_ANNOTATIONS)
+    tool = MarketplaceInventoryTool.from_function(get_marketplace_inventory, annotations=_READ_ANNOTATIONS)
     tool.parameters["additionalProperties"] = False
     return tool

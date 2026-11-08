@@ -1,6 +1,6 @@
 """Bounded, installed-only Marketplace inventory read (HAMCP-290).
 
-``ha_get_hacs_info`` is an Engineering-native read of the Core 2026.11
+``get_marketplace_inventory`` is an Engineering-native read of the Core 2026.11
 Marketplace store.  The runtime-only profile ``core.marketplace_read`` is
 admitted only by an owner-signed registry; until then the gateway refuses
 ``pending_signed_registry_admission`` before the application, and this

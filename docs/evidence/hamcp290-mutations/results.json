@@ -6,20 +6,22 @@
    "test_hamcp164_core_gate_fail_closed.py"
   ],
   "returncode": 0,
-  "tests": 208,
-  "seconds": 26.0
+  "tests": 217,
+  "seconds": 26.2
  },
- "mutation_count": 58,
- "killed": 56,
+ "mutation_count": 69,
+ "killed": 66,
  "not_killed": [
   "B5-frame-count-unbounded",
-  "A9-static-requirement-removed"
+  "A9-static-requirement-removed",
+  "W1-registry-name-reverted"
  ],
  "equivalent": {
   "B5-frame-count-unbounded": "MarketplaceReader.read calls receive() at most four times by construction (auth_required, auth_ok, at most two command results: one per send, and send runs at most twice), so the frames > MAX_FRAMES guard can never fire. It stays as defense in depth against a future edit; no input can reach it."
  },
  "fail_closed_at_import": {
-  "A9-static-requirement-removed": "ha_core_readmission/routes.py refuses to import with RuntimeError 'Static Core requirements must be non-empty: [ha_get_hacs_info]', so the Engineering runtime cannot start; every suite errors at import."
+  "A9-static-requirement-removed": "ha_core_readmission/routes.py refuses to import with RuntimeError 'Static Core requirements must be non-empty: [get_marketplace_inventory]', so the Engineering runtime cannot start; every suite errors at import.",
+  "W1-registry-name-reverted": "the reviewed FastMCP registry adapter refuses a tool whose registry key differs from its Tool.name (mcp_sdk_compatibility._validate_mapping), so tools/registry.py raises McpSdkCompatibilityError at import and the Engineering runtime cannot start; every suite errors at import."
  },
  "unexpected_survivors": [],
  "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
@@ -49,7 +51,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F1-any-failure-code-falls-back.log",
-   "seconds": 26.4
+   "seconds": 25.0
   },
   {
    "id": "F2-not-loaded-falls-back",
@@ -74,7 +76,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F2-not-loaded-falls-back.log",
-   "seconds": 26.2
+   "seconds": 25.1
   },
   {
    "id": "F3-message-text-selects-fallback",
@@ -100,7 +102,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F3-message-text-selects-fallback.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "F4-missing-error-mapping-falls-back",
@@ -125,7 +127,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F4-missing-error-mapping-falls-back.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "F5-hacs-unknown-command-read-as-empty",
@@ -149,7 +151,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F5-hacs-unknown-command-read-as-empty.log",
-   "seconds": 26.2
+   "seconds": 25.0
   },
   {
    "id": "F6-success-with-non-list-result",
@@ -174,7 +176,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F6-success-with-non-list-result.log",
-   "seconds": 26.3
+   "seconds": 25.1
   },
   {
    "id": "F7-reply-id-not-matched",
@@ -198,7 +200,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F7-reply-id-not-matched.log",
-   "seconds": 26.1
+   "seconds": 24.8
   },
   {
    "id": "F8-failure-with-result-accepted",
@@ -223,7 +225,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/F8-failure-with-result-accepted.log",
-   "seconds": 26.5
+   "seconds": 24.7
   },
   {
    "id": "B1-reply-record-count-unbounded",
@@ -247,7 +249,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B1-reply-record-count-unbounded.log",
-   "seconds": 26.4
+   "seconds": 24.8
   },
   {
    "id": "B2-projection-record-count-unbounded",
@@ -271,7 +273,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B2-projection-record-count-unbounded.log",
-   "seconds": 26.3
+   "seconds": 25.6
   },
   {
    "id": "B3-frame-bytes-unbounded",
@@ -301,7 +303,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B3-frame-bytes-unbounded.log",
-   "seconds": 26.2
+   "seconds": 25.3
   },
   {
    "id": "B4-auth-frame-bound-widened",
@@ -325,7 +327,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B4-auth-frame-bound-widened.log",
-   "seconds": 26.1
+   "seconds": 24.8
   },
   {
    "id": "B5-frame-count-unbounded",
@@ -347,7 +349,7 @@
    "expected_equivalent": true,
    "equivalence_reason": "MarketplaceReader.read calls receive() at most four times by construction (auth_required, auth_ok, at most two command results: one per send, and send runs at most twice), so the frames > MAX_FRAMES guard can never fire. It stays as defense in depth against a future edit; no input can reach it.",
    "log_path": "mutation-logs/B5-frame-count-unbounded.log",
-   "seconds": 26.1
+   "seconds": 25.0
   },
   {
    "id": "B6-duplicate-json-keys-accepted",
@@ -372,7 +374,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B6-duplicate-json-keys-accepted.log",
-   "seconds": 26.0
+   "seconds": 25.0
   },
   {
    "id": "B7-non-finite-constants-accepted",
@@ -396,7 +398,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B7-non-finite-constants-accepted.log",
-   "seconds": 26.2
+   "seconds": 24.9
   },
   {
    "id": "B8-deadline-not-capped",
@@ -420,7 +422,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B8-deadline-not-capped.log",
-   "seconds": 31.0
+   "seconds": 30.0
   },
   {
    "id": "B9-limit-unbounded",
@@ -436,17 +438,18 @@
    "killed": true,
    "returncode": 1,
    "assertion_failures": 1,
-   "errors": 1,
+   "errors": 2,
    "first_assertion_failures": [
     "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
    ],
    "first_errors": [
+    "ERROR test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
     "ERROR test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)"
    ],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B9-limit-unbounded.log",
-   "seconds": 26.1
+   "seconds": 25.1
   },
   {
    "id": "B10-negative-offset-accepted",
@@ -472,7 +475,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B10-negative-offset-accepted.log",
-   "seconds": 26.1
+   "seconds": 25.0
   },
   {
    "id": "B11-bool-accepted-as-int",
@@ -497,7 +500,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B11-bool-accepted-as-int.log",
-   "seconds": 26.2
+   "seconds": 24.9
   },
   {
    "id": "B12-query-length-unbounded",
@@ -521,7 +524,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B12-query-length-unbounded.log",
-   "seconds": 26.3
+   "seconds": 25.0
   },
   {
    "id": "B13-control-characters-accepted",
@@ -547,7 +550,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B13-control-characters-accepted.log",
-   "seconds": 26.3
+   "seconds": 24.9
   },
   {
    "id": "B14-unknown-argument-keys-accepted",
@@ -572,7 +575,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B14-unknown-argument-keys-accepted.log",
-   "seconds": 25.9
+   "seconds": 25.0
   },
   {
    "id": "B15-schema-admits-unknown-keys",
@@ -590,13 +593,13 @@
    "assertion_failures": 1,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_tool_is_registered_read_only_policy_bound_and_owns_the_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_policy_bound_and_owns_the_name)"
+    "FAIL test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B15-schema-admits-unknown-keys.log",
-   "seconds": 26.0
+   "seconds": 25.1
   },
   {
    "id": "B16-page-not-limited",
@@ -622,7 +625,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B16-page-not-limited.log",
-   "seconds": 26.0
+   "seconds": 25.0
   },
   {
    "id": "B17-next-offset-on-last-page",
@@ -646,7 +649,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/B17-next-offset-on-last-page.log",
-   "seconds": 26.1
+   "seconds": 25.0
   },
   {
    "id": "P1-uninstalled-records-listed",
@@ -674,7 +677,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P1-uninstalled-records-listed.log",
-   "seconds": 25.9
+   "seconds": 24.9
   },
   {
    "id": "P2-truthy-installed-accepted",
@@ -698,7 +701,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P2-truthy-installed-accepted.log",
-   "seconds": 26.0
+   "seconds": 24.8
   },
   {
    "id": "P3-dot-segment-full-name-accepted",
@@ -723,7 +726,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P3-dot-segment-full-name-accepted.log",
-   "seconds": 26.1
+   "seconds": 25.4
   },
   {
    "id": "P4-duplicate-installed-ids-accepted",
@@ -748,7 +751,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P4-duplicate-installed-ids-accepted.log",
-   "seconds": 26.0
+   "seconds": 24.9
   },
   {
    "id": "P5-dropped-field-projected",
@@ -777,7 +780,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P5-dropped-field-projected.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "P6-description-unsanitized",
@@ -801,7 +804,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P6-description-unsanitized.log",
-   "seconds": 25.6
+   "seconds": 24.1
   },
   {
    "id": "P7-name-not-truncated",
@@ -825,7 +828,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P7-name-not-truncated.log",
-   "seconds": 26.1
+   "seconds": 24.8
   },
   {
    "id": "P8-search-over-unsanitized-text",
@@ -849,7 +852,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P8-search-over-unsanitized-text.log",
-   "seconds": 26.2
+   "seconds": 24.8
   },
   {
    "id": "P9-known-secrets-dropped",
@@ -873,7 +876,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P9-known-secrets-dropped.log",
-   "seconds": 25.3
+   "seconds": 24.1
   },
   {
    "id": "P10-partial-never-flagged",
@@ -897,7 +900,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P10-partial-never-flagged.log",
-   "seconds": 25.9
+   "seconds": 24.9
   },
   {
    "id": "P11-fingerprint-over-page-only",
@@ -922,7 +925,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P11-fingerprint-over-page-only.log",
-   "seconds": 25.9
+   "seconds": 24.6
   },
   {
    "id": "P12-unsorted-results",
@@ -948,7 +951,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P12-unsorted-results.log",
-   "seconds": 25.8
+   "seconds": 24.9
   },
   {
    "id": "P13-category-filter-ignored",
@@ -972,7 +975,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/P13-category-filter-ignored.log",
-   "seconds": 26.1
+   "seconds": 25.1
   },
   {
    "id": "A1-anonymous-caller-admitted",
@@ -996,7 +999,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A1-anonymous-caller-admitted.log",
-   "seconds": 25.8
+   "seconds": 25.0
   },
   {
    "id": "A2-profile-availability-ignored",
@@ -1021,7 +1024,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A2-profile-availability-ignored.log",
-   "seconds": 25.9
+   "seconds": 25.0
   },
   {
    "id": "A3-dispatch-authority-ignored",
@@ -1045,7 +1048,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A3-dispatch-authority-ignored.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "A4-no-recheck-before-each-command",
@@ -1071,7 +1074,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A4-no-recheck-before-each-command.log",
-   "seconds": 26.1
+   "seconds": 24.8
   },
   {
    "id": "A5-no-recheck-before-publishing",
@@ -1096,7 +1099,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A5-no-recheck-before-publishing.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "A6-read-recheck-noop",
@@ -1120,7 +1123,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A6-read-recheck-noop.log",
-   "seconds": 26.0
+   "seconds": 24.8
   },
   {
    "id": "A7-core-identity-unchecked",
@@ -1144,7 +1147,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A7-core-identity-unchecked.log",
-   "seconds": 26.3
+   "seconds": 24.9
   },
   {
    "id": "A8-service-requirement-empty",
@@ -1170,7 +1173,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A8-service-requirement-empty.log",
-   "seconds": 26.1
+   "seconds": 24.9
   },
   {
    "id": "A9-static-requirement-removed",
@@ -1196,16 +1199,145 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/A9-static-requirement-removed.log",
-   "seconds": 3.5
+   "seconds": 2.2
   },
   {
-   "id": "A10-gateway-exposes-delegated-read",
-   "class": "admission removed",
+   "id": "R1-retired-read-exposed",
+   "class": "delegated read retirement weakened",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-     "                    entry.upstream_name in ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS\n                    and entry.upstream_name in base_names\n",
-     "                    False\n"
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if False:\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1-retired-read-exposed.log",
+   "seconds": 24.7
+  },
+  {
+   "id": "R2-retired-read-withheld-only-beside-native-route",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS and entry.upstream_name in base_names:\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2-retired-read-withheld-only-beside-native-route.log",
+   "seconds": 24.7
+  },
+  {
+   "id": "R3-retired-read-withheld-only-before-9-1",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS and not catalog.server_version.startswith(\"9.\"):\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_withheld_on_the_9_1_0_capture (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_withheld_on_the_9_1_0_capture)",
+    "FAIL test_retired_read_is_withheld_on_the_9_1_0_capture (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_withheld_on_the_9_1_0_capture)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R3-retired-read-withheld-only-before-9-1.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "R4-retirement-disposition-not-distinct",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                            \"disposition\": \"retired_delegated_read\",",
+     "                            \"disposition\": \"core_withheld\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)",
+    "FAIL test_retired_read_is_never_exposed_without_a_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_without_a_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R4-retirement-disposition-not-distinct.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "R5-retired-read-not-recorded-withheld",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                            \"tool\": entry.upstream_name,\n                            \"disposition\": \"retired_delegated_read\",",
+     "                            \"tool\": \"retired\",\n                            \"disposition\": \"retired_delegated_read\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)",
+    "FAIL test_retired_read_is_never_exposed_without_a_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_without_a_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R5-retired-read-not-recorded-withheld.log",
+   "seconds": 24.8
+  },
+  {
+   "id": "R6-dispatch-guard-removed",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                or policy_entry.upstream_name in RETIRED_DELEGATED_READS\n",
+     ""
     ]
    ],
    "verdict": "killed",
@@ -1214,40 +1346,63 @@
    "assertion_failures": 1,
    "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_native_route_withholds_the_delegated_read_instead_of_aliasing (test_hamcp290_marketplace_inventory.GatewaySuppressionTests.test_native_route_withholds_the_delegated_read_instead_of_aliasing)"
+    "FAIL test_a_previously_admitted_route_is_refused_at_dispatch (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_a_previously_admitted_route_is_refused_at_dispatch)"
    ],
    "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/A10-gateway-exposes-delegated-read.log",
-   "seconds": 26.4
+   "log_path": "mutation-logs/R6-dispatch-guard-removed.log",
+   "seconds": 25.1
   },
   {
-   "id": "A11-gateway-withholds-without-native-route",
-   "class": "admission removed",
+   "id": "R7-retired-names-emptied",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = (\"ha_get_hacs_info\",)",
+     "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ()"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 16,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)",
+    "FAIL test_a_previously_admitted_route_is_refused_at_dispatch (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_a_previously_admitted_route_is_refused_at_dispatch)",
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R7-retired-names-emptied.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "R8-retired-read-counted-as-core-withdrawal",
+   "class": "delegated read retirement weakened",
    "replacements": [
     [
      "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-     "\n                    and entry.upstream_name in base_names\n                ):",
-     "\n                ):"
+     "            str(item.get(\"tool\", \"\")) for item in core_withheld\n        } - RETIRED_DELEGATED_READS\n",
+     "            str(item.get(\"tool\", \"\")) for item in core_withheld\n        }\n"
     ]
    ],
    "verdict": "killed",
    "killed": true,
    "returncode": 1,
    "assertion_failures": 1,
-   "errors": 2,
+   "errors": 0,
    "first_assertion_failures": [
-    "FAIL test_without_a_native_route_the_delegated_read_is_unchanged (test_hamcp290_marketplace_inventory.GatewaySuppressionTests.test_without_a_native_route_the_delegated_read_is_unchanged)"
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)"
    ],
-   "first_errors": [
-    "ERROR test_reviewed_tool_aware_domain_outcomes_are_non_operational (test_readonly_upstream_gateway.DelegationTests.test_reviewed_tool_aware_domain_outcomes_are_non_operational)",
-    "ERROR test_matching_open_world_contract_publishes_policy_annotations (test_readonly_upstream_gateway.RegistrationTests.test_matching_open_world_contract_publishes_policy_annotations)"
-   ],
+   "first_errors": [],
    "expected_equivalent": false,
    "equivalence_reason": null,
-   "log_path": "mutation-logs/A11-gateway-withholds-without-native-route.log",
-   "seconds": 26.3
+   "log_path": "mutation-logs/R8-retired-read-counted-as-core-withdrawal.log",
+   "seconds": 25.0
   },
   {
    "id": "C1-marketplace-command-swapped",
@@ -1273,7 +1428,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C1-marketplace-command-swapped.log",
-   "seconds": 25.6
+   "seconds": 24.8
   },
   {
    "id": "C2-hacs-command-swapped",
@@ -1299,7 +1454,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C2-hacs-command-swapped.log",
-   "seconds": 25.8
+   "seconds": 25.0
   },
   {
    "id": "C3-argument-forwarded",
@@ -1325,7 +1480,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C3-argument-forwarded.log",
-   "seconds": 25.7
+   "seconds": 25.0
   },
   {
    "id": "C4-dispatch-allowlist-skipped",
@@ -1350,7 +1505,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/C4-dispatch-allowlist-skipped.log",
-   "seconds": 25.7
+   "seconds": 24.9
   },
   {
    "id": "T1-hacs-answer-labelled-core",
@@ -1374,7 +1529,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T1-hacs-answer-labelled-core.log",
-   "seconds": 25.6
+   "seconds": 25.1
   },
   {
    "id": "T2-fallback-flag-dropped",
@@ -1399,7 +1554,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T2-fallback-flag-dropped.log",
-   "seconds": 25.8
+   "seconds": 24.9
   },
   {
    "id": "T3-tool-metadata-fallback-dropped",
@@ -1423,7 +1578,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T3-tool-metadata-fallback-dropped.log",
-   "seconds": 25.7
+   "seconds": 25.5
   },
   {
    "id": "T4-refusal-after-fallback-unattributed",
@@ -1448,7 +1603,7 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T4-refusal-after-fallback-unattributed.log",
-   "seconds": 25.7
+   "seconds": 25.3
   },
   {
    "id": "T5-refused-value-reflected",
@@ -1474,7 +1629,136 @@
    "expected_equivalent": false,
    "equivalence_reason": null,
    "log_path": "mutation-logs/T5-refused-value-reflected.log",
-   "seconds": 25.5
+   "seconds": 25.3
+  },
+  {
+   "id": "W1-registry-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/registry.py",
+     "\"get_marketplace_inventory\": marketplace_inventory_tool(),",
+     "\"ha_get_hacs_info\": marketplace_inventory_tool(),"
+    ]
+   ],
+   "verdict": "error_only",
+   "killed": false,
+   "returncode": 1,
+   "assertion_failures": 0,
+   "errors": 3,
+   "first_assertion_failures": [],
+   "first_errors": [
+    "ERROR test_hamcp290_marketplace_inventory (unittest.loader._FailedTest.test_hamcp290_marketplace_inventory)",
+    "ERROR test_readonly_upstream_gateway (unittest.loader._FailedTest.test_readonly_upstream_gateway)",
+    "ERROR test_hamcp164_core_gate_fail_closed (unittest.loader._FailedTest.test_hamcp164_core_gate_fail_closed)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W1-registry-name-reverted.log",
+   "seconds": 3.7
+  },
+  {
+   "id": "W2-route-constant-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "MARKETPLACE_TOOL = \"get_marketplace_inventory\"",
+     "MARKETPLACE_TOOL = \"ha_get_hacs_info\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 9,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)",
+    "FAIL test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)",
+    "FAIL test_shipped_reference_set_withholds (test_hamcp290_marketplace_inventory.SignedTestRegistryAdmissionTests.test_shipped_reference_set_withholds)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W2-route-constant-reverted.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "W3-capability-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        \"tool\": \"get_marketplace_inventory\",\n        \"category\": \"evidence\",",
+     "        \"tool\": \"ha_get_hacs_info\",\n        \"category\": \"evidence\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)"
+   ],
+   "first_errors": [
+    "ERROR test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W3-capability-name-reverted.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "W4-routing-key-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
+     "    \"get_marketplace_inventory\": {\n        \"policy_id\": \"marketplace_inventory_read_v1\"",
+     "    \"ha_get_hacs_info\": {\n        \"policy_id\": \"marketplace_inventory_read_v1\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)"
+   ],
+   "first_errors": [
+    "ERROR test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W4-routing-key-reverted.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "W5-run-structured-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "        \"get_marketplace_inventory\", \"Returned a sanitized page",
+     "        \"ha_get_hacs_info\", \"Returned a sanitized page"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W5-run-structured-name-reverted.log",
+   "seconds": 25.0
   }
  ]
 }

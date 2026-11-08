@@ -231,7 +231,7 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integ
                     "get_configuration_definitions": configuration_definitions_tool(),
                     "list_script_traces": script_trace_list_tool(),
                     "get_script_trace": script_trace_get_tool(),
-                    "ha_get_hacs_info": marketplace_inventory_tool(),
+                    "get_marketplace_inventory": marketplace_inventory_tool(),
                     **trace_snapshot_tools()})
 
 

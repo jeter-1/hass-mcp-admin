@@ -40,6 +40,7 @@ from ha_mcp_engineering.ha_core_readmission.runtime import (
     CORE_RECOVERY_STATES,
 )
 from ha_mcp_engineering.ha_core_readmission.source import AiohttpCoreSnapshotSource
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # HAMCP-290
 from tests.support.core_gate import reconcile_through_gate
 
 
@@ -90,6 +91,15 @@ class _FlakySource(core_tests._MutableSource):
 
 def _events(records, event):
     return [record for record in records if getattr(record, "event", None) == event]
+
+
+# HAMCP-290: the retired delegated read stays recorded beside the Core
+# withholdings, but it is never a Core catalog withdrawal or restoration.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
+
+
+def _withheld_names(gateway):
+    return frozenset(item["tool"] for item in gateway.health_snapshot()["core_withheld_tools"])
 
 
 class _Hold:
@@ -1482,10 +1492,10 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                         "authority_restorations")},
                     {"verification_attempts": 27, "verification_successes": 26,
                      "verification_failures": 1, "retirements": 1, "reprobes": 26,
-                     "catalog_withdrawals": 29, "catalog_restorations": 0,
+                     "catalog_withdrawals": 29 - RETIRED_COUNT, "catalog_restorations": 0,  # HAMCP-290
                      "authority_restorations": 0})
                 catalog = gateway.health_snapshot()
-                self.assertEqual(len(catalog["core_withheld_tools"]), 29)
+                self.assertEqual(len(catalog["core_withheld_tools"]), 29)  # HAMCP-290: 28 Core + 1 retired
                 self.assertEqual(catalog["optional_tools"][yaml_tests.TOOL],
                                  "withheld:core_unavailable")
                 self.assertEqual(transport.sent, [])
@@ -1503,8 +1513,8 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.recovery()["recovery_state"], "restored")
                 self.assertEqual(self.counters()["recovery_confirmations"],
                                  CORE_RECOVERY_CONFIRMATIONS)
-                self.assertEqual(self.counters()["catalog_restorations"], 29)
-                self.assertEqual(gateway.health_snapshot()["core_withheld_tools"], [])
+                self.assertEqual(self.counters()["catalog_restorations"], 29 - RETIRED_COUNT)  # HAMCP-290
+                self.assertEqual(_withheld_names(gateway), RETIRED_DELEGATED_READS)  # HAMCP-290
                 self.assert_authority_round_trip()
 
     async def test_flapping_requires_more_spaced_confirmations_and_does_not_toggle(self):
@@ -1612,7 +1622,7 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(tool, yaml_tests.Harness.exposed(gateway))
             self.assertEqual(len(transport.sent), sent)  # zero dispatch while withheld
             withdrawals = self.counters()["catalog_withdrawals"]
-            self.assertEqual(withdrawals, len(withheld))
+            self.assertEqual(withdrawals, len(withheld - RETIRED_DELEGATED_READS))  # HAMCP-290
             self.network.mode = "ok"
             delay.set_result(None)
             (await self.release(CONFIRM)).set_result(None)
@@ -1620,7 +1630,7 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(gateway_wakes), 2)
             await gateway.initialize(server)
         self.assertEqual(set(yaml_tests.Harness.exposed(gateway)), baseline)
-        self.assertEqual(gateway.health_snapshot()["core_withheld_tools"], [])
+        self.assertEqual(_withheld_names(gateway), RETIRED_DELEGATED_READS)  # HAMCP-290
         self.assertEqual(self.counters()["catalog_restorations"], withdrawals)
         withdrawn = _events(logs.records, "core_catalog_tools_withdrawn")
         restored = _events(logs.records, "core_catalog_tools_restored")

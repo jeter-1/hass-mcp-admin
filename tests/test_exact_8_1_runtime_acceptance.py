@@ -328,7 +328,7 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
-            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 82  # HAMCP-290: + ha_get_hacs_info
+            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 82  # HAMCP-290: + get_marketplace_inventory
         )
         for version, delegated in (
             ("8.0.0", 24),
@@ -343,9 +343,15 @@ class ExactAddonProfileTests(unittest.TestCase):
                 snapshot = addon_acceptance._runtime_snapshot(
                     observed_catalog_fingerprint="a" * 64
                 )
-                self.assertEqual(snapshot["engineering_tool_count"], 82)  # HAMCP-290: + ha_get_hacs_info
+                self.assertEqual(snapshot["engineering_tool_count"], 82)  # HAMCP-290: + get_marketplace_inventory
+                # HAMCP-290: the matched automatic reads include the retired
+                # ha_get_hacs_info, which is never exposed, so the runtime
+                # snapshot counts one fewer delegated tool (no over-count).
+                self.assertEqual(addon_acceptance.EXPECTED_AUTOMATIC_READ_COUNT, delegated)
+                self.assertEqual(addon_acceptance.EXPECTED_EXPOSED_READ_COUNT, delegated - 1)
+                self.assertEqual(snapshot["delegated_tool_count"], delegated - 1)
                 self.assertEqual(
-                    snapshot["registered_tool_count"], 82 + delegated  # HAMCP-290: + ha_get_hacs_info
+                    snapshot["registered_tool_count"], 82 + delegated - 1
                 )
 
     def test_packaging_probe_has_no_third_party_requirement_parser(self):
@@ -853,11 +859,11 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 "exact_matched_automatic_read_count": expected[
                     "delegated_read_count"
                 ],
-                # HAMCP-290: the native-owned ha_get_hacs_info read is
-                # matched but withheld, never exposed a second time.
+                # HAMCP-290: the retired delegated ha_get_hacs_info read is
+                # matched but never exposed.
                 "dynamically_exposed_count": expected[
                     "delegated_read_count"
-                ] - readmission.NATIVE_OWNED_DELEGATED_READ_COUNT,
+                ] - readmission.RETIRED_DELEGATED_READ_COUNT,
                 "held_read_count": len(expected["held_tools"]),
                 # The bounded public health projection retains the exact count,
                 # while exact held identities are proven from tools/list.
@@ -939,7 +945,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["probe"]["engineering_tool_count"], 106)
         health = result["probe"]["gateway_health"]
-        self.assertEqual(health["dynamically_exposed_count"], 24)  # HAMCP-290: 25 - withheld ha_get_hacs_info
+        self.assertEqual(health["dynamically_exposed_count"], 24)  # HAMCP-290: 25 - retired ha_get_hacs_info
         self.assertEqual(health["held_tools"], [])
         self.assertTrue(result["probe"]["held_tools_absent"])
 
@@ -981,7 +987,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
             result["probe"]["gateway_health"][
                 "dynamically_exposed_count"
             ],
-            24,  # HAMCP-290: 25 - withheld ha_get_hacs_info
+            24,  # HAMCP-290: 25 - retired ha_get_hacs_info
         )
 
     async def test_exact_8_4_1_readmission_uses_exact_accounting(self):
@@ -1009,7 +1015,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         for field, value in (
             ("observed_advertised_tool_count", 77),
             # HAMCP-290: 8.1.0 now exposes 23; refuse one fewer and the
-            # native-owned read exposed a second time.
+            # retired read exposed.
             ("dynamically_exposed_count", 22),
             ("dynamically_exposed_count", 24),
             ("held_read_count", 1),

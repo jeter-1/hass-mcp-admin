@@ -66,6 +66,9 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    RETIRED_DELEGATED_READS,
+)
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
     registered_tools,
@@ -90,6 +93,10 @@ EXPECTED_NORMALIZED_CATALOG_FINGERPRINT = (
 )
 EXPECTED_TOOL_COUNT = 78
 EXPECTED_AUTOMATIC_READ_COUNT = 24
+# HAMCP-290: the retired delegated ha_get_hacs_info is an automatic read in
+# every reviewed release but is never exposed (Josh, 2026-11-08); exposure is
+# the matched automatic count less the retired reads in the selected policy.
+EXPECTED_EXPOSED_READ_COUNT = 23
 EXPECTED_HELD_TOOLS = {"ha_get_operation_status", "ha_search"}
 EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT = (
     "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
@@ -237,6 +244,7 @@ def _select_exact_addon_profile(version: str) -> None:
     global EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT
     global EXPECTED_ADDON_DETAIL_PROFILE
     global EXPECTED_AUTOMATIC_READ_COUNT
+    global EXPECTED_EXPOSED_READ_COUNT
     global EXPECTED_HELD_TOOLS
     global EXPECTED_DASHBOARD_STATUS
     global EXPECTED_OPERATIONAL_PLANNING_SUPPORTED
@@ -254,10 +262,25 @@ def _select_exact_addon_profile(version: str) -> None:
     )
     EXPECTED_ADDON_DETAIL_PROFILE = str(profile["addon_detail_profile"])
     EXPECTED_AUTOMATIC_READ_COUNT = int(profile["automatic_read_count"])
+    EXPECTED_EXPOSED_READ_COUNT = (
+        EXPECTED_AUTOMATIC_READ_COUNT - _retired_automatic_read_count(version)
+    )
     EXPECTED_HELD_TOOLS = set(profile["held_tools"])
     EXPECTED_DASHBOARD_STATUS = str(profile["dashboard_status"])
     EXPECTED_OPERATIONAL_PLANNING_SUPPORTED = bool(
         profile["operational_planning_supported"]
+    )
+
+
+def _retired_automatic_read_count(version: str) -> int:
+    """Count the selected reviewed policy's automatic reads Engineering retired."""
+    release = load_reviewed_upstream_release_registry().by_version.get(version)
+    if release is None:
+        raise AcceptanceFailure("unsupported exact add-on acceptance profile")
+    return sum(
+        1
+        for entry in release.policy.tools
+        if entry.is_read_route and entry.upstream_name in RETIRED_DELEGATED_READS
     )
 
 
@@ -381,12 +404,13 @@ def _runtime_snapshot(
     return {
         "server_version": SERVER_VERSION,
         "build_sha": "0" * 40,
+        # HAMCP-290: exposed delegated reads, not matched automatic reads.
         "registered_tool_count": (
             ENGINEERING_STATIC_TOOL_COUNT
-            + EXPECTED_AUTOMATIC_READ_COUNT
+            + EXPECTED_EXPOSED_READ_COUNT
         ),
         "engineering_tool_count": ENGINEERING_STATIC_TOOL_COUNT,
-        "delegated_tool_count": EXPECTED_AUTOMATIC_READ_COUNT,
+        "delegated_tool_count": EXPECTED_EXPOSED_READ_COUNT,
         "governance_storage_status": "healthy",
         "governance_plan_count": 0,
         "audit_storage_status": "healthy",
@@ -413,12 +437,14 @@ async def _automatic_read_acceptance(
     require(health.get("admission_status") == "admitted_exact", "automatic reads were not admitted")
     require(health.get("selected_compatibility_entry_id") == EXPECTED_ENTRY_ID, "automatic reads selected the wrong release")
     require(health.get("observed_advertised_tool_count") == EXPECTED_TOOL_COUNT, "automatic-read catalog count changed")
-    require(health.get("dynamically_exposed_count") == EXPECTED_AUTOMATIC_READ_COUNT, "automatic-read exposure count changed")
+    require(health.get("exact_matched_automatic_read_count") == EXPECTED_AUTOMATIC_READ_COUNT, "automatic-read match count changed")
+    require(health.get("dynamically_exposed_count") == EXPECTED_EXPOSED_READ_COUNT, "automatic-read exposure count changed")
     require(set(health.get("held_tools") or []) == EXPECTED_HELD_TOOLS, "held-tool set changed")
     require(health.get("fallback_count") == 0, "automatic-read fallback occurred")
 
     published = registered_tools(server)
-    require(len(published.values()) == EXPECTED_AUTOMATIC_READ_COUNT, "dynamic registry count changed")
+    require(len(published.values()) == EXPECTED_EXPOSED_READ_COUNT, "dynamic registry count changed")
+    require(not RETIRED_DELEGATED_READS.intersection(published), "retired delegated read became callable")
     require(not EXPECTED_HELD_TOOLS.intersection(published), "held tool became callable")
     state_tool = published.get("ha_get_state")
     require(state_tool is not None, "representative automatic read was not exposed")

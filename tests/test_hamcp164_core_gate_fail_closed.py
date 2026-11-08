@@ -42,7 +42,6 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CORE_ROUTE_MAPPED,
     CORE_ROUTE_UNMAPPED,
     DELEGATED_CORE_REQUIREMENTS,
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
     STATIC_TOOL_CORE_REQUIREMENTS,
     f3_requirements,
     static_tool_core_route,
@@ -131,9 +130,9 @@ STATIC_CORE_TABLE = {
     "get_history": MAPPED,
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
+    "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
-    "ha_get_hacs_info": MAPPED,  # HAMCP-290: dormant core.marketplace_read
     "handoff_generation": MAPPED,
     "incident_correlation": MAPPED,
     "inspect_governance_record": LOCAL,
@@ -255,7 +254,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -359,16 +358,11 @@ class StaticCoreTableTests(unittest.TestCase):
         routes._validate_static_core_routes()
 
     def test_every_delegated_route_maps_a_non_empty_requirement_set(self):
-        # HAMCP-162 maps ha_config_get_yaml (30 -> 31).
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
-        # HAMCP-290: the only permitted overlap is the exact Engineering-native
-        # owned set, whose delegated read the gateway withholds whenever the
-        # static name is registered; any other overlap still fails.
-        self.assertEqual(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, frozenset({"ha_get_hacs_info"}))
-        self.assertEqual(
-            set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES),
-            set(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS),
-        )
+        # HAMCP-162 maps ha_config_get_yaml (30 -> 31); HAMCP-290 retired
+        # the delegated ha_get_hacs_info from the mapping (31 -> 30).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        self.assertNotIn("ha_get_hacs_info", DELEGATED_CORE_REQUIREMENTS)
+        self.assertFalse(set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, values in DELEGATED_CORE_REQUIREMENTS.items():
             with self.subTest(tool=name):
                 self.assertTrue(values)
@@ -523,7 +517,7 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 "get_script_trace",
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed admission (its own tests cover it).
-                "ha_get_hacs_info",
+                "get_marketplace_inventory",
             }:
                 continue
             with self.subTest(tool=name):

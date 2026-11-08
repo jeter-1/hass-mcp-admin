@@ -32,7 +32,7 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+    RETIRED_DELEGATED_READS,
 )
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
@@ -327,16 +327,13 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
     async def test_compiled_exact_release_registers_only_25_reads(self) -> None:
         gateway, transport, snapshot = await self._initialize()
         registered = set(gateway._registered_tool_registry.snapshot())
-        self.assertEqual(registered, EXACT_8_4_1_READS)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
-        # HAMCP-290: this bare test server registers no static tool, so the
-        # native-owned delegated read is exposed here; with the Engineering
-        # static registry present the gateway withholds it (82 + 24 = 106).
-        self.assertEqual(registered & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, {"ha_get_hacs_info"})
-        self.assertEqual(
-            ENGINEERING_STATIC_TOOL_COUNT + len(registered - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS), 106
-        )
+        # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
+        # 2026-11-08), so 25 matched reads expose 24 (82 + 24 = 106).
+        self.assertEqual(registered, EXACT_8_4_1_READS - RETIRED_DELEGATED_READS)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["core_withheld_read_count"], 1)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 106)
         for unreachable in (
             "ha_get_operation_status",
             "ha_get_app",
@@ -375,8 +372,8 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
             entry=entry,
         )
         registered = set(gateway._registered_tool_registry.snapshot())
-        self.assertEqual(registered, UNCHANGED_8_4_1_READS)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 21)
+        self.assertEqual(registered, UNCHANGED_8_4_1_READS - RETIRED_DELEGATED_READS)  # HAMCP-290
+        self.assertEqual(snapshot["dynamically_exposed_count"], 21 - len(RETIRED_DELEGATED_READS))  # HAMCP-290
         self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
@@ -393,7 +390,7 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
                 "duplicate_reviewed",
                 self.capture["tools"] + [deepcopy(selected)],
                 True,
-                24,
+                24 - len(RETIRED_DELEGATED_READS),  # HAMCP-290
             ),
             (
                 "unknown_addition",
@@ -406,7 +403,7 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
                 True,
-                25,
+                25 - len(RETIRED_DELEGATED_READS),  # HAMCP-290
             ),
             (
                 "reordered",

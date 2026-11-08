@@ -59,7 +59,6 @@ from ha_mcp_engineering.ha_core_readmission import routes  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
     STATIC_TOOL_CORE_REQUIREMENTS,
     static_tools_requiring,
 )
@@ -166,7 +165,7 @@ EXPECTED_LIVE_WITHHELD = [
         "capability_id": MARKETPLACE,
         "disposition": "unavailable",
         "reason_code": MISSING,
-        "affected_tools": ["ha_get_hacs_info"],
+        "affected_tools": ["get_marketplace_inventory"],
     },
     {
         "capability_id": SCENE_CONFIGURATION,
@@ -249,7 +248,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "list_dashboards",
     ],
     "core.dashboard_metadata_operation": ["create_dashboard_metadata_plan"],
-    "core.marketplace_read": ["ha_get_hacs_info"],  # HAMCP-290
+    "core.marketplace_read": ["get_marketplace_inventory"],  # HAMCP-290
     "core.scene_configuration_operation": ["create_scene_configuration_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",
@@ -1001,10 +1000,7 @@ class AffectedToolsTests(unittest.TestCase):
     def test_delegated_and_unknown_names_are_not_listed(self):
         self.assertEqual(static_tools_requiring("core.unsupported_f3_operation"), ())
         self.assertEqual(static_tools_requiring("core.typed_fan_operation"), ())
-        # HAMCP-290: only the exact Engineering-native owned name may appear in
-        # both tables (the gateway withholds its delegated read).
-        self.assertEqual(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, frozenset({"ha_get_hacs_info"}))
-        delegated = set(DELEGATED_CORE_REQUIREMENTS) - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
+        delegated = set(DELEGATED_CORE_REQUIREMENTS)
         for profile in CORE_RUNTIME_CAPABILITY_PROFILES:
             self.assertFalse(set(static_tools_requiring(profile.capability_id)) & delegated)
 

@@ -36,7 +36,7 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     registered_tools,
 )
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+    RETIRED_DELEGATED_READS,
 )
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
@@ -1266,10 +1266,15 @@ async def inspect_engineering(
         for entry in policy.tools
         if entry.is_read_route
     }
-    # HAMCP-290: a delegated read whose public name an Engineering-native
-    # route owns is withheld by the gateway, never aliased or delegated.
-    native_owned = automatic & base_names & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
-    automatic -= native_owned
+    # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
+    # the gateway withholds them on every release, never aliased, delegated
+    # or dispatched, whether or not a native route is registered.
+    retired = {
+        entry.exposed_name
+        for entry in policy.tools
+        if entry.is_read_route and entry.upstream_name in RETIRED_DELEGATED_READS
+    }
+    automatic -= retired
     held = {
         entry.exposed_name
         for entry in policy.tools
@@ -1356,9 +1361,10 @@ async def inspect_engineering(
             require(not held & names, "held-for-canary tool became callable")
             require("ha_get_logs" not in names, "raw log delegation is reachable")
             require("ha_call_service" not in names, "write-classified tool is advertised")
+            require(not retired & names, "a retired delegated read is advertised")
             require(len(names) == len(base_names | automatic), "unexpected tool exposed")
             for entry in policy.tools:
-                if not entry.is_read_route or entry.exposed_name in native_owned:
+                if not entry.is_read_route or entry.exposed_name in retired:
                     continue
                 annotations = advertised_by_name[entry.exposed_name].get("annotations", {})
                 expected_annotations = {
@@ -1835,10 +1841,10 @@ async def inspect_engineering(
             # HAMCP-290: public health keeps counts, not per-tool rows
             # (health_projection empties core_withheld_tools). Nothing else is
             # Core-withheld on this lane (dynamic exposure equals every other
-            # automatic read), so the count must be exactly the native-owned set.
+            # automatic read), so the count must be exactly the retired set.
             require(
-                gateway_state.get("core_withheld_read_count") == len(native_owned),
-                "an Engineering-native-owned delegated read was not withheld",
+                gateway_state.get("core_withheld_read_count") == len(retired),
+                "a retired delegated read was not withheld",
             )
             require(
                 set(gateway_state.get("reviewed_supported_versions") or ())

@@ -551,14 +551,11 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         runtime, source = await self.runtime()
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
-        self.assertEqual(len(tools), 28)
-        # HAMCP-290: this bare server has no native ha_get_hacs_info, so the
-        # delegated read stays exposed here; in the real registry the native
-        # tool owns that name and the gateway withholds the delegated read.
-        from ha_mcp_engineering.ha_core_readmission.routes import ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
-        self.assertEqual(set(tools) & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, {"ha_get_hacs_info"})
-        self.assertEqual(
-            ENGINEERING_STATIC_TOOL_COUNT + len(set(tools) - ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS), 109)
+        # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
+        # 2026-11-08) and never exposed, so 28 matched reads expose 27.
+        self.assertEqual(len(tools), 27)
+        self.assertNotIn("ha_get_hacs_info", tools)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 109)
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])

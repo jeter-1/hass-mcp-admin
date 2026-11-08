@@ -1908,7 +1908,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_52_without_upstream_discovery(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(
             len(registered_tools(get_registered_server()).values()),
             ENGINEERING_STATIC_TOOL_COUNT,
@@ -2389,7 +2389,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_hostile_remote_annotations_quarantine_instead_of_republishing(self):
-        entry = policy_entry("ha_get_hacs_info", open_world=True)
+        # HAMCP-290: was ha_get_hacs_info, now a retired delegated read.
+        entry = policy_entry("ha_get_history", open_world=True)
         advertised = catalog_tool(entry.upstream_name)
         advertised["annotations"] = {
             "readOnlyHint": False,
@@ -2398,7 +2399,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             "openWorldHint": False,
         }
         gateway, server, _ = await initialize([entry], [advertised])
-        self.assertIsNone(registered_tools(server).get("ha_get_hacs_info"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         health = gateway.health_snapshot()
         self.assertEqual(health["annotation_mismatch_count"], 1)
         self.assertEqual(
@@ -2406,7 +2407,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_matching_open_world_contract_publishes_policy_annotations(self):
-        entry = policy_entry("ha_get_hacs_info", open_world=True)
+        # HAMCP-290: was ha_get_hacs_info, now a retired delegated read.
+        entry = policy_entry("ha_get_history", open_world=True)
         advertised = catalog_tool(entry.upstream_name)
         advertised["annotations"]["openWorldHint"] = True
         _gateway, server, _ = await initialize([entry], [advertised])
@@ -2842,7 +2844,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(catalog["engineering_registered_count"], 82)  # HAMCP-290: + get_marketplace_inventory
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -4168,13 +4170,6 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 "entity_not_found",
                 "entity_not_found",
                 "The requested entity registry entry was not found.",
-            ),
-            (
-                "ha_get_hacs_info",
-                "RESOURCE_NOT_FOUND",
-                "resource_not_found",
-                "resource_not_found",
-                "The requested HACS repository was not found.",
             ),
             (
                 "ha_get_skill_guide",

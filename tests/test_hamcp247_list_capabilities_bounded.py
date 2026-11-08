@@ -12,7 +12,7 @@ the real UpstreamReadGateway is driven offline with the captured stock
 ha-mcp 8.6.0 descriptors and the signed release registry disabled (82 native
 + 27 dynamic = 109 registered; live had 106 before HAMCP-253 added one native
 read and HAMCP-311 added control_helper; HAMCP-290 added the native
-ha_get_hacs_info, whose delegated read the gateway withholds).  The "108-tool" cases (now 110) use
+get_marketplace_inventory and retired the delegated ha_get_hacs_info).  The "108-tool" cases (now 110) use
 the exact ha-mcp 8.5.0 component capture with the optional ``ha_config_get_yaml``
 admitted (82 + 28 = 110 since HAMCP-290), as the round-1 review did; neither is a claim about
 the household's current provider version.  Every call shape is rendered by
@@ -56,7 +56,6 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
-from ha_mcp_engineering.tools.marketplace_inventory import ha_get_hacs_info  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
 from test_hamcp162_yaml_admission import captured  # noqa: E402
 from test_upstream_8_5_compatibility import capture  # noqa: E402
@@ -170,11 +169,7 @@ class _LiveShapedCatalog(unittest.TestCase):
                 ),
                 transport=transport,
             )
-            server = FastMCP("hamcp247")
-            # HAMCP-290: as in production, the Engineering-native route owns
-            # ha_get_hacs_info, so the gateway withholds the delegated read.
-            server.add_tool(ha_get_hacs_info)
-            await gateway.initialize(server)
+            await gateway.initialize(FastMCP("hamcp247"))
 
         asyncio.run(publish())
         cls.dynamic = capabilities._DYNAMIC_UPSTREAM_CAPABILITIES
@@ -244,7 +239,7 @@ def _request_of(entry):
 
 class LiveShapedFixtureTests(_LiveShapedCatalog):
     def test_the_fixture_reproduces_the_live_overflow(self):
-        self.assertEqual(len(self.dynamic), 27)  # HAMCP-290: the delegated ha_get_hacs_info is withheld (native-owned)
+        self.assertEqual(len(self.dynamic), 27)  # HAMCP-290: the delegated ha_get_hacs_info is retired
         self.assertEqual(build_capability_catalog()["registered_count"], 109)  # HAMCP-290: 82 + 27
         for arguments in ({}, {"status": "delegated"}):
             catalog = build_capability_catalog(**arguments)
@@ -263,7 +258,7 @@ class SizeTests(_LiveShapedCatalog):
 
     def test_every_call_shape_returns_data_under_the_cap_at_half_again_growth(self):
         with self.grown():
-            self.assertEqual(build_capability_catalog()["registered_count"], 165)  # HAMCP-290: +1 native, -1 delegated, grown
+            self.assertEqual(build_capability_catalog()["registered_count"], 165)  # HAMCP-290: +1 native, -1 retired delegated, grown
             for arguments in SHAPES:
                 with self.subTest(**arguments):
                     self.assert_usable(_call(**arguments), arguments)
@@ -427,7 +422,7 @@ class FilterSemanticsTests(_LiveShapedCatalog):
         data = self.assert_usable(_call(status="delegated"), {"status": "delegated"})
         self.assertEqual(data["beta_native"], [])
         self.assertEqual(data["tools"], [])
-        self.assertEqual(len(data["dynamic_upstream"]), 27)  # HAMCP-290: the delegated ha_get_hacs_info is withheld (native-owned)
+        self.assertEqual(len(data["dynamic_upstream"]), 27)  # HAMCP-290: the delegated ha_get_hacs_info is retired
         self.assertLess(len(data["provider_matrix"]), len(full["provider_matrix"]))
         self.assertTrue(data["provider_matrix"])
         self.assertLessEqual(
@@ -507,7 +502,7 @@ class FilterSemanticsTests(_LiveShapedCatalog):
             [dict(row) for row in capabilities.CAPABILITY_PROVIDER_MATRIX],
         )
         self.assertEqual(catalog["upstream_read_gateway"], self.gateway)
-        self.assertEqual(len(catalog["beta_native"]), 57)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(catalog["beta_native"]), 57)  # HAMCP-290: + get_marketplace_inventory
 
 
 class SectionSelectorTests(_LiveShapedCatalog):
@@ -548,7 +543,7 @@ class SectionSelectorTests(_LiveShapedCatalog):
             _call(detail_section=" Beta_Native "), {"detail_section": " Beta_Native "}
         )
         self.assertEqual(data["filters"]["detail_section"], "beta_native")
-        self.assertEqual(len(data["beta_native"]), 57)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(data["beta_native"]), 57)  # HAMCP-290: + get_marketplace_inventory
 
     def test_an_unknown_section_is_refused_clearly(self):
         for section in ("planned", "everything", "tool_index", "beta-native"):
@@ -749,7 +744,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         data = build_capability_view(detail_section="beta_native", response_limit=20_000)
         record = data["beta_native"]
         self.assertIs(record["paged"], True)
-        self.assertEqual(record["item_count"], 57)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(record["item_count"], 57)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(record["page"]["offset"], 0)
         self.assertIs(record["page"]["final"], False)
         count = record["page"]["row_count"]
@@ -803,8 +798,8 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
 
     def test_an_oversize_gateway_drops_detail_fields_and_says_so(self):
         # Between the identity floor and the full section, per filter.
-        # HAMCP-290: the unfiltered gateway identity now carries the withheld
-        # native-owned entry, so its partial window starts above 14k.
+        # HAMCP-290: the unfiltered gateway identity now carries the retired
+        # delegated read's withheld entry, so its partial window starts above 14k.
         for arguments, limit in (({}, 15_000), ({"status": "delegated"}, 13_000)):
             with self.subTest(**arguments), self.grown(4.0):
                 data = build_capability_view(
@@ -865,7 +860,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
     def test_no_single_class_outgrows_the_real_cap(self):
         # Every one of the 77 tools ha-mcp 8.6.0 offers, delegated at once,
         # still fits in one status-and-category class (81 rows here; 84 before
-        # HAMCP-290 withheld the native-owned ha_get_hacs_info).
+        # HAMCP-290 retired the delegated ha_get_hacs_info).
         self.assertEqual(len(capture("8.6.0")["tools"]), 77)
         with self.grown(3.0):
             self.assertEqual(len(capabilities._DYNAMIC_UPSTREAM_CAPABILITIES), 81)
@@ -884,7 +879,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
             source = build_capability_catalog(
                 status="delegated", category="upstream_read_gateway"
             )["dynamic_upstream"]
-            self.assertEqual(len(source), 270)  # HAMCP-290: the delegated ha_get_hacs_info is withheld (native-owned)
+            self.assertEqual(len(source), 270)  # HAMCP-290: the delegated ha_get_hacs_info is retired
             self.assertGreater(len(_compact(source)), LIMIT)
             responses = self.crawl(arguments, LIMIT)
             self.assertGreaterEqual(len(responses), 3)
@@ -910,7 +905,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         record = data["beta_native"]
         self.assertEqual(record["reason"], "page_row_exceeds_response_limit")
         self.assertEqual(record["retrieval"], [])
-        self.assertEqual(record["item_count"], 57)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(record["item_count"], 57)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(data["sections"]["beta_native"]["included"], "omitted_size_limit")
 
 
@@ -1053,7 +1048,7 @@ class SizeGuardTests(_LiveShapedCatalog):
 
 
 class _Catalog108(_LiveShapedCatalog):
-    """The exact ha-mcp 8.5.0 component capture: 82 native + 28 upstream (110; 108 before HAMCP-253, 109 before HAMCP-311; HAMCP-290 adds the native ha_get_hacs_info and withholds its delegated read)."""
+    """The exact ha-mcp 8.5.0 component capture: 82 native + 28 upstream (110; 108 before HAMCP-253, 109 before HAMCP-311; HAMCP-290 adds the native get_marketplace_inventory and retires the delegated ha_get_hacs_info)."""
 
     @staticmethod
     def upstream_capture():
@@ -1070,14 +1065,14 @@ class ReviewReproductionTests(_Catalog108, _Crawler):
     def test_the_fixture_is_the_108_tool_catalog(self):
         catalog = build_capability_catalog()
         self.assertEqual(catalog["registered_count"], 110)  # HAMCP-290: 82 + 28
-        self.assertEqual(catalog["dynamic_upstream_count"], 28)  # HAMCP-290: the delegated ha_get_hacs_info is withheld (native-owned)
+        self.assertEqual(catalog["dynamic_upstream_count"], 28)  # HAMCP-290: the delegated ha_get_hacs_info is retired
         self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 49)
 
     def test_r1_m1_a_terminal_class_is_crawled_to_completion(self):
         source = build_capability_catalog(
             status="delegated", category="upstream_read_gateway"
         )["dynamic_upstream"]
-        self.assertEqual(len(source), 28)  # HAMCP-290: the delegated ha_get_hacs_info is withheld (native-owned)
+        self.assertEqual(len(source), 28)  # HAMCP-290: the delegated ha_get_hacs_info is retired
         responses = self.crawl(M1_ARGUMENTS, 12_000)
         self.assertGreater(len(responses), 1)
         recovered = self.list_rows(responses, "dynamic_upstream")

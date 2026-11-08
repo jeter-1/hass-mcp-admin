@@ -627,6 +627,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
         baseline_policy_path,
     )
     version_path = Path("hass_mcp_engineering_beta/ha_mcp_engineering/version.py")
+    routes_path = Path("hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py")
     validator_path = Path("scripts/validate_addon_metadata.py")
     staged_version_path = Path(".release/next-version")
 
@@ -691,29 +692,38 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 "The reviewed upstream policy entry count differs from its stock catalog count."
             )
 
-    # HAMCP-290: an automatic read whose public name an Engineering-native
-    # tool owns is withheld by the gateway, never exposed a second time.
-    static_names = {
-        item.get("tool")
-        for group in (canonical, native)
-        if isinstance(group, (tuple, list))
-        for item in group
-        if isinstance(item, dict)
-    }
-    native_owned_count = (
+    # HAMCP-290: Engineering retired these reviewed automatic reads (Josh,
+    # 2026-11-08); the gateway never exposes them, so they are subtracted
+    # from the public total.  The retired names are read from source.
+    retired = python_literal(repo_root / routes_path, "RETIRED_DELEGATED_READ_TOOLS")
+    retired_names = (
+        set(retired)
+        if isinstance(retired, (tuple, list)) and all(isinstance(name, str) for name in retired)
+        else None
+    )
+    if retired_names is None:
+        unknowns.append(
+            {
+                "field": "retired_delegated_reads",
+                "source_required": routes_path.as_posix(),
+            }
+        )
+    retired_count = (
         sum(
             1
             for item in policy["tools"]
             if isinstance(item, dict)
             and item.get("classification") == "automatic_read"
-            and item.get("exposed_name") in static_names
+            and item.get("upstream_name") in retired_names
         )
-        if policy is not None and isinstance(policy.get("tools"), list)
-        else 0
+        if retired_names is not None
+        and policy is not None
+        and isinstance(policy.get("tools"), list)
+        else None
     )
     total_count = (
-        static_count + delegated_count - native_owned_count
-        if static_count is not None and delegated_count is not None
+        static_count + delegated_count - retired_count
+        if static_count is not None and delegated_count is not None and retired_count is not None
         else None
     )
 
@@ -850,14 +860,18 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 policy_path.as_posix(),
             ),
             "expected_delegated_reads": known(
-                delegated_count,
+                delegated_count - retired_count
+                if delegated_count is not None and retired_count is not None
+                else None,
                 "expected_delegated_read_count",
-                f"{policy_path.as_posix()} direct reads plus compiled read projections",
+                f"{policy_path.as_posix()} direct reads plus compiled read projections, "
+                f"less {routes_path.as_posix()} retired reads",
             ),
             "expected_connector_total": known(
                 total_count,
                 "expected_connector_tool_count",
-                f"{capabilities_path.as_posix()} plus {policy_path.as_posix()}",
+                f"{capabilities_path.as_posix()} plus {policy_path.as_posix()} "
+                f"less {routes_path.as_posix()} retired reads",
             ),
             "expectation_note": (
                 "The connector total assumes every reviewed direct or compiled-adapter read contract matched "

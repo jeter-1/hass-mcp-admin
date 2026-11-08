@@ -102,8 +102,8 @@ class AuthorityHelperTests(unittest.TestCase):
     def test_readmission_requires_exact_860_counts_and_zero_fallback(self):
         helper = self.module('exact_image_readmission_acceptance')
         health = {name: 0 for name in helper.ZERO_ADMISSION_COUNTERS}
-        # HAMCP-290: the native ha_get_hacs_info owns the name; the matched
-        # delegated read is withheld, so 28 matched reads expose 27.
+        # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
+        # 2026-11-08), so 28 matched reads expose 27.
         health.update(admission_status='admitted_exact', selected_compatibility_entry_id='ha-mcp-v8.6.0-7426fb16',
                       observed_protocol_version='2025-03-26', observed_advertised_tool_count=77,
                       reviewed_accounted_tool_count=77, reviewed_tool_accounting_valid=True,

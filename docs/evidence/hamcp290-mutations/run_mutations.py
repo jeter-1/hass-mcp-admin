@@ -26,12 +26,17 @@ Classes:
 - ``P*``: the installed-only projection, sanitizer, truncation, search over
   sanitized text, completeness, fingerprint and ordering;
 - ``A*``: admission (anonymous caller, signed profile, dispatch authority,
-  generation re-checks, Core identity, the static requirement, the gateway's
-  withholding of the delegated read);
+  generation re-checks, Core identity, the static requirement);
+- ``R*``: the retirement of the delegated ``ha_get_hacs_info`` read (Josh,
+  2026-11-08): the exposure-loop condition and its distinct disposition, the
+  dispatch guard, and the retired-name declaration;
 - ``C*``: the closed command vocabulary (constant payloads, no forwarded
   argument);
 - ``T*``: attribution (backend, ``fallback_occurred``) and never reflecting a
-  refused value.
+  refused value;
+- ``W*``: the rename wiring of the Engineering-owned
+  ``get_marketplace_inventory`` (registry, route constant, capability and
+  routing entries).
 
 Usage:
 
@@ -63,12 +68,24 @@ MI = f"{E}/marketplace_inventory.py"
 TI = f"{E}/tools/marketplace_inventory.py"
 GW = f"{E}/providers/upstream_read_gateway.py"
 RT = f"{E}/ha_core_readmission/routes.py"
+REG = f"{E}/tools/registry.py"
+CAP = f"{E}/capabilities.py"
+ROU = f"{E}/providers/routing.py"
 MODULES = (
     "test_hamcp290_marketplace_inventory.py",
     "test_readonly_upstream_gateway.py",
     "test_hamcp164_core_gate_fail_closed.py",
 )
-_IMPORT_GUARD = "RuntimeError: Static Core requirements must be non-empty: ['ha_get_hacs_info']"
+# Each import-guard mutant names the exact guard text its log must show.
+_IMPORT_GUARDS: dict[str, tuple[str, ...]] = {
+    "A9-static-requirement-removed": (
+        "RuntimeError: Static Core requirements must be non-empty: ['get_marketplace_inventory']",),
+    "W1-registry-name-reverted": (
+        "ha_mcp_engineering/tools/registry.py",
+        "in _validate_mapping",
+        "McpSdkCompatibilityError: The pinned MCP SDK compatibility contract is unavailable; "
+        "startup is blocked."),
+}
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
 
 
@@ -82,6 +99,8 @@ P = "projection, sanitizer or paging weakened"
 A = "admission removed"
 C = "command vocabulary widened"
 T = "attribution wrong or refused value reflected"
+R = "delegated read retirement weakened"
+W = "rename wiring reverted"
 
 MUTATIONS = [
     # --- fallback --------------------------------------------------------
@@ -222,12 +241,40 @@ MUTATIONS = [
       (MI, "CORE_REQUIREMENTS = (PROFILE,)", "CORE_REQUIREMENTS = ()")),
     m("A9-static-requirement-removed", A,
       (RT, "    MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),", "    MARKETPLACE_TOOL: (),")),
-    m("A10-gateway-exposes-delegated-read", A,
-      (GW, "                    entry.upstream_name in ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS\n"
-           "                    and entry.upstream_name in base_names\n",
-       "                    False\n")),
-    m("A11-gateway-withholds-without-native-route", A,
-      (GW, "\n                    and entry.upstream_name in base_names\n                ):", "\n                ):")),
+    # --- retirement of the delegated read (Josh, 2026-11-08) -------------
+    m("R1-retired-read-exposed", R,
+      (GW, "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n"
+           "                    # HAMCP-290: a retired delegated read",
+       "                if False:\n"
+       "                    # HAMCP-290: a retired delegated read")),
+    m("R2-retired-read-withheld-only-beside-native-route", R,
+      (GW, "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n"
+           "                    # HAMCP-290: a retired delegated read",
+       "                if entry.upstream_name in RETIRED_DELEGATED_READS and entry.upstream_name in base_names:\n"
+       "                    # HAMCP-290: a retired delegated read")),
+    m("R3-retired-read-withheld-only-before-9-1", R,
+      (GW, "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n"
+           "                    # HAMCP-290: a retired delegated read",
+       "                if entry.upstream_name in RETIRED_DELEGATED_READS and not catalog.server_version.startswith(\"9.\"):\n"
+       "                    # HAMCP-290: a retired delegated read")),
+    m("R4-retirement-disposition-not-distinct", R,
+      (GW, '                            "disposition": "retired_delegated_read",',
+       '                            "disposition": "core_withheld",')),
+    m("R5-retired-read-not-recorded-withheld", R,
+      (GW, '                            "tool": entry.upstream_name,\n'
+           '                            "disposition": "retired_delegated_read",',
+       '                            "tool": "retired",\n'
+           '                            "disposition": "retired_delegated_read",')),
+    m("R6-dispatch-guard-removed", R,
+      (GW, "                or policy_entry.upstream_name in RETIRED_DELEGATED_READS\n", "")),
+    m("R7-retired-names-emptied", R,
+      (RT, 'RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_get_hacs_info",)',
+       "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ()")),
+    m("R8-retired-read-counted-as-core-withdrawal", R,
+      (GW, '            str(item.get("tool", "")) for item in core_withheld\n'
+           "        } - RETIRED_DELEGATED_READS\n",
+       '            str(item.get("tool", "")) for item in core_withheld\n'
+           "        }\n")),
     # --- command vocabulary ----------------------------------------------
     m("C1-marketplace-command-swapped", C,
       (MI, 'MARKETPLACE_LIST_COMMAND = "marketplace/repositories/list"',
@@ -252,6 +299,21 @@ MUTATIONS = [
     m("T5-refused-value-reflected", T,
       (TI, '            async def invalid():\n                raise MarketplaceError("invalid_arguments")',
        '            async def invalid():\n                raise ValueError(repr(arguments))')),
+    # --- rename wiring ---------------------------------------------------
+    m("W1-registry-name-reverted", W,
+      (REG, '"get_marketplace_inventory": marketplace_inventory_tool(),',
+       '"ha_get_hacs_info": marketplace_inventory_tool(),')),
+    m("W2-route-constant-reverted", W,
+      (RT, 'MARKETPLACE_TOOL = "get_marketplace_inventory"', 'MARKETPLACE_TOOL = "ha_get_hacs_info"')),
+    m("W3-capability-name-reverted", W,
+      (CAP, '        "tool": "get_marketplace_inventory",\n        "category": "evidence",',
+       '        "tool": "ha_get_hacs_info",\n        "category": "evidence",')),
+    m("W4-routing-key-reverted", W,
+      (ROU, '    "get_marketplace_inventory": {\n        "policy_id": "marketplace_inventory_read_v1"',
+       '    "ha_get_hacs_info": {\n        "policy_id": "marketplace_inventory_read_v1"')),
+    m("W5-run-structured-name-reverted", W,
+      (TI, '        "get_marketplace_inventory", "Returned a sanitized page',
+       '        "ha_get_hacs_info", "Returned a sanitized page')),
 ]
 
 # Expected survivors, each with the reason it cannot change behaviour.
@@ -267,8 +329,13 @@ EQUIVALENT: dict[str, str] = {
 FAIL_CLOSED_AT_IMPORT: dict[str, str] = {
     "A9-static-requirement-removed": (
         "ha_core_readmission/routes.py refuses to import with RuntimeError "
-        "'Static Core requirements must be non-empty: [ha_get_hacs_info]', so the "
+        "'Static Core requirements must be non-empty: [get_marketplace_inventory]', so the "
         "Engineering runtime cannot start; every suite errors at import."),
+    "W1-registry-name-reverted": (
+        "the reviewed FastMCP registry adapter refuses a tool whose registry key differs "
+        "from its Tool.name (mcp_sdk_compatibility._validate_mapping), so tools/registry.py "
+        "raises McpSdkCompatibilityError at import and the Engineering runtime cannot "
+        "start; every suite errors at import."),
 }
 
 
@@ -345,6 +412,8 @@ def main() -> int:
     identifiers = [item["id"] for item in MUTATIONS]
     if len(set(identifiers)) != len(identifiers):
         raise SystemExit("duplicate mutation id")
+    if set(FAIL_CLOSED_AT_IMPORT) != set(_IMPORT_GUARDS):
+        raise SystemExit("import-guard reasons and guard texts disagree")
     if (set(EQUIVALENT) | set(FAIL_CLOSED_AT_IMPORT)) - set(identifiers):
         raise SystemExit("equivalent or import-guard id without a mutant")
     unknown = set(arguments.only) - set(identifiers)
@@ -399,7 +468,8 @@ def main() -> int:
     # An import-guard mutant counts only when its log shows that exact guard.
     import_guard = [item["id"] for item in results if item["id"] in FAIL_CLOSED_AT_IMPORT
                     and item["verdict"] == "error_only"
-                    and _IMPORT_GUARD in (work / item["log_path"]).read_text(encoding="utf-8")]
+                    and all(text in (work / item["log_path"]).read_text(encoding="utf-8")
+                            for text in _IMPORT_GUARDS[item["id"]])]
     unexpected = [identifier for identifier in not_killed
                   if identifier not in EQUIVALENT and identifier not in import_guard]
     document = {

@@ -59,7 +59,7 @@ from ..ha_mcp_readmission.registry import (
     SignedReleaseRegistry,
 )
 from ..ha_core_readmission.routes import (
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+    RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
 from ..observability import METRICS
@@ -161,38 +161,6 @@ MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
 OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
-HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
-    "ha-mcp-hacs-info-top-level-success-v1"
-)
-_REVIEWED_SUCCESS_ENVELOPE_MODELS = {
-    ("8.5.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    ("8.6.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.1.0",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.1.1",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.2.0",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.4.1",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.4.3",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-}
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
 STARTUP_ORDERING_GRACE_SECONDS = 600.0
@@ -327,7 +295,6 @@ _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_get_device", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
-    ("ha_get_hacs_info", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_operation_status", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_skill_guide", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_state", "ENTITY_NOT_FOUND"): "entity_not_found",
@@ -366,9 +333,6 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_entity", "entity_not_found"): (
         "The requested entity registry entry was not found."
-    ),
-    ("ha_get_hacs_info", "resource_not_found"): (
-        "The requested HACS repository was not found."
     ),
     ("ha_get_integration", "resource_not_found"): (
         "The requested config entry was not found in the reviewed listing."
@@ -1547,18 +1511,15 @@ class UpstreamReadGateway:
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
-                if (
-                    entry.upstream_name in ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
-                    and entry.upstream_name in base_names
-                ):
-                    # HAMCP-290: an Engineering-native route owns this public
-                    # name.  The delegated read is withheld, never aliased, so
-                    # the client sees one provider and no second HACS route.
+                if entry.upstream_name in RETIRED_DELEGATED_READS:
+                    # HAMCP-290: a retired delegated read is never exposed,
+                    # aliased or dispatched, on any reviewed release and
+                    # whether or not a native route is registered.
                     core_withheld.append(
                         {
                             "tool": entry.upstream_name,
-                            "disposition": "engineering_native_owned",
-                            "reason_codes": ["engineering_native_route_owns_name"],
+                            "disposition": "retired_delegated_read",
+                            "reason_codes": ["delegated_read_retired"],
                         }
                     )
                     continue
@@ -2062,14 +2023,17 @@ class UpstreamReadGateway:
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
+        # HAMCP-290: a retired delegated read is recorded beside the Core
+        # withholdings, but it is not a Core catalog withdrawal or
+        # restoration, so it never reaches the Core runtime counters.
         previous_core_withheld = {
             str(item.get("tool", ""))
             for item in self._state.get("core_withheld_tools", ())
             if isinstance(item, dict)
-        }
+        } - RETIRED_DELEGATED_READS
         next_core_withheld = {
             str(item.get("tool", "")) for item in core_withheld
-        }
+        } - RETIRED_DELEGATED_READS
         automatic_count = policy.classification_counts[
             "automatic_read"
         ]
@@ -3267,6 +3231,7 @@ class UpstreamReadGateway:
                 not mapping
                 or not mapping.entry.is_read_route
                 or mapping.entry.upstream_name != policy_entry.upstream_name
+                or policy_entry.upstream_name in RETIRED_DELEGATED_READS
                 or mapping.generation != admission_generation
                 or mapping.contract_fingerprint != contract_fingerprint
             ):
@@ -4109,10 +4074,7 @@ class UpstreamReadGateway:
                 try:
                     check_platform_stats_precheck(
                         _normalize_upstream_payload(
-                            precheck.call_result,
-                            server_version=mapping.adapter_version,
-                            protocol_version=mapping.protocol_version,
-                            upstream_tool=policy_entry.upstream_name,
+                            precheck.call_result
                         )
                     )
                 except StatsCapExceeded:
@@ -4196,10 +4158,7 @@ class UpstreamReadGateway:
                 completeness_warnings = [yaml_reader.K7_WARNING]
             else:
                 payload = _normalize_upstream_payload(
-                    exchange.call_result,
-                    server_version=mapping.adapter_version,
-                    protocol_version=mapping.protocol_version,
-                    upstream_tool=policy_entry.upstream_name,
+                    exchange.call_result
                 )
                 if is_blueprint_adapter(policy_entry):
                     try:
@@ -5050,10 +5009,7 @@ class UpstreamReadGateway:
                     error_contract=error_contract,
                 )
             payload = _normalize_upstream_payload(
-                exchange.call_result,
-                server_version=route.server_version,
-                protocol_version=route.protocol_version,
-                upstream_tool=upstream_tool_name,
+                exchange.call_result
             )
             output_schema = route.observed_tool.get("outputSchema")
             output_match = True
@@ -7015,20 +6971,7 @@ def _reviewed_single_entity_registry_lookup(
     )
 
 
-def _normalize_upstream_payload(
-    call_result: dict[str, Any],
-    *,
-    server_version: str,
-    protocol_version: str,
-    upstream_tool: str,
-) -> Any:
-    response_model = _REVIEWED_SUCCESS_ENVELOPE_MODELS.get(
-        (server_version, protocol_version, upstream_tool)
-    )
-    if response_model == HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1:
-        payload = _reviewed_hacs_info_payload(call_result)
-        return _normalize_hacs_info_top_level_success(payload)
-
+def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:
     structured = call_result.get("structuredContent")
     if structured is not None:
         payload = structured
@@ -7048,77 +6991,6 @@ def _normalize_upstream_payload(
         else:
             payload = content
     return payload
-
-
-def _reviewed_hacs_info_payload(call_result: dict[str, Any]) -> Any:
-    """Decode the exact 8.1 MCP success envelope without ambiguity."""
-
-    content = call_result.get("content")
-    if (
-        not isinstance(content, list)
-        or len(content) != 1
-        or not isinstance(content[0], dict)
-        or content[0].get("type") != "text"
-        or not isinstance(content[0].get("text"), str)
-    ):
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    try:
-        text_payload = json.loads(
-            content[0]["text"],
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
-        raise _GatewayFailure("invalid_response", dispatched=True) from None
-
-    structured = call_result.get("structuredContent")
-    if structured is not None:
-        try:
-            structured_canonical = json.dumps(
-                structured,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-            text_canonical = json.dumps(
-                text_payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-        except (RecursionError, TypeError, UnicodeError, ValueError):
-            raise _GatewayFailure(
-                "invalid_response", dispatched=True
-            ) from None
-        if structured_canonical != text_canonical:
-            raise _GatewayFailure("invalid_response", dispatched=True)
-    return structured if structured is not None else text_payload
-
-
-def _normalize_hacs_info_top_level_success(payload: Any) -> dict[str, Any]:
-    """Restore the exact 8.0 HACS read shape for reviewed 8.1 success data."""
-
-    if not isinstance(payload, dict) or set(payload) != {
-        "success",
-        "data",
-        "metadata",
-    }:
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    data = payload.get("data")
-    metadata = payload.get("metadata")
-    if (
-        payload.get("success") is not True
-        or not isinstance(data, dict)
-        or not isinstance(metadata, dict)
-        or "success" in data
-    ):
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    return {
-        "data": {"success": True, **data},
-        "metadata": metadata,
-    }
 
 
 def _upstream_completeness(

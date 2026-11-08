@@ -702,7 +702,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
             set(),
         )
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(len(tools), 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertIn("configuration_integrity_analysis", tools)
         schema = tools["configuration_integrity_analysis"].parameters
         json.dumps(schema)

@@ -696,22 +696,17 @@ class RollbackReadyPathTests(unittest.TestCase):
     def test_expected_delegated_set_is_empty_and_static_catalog_is_source_frozen(self):
         self.assertEqual(LANES.ROLLBACK_EXPECTED_DELEGATED_READS, frozenset())
         self.assertIn("get_server_health", self.static)
-        # Every 8.5.0 upstream name except the Engineering-native-owned
-        # ha_get_hacs_info (HAMCP-290) is outside the frozen static catalog, so
+        # Every 8.5.0 upstream name is outside the frozen static catalog, so
         # exposing any of them is a delegated read.
         self.assertTrue(self.policy_85_names)
-        self.assertEqual(set(self.policy_85_names) & self.static, {"ha_get_hacs_info"})
+        self.assertFalse(set(self.policy_85_names) & self.static)
 
     def test_extra_delegated_read_other_than_ha_get_state_fails(self):
         self.refused(self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]),
                      "fail_closed_delegated_read_exposed")
-        for name in sorted(set(self.policy_85_names) - self.static):
+        for name in self.policy_85_names:
             with self.subTest(name=name):
                 self.refused(self.catalog(pages=[sorted(self.static) + [name]]), "fail_closed_delegated_read_exposed")
-        # HAMCP-290: a second ha_get_hacs_info beside the native one is a
-        # duplicate name and still fails closed.
-        self.refused(self.catalog(pages=[sorted(self.static) + ["ha_get_hacs_info"]]),
-                     "fail_closed_catalog_duplicate_name")
         # Any non-static name is unexpected, whatever it is called.
         self.refused(self.catalog(pages=[sorted(self.static) + ["synthetic_unknown_tool"]]),
                      "fail_closed_delegated_read_exposed")

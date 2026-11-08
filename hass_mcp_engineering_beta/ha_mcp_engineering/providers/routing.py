@@ -138,7 +138,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_recorder_settings": ProviderCapability.RECORDER_SETTINGS,
     "list_script_traces": ProviderCapability.SCRIPT_TRACE,
     "get_script_trace": ProviderCapability.SCRIPT_TRACE,
-    "ha_get_hacs_info": ProviderCapability.MARKETPLACE_INVENTORY,
+    "get_marketplace_inventory": ProviderCapability.MARKETPLACE_INVENTORY,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -291,7 +291,7 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "scope": "one exact script key and run id; trace/get domain script only; shared sanitizer before output; admitted core.script_trace_read only",
         "writes_allowed": "none", "fallback_policy": "none",
     },
-    "ha_get_hacs_info": {
+    "get_marketplace_inventory": {
         "policy_id": "marketplace_inventory_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "constant marketplace/repositories/list; installed repositories only; bounded store, fixed projection, shared sanitizer, Engineering-side paging; admitted core.marketplace_read only",
         "writes_allowed": "none",

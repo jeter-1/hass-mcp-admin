@@ -626,7 +626,7 @@ SANITIZER_SITES = {
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_untrusted_text", "sanitize_untrusted_data"): (1, "audit"),
-    # HAMCP-290: the native ha_get_hacs_info Marketplace inventory read.
+    # HAMCP-290: the native get_marketplace_inventory Marketplace inventory read.
     ("marketplace_inventory.py", "sanitize_records", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_log_lines"): (1, "logs"),
     ("providers/operational_lifecycle.py", "_safe_text", "sanitize_untrusted_data"): (1, "governance"),

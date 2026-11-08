@@ -25,7 +25,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
+    RETIRED_DELEGATED_READS,
 )
 from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
     CORE_2026_9_1_AUTHORITY,
@@ -3010,7 +3010,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + ha_get_hacs_info
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -3021,34 +3021,39 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        # HAMCP-290: the static registry owns ha_get_hacs_info, so the gateway
-        # withholds that one automatic read (82 + 28 - 1 = 109).
-        owned = {
+        # HAMCP-290: the reviewed policy still classifies ha_get_hacs_info as
+        # an automatic read; Engineering retires it (Josh, 2026-11-08), so
+        # one matched read is never exposed (82 + 28 - 1 = 109).
+        retired = {
             item.upstream_name
             for item in policy.tools
             if item.classification == "automatic_read"
-        } & ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS
-        self.assertEqual(owned, {"ha_get_hacs_info"})
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(owned), 109)
+        } & RETIRED_DELEGATED_READS
+        self.assertEqual(retired, {"ha_get_hacs_info"})
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 109)
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
-        # never a stock policy entry (30 -> 31).
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
+        # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
+        # from the mapping (31 -> 30).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
         self.assertEqual(
             {
                 item.upstream_name
                 for item in policy.tools
                 if item.is_read_route or item.classification == "held_for_canary"
-            },
+            }
+            - RETIRED_DELEGATED_READS,
             set(DELEGATED_CORE_REQUIREMENTS)
             - {"ha_manage_blueprints", "ha_config_get_yaml"},
         )
         current = registry.by_version["8.5.0"].policy
         self.assertEqual(
             {item.upstream_name for item in current.tools
-             if item.is_read_route or item.classification == "held_for_canary"},
+             if item.is_read_route or item.classification == "held_for_canary"}
+            - RETIRED_DELEGATED_READS,
             set(DELEGATED_CORE_REQUIREMENTS)
             - {"ha_get_blueprint", "ha_config_get_yaml"},
         )
+        self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
         self.assertEqual(
             delegated_requirements("ha_manage_blueprints"),
             delegated_requirements("ha_get_blueprint"),
@@ -3093,7 +3098,8 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         counts = json.loads(result.stdout)["tool_counts"]
         self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
-        self.assertEqual(counts["expected_delegated_reads"], 28)
+        # HAMCP-290: 28 matched, one retired delegated read (82 + 27 = 109).
+        self.assertEqual(counts["expected_delegated_reads"], 27)
         self.assertEqual(counts["expected_connector_total"], 109)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
@@ -3125,15 +3131,17 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
         health = await gateway.initialize(server)
 
+        # HAMCP-290: the retired delegated read is withheld beside the Core
+        # withholding (Josh decision 2026-11-08).
         self.assertEqual(
             len(registered_tools(server)),
-            27,
+            27 - len(RETIRED_DELEGATED_READS),
             msg=json.dumps(health, sort_keys=True),
         )
         self.assertIsNone(
             registered_tools(server).get("ha_config_list_dashboard_resources")
         )
-        self.assertEqual(health["core_withheld_read_count"], 1)
+        self.assertEqual(health["core_withheld_read_count"], 1 + len(RETIRED_DELEGATED_READS))
         self.assertEqual(health["last_discovery_failure_category"], None)
         self.assertEqual(health["fallback_count"], 0)
 
@@ -3166,12 +3174,14 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(registered_tools(server).get("ha_get_device"))
         health = gateway.health_snapshot()
-        self.assertEqual(health["core_withheld_read_count"], 5)
-        self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 102)  # HAMCP-290: + ha_get_hacs_info
+        # HAMCP-290: the retired delegated read is withheld beside the five
+        # device-dependent reads; 25 matched, 5 Core-withheld, 1 retired.
+        self.assertEqual(health["core_withheld_read_count"], 5 + len(RETIRED_DELEGATED_READS))
+        self.assertEqual(health["dynamically_exposed_count"], 20 - len(RETIRED_DELEGATED_READS))
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 101)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
-            set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
+            set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,
         )
         result = json.loads(
             await registered_tools(server).get("ha_get_state").run(
@@ -3207,10 +3217,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(registered_tools(server).get("ha_get_device"))
         self.assertEqual(
-            gateway.health_snapshot()["dynamically_exposed_count"], 28
+            gateway.health_snapshot()["dynamically_exposed_count"],
+            28 - len(RETIRED_DELEGATED_READS),  # HAMCP-290
         )
         self.assertGreater(gateway._admission_generation, upstream_generation)
         counters = runtime.health_snapshot()["counters"]
+        # HAMCP-290: the retired read is not a Core catalog withdrawal, so
+        # only the five device-dependent reads are counted each way.
         self.assertEqual(counters["catalog_withdrawals"], 5)
         self.assertEqual(counters["catalog_restorations"], 5)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
@@ -3259,8 +3272,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             {
                 item["tool"] for item in gateway.health_snapshot()["core_withheld_tools"]
             },
-            set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
+            set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,  # HAMCP-290
         )
+        self.assertEqual(runtime.health_snapshot()["counters"]["catalog_withdrawals"], 5)  # HAMCP-290
         self.assertEqual(transport.calls, [])
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 

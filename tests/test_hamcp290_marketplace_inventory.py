@@ -1,13 +1,18 @@
 """Installed-only Marketplace inventory read (HAMCP-290, Release 2.5.0).
 
 ``core.marketplace_read`` is runtime-only.  Until an owner-signed registry
-references it the gateway refuses ``ha_get_hacs_info`` with
+references it the gateway refuses ``get_marketplace_inventory`` with
 ``pending_signed_registry_admission`` before the app, and the service refuses
 ``authority_unavailable`` with zero Home Assistant commands.  With admission,
 only two constant payloads exist: ``marketplace/repositories/list`` and, only
 on an exact ``unknown_command`` error code, ``hacs/repositories/list`` on the
 same connection.  Every Marketplace and HACS management command is
 unreachable; oversized or malformed stores fail closed with no partial page.
+
+The reviewed ha-mcp ``ha_get_hacs_info`` read is retired (Josh, 2026-11-08):
+the gateway never exposes, aliases or dispatches it on any reviewed release,
+with or without the native route, and a refused native read never falls back
+to it.
 
 Fixtures model Core 2026.11.0 (74cf5a49)
 ``components/marketplace/websocket/repositories.py:28-89`` (25-key
@@ -47,9 +52,10 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
 )
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
-    ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS,
     F3_ENTRY_ADMISSION_PROFILES,
     PENDING_ADMISSION_TOOLS,
+    RETIRED_DELEGATED_READ_TOOLS,
+    RETIRED_DELEGATED_READS,
     static_tool_requirements,
 )
 from ha_mcp_engineering.providers.routing import (  # noqa: E402
@@ -64,7 +70,8 @@ from ha_mcp_engineering.tools import marketplace_inventory as public  # noqa: E4
 from ha_mcp_engineering.tools.registry import ENGINEERING_STATIC_TOOL_NAMES  # noqa: E402
 
 PROFILE = "core.marketplace_read"
-TOOL = "ha_get_hacs_info"
+TOOL = "get_marketplace_inventory"
+RETIRED = "ha_get_hacs_info"
 PENDING = "pending_signed_registry_admission"
 HA_TOKEN = syn.needle("hatoken")
 ACCESS_SECRET = syn.needle("accesssecret")
@@ -224,7 +231,7 @@ class ContractTests(unittest.TestCase):
         others = [p for p in CORE_RUNTIME_CAPABILITY_PROFILES if p.capability_id != PROFILE]
         self.assertEqual(len(others), 32)
 
-    def test_tool_is_registered_read_only_policy_bound_and_owns_the_name(self):
+    def test_tool_is_registered_read_only_and_policy_bound_under_its_own_name(self):
         self.assertIn(TOOL, ENGINEERING_STATIC_TOOL_NAMES)
         self.assertEqual(static_tool_requirements(TOOL, {}), (PROFILE,))
         self.assertEqual(PENDING_ADMISSION_TOOLS[TOOL], ("marketplace_inventory", PROFILE))
@@ -240,9 +247,10 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(capability["core_capabilities"], [PROFILE])
         self.assertEqual(capability["core_admission_requirement"], "signed_core_registry_admission")
         self.assertEqual(capability["fallback"], mi.FALLBACK)
-        self.assertEqual(ENGINEERING_NATIVE_OWNED_DELEGATED_TOOLS, frozenset({TOOL}))
-        # The reviewed delegated mapping stays compiled; the gateway withholds it.
-        self.assertIn(TOOL, DELEGATED_CORE_REQUIREMENTS)
+        # Engineering-owned name: no ha_ prefix and no delegated route.
+        self.assertFalse(TOOL.startswith("ha_"))
+        self.assertNotIn(TOOL, DELEGATED_CORE_REQUIREMENTS)
+        self.assertNotIn(TOOL, RETIRED_DELEGATED_READS)
         registered = public.registered_tool()
         self.assertIs(registered.annotations.readOnlyHint, True)
         self.assertIs(registered.annotations.destructiveHint, False)
@@ -254,6 +262,19 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(properties["query"]["maxLength"], mi.MAX_QUERY)
         self.assertEqual((properties["limit"]["minimum"], properties["limit"]["maximum"]), (1, 50))
         self.assertEqual((properties["offset"]["minimum"], properties["offset"]["maximum"]), (0, 20000))
+
+    def test_delegated_hacs_read_is_retired_from_every_engineering_table(self):
+        self.assertEqual(RETIRED_DELEGATED_READ_TOOLS, (RETIRED,))
+        self.assertEqual(RETIRED_DELEGATED_READS, frozenset({RETIRED}))
+        self.assertNotIn(RETIRED, ENGINEERING_STATIC_TOOL_NAMES)
+        self.assertNotIn(RETIRED, DELEGATED_CORE_REQUIREMENTS)
+        self.assertNotIn(RETIRED, TOOL_CAPABILITY_POLICY)
+        self.assertNotIn(RETIRED, ANALYTICAL_PROVIDER_POLICIES)
+        self.assertNotIn(RETIRED, PENDING_ADMISSION_TOOLS)
+        self.assertFalse(capability_for_tool(RETIRED))
+        self.assertEqual(static_tool_requirements(RETIRED, {}), ())
+        # No alias spelling of the retired name is Engineering-owned either.
+        self.assertFalse({name for name in ENGINEERING_STATIC_TOOL_NAMES if "hacs" in name})
 
     def test_payloads_are_the_closed_vocabulary(self):
         self.assertEqual(dict(mi.MARKETPLACE_PAYLOAD), {"type": "marketplace/repositories/list"})
@@ -951,29 +972,258 @@ class EndToEndLoopbackTests(LoopbackTestCase):
         self.assertEqual([c["type"] for c in self.peer.ledger], [mi.MARKETPLACE_LIST_COMMAND])
 
 
-class GatewaySuppressionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_native_route_withholds_the_delegated_read_instead_of_aliasing(self):
-        from mcp.server.fastmcp import FastMCP
-        from test_readonly_upstream_gateway import catalog_tool, initialize, policy_entry, registered_tools
+def _retired_entry(reviewed_schema=None, open_world=False):
+    from test_readonly_upstream_gateway import policy_entry
 
-        server = FastMCP("hamcp290-native-owned")
-        server.add_tool(public.registered_tool().fn, name=TOOL)
-        original = registered_tools(server).get(TOOL)
-        gateway, server, _ = await initialize([policy_entry(TOOL)], [catalog_tool(TOOL)], server=server)
-        self.assertIs(registered_tools(server).get(TOOL), original)
-        self.assertIsNone(registered_tools(server).get("ha_mcp__" + TOOL))
+    return policy_entry(RETIRED, reviewed_schema=reviewed_schema, open_world=open_world)
+
+
+def _native_server(name: str):
+    from mcp.server.fastmcp import FastMCP
+
+    server = FastMCP(name)
+    server.add_tool(public.registered_tool().fn, name=TOOL)
+    return server
+
+
+class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
+    """The delegated ``ha_get_hacs_info`` is retired on every reviewed release."""
+
+    def assert_retired(self, gateway, server, *, matched=None):
+        from test_readonly_upstream_gateway import registered_tools
+
+        names = set(registered_tools(server))
+        self.assertNotIn(RETIRED, names)
+        self.assertFalse({name for name in names if name.endswith(RETIRED)})
         health = gateway.health_snapshot()
-        self.assertEqual(health["collision_count"], 0)
-        self.assertEqual(health["dynamically_exposed_count"], 0)
         withheld = {item["tool"]: item for item in health["core_withheld_tools"]}
-        self.assertEqual(withheld[TOOL]["disposition"], "engineering_native_owned")
+        self.assertIn(RETIRED, withheld)
+        self.assertEqual(withheld[RETIRED]["disposition"], "retired_delegated_read")
+        self.assertEqual(withheld[RETIRED]["reason_codes"], ["delegated_read_retired"])
+        self.assertNotIn(RETIRED, {item["upstream_name"] for item in health["collision_mappings"]})
+        self.assertNotIn(RETIRED, health["exposed_tools"])
+        if matched is not None:
+            self.assertEqual(health["exact_matched_automatic_read_count"], matched)
+            self.assertEqual(health["dynamically_exposed_count"], matched - 1)
+        return health
 
-    async def test_without_a_native_route_the_delegated_read_is_unchanged(self):
+    async def test_retired_read_is_never_exposed_without_a_native_route(self):
+        from test_readonly_upstream_gateway import catalog_tool, initialize
+
+        gateway, server, transport = await initialize([_retired_entry()], [catalog_tool(RETIRED)])
+        self.assert_retired(gateway, server, matched=1)
+        self.assertEqual(transport.calls, [])
+
+    async def test_retired_read_is_never_counted_as_a_core_catalog_change(self):
+        # The retired read is reported beside the Core withholdings, but it is
+        # not a Core withdrawal or restoration, so no false Core telemetry.
+        from test_readonly_upstream_gateway import CompositeCoreRuntime, catalog_tool, initialize
+
+        class RecordingCoreRuntime(CompositeCoreRuntime):
+            def __init__(self):
+                super().__init__()
+                self.catalog_changes = []
+
+            def record_catalog_change(self, *, restored, count=1):
+                self.catalog_changes.append((restored, count))
+
+        runtime = RecordingCoreRuntime()
+        gateway, server, transport = await initialize(
+            [_retired_entry()], [catalog_tool(RETIRED)], core_runtime=runtime)
+        self.assert_retired(gateway, server, matched=1)
+        self.assertEqual(runtime.catalog_changes, [])
+        self.assertEqual(runtime.acquire_calls, 0)
+        self.assertEqual(transport.calls, [])
+
+    async def test_retired_read_is_never_exposed_or_aliased_beside_the_native_route(self):
+        from test_readonly_upstream_gateway import catalog_tool, initialize, registered_tools
+
+        server = _native_server("hamcp290-native")
+        original = registered_tools(server).get(TOOL)
+        gateway, server, transport = await initialize(
+            [_retired_entry(), ], [catalog_tool(RETIRED)], server=server)
+        self.assertIs(registered_tools(server).get(TOOL), original)
+        health = self.assert_retired(gateway, server, matched=1)
+        self.assertEqual(health["collision_count"], 0)
+        self.assertEqual(transport.calls, [])
+
+    async def test_upstream_tool_advertising_the_native_name_is_never_exposed_in_its_place(self):
         from test_readonly_upstream_gateway import catalog_tool, initialize, policy_entry, registered_tools
 
-        gateway, server, _ = await initialize([policy_entry(TOOL)], [catalog_tool(TOOL)])
-        self.assertIsNotNone(registered_tools(server).get(TOOL))
-        self.assertEqual(gateway.health_snapshot()["core_withheld_read_count"], 0)
+        for reviewed in (False, True):
+            with self.subTest(reviewed=reviewed):
+                server = _native_server("hamcp290-impostor")
+                original = registered_tools(server).get(TOOL)
+                entries = [policy_entry("ha_get_state")]
+                if reviewed:
+                    # Even a reviewed upstream entry under the native name is
+                    # aliased, never published in the native tool's place.
+                    entries.append(policy_entry(TOOL))
+                gateway, server, transport = await initialize(
+                    entries, [catalog_tool("ha_get_state"), catalog_tool(TOOL)], server=server)
+                self.assertIs(registered_tools(server).get(TOOL), original)
+                self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+                self.assertEqual(transport.calls, [])
+
+    async def test_retired_read_is_withheld_on_the_exact_reviewed_captures(self):
+        from test_readonly_upstream_gateway import registered_tools
+        import test_hamcp162_yaml_admission as yaml_admission
+
+        harness = yaml_admission.AdmissionTests()
+        harness.setUp()
+        self.addCleanup(harness.temporary.cleanup)
+        for version in ("8.4.3", "8.5.0"):
+            for label in ("A", "OFF"):
+                for native in (False, True):
+                    with self.subTest(version=version, label=label, native=native):
+                        tools = yaml_admission.captured(version, label)
+                        self.assertIn(RETIRED, {tool["name"] for tool in tools})
+                        gateway, transport = await harness.gateway(version, tools)
+                        server = gateway.synthetic_server
+                        if native:
+                            server = _native_server(f"hamcp290-{version}-{label}")
+                            gateway, transport = await _gateway_on(server, version, tools)
+                        health = self.assert_retired(gateway, server)
+                        # Mode A also exposes the optional YAML reader, which is
+                        # not an automatic read; OFF does not.
+                        optional = 1 if label == "A" else 0
+                        self.assertEqual(health["dynamically_exposed_count"],
+                                         health["exact_matched_automatic_read_count"]
+                                         - health["core_withheld_read_count"] + optional)
+                        self.assertEqual(health["core_withheld_read_count"], 1)
+                        if native:
+                            self.assertIsNotNone(registered_tools(server).get(TOOL))
+                        self.assertEqual(transport.sent, [])
+
+    async def test_held_read_canary_never_dispatches_the_retired_read(self):
+        """The evidence-only canary path does not pass the dispatch guard, so
+        prove it refuses the retired read on the exact reviewed captures."""
+
+        import test_hamcp162_yaml_admission as yaml_admission
+
+        harness = yaml_admission.AdmissionTests()
+        harness.setUp()
+        self.addCleanup(harness.temporary.cleanup)
+        for version in ("8.4.3", "8.5.0"):
+            with self.subTest(version=version):
+                gateway, transport = await harness.gateway(version, yaml_admission.captured(version, "OFF"))
+                health = gateway.health_snapshot()
+                self.assertEqual(health["admission_status"], "admitted_exact")
+                value = json.loads(await gateway.run_held_read_canary(
+                    upstream_tool_name=RETIRED,
+                    expected_compatibility_entry_id=health["selected_compatibility_entry_id"],
+                    arguments={},
+                ))
+                self.assertFalse(value["success"])
+                self.assertEqual(value["details"]["reason"], "tool_not_held_for_canary")
+                self.assertFalse(value["details"]["canary_evidence"]["dispatch_occurred"])
+                self.assertEqual(transport.sent, [])
+                self.assertNotIn(RETIRED, gateway.health_snapshot()["held_tools"])
+
+    async def test_retired_read_is_withheld_on_the_9_1_0_capture(self):
+        from test_readonly_upstream_gateway import initialize, policy_entry, registered_tools
+
+        capture = json.loads((ROOT / "docs/evidence/hamcp319/phase1/catalogs/full-1.json").read_text())
+        tools = capture["tools"]
+        by_name = {tool["name"]: tool for tool in tools}
+        names = (RETIRED, "ha_get_state")
+
+        def entries():
+            return [policy_entry(name, reviewed_schema=by_name[name]["inputSchema"],
+                                 open_world=bool(by_name[name]["annotations"].get("openWorldHint")))
+                    for name in names]
+
+        reviewed = {
+            "version": "9.1.0", "reviewed_version": "9.1.0",
+            "reviewed_descriptions": {name: by_name[name]["description"] for name in names},
+            "reviewed_runtime_annotations": {name: by_name[name]["annotations"] for name in names},
+            "reviewed_output_schemas": {name: by_name[name]["outputSchema"] for name in names},
+        }
+        for native in (False, True):
+            with self.subTest(native=native):
+                server = _native_server("hamcp290-9.1.0") if native else None
+                gateway, server, transport = await initialize(entries(), tools, server=server, **reviewed)
+                self.assert_retired(gateway, server, matched=2)
+                self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+                self.assertEqual(transport.calls, [])
+        # Non-vacuous: without the retirement this exact descriptor is admitted.
+        from ha_mcp_engineering.providers import upstream_read_gateway as gw
+
+        with mock.patch.object(gw, "RETIRED_DELEGATED_READS", frozenset()):
+            _gateway, server, _transport = await initialize(entries(), tools, **reviewed)
+        self.assertIsNotNone(registered_tools(server).get(RETIRED))
+
+    async def test_a_previously_admitted_route_is_refused_at_dispatch(self):
+        """Defence in depth: the lowest dispatch point refuses a retired read."""
+
+        from test_readonly_upstream_gateway import catalog_tool, initialize, registered_tools
+        from ha_mcp_engineering.providers import upstream_read_gateway as gw
+
+        with mock.patch.object(gw, "RETIRED_DELEGATED_READS", frozenset()):
+            gateway, server, transport = await initialize([_retired_entry()], [catalog_tool(RETIRED)])
+        route = registered_tools(server).get(RETIRED)
+        self.assertIsNotNone(route)
+        value = json.loads(await route.run({"entity_id": "sun.sun"}))
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_prohibited")
+        self.assertEqual(transport.calls, [])
+        health = gateway.health_snapshot()
+        self.assertEqual(health["prohibited_delegation_attempts"], 1)
+        self.assertEqual(health["fallback_count"], 0)
+
+    async def test_direct_provider_call_to_the_retired_read_is_refused(self):
+        from test_readonly_upstream_gateway import catalog_tool, initialize, schema
+
+        entry = _retired_entry()
+        gateway, _server, transport = await initialize([entry], [catalog_tool(RETIRED)])
+        value = json.loads(await gateway.execute(
+            exposed_name=RETIRED, arguments={"entity_id": "sun.sun"}, reviewed_schema=schema(),
+            policy_entry=entry, admission_generation=gateway.health_snapshot().get("admission_generation", 0),
+            contract_fingerprint="not-admitted",
+        ))
+        self.assertEqual(value["error_code"], "provider_prohibited")
+        self.assertEqual(transport.calls, [])
+
+    async def test_refused_native_read_never_falls_back_upstream(self):
+        from test_readonly_upstream_gateway import catalog_tool, initialize, registered_tools
+
+        server = _native_server("hamcp290-no-fallback")
+        gateway, server, transport = await initialize(
+            [_retired_entry()], [catalog_tool(RETIRED)], server=server)
+        unconfigured = mi.MarketplaceInventoryRuntime()
+        with mock.patch.object(public, "MARKETPLACE_INVENTORY", unconfigured):
+            for arguments in ({}, {"query": "x"}, {"limit": 999}):
+                with self.subTest(arguments=arguments):
+                    rendered = await public.registered_tool().run(arguments)
+                    value = json.loads(rendered)
+                    self.assertFalse(value["success"])
+                    self.assertIs(value["metadata"]["fallback_occurred"], False)
+                    self.assertNotIn(RETIRED, rendered)
+        self.assertEqual(transport.calls, [])
+        self.assertIsNone(registered_tools(server).get(RETIRED))
+        health = gateway.health_snapshot()
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(health["dynamically_exposed_count"], 0)
+
+
+async def _gateway_on(server, version, tools):
+    """``test_hamcp162_yaml_admission.Harness.gateway`` (Mode A) on ``server``."""
+
+    from dataclasses import replace
+
+    import test_hamcp162_yaml_admission as yaml_admission
+    import test_ha_mcp_production_readmission as signed
+    from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+
+    transport = yaml_admission.RaceTransport(tools, version)
+    gateway = UpstreamReadGateway()
+    configured = replace(
+        signed._settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
+        upstream_dashboard_mcp_url="http://synthetic-provider:9583/synthetic-path-credential/mcp",
+    )
+    gateway.configure(configured, transport=transport)
+    await gateway.initialize(server)
+    return gateway, transport
 
 
 class UnadmittedCompiledCoreTests(unittest.IsolatedAsyncioTestCase):

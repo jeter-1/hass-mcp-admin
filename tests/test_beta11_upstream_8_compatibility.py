@@ -33,6 +33,10 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
     FakeTransport,
     settings,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def capture(version: str) -> dict:
@@ -226,7 +230,7 @@ class Beta11GatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_8_0_admits_24_and_holds_two(self):
         gateway, target = await self.gateway_for("8.0.0")
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 24)
+        self.assertEqual(health["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["held_read_count"], 2)
         self.assertEqual(
             health["held_tools"],
@@ -249,7 +253,7 @@ class Beta11GatewayTests(unittest.IsolatedAsyncioTestCase):
         names = set(registered_tools(target))
         self.assertNotIn("ha_search", names)
         self.assertNotIn("ha_get_operation_status", names)
-        self.assertEqual(len(gateway._registered_names), 24)
+        self.assertEqual(len(gateway._registered_names), 24 - RETIRED_COUNT)  # HAMCP-290
 
     async def test_unknown_8_x_does_not_inherit_exact_8_0_trust(self):
         gateway, target = await self.gateway_for("8.0.1")
@@ -263,7 +267,7 @@ class Beta11GatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_7_14_2_remains_26_reads(self):
         gateway, _target = await self.gateway_for("7.14.2")
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertEqual(health["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["held_read_count"], 0)
         self.assertEqual(
             health["observed_catalog_fingerprint"],

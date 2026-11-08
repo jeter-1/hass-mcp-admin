@@ -19,7 +19,7 @@ from ha_mcp_engineering.fan.contracts import FAN_CONTRACT, FAN_RELEASES, FanRefu
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_evidence, validate_reviewed_release_catalog
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
-from test_beta58_ha_mcp_8_4_3_continuity import EXACT_READS
+from test_beta58_ha_mcp_8_4_3_continuity import EXPOSED_READS  # HAMCP-290: omits the retired read
 import test_typed_fan as fan
 
 def capture(version='8.5.0'):
@@ -55,7 +55,7 @@ class CompatibilityTests(unittest.IsolatedAsyncioTestCase):
     async def test_25_public_reads_and_blueprint_schema_unchanged(self):
         g, t = await self.gateway()
         tools = g._registered_tool_registry.snapshot()
-        self.assertEqual(set(tools), EXACT_READS, g.health_snapshot())
+        self.assertEqual(set(tools), EXPOSED_READS, g.health_snapshot())  # HAMCP-290
         old = next((t for t in capture('8.4.3')['tools'] if t['name'] == 'ha_get_blueprint'))
         self.assertEqual(tools['ha_get_blueprint'].parameters, old['inputSchema'])
         self.assertNotIn('ha_manage_blueprints', tools)
@@ -390,7 +390,7 @@ class Signed850Tests(unittest.IsolatedAsyncioTestCase):
     async def test_signed_matching_entry_preserves_closed_wrapper_and_fan_authority(self):
         entry = _signed_entry_for(self.release, version='8.5.0')
         g, t, health = await self._initialize(raw=self._raw(entry=entry), version='8.5.0')
-        self.assertEqual(set(g._registered_tool_registry.snapshot()), EXACT_READS, health)
+        self.assertEqual(set(g._registered_tool_registry.snapshot()), EXPOSED_READS, health)  # HAMCP-290
         self.assertTrue(g.fan_provider_authority_token('8.5.0'))
         raw = next((x for x in entry['tool_contracts'] if x['tool_name'] == 'ha_manage_blueprints'))
         self.assertFalse(raw['reviewed_automatic_read'])

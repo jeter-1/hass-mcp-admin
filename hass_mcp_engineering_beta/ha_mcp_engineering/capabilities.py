@@ -622,7 +622,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
         # HAMCP-290: installed-only Marketplace inventory; dormant until the
         # owner-signed registry admits core.marketplace_read.
-        "tool": "ha_get_hacs_info",
+        "tool": "get_marketplace_inventory",
         "category": "evidence",
         "status": "beta_native",
         "risk": "read",
