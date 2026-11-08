@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from ha_mcp_engineering.capabilities import build_capability_catalog  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
 from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission  # noqa: E402
@@ -547,8 +548,10 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version):
                 g, t = await make_gateway(version)
                 tools = g._registered_tool_registry.snapshot()
-                self.assertEqual(set(tools), EXACT_READS, g.health_snapshot())
-                self.assertEqual(len(tools), 28)
+                # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
+                # on every reviewed release (Josh decision 2026-11-08).
+                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS, g.health_snapshot())
+                self.assertEqual(len(tools), 28 - len(RETIRED_DELEGATED_READS))
                 upstream = {item["name"]: item for item in capture(version)["tools"]}
                 for name in TOOLS:
                     self.assertEqual(tools[name].parameters, platform.PUBLIC_SCHEMAS[name])
@@ -1183,7 +1186,8 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                         mutate(next(item for item in tools if item["name"] == tool))
                         g, t = await make_gateway(version, tools)
                         exposed = set(g._registered_tool_registry.snapshot())
-                        self.assertEqual(exposed, EXACT_READS - {tool}, g.health_snapshot())
+                        # HAMCP-290: the retired read is never exposed.
+                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS - {tool}, g.health_snapshot())
                         self.assertIn(tool, {item["upstream_name"] for item in g.health_snapshot()["quarantined_tools"]})
                         self.assertEqual(t.sent, [])
 
@@ -1344,7 +1348,10 @@ class CatalogMetadataTests(unittest.TestCase):
         for version in VERSIONS:
             reads = {e.upstream_name for e in registry.by_version[version].policy.tools if e.is_read_route}
             with self.subTest(version=version):
-                self.assertTrue(reads <= set(DELEGATED_CORE_REQUIREMENTS), reads - set(DELEGATED_CORE_REQUIREMENTS))
+                # HAMCP-290: the retired delegated read has no Core requirement row.
+                self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
+                live = reads - RETIRED_DELEGATED_READS
+                self.assertTrue(live <= set(DELEGATED_CORE_REQUIREMENTS), live - set(DELEGATED_CORE_REQUIREMENTS))
 
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())

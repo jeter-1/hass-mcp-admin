@@ -35,6 +35,9 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     get_registered_server,
     registered_tools,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    RETIRED_DELEGATED_READS,
+)
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
@@ -1263,6 +1266,15 @@ async def inspect_engineering(
         for entry in policy.tools
         if entry.is_read_route
     }
+    # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
+    # the gateway withholds them on every release, never aliased, delegated
+    # or dispatched, whether or not a native route is registered.
+    retired = {
+        entry.exposed_name
+        for entry in policy.tools
+        if entry.is_read_route and entry.upstream_name in RETIRED_DELEGATED_READS
+    }
+    automatic -= retired
     held = {
         entry.exposed_name
         for entry in policy.tools
@@ -1349,9 +1361,10 @@ async def inspect_engineering(
             require(not held & names, "held-for-canary tool became callable")
             require("ha_get_logs" not in names, "raw log delegation is reachable")
             require("ha_call_service" not in names, "write-classified tool is advertised")
+            require(not retired & names, "a retired delegated read is advertised")
             require(len(names) == len(base_names | automatic), "unexpected tool exposed")
             for entry in policy.tools:
-                if not entry.is_read_route:
+                if not entry.is_read_route or entry.exposed_name in retired:
                     continue
                 annotations = advertised_by_name[entry.exposed_name].get("annotations", {})
                 expected_annotations = {
@@ -1824,6 +1837,14 @@ async def inspect_engineering(
             require(
                 gateway_state.get("dynamically_exposed_count") == len(automatic),
                 "dynamic exposure count mismatch",
+            )
+            # HAMCP-290: public health keeps counts, not per-tool rows
+            # (health_projection empties core_withheld_tools). Nothing else is
+            # Core-withheld on this lane (dynamic exposure equals every other
+            # automatic read), so the count must be exactly the retired set.
+            require(
+                gateway_state.get("core_withheld_read_count") == len(retired),
+                "a retired delegated read was not withheld",
             )
             require(
                 set(gateway_state.get("reviewed_supported_versions") or ())

@@ -199,6 +199,7 @@ def create_application(
     from .backup_inventory.service import BACKUP_INVENTORY
     from .recorder_settings.service import RECORDER_SETTINGS
     from .script_traces import SCRIPT_TRACES
+    from .marketplace_inventory import MARKETPLACE_INVENTORY, MarketplaceReader
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
@@ -225,6 +226,8 @@ def create_application(
     )
     # HAMCP-232/145 §4b: dormant until a signed registry admits the profile.
     SCRIPT_TRACES.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
+    # HAMCP-290: dormant until a signed registry admits core.marketplace_read.
+    MARKETPLACE_INVENTORY.configure(MarketplaceReader(settings), CORE_READMISSION, settings)
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
     CONFIGURATION_DEFINITIONS.configure(

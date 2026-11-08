@@ -130,7 +130,7 @@ class Beta36ReleaseBoundaryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 56)
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 57)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(APPROVAL_AUTHORITY_VERSION, 3)
         self.assertEqual(MAX_SELF_INFO_BYTES, 512 * 1024)

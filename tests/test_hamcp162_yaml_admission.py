@@ -37,6 +37,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 from ha_mcp_engineering.clients.upstream_read import McpReadResult  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
 from ha_mcp_engineering.ha_mcp_readmission.models import (  # noqa: E402
@@ -505,7 +506,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):
@@ -518,6 +519,8 @@ class AdmissionTests(Harness):
                     self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version])
                     self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
                     self.assertTrue(health["reviewed_tool_accounting_valid"])
+                    # HAMCP-290: the delegated ha_get_hacs_info is retired.
+                    self.assertNotIn("ha_get_hacs_info", self.exposed(gateway))
                     self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(self.exposed(gateway)), STOCK_PUBLIC)
                     self.assertNotIn(TOOL, self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
@@ -1177,7 +1180,9 @@ class CoreTests(Harness):
     def test_the_reader_has_an_explicit_core_mapping(self):
         self.assertEqual(delegated_requirements(TOOL), y.CORE_REQUIREMENTS)
         self.assertEqual(DELEGATED_CORE_REQUIREMENTS[TOOL], ("core.basic_rest_read", "core.basic_websocket_read"))
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
+        # HAMCP-290: the retired delegated ha_get_hacs_info row is removed.
+        self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31 - len(RETIRED_DELEGATED_READS))
         for sibling in y.SIBLING_TOOLS:
             self.assertNotIn(sibling, DELEGATED_CORE_REQUIREMENTS)
 

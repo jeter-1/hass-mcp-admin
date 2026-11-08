@@ -664,6 +664,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
     from uuid import uuid4
     from mcp.server.fastmcp import FastMCP
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
     from ha_mcp_engineering.providers.upstream_fan import FanProvider
     from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
     from ha_mcp_engineering.fan.contracts import FanRequest, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS, digest
@@ -691,7 +692,9 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
     health = await gateway.initialize(server)
     require(health["admission_status"] == "admitted_exact", "candidate_read_admission")
     tools = gateway._registered_tool_registry.snapshot()
-    require(len(tools) == 28 and "ha_get_blueprint" in tools
+    # HAMCP-290: 28 matched reads; the retired ha_get_hacs_info is never exposed.
+    require(len(tools) == 28 - len(RETIRED_DELEGATED_READS) and "ha_get_blueprint" in tools
+            and not RETIRED_DELEGATED_READS & set(tools)
             and "ha_manage_blueprints" not in tools and "ha_call_service" not in tools,
             "candidate_public_read_projection")
     telemetry, context = begin_request("synthetic-850-" + kind)
@@ -910,6 +913,7 @@ async def search_checks(kind,configured,core,rest,websocket,output):
     from dataclasses import replace
     from mcp.server.fastmcp import FastMCP
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
     from ha_mcp_engineering.request_context import begin_request, end_request
     from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_catalog
     phase(kind+'_component_search')
@@ -924,7 +928,8 @@ async def search_checks(kind,configured,core,rest,websocket,output):
     records=[];raw_records=[]
     try:
         health=await g.initialize(FastMCP('synthetic-component-search'))
-        require(health['dynamically_exposed_count']==28,'component_read_count')
+        # HAMCP-290: 28 matched reads; the retired ha_get_hacs_info is never exposed.
+        require(health['dynamically_exposed_count']==28-len(RETIRED_DELEGATED_READS),'component_read_count')
         transport=g._transport;original=transport.execute_read
         async def observed(*args,**kwargs):
             exchange=await original(*args,**kwargs)
@@ -992,6 +997,7 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
     from dataclasses import replace
     from mcp.server.fastmcp import FastMCP
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
     from ha_mcp_engineering.providers.upstream_power import PowerProvider
     from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority
     from ha_mcp_engineering.audit import AuditLogger
@@ -1010,7 +1016,9 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
         health = await gateway.initialize(FastMCP("candidate-843-disposable"))
         require(health["admission_status"] == "admitted_exact", "candidate_read_admission")
         tools = gateway._registered_tool_registry.snapshot()
-        require(len(tools) == 28 and "ha_call_service" not in tools,
+        # HAMCP-290: 28 matched reads; the retired ha_get_hacs_info is never exposed.
+        require(len(tools) == 28 - len(RETIRED_DELEGATED_READS) and "ha_call_service" not in tools
+                and not RETIRED_DELEGATED_READS & set(tools),
                 "candidate_public_read_projection")
         service = PowerService(str(work / "power"), PowerProvider.configured(configured, gateway),
                                PowerCoreAuthority(core),

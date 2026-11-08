@@ -81,190 +81,57 @@ def _call_result(payload):
     }
 
 
-class HacsReadResponseCompatibilityTests(unittest.IsolatedAsyncioTestCase):
+class HacsReadRetirementTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-290: the delegated ha_get_hacs_info read is retired.
+
+    Josh retired the delegated read on 2026-11-08 in favour of the
+    Engineering-owned ``get_marketplace_inventory``.  The former 8.0/8.1
+    response-envelope compatibility cases (and the reviewed HACS envelope
+    model they exercised) were removed with it; every reviewed release now
+    withholds the read before registration and never dispatches it.
+    """
+
     def tearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
-    async def _invoke(self, version, result):
-        entry = policy_entry(HACS_READ_TOOL, open_world=True)
-        descriptor = _hacs_descriptor()
-        transport = FakeTransport(
-            [descriptor],
-            version=version,
-            result=result,
-        )
-        gateway, server, _ = await initialize(
-            [entry],
-            [descriptor],
-            transport=transport,
-            version=version,
-            reviewed_version=version,
-        )
-        tool = registered_tools(server).get(HACS_READ_TOOL)
-        self.assertIsNotNone(tool)
-        encoded = await tool.run({"entity_id": "synthetic-hacs-read"})
-        return json.loads(encoded), gateway, transport
-
-    async def test_8_0_nested_success_envelope_is_preserved(self):
-        old_payload = {
-            "data": {"success": True, **HACS_DATA},
-            "metadata": HACS_METADATA,
-        }
-
-        value, gateway, transport = await self._invoke(
-            "8.0.0",
-            _call_result(old_payload),
-        )
-
-        self.assertTrue(value["success"])
-        self.assertEqual(value["data"], old_payload)
-        self.assertEqual(len(transport.calls), 1)
-        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
-
-    async def test_exact_8_1_top_level_success_is_normalized_to_8_0_shape(self):
-        new_payload = {
+    async def test_retired_hacs_read_is_never_exposed_or_dispatched(self):
+        payload = {
             "success": True,
             "data": HACS_DATA,
             "metadata": HACS_METADATA,
         }
-        expected = {
-            "data": {"success": True, **HACS_DATA},
-            "metadata": HACS_METADATA,
-        }
-
-        value, gateway, transport = await self._invoke(
-            "8.1.0",
-            _call_result(new_payload),
-        )
-
-        self.assertTrue(value["success"])
-        self.assertEqual(value["data"], expected)
-        self.assertEqual(len(transport.calls), 1)
-        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
-
-    async def test_exact_8_1_text_only_success_uses_the_same_normalization(self):
-        new_payload = {
-            "success": True,
-            "data": HACS_DATA,
-            "metadata": HACS_METADATA,
-        }
-        result = _call_result(new_payload)
-        result.pop("structuredContent")
-
-        value, gateway, transport = await self._invoke("8.1.0", result)
-
-        self.assertTrue(value["success"])
-        self.assertEqual(
-            value["data"],
-            {
-                "data": {"success": True, **HACS_DATA},
-                "metadata": HACS_METADATA,
-            },
-        )
-        self.assertEqual(len(transport.calls), 1)
-        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
-
-    async def test_exact_8_1_malformed_or_ambiguous_envelopes_fail_closed(self):
-        valid = {
-            "success": True,
-            "data": HACS_DATA,
-            "metadata": HACS_METADATA,
-        }
-        cases = {
-            "missing_metadata": {
-                "success": True,
-                "data": HACS_DATA,
-            },
-            "extra_top_level_member": {
-                **valid,
-                "warning": "unreviewed",
-            },
-            "false_success": {
-                **valid,
-                "success": False,
-            },
-            "non_boolean_success": {
-                **valid,
-                "success": 1,
-            },
-            "non_object_data": {
-                **valid,
-                "data": [],
-            },
-            "non_object_metadata": {
-                **valid,
-                "metadata": [],
-            },
-            "ambiguous_inner_success": {
-                **valid,
-                "data": {"success": True, **HACS_DATA},
-            },
-        }
-        for label, payload in cases.items():
-            with self.subTest(label=label):
-                value, gateway, transport = await self._invoke(
-                    "8.1.0",
-                    _call_result(payload),
+        for version in ("8.0.0", "8.1.0"):
+            with self.subTest(version=version):
+                entry = policy_entry(HACS_READ_TOOL, open_world=True)
+                descriptor = _hacs_descriptor()
+                transport = FakeTransport(
+                    [descriptor],
+                    version=version,
+                    result=_call_result(payload),
                 )
-                self.assertFalse(value["success"])
-                self.assertEqual(value["error_code"], "provider_error")
+                gateway, server, _ = await initialize(
+                    [entry],
+                    [descriptor],
+                    transport=transport,
+                    version=version,
+                    reviewed_version=version,
+                )
+                self.assertIsNone(registered_tools(server).get(HACS_READ_TOOL))
+                self.assertEqual(transport.calls, [])
+                health = gateway.health_snapshot()
+                self.assertEqual(health["dynamically_exposed_count"], 0)
+                self.assertEqual(health["core_withheld_read_count"], 1)
                 self.assertEqual(
-                    value["details"]["failure_category"],
-                    "invalid_response",
+                    health["core_withheld_tools"],
+                    [
+                        {
+                            "tool": HACS_READ_TOOL,
+                            "disposition": "retired_delegated_read",
+                            "reason_codes": ["delegated_read_retired"],
+                        }
+                    ],
                 )
-                self.assertFalse(value["retryable"])
-                self.assertEqual(len(transport.calls), 1)
-                self.assertEqual(
-                    gateway.health_snapshot()["fallback_count"],
-                    0,
-                )
-
-    async def test_exact_8_1_divergent_content_and_structured_payloads_fail(self):
-        structured = {
-            "success": True,
-            "data": HACS_DATA,
-            "metadata": HACS_METADATA,
-        }
-        text_payload = {
-            **structured,
-            "data": {**HACS_DATA, "count": 2},
-        }
-        result = _call_result(structured)
-        result["content"][0]["text"] = json.dumps(text_payload)
-
-        value, gateway, transport = await self._invoke("8.1.0", result)
-
-        self.assertFalse(value["success"])
-        self.assertEqual(
-            value["details"]["failure_category"],
-            "invalid_response",
-        )
-        self.assertEqual(len(transport.calls), 1)
-        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
-
-    async def test_exact_8_1_duplicate_json_member_fails_without_structured_data(self):
-        result = {
-            "content": [
-                {
-                    "type": "text",
-                    "text": (
-                        '{"success":true,"success":true,'
-                        '"data":{},"metadata":{}}'
-                    ),
-                }
-            ],
-            "isError": False,
-        }
-
-        value, gateway, transport = await self._invoke("8.1.0", result)
-
-        self.assertFalse(value["success"])
-        self.assertEqual(
-            value["details"]["failure_category"],
-            "invalid_response",
-        )
-        self.assertEqual(len(transport.calls), 1)
-        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+                self.assertEqual(health["fallback_count"], 0)
 
     async def test_unknown_8_1_patch_version_is_rejected_before_dispatch(self):
         entry = policy_entry(HACS_READ_TOOL, open_world=True)
@@ -297,7 +164,9 @@ class HacsReadResponseCompatibilityTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(health["fallback_count"], 0)
 
-    async def test_8_1_hacs_model_is_not_applied_to_another_tool(self):
+    async def test_8_1_hacs_shaped_payload_on_another_tool_is_unchanged(self):
+        # HAMCP-290: with the HACS envelope model removed, no tool rewrites
+        # a top-level-success payload; it passes through unchanged.
         other_tool = "ha_get_state"
         payload = {
             "success": True,
@@ -399,7 +268,9 @@ class HacsRemoveNegativeReachabilityTests(unittest.IsolatedAsyncioTestCase):
             transport=transport,
         )
 
-        self.assertIsNotNone(registered_tools(server).get(HACS_READ_TOOL))
+        # HAMCP-290: the HACS read is a retired delegated read, so neither
+        # half of the HACS surface is reachable through the gateway.
+        self.assertIsNone(registered_tools(server).get(HACS_READ_TOOL))
         self.assertIsNone(registered_tools(server).get(HACS_WRITE_TOOL))
         value = json.loads(
             await gateway.execute(

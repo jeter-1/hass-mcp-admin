@@ -29,6 +29,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
 from ha_mcp_engineering.ha_core_readmission.profiles import (
     CORE_CONFIGURATION_DELETE_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES, CORE_LABEL_REGISTRY_PROFILES,
     CORE_NOVEMBER_BATCH_PROFILES,
+    CORE_MARKETPLACE_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
 from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
@@ -104,7 +105,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 29)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155, +3 HAMCP-232/145, +1 HAMCP-106, +1 HAMCP-071, +1 HAMCP-311 transport evidence (not admission)
+        self.assertEqual(len(ids), 30)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155, +3 HAMCP-232/145, +1 HAMCP-106, +1 HAMCP-071, +1 HAMCP-311 transport evidence (not admission), +1 HAMCP-290 marketplace
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -233,6 +234,8 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                               and p not in CORE_CONFIGURATION_DELETE_PROFILES
                               # HAMCP-232/145: nor the dormant November batch.
                               and p not in CORE_NOVEMBER_BATCH_PROFILES
+                              # HAMCP-290: nor the dormant Marketplace read.
+                              and p not in CORE_MARKETPLACE_PROFILES
                               # HAMCP-311: nor the signed-only helper value
                               # profile, which no shipped sequence names.
                               and p.capability_id != 'core.typed_helper_value_operation'])

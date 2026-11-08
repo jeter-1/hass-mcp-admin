@@ -74,6 +74,7 @@ class CoreCapabilityClass(str, Enum):
     SCRIPT_TRACE_READ = "script_trace_read"
     DASHBOARD_METADATA_OPERATION = "dashboard_metadata_operation"
     SCENE_CONFIGURATION_OPERATION = "scene_configuration_operation"
+    MARKETPLACE_INVENTORY_READ = "marketplace_inventory_read"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -120,6 +121,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.TYPED_INPUT_SELECT_OPTION_OPERATION,
             CoreCapabilityClass.DASHBOARD_METADATA_OPERATION,
             CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
+            CoreCapabilityClass.MARKETPLACE_INVENTORY_READ,
         }
 
 
