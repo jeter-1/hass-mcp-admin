@@ -864,9 +864,30 @@ delegated provider or fallback.
   `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
   bounded size, count and age. Manual
-  captures are refused at capacity; a watch evicts only its own snapshots.
-- **Watch poller.** The only periodic Core read: bounded to 10 watches every
-  30 seconds, under its own Core authority lease, paused while authority is
+  captures are refused at capacity; a watch evicts only its own snapshots
+  (at most 20 each), and watch captures together stay inside a
+  400-snapshot, 100 MiB reservation (HAMCP-296) that is refused, never
+  evicted, when full. The store holds at most 500 snapshots and 128 MiB
+  since HAMCP-296, so at least 100 snapshots and 28 MiB always remain for
+  manual captures. `index.json` keeps the shipped v1 bounds (10 watches,
+  200 snapshot entries, 32 MiB of entry bytes; manual captures first, then
+  the newest watch captures). Everything past those bounds (further
+  snapshot entries, watches 11-20, priority and renewal rows, at most 20
+  lapsed records for 7 days) is one closed-schema sidecar state (4 MiB
+  bound) written to one of two slot files, `watch-sidecar-a.json` and
+  `watch-sidecar-b.json`, each bound to the sha256 of the exact `index.json`
+  bytes it pairs with. A write goes to the slot not currently committed,
+  then the index; the index rename (or, when the index bytes do not change,
+  the slot rename) is the single commit point, and a load uses only a slot
+  bound to the index on disk, so a failed write leaves the prior pair and
+  the two are never mixed across transactions. The slots use the same
+  lock, `O_NOFOLLOW`, `0600`, fsync and rename; a damaged or unbound
+  sidecar resets to empty (`lifecycle_store: "reset"`) and never blocks
+  the store. A shipped (v1) server ignores the slots and deletes the record
+  files of entries the index does not name, so a downgrade loses every
+  overflow snapshot and watches 11-20.
+- **Watch poller.** The only periodic Core read: bounded to 20 watches
+  (HAMCP-296; 10 before) every 30 seconds, high-priority watches first, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each
   watch's reads are stored and again under the store lock, immediately
   before the first write. Watch changes need no approval but write a

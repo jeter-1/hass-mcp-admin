@@ -298,9 +298,14 @@ async def get_server_health(
                 # in its own secret-free health state. Core health remains
                 # available even when the optional provider is unavailable.
                 pass
-        return await HEALTH.async_snapshot(
+        snapshot = await HEALTH.async_snapshot(
             connection, deep_storage_audit=deep_storage_audit is True
         )
+        # HAMCP-296: in-memory trace-watch summary; no disk I/O or Core call.
+        from ..trace_snapshots.runtime import TRACE_SNAPSHOTS
+
+        snapshot["trace_watches"] = TRACE_SNAPSHOTS.watch_health()
+        return snapshot
 
     return await run_structured(
         "get_server_health",
