@@ -33,10 +33,11 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
 from ha_mcp_engineering.clients.upstream_read import McpReadCatalog
 from ha_mcp_engineering.errors import DashboardProviderError
+from ha_mcp_engineering.providers.upstream_dashboard import EXACT_GETTER_RELEASES
 from ha_mcp_engineering.providers.upstream_fan import REQUIRED_TOOLS
 from ha_mcp_engineering.providers.upstream_yaml_reader import TOOL_NAME as YAML_TOOL
 from ha_mcp_engineering.upstream_tool_policy import (
-    EXACT_USED_TOOL_RELEASES, load_reviewed_upstream_release_registry,
+    load_reviewed_upstream_release_registry,
 )
 import test_hamcp162_yaml_admission as adm
 from test_hamcp319_dashboard import (
@@ -145,7 +146,7 @@ def with_extra(tools, template='ha_get_state'):
 
 class Scope(unittest.TestCase):
     def test_exact_used_tool_releases(self):
-        self.assertEqual(EXACT_USED_TOOL_RELEASES, frozenset(VERSIONS))
+        self.assertEqual(EXACT_GETTER_RELEASES, frozenset(VERSIONS))
         for version in VERSIONS:
             release = REGISTRY.by_version[version]
             self.assertEqual(release.runtime_contract_fingerprint_model,
