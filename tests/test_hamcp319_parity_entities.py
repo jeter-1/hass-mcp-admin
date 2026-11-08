@@ -165,6 +165,31 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
         result = await self.call(name, {**args, 'synthetic_unreviewed': 1}, wrap({'success': True}))
         self.assert_refused_unsent(result)
 
+    async def assert_thread_credential_attribute_redacted(self, template):
+        """Section 6.5 backstop on a generic attribute (ha_get_state): Thread
+        credential keys are redacted by category; released neighbors pass."""
+        template = deepcopy(template)
+        canaries = {
+            'network_key': 'CANARY-attr-network-key',
+            'Active-Dataset-TLVs': 'CANARY-attr-active-dataset',
+            'pskc': 'CANARY-attr-pskc',
+            'dataset_tlvs': {'raw': 'CANARY-attr-dataset-tlvs'},
+        }
+        template['data']['attributes'].update(canaries, channel=15, network_name='synthetic-net')
+        args = {'entity_id': 'light.synthetic_lamp'}
+        result = await self.call('ha_get_state', args, wrap(template))
+        # A redaction is disclosed: the result is useful but marked partial.
+        self.assert_success(result, 'ha_get_state', partial=True)
+        self.assert_sent('ha_get_state', args)
+        attributes = result['data']['data']['attributes']
+        for key in canaries:
+            self.assertEqual(attributes[key], '[REDACTED:thread_credential]')
+        self.assertEqual(attributes['channel'], 15)
+        self.assertEqual(attributes['network_name'], 'synthetic-net')
+        self.assertEqual(attributes['brightness'], template['data']['attributes']['brightness'])
+        self.assertEqual(result['warnings'], [REDACTION_WARNING])
+        self.assertNotIn('CANARY-attr', json.dumps(result))
+
     async def assert_upstream_error_fails(self, name, args, code='SERVICE_CALL_FAILED'):
         result = await self.call(name, args, error_result(code))
         self.assertFalse(result['success'], result)
@@ -337,6 +362,9 @@ class Parity91Tests(ParityBase):
         self.assert_sent('ha_get_state', args)
         self.assertEqual(result['data'], template)
         self.assertEqual(result['warnings'], [])
+
+    async def test_91_thread_credential_generic_attribute_redacted(self):
+        await self.assert_thread_credential_attribute_redacted(V91['ha_get_state']['single'])
 
     async def test_91_parity_row_19_state_bulk_partial_disclosed(self):
         args = {'entity_id': ['light.synthetic_lamp', 'light.synthetic_absent']}
@@ -610,6 +638,9 @@ class Parity85Tests(ParityBase):
         await self.assert_unknown_key_refused('ha_get_state', {'entity_id': 'light.synthetic_lamp'})
         await self.assert_upstream_error_fails('ha_get_state', {'entity_id': 'light.synthetic_absent'},
                                                'ENTITY_NOT_FOUND')
+
+    async def test_85_thread_credential_generic_attribute_redacted(self):
+        await self.assert_thread_credential_attribute_redacted(V85['ha_get_state']['single'])
 
     async def test_85_parity_row_20_todo(self):
         await self.assert_passthrough('ha_get_todo', {'entity_id': 'todo.synthetic_list', 'status': 'needs_action'},

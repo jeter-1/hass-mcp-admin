@@ -42,7 +42,9 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 )
 from test_hamcp129_platform_reads import call, ok, refused  # noqa: E402
 import test_hamcp162_yaml_admission as adm  # noqa: E402
-from test_hamcp162_yaml_reader import AuditTests  # noqa: E402
+# Module import, not ``from ... import AuditTests``: a TestCase bound at module
+# level is discovered again under its own id (duplicate_discovered_test_id).
+import test_hamcp162_yaml_reader as yaml_reader_tests  # noqa: E402
 
 PHASE1 = ROOT / "docs/evidence/hamcp319/phase1"
 COMPATIBILITY = ROOT / "docs/evidence/upstream-read-compatibility"
@@ -812,7 +814,7 @@ class GatewayTests(adm.Harness):
                 transport.respond = respond
                 with captured_logs() as logs:
                     result = await call(gateway, TOOL, {"yaml_path": "lamp"})
-                    serialized, record = await AuditTests.audited(self, gateway, {"yaml_path": "lamp"})
+                    serialized, record = await yaml_reader_tests.AuditTests.audited(self, gateway, {"yaml_path": "lamp"})
                 self.assertEqual(result.get("success"), success, result)
                 self.assertEqual(record["tool_name"], TOOL)
                 for sink in (json.dumps(result), serialized, "\n".join(logs)):
