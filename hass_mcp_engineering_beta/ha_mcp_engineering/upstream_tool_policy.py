@@ -78,6 +78,12 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
     "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
 }
+# HAMCP-319 (Codex F1 on PR #406): on these releases runtime admission binds
+# each tool Engineering uses, exactly and once, and nothing else. Neither the
+# catalog order nor the presence of an unused tool is a runtime admission
+# condition; their order fingerprints above remain offline evidence bindings,
+# and the CI exact-image lanes keep the strict full-catalog comparison.
+USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0", "9.1.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )

@@ -240,7 +240,10 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, tool=name):
                     gateway, transport = await self.gateway(
                         version, without(gateway_catalog(version), name))
-                    self.assertNotIn(EXPOSED_AS.get(name, name), self.exposed(gateway))
+                    # Codex F1: only the missing used read is withheld; the
+                    # rest of the catalog is not quarantined by its absence.
+                    base = await self.baseline(version)
+                    self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
                     self.assertEqual(transport.sent, [])
 
     async def test_duplicate_used_read_fails_closed(self):
@@ -269,6 +272,95 @@ class ReadGatewayExactAdmission(adm.Harness):
                     version, changed(gateway_catalog(version), SETTER, _set_title))
                 self.assertEqual(self.exposed(gateway), base)
                 self.assertNotIn(SETTER, self.exposed(gateway))
+
+
+    # Codex F1 (PR #406 verdict 6731785026): on 8.5.0 and 9.1.0 neither the
+    # catalog order nor the presence of an unused tool is a runtime admission
+    # condition. Only the used tools are bound, each exactly. The strict
+    # full-catalog comparison stays in the CI exact-image lanes.
+    def stock_reads(self, version):
+        return {EXPOSED_AS.get(name, name) for name in used_reads(version)}
+
+    def assert_exact_exposure(self, version, exposed, base):
+        self.assertEqual(exposed, base)
+        self.assertEqual(exposed - {YAML_TOOL}, self.stock_reads(version))
+        self.assertEqual(len(exposed - {YAML_TOOL}), 27)
+        self.assertNotIn(EXTRA, exposed)
+
+    async def test_reordered_catalog_is_admitted(self):
+        for version in VERSIONS:
+            base = await self.baseline(version)
+            self.assertEqual(len(base), 28)
+            self.assertIn(YAML_TOOL, base)
+            tools = gateway_catalog(version)
+            variants = {
+                'reversed': list(reversed(tools)),
+                'name_sorted': sorted(tools, key=lambda tool: tool['name']),
+                'rotated': tools[1:] + tools[:1],
+                'two_used_reads_swapped': _swap(tools, 'ha_get_state', 'ha_search'),
+            }
+            for label, reordered in variants.items():
+                with self.subTest(version=version, variant=label):
+                    self.assertNotEqual([t['name'] for t in reordered], [t['name'] for t in tools])
+                    gateway, transport = await self.gateway(version, reordered)
+                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assertEqual(transport.sent, [])
+
+    async def test_unused_tool_removal_is_admitted(self):
+        for version in VERSIONS:
+            base = await self.baseline(version)
+            names = {tool['name'] for tool in gateway_catalog(version)}
+            for name in ('ha_restart', 'ha_get_hacs_info'):
+                if name not in names:
+                    continue
+                with self.subTest(version=version, removed=name):
+                    gateway, transport = await self.gateway(
+                        version, without(gateway_catalog(version), name))
+                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assertEqual(transport.sent, [])
+
+    async def test_extra_unused_tool_interspersed_is_admitted(self):
+        for version in VERSIONS:
+            base = await self.baseline(version)
+            tools = gateway_catalog(version)
+            for position in (0, len(tools) // 2, len(tools)):
+                with self.subTest(version=version, position=position):
+                    extra = deepcopy(next(t for t in tools if t['name'] == 'ha_get_state'))
+                    extra['name'] = EXTRA
+                    gateway, transport = await self.gateway(
+                        version, tools[:position] + [extra] + tools[position:])
+                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assertEqual(transport.sent, [])
+
+    async def test_reordered_catalog_still_refuses_changed_missing_duplicate(self):
+        """Lifting order does not lift the per-used-tool checks."""
+        for version in VERSIONS:
+            base = await self.baseline(version)
+            cases = {
+                'changed': changed(gateway_catalog(version), 'ha_get_state', _set_description),
+                'missing': without(gateway_catalog(version), 'ha_get_state'),
+                'duplicate': duplicated(gateway_catalog(version), 'ha_get_state'),
+            }
+            for label, tools in cases.items():
+                with self.subTest(version=version, case=label):
+                    gateway, transport = await self.gateway(version, list(reversed(tools)))
+                    exposed = self.exposed(gateway)
+                    self.assertNotIn('ha_get_state', exposed)
+                    self.assertEqual(transport.sent, [])
+                    if label == 'duplicate' and version == '9.1.0':
+                        # 9.1 strict-full: a duplicate reviewed name blocks
+                        # every stock read (HAMCP-319 sections 4 and 8.2).
+                        self.assertLessEqual(exposed, {YAML_TOOL})
+                    else:
+                        self.assertEqual(exposed, base - {'ha_get_state'})
+
+
+def _swap(tools, first, second):
+    tools = deepcopy(list(tools))
+    names = [tool['name'] for tool in tools]
+    i, j = names.index(first), names.index(second)
+    tools[i], tools[j] = tools[j], tools[i]
+    return tools
 
 
 # ---------------------------------------------------------------------------

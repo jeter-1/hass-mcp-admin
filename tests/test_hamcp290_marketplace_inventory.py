@@ -1526,31 +1526,31 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
             "reviewed_runtime_annotations": {name: by_name[name]["annotations"] for name in names},
             "reviewed_output_schemas": {name: by_name[name]["outputSchema"] for name in names},
         }
-        # HAMCP-319 binds the exact 9.1.0 wire order of the full 77-tool stock
-        # policy (EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"]), so this
-        # synthetic two-entry subset policy is quarantined for order before
-        # retirement is reached.  Prove that first, then isolate the
-        # retirement decision by lifting only the order binding for this
-        # subset; the order binding itself is covered by test_hamcp319_yaml.
-        gateway, server, transport = await initialize(entries(), tools, **reviewed)
-        health = gateway.health_snapshot()
-        self.assertEqual(health["quarantine_reason_counts"], {"catalog_order_mismatch": 2})
-        self.assertEqual(set(registered_tools(server)) & set(names), set())
-        self.assertEqual(transport.calls, [])
-        with mock.patch.dict(gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS):
-            del gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"]
-            for native in (False, True):
-                with self.subTest(native=native):
-                    server = _native_server("hamcp290-9.1.0") if native else None
-                    gateway, server, transport = await initialize(entries(), tools, server=server, **reviewed)
-                    self.assert_retired(gateway, server, matched=2)
-                    self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
-                    self.assertEqual(transport.calls, [])
-            # Non-vacuous: without the retirement this exact descriptor is admitted.
-            with mock.patch.object(gw, "RETIRED_DELEGATED_READS", frozenset()):
-                _gateway, server, _transport = await initialize(entries(), tools, **reviewed)
-            self.assertIsNotNone(registered_tools(server).get(RETIRED))
-        self.assertIn("9.1.0", gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS)
+        # HAMCP-319 (Codex F1 on PR #406): 9.1.0 runtime admission binds each
+        # used tool, not the catalog order, so this synthetic two-entry subset
+        # policy reaches the retirement decision with no test-scoped lift. Its
+        # observed order differs from the full-catalog evidence fingerprint,
+        # which proves that order is not what admits or withholds here.
+        from ha_mcp_engineering.upstream_tool_policy import schema_fingerprint
+
+        subset_order = [tool["name"] for tool in tools if tool["name"] in names]
+        self.assertNotEqual(
+            schema_fingerprint(subset_order),
+            gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"],
+        )
+        self.assertIn("9.1.0", gw.USED_TOOL_ADMISSION_RELEASES)
+        for native in (False, True):
+            with self.subTest(native=native):
+                server = _native_server("hamcp290-9.1.0") if native else None
+                gateway, server, transport = await initialize(entries(), tools, server=server, **reviewed)
+                self.assertEqual(gateway.health_snapshot()["quarantine_reason_counts"], {})
+                self.assert_retired(gateway, server, matched=2)
+                self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+                self.assertEqual(transport.calls, [])
+        # Non-vacuous: without the retirement this exact descriptor is admitted.
+        with mock.patch.object(gw, "RETIRED_DELEGATED_READS", frozenset()):
+            _gateway, server, _transport = await initialize(entries(), tools, **reviewed)
+        self.assertIsNotNone(registered_tools(server).get(RETIRED))
 
     async def test_a_previously_admitted_route_is_refused_at_dispatch(self):
         """Defence in depth: the lowest dispatch point refuses a retired read."""

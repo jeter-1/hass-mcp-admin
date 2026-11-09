@@ -82,6 +82,7 @@ from ..sanitization import (
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
+    USED_TOOL_ADMISSION_RELEASES,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     REVIEWED_UPSTREAM_SERVER,
     ReviewedUpstreamRelease,
@@ -2953,15 +2954,19 @@ class UpstreamReadGateway:
                 selected_policy.reviewed_upstream_version
             )
         )
-        exact_catalog_order_required = (
+        exact_catalog_structure_required = (
             require_exact_order and expected_order_fingerprint is not None
         )
         catalog_structure_invalid = (
             catalog.catalog_complete is not True
-            or (exact_catalog_order_required and catalog_has_invalid_structure)
+            or (exact_catalog_structure_required and catalog_has_invalid_structure)
         )
+        # HAMCP-319 (Codex F1): 8.5.0 and 9.1.0 bind each used tool, not the
+        # catalog order; a reorder or an absent unused tool changes nothing.
         catalog_order_invalid = (
-            exact_catalog_order_required
+            exact_catalog_structure_required
+            and selected_policy.reviewed_upstream_version
+            not in USED_TOOL_ADMISSION_RELEASES
             and schema_fingerprint(observed_reviewed_order)
             != expected_order_fingerprint
         )
