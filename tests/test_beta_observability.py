@@ -929,6 +929,8 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "last_successful_call_at": None,
                 "last_failed_call_at": None,
                 "last_failure_category": None,
+                # HAMCP-319 section 3.3: fixed operator text, None when healthy.
+                "operator_remediation": None,
                 "capability_status": "unconfigured",
                 "upstream_server_name": None,
                 "upstream_server_version": None,
@@ -1031,6 +1033,11 @@ class GatewayAndHealthTests(unittest.TestCase):
                     "not_configured": 0,
                     "authentication_failed": 0,
                     "endpoint_rejected": 0,
+                    # HAMCP-319 design §3: endpoint and redirect refusals.
+                    "upstream_redirect_refused": 0,
+                    "upstream_endpoint_rejected": 0,
+                    "upstream_catalog_mode_unadmitted": 0,
+                    "upstream_catalog_selector_invalid": 0,
                     "connection_failed": 0,
                     "timeout": 0,
                     "protocol_error": 0,

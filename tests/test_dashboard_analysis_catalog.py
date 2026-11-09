@@ -239,7 +239,7 @@ class InnerPayloadTests(unittest.TestCase):
 
     def test_original_hashes_are_verified_before_projection(self):
         payload = self.payload()
-        result = _analysis_configuration(call_result(payload), "synthetic")
+        result = _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
         self.assertEqual(result["engineering_config_hash"], _engineering_config_hash(payload["config"]))
         self.assertEqual(result["config_hash"], payload["config_hash"])
         self.assertEqual(result["configuration"], payload["config"])
@@ -250,20 +250,20 @@ class InnerPayloadTests(unittest.TestCase):
                 payload = self.payload()
                 payload.update(config=config, config_hash=_upstream_config_hash(config))
                 with self.assertRaises(c.AnalysisError) as error:
-                    _analysis_configuration(call_result(payload), "synthetic")
+                    _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
                 self.assertEqual(error.exception.reason, "malformed_response")
                 self.assertFalse(error.exception.retryable)
                 self.assertNotIn("synthetic-private-value", str(error.exception))
         payload = self.payload()
         payload.update(config={"views": []}, config_hash=_upstream_config_hash({"views": []}))
-        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic")["configuration"], {"views": []})
+        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")["configuration"], {"views": []})
 
     def test_unpaired_unicode_is_permanent_malformed_source(self):
         payload = self.payload()
         payload["config"]["name"] = chr(0xD800)
         payload["config_hash"] = _upstream_config_hash(payload["config"])
         with self.assertRaises(c.AnalysisError) as error:
-            _analysis_configuration(call_result(payload), "synthetic")
+            _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
         self.assertEqual(error.exception.reason, "malformed_response")
         self.assertFalse(error.exception.retryable)
 
@@ -282,7 +282,7 @@ class InnerPayloadTests(unittest.TestCase):
                       {"content": [{"type": "text", "text": '{"success":NaN}'}]}])
         for result in cases:
             with self.subTest(result=result), self.assertRaises(c.AnalysisError) as error:
-                _analysis_configuration(result, "synthetic")
+                _analysis_configuration(result, "synthetic", upstream_version="8.5.0")
             self.assertFalse(error.exception.retryable)
             self.assertNotIn("synthetic-private-value", str(error.exception))
 

@@ -1,0 +1,100 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "yaml",
+  "consumer": "tests/test_hamcp319_yaml.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "generation": "Class C values were extracted by JSON pointer from the committed Phase 1 receipts with json.loads and written with json.dumps(indent=2, sort_keys=True); no value was edited, and the consumer re-verifies each receipt sha256 against SHA256SUMS.json and each value against its pointer. Class S is a transcription of the pinned 9.1.0 source shape (read only, never executed). No record carries a record hash.",
+  "fixtures": {
+    "/class_c/yaml_fixed_projection": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/extended.json",
+      "sha256": "412e1e41216d372f086cc748a552e22307bd85f9d1ed86f8f791d905c459d013",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/yaml_fixed_projection"
+    },
+    "/class_c/yaml_missing_key": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/extended.json",
+      "sha256": "412e1e41216d372f086cc748a552e22307bd85f9d1ed86f8f791d905c459d013",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/yaml_missing_key"
+    },
+    "/class_c/yaml_input_tag_source_only": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/more-edges.json",
+      "sha256": "e534521376e660842517c548bcb900a7c7f7c12aa4d384fec68e08662c8f01a8",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/yaml_input_tag_source_only"
+    },
+    "/class_c/full_disabled_yaml": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/alternate.json",
+      "sha256": "fdbdcf7916dc79ba8a365b921b30fdd38c40b40f880fa1c69920e19a4fae645c",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/full_disabled_yaml"
+    },
+    "/descriptors/ha_config_get_yaml": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+      "sha256": "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/tools/12"
+    },
+    "/descriptors/ha_delete_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+      "sha256": "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/tools/33"
+    },
+    "/descriptors/ha_list_files": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+      "sha256": "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/tools/52"
+    },
+    "/descriptors/ha_read_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+      "sha256": "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/tools/64"
+    },
+    "/descriptors/ha_write_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+      "sha256": "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+      "sha256_source": "docs/evidence/hamcp319/phase1/SHA256SUMS.json",
+      "pointer": "/tools/81"
+    },
+    "/class_s/component_missing": {
+      "class": "S",
+      "source": [
+        "src/ha_mcp/tools/tools_yaml_read.py:551 (_assert_mcp_tools_available first in the read)",
+        "src/ha_mcp/tools/tools_yaml_read.py:622-623 (except ToolError: raise, no rewrap)",
+        "src/ha_mcp/tools/tools_filesystem.py:486-532 (no-services verdict raises)",
+        "src/ha_mcp/tools/tools_filesystem.py:191-221 (_raise_tools_entry_not_set_up: COMPONENT_NOT_INSTALLED, three suggestions)",
+        "src/ha_mcp/errors.py:261-327 (create_error_response: success false, error.code/message/suggestion/suggestions)",
+        "src/ha_mcp/tools/helpers.py:45-73 (raise_tool_error: ToolError(json.dumps(..., indent=2)) gives isError true)"
+      ],
+      "synthetic_text": "message and suggestion strings are synthetic canaries; code, key layout and indent=2 serialization follow the cited source",
+      "note": "No Phase 1 receipt captures this state: docs/evidence/hamcp319/phase1 edges.json /yaml_component_missing is a success record (component present) and is not cited."
+    }
+  },
+  "source_files": {
+    "src/ha_mcp/tools/tools_yaml_read.py": "d72be9de84711fe0ca54065b30034fc9f85541a851337c26615f694f6d1f6d89",
+    "src/ha_mcp/tools/tools_filesystem.py": "2b026faa876bd996d1c6d352f3fec5a173c1cee23cad99269d79792b0ad44885",
+    "src/ha_mcp/errors.py": "02877355134d059b5fe6698d6bb974248016ddc333e84d322c4c9a209a7647bb",
+    "src/ha_mcp/tools/helpers.py": "87a3c0a6464d52c8eba4457a83f7f940d39ad8239b5c439d7d69d326a979aede"
+  },
+  "synthetic_variants": "Scanner and integrity cases are built at test time from /class_c/yaml_fixed_projection's shape (class S: src/ha_mcp/tools/tools_yaml_read.py:190-243 _evaluate_read match = {file, yaml_path, content = subtree, parsed}, and :605-614 result keys) with synthetic content, keys and canaries.",
+  "filesystem_off_catalog": "Synthesized at test time as catalogs/full-1.json minus the five optional tools (class S: src/ha_mcp/tools/tools_yaml_read.py:644-654 and the filesystem tools register only when filesystem tools are enabled). No Phase 1 capture of the full configuration with filesystem tools off exists; catalogs/alternate-full.json is a different configuration.",
+  "gateway_catalog_order": "catalogs/full-1.json lists tools by name, not in wire order. Gateway tests therefore order the 77 stock descriptors (byte-equal to docs/evidence/upstream-read-compatibility/ha-mcp-9.1.0.json) by docs/evidence/upstream-read-compatibility/ha-mcp-9.1.0-contract-review.json /runtime_catalog/runtime_tool_order, the order bound by EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS['9.1.0'], and append the five optional descriptors. The optional tools' wire positions are unknown; the order check covers stock policy names only."
+}

@@ -1,0 +1,80 @@
+{
+  "fixture_model": "hamcp319-typed-structured-content-templates-v1",
+  "upstream": {"name": "ha-mcp", "version": "9.1.0", "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"},
+  "placeholders": {
+    "${domain}": "ha_call_service domain argument",
+    "${service}": "ha_call_service service argument",
+    "${entity_id}": "ha_call_service or ha_get_state entity_id argument",
+    "${data}": "ha_call_service data argument (whole value)",
+    "${record}": "projected entity record (whole value)",
+    "${services}": "summary service entries keyed domain.service (whole value)",
+    "${count}": "number of service entries (whole value)",
+    "${timezone}": "synthetic Home Assistant time zone"
+  },
+  "templates": {
+    "call_service_success_changed_states": {
+      "success": true,
+      "domain": "${domain}",
+      "service": "${service}",
+      "entity_id": "${entity_id}",
+      "parameters": "${data}",
+      "result": ["${record}"],
+      "message": "Successfully executed ${domain}.${service}"
+    },
+    "call_service_nonadmin_empty_list": {
+      "success": true,
+      "domain": "${domain}",
+      "service": "${service}",
+      "entity_id": "${entity_id}",
+      "parameters": "${data}",
+      "result": [],
+      "message": "Successfully executed ${domain}.${service}"
+    },
+    "call_service_nonadmin_envelope": {
+      "success": true,
+      "domain": "${domain}",
+      "service": "${service}",
+      "entity_id": "${entity_id}",
+      "parameters": "${data}",
+      "result": {"changed_states": [], "service_response": null},
+      "message": "Successfully executed ${domain}.${service}"
+    },
+    "call_service_timeout_partial": {
+      "success": true,
+      "partial": true,
+      "domain": "${domain}",
+      "service": "${service}",
+      "entity_id": "${entity_id}",
+      "parameters": "${data}",
+      "message": "Service ${domain}.${service} was dispatched but Home Assistant did not respond within the timeout period. The operation is likely still running in the background.",
+      "warnings": [
+        "Response timed out. This is normal for long-running services like updates or firmware installs. Use ha_get_state('${entity_id}') to check the current status."
+      ]
+    },
+    "get_state": {
+      "data": "${record}",
+      "metadata": {
+        "home_assistant_timezone": "${timezone}",
+        "timestamp_format": "ISO 8601 (${timezone})",
+        "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to ${timezone} local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+      }
+    },
+    "list_services_summary": {
+      "success": true,
+      "domains": ["${domain}"],
+      "services": "${services}",
+      "total_count": "${count}",
+      "offset": 0,
+      "limit": 50,
+      "count": "${count}",
+      "has_more": false,
+      "next_offset": null,
+      "detail_level": "summary",
+      "filters_applied": {"domain": "${domain}", "query": null}
+    }
+  },
+  "synthetic_values": {
+    "timezone": "America/Chicago",
+    "last_updated_format": "2026-09-16T07:00:%02d.000000-05:00"
+  }
+}

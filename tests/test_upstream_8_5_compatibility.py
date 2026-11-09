@@ -228,13 +228,15 @@ class Fan850Tests(fan.FanTests):
         from ha_mcp_engineering.capabilities import build_capability_catalog
         row = next(x for x in build_capability_catalog()['provider_matrix']
                    if x['tool'] == 'control_fan')
-        for version, (_, _, contract) in FAN_RELEASES.items():
+        for index, (version, (_, _, contract)) in enumerate(FAN_RELEASES.items()):
             with self.subTest(version=version):
                 self.transport.catalog = replace(
                     self.transport.catalog, server_version=version,
                     tools=tuple(capture(version)['tools']))
                 before = self.transport.writes
-                result = await self.call(self.request(percentage=66 if version == '8.4.3' else 33))
+                # Alternate the target so every release performs a real write
+                # (HAMCP-319 adds a third release; a repeat would be no_change).
+                result = await self.call(self.request(percentage=(33, 66)[index % 2]))
                 self.assertEqual(result['provider_contract'], contract)
                 self.assertEqual(result['state'], 'succeeded_verified')
                 self.assertEqual(self.transport.writes, before + 1)

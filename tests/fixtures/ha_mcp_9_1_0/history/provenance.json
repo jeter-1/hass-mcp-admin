@@ -1,0 +1,216 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "history",
+  "consumer": "tests/test_hamcp319_history.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "baseline": {
+    "name": "ha-mcp",
+    "version": "8.5.0",
+    "source_commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"
+  },
+  "generation": "Hand-written decoded structured-content payloads transcribed from the pinned 9.1.0 and shipped 8.5.0 source (read only, never executed). No Phase 1 receipt contains an ha_get_history result, so every record is class S. Recorder rows, statistics values, entity ids and the America/Chicago zone are synthetic; Core row content is not claimed from any ha-mcp source. These are not captured records and carry no hashes. The test serializes each payload into an MCP call result. The listed sha256 values identify the source files the line citations refer to (9.1.0 paths under the pinned checkout; 8.5.0 paths at commit 311d6dc).",
+  "source_files": {
+    "src/ha_mcp/tools/tools_history.py": "b0fad5cfa724fa07a357ac6b13ded4d1770f70aa2824d3471f59eddb5d06b02c",
+    "src/ha_mcp/tools/history_response.py": "add2f73aadc51b415b7ea507448f8d8d346283d0f636d79b6df934c6289b0617",
+    "src/ha_mcp/tools/response_helpers.py": "f7a2e6e3ec8602f58baade074c701e8c1712eb0cd0edd03adae95b34463b824a",
+    "src/ha_mcp/tools/statistics_helpers.py": "3c2da3e20e0f8cfcd7557353aaab660ab4e087f8e1497ed48d7c6a587d05d9f6",
+    "src/ha_mcp/tools/statistics_resets.py": "9d131891e2bc4fe589484ddffab4338fb94492f0b1447612ea691773c83ded91"
+  },
+  "baseline_source_files": {
+    "src/ha_mcp/tools/tools_history.py": "fc8f9c505dd97372ea4f3d27c8fa9b786b32955da1147cb4b1ca3ec2ac848b90",
+    "src/ha_mcp/tools/util_helpers.py": "080b02be2b36a3362116df6fa8f867df22856967c5a921e05ee631a3ced7494c",
+    "src/ha_mcp/errors.py": "ee0250cec5b5c1ad007d74f5f0bcb4ee09f7a9889dc6d5403c64bd4532e8d5ef",
+    "src/ha_mcp/tools/helpers.py": "5e783def20012b42520078ba6d3ee0ad959499eae3cf3b11bdb0a3126774d15e"
+  },
+  "fixtures": {
+    "scenarios/history_minimal/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:505-519 (add_timezone_metadata(convert_timestamps=False), format_history_response, project_fields, typo warning lifted to the top level)",
+        "src/ha_mcp/tools/tools_history.py:946-985 (history entity, pagination, period and query_params including summary)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data.warnings hoisted beside data, timezone warning appended)",
+        "src/ha_mcp/tools/response_helpers.py:436-455 (native metadata; fetch failure gives UTC plus the timezone warning)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/history_response.py:16-46 (s/a/lu/lc expansion, localized event times, lc falls back to lu)",
+        "src/ha_mcp/tools/history_response.py:49-74 (history metadata timestamp_format and note)"
+      ]
+    },
+    "scenarios/history_minimal/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:914-1025 (history entity and rows {state, last_changed, last_updated[, attributes]}, attributes default {} at :986-987)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:490-496 (add_timezone_metadata then project_fields)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (converted metadata note; fetch failure metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:389-433 (project_fields typo warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/history_attributes/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:505-519 (add_timezone_metadata(convert_timestamps=False), format_history_response, project_fields, typo warning lifted to the top level)",
+        "src/ha_mcp/tools/tools_history.py:946-985 (history entity, pagination, period and query_params including summary)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data.warnings hoisted beside data, timezone warning appended)",
+        "src/ha_mcp/tools/response_helpers.py:436-455 (native metadata; fetch failure gives UTC plus the timezone warning)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/history_response.py:16-46 (s/a/lu/lc expansion, localized event times, lc falls back to lu)",
+        "src/ha_mcp/tools/history_response.py:49-74 (history metadata timestamp_format and note)"
+      ]
+    },
+    "scenarios/history_attributes/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:914-1025 (history entity and rows {state, last_changed, last_updated[, attributes]}, attributes default {} at :986-987)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:490-496 (add_timezone_metadata then project_fields)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (converted metadata note; fetch failure metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:389-433 (project_fields typo warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/history_attributes_absent/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:505-519 (add_timezone_metadata(convert_timestamps=False), format_history_response, project_fields, typo warning lifted to the top level)",
+        "src/ha_mcp/tools/tools_history.py:946-985 (history entity, pagination, period and query_params including summary)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data.warnings hoisted beside data, timezone warning appended)",
+        "src/ha_mcp/tools/response_helpers.py:436-455 (native metadata; fetch failure gives UTC plus the timezone warning)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/history_response.py:16-46 (s/a/lu/lc expansion, localized event times, lc falls back to lu)",
+        "src/ha_mcp/tools/history_response.py:49-74 (history metadata timestamp_format and note)"
+      ]
+    },
+    "scenarios/history_attributes_absent/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:914-1025 (history entity and rows {state, last_changed, last_updated[, attributes]}, attributes default {} at :986-987)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:490-496 (add_timezone_metadata then project_fields)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (converted metadata note; fetch failure metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:389-433 (project_fields typo warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/history_fields_typo/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:505-519 (add_timezone_metadata(convert_timestamps=False), format_history_response, project_fields, typo warning lifted to the top level)",
+        "src/ha_mcp/tools/tools_history.py:946-985 (history entity, pagination, period and query_params including summary)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data.warnings hoisted beside data, timezone warning appended)",
+        "src/ha_mcp/tools/response_helpers.py:436-455 (native metadata; fetch failure gives UTC plus the timezone warning)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/history_response.py:16-46 (s/a/lu/lc expansion, localized event times, lc falls back to lu)",
+        "src/ha_mcp/tools/history_response.py:49-74 (history metadata timestamp_format and note)",
+        "src/ha_mcp/tools/response_helpers.py:182-227 (project_fields typo text)"
+      ]
+    },
+    "scenarios/history_fields_typo/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:914-1025 (history entity and rows {state, last_changed, last_updated[, attributes]}, attributes default {} at :986-987)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:490-496 (add_timezone_metadata then project_fields)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (converted metadata note; fetch failure metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:389-433 (project_fields typo warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/history_timezone_failed/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:505-519 (add_timezone_metadata(convert_timestamps=False), format_history_response, project_fields, typo warning lifted to the top level)",
+        "src/ha_mcp/tools/tools_history.py:946-985 (history entity, pagination, period and query_params including summary)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data.warnings hoisted beside data, timezone warning appended)",
+        "src/ha_mcp/tools/response_helpers.py:436-455 (native metadata; fetch failure gives UTC plus the timezone warning)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/history_response.py:16-46 (s/a/lu/lc expansion, localized event times, lc falls back to lu)",
+        "src/ha_mcp/tools/history_response.py:49-74 (history metadata timestamp_format and note)"
+      ]
+    },
+    "scenarios/history_timezone_failed/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:914-1025 (history entity and rows {state, last_changed, last_updated[, attributes]}, attributes default {} at :986-987)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:490-496 (add_timezone_metadata then project_fields)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (converted metadata note; fetch failure metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:389-433 (project_fields typo warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/statistics_default_types/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:989-1100 (statistics data, statistic_types, query_params, warning order: unit, reset, empty)",
+        "src/ha_mcp/tools/tools_history.py:505-519 (wrapper and top-level warnings)",
+        "src/ha_mcp/tools/response_helpers.py:392-455 (native metadata and hoisted warnings)",
+        "src/ha_mcp/tools/statistics_helpers.py:41-62 (unit_of_measurement, unit_source, unit_reason)",
+        "src/ha_mcp/tools/statistics_helpers.py:65-92 (entity shape: Core rows unchanged, statistics_metadata, pagination)",
+        "src/ha_mcp/tools/statistics_helpers.py:95-102 (unit warning text)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)"
+      ]
+    },
+    "scenarios/statistics_default_types/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1075-1117 (start plus requested or default types; unit from rows, so null for Core rows)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1120-1218 (statistics data, defaults at :1180, empty warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/statistics_requested_units_unknown_and_empty/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:989-1100 (statistics data, statistic_types, query_params, warning order: unit, reset, empty)",
+        "src/ha_mcp/tools/tools_history.py:505-519 (wrapper and top-level warnings)",
+        "src/ha_mcp/tools/response_helpers.py:392-455 (native metadata and hoisted warnings)",
+        "src/ha_mcp/tools/statistics_helpers.py:41-62 (unit_of_measurement, unit_source, unit_reason)",
+        "src/ha_mcp/tools/statistics_helpers.py:65-92 (entity shape: Core rows unchanged, statistics_metadata, pagination)",
+        "src/ha_mcp/tools/statistics_helpers.py:95-102 (unit warning text)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)",
+        "src/ha_mcp/tools/statistics_resets.py:107-113 (reset warning text; last_reset popped)"
+      ]
+    },
+    "scenarios/statistics_requested_units_unknown_and_empty/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1075-1117 (start plus requested or default types; unit from rows, so null for Core rows)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1120-1218 (statistics data, defaults at :1180, empty warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "scenarios/statistics_unitless_timezone_failed/ha_mcp_9_1_0": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_history.py:989-1100 (statistics data, statistic_types, query_params, warning order: unit, reset, empty)",
+        "src/ha_mcp/tools/tools_history.py:505-519 (wrapper and top-level warnings)",
+        "src/ha_mcp/tools/response_helpers.py:392-455 (native metadata and hoisted warnings)",
+        "src/ha_mcp/tools/statistics_helpers.py:41-62 (unit_of_measurement, unit_source, unit_reason)",
+        "src/ha_mcp/tools/statistics_helpers.py:65-92 (entity shape: Core rows unchanged, statistics_metadata, pagination)",
+        "src/ha_mcp/tools/statistics_helpers.py:95-102 (unit warning text)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)"
+      ]
+    },
+    "scenarios/statistics_unitless_timezone_failed/ha_mcp_8_5_0": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1075-1117 (start plus requested or default types; unit from rows, so null for Core rows)",
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1120-1218 (statistics data, defaults at :1180, empty warning inside data)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:805-851 (metadata)",
+        "8.5 311d6dc src/ha_mcp/tools/util_helpers.py:478-499 (pagination metadata)"
+      ]
+    },
+    "refusals_8_5_0/statistics_invalid_period": {
+      "class": "S",
+      "sources": [
+        "8.5 311d6dc src/ha_mcp/tools/tools_history.py:1139-1151 (invalid period refusal before any recorder query)",
+        "8.5 311d6dc src/ha_mcp/errors.py:258-323 (create_error_response shape; context fields at top level)",
+        "8.5 311d6dc src/ha_mcp/tools/helpers.py:40-68 (raise_tool_error: ToolError, isError)"
+      ]
+    }
+  }
+}

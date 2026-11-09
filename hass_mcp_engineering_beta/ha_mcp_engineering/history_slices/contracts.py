@@ -31,8 +31,8 @@ from ..incident_logs.contracts import MAX_FUTURE_SKEW_SECONDS, format_ms, parse_
 
 SCHEMA = "history-slices-v1"
 UPSTREAM_TOOL = "ha_get_history"
-# Versions whose history response shape was reviewed from source.
-REVIEWED_VERSIONS = frozenset({"8.5.0", "8.6.0"})
+# Reviewed history shapes; each has a parser row in service._PARSERS (9.1.0: HAMCP-319 rule 3).
+REVIEWED_VERSIONS = frozenset({"8.5.0", "8.6.0", "9.1.0"})
 
 MAX_SPAN_SECONDS = 7 * 24 * 3600
 SLICE_SECONDS = 6 * 3600

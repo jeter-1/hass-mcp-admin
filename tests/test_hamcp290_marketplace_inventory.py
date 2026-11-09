@@ -1508,6 +1508,7 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retired_read_is_withheld_on_the_9_1_0_capture(self):
         from test_readonly_upstream_gateway import initialize, policy_entry, registered_tools
+        from ha_mcp_engineering.providers import upstream_read_gateway as gw
 
         capture = json.loads((ROOT / "docs/evidence/hamcp319/phase1/catalogs/full-1.json").read_text())
         tools = capture["tools"]
@@ -1525,16 +1526,28 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
             "reviewed_runtime_annotations": {name: by_name[name]["annotations"] for name in names},
             "reviewed_output_schemas": {name: by_name[name]["outputSchema"] for name in names},
         }
+        # HAMCP-319 (Codex F1 on PR #406): 9.1.0 runtime admission binds each
+        # used tool, not the catalog order, so this synthetic two-entry subset
+        # policy reaches the retirement decision with no test-scoped lift. Its
+        # observed order differs from the full-catalog evidence fingerprint,
+        # which proves that order is not what admits or withholds here.
+        from ha_mcp_engineering.upstream_tool_policy import schema_fingerprint
+
+        subset_order = [tool["name"] for tool in tools if tool["name"] in names]
+        self.assertNotEqual(
+            schema_fingerprint(subset_order),
+            gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"],
+        )
+        self.assertIn("9.1.0", gw.USED_TOOL_ADMISSION_RELEASES)
         for native in (False, True):
             with self.subTest(native=native):
                 server = _native_server("hamcp290-9.1.0") if native else None
                 gateway, server, transport = await initialize(entries(), tools, server=server, **reviewed)
+                self.assertEqual(gateway.health_snapshot()["quarantine_reason_counts"], {})
                 self.assert_retired(gateway, server, matched=2)
                 self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
                 self.assertEqual(transport.calls, [])
         # Non-vacuous: without the retirement this exact descriptor is admitted.
-        from ha_mcp_engineering.providers import upstream_read_gateway as gw
-
         with mock.patch.object(gw, "RETIRED_DELEGATED_READS", frozenset()):
             _gateway, server, _transport = await initialize(entries(), tools, **reviewed)
         self.assertIsNotNone(registered_tools(server).get(RETIRED))

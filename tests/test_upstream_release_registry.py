@@ -51,6 +51,7 @@ POLICY_8410 = RUNTIME / "upstream_tool_policy_8_4_1.json"
 POLICY_8430 = RUNTIME / "upstream_tool_policy_8_4_3.json"
 POLICY_8500 = RUNTIME / "upstream_tool_policy_8_5_0.json"
 POLICY_8600 = RUNTIME / "upstream_tool_policy_8_6_0.json"
+POLICY_9100 = RUNTIME / "upstream_tool_policy_9_1_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -71,6 +72,7 @@ ARTIFACT_EVIDENCE_8430 = (
 )
 ARTIFACT_EVIDENCE_8500 = CAPTURE_DIRECTORY / "ha-mcp-8.5.0-contract-review.json"
 ARTIFACT_EVIDENCE_8600 = CAPTURE_DIRECTORY / "ha-mcp-8.6.0-contract-review.json"
+ARTIFACT_EVIDENCE_9100 = CAPTURE_DIRECTORY / "ha-mcp-9.1.0-contract-review.json"
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
 )
@@ -94,7 +96,7 @@ def captured_tools(version: str) -> list[dict]:
         )
     )
     tools = value["tools"]
-    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
+    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0"}:
         review = json.loads(
             (
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}-contract-review.json"
@@ -138,6 +140,7 @@ class RegistryFixture:
             POLICY_8430,
             POLICY_8500,
             POLICY_8600,
+            POLICY_9100,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -160,6 +163,7 @@ class RegistryFixture:
             "8.4.3",
             "8.5.0",
             "8.6.0",
+            "9.1.0",
         ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
@@ -188,6 +192,7 @@ class RegistryFixture:
         )
         shutil.copy2(ARTIFACT_EVIDENCE_8500, self.capture_directory / ARTIFACT_EVIDENCE_8500.name)
         shutil.copy2(ARTIFACT_EVIDENCE_8600, self.capture_directory / ARTIFACT_EVIDENCE_8600.name)
+        shutil.copy2(ARTIFACT_EVIDENCE_9100, self.capture_directory / ARTIFACT_EVIDENCE_9100.name)
         self.dashboard_attestations = (
             self.runtime
             / "providers"
@@ -264,6 +269,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.4.3",
                 "8.5.0",
                 "8.6.0",
+                "9.1.0",
             ),
         )
         self.assertEqual(registry.default_version, "7.14.1")
@@ -272,7 +278,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             canonical_json(json.loads(REGISTRY.read_text())),
         )
         for release in registry.releases:
-            expected_tool_count = 77 if release.version in {"8.5.0", "8.6.0"} else 78
+            expected_tool_count = 77 if release.version in {"8.5.0", "8.6.0", "9.1.0"} else 78
             self.assertEqual(release.advertised_tool_count, expected_tool_count)
             self.assertEqual(len(release.tool_contracts), expected_tool_count)
             expected_automatic_reads = {
@@ -286,6 +292,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.4.3": 28,
                 "8.5.0": 28,
                 "8.6.0": 28,
+                "9.1.0": 27,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -304,6 +311,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                         "8.4.3",
                         "8.5.0",
                         "8.6.0",
+                        "9.1.0",
                     }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
@@ -934,6 +942,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.4.3": 28,
                 "8.5.0": 28,
                 "8.6.0": 28,
+                "9.1.0": 27,
             }
             self.assertEqual(
                 len(automatic_names),
