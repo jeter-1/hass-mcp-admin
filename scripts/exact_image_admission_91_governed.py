@@ -1046,13 +1046,17 @@ async def mcp_call(session, tool: str, arguments: dict[str, Any]) -> tuple[dict[
 def envelope_ok(response: Any) -> bool:
     """A decoded, positive, error-free MCP envelope.
 
-    Every required read, poll and duplicate check must pass this before its
-    data counts: a failed or ``isError`` envelope keeps its ``data`` (see
-    ``mcp_call``), so reading ``data`` alone would let an errored read verify.
+    Every required read, poll and duplicate check -- and the stage health read
+    -- must pass this before its data counts: a failed or ``isError`` envelope
+    keeps its ``data`` (see ``mcp_call``), so reading ``data`` alone would let
+    an errored read verify. A contradictory ``success: true`` envelope that
+    still carries a nonempty application error field is not error-free either;
+    this is the rule ``runners.health_problem`` applies to the same fields.
     """
 
     return isinstance(response, dict) and response.get("success") is True \
-        and response.get("mcp_is_error") is not True
+        and response.get("mcp_is_error") is not True \
+        and all(response.get(key) in (None, "", [], {}) for key in runners.HEALTH_ERROR_FIELDS)
 
 
 def data_of(response: dict[str, Any]) -> dict[str, Any]:
@@ -1444,6 +1448,8 @@ async def run_stage(plan: Plan, stage: Stage, lane: LaneContext) -> None:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 _, health = await mcp_call(session, "get_server_health", {"check_ha": False})
+                # The version counts only from an error-free health envelope; otherwise the stage refuses.
+                require(envelope_ok(health), "engineering_health_read_failed")
                 server = find_key(health, "server") or {}
                 observed = server.get("version") if isinstance(server, dict) else None
                 require(observed == expected_version, "engineering_version_mismatch")
@@ -1457,6 +1463,23 @@ async def run_stage(plan: Plan, stage: Stage, lane: LaneContext) -> None:
         staged["protocols"] = [item["protocol"] for item in lane.proxy.since(mark) if "protocol" in item]
         staged["peer_log"] = {"forwarded": lane.proxy.forwarded - forwarded,
                               "peer_posts": peer_posts(lane.peer_container, stage.endpoint_path) - posts}
+
+
+async def run_stages(plan: Plan, lane: LaneContext) -> None:
+    """Every stage of the configuration in order; a refused stage records its failure and never hides another."""
+
+    for index, stage in enumerate(plan.stages):
+        staged = plan.evidence["stages"][stage.key]
+        try:
+            if index:
+                await reset_core(lane)
+            await run_stage(plan, stage, lane)
+        except LaneFailure as exc:
+            staged["failure"] = bounded(str(exc), 120)
+        except Exception as exc:  # bounded category only; one stage never hides another
+            staged["failure"] = type(exc).__name__[:64]
+        finally:
+            docker("rm", "-f", f"{plan.identity}-engineering-{stage.key}", check=False, timeout=120)
 
 
 async def run_lane(plan: Plan) -> None:
@@ -1599,18 +1622,7 @@ async def run_lane(plan: Plan) -> None:
             lane = LaneContext(work=work, data=data, core_url=core_url, token=token, rest=rest, socket=socket,
                                proxy=proxy, peer_container=peer_container, upstream_version=package,
                                ingress=ingress, host_probe=host_probe)
-            for index, stage in enumerate(plan.stages):
-                staged = plan.evidence["stages"][stage.key]
-                try:
-                    if index:
-                        await reset_core(lane)
-                    await run_stage(plan, stage, lane)
-                except LaneFailure as exc:
-                    staged["failure"] = bounded(str(exc), 120)
-                except Exception as exc:  # bounded category only; one stage never hides another
-                    staged["failure"] = type(exc).__name__[:64]
-                finally:
-                    docker("rm", "-f", f"{plan.identity}-engineering-{stage.key}", check=False, timeout=120)
+            await run_stages(plan, lane)
     finally:
         if proxy is not None:
             proxy.stop()

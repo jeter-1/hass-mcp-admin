@@ -245,6 +245,13 @@ class Harness(unittest.TestCase):
         self.assertEqual(result["gate"]["acceptance"][configuration], "NOT ACCEPTED")
         self.assertNotEqual(result["gate_code"], 0)
 
+    def assert_only_stage_rejected(self, result: dict, stage: str, fragment: str):
+        for case in STAGE[stage].cases:
+            self.assert_rejected(result, case, fragment)
+        for case in SBS_CASES:
+            if case not in STAGE[stage].cases:
+                self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
+
 
 class PositiveTests(Harness):
     def test_every_required_operation_verified_is_accepted_end_to_end(self):
@@ -820,13 +827,6 @@ class SideBySideStageTests(Harness):
         ident = mutate(ident)
         return self.sbs(identities={stage: ident})
 
-    def assert_only_stage_rejected(self, result: dict, stage: str, fragment: str):
-        for case in STAGE[stage].cases:
-            self.assert_rejected(result, case, fragment)
-        for case in SBS_CASES:
-            if case not in STAGE[stage].cases:
-                self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
-
     def test_rollback_stage_must_run_the_pinned_beta6_release_with_verified_identity(self):
         breaks = {
             "lane image instead": (lambda i: dict(i, engineering_image=governed.LANE_IMAGE),
@@ -1062,8 +1062,12 @@ class SideBySideSourceBindingTests(unittest.TestCase):
 
 
 import asyncio  # noqa: E402
+import contextlib  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 import unittest.mock  # noqa: E402  (used by test_engineering_image_must_be_the_lane_image)
+
+import mcp  # noqa: E402  (run_stage imports ClientSession / streamablehttp_client at call time)
+import mcp.client.streamable_http as mcp_transport  # noqa: E402
 
 # --------------------------------------------------------------------------
 # F2 residual (#407 combined review, comment 6725224530): an errored public MCP
@@ -1096,6 +1100,26 @@ def mcp_result(payload: dict, is_error: bool):
     return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))], isError=is_error)
 
 
+# F2 residual B (#407 Delta 3 review, comment 6727880633): the application error fields that
+# ``exact_image_admission_91_runners.health_problem`` already refuses (HEALTH_ERROR_FIELDS).
+CONTRADICTORY_FIELDS = ("error_code", "error", "errors")
+
+
+def errored_result(data: dict, code: str, envelope: str = "mcp_error"):
+    """An errored response that still carries plausible ``data``.
+
+    ``mcp_error``: MCP ``isError`` with ``success: false`` and an error code.
+    A field of CONTRADICTORY_FIELDS: a contradictory envelope -- ``success:
+    true``, ``isError: false`` -- that nonetheless carries that nonempty
+    application error field.
+    """
+
+    if envelope == "mcp_error":
+        return mcp_result({"success": False, "data": data, "error_code": code}, True)
+    value = {"error_code": code, "error": f"synthetic {code}", "errors": [{"code": code}]}[envelope]
+    return mcp_result({"success": True, "data": data, envelope: value}, False)
+
+
 class FakeDashboardSession:
     """Synthetic Engineering MCP for the governed dashboard flow.
 
@@ -1105,11 +1129,12 @@ class FakeDashboardSession:
     get_change_plan), ``refused_plan_status`` (only the read after the refused
     apply), ``list``, ``seed_config`` (first config read), ``poll`` (the task
     poll after an accepted apply). ``accepted`` makes apply return
-    ``accepted`` so the flow polls get_execution_task.
+    ``accepted`` so the flow polls get_execution_task. ``envelope`` selects
+    how an errored read looks (see ``errored_result``).
     """
 
-    def __init__(self, proxy, stage, bad="none", accepted=False):
-        self.proxy, self.stage, self.bad, self.accepted = proxy, stage, bad, accepted
+    def __init__(self, proxy, stage, bad="none", accepted=False, envelope="mcp_error"):
+        self.proxy, self.stage, self.bad, self.accepted, self.envelope = proxy, stage, bad, accepted, envelope
         self.state, self.gets, self.applies, self.plan_reads, self.task_reads = "awaiting_approval", 0, 0, 0, 0
         self.errors = []
 
@@ -1149,11 +1174,10 @@ class FakeDashboardSession:
             err = (self.bad == "poll" and polled) or (not polled and self.bad in ("task", "both"))
         else:
             raise AssertionError(name)
-        payload = {"success": not err, "data": data}
         if err:
-            payload["error_code"] = "synthetic_read_failure"
             self.errors.append(name)
-        return mcp_result(payload, err)
+            return errored_result(data, "synthetic_read_failure", self.envelope)
+        return mcp_result({"success": True, "data": data}, False)
 
 
 class FakeCoreSocket:
@@ -1168,11 +1192,12 @@ class FakeTypedSession:
     the matching receipt. ``bad="poll"``: the first call returns a non-terminal
     receipt and the get_execution_task poll returns an MCP error carrying a
     plausible terminal receipt. ``polled`` alone makes the flow poll
-    successfully (positive control).
+    successfully (positive control). ``envelope`` selects how an errored
+    response looks (see ``errored_result``).
     """
 
-    def __init__(self, proxy, stage, core_version, bad="none", polled=False):
-        self.proxy, self.stage, self.core, self.bad = proxy, stage, core_version, bad
+    def __init__(self, proxy, stage, core_version, bad="none", polled=False, envelope="mcp_error"):
+        self.proxy, self.stage, self.core, self.bad, self.envelope = proxy, stage, core_version, bad, envelope
         self.polled = polled or bad == "poll"
         self.calls, self.current, self.counts, self.errors = {}, None, {}, []
 
@@ -1189,12 +1214,10 @@ class FakeTypedSession:
     async def call_tool(self, name, args):
         if name == "get_execution_task":
             tool = governed.TYPED_TABLE[self.current][0]
-            err = self.bad == "poll"
-            payload = {"success": not err, "data": self.receipt(tool)}
-            if err:
-                payload["error_code"] = "synthetic_poll_failure"
+            if self.bad == "poll":
                 self.errors.append(name)
-            return mcp_result(payload, err)
+                return errored_result(self.receipt(tool), "synthetic_poll_failure", self.envelope)
+            return mcp_result({"success": True, "data": self.receipt(tool)}, False)
         key = args["operation_id"]
         n = self.calls.get(key, 0) + 1
         self.calls[key] = n
@@ -1203,12 +1226,11 @@ class FakeTypedSession:
         if n == 1:
             self.proxy.entries.append({"method": "tools/call", "tool": governed.SERVICE_TOOL})
             self.counts[base["entity_id"]] = self.counts.get(base["entity_id"], 0) + 1
-        err = n > 1 and self.bad == "duplicate"
-        payload = {"success": not err, "data": self.receipt(name, terminal=not (n == 1 and self.polled))}
-        if err:
-            payload["error_code"] = "synthetic_duplicate_failure"
+        receipt = self.receipt(name, terminal=not (n == 1 and self.polled))
+        if n > 1 and self.bad == "duplicate":
             self.errors.append(name)
-        return mcp_result(payload, err)
+            return errored_result(receipt, "synthetic_duplicate_failure", self.envelope)
+        return mcp_result({"success": True, "data": receipt}, False)
 
     async def state(self, client, url, token, entity):
         if self.current is None:
@@ -1220,8 +1242,8 @@ class FakeTypedSession:
         return state
 
 
-class EnvelopeFlowTests(Harness):
-    """Codex's 10 F2 demonstrations + 4 positive controls, through the real flows and pipeline."""
+class FlowHarness(Harness):
+    """Runs the ACTUAL dashboard_flow / typed_flow against a synthetic session, then the pipeline."""
 
     def flow_plan(self, stage, case):
         evidence = ev.evidence(stage.configuration, core_version=self.core_version)
@@ -1230,10 +1252,10 @@ class EnvelopeFlowTests(Harness):
                              ev.ENGINEERING_VERSION, self.base / "work", "synthetic", evidence, stage.configuration)
         return plan, evidence
 
-    def run_dashboard(self, stage, bad="none", accepted=False):
+    def run_dashboard(self, stage, bad="none", accepted=False, envelope="mcp_error"):
         plan, evidence = self.flow_plan(stage, stage.dashboard_case)
         proxy = FakeProxy()
-        session = FakeDashboardSession(proxy, stage, bad, accepted)
+        session = FakeDashboardSession(proxy, stage, bad, accepted, envelope)
 
         async def ingress(_plan_id):
             session.state = "approved"
@@ -1247,10 +1269,10 @@ class EnvelopeFlowTests(Harness):
             asyncio.run(governed.guarded(plan, stage.dashboard_case, flow))
         return self.pipeline(evidence, configuration=stage.configuration), evidence, session
 
-    def run_typed(self, stage, bad="none", polled=False):
+    def run_typed(self, stage, bad="none", polled=False, envelope="mcp_error"):
         plan, evidence = self.flow_plan(stage, stage.typed_case)
         proxy = FakeProxy()
-        session = FakeTypedSession(proxy, stage, self.core_version, bad, polled)
+        session = FakeTypedSession(proxy, stage, self.core_version, bad, polled, envelope)
         flow = governed.typed_flow(plan, stage, session, proxy, "http://127.0.0.1:1", "synthetic-token")
         with unittest.mock.patch.object(governed, "core_state", session.state), \
                 unittest.mock.patch.object(governed.asyncio, "sleep", _no_sleep):
@@ -1281,6 +1303,10 @@ class EnvelopeFlowTests(Harness):
         entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
         compact = {o["id"]: o["verified"] for o in entry.get("operations") or []}
         self.assertIs(compact.get(op), False, compact)
+
+
+class EnvelopeFlowTests(FlowHarness):
+    """Codex's 10 F2 demonstrations + 4 positive controls, through the real flows and pipeline."""
 
     # -- Codex's 8 dashboard demonstrations: {task, config, both, plan_status} x {91_only, rollback}
     def test_codex_dashboard_task_error_91_only_not_accepted(self):
@@ -1512,6 +1538,314 @@ class EnvelopeRecordTests(Harness):
         self.assertTrue(envelope_ok(asyncio.run(decode('{"success": true, "data": {}}', False))))
         self.assertFalse(envelope_ok(asyncio.run(decode('{"success": true, "data": {}}', True))))
         self.assertFalse(envelope_ok(asyncio.run(decode("not json", False))))
+
+
+
+# --------------------------------------------------------------------------
+# F2 residuals (#407 Delta 3 review, comment 6727880633).
+# B: a contradictory envelope -- success:true, isError:false, yet a nonempty
+#    error_code / error / errors -- is not an error-free read (the rule
+#    runners.health_problem already applies), on every read, poll and duplicate.
+# A: the stage health read through the ACTUAL run_stages -> run_stage ->
+#    mcp_call must be an error-free envelope before its version counts; a
+#    failed one ends that stage through the existing stage-failure path.
+# --------------------------------------------------------------------------
+
+# (bad, operation, location, flag, reason fragment, accepted apply)
+CONTRADICTORY_DASHBOARD = (
+    ("task", "dashboard_verify", "facts", "task_read_ok", "error-free", False),
+    ("config", "dashboard_verify", "facts", "config_read_ok", "error-free", False),
+    ("both", "dashboard_verify", "facts", "task_read_ok", "error-free", False),
+    ("plan_status", "dashboard_plan", "readback", "plan_read_ok", "get_change_plan", False),
+    ("refused_plan_status", "dashboard_apply_before_approval_refused", "readback", "plan_read_ok",
+     "refused apply", False),
+    ("list", "dashboard_list", "facts", "success", "list_dashboards did not succeed", False),
+    ("seed_config", "dashboard_get", "facts", "success", "bound configuration", False),
+    ("poll", "dashboard_apply", "facts", "poll_reads_ok", "error-free", True),
+)
+CONTRADICTORY_TYPED = (
+    ("duplicate", "duplicate_read_ok"),
+    ("poll", "poll_reads_ok"),
+)
+
+
+class ContradictoryEnvelopeFlowTests(FlowHarness):
+    """Residual B: every errored read as a contradictory success envelope, through the real flows."""
+
+    def dashboard_variant(self, bad):
+        _bad, op, where, flag, fragment, accepted = next(v for v in CONTRADICTORY_DASHBOARD if v[0] == bad)
+        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+            for field in CONTRADICTORY_FIELDS:
+                with self.subTest(stage=stage.key, field=field):
+                    self.setUp()
+                    try:
+                        result, evidence, session = self.run_dashboard(stage, bad, accepted, envelope=field)
+                        self.assertTrue(session.errors)
+                        self.assert_error_refused(result, evidence, session, stage.dashboard_case, op, flag,
+                                                  where=where, fragment=fragment)
+                    finally:
+                        self.tearDown()
+
+    def typed_variant(self, bad):
+        flag = dict(CONTRADICTORY_TYPED)[bad]
+        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+            for field in CONTRADICTORY_FIELDS:
+                with self.subTest(stage=stage.key, field=field):
+                    self.setUp()
+                    try:
+                        result, evidence, session = self.run_typed(stage, bad, envelope=field)
+                        self.assertTrue(session.errors)
+                        self.assert_error_refused(result, evidence, session, stage.typed_case,
+                                                  governed.TYPED_OPERATIONS[0], flag, fragment="error-free")
+                    finally:
+                        self.tearDown()
+
+    # Codex's ten error-bearing variants: {task, config, both, plan_status} dashboard and the typed
+    # duplicate, each on 9.1 and the beta.6 rollback, with every contradictory field.
+    def test_contradictory_dashboard_task_read_not_accepted(self):
+        self.dashboard_variant("task")
+
+    def test_contradictory_dashboard_config_read_not_accepted(self):
+        self.dashboard_variant("config")
+
+    def test_contradictory_dashboard_task_and_config_reads_not_accepted(self):
+        self.dashboard_variant("both")
+
+    def test_contradictory_dashboard_plan_status_read_not_accepted(self):
+        self.dashboard_variant("plan_status")
+
+    def test_contradictory_typed_duplicate_not_accepted(self):
+        self.typed_variant("duplicate")
+
+    # Every other required read and both poll loops.
+    def test_contradictory_refused_apply_plan_status_read_not_accepted(self):
+        self.dashboard_variant("refused_plan_status")
+
+    def test_contradictory_dashboard_list_not_accepted(self):
+        self.dashboard_variant("list")
+
+    def test_contradictory_dashboard_seed_config_read_not_accepted(self):
+        self.dashboard_variant("seed_config")
+
+    def test_contradictory_dashboard_poll_not_accepted(self):
+        self.dashboard_variant("poll")
+
+    def test_contradictory_typed_poll_not_accepted(self):
+        self.typed_variant("poll")
+
+    def test_empty_error_fields_on_a_successful_envelope_stay_accepted(self):
+        # Control: present-but-empty error fields are not an error (the health_problem rule). Every
+        # positive envelope the fakes serve carries them, through the real flows, and still verifies.
+        self.assertTrue(governed.envelope_ok({"success": True, "data": {}, "error_code": None, "error": "",
+                                              "errors": [], "mcp_is_error": False}))
+        plain, served = mcp_result, []
+
+        def with_empty_error_fields(payload, is_error):
+            if payload.get("success") is True and not is_error:
+                payload = {"error_code": None, "error": "", "errors": [], **payload}
+                served.append(payload)
+            return plain(payload, is_error)
+
+        with unittest.mock.patch.object(sys.modules[__name__], "mcp_result", with_empty_error_fields):
+            result, evidence, session = self.run_dashboard(ROLLBACK_STAGE, accepted=True)
+            self.assertEqual(session.errors, [])
+            self.assert_accepted(result, ROLLBACK_STAGE.dashboard_case)
+            dashboard_served = len(served)
+            self.assertGreater(dashboard_served, 0)
+            self.setUp()
+            result, evidence, session = self.run_typed(ROLLBACK_STAGE, polled=True)
+            self.assertEqual(session.errors, [])
+            self.assert_accepted(result, ROLLBACK_STAGE.typed_case)
+            self.assertGreater(len(served), dashboard_served)
+
+    def test_envelope_ok_refuses_nonempty_application_error_fields(self):
+        for field in CONTRADICTORY_FIELDS:
+            for value in ("synthetic_read_failure", {"code": "synthetic"}, [{"code": "synthetic"}], 1, True):
+                with self.subTest(field=field, value=value):
+                    self.assertFalse(governed.envelope_ok({"success": True, "data": {"ok": True}, field: value}))
+        for empty in (None, "", [], {}):
+            with self.subTest(empty=empty):
+                self.assertTrue(governed.envelope_ok({"success": True, "data": {}, "error_code": empty,
+                                                      "error": empty, "errors": empty}))
+
+        async def decode(payload):
+            async def call_tool(_name, _args):
+                return mcp_result(payload, False)
+            return (await governed.mcp_call(SimpleNamespace(call_tool=call_tool), "get_change_plan", {}))[1]
+        for field in CONTRADICTORY_FIELDS:
+            with self.subTest(decoded=field):
+                self.assertFalse(governed.envelope_ok(asyncio.run(decode({"success": True, "data": {},
+                                                                          field: "synthetic"}))))
+
+
+class StageProxy(FakeProxy):
+    def __init__(self):
+        super().__init__()
+        self.forwarded = 0
+
+
+# Health read variants, each still carrying the stage's expected version in data.server.version.
+HEALTH_VARIANTS = {
+    "failed": ({"success": False}, False),
+    "mcp_error": ({"success": True}, True),
+    "codex_failed_mcp_error_code": ({"success": False, "error_code": "synthetic_health_failure"}, True),
+    "missing_success": ({}, False),
+    "error_code": ({"success": True, "error_code": "synthetic_health_failure"}, False),
+    "error": ({"success": True, "error": "synthetic health failure"}, False),
+    "errors": ({"success": True, "errors": [{"code": "synthetic_health_failure"}]}, False),
+}
+
+
+class FakeStageSession:
+    """One stage's Engineering MCP: the health read, then the real dashboard and typed flows."""
+
+    TYPED_TOOLS = frozenset(entry[0] for entry in governed.TYPED_TABLE.values())
+
+    def __init__(self, proxy, stage, core_version, version, health="ok"):
+        self.proxy, self.stage, self.version, self.health = proxy, stage, version, health
+        self.dashboard = FakeDashboardSession(proxy, stage)
+        self.typed = FakeTypedSession(proxy, stage, core_version)
+        self.typed_phase, self.calls = False, []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def initialize(self):
+        self.proxy.entries.extend([{"protocol": ev.PROTOCOL}, {"protocol": ev.PROTOCOL}])
+        self.proxy.forwarded += 2
+
+    async def call_tool(self, name, args):
+        self.calls.append(name)
+        if name == "get_server_health":
+            data = {"server": {"version": self.version}, "upstream_read_gateway": {}}
+            if self.health == "ok":
+                return mcp_result({"success": True, "operation": name, "data": data}, False)
+            envelope, is_error = HEALTH_VARIANTS[self.health]
+            return mcp_result(dict(envelope, operation=name, data=data), is_error)
+        self.typed_phase = self.typed_phase or name in self.TYPED_TOOLS
+        return await (self.typed if self.typed_phase else self.dashboard).call_tool(name, args)
+
+
+class StageHealthTests(Harness):
+    """Residual A: the ACTUAL run_stages / run_stage / mcp_call health read, then the real pipeline."""
+
+    def run_stages(self, configuration, bad_stage=None, health="ok"):
+        stages = governed.STAGES_BY_CONFIGURATION[configuration]
+        rollback = ev.rollback_identity() if configuration == SBS else None
+        plan = governed.Plan("amd64", {}, {"version": self.core_version}, governed.LANE_IMAGE,
+                             ev.ENGINEERING_VERSION, self.base / "work", "governed91-health-amd64",
+                             governed.empty_evidence(configuration), configuration, rollback)
+        proxy = StageProxy()
+        sessions, order = [], list(stages)
+        (self.base / "work").mkdir()
+
+        def client_session(*_args, **_kwargs):
+            stage = order.pop(0)
+            version = governed.ROLLBACK_VERSION if stage.rollback else ev.ENGINEERING_VERSION
+            session = FakeStageSession(proxy, stage, self.core_version, version,
+                                       health if stage.key == bad_stage else "ok")
+            sessions.append(session)
+            return session
+
+        @contextlib.asynccontextmanager
+        async def transport(*_args, **_kwargs):
+            yield (None, None, None)
+
+        docker_calls = []
+
+        def docker(*args, **_kwargs):
+            docker_calls.append(args)
+            text = "amd64" if "{{.Architecture}}" in args else "sha256:" + "9" * 64
+            return SimpleNamespace(returncode=0, stdout=text, stderr="")
+
+        async def ingress(_plan_id):
+            sessions[-1].dashboard.state = "approved"
+            return {"rounds": [{"get_status": 200, "post_status": 200, "decision": "approved"}]}
+
+        async def host_probe(_plan_id):
+            return 403
+
+        async def core_state(client, url, token, entity):
+            return await sessions[-1].typed.state(client, url, token, entity)
+
+        async def reset_core(_lane):
+            return None
+
+        lane = governed.LaneContext(work=self.base / "work", data=self.base / "work" / "data",
+                                    core_url="http://127.0.0.1:1", token="synthetic-token", rest=None,
+                                    socket=FakeCoreSocket(), proxy=proxy, peer_container="governed91-health-peer",
+                                    upstream_version=stages[0].upstream_version, ingress=ingress,
+                                    host_probe=host_probe)
+        patch = unittest.mock.patch.object
+        with patch(governed, "docker", docker), patch(governed, "peer_posts", lambda *_a: proxy.forwarded), \
+                patch(governed, "_wait_ready", lambda *_a: True), patch(governed, "core_state", core_state), \
+                patch(governed, "reset_core", reset_core), patch(governed.asyncio, "sleep", _no_sleep), \
+                patch(mcp, "ClientSession", client_session), \
+                patch(mcp_transport, "streamablehttp_client", transport):
+            asyncio.run(governed.run_stages(plan, lane))
+        self.assertEqual([s.stage.key for s in sessions], [s.key for s in stages])
+        for stage in stages:
+            self.assertIn(("rm", "-f", f"{plan.identity}-engineering-{stage.key}"), docker_calls)
+        return plan.evidence, {s.stage.key: s for s in sessions}
+
+    def test_control_healthy_stage_reads_are_accepted(self):
+        for configuration in ("91_only", SBS):
+            with self.subTest(configuration=configuration):
+                self.setUp()
+                try:
+                    evidence, sessions = self.run_stages(configuration)
+                    result = self.pipeline(evidence, configuration=configuration)
+                    for stage in governed.STAGES_BY_CONFIGURATION[configuration]:
+                        self.assertNotIn("failure", evidence["stages"][stage.key])
+                        self.assertEqual(evidence["stages"][stage.key]["identity"]["engineering_version"],
+                                         sessions[stage.key].version)
+                        for case in stage.cases:
+                            self.assertEqual(result["cases"][case]["status"], "passed",
+                                             result["cases"][case]["reason"])
+                    self.assertEqual(result["manifest"]["result"], "PASS")
+                    self.assertEqual(result["gate"]["acceptance"][configuration], "ACCEPTED")
+                    self.assertEqual(result["gate_code"], 0)
+                finally:
+                    self.tearDown()
+
+    def assert_health_refused(self, configuration, stage_key):
+        for health in HEALTH_VARIANTS:
+            with self.subTest(stage=stage_key, health=health):
+                self.setUp()
+                try:
+                    evidence, sessions = self.run_stages(configuration, stage_key, health)
+                    result = self.pipeline(evidence, configuration=configuration)
+                    self.assertEqual(result["gate"]["acceptance"][configuration], "NOT ACCEPTED")
+                    staged = evidence["stages"][stage_key]
+                    # The stage ended at the health read: no governed call ran on it, no version counted.
+                    self.assertEqual(sessions[stage_key].calls, ["get_server_health"])
+                    self.assertEqual(staged.get("failure"), "engineering_health_read_failed")
+                    self.assertNotIn("engineering_version", staged["identity"])
+                    fragment = "stage refused: engineering_health_read_failed"
+                    if configuration == SBS:
+                        self.assert_only_stage_rejected(result, stage_key, fragment)
+                    else:
+                        for case in STAGE[stage_key].cases:
+                            self.assert_rejected(result, case, fragment)
+                    for case in STAGE[stage_key].cases:
+                        self.assertEqual(result["cases"][case]["observed"]["stage_failure"],
+                                         "engineering_health_read_failed")
+                        entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
+                        self.assertEqual(entry["status"], "failed")
+                finally:
+                    self.tearDown()
+
+    def test_errored_health_read_on_the_current_9_1_stage_is_not_accepted(self):
+        self.assert_health_refused("91_only", "91_only")
+
+    def test_errored_health_read_on_the_beta6_rollback_stage_is_not_accepted(self):
+        self.assert_health_refused(SBS, "rollback")
+
+    def test_errored_health_read_on_stage_a_fails_only_stage_a(self):
+        self.assert_health_refused(SBS, "stage_a")
 
 
 if __name__ == "__main__":
