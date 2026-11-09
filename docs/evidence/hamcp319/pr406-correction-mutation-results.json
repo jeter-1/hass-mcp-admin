@@ -1,0 +1,200 @@
+{
+  "head": "8fcc62ab1f24d570f0bcbde74faa8110c475184c",
+  "tree": "a0ccbd04e452489d123a3b1615282c80ba2b0532",
+  "python": "3.12.14",
+  "files": {
+    "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py": "302e06ec98483d43f75f909f5f4cd5c02a879957",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py": "2b4e14547aba12e0b9c14591cd9a06ec1edd0e11",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py": "f90b422cf2a6792f4538e776f276971d41ae0d64",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py": "3b2a859d685b8185c581af819c454b3deca7ac0e",
+    "tests/test_hamcp319_dashboard.py": "b7c0e5f31680a23e1730ae90eb07b61d62da5c38",
+    "tests/test_hamcp319_no_redirect_catalog.py": "a3c69772be202080fa26fd0c38694e1aa5640fc1",
+    "tests/test_hamcp319_no_redirect_matrix.py": "9d646ca8fe25bb7cd608b87e75abe1a9c026e72d",
+    "tests/test_hamcp319_used_tool_exact_admission.py": "f3ac3e6ad3e38e21da028c79cf6a831ba7824f50"
+  },
+  "mutants": [
+    {
+      "id": 1,
+      "finding": "F1",
+      "name": "re-add the order check on 8.5.0/9.1.0",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "test_hamcp319_used_tool_exact_admission.ReadGatewayExactAdmission.test_reordered_catalog_is_admitted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1",
+      "name": "re-add the order check on 8.5.0/9.1.0 (paginated public catalog)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "test_hamcp319_no_redirect_catalog.OrderAcrossPagesTests.test_91_catalog_order_resorted_pages_admitted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1",
+      "name": "re-add the order check on 8.5.0/9.1.0 (unused tool removed/changed/extra)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "test_hamcp319_no_redirect_catalog.OrderAcrossPagesTests.test_unused_tool_changes_admitted_both_versions",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1",
+      "name": "keep the order gate on 8.5.0 (release set 9.1.0 only)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "test": "test_hamcp319_no_redirect_catalog.OrderAcrossPagesTests.test_85_catalog_order_parity",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F1",
+      "name": "keep the order gate on 9.1.0 (release set 8.5.0 only)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "test": "test_hamcp319_no_redirect_catalog.OrderAcrossPagesTests.test_91_catalog_order_resorted_pages_admitted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F1",
+      "name": "require every reviewed tool, used or not, to be present",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "test_hamcp319_used_tool_exact_admission.ReadGatewayExactAdmission.test_unused_tool_removal_is_admitted",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F1",
+      "name": "negative: accept a duplicate used tool on a reordered 9.1.0 catalog",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "test_hamcp319_used_tool_exact_admission.ReadGatewayExactAdmission.test_reordered_catalog_still_refuses_changed_missing_duplicate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F2",
+      "name": "drop the both-ready latch check (call_soon latch)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "test": "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization.test_operation_latch_and_step_both_ready_latch_wins",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "F2",
+      "name": "drop the both-ready latch check (one set() wakes step and waiter)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "test": "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization.test_operation_latch_woken_together_with_step_latch_wins",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "F2",
+      "name": "drop the both-ready latch check (latch set inside the succeeding step)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "test": "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization.test_operation_latch_set_inside_succeeding_step_wins",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "F2",
+      "name": "drop the both-ready latch check (public concurrent GET redirect)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "test": "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization.test_public_get_redirect_concurrent_with_tool_result_refused",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "F2",
+      "name": "let a cleanup latch flip a succeeding step",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "test": "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization.test_cleanup_latch_does_not_flip_a_succeeding_step",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "F3",
+      "name": "drop the version-gated stored_config requirement",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "F3",
+      "name": "accept null (and so an absent flag) on 9.1.0",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "F3",
+      "name": "accept a non-boolean truthy flag",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "F3",
+      "name": "decode without the admitted release context",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "F3",
+      "name": "empty the stored_config release set",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "F3",
+      "name": "hash the configuration before the stored_config gate",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_91_without_literal_true_refused_before_hash_work",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "finding": "F3",
+      "name": "positive: also require the flag on 8.5.0",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate.test_85_absent_flag_accepted",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated copy, every named test class)",
+    "tests": [
+      "test_hamcp319_used_tool_exact_admission.ReadGatewayExactAdmission",
+      "test_hamcp319_no_redirect_catalog.OrderAcrossPagesTests",
+      "test_hamcp319_no_redirect_matrix.NoRedirectLatchLinearization",
+      "test_hamcp319_dashboard.AnalysisStoredConfigReleaseGate"
+    ],
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 31 tests in 43.065s"
+  }
+}
