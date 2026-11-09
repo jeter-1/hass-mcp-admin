@@ -15,7 +15,8 @@
     "path": "tests/fixtures/ha_mcp_8_6_0/read-results.json",
     "provenance": "tests/fixtures/ha_mcp_8_6_0/provenance.json",
     "read_results_sha256": "sha256:acbfe18c46a6f2fabafeb58421d024be5a85d187055472a62810ea78bb7634d8",
-    "pointers": "/standalone/0 .. /standalone/10"
+    "pointers": "/standalone/0 .. /standalone/10",
+    "class": "S"
   },
   "source_files": {
     "src/ha_mcp/errors.py": "02877355134d059b5fe6698d6bb974248016ddc333e84d322c4c9a209a7647bb",
@@ -160,5 +161,149 @@
         "src/ha_mcp/errors.py:304-327"
       ]
     }
+  },
+  "eight_five_evidence_classes": {
+    "ruling": "Architect ruling 2026-11-07 item 1, enforced by ruling 1 (2026-11-08): 8.6 recordings are never 8.5 evidence. C = captured from the exact version; S = synthetic or replayed. Only rows 25, 26-28 and the row-29 catalog are C on 8.5.0; every other 8.5.0 row is S.",
+    "enforced_by": "tests/test_hamcp319_evidence_classes.py",
+    "canonical_sha256_model": "sha256 of json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False) encoded as UTF-8",
+    "recordings": [
+      {
+        "path": "tests/fixtures/ha_mcp_8_6_0/read-results.json",
+        "recorded_version": {
+          "source": "tests/fixtures/ha_mcp_8_6_0/provenance.json",
+          "pointer": "/source_commit",
+          "kind": "commit"
+        },
+        "pointers": [
+          "/standalone"
+        ],
+        "classes": {
+          "8.5.0": "S",
+          "9.1.0": "S"
+        },
+        "rows": {
+          "8.5.0": "1-24",
+          "9.1.0": "25"
+        },
+        "loaded_by": {
+          "tests/test_hamcp319_side_by_side.py": [
+            "S (8.6 replay), never C"
+          ],
+          "tests/test_hamcp319_parity_config.py": [
+            "S (8.6 replay): 8.6.0 records fed to the 8.5.0 policy"
+          ],
+          "tests/test_hamcp319_parity_entities.py": [
+            "9.1.0 rows 25-28 are S"
+          ]
+        },
+        "canonical_sha256": "1581e1219627436ae6da18de9801910b74f21ff243bffa41123708bd202eba34"
+      },
+      {
+        "path": "tests/fixtures/hamcp129/results-8.6.0.json",
+        "recorded_version": {
+          "source": "tests/fixtures/hamcp129/provenance.json",
+          "pointer": "/upstream/8.6.0/commit",
+          "kind": "commit"
+        },
+        "pointers": [
+          "/apps_installed",
+          "/integrations_list",
+          "/health_baseline"
+        ],
+        "classes": {
+          "9.1.0": "S"
+        },
+        "rows": {
+          "9.1.0": "26-28"
+        },
+        "loaded_by": {
+          "tests/test_hamcp319_parity_entities.py": [
+            "9.1.0 rows 25-28 are S"
+          ]
+        },
+        "canonical_sha256": "21bca2a4ce51be75a0530fc3934ce683e1abbe7fc0305f76dd18d5dfcceab243"
+      },
+      {
+        "path": "tests/fixtures/ha_mcp_8_5_0/read-results.json",
+        "recorded_version": {
+          "source": "tests/fixtures/ha_mcp_8_5_0/provenance.json",
+          "pointer": "/source_commit",
+          "kind": "commit"
+        },
+        "pointers": [
+          "/standalone-call-04.json",
+          "/standalone-call-05.json"
+        ],
+        "classes": {
+          "8.5.0": "C",
+          "9.1.0": "S"
+        },
+        "rows": {
+          "8.5.0": "25",
+          "9.1.0": "25"
+        },
+        "loaded_by": {
+          "tests/test_hamcp319_parity_entities.py": [
+            "8.5.0 row 25 is C",
+            "9.1.0 rows 25-28 are S"
+          ],
+          "tests/test_hamcp319_no_redirect_useful.py": [
+            "(captured 8.5.0 blueprint list)"
+          ]
+        },
+        "canonical_sha256": "246790e5761543761438142e707a8dea548da67153d5d46e7b76063cc4d8d2fd"
+      },
+      {
+        "path": "tests/fixtures/hamcp129/results-8.5.0.json",
+        "recorded_version": {
+          "source": "tests/fixtures/hamcp129/provenance.json",
+          "pointer": "/upstream/8.5.0/commit",
+          "kind": "commit"
+        },
+        "pointers": [
+          "/apps_installed",
+          "/integrations_list",
+          "/health_baseline"
+        ],
+        "classes": {
+          "8.5.0": "C"
+        },
+        "rows": {
+          "8.5.0": "26-28"
+        },
+        "loaded_by": {
+          "tests/test_hamcp319_parity_entities.py": [
+            "8.5.0 rows 26-28 are C"
+          ],
+          "tests/test_hamcp319_side_by_side.py": [
+            "Rows 26-28 (8.5.0, class C)"
+          ]
+        },
+        "canonical_sha256": "018156726706462114607f171a40bdaf7d499699006717c1a98902208f0106d5"
+      },
+      {
+        "path": "docs/evidence/hamcp162/captures/catalog-8.5.0-A.json",
+        "recorded_version": {
+          "source": "docs/evidence/hamcp162/captures/catalog-8.5.0-A.json",
+          "pointer": "/initialize_result/serverInfo/version",
+          "kind": "version"
+        },
+        "pointers": [
+          "/tools"
+        ],
+        "classes": {
+          "8.5.0": "C"
+        },
+        "rows": {
+          "8.5.0": "29 (catalog)"
+        },
+        "loaded_by": {
+          "tests/test_hamcp319_no_redirect_catalog.py": [
+            "(captured 8.5.0 catalog with the optional reader)"
+          ]
+        },
+        "canonical_sha256": "44715ff4468dda7e004b76ca1232514026e0b654cb53a1404fd8cf2ba96d4d27"
+      }
+    ]
   }
 }
