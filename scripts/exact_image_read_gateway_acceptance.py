@@ -74,6 +74,11 @@ from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
     SupervisorSelfAddonIdentity,
 )
+from ha_mcp_engineering.providers import (  # noqa: E402
+    upstream_reads_9_1,
+    upstream_reads_9_1_entities,
+    upstream_yaml_reader,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
@@ -87,6 +92,9 @@ from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 
 EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
+# Releases whose exact evidence carries the app-tool transition (no
+# ha_get_addon) and held operational backup/lifecycle providers.
+APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0"})
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -174,6 +182,17 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "physical_or_high_risk_action": 4,
         "prohibited": 1,
         "unsupported": 1,
+    },
+    # HAMCP-319: the reviewed 9.1.0 policy reclassifies ha_get_hacs_info from
+    # automatic_read to unsupported; every other count equals 8.5.0.
+    "9.1.0": {
+        "automatic_read": 27,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 10,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 2,
     },
 }
 
@@ -420,6 +439,16 @@ DELEGATED_READ_CALLS = {
     "ha_list_services": {"limit": 5},
     "ha_search": {"domain_filter": "sun", "limit": 5},
 }
+# HAMCP-319 section 7 row 18 (R4): the 9.1.0 skill guide serves only the
+# file tier; the no-argument inventory tier is never synthesized.
+DELEGATED_READ_CALL_OVERRIDES_BY_VERSION: dict[str, dict[str, dict[str, Any]]] = {
+    "9.1.0": {
+        "ha_get_skill_guide": {
+            "skill": "home-assistant-best-practices",
+            "file": "SKILL.md",
+        },
+    },
+}
 UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "source": "installed",
     "include_stats": False,
@@ -508,6 +537,8 @@ UPSTREAM_ERROR_CALLS = {
 }
 EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
     "invalid_search": {
+        # HAMCP-319: reviewed capture ha-mcp-9.1.0.json error_shapes.
+        "9.1.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.6.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
@@ -576,6 +607,23 @@ class AcceptanceFailure(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AcceptanceFailure(message)
+
+
+def upstream_wire_arguments(
+    version: str, tool: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Direct-upstream arguments for one exact release.
+
+    Engineering keeps the shipped 8.5 public schema for 9.1.0 and rebuilds the
+    exact 9.1 wire arguments through the compiled adapter (HAMCP-319 section
+    7). A direct upstream probe of 9.1.0 sends those same wire arguments; every
+    other release takes the public arguments unchanged.
+    """
+
+    if version != upstream_reads_9_1.VERSION:
+        return dict(arguments)
+    release = load_reviewed_upstream_release_registry().by_version[version]
+    return upstream_reads_9_1.read_arguments(release.policy.by_name[tool], arguments)
 
 
 def verify_850_gateway_fixture_capture(captured: dict, reviewed: dict) -> None:
@@ -1163,7 +1211,7 @@ async def inspect_upstream(
             )
             tools = await list_all_tools(session)
             tool_names = {item.get("name") for item in tools}
-            if expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
+            if expected_upstream_version in APP_TOOL_TRANSITION_VERSIONS:
                 require(
                     "ha_get_addon" not in tool_names
                     and {"ha_get_app", "ha_manage_app"} <= tool_names,
@@ -1201,7 +1249,11 @@ async def inspect_upstream(
                     continue
                 result = await session.call_tool(
                     expected["tool"],
-                    expected["arguments"],
+                    upstream_wire_arguments(
+                        expected_upstream_version,
+                        expected["tool"],
+                        expected["arguments"],
+                    ),
                 )
                 evidence = decode_upstream_error_evidence(result)
                 code = evidence["structured_code"]
@@ -1241,6 +1293,9 @@ async def inspect_engineering(
     expected_upstream_version: str,
     policy: Any,
     release: Any,
+    optional_exposed: frozenset[str] = frozenset(),
+    prohibited_optional: frozenset[str] = frozenset(),
+    stock_wire: bool = True,
 ) -> dict[str, Any]:
     readiness = engineering_readiness(endpoint)
     if readiness["http_status"] != 200 or readiness["ready"] is not True:
@@ -1270,7 +1325,12 @@ async def inspect_engineering(
     }
     delegated_read_calls = {
         name: arguments
-        for name, arguments in DELEGATED_READ_CALLS.items()
+        for name, arguments in {
+            **DELEGATED_READ_CALLS,
+            **DELEGATED_READ_CALL_OVERRIDES_BY_VERSION.get(
+                expected_upstream_version, {}
+            ),
+        }.items()
         if name in automatic
     }
     error_call_contracts = {
@@ -1349,7 +1409,15 @@ async def inspect_engineering(
             require(not held & names, "held-for-canary tool became callable")
             require("ha_get_logs" not in names, "raw log delegation is reachable")
             require("ha_call_service" not in names, "write-classified tool is advertised")
-            require(len(names) == len(base_names | automatic), "unexpected tool exposed")
+            require(optional_exposed <= names, "admitted optional reader is not advertised")
+            require(
+                not prohibited_optional & names,
+                "a prohibited optional file sibling became callable",
+            )
+            require(
+                len(names) == len(base_names | automatic | optional_exposed),
+                "unexpected tool exposed",
+            )
             for entry in policy.tools:
                 if not entry.is_read_route:
                     continue
@@ -1407,8 +1475,22 @@ async def inspect_engineering(
                         "The untrusted upstream response was safely bounded."
                         in (value.get("warnings") or [])
                     )
+                    visible_scope_only = (
+                        expected_upstream_version == upstream_reads_9_1.VERSION
+                    )
+                    if visible_scope_only:
+                        # HAMCP-319 design F3: 9.1.0 hides filtered entities
+                        # from search without a marker, so every 9.1 search
+                        # result is qualified as visible scope (partial).
+                        require(
+                            upstream_reads_9_1_entities.VISIBLE_SCOPE
+                            in (value.get("warnings") or []),
+                            "9.1 ha_search lost its visible-scope qualification",
+                        )
                     expected = (
-                        "partial" if upstream_partial or locally_bounded else "complete"
+                        "partial"
+                        if upstream_partial or locally_bounded or visible_scope_only
+                        else "complete"
                     )
                     require(
                         metadata.get("completeness") == expected,
@@ -1745,7 +1827,15 @@ async def inspect_engineering(
             require(
                 routing_after.get("partial_results", 0)
                 - routing_before.get("partial_results", 0)
-                == int(partial_search_enabled),
+                == (
+                    sum(
+                        1
+                        for item in calls.values()
+                        if item.get("completeness") == "partial"
+                    )
+                    if expected_upstream_version == upstream_reads_9_1.VERSION
+                    else int(partial_search_enabled)
+                ),
                 "partial delegated-read accounting mismatch",
             )
             for metric_name in (
@@ -1822,7 +1912,8 @@ async def inspect_engineering(
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")
             require(
-                gateway_state.get("dynamically_exposed_count") == len(automatic),
+                gateway_state.get("dynamically_exposed_count")
+                == len(automatic | optional_exposed),
                 "dynamic exposure count mismatch",
             )
             require(
@@ -1892,7 +1983,8 @@ async def inspect_engineering(
                 "active dashboard compatibility disposition is not exact",
             )
             require(
-                gateway_state.get("observed_catalog_matches_reviewed_stock_fixture") is True,
+                gateway_state.get("observed_catalog_matches_reviewed_stock_fixture")
+                is stock_wire,
                 "exact image was not recognized as the stock reviewed fixture",
             )
 
@@ -1900,7 +1992,8 @@ async def inspect_engineering(
     require(not stats["http_mutations"], "an HTTP mutation reached the HA fixture")
     require(not stats["websocket_mutations"], "a WebSocket mutation reached the HA fixture")
     return {
-        "engineering_tool_count": len(base_names | automatic),
+        "engineering_tool_count": len(base_names | automatic | optional_exposed),
+        "optional_exposed_tools": sorted(optional_exposed),
         "base_engineering_tool_count": len(base_names),
         "dynamic_tool_count": len(automatic),
         "delegated_read_calls": calls,
@@ -2551,6 +2644,40 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         args.upstream_endpoint,
         expected_upstream_version=args.expected_upstream_version,
     )
+    # Accounted optional names (the YAML reader and its prohibited file
+    # siblings) are not stock policy names. A peer either advertises all of a
+    # release's accounted optional names or none; the stock checks below run
+    # on the remaining catalog. 8.x lanes advertise none, so this is a no-op
+    # there (HAMCP-319 section 6.4).
+    accounted_optional = frozenset(
+        name
+        for name in upstream_yaml_reader.optional_names(
+            args.expected_upstream_version
+        )
+        if name not in policy.by_name
+    )
+    optional_on_wire = frozenset(
+        tool["name"] for tool in upstream_tools if tool["name"] in accounted_optional
+    )
+    require(
+        not optional_on_wire or optional_on_wire == accounted_optional,
+        "partial optional catalog: "
+        f"observed={sorted(optional_on_wire)} accounted={sorted(accounted_optional)}",
+    )
+    if optional_on_wire:
+        upstream_tools = [
+            tool for tool in upstream_tools if tool["name"] not in optional_on_wire
+        ]
+        observed_fingerprint = catalog_fingerprint(upstream_tools)
+    optional_exposed = frozenset(
+        name
+        for name in optional_on_wire
+        if name == upstream_yaml_reader.TOOL_NAME
+        and upstream_yaml_reader.OPTIONAL_TOOL_DISPOSITIONS.get(
+            args.expected_upstream_version
+        )
+        == "admitted"
+    )
     require(len(upstream_tools) == policy.reviewed_stock_catalog_tool_count, "stock catalog count mismatch")
     observed_by_name = {tool["name"]: tool for tool in upstream_tools}
     missing_names = sorted(set(policy.by_name) - set(observed_by_name))
@@ -2638,8 +2765,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         expected_upstream_version=args.expected_upstream_version,
         policy=policy,
         release=release,
+        optional_exposed=optional_exposed,
+        prohibited_optional=optional_on_wire - optional_exposed,
+        stock_wire=not optional_on_wire,
     )
-    if args.expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
+    if args.expected_upstream_version in APP_TOOL_TRANSITION_VERSIONS:
         held_settings = Settings(
             ha_url=args.ha_url,
             ha_token=args.ha_token,
@@ -2687,6 +2817,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "upstream_version": args.expected_upstream_version,
         "observed_catalog_count": len(upstream_tools),
         "observed_catalog_fingerprint": observed_fingerprint,
+        "observed_optional_tools": sorted(optional_on_wire),
         "reviewed_runtime_description_fingerprint_count": len(
             reviewed_descriptions
         ),

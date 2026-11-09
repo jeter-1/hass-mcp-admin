@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
 from support.support_window_matrix import registry_matrix, support_window  # noqa: E402
+from support import governed91_evidence  # noqa: E402
 
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 WINDOW = ROOT / "ci/support-window.yaml"
@@ -97,6 +98,9 @@ def passing_results(row):
                         "config_digest": "sha256:" + "d" * 64}
         elif case.name.endswith(("gateway_acceptance", "exact_admission_health", "_useful")):
             observed = {"negotiated_protocol": LANES.EXPECTED_PROTOCOL}
+        if case.name in governed91_evidence.governed.REQUIRED_OPERATIONS:
+            # Governed cases pass only with their executed, readback-bound operation evidence.
+            observed = governed91_evidence.passing_observed(case.name)
         results[case.name] = LANES.case_result(case.name, "passed", form=case.endpoint_form, observed=observed)
     return results
 
