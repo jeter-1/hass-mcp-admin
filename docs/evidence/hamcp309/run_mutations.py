@@ -35,6 +35,14 @@ AWARE = 'if stamp is None or stamp.utcoffset() is None:'
 FIELD = 'field = "published_at" if release.get("created_at") is None else "created_at"'
 PARSE = '    return listing_timestamp(release.get(field))'
 D = 'ReleaseDiscovery.'
+FILTER = """            if not official(release):
+                # Never selectable and never the stop record: its position changes neither
+                # the pages read nor the version selected, so it is not order-compared.
+                continue
+"""
+PARSED = """            stamp = listed_at(release)  # Every record read must carry a valid timestamp.
+            if not official(release):"""
+SKIP = '            if not official(release):'
 mutants = [
     # Round 1 (Codex M1): the stop is the predecessor's own record, never a version comparison.
     ('restore the version-sentinel stop', WORKFLOW, RECORD, SENTINEL,
@@ -64,6 +72,25 @@ mutants = [
     ('separate published_at parser', WORKFLOW, PARSE,
      '    return listing_timestamp(release.get(field)) if field == "created_at" else datetime.fromisoformat(release.get(field))',
      D + 'test_one_parser_reads_both_fields'),
+    # Part 3: order is compared across official stable records only; every record is still parsed.
+    ('compare every record (restore the whole-listing guard)', WORKFLOW, FILTER, '',
+     D + 'test_real_prerelease_inversion_below_predecessor_accepted'),
+    ('compare every record (synthetic shapes)', WORKFLOW, FILTER, '', D + 'test_nonofficial_order_never_refuses'),
+    ('exclude only prereleases', WORKFLOW, SKIP, '            if release.get("prerelease"):',
+     D + 'test_nonofficial_order_never_refuses'),
+    ('skip parsing non-official records', WORKFLOW, PARSED,
+     PARSED.replace('listed_at(release)  #', 'listed_at(release) if official(release) else None  #'),
+     D + 'test_nonofficial_records_still_need_valid_timestamps'),
+    ('advance the comparison on non-official records', WORKFLOW, FILTER,
+     FILTER.replace('                continue', '                previous = stamp; continue'),
+     D + 'test_official_stable_inversion_refused'),
+    ('ignore stable records below the predecessor version', WORKFLOW, SKIP,
+     SKIP.replace(':', ' or version_key(release["tag_name"]) < version_key(predecessor):'),
+     D + 'test_official_stable_inversion_refused'),
+    ('stop comparing after the predecessor record', WORKFLOW, SKIP,
+     SKIP.replace(':', ' or any(official(r) and r["tag_name"] == predecessor for r in releases[:releases.index(release)]):'),
+     D + 'test_official_stable_inversion_refused'),
+    ('drop the ordering guard (Part 3 refusals)', WORKFLOW, GUARD, '            if False:', D + 'test_official_stable_inversion_refused'),
     # Original round: page cap and early stop, re-targeted at the round-1 loop.
     ('restore the 10-page raise', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP, D + 'test_target_on_page_one_of_over_1000_releases'),
     ('restore the 10-page raise (prepare)', WORKFLOW, STOP + EXHAUSTED, OLD_LOOP,

@@ -299,6 +299,8 @@ def capability_evidence_for_probes(
                 "core.dashboard_metadata_operation",
                 # HAMCP-071 (dormant until signed in the November batch).
                 "core.scene_configuration_operation",
+                # HAMCP-290 Release 2.5.0 (dormant until signed).
+                "core.marketplace_read",
             ):
                 add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence

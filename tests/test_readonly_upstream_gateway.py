@@ -24,6 +24,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
     capability_for_tool,
     replace_dynamic_upstream_capabilities,
 )
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.application import _serve  # noqa: E402
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
@@ -1907,7 +1908,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_52_without_upstream_discovery(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(
             len(registered_tools(get_registered_server()).values()),
             ENGINEERING_STATIC_TOOL_COUNT,
@@ -2388,7 +2389,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_hostile_remote_annotations_quarantine_instead_of_republishing(self):
-        entry = policy_entry("ha_get_hacs_info", open_world=True)
+        # HAMCP-290: was ha_get_hacs_info, now a retired delegated read.
+        entry = policy_entry("ha_get_history", open_world=True)
         advertised = catalog_tool(entry.upstream_name)
         advertised["annotations"] = {
             "readOnlyHint": False,
@@ -2397,7 +2399,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             "openWorldHint": False,
         }
         gateway, server, _ = await initialize([entry], [advertised])
-        self.assertIsNone(registered_tools(server).get("ha_get_hacs_info"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         health = gateway.health_snapshot()
         self.assertEqual(health["annotation_mismatch_count"], 1)
         self.assertEqual(
@@ -2405,7 +2407,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_matching_open_world_contract_publishes_policy_annotations(self):
-        entry = policy_entry("ha_get_hacs_info", open_world=True)
+        # HAMCP-290: was ha_get_hacs_info, now a retired delegated read.
+        entry = policy_entry("ha_get_history", open_world=True)
         advertised = catalog_tool(entry.upstream_name)
         advertised["annotations"]["openWorldHint"] = True
         _gateway, server, _ = await initialize([entry], [advertised])
@@ -2841,7 +2844,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 81)
+        self.assertEqual(catalog["engineering_registered_count"], 82)  # HAMCP-290: + get_marketplace_inventory
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -4169,13 +4172,6 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 "The requested entity registry entry was not found.",
             ),
             (
-                "ha_get_hacs_info",
-                "RESOURCE_NOT_FOUND",
-                "resource_not_found",
-                "resource_not_found",
-                "The requested HACS repository was not found.",
-            ),
-            (
                 "ha_get_skill_guide",
                 "RESOURCE_NOT_FOUND",
                 "resource_not_found",
@@ -5482,12 +5478,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(len(health["exposed_tools"]), 26)
         self.assertEqual(catalog["dynamic_upstream_count"], 26)
-        self.assertEqual(catalog["registered_count"], 107)  # HAMCP-253, HAMCP-311: 81 static + 26
+        self.assertEqual(catalog["registered_count"], 108)  # HAMCP-253, HAMCP-311; HAMCP-290: 82 static + 26
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 26
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 26)
-        self.assertEqual(metadata["tool_count"], 107)
+        self.assertEqual(metadata["tool_count"], 108)  # HAMCP-290: 82 static + 26
         self.assertEqual(capability_for_tool("ha_read_0")["fallback"], "none")
 
         task.cancel()
@@ -5794,6 +5790,13 @@ class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(telemetry.upstream_duration_ms, 0)
             self.assertEqual(result['success'], raw is None)
         self.assertEqual(len(transport.sent), 2)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

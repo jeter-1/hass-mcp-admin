@@ -106,10 +106,10 @@ class ProvenanceValueTests(unittest.TestCase):
         self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         catalog = build_capability_catalog()
         health = HealthRegistry().snapshot({"checked": False, "status": "not_checked"})
-        self.assertEqual(catalog["registered_count"], 81)
+        self.assertEqual(catalog["registered_count"], 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertEqual(catalog["count"], 25)
         self.assertEqual(catalog["planned"], [])
-        self.assertEqual(health["registered_tool_count"], 81)
+        self.assertEqual(health["registered_tool_count"], 82)  # HAMCP-290: + get_marketplace_inventory
         self.assertNotIn("build_sha", json.dumps(catalog, sort_keys=True))
         self.assertNotIn("build_time", json.dumps(catalog, sort_keys=True))
         self.assertNotIn("build_sha", json.dumps(health, sort_keys=True))

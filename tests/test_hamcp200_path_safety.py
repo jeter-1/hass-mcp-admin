@@ -43,6 +43,7 @@ from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 from tests.support.process_isolation import restore_after_class  # noqa: E402
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.clients import paths  # noqa: E402
 from ha_mcp_engineering.clients.paths import (  # noqa: E402
     INVALID_IDENTIFIER_MESSAGE,
@@ -1712,6 +1713,13 @@ class CompatibilityEntryPointTests(unittest.TestCase):
 
     def test_canonical_application_remains_the_entry_point(self):
         self.assertTrue((PACKAGE_DIR / "__main__.py").is_file())
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

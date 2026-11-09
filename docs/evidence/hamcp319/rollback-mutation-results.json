@@ -1,0 +1,101 @@
+{
+  "head": "f4c3099301c9b75ef960282e09f4611b8f3bb4ad",
+  "reviewed_head": "62da9b6cb55c2f509ea16adb6e304a7e5c30f2ad",
+  "python": "3.12.14",
+  "mutants": [
+    {
+      "id": 1,
+      "name": "revert to the sentinel-only check (#404 head: ha_get_state and admitted_exact literals)",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_codex_reproduction_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "name": "exact set compared in one direction only (missing expected read accepted)",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_missing_expected_read_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "name": "drop the health-validity check: missing or malformed health read as unadmitted",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_missing_health_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "name": "drop the health-validity check: an errored tool result accepted",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_errored_health_fails",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "name": "drop the health-validity check: a failure envelope accepted",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_errored_health_fails",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "name": "drop the admitted check (admission judged by the admitted marker's absence)",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_admitted_health_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "name": "drop the explicit unadmitted allowlist (unknown or missing status accepted)",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_unadmission_must_be_positively_established",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "name": "drop the zero-exposed check",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_unadmission_must_be_positively_established",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "name": "ignore later catalog pages in the evaluation",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_later_page_delegated_read_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "name": "ignore later catalog pages in the reader (first page only)",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_delegated_read_on_later_catalog_page_fails",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "name": "accept an incomplete catalog",
+      "file": "scripts/exact_image_admission_lanes.py",
+      "test": "RollbackReadyPathTests.test_incomplete_catalog_fails_writer_and_gate",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 65 tests in 2.760s"
+  }
+}

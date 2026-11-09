@@ -115,6 +115,7 @@ def _contract(
     provider_boundary: str,
     response_contract: dict[str, Any],
     predispatch: tuple[str, ...] = (),
+    fallback: str = "none",
 ) -> CoreCapabilityProfile:
     profile_id = capability_id.replace(".", "_") + "_v1"
     material = {
@@ -129,7 +130,7 @@ def _contract(
         "provider_boundary": provider_boundary,
         "response_contract": response_contract,
         "predispatch": list(predispatch),
-        "fallback": "none",
+        "fallback": fallback,
     }
     return CoreCapabilityProfile(
         capability_id=capability_id,
@@ -888,6 +889,63 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-290 (Release 2.5.0): installed-only Marketplace inventory read.
+# Core 2026.11.0 (74cf5a49) registers ``marketplace/repositories/list`` in
+# ``components/marketplace/websocket/repositories.py:62-89`` (admin, optional
+# categories, no paging) and returns installed and uninstalled repositories.
+# The one reviewed fallback is ``hacs/repositories/list`` on the same
+# connection, and only on an exact ``unknown_command`` error code (HAMCP-319
+# Option B).  Runtime-only and dormant until the owner-signed registry admits
+# it; nothing here is signed.
+CORE_MARKETPLACE_PROFILES = (
+    _contract(
+        "core.marketplace_read",
+        CoreCapabilityClass.MARKETPLACE_INVENTORY_READ,
+        "compiled-core-marketplace-read-v1",
+        (
+            "marketplace_repositories_list_command_contract",
+            "marketplace_repositories_list_bounded_mapping_sequence",
+            "marketplace_not_loaded_error_contract",
+            "unknown_command_error_code_contract",
+            "hacs_repositories_list_command_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": ["marketplace/repositories/list", "hacs/repositories/list"],
+            "payloads": "constant_type_only_no_argument_ever_forwarded",
+            "max_commands": 2,
+            "fallback_trigger": {"error.code": "unknown_command", "message_text": "ignored"},
+            "store": "bounded_list_of_repository_mappings_whole_store_fail_closed",
+            "projection": "installed_only_fixed_ten_fields",
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "query": "matched_over_sanitized_text_only",
+            "pagination": "engineering_side_offset_limit_sorted_full_name_id",
+            "bounds": {"frame_bytes": 8388608, "auth_bytes": 65536, "max_frames": 4,
+                       "max_records": 20000, "max_seconds": 30},
+            "never_sent": [
+                "marketplace/critical/acknowledge",
+                "marketplace/github/connect",
+                "marketplace/repositories/add",
+                "marketplace/repositories/clear_new",
+                "marketplace/repositories/detect",
+                "marketplace/repositories/remove",
+                "marketplace/repository/beta",
+                "marketplace/repository/ignore",
+                "marketplace/repository/install",
+                "marketplace/repository/refresh",
+                "marketplace/repository/uninstall",
+                "marketplace/repository/version",
+                "marketplace/subscribe",
+                "marketplace/warning/accept",
+                "hacs/repositories/add",
+                "hacs/repositories/clear_new",
+                "hacs/repositories/remove",
+            ],
+            "write": "none",
+        },
+        fallback="hacs_repositories_list_on_exact_unknown_command",
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
@@ -895,6 +953,7 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_LABEL_REGISTRY_PROFILES
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
+    + CORE_MARKETPLACE_PROFILES
 )
 
 
@@ -959,6 +1018,7 @@ __all__ = [
     "CORE_LABEL_REGISTRY_PROFILES",
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
+    "CORE_MARKETPLACE_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

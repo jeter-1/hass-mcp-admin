@@ -1,0 +1,795 @@
+{
+ "v85": {
+  "ha_get_entity": {
+   "single": {
+    "entity_entry": {
+     "aliases": [],
+     "area_id": "synthetic_office",
+     "categories": {},
+     "device_class": null,
+     "device_id": "synthetic-device-1",
+     "disabled_by": null,
+     "enabled": true,
+     "entity_id": "light.synthetic_lamp",
+     "hidden": false,
+     "hidden_by": null,
+     "icon": null,
+     "labels": [],
+     "name": null,
+     "options": {},
+     "original_device_class": null,
+     "original_name": "Synthetic Lamp",
+     "platform": "synthetic"
+    },
+    "entity_id": "light.synthetic_lamp",
+    "success": true
+   }
+  },
+  "ha_get_entity_exposure": {
+   "single": {
+    "entity_id": "light.synthetic_lamp",
+    "exposed_to": {
+     "cloud.alexa": false,
+     "cloud.google_assistant": false,
+     "conversation": true
+    },
+    "has_custom_settings": true,
+    "is_exposed_anywhere": true,
+    "note": null,
+    "success": true
+   }
+  },
+  "ha_get_overview": {
+   "minimal": {
+    "ai_insights": {
+     "automation_ready": false,
+     "controllable_devices": [],
+     "monitoring_sensors": [],
+     "most_common_domains": [
+      "light"
+     ]
+    },
+    "area_analysis": {
+     "synthetic_office": {
+      "count": 1
+     }
+    },
+    "domain_stats": {
+     "light": {
+      "count": 1,
+      "states_summary": {
+       "on": 1
+      },
+      "truncated": false
+     }
+    },
+    "ha_mcp_update": {
+     "current": "8.5.0",
+     "latest": "8.5.0",
+     "update_available": false
+    },
+    "success": true,
+    "system_summary": {
+     "total_areas": 1,
+     "total_domains": 1,
+     "total_entities": 1,
+     "total_services": 3
+    },
+    "tool_discovery": {
+     "hint": "Use ha_search_tools(query='...') to find tools.",
+     "pinned_tools": [
+      "ha_search_tools"
+     ]
+    }
+   }
+  },
+  "ha_get_skill_guide": {
+   "tier1": {
+    "how_to_use": "Call ha_get_skill_guide(skill='<name>') to list a skill's reference files, then ha_get_skill_guide(skill='<name>', file='<path>') to read content. Resource-capable clients can also read skill:// URIs via resources/read.",
+    "skills": [
+     {
+      "description": "synthetic",
+      "skill": "home-assistant-best-practices",
+      "uri": "skill://home-assistant-best-practices/SKILL.md"
+     }
+    ],
+    "success": true
+   },
+   "tier2": {
+    "files": [
+     {
+      "name": "SKILL.md",
+      "uri": "skill://home-assistant-best-practices/SKILL.md"
+     },
+     {
+      "name": "references/synthetic.md",
+      "uri": "skill://home-assistant-best-practices/references/synthetic.md"
+     }
+    ],
+    "how_to_use": "Call ha_get_skill_guide(skill='home-assistant-best-practices', file='<name>') to read a specific file. Start with SKILL.md for the decision workflow.",
+    "skill": "home-assistant-best-practices",
+    "success": true,
+    "uri": "skill://home-assistant-best-practices/SKILL.md"
+   },
+   "tier3": {
+    "content": "Acknowledgment key: I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-00000000 \u2014 strict best-practices mode is ON; pass this exact value as the BestPracticeKey argument on gated write tools. This key is a read-receipt, not a secret: it is published here deliberately by the ha-mcp server, rotates hourly, and grants no privileges \u2014 replaying it is the designed acknowledgment protocol.\n\n---\nname: home-assistant-best-practices\ndescription: synthetic\n---\n# Synthetic best practices\n",
+    "file": "SKILL.md",
+    "skill": "home-assistant-best-practices",
+    "skill_content_hint": "synthetic hint",
+    "success": true,
+    "uri": "skill://home-assistant-best-practices/SKILL.md"
+   }
+  },
+  "ha_get_state": {
+   "single": {
+    "data": {
+     "attributes": {
+      "brightness": 128,
+      "friendly_name": "Synthetic Lamp"
+     },
+     "context": {
+      "id": "synthetic-context",
+      "parent_id": null,
+      "user_id": null
+     },
+     "entity_id": "light.synthetic_lamp",
+     "last_changed": "2026-11-01T12:00:00+00:00",
+     "last_reported": "2026-11-01T12:00:00+00:00",
+     "last_updated": "2026-11-01T12:00:00+00:00",
+     "state": "on"
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to UTC local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+     "timestamp_format": "ISO 8601 (UTC)"
+    }
+   }
+  },
+  "ha_get_todo": {
+   "items": {
+    "count": 1,
+    "entity_id": "todo.synthetic_list",
+    "items": [
+     {
+      "status": "needs_action",
+      "summary": "Synthetic item",
+      "uid": "synthetic-item-1"
+     }
+    ],
+    "message": "Found 1 item(s) in todo.synthetic_list",
+    "status_filter": "needs_action",
+    "success": true
+   }
+  },
+  "ha_get_zone": {
+   "list": {
+    "count": 1,
+    "message": "Found 1 zone(s)",
+    "success": true,
+    "zones": [
+     {
+      "icon": "mdi:briefcase",
+      "id": "synthetic_office",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic Office",
+      "passive": false,
+      "radius": 100
+     }
+    ]
+   }
+  },
+  "ha_list_floors_areas": {
+   "all": {
+    "area_count": 1,
+    "floor_count": 1,
+    "floors": [
+     {
+      "areas": [
+       {
+        "area_id": "synthetic_office",
+        "name": "Synthetic Office"
+       }
+      ],
+      "floor_id": "synthetic_ground",
+      "level": 0,
+      "name": "Synthetic Ground"
+     }
+    ],
+    "message": "Found 1 floor(s), 1 area(s), 0 unassigned, 0 orphaned",
+    "orphaned_areas": [],
+    "orphaned_count": 0,
+    "success": true,
+    "unassigned_areas": [],
+    "unassigned_count": 0
+   }
+  },
+  "ha_list_services": {
+   "light": {
+    "count": 1,
+    "detail_level": "summary",
+    "domains": [
+     "light"
+    ],
+    "filters_applied": {
+     "domain": "light",
+     "query": null
+    },
+    "has_more": false,
+    "limit": 50,
+    "next_offset": null,
+    "offset": 0,
+    "services": {
+     "light.turn_on": {
+      "description": "Synthetic",
+      "name": "Turn on"
+     }
+    },
+    "success": true,
+    "total_count": 1
+   }
+  },
+  "ha_search": {
+   "no_warnings": {
+    "automations": [],
+    "config_total_matches": 0,
+    "count": 1,
+    "entities": [
+     {
+      "domain": "light",
+      "entity_id": "light.synthetic_lamp",
+      "friendly_name": "Synthetic Lamp",
+      "match_type": "exact_match",
+      "score": 100,
+      "state": "on"
+     }
+    ],
+    "entity_has_more": false,
+    "entity_next_offset": null,
+    "entity_total_matches": 1,
+    "errors": [],
+    "has_more": false,
+    "helpers": [],
+    "limit": 10,
+    "next_offset": null,
+    "offset": 0,
+    "partial": false,
+    "query": "synthetic lamp",
+    "scenes": [],
+    "scripts": [],
+    "search_type": "exact_match",
+    "search_types": [
+     "automation",
+     "script",
+     "scene",
+     "helper"
+    ],
+    "success": true,
+    "warnings": []
+   }
+  }
+ },
+ "v91": {
+  "ha_get_entity": {
+   "bulk_partial": {
+    "count": 1,
+    "entity_entries": [
+     {
+      "aliases": [],
+      "area_id": "synthetic_office",
+      "categories": {},
+      "device_class": null,
+      "device_id": "synthetic-device-1",
+      "disabled_by": null,
+      "enabled": true,
+      "entity_id": "light.synthetic_lamp",
+      "hidden": false,
+      "hidden_by": null,
+      "icon": null,
+      "labels": [],
+      "name": null,
+      "options": {},
+      "original_device_class": null,
+      "original_name": "Synthetic Lamp",
+      "platform": "synthetic",
+      "uses_device_name": false
+     }
+    ],
+    "errors": [
+     {
+      "entity_id": "light.synthetic_absent",
+      "error": "Entity not found"
+     }
+    ],
+    "success": true,
+    "suggestions": [
+     "Use ha_search() to find valid entity IDs for failed lookups"
+    ]
+   },
+   "single": {
+    "entity_entry": {
+     "aliases": [],
+     "area_id": "synthetic_office",
+     "categories": {},
+     "device_class": null,
+     "device_id": "synthetic-device-1",
+     "disabled_by": null,
+     "enabled": true,
+     "entity_id": "light.synthetic_lamp",
+     "hidden": false,
+     "hidden_by": null,
+     "icon": null,
+     "labels": [],
+     "name": null,
+     "options": {},
+     "original_device_class": null,
+     "original_name": "Synthetic Lamp",
+     "platform": "synthetic",
+     "uses_device_name": false
+    },
+    "entity_id": "light.synthetic_lamp",
+    "success": true
+   }
+  },
+  "ha_get_entity_exposure": {
+   "list": {
+    "count": 1,
+    "exposed_entities": {
+     "light.synthetic_lamp": {
+      "conversation": true
+     }
+    },
+    "filters_applied": {},
+    "success": true,
+    "summary": {
+     "cloud.alexa": 0,
+     "cloud.google_assistant": 0,
+     "conversation": 1
+    },
+    "total_entities_with_settings": 1
+   },
+   "single": {
+    "entity_id": "light.synthetic_lamp",
+    "exposed_to": {
+     "cloud.alexa": false,
+     "cloud.google_assistant": false,
+     "conversation": true
+    },
+    "has_custom_settings": true,
+    "is_exposed_anywhere": true,
+    "note": null,
+    "success": true
+   }
+  },
+  "ha_get_overview": {
+   "minimal": {
+    "ai_insights": {
+     "automation_ready": false,
+     "controllable_devices": [],
+     "monitoring_sensors": [],
+     "most_common_domains": [
+      "light"
+     ]
+    },
+    "area_analysis": {
+     "synthetic_office": {
+      "count": 1
+     }
+    },
+    "domain_stats": {
+     "light": {
+      "count": 1,
+      "states_summary": {
+       "on": 1
+      },
+      "truncated": false
+     }
+    },
+    "ha_mcp_update": {
+     "current": "9.1.0",
+     "latest": "9.1.0",
+     "update_available": false
+    },
+    "mcp_client": {
+     "capabilities": null,
+     "client_info": {
+      "name": "synthetic-client",
+      "version": "0"
+     },
+     "protocol_version": "2025-03-26"
+    },
+    "settings_url_hint": "The settings page is served at '/synthetic/settings' on this MCP server.",
+    "success": true,
+    "system_summary": {
+     "total_areas": 1,
+     "total_domains": 1,
+     "total_entities": 1,
+     "total_services": 3
+    },
+    "tool_discovery": {
+     "hint": "Use ha_search_tools(query='...') to find tools.",
+     "pinned_tools": [
+      "ha_search_tools"
+     ]
+    }
+   },
+   "partial": {
+    "ai_insights": {
+     "automation_ready": false,
+     "controllable_devices": [],
+     "monitoring_sensors": [],
+     "most_common_domains": [
+      "light"
+     ]
+    },
+    "area_analysis": {
+     "synthetic_office": {
+      "count": 1
+     }
+    },
+    "domain_stats": {
+     "light": {
+      "count": 1,
+      "states_summary": {
+       "on": 1
+      },
+      "truncated": false
+     }
+    },
+    "mcp_client": {
+     "capabilities": null,
+     "client_info": null,
+     "protocol_version": "2025-03-26"
+    },
+    "partial": true,
+    "success": true,
+    "system_summary": {
+     "total_areas": 1,
+     "total_domains": 1,
+     "total_entities": 1,
+     "total_services": 3
+    },
+    "warnings": [
+     "Services unavailable: synthetic"
+    ]
+   }
+  },
+  "ha_get_skill_guide": {
+   "file_reference": {
+    "content": "Acknowledgment key: I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-00000000 \u2014 strict best-practices mode is ON; pass this exact value as the BestPracticeKey argument on gated write tools. This key is a read-receipt, not a secret: it is published here deliberately by the ha-mcp server, rotates hourly, and grants no privileges \u2014 replaying it is the designed acknowledgment protocol.\n\n# Synthetic reference\n",
+    "file": "references/synthetic.md",
+    "skill_content_hint": "synthetic hint",
+    "success": true,
+    "uri": "skill://home-assistant-best-practices/references/synthetic.md"
+   },
+   "file_skill_md": {
+    "content": "Acknowledgment key: I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-00000000 \u2014 strict best-practices mode is ON; pass this exact value as the BestPracticeKey argument on gated write tools. This key is a read-receipt, not a secret: it is published here deliberately by the ha-mcp server, rotates hourly, and grants no privileges \u2014 replaying it is the designed acknowledgment protocol.\n\n---\nname: home-assistant-best-practices\ndescription: synthetic\n---\n# Synthetic best practices\n",
+    "file": "SKILL.md",
+    "how_to_use": "Call ha_get_skill_guide(file='<path>') for the reference files the table above points to for your task, using the path exactly as linked (e.g. 'references/triggers-and-conditions.md'). Read only those; do not load every file.",
+    "success": true,
+    "uri": "skill://home-assistant-best-practices/SKILL.md"
+   }
+  },
+  "ha_get_state": {
+   "bulk_partial": {
+    "data": {
+     "count": 1,
+     "error_count": 1,
+     "errors": [
+      {
+       "entity_id": "light.synthetic_absent",
+       "error": "Entity not found"
+      }
+     ],
+     "partial": true,
+     "states": {
+      "light.synthetic_lamp": {
+       "attributes": {
+        "brightness": 128,
+        "friendly_name": "Synthetic Lamp"
+       },
+       "context": {
+        "id": "synthetic-context",
+        "parent_id": null,
+        "user_id": null
+       },
+       "entity_id": "light.synthetic_lamp",
+       "last_changed": "2026-11-01T12:00:00+00:00",
+       "last_reported": "2026-11-01T12:00:00+00:00",
+       "last_updated": "2026-11-01T12:00:00+00:00",
+       "state": "on"
+      }
+     },
+     "success": true,
+     "suggestions": [
+      "Verify entities exist in Home Assistant"
+     ]
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to UTC local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+     "timestamp_format": "ISO 8601 (UTC)"
+    }
+   },
+   "single": {
+    "data": {
+     "attributes": {
+      "brightness": 128,
+      "friendly_name": "Synthetic Lamp"
+     },
+     "context": {
+      "id": "synthetic-context",
+      "parent_id": null,
+      "user_id": null
+     },
+     "entity_id": "light.synthetic_lamp",
+     "last_changed": "2026-11-01T12:00:00+00:00",
+     "last_reported": "2026-11-01T12:00:00+00:00",
+     "last_updated": "2026-11-01T12:00:00+00:00",
+     "state": "on"
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to UTC local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+     "timestamp_format": "ISO 8601 (UTC)"
+    }
+   }
+  },
+  "ha_get_todo": {
+   "items": {
+    "count": 1,
+    "entity_id": "todo.synthetic_list",
+    "items": [
+     {
+      "status": "needs_action",
+      "summary": "Synthetic item",
+      "uid": "synthetic-item-1"
+     }
+    ],
+    "message": "Found 1 item(s) in todo.synthetic_list",
+    "status_filter": "needs_action",
+    "success": true
+   },
+   "lists": {
+    "count": 1,
+    "message": "Found 1 todo list(s)",
+    "success": true,
+    "todo_lists": [
+     {
+      "entity_id": "todo.synthetic_list",
+      "friendly_name": "Synthetic List",
+      "icon": null,
+      "state": "1",
+      "supported_features": 15
+     }
+    ]
+   },
+   "unavailable_items": {
+    "count": 1,
+    "entity_id": "todo.synthetic_list",
+    "items": [
+     {
+      "status": "needs_action",
+      "summary": "Synthetic item",
+      "uid": "synthetic-item-1"
+     }
+    ],
+    "message": "Found 1 item(s) in todo.synthetic_list",
+    "status_filter": null,
+    "success": true,
+    "warnings": [
+     "todo.synthetic_list is unavailable: these are the items Home Assistant last held"
+    ]
+   }
+  },
+  "ha_get_zone": {
+   "list_with_extra_rows": {
+    "count": 3,
+    "message": "Found 3 zone(s)",
+    "success": true,
+    "zones": [
+     {
+      "editable": true,
+      "entity_id": "zone.synthetic_office",
+      "icon": "mdi:briefcase",
+      "id": "synthetic_office",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic Office",
+      "passive": false,
+      "radius": 100,
+      "source": "storage"
+     },
+     {
+      "editable": false,
+      "entity_id": "zone.home",
+      "icon": "mdi:home",
+      "id": "home",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Home",
+      "radius": 100,
+      "source": "yaml"
+     },
+     {
+      "editable": false,
+      "entity_id": "zone.synthetic_yaml",
+      "id": "synthetic_yaml",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic YAML",
+      "passive": false,
+      "radius": 50,
+      "source": "yaml"
+     }
+    ]
+   },
+   "list_with_gaps": {
+    "count": 1,
+    "message": "Found 1 zone(s)",
+    "success": true,
+    "warnings": [
+     "entity registry could not be read"
+    ],
+    "zones": [
+     {
+      "editable": true,
+      "entity_id": "zone.synthetic_office",
+      "icon": "mdi:briefcase",
+      "id": "synthetic_office",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic Office",
+      "passive": false,
+      "radius": 100,
+      "source": "storage"
+     }
+    ]
+   },
+   "single": {
+    "success": true,
+    "zone": {
+     "editable": true,
+     "entity_id": "zone.synthetic_office",
+     "icon": "mdi:briefcase",
+     "id": "synthetic_office",
+     "latitude": 0.0,
+     "longitude": 0.0,
+     "name": "Synthetic Office",
+     "passive": false,
+     "radius": 100,
+     "source": "storage"
+    },
+    "zone_id": "synthetic_office"
+   }
+  },
+  "ha_list_floors_areas": {
+   "all": {
+    "area_count": 1,
+    "floor_count": 1,
+    "floors": [
+     {
+      "areas": [
+       {
+        "area_id": "synthetic_office",
+        "name": "Synthetic Office"
+       }
+      ],
+      "floor_id": "synthetic_ground",
+      "level": 0,
+      "name": "Synthetic Ground"
+     }
+    ],
+    "message": "Found 1 floor(s), 1 area(s), 0 unassigned, 0 orphaned",
+    "orphaned_areas": [],
+    "orphaned_count": 0,
+    "success": true,
+    "unassigned_areas": [],
+    "unassigned_count": 0
+   }
+  },
+  "ha_list_services": {
+   "light": {
+    "count": 1,
+    "detail_level": "summary",
+    "domains": [
+     "light"
+    ],
+    "filters_applied": {
+     "domain": "light",
+     "query": null
+    },
+    "has_more": false,
+    "limit": 50,
+    "next_offset": null,
+    "offset": 0,
+    "services": {
+     "light.turn_on": {
+      "description": "Synthetic",
+      "name": "Turn on"
+     }
+    },
+    "success": true,
+    "total_count": 1
+   }
+  },
+  "ha_search": {
+   "no_warnings": {
+    "automations": [],
+    "config_total_matches": 0,
+    "count": 1,
+    "entities": [
+     {
+      "domain": "light",
+      "entity_id": "light.synthetic_lamp",
+      "friendly_name": "Synthetic Lamp",
+      "match_type": "exact_match",
+      "score": 100,
+      "state": "on"
+     }
+    ],
+    "entity_has_more": false,
+    "entity_next_offset": null,
+    "entity_total_matches": 1,
+    "errors": [],
+    "has_more": false,
+    "helpers": [],
+    "limit": 10,
+    "next_offset": null,
+    "offset": 0,
+    "partial": false,
+    "query": "synthetic lamp",
+    "scenes": [],
+    "scripts": [],
+    "search_type": "exact_match",
+    "search_types": [
+     "automation",
+     "script",
+     "scene",
+     "helper"
+    ],
+    "success": true
+   },
+   "partial": {
+    "automations": [],
+    "config_total_matches": 0,
+    "count": 1,
+    "entities": [
+     {
+      "domain": "light",
+      "entity_id": "light.synthetic_lamp",
+      "friendly_name": "Synthetic Lamp",
+      "match_type": "exact_match",
+      "score": 100,
+      "state": "on"
+     }
+    ],
+    "entity_has_more": false,
+    "entity_next_offset": null,
+    "entity_total_matches": 1,
+    "errors": [],
+    "has_more": false,
+    "helpers": [],
+    "limit": 10,
+    "next_offset": null,
+    "offset": 0,
+    "partial": true,
+    "partial_reason": "config backend timed out",
+    "query": "synthetic lamp",
+    "scenes": [],
+    "scripts": [],
+    "search_type": "exact_match",
+    "search_types": [
+     "automation",
+     "script",
+     "scene",
+     "helper"
+    ],
+    "success": true,
+    "warnings": [
+     "incomplete results: config backend timed out"
+    ]
+   }
+  }
+ }
+}

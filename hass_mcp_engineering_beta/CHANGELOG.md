@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.4.2-beta.7 - 2.5.0 build: ha-mcp 9.1.0, no redirects, secret-path containment, Marketplace read (HAMCP-331)
+
+Builds on 2.4.2-beta.6 (HAMCP-304, #373). Every item landed through its own
+reviewed pull request into `release/2.5.0`; the version was materialized once
+at the branch base because the release transition refuses
+`2.4.2-beta.6 -> 2.5.0-beta.1`. Deploy Engineering on ha-mcp 8.5 first,
+verify, and only then update the app to 9.1 (release notes, Deploy order).
+
+- HAMCP-319 Phase 2 (#385, #404, #405, #406 with #407, #408): ha-mcp 9.1.0
+  admitted side by side with 8.5.0, only on an `upstream_dashboard_mcp_url`
+  ending exactly in `/catalog/full`; a legacy value is refused before any
+  list (`upstream_catalog_mode_unadmitted`,
+  `upstream_catalog_selector_invalid`). Used tools are bound exactly on
+  9.1.0; catalog order is informational there.
+  - Redirects are refused on every ha-mcp connection, 8.5.0 included
+    (`upstream_redirect_refused`, zero requests to the destination). A URL
+    that relied on a redirect must be set to the exact endpoint.
+  - `ha_get_device` withholds Thread credentials and non-IP addresses; on
+    8.5.0 its output is also reduced (Thread `ip_addresses`, unknown nested
+    keys, closed warning codes, `registry_pair_withheld`,
+    `registry_identity_withheld`).
+  - `thread_credential` keys are redacted on every surface; 8.5.0 dashboard
+    getter drift is refused (`upstream_runtime_contract_mismatch`).
+  - 9.1 parity differences are disclosed; typed write records keep their
+    recorded upstream contract after rollback.
+- HAMCP-288 (#387, #403): Engineering never returns the ha-mcp secret path;
+  `get_incident_logs` withholds the ha-mcp app's log source
+  (`upstream_secret_path_source_withheld`); configuration refuses
+  separator-only and percent-encoded route-word-only secret paths. LAN
+  listener finding and rotation runbook under `docs/evidence/hamcp288/`.
+- HAMCP-290 (#409): new Engineering-owned `get_marketplace_inventory`
+  (installed repositories, paged, sanitized); delegated `ha_get_hacs_info`
+  retired on every release. Its `core.marketplace_read` profile ships
+  unsigned, so no Marketplace read is available on any Core until it is
+  signed after 2.5.
+- HAMCP-327 (#386, folds in HAMCP-301): `control_helper` asks
+  (`confirmation_required`, `evidence_unavailable`) instead of acting without
+  safety evidence; partial coverage is established evidence with gaps
+  disclosed.
+- HAMCP-309 Part 3 (#384, scripts only): the Core release order guard
+  compares only official stable records.
+- HAMCP-278 done; HAMCP-279 is CI-only and pending live proof.
+- Tool counts: 82 Engineering tools (81 before); 109 with 9.1.0 as the
+  newest reviewed release, 110 on the 8.5.0 capture with the YAML reader on.
+- No storage format, approval, write or fallback change. Rollback to
+  2.4.2-beta.6 is safe after returning the app to 8.5.0 without
+  `/catalog/full`; it loses HAMCP-288 containment and restores
+  `ha_get_hacs_info`.
+
 ## 2.4.2-beta.6 - Prohibited plans and approval kind project correctly (HAMCP-304, HAMCP-305, HAMCP-312)
 
 Builds on 2.4.2-beta.5 (HAMCP-318, #376). No tool, input schema, route,

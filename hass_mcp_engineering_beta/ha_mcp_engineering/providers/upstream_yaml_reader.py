@@ -23,6 +23,13 @@ exact versions listed in :data:`OPTIONAL_DISPOSITIONS` whose complete runtime
 descriptor matches the D1-captured binding. It never joins the stock policy
 or the stock catalog accounting, so its absence or drift never quarantines a
 stock read.
+
+HAMCP-319 (design section 6.4): on 9.1.0 the reader also asks for the raw
+subtree text, used only as transient input to a bounded, constructor-free tag
+scan (:func:`scan_tags`). The text is deleted from both response channels
+before the agreement checks and is never returned, logged or audited. The
+read contract (arguments, accepted match keys, tag scan) is selected by the
+route entry's version-bound adapter token (:data:`YAML_READ_CONTRACTS`).
 """
 from __future__ import annotations
 
@@ -35,6 +42,8 @@ import re
 import unicodedata
 from typing import Any, Callable
 from urllib.parse import unquote_to_bytes
+
+import yaml
 
 from ..sanitization import (
     ENV_VAR_REFERENCE_NAME,
@@ -59,7 +68,22 @@ from ..sanitization import (
 
 TOOL_NAME = "ha_config_get_yaml"
 TITLE = "Read YAML Config Fragment"
+# The prohibited file siblings: the 8.x catalogs carry two; the 9.1.0 catalog
+# carries four, including the write and delete tools (HAMCP-319 section 6.4).
+# None is ever routed; captured descriptors never grant sibling reachability.
 SIBLING_TOOLS = ("ha_list_files", "ha_read_file")
+_SIBLING_TOOLS_BY_VERSION: dict[str, tuple[str, ...]] = {
+    "9.1.0": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
+}
+ALL_SIBLING_TOOLS = tuple(
+    sorted(set(SIBLING_TOOLS).union(*_SIBLING_TOOLS_BY_VERSION.values()))
+)
+
+
+def sibling_tools(version: Any) -> tuple[str, ...]:
+    """The prohibited siblings accounted for one release version."""
+
+    return _SIBLING_TOOLS_BY_VERSION.get(version, SIBLING_TOOLS)
 ALLOWED_FILE = "configuration.yaml"
 CORE_REQUIREMENTS = ("core.basic_rest_read", "core.basic_websocket_read")
 
@@ -289,13 +313,69 @@ def refusal_audit_details(arguments: Any) -> dict[str, int]:
     }
 
 
-def upstream_arguments(yaml_path: str) -> dict[str, Any]:
-    """The only argument shape Engineering ever sends upstream."""
+# ---------------------------------------------------------------------------
+# Version-keyed read contracts (HAMCP-319 section 6.4).
 
+# The match keys each contract accepts at the ingress boundary. 8.x sends
+# include_content=false and accepts exactly these three; 9.1.0 additionally
+# accepts ``content``, which is scanned and deleted before anything else.
+_MATCH_KEYS = frozenset({"file", "yaml_path", "parsed"})
+_MATCH_KEYS_9_1 = frozenset({"file", "yaml_path", "parsed", "content"})
+
+
+@dataclass(frozen=True)
+class YamlReadContract:
+    """The closed argument and response contract of one release line."""
+
+    contract_id: str
+    include_content: bool
+    tag_scan: bool
+    match_keys: frozenset[str]
+
+
+_CONTRACT_8 = YamlReadContract("hamcp162-yaml-read-8x-v1", False, False, _MATCH_KEYS)
+_CONTRACT_9_1 = YamlReadContract(
+    "hamcp319-yaml-read-9-1-v1", True, True, _MATCH_KEYS_9_1
+)
+# One explicit contract per admitted version. A version without a row is
+# never admitted (``withheld_reason``) and a route entry for it never
+# dispatches (``contract_for``).
+YAML_READ_CONTRACTS: dict[str, YamlReadContract] = {
+    "8.4.3": _CONTRACT_8,
+    "8.5.0": _CONTRACT_8,
+    "9.1.0": _CONTRACT_9_1,
+}
+
+
+def contract_for(entry: Any = None) -> YamlReadContract:
+    """The read contract of a route entry's version-bound adapter token.
+
+    ``None`` is the legacy direct call (8.x shape). A token or version with
+    no compiled contract fails closed before any upstream call.
+    """
+
+    if entry is None:
+        return _CONTRACT_8
+    restrictions = getattr(entry, "argument_restrictions", ())
+    binding = ADAPTER_TOKENS.get(restrictions[0]) if len(restrictions) == 1 else None
+    contract = YAML_READ_CONTRACTS.get(binding.version) if binding is not None else None
+    if contract is None:
+        raise YamlReadRefusal(READ_FAILED)
+    return contract
+
+
+def upstream_arguments(yaml_path: str, *, entry: Any = None) -> dict[str, Any]:
+    """The only argument shape Engineering ever sends upstream.
+
+    ``include_content`` is true only under a contract with a tag scan
+    (9.1.0); the text is then requested for the scan only.
+    """
+
+    contract = contract_for(entry)
     return {
         "yaml_path": yaml_path,
         "file": ALLOWED_FILE,
-        "include_content": False,
+        "include_content": contract.include_content,
         "include_parsed": True,
     }
 
@@ -573,6 +653,10 @@ FIELD_POSITIONS: dict[str, str] = {
     "details": "details",
     "retryable": "retryable",
     "success": "status",
+    # HAMCP-319 section 6.4: the 9.1.0 tag-scan disclosure.
+    "tag_completeness": "envelope",
+    "tag_lossy": "envelope",
+    "lossy_tags": "envelope",
 }
 assert set(FIELD_POSITIONS.values()) <= OUTPUT_POSITIONS
 
@@ -794,7 +878,8 @@ REDACTION_CATEGORIES = frozenset(
         # The shared sanitizer's.
         "token", "password", "auth_cookie", "url_credentials",
         "webhook_identifier", "webhook_secret", "auth_flow",
-        "matter_setup_payload", "matter_setup_code", "reference_marker",
+        "matter_setup_payload", "matter_setup_code", "thread_credential",
+        "reference_marker",
     }
 )
 KNOWN_SECRET_MARKER = "[REDACTED:token]"
@@ -1290,7 +1375,6 @@ _SUCCESS_KEYS = frozenset(
     {"success", "yaml_path", "matches", "count", "files_searched",
      "files_unreadable", "warnings"}
 )
-_MATCH_KEYS = frozenset({"file", "yaml_path", "parsed"})
 
 
 def decode_success(call_result: Any, yaml_path: str) -> tuple[bool, Any]:
@@ -1380,6 +1464,175 @@ def classify_error(call_result: Any) -> YamlReadRefusal:
 
 
 # ---------------------------------------------------------------------------
+# HAMCP-319 section 6.4: the bounded, constructor-free tag scan (9.1.0).
+
+# Rule 1: the scan cap is the projection bound (the route's response limit).
+MAX_SCAN_BYTES = 60_000
+# Rule 3: the 2.2.1 preserved set. A tag is preserved only when its exact
+# source text is one of these (no handle redefinition, no escapes).
+PRESERVED_TAGS = frozenset(
+    {
+        "!include", "!include_dir_list", "!include_dir_merge_list",
+        "!include_dir_named", "!include_dir_merge_named", "!secret", "!env_var",
+    }
+)
+# Rule 4: the closed allowlist of lossy tag names; every other tag (and any
+# directive that can redefine a handle) is the generic ``unknown_tag``.
+INPUT_TAG = "!input"
+UNKNOWN_TAG = "unknown_tag"
+LOSSY_TAG_NAMES = frozenset({INPUT_TAG, UNKNOWN_TAG})
+TAG_LOSSLESS = "lossless"
+TAG_LOSSY = "lossy"
+TAG_UNAVAILABLE = "unavailable"
+TAG_NOT_APPLICABLE = "not_applicable"
+TAG_COMPLETENESS_VALUES = frozenset(
+    {TAG_LOSSLESS, TAG_LOSSY, TAG_UNAVAILABLE, TAG_NOT_APPLICABLE}
+)
+TAG_LOSSY_LIMITATION = (
+    "yaml_tag_lossy:a YAML tag outside the preserved set was dropped from the "
+    "parsed value"
+)
+TAG_UNAVAILABLE_LIMITATION = (
+    "yaml_tag_scan_unavailable:tag preservation could not be verified"
+)
+
+
+@dataclass(frozen=True)
+class TagScan:
+    """The value-free outcome of one tag scan. Never carries tag text."""
+
+    completeness: str
+    lossy_tags: tuple[str, ...] = ()
+
+    @property
+    def lossy(self) -> bool | None:
+        if self.completeness == TAG_LOSSY:
+            return True
+        if self.completeness == TAG_LOSSLESS:
+            return False
+        return None
+
+
+_SCAN_UNAVAILABLE = TagScan(TAG_UNAVAILABLE)
+_SCAN_NOT_APPLICABLE = TagScan(TAG_NOT_APPLICABLE)
+
+
+def scan_tags(content: Any) -> TagScan:
+    """Rules 1-5: classify the tags of one raw subtree text.
+
+    Only the YAML tokenizer and event parser run (``yaml.scan`` and
+    ``yaml.parse``): nothing is constructed, loaded, resolved or followed,
+    and quoted scalars and comments yield no tag token. Non-text, oversize,
+    unencodable, untokenizable or structurally incomplete (for example
+    truncated) input is ``unavailable``, never lossless. The returned names
+    come only from :data:`LOSSY_TAG_NAMES`.
+    """
+
+    if type(content) is not str:
+        return _SCAN_UNAVAILABLE
+    try:
+        if len(content.encode("utf-8", "strict")) > MAX_SCAN_BYTES:
+            return _SCAN_UNAVAILABLE
+    except UnicodeError:
+        return _SCAN_UNAVAILABLE
+    lossy: set[str] = set()
+    try:
+        # Events only: an unclosed flow collection or a broken indentation
+        # tokenizes but cannot be a whole subtree, so it is unavailable.
+        for _event in yaml.parse(content, Loader=yaml.BaseLoader):
+            pass
+        for token in yaml.scan(content, Loader=yaml.BaseLoader):
+            if isinstance(token, yaml.DirectiveToken):
+                lossy.add(UNKNOWN_TAG)
+            elif isinstance(token, yaml.TagToken):
+                raw = content[token.start_mark.index : token.end_mark.index]
+                if raw in PRESERVED_TAGS:
+                    continue
+                lossy.add(INPUT_TAG if raw == INPUT_TAG else UNKNOWN_TAG)
+    except Exception:
+        return _SCAN_UNAVAILABLE
+    if lossy:
+        return TagScan(TAG_LOSSY, tuple(sorted(lossy)))
+    return TagScan(TAG_LOSSLESS)
+
+
+def _scrub(call_result: Any) -> None:
+    # Rule 6 on failure: no raw text survives in the caller's object.
+    if type(call_result) is dict:
+        call_result["content"] = []
+        call_result.pop("structuredContent", None)
+
+
+def strip_content(
+    call_result: Any, yaml_path: str, contract: YamlReadContract
+) -> TagScan:
+    """Rules 5-6: scan the text channel's subtree text, then delete it.
+
+    ``content`` is accepted only as a match key of the contract. The text
+    channel is strictly decoded (duplicate members refused); when the
+    structured channel is present its ``content`` must be byte-identical.
+    ``content`` is then deleted from every match in both channels, and
+    ``call_result`` is rewritten in place to the stripped channels, so the
+    agreement checks and every later step see no raw text. Any failure
+    scrubs ``call_result`` and refuses with a fixed code.
+    """
+
+    try:
+        text = _single_text(call_result)
+        try:
+            payload = _strict_json(text)
+        except (RecursionError, TypeError, UnicodeError, ValueError):
+            raise YamlReadRefusal(IDENTITY_INVALID) from None
+        structured = call_result.get("structuredContent")
+        if structured is not None and type(structured) is not dict:
+            raise YamlReadRefusal(IDENTITY_INVALID)
+        if type(payload) is not dict:
+            raise YamlReadRefusal(IDENTITY_INVALID)
+        channels = [payload] + ([structured] if structured is not None else [])
+        match_lists = [channel.get("matches") for channel in channels]
+        if any(type(matches) is not list for matches in match_lists):
+            raise YamlReadRefusal(IDENTITY_INVALID)
+        if len({len(matches) for matches in match_lists}) != 1:
+            raise YamlReadRefusal(IDENTITY_INVALID)
+        for row in zip(*match_lists):
+            if any(type(match) is not dict for match in row):
+                raise YamlReadRefusal(IDENTITY_INVALID)
+            if any(not set(match) <= contract.match_keys for match in row):
+                raise YamlReadRefusal(IDENTITY_INVALID)
+            first = row[0]
+            for other in row[1:]:
+                if ("content" in first) != ("content" in other) or (
+                    "content" in first
+                    and (
+                        type(first["content"]) is not type(other["content"])
+                        or first["content"] != other["content"]
+                    )
+                ):
+                    raise YamlReadRefusal(IDENTITY_INVALID)
+        text_matches = match_lists[0]
+        if not text_matches:
+            scan = _SCAN_NOT_APPLICABLE
+        elif len(text_matches) == 1 and "content" in text_matches[0]:
+            scan = scan_tags(text_matches[0]["content"])
+        else:
+            scan = _SCAN_UNAVAILABLE
+        for matches in match_lists:
+            for match in matches:
+                match.pop("content", None)
+        stripped_text = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    except YamlReadRefusal:
+        _scrub(call_result)
+        raise
+    except Exception:
+        _scrub(call_result)
+        raise YamlReadRefusal(IDENTITY_INVALID) from None
+    call_result["content"] = [{"type": "text", "text": stripped_text}]
+    if structured is not None:
+        call_result["structuredContent"] = structured
+    return scan
+
+
+# ---------------------------------------------------------------------------
 # The whole success projection: L4, caps, L5, rendering and the envelope.
 
 
@@ -1405,6 +1658,13 @@ ENVELOPE_VOCABULARY = frozenset(
         "complete",
         "partial",
         "include_not_followed_truncated",
+        "tag_completeness",
+        "tag_lossy",
+        "lossy_tags",
+        *TAG_COMPLETENESS_VALUES,
+        *LOSSY_TAG_NAMES,
+        TAG_LOSSY_LIMITATION,
+        TAG_UNAVAILABLE_LIMITATION,
         K7_WARNING,
         *DISCLOSURE_LIMITATIONS,
         *(code for code in FAILURES),
@@ -1582,7 +1842,14 @@ def project_success(
     *,
     known_secrets: tuple[str, ...] = (),
     max_string: int | None = None,
+    entry: Any = None,
 ) -> YamlReadResult:
+    contract = contract_for(entry)
+    tag_scan: TagScan | None = None
+    if contract.tag_scan:
+        # Section 6.4 rule 6: the raw text is scanned and deleted from both
+        # channels before the agreement checks below.
+        tag_scan = strip_content(call_result, yaml_path, contract)
     found, parsed = decode_success(call_result, yaml_path)
     registry = ReferenceMarkerRegistry()
     limitations: list[str] = []
@@ -1633,23 +1900,33 @@ def project_success(
             redacted_tree, sanitation.value, registry
         )
         categories |= account.categories | set(sanitation.redaction_categories)
+    if tag_scan is not None and not found:
+        tag_scan = _SCAN_NOT_APPLICABLE
+    if tag_scan is not None and tag_scan.completeness == TAG_LOSSY:
+        partial = True
+        limitations.append(TAG_LOSSY_LIMITATION)
+    elif tag_scan is not None and tag_scan.completeness == TAG_UNAVAILABLE:
+        partial = True
+        limitations.append(TAG_UNAVAILABLE_LIMITATION)
     limitations.extend(DISCLOSURE_LIMITATIONS)
     # H1/H4: every envelope field passes the final pass. The value (already
     # screened by L4 and through L5 above) is held back as None so its
     # rendered markers stay intact; the requested path gets the key-path
     # projection.
-    fields, sealed, sealed_categories = seal(
-        {
-            "file": ALLOWED_FILE,
-            "yaml_path": project_path(yaml_path.split("."), known_secrets),
-            "source": SOURCE,
-            "found": found,
-            "value": None,
-            "completeness": "partial" if partial else "complete",
-            "limitations": limitations,
-        },
-        known_secrets,
-    )
+    body: dict[str, Any] = {
+        "file": ALLOWED_FILE,
+        "yaml_path": project_path(yaml_path.split("."), known_secrets),
+        "source": SOURCE,
+        "found": found,
+        "value": None,
+        "completeness": "partial" if partial else "complete",
+    }
+    if tag_scan is not None:
+        body["tag_completeness"] = tag_scan.completeness
+        body["tag_lossy"] = tag_scan.lossy
+        body["lossy_tags"] = list(tag_scan.lossy_tags)
+    body["limitations"] = limitations
+    fields, sealed, sealed_categories = seal(body, known_secrets)
     redacted += sealed
     categories |= sealed_categories
     if redacted:
@@ -1667,9 +1944,12 @@ def project_success(
         "found": fields["found"],
         "value": value,
         "completeness": fields["completeness"],
-        "limitations": fields["limitations"],
-        "redaction": summary["redaction"],
     }
+    if tag_scan is not None:
+        for name in ("tag_completeness", "tag_lossy", "lossy_tags"):
+            envelope[name] = fields[name]
+    envelope["limitations"] = fields["limitations"]
+    envelope["redaction"] = summary["redaction"]
     return YamlReadResult(
         envelope=envelope,
         redacted_field_count=redacted,
@@ -1699,6 +1979,18 @@ TOP_LEVEL_FIELDS = (
 _GET_YAML_RUNTIME = (
     "75d623c93573aee91b9d78723f71ac1de30c688efda78bb48033dd62a196d007"
 )
+# HAMCP-319: the 9.1.0 descriptor, computed by the repository's own
+# ``runtime_contract_fingerprint`` and ``schema_fingerprint`` from
+# docs/evidence/hamcp319/phase1/catalogs/full-1.json (/tools/12).
+ARGUMENT_CONSTRAINTS_ID_9_1 = "hamcp319-yaml-fragment-read-arguments-9-1-v1"
+INPUT_SCHEMA_FINGERPRINT_9_1 = (
+    "870b75b78aca0c16c9bde227c4c8d21f27f4e71963f73c9538ed911c836e37d6"
+)
+_GET_YAML_RUNTIME_BY_VERSION = {
+    "8.4.3": _GET_YAML_RUNTIME,
+    "8.5.0": _GET_YAML_RUNTIME,
+    "9.1.0": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
+}
 _SAME = "f31334156d7e5209dfc90f4f42f19e829fa93f75741665019395b045576b09a5"
 _TITLE_FP = "b5a58f2039cce78043c7e31875567abf2a0b4114ea7880071aaa09ab791cbce8"
 # Per-component hashes for reason codes and diagnostics only. They never
@@ -1720,7 +2012,34 @@ _GET_YAML_DIAGNOSTICS = {
     "/outputSchema": "7751ca245b89acd7d145f5c7b68cb80458b8d38bfe36a965a332f56bc2525a8c",
     "/title": _TITLE_FP,
 }
+_ABSENT = "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109"
+_GET_YAML_DIAGNOSTICS_9_1 = {
+    "/_meta": "36149887dee98728eee05c63b226325c78238bd93bfccb439a597e892fafedeb",
+    "/_meta/fastmcp/tags": "dfe77884725873810db0f7b4def09c1f98b92f9d7fea790137b93b5745b00e1e",
+    "/_meta/ha_mcp/llm_api_exposed": _ABSENT,
+    "/_meta/ha_mcp/pinned": _ABSENT,
+    "/_meta/ha_mcp/policy/deployment": _ABSENT,
+    "/_meta/ha_mcp/policy/enabled": _ABSENT,
+    "/_meta/ha_mcp/policy/live": _ABSENT,
+    "/_meta/ha_mcp/policy/rules": _ABSENT,
+    "/annotations": "cc2c3bd53d929b386904a9b83750221266332231505479b14416c2ab98efa512",
+    "/annotations/title": _TITLE_FP,
+    "/description": "cd5d89a5ff7cd0d53bd1af3fe088063a0e876af7bf23a92609aea2e9b640f510",
+    "/execution": _ABSENT,
+    "/inputSchema": INPUT_SCHEMA_FINGERPRINT_9_1,
+    "/outputSchema": "7751ca245b89acd7d145f5c7b68cb80458b8d38bfe36a965a332f56bc2525a8c",
+    "/title": _TITLE_FP,
+}
+_GET_YAML_DIAGNOSTICS_BY_VERSION = {
+    "8.4.3": _GET_YAML_DIAGNOSTICS,
+    "8.5.0": _GET_YAML_DIAGNOSTICS,
+    "9.1.0": _GET_YAML_DIAGNOSTICS_9_1,
+}
 DIAGNOSTIC_POINTERS = tuple(sorted(_GET_YAML_DIAGNOSTICS))
+assert all(
+    tuple(sorted(table)) == DIAGNOSTIC_POINTERS
+    for table in _GET_YAML_DIAGNOSTICS_BY_VERSION.values()
+)
 # The four dynamic policy pointers are projected by the v2 model; a
 # difference there is never named as the drift reason.
 _POLICY_POINTERS = frozenset(
@@ -1751,6 +2070,8 @@ class OptionalToolBinding:
     capture_resource: str
     capture_sha256: str
     binding_model: str = BINDING_MODEL
+    input_schema_fingerprint: str = INPUT_SCHEMA_FINGERPRINT
+    argument_constraints_id: str = ARGUMENT_CONSTRAINTS_ID
 
 
 _CAPTURES = {
@@ -1764,13 +2085,27 @@ _CAPTURES = {
         "docs/evidence/hamcp162/captures/catalog-8.5.0-A.json",
         "4321a9e0f609084d7e1fe9885a767907c5ad3bfea0712186b4a4585eeb3d31f1",
     ),
+    # HAMCP-319 Phase 1 capture (SHA256SUMS.json entry catalogs/full-1.json).
+    "9.1.0": (
+        "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
+        "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
+        "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
+    ),
 }
 _SIBLING_RUNTIME = {
     ("8.4.3", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
     ("8.5.0", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
     ("8.4.3", "ha_read_file"): "97459dd33eca15079f42cce074485c821752fad85c0c6a3f545544e42adecae1",
     ("8.5.0", "ha_read_file"): "7627857f25d581e75c41bed2cad2ddf9b41839b69b8942c033c150c17cbf92a6",
+    # HAMCP-319: the four 9.1.0 siblings stay prohibited; these bindings only
+    # account and report drift and never route.
+    ("9.1.0", "ha_delete_file"): "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
+    ("9.1.0", "ha_list_files"): "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
+    ("9.1.0", "ha_read_file"): "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
+    ("9.1.0", "ha_write_file"): "0f638d1b0f3795e12ebada76456605192c28704a3222060c6d121842ab5bdffe",
 }
+_INPUT_SCHEMA_BY_VERSION = {"9.1.0": INPUT_SCHEMA_FINGERPRINT_9_1}
+_ARGUMENT_CONSTRAINTS_BY_VERSION = {"9.1.0": ARGUMENT_CONSTRAINTS_ID_9_1}
 
 
 def _binding(version: str, tool: str, runtime: str, token: str | None) -> OptionalToolBinding:
@@ -1788,13 +2123,19 @@ def _binding(version: str, tool: str, runtime: str, token: str | None) -> Option
         source_commit=commit,
         capture_resource=resource,
         capture_sha256=digest,
+        input_schema_fingerprint=_INPUT_SCHEMA_BY_VERSION.get(
+            version, INPUT_SCHEMA_FINGERPRINT
+        ),
+        argument_constraints_id=_ARGUMENT_CONSTRAINTS_BY_VERSION.get(
+            version, ARGUMENT_CONSTRAINTS_ID
+        ),
     )
 
 
 OPTIONAL_TOOL_BINDINGS: dict[tuple[str, str], OptionalToolBinding] = {
     **{
         (version, TOOL_NAME): _binding(
-            version, TOOL_NAME, _GET_YAML_RUNTIME,
+            version, TOOL_NAME, _GET_YAML_RUNTIME_BY_VERSION[version],
             f"ha-mcp-{version}-yaml-fragment-read-v1",
         )
         for version in _CAPTURES
@@ -1811,7 +2152,8 @@ ADAPTER_TOKENS = {
 }
 # One explicit disposition for every registry version (HAMCP-184 rule): no
 # default exists, and a disposition is never inferred from provider
-# dispositions. 8.6.0 stays held until its HOLD lifts (D7).
+# dispositions. 8.6.0 stays held until its HOLD lifts (D7). 9.1.0 is admitted
+# by HAMCP-319 section 6.4 under its own read contract.
 OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
     "7.14.1": "held",
     "7.14.2": "held",
@@ -1823,8 +2165,16 @@ OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
     "8.4.3": "admitted",
     "8.5.0": "admitted",
     "8.6.0": "held",
+    "9.1.0": "admitted",
 }
 OPTIONAL_NAMES = (TOOL_NAME,) + SIBLING_TOOLS
+ALL_OPTIONAL_NAMES = (TOOL_NAME,) + ALL_SIBLING_TOOLS
+
+
+def optional_names(version: Any) -> tuple[str, ...]:
+    """The reader and the prohibited siblings accounted for one version."""
+
+    return (TOOL_NAME,) + sibling_tools(version)
 
 
 class OptionalBindingError(ValueError):
@@ -1856,6 +2206,8 @@ def validate_bindings_against_registry(registry: Any) -> None:
     for version, disposition in OPTIONAL_TOOL_DISPOSITIONS.items():
         if disposition == "admitted" and (version, TOOL_NAME) not in OPTIONAL_TOOL_BINDINGS:
             raise OptionalBindingError("optional_admitted_binding_absent")
+        if disposition == "admitted" and version not in YAML_READ_CONTRACTS:
+            raise OptionalBindingError("optional_admitted_contract_absent")
 
 
 def binding_contract_fingerprint(binding: OptionalToolBinding, disposition: str) -> str:
@@ -1927,12 +2279,13 @@ def match_descriptor(tools: Any, binding: OptionalToolBinding) -> OptionalMatch:
     if observed == binding.runtime_contract_fingerprint:
         return OptionalMatch("matched", None, observed)
     reason = "optional_descriptor_contract_changed"
-    if binding.tool_name == TOOL_NAME:
+    expected = _GET_YAML_DIAGNOSTICS_BY_VERSION.get(binding.version)
+    if binding.tool_name == TOOL_NAME and expected is not None:
         diagnostics = descriptor_diagnostic_fingerprints(tool)
         changed = {
             pointer for pointer in DIAGNOSTIC_POINTERS
             if pointer not in _POLICY_POINTERS
-            and diagnostics.get(pointer) != _GET_YAML_DIAGNOSTICS[pointer]
+            and diagnostics.get(pointer) != expected[pointer]
         }
         for prefix, code in _DIAGNOSTIC_REASONS:
             if any(pointer == prefix or pointer.startswith(prefix + "/") for pointer in changed):
@@ -1983,6 +2336,8 @@ def withheld_reason(release: Any, *, signed_selection: bool) -> str | None:
         return "optional_binding_absent"
     if binding.source_commit != release.source_commit:
         return "optional_source_commit_mismatch"
+    if release.version not in YAML_READ_CONTRACTS:
+        return "optional_contract_absent"
     return None
 
 
@@ -2004,7 +2359,7 @@ def evaluate_optional(
     }
     states: dict[str, str] = {}
     accounted: list[str] = []
-    for sibling in SIBLING_TOOLS:
+    for sibling in sibling_tools(version):
         states[sibling] = (
             "prohibited_withheld" if sibling in observed_names else "optional_absent"
         )
@@ -2048,7 +2403,7 @@ def sibling_drift(tools: Any, version: str | None) -> tuple[tuple[str, str], ...
     """Report drift in a prohibited sibling. It never changes admission."""
 
     drift = []
-    for sibling in SIBLING_TOOLS:
+    for sibling in sibling_tools(version):
         binding = OPTIONAL_TOOL_BINDINGS.get((version, sibling))
         if binding is None:
             continue
@@ -2066,7 +2421,7 @@ def is_yaml_adapter(entry: Any) -> bool:
         and entry.upstream_name == TOOL_NAME
         and entry.exposed_name == TOOL_NAME
         and entry.classification == "mixed_or_requires_wrapper"
-        and entry.input_schema_fingerprint == INPUT_SCHEMA_FINGERPRINT
+        and entry.input_schema_fingerprint == binding.input_schema_fingerprint
         and entry.reviewed_annotations.read_only
         and not entry.reviewed_annotations.destructive
     )
@@ -2088,7 +2443,7 @@ def synthesized_policy_entry(binding: OptionalToolBinding) -> Any:
         exposed_name=TOOL_NAME,
         description=DESCRIPTION,
         classification="mixed_or_requires_wrapper",
-        input_schema_fingerprint=INPUT_SCHEMA_FINGERPRINT,
+        input_schema_fingerprint=binding.input_schema_fingerprint,
         reason=(
             "HAMCP-162 optional reviewed tool: configuration.yaml fragment "
             "read through a closed Engineering-built argument shape."
@@ -2096,7 +2451,7 @@ def synthesized_policy_entry(binding: OptionalToolBinding) -> Any:
         collision_status="none",
         collision_policy="alias_upstream_on_collision",
         argument_restrictions=(binding.adapter_token,),
-        response_limit_bytes=60_000,
+        response_limit_bytes=MAX_SCAN_BYTES,
         timeout_seconds=60.0,
         source_evidence=(binding.capture_resource, binding.capture_sha256),
         reviewed_annotations=ReviewedToolAnnotations(
@@ -2120,7 +2475,7 @@ def _contract_material(
         "tool_name": binding.tool_name,
         "classification": binding.classification,
         "adapter_token": binding.adapter_token,
-        "argument_constraints_id": ARGUMENT_CONSTRAINTS_ID,
+        "argument_constraints_id": binding.argument_constraints_id,
         "runtime_contract_fingerprint": runtime,
         "runtime_contract_fingerprint_model": (
             binding.runtime_contract_fingerprint_model

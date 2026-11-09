@@ -1,0 +1,103 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "dashboard",
+  "consumer": "tests/test_hamcp319_dashboard.py",
+  "fixture_files": [
+    "envelopes.json",
+    "dashboard-guide.md"
+  ],
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "generation": "envelopes.json holds hand-written structured-content templates transcribed from the pinned 9.1.0 source (read only, never executed). They are not captured records. Placeholders in angle brackets are filled per synthetic call by the test peer; every hash is computed at test time from the exact configuration sent, so no hash-bearing record is stored. dashboard-guide.md is a byte-exact copy of the pinned skills blob. The listed sha256 values identify the pinned source files the line citations refer to.",
+  "source_files": {
+    "src/ha_mcp/tools/tools_config_dashboards.py": "44958746d19fdd179dc52817b362155cc2772e57ce7b5cd8ae945b6ed34444e6",
+    "src/ha_mcp/tools/dashboard_read_errors.py": "aca4bcec024915f10f76197d8cc3794a9cc16fcbe14e6cce529537d91e409922",
+    "src/ha_mcp/server.py": "29d6d33d645117661f0e35945110ea21fb6650ae2c09b74398bdcc36f36931c1",
+    "src/ha_mcp/strict_bps.py": "f7be9802d83d900d38ebbada78f5759e30b76a792c1d5f17c4934562c5e416d8",
+    "src/ha_mcp/dashboard_screenshot/paths.py": "5e55cd9fb2abf337f787eba1b09641303ad85f36bc90ef5d220e71dbf7101ec8",
+    "src/ha_mcp/errors.py": "02877355134d059b5fe6698d6bb974248016ddc333e84d322c4c9a209a7647bb",
+    "src/ha_mcp/utils/config_hash.py": "e4a9c2b096b45100b47f706c79d903358783b81480e5209d05fd1b2074b7d07d"
+  },
+  "fixtures": {
+    "envelopes.json#/get_no_stored_config": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:2181-2193 (component path: component_status 'no_config' gives stored_config=False, config None)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2222-2251 (legacy path: a message in NO_STORED_CONFIG_MESSAGES gives stored_config=False and config None)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2280-2283 (config_hash None and config_size_bytes 0 for a non-dict config)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2304-2316 (get envelope; render paths attached)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2333-2335 (stored_config and NO_STORED_CONFIG_NOTE message)",
+        "src/ha_mcp/dashboard_screenshot/paths.py:180-181 (render_paths [] for a non-dict config)",
+        "src/ha_mcp/tools/dashboard_read_errors.py:29-39 (NO_STORED_CONFIG_MESSAGES and NO_STORED_CONFIG_NOTE text)"
+      ]
+    },
+    "envelopes.json#/get_stored_config": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:2280-2283 (config_hash = compute_config_hash(config); config_size_bytes = len(json.dumps(config)))",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2304-2316 (get envelope)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:2333 (stored_config True)",
+        "src/ha_mcp/dashboard_screenshot/paths.py:201-203 and following (render_paths; [] for an empty views list)"
+      ]
+    },
+    "envelopes.json#/list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:1808-1813 (fetch_dashboards_list(...) or [] then the list envelope)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:1005-1036 (fetch_dashboards_list returns None on an unrecognized shape, collapsed to [] by the caller)"
+      ]
+    },
+    "envelopes.json#/set_update": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:3605-3614 (update success envelope; action 'update' and dashboard_created False for an existing dashboard)"
+      ]
+    },
+    "envelopes.json#/set_update_native": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:3605-3614 (update success envelope; action 'update' and dashboard_created False for an existing dashboard)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:3502-3520 (native write path copies config_hash, write_committed and post_write_verified into the result and attaches render paths)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:3625 (_attach_dashboard_write_result is applied to the update envelope)",
+        "src/ha_mcp/utils/config_hash.py (compute_config_hash: sha256 of sort_keys compact JSON, first 16 hex; the test peer mirrors it to fill <config_hash>)"
+      ]
+    },
+    "envelopes.json#/set_write_outcome_unknown": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_config_dashboards.py:3357-3372 (cancelled save: SERVICE_CALL_FAILED with write_committed None and reason write_outcome_unknown)",
+        "src/ha_mcp/tools/tools_config_dashboards.py:3499 (full-config save uses the default action 'set')",
+        "src/ha_mcp/errors.py:304-327 (error envelope: one suggestion gives 'suggestion' only; context merged at top level)"
+      ]
+    },
+    "envelopes.json#/skill_guide_reference_file": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/server.py:1060-1076 (strict mode prefixes the acknowledgement line and a blank line; skill_content_hint only for non-SKILL.md files; success, file, uri, content)",
+        "src/ha_mcp/server.py:76-82 (_SKILL_GUIDE_MANDATORYBPS_HINT text)"
+      ]
+    },
+    "envelopes.json#/strict_bps_ack_line": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/strict_bps.py:202-216 (acknowledgement line text)",
+        "src/ha_mcp/strict_bps.py:87-97 (key = I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-<8 hex>)"
+      ]
+    },
+    "dashboard-guide.md": {
+      "class": "S",
+      "repository": "homeassistant-ai/skills",
+      "commit": "166defa51c606b3c77d45a9b29a459d1f993f357",
+      "path": "skills/home-assistant-best-practices/references/dashboard-guide.md",
+      "git_blob": "bafb545627ca4aac44eb439400f30d77f24eacf8",
+      "sha256": "b4d42e9383fe929ecc87fb52150ceb3222173b528b1cf9f8663218c65544d293",
+      "bytes": 31666,
+      "pinned_by": "ha-mcp d2e3f4b0647d815fb32d530fed15a6a99b1d4b33 gitlink src/ha_mcp/resources/skills-vendor (design section 7.1)",
+      "note": "Phase 1 did not capture this file; the evidence class stays S until the exact-image lane runs the internal read."
+    }
+  }
+}

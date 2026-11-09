@@ -71,11 +71,22 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 # sequence to this fingerprint instead of treating alphabetical order as an
 # upstream contract.
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
+    # HAMCP-319: wire order of the exact 9.1 standalone and app captures.
+    "9.1.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
     "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
 }
+# HAMCP-319 (Codex F1 on PR #406): on these releases runtime admission binds
+# each tool Engineering uses, exactly and once, and nothing else. Neither the
+# catalog order nor the presence of an unused tool is a runtime admission
+# condition; their order fingerprints above remain offline evidence bindings,
+# and the CI exact-image lanes keep the strict full-catalog comparison.
+# 9.1.0 only: the pre-existing order gate of every other release, 8.5.0
+# included, is deliberately unchanged (architect ruling 2026-11-08: outside
+# #406 scope).
+USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
@@ -1355,12 +1366,15 @@ def load_upstream_tool_policy(
         ADAPTER_BINDINGS as PLATFORM_BINDINGS, is_platform_adapter,
     )
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
+    from .providers import upstream_reads_9_1 as reads_9_1
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
-    from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, OPTIONAL_NAMES
+    from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, ALL_OPTIONAL_NAMES
     for entry in entries:
         # The optional YAML reader is binary-owned (HAMCP-162): a policy
-        # document can neither carry its adapter token nor review its names.
-        if entry.upstream_name in OPTIONAL_NAMES or any(
+        # document can neither carry its adapter token nor review its names,
+        # including the version-specific prohibited siblings (HAMCP-319: the
+        # 9.1 ha_write_file and ha_delete_file).
+        if entry.upstream_name in ALL_OPTIONAL_NAMES or any(
             token in YAML_ADAPTERS for token in entry.argument_restrictions
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_yaml_adapter")
@@ -1384,6 +1398,12 @@ def load_upstream_tool_policy(
         if READ_ADAPTER in entry.argument_restrictions and (
             not is_adapter(entry) or expected_version != "8.6.0"
             or expected_source_commit != READ_SOURCE
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
+        if reads_9_1.ADAPTER in entry.argument_restrictions and (
+            not reads_9_1.is_adapter(entry)
+            or expected_version != reads_9_1.VERSION
+            or expected_source_commit != reads_9_1.SOURCE
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
     if len(entries) != stock_tool_count:
@@ -2444,7 +2464,9 @@ def _reviewed_artifact_evidence(
     )
     addon_tools = json.loads(canonical_json(standalone_tools))
     policy_differences = []
-    if release.version != "8.6.0":
+    # 8.6.0 and 9.1.0 publish no private ``_meta.ha_mcp.policy`` block; their
+    # exact standalone and app catalogs are byte-identical (HAMCP-319 capture).
+    if release.version not in {"8.6.0", "9.1.0"}:
         for tool in addon_tools:
             policy_state = tool["_meta"]["ha_mcp"]["policy"]
             policy_state.update(
@@ -2616,12 +2638,14 @@ def _dashboard_attestation_projection(attestation: Any) -> dict[str, Any]:
 
 def _dashboard_compiled_constraints_projection(
     contract_family: str,
+    *,
+    upstream_version: str,
 ) -> dict[str, Any]:
     from .providers.upstream_contracts import (
-        ALLOWED_SCHEMA_PROPERTIES,
         COMPILED_ARGUMENT_SHAPES,
         COMPILED_CONTRACT_FAMILIES,
-        PROHIBITED_ARGUMENTS,
+        allowed_schema_properties_for_version,
+        prohibited_arguments_for_version,
     )
 
     family = COMPILED_CONTRACT_FAMILIES.get(contract_family)
@@ -2642,9 +2666,11 @@ def _dashboard_compiled_constraints_projection(
         },
         "compiled_argument_shapes": COMPILED_ARGUMENT_SHAPES,
         "allowed_schema_properties": sorted(
-            ALLOWED_SCHEMA_PROPERTIES
+            allowed_schema_properties_for_version(upstream_version)
         ),
-        "prohibited_arguments": sorted(PROHIBITED_ARGUMENTS),
+        "prohibited_arguments": sorted(
+            prohibited_arguments_for_version(upstream_version)
+        ),
     }
 
 
@@ -2709,7 +2735,8 @@ def _dashboard_evidence(
     )
     constraints_fingerprint = schema_fingerprint(
         _dashboard_compiled_constraints_projection(
-            attestation.contract_family
+            attestation.contract_family,
+            upstream_version=attestation.upstream_version,
         )
     )
     return attestation_fingerprint, constraints_fingerprint

@@ -20,6 +20,7 @@ sys.path.insert(0, str(BETA_DIR))
 sys.path.insert(0, str(PRODUCTION_DIR))
 
 from ha_mcp_engineering.application import create_application, validate_settings  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger, AuditRecord  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
@@ -862,7 +863,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 81)
+        self.assertEqual(health["registered_tool_count"], 82)  # HAMCP-290: + get_marketplace_inventory
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]
@@ -928,6 +929,8 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "last_successful_call_at": None,
                 "last_failed_call_at": None,
                 "last_failure_category": None,
+                # HAMCP-319 section 3.3: fixed operator text, None when healthy.
+                "operator_remediation": None,
                 "capability_status": "unconfigured",
                 "upstream_server_name": None,
                 "upstream_server_version": None,
@@ -1030,6 +1033,11 @@ class GatewayAndHealthTests(unittest.TestCase):
                     "not_configured": 0,
                     "authentication_failed": 0,
                     "endpoint_rejected": 0,
+                    # HAMCP-319 design §3: endpoint and redirect refusals.
+                    "upstream_redirect_refused": 0,
+                    "upstream_endpoint_rejected": 0,
+                    "upstream_catalog_mode_unadmitted": 0,
+                    "upstream_catalog_selector_invalid": 0,
                     "connection_failed": 0,
                     "timeout": 0,
                     "protocol_error": 0,
@@ -1242,6 +1250,13 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertIn("issues", details)
         self.assertNotIn("test-ha-token", details)
         self.assertNotIn(SECRET, details)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

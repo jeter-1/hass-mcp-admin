@@ -30,6 +30,10 @@ from ..clients.mcp import (
     validate_dashboard_read_arguments,
     validate_dashboard_write_arguments,
 )
+from ..clients.ha_mcp_endpoint import (
+    ENDPOINT_REFUSAL_CODES as HA_MCP_ENDPOINT_REFUSAL_CODES,
+    OPERATOR_MESSAGES as HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
+)
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..models.responses import SuccessResponse, _compact_json
@@ -109,6 +113,10 @@ DASHBOARD_WRITE_DEPENDENCIES = (
     REQUIRED_BEST_PRACTICES_TOOL,
     REQUIRED_DASHBOARD_WRITE_TOOL,
 )
+# HAMCP-319: releases on which the getter read path also requires the getter's
+# whole descriptor to equal its reviewed release runtime contract. Older
+# releases keep their previously reviewed read-path admission.
+EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0"})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
         "ha_config_set_dashboard",
@@ -127,6 +135,10 @@ FAILURE_CATEGORIES = (
     "not_configured",
     "authentication_failed",
     "endpoint_rejected",
+    "upstream_redirect_refused",
+    "upstream_endpoint_rejected",
+    "upstream_catalog_mode_unadmitted",
+    "upstream_catalog_selector_invalid",
     "connection_failed",
     "timeout",
     "protocol_error",
@@ -171,6 +183,15 @@ MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SAFE_UPSTREAM_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 RESPONSE_ENVELOPE_RESERVE = 16_000
+# HAMCP-319 section 6.3 (F4): exact releases whose get mode always reports
+# whether Home Assistant holds a saved config (9.1.0 _finalize_get_result).
+# On these releases anything but ``stored_config: true`` never yields a
+# readable configuration, and no hash is derived first.
+STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0"})
+# HAMCP-319 section 6.3 (F4): exact releases whose list mode is decoded here
+# and whose ``[]`` cannot prove absence (9.1.0 ``fetch_dashboards_list(...) or
+# []``). An empty inventory from them is reported as not complete.
+COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0"})
 # HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
 # provider result in. The size estimate serializes this exact wrapper.
 CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"
@@ -195,6 +216,17 @@ _ERROR_CODES = {
     "not_configured": ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
     "authentication_failed": ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED,
     "endpoint_rejected": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    # HAMCP-319 section 3.3: the closed ha-mcp endpoint refusal codes keep the
+    # existing public error code; the category and fixed operator remediation
+    # travel in the bounded details.
+    "upstream_redirect_refused": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    "upstream_endpoint_rejected": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+    "upstream_catalog_mode_unadmitted": (
+        ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED
+    ),
+    "upstream_catalog_selector_invalid": (
+        ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED
+    ),
     "connection_failed": ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
     "timeout": ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
     "protocol_error": ErrorCode.UPSTREAM_DASHBOARD_PROTOCOL_ERROR,
@@ -529,9 +561,23 @@ class UpstreamDashboardProvider:
                     "Sensitive dashboard metadata was redacted; the inventory "
                     "is not complete."
                 )
+            # HAMCP-319 section 6.3 (F4): a collapsed registry read and an
+            # empty registry are the same ``[]`` on these releases, so
+            # absence is never decided from it.
+            collapsed_empty = (
+                not dashboards
+                and exchange.handshake.server_version
+                in COLLAPSIBLE_EMPTY_LIST_RELEASES
+            )
+            if collapsed_empty:
+                warnings.append(
+                    "The dashboard registry list is empty; this upstream "
+                    "release reports a failed registry read as an empty list, "
+                    "so dashboard absence is unavailable."
+                )
             completeness = (
                 "partial"
-                if truncated or malformed or redactions.applied
+                if truncated or malformed or redactions.applied or collapsed_empty
                 else "complete"
             )
             metadata["completeness"] = completeness
@@ -581,6 +627,39 @@ class UpstreamDashboardProvider:
         def normalize(
             payload: dict[str, Any], exchange: McpDashboardRead
         ) -> DashboardProviderResult:
+            # HAMCP-319 section 6.3 (F4): ``stored_config: false`` (no saved
+            # config, missing YAML file or recovery mode) means the dashboard
+            # exists and its saved config is unavailable. It is never an empty
+            # config and never absence, and no hash is derived from it.
+            stored_config_present = "stored_config" in payload
+            stored_config = payload.get("stored_config")
+            if stored_config is False:
+                details: dict[str, Any] = {
+                    "provider_response_received": True,
+                    "provider_failure_kind": "saved_configuration_unavailable",
+                    "upstream_action": "get",
+                    "saved_configuration": "unavailable",
+                }
+                if (
+                    payload.get("url_path") == url_path
+                    and "resolved_from" not in payload
+                ):
+                    details["dashboard_identity"] = "exists"
+                self._raise("upstream_error", dispatched=True, details=details)
+            if (
+                stored_config_present and stored_config is not True
+            ) or (
+                exchange.handshake.server_version in STORED_CONFIG_REQUIRED_RELEASES
+                and stored_config is not True
+            ):
+                self._raise(
+                    "invalid_response",
+                    dispatched=True,
+                    details={
+                        "provider_response_received": True,
+                        "saved_configuration": "unavailable",
+                    },
+                )
             config = payload.get("config")
             if not isinstance(config, dict):
                 self._raise("invalid_response", dispatched=True)
@@ -750,17 +829,31 @@ class UpstreamDashboardProvider:
                 {"url_path": url_path, "force_reload": True, "list_only": False,
                  "include_screenshot": False}, admit, authorize=check, budget=budget)
             check()
-            data = await c.worker(_analysis_configuration, exchange.call_result, url_path)
-            check()
+            # HAMCP-319 (Codex F3): decode with the admitted release, so the
+            # admission must exist before any configuration or hash work.
             if metadata is None:
                 raise c.AnalysisError("authority_unavailable")
+            data = await c.worker(
+                _analysis_configuration, exchange.call_result, url_path,
+                upstream_version=metadata["upstream_version"])
+            check()
             return data, metadata
         except DashboardTransportError as error:
             reason = {"authentication_failed": "access_denied", "response_too_large": "response_limit",
                       "timeout": "timeout", "invalid_response": "malformed_response",
-                      "connection_failed": "source_unavailable", "upstream_error": "source_rejected"}.get(
+                      "connection_failed": "source_unavailable", "upstream_error": "source_rejected",
+                      "upstream_redirect_refused": "upstream_redirect_refused"}.get(
                           error.category, "authority_unavailable")
-            raise c.AnalysisError(reason) from None
+            # HAMCP-319 section 3.3: a refused redirect reports its own closed
+            # reason. The transport raises that category only after the
+            # binding latch was set by the fence's 3xx branch (the latch is
+            # consulted first in _bounded_mcp_read). A catalog-mode refusal
+            # keeps authority_unavailable. Both carry the fixed operator text
+            # so the dashboard result names the fix.
+            raise c.AnalysisError(
+                reason,
+                operator_remediation=HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(error.category),
+            ) from None
 
     def _validate_write_handshake(
         self,
@@ -1409,6 +1502,17 @@ class UpstreamDashboardProvider:
                 raise DashboardTransportError(
                     admission.failure_category or "internal_error"
                 )
+            # HAMCP-319: the getter is a used tool. On exact releases its whole
+            # descriptor must also match the reviewed release contract (the
+            # 8.5.0 profile has no title or annotation-hint rule) before any
+            # read is dispatched. Specific admission categories above win.
+            if handshake.server_version in EXACT_GETTER_RELEASES and (
+                expected_release_runtime is None
+                or observed_release_runtime != expected_release_runtime
+            ):
+                raise DashboardTransportError(
+                    "upstream_runtime_contract_mismatch"
+                )
             decision = DashboardTrustDecision(
                 mode=TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
                 profile=admission.contract_family,
@@ -1857,7 +1961,7 @@ class UpstreamDashboardProvider:
             self._state.session_state = "failed"
             if category == "timeout":
                 self._state.timeout_count += 1
-            if category in {
+            if category in HA_MCP_ENDPOINT_REFUSAL_CODES or category in {
                 "authentication_failed",
                 "endpoint_rejected",
                 "connection_failed",
@@ -1921,6 +2025,10 @@ class UpstreamDashboardProvider:
         }
         if details:
             safe_details.update(details)
+        if category in HA_MCP_ENDPOINT_OPERATOR_MESSAGES:
+            safe_details["operator_remediation"] = (
+                HA_MCP_ENDPOINT_OPERATOR_MESSAGES[category]
+            )
         raise DashboardProviderError(_ERROR_CODES[category], details=safe_details)
 
     def health_snapshot(self) -> dict[str, Any]:
@@ -1959,6 +2067,9 @@ class UpstreamDashboardProvider:
                 "last_successful_call_at": state.last_successful_dashboard_call_timestamp,
                 "last_failed_call_at": state.last_failed_call_at,
                 "last_failure_category": state.last_failure_category,
+                "operator_remediation": HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(
+                    state.last_failure_category
+                ),
                 "capability_status": state.capability_status,
                 "upstream_server_name": state.upstream_server_name,
                 "upstream_server_version": state.upstream_server_version,
@@ -2290,8 +2401,11 @@ def _analysis_handshake(handshake, expected):
             "upstream_authority_hash": c.digest([identity, asdict(decision.attestation), decision.source])}
 
 
-def _analysis_configuration(result, url_path):
-    """Decode strict inner JSON and verify raw source hashes before projection."""
+def _analysis_configuration(result, url_path, *, upstream_version):
+    """Decode strict inner JSON and verify raw source hashes before projection.
+
+    ``upstream_version`` is the admitted release (``_analysis_handshake``).
+    """
     from ..dashboard_analysis import contracts as c
 
     if type(result) is not dict or ("isError" in result and result["isError"] is not False):
@@ -2312,6 +2426,13 @@ def _analysis_configuration(result, url_path):
         raise c.AnalysisError("source_rejected")
     if payload.get("url_path") != url_path:
         raise c.AnalysisError("identity_mismatch")
+    # HAMCP-319 section 6.3 (F4): no saved config is not an analyzable source.
+    # Codex F3 on PR #406: as in the governed getter, a release that always
+    # reports the flag must report literal ``true``; absence is not consent.
+    if ("stored_config" in payload and payload["stored_config"] is not True) or (
+            upstream_version in STORED_CONFIG_REQUIRED_RELEASES
+            and payload.get("stored_config") is not True):
+        raise c.AnalysisError("source_rejected")
     configuration = payload.get("config")
     if (type(configuration) is not dict or not (
             type(configuration.get("views")) is list or type(configuration.get("strategy")) is dict)):

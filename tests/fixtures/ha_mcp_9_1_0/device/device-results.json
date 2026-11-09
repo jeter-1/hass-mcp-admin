@@ -1,0 +1,520 @@
+{
+  "synthetic": true,
+  "single_zha": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-zha-device",
+      "name": "Hall motion",
+      "manufacturer": "Synthetic",
+      "model": "Z1",
+      "sw_version": "1.0.0",
+      "area_id": "hallway",
+      "integration_type": "zha",
+      "integration_sources": [
+        "zha"
+      ],
+      "via_device_id": "synthetic-zha-coordinator",
+      "ieee_address": "00:11:22:33:44:55:66:77",
+      "zha_trigger_hint": "Use ieee '00:11:22:33:44:55:66:77' for zha_event triggers",
+      "entities": [
+        {
+          "entity_id": "binary_sensor.hall_motion",
+          "name": "Hall motion",
+          "platform": "zha"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Hall motion",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [
+        "synthetic-label"
+      ],
+      "config_entries": [
+        "01SYNTHZHAENTRY"
+      ],
+      "connections": [
+        [
+          "zigbee",
+          "00:11:22:33:44:55:66:77"
+        ]
+      ],
+      "identifiers": [
+        [
+          "zha",
+          "00:11:22:33:44:55:66:77"
+        ]
+      ],
+      "radio_metrics": {
+        "lqi": 211,
+        "rssi": -52
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "binary_sensor.hall_motion",
+        "name": "Hall motion",
+        "platform": "zha"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_zwave": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-zwave-device",
+      "name": "Porch lock",
+      "manufacturer": "Synthetic",
+      "model": "ZW1",
+      "sw_version": "1.0.0",
+      "area_id": "porch",
+      "integration_type": "zwave_js",
+      "integration_sources": [
+        "zwave_js"
+      ],
+      "via_device_id": "synthetic-zwave-controller",
+      "node_id": "12",
+      "entities": [
+        {
+          "entity_id": "lock.porch",
+          "name": "Porch lock",
+          "platform": "zwave_js"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Porch lock",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHZWAVEENTRY"
+      ],
+      "connections": [],
+      "identifiers": [
+        [
+          "zwave_js",
+          "3967641190-12"
+        ],
+        [
+          "zwave_js",
+          "3967641190-12-271:4098:52"
+        ]
+      ],
+      "node_status": {
+        "node_id": 12,
+        "status": "alive",
+        "is_routing": true,
+        "is_secure": true,
+        "highest_security_class": 1,
+        "zwave_plus_version": 2,
+        "is_controller_node": false
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "lock.porch",
+        "name": "Porch lock",
+        "platform": "zwave_js"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_matter_wifi": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-matter-wifi",
+      "name": "Office lamp",
+      "manufacturer": "Synthetic",
+      "model": "M1",
+      "sw_version": "1.0.0",
+      "area_id": "office",
+      "integration_type": "matter",
+      "integration_sources": [
+        "matter"
+      ],
+      "via_device_id": null,
+      "entities": [
+        {
+          "entity_id": "light.synthetic_matter_wifi",
+          "name": "Office lamp",
+          "platform": "matter"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Office lamp",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHMATTERENTRY"
+      ],
+      "connections": [
+        [
+          "mac",
+          "aa:bb:cc:dd:ee:01"
+        ]
+      ],
+      "identifiers": [
+        [
+          "matter",
+          "deviceid_0123456789ABCDEF-00000000000000A1-MatterNodeDevice"
+        ],
+        [
+          "matter",
+          "deviceid_0123456789ABCDEF-00000000000000A1-1"
+        ]
+      ],
+      "node_diagnostics": {
+        "network_type": "wifi",
+        "node_type": "end_device",
+        "available": true,
+        "network_name": "SyntheticNet",
+        "ip_addresses": [
+          "192.0.2.10",
+          "2001:db8::10"
+        ],
+        "mac_address": "aa:bb:cc:dd:ee:01",
+        "active_fabrics": [
+          {
+            "fabric_index": 1,
+            "fabric_id": 1,
+            "vendor_id": 4939,
+            "vendor_name": "Synthetic Vendor",
+            "fabric_label": "Home"
+          },
+          {
+            "fabric_index": 2,
+            "fabric_id": 2,
+            "vendor_id": 24582,
+            "vendor_name": "Synthetic Two",
+            "fabric_label": ""
+          }
+        ],
+        "active_fabric_index": 1
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "light.synthetic_matter_wifi",
+        "name": "Office lamp",
+        "platform": "matter"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_matter_thread": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-matter-thread",
+      "name": "Office sensor",
+      "manufacturer": "Synthetic",
+      "model": "M1",
+      "sw_version": "1.0.0",
+      "area_id": "office",
+      "integration_type": "matter",
+      "integration_sources": [
+        "matter"
+      ],
+      "via_device_id": null,
+      "entities": [
+        {
+          "entity_id": "light.synthetic_matter_thread",
+          "name": "Office sensor",
+          "platform": "matter"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Office sensor",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHMATTERENTRY"
+      ],
+      "connections": [],
+      "identifiers": [
+        [
+          "matter",
+          "deviceid_0123456789ABCDEF-00000000000000A2-MatterNodeDevice"
+        ],
+        [
+          "matter",
+          "deviceid_0123456789ABCDEF-00000000000000A2-1"
+        ]
+      ],
+      "node_diagnostics": {
+        "network_type": "thread",
+        "node_type": "end_device",
+        "available": true,
+        "network_name": "SyntheticNet",
+        "ip_addresses": [
+          "fd00:db8:0:0:1:2:3:4"
+        ],
+        "mac_address": null,
+        "active_fabrics": [
+          {
+            "fabric_index": 1,
+            "fabric_id": 1,
+            "vendor_id": 4939,
+            "vendor_name": "Synthetic Vendor",
+            "fabric_label": "Home"
+          },
+          {
+            "fabric_index": 2,
+            "fabric_id": 2,
+            "vendor_id": 24582,
+            "vendor_name": "Synthetic Two",
+            "fabric_label": ""
+          }
+        ],
+        "active_fabric_index": 1
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "light.synthetic_matter_thread",
+        "name": "Office sensor",
+        "platform": "matter"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_z2m": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-z2m-device",
+      "name": "Kitchen button",
+      "manufacturer": "Synthetic",
+      "model": "ZB2",
+      "sw_version": "1.0.0",
+      "area_id": "kitchen",
+      "integration_type": "zigbee2mqtt",
+      "integration_sources": [
+        "mqtt"
+      ],
+      "via_device_id": "synthetic-z2m-bridge",
+      "ieee_address": "0x00124b0012345678",
+      "friendly_name": "Kitchen button",
+      "mqtt_topic_hint": "zigbee2mqtt/Kitchen button/...",
+      "entities": [
+        {
+          "entity_id": "event.kitchen_button",
+          "name": "Kitchen button",
+          "platform": "mqtt"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Kitchen button",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHMQTTENTRY"
+      ],
+      "connections": [],
+      "identifiers": [
+        [
+          "mqtt",
+          "zigbee2mqtt_0x00124b0012345678"
+        ]
+      ]
+    },
+    "entities": [
+      {
+        "entity_id": "event.kitchen_button",
+        "name": "Kitchen button",
+        "platform": "mqtt"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_hassio": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-hassio-core",
+      "name": "Home Assistant Core",
+      "manufacturer": "Home Assistant",
+      "model": "Home Assistant Core",
+      "sw_version": "1.0.0",
+      "area_id": null,
+      "integration_type": "hassio",
+      "integration_sources": [
+        "hassio"
+      ],
+      "via_device_id": null,
+      "entities": [],
+      "name_by_user": null,
+      "default_name": "Home Assistant Core",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHHASSIOENTRY"
+      ],
+      "connections": [],
+      "identifiers": [
+        [
+          "hassio",
+          "core"
+        ]
+      ]
+    },
+    "entities": [],
+    "entity_count": 0,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "single_child": {
+    "success": true,
+    "device": {
+      "device_id": "synthetic-child-device",
+      "name": "Living room bulb",
+      "manufacturer": "Synthetic",
+      "model": "MB1",
+      "sw_version": "1.0.0",
+      "area_id": "living_room",
+      "integration_type": "matter",
+      "integration_sources": [
+        "matter"
+      ],
+      "via_device_id": "synthetic-parent-bridge",
+      "entities": [
+        {
+          "entity_id": "light.living_room_bulb",
+          "name": "Living room bulb",
+          "platform": "matter"
+        }
+      ],
+      "name_by_user": null,
+      "default_name": "Living room bulb",
+      "hw_version": null,
+      "serial_number": null,
+      "disabled_by": null,
+      "labels": [],
+      "config_entries": [
+        "01SYNTHCHILDENTRY"
+      ],
+      "connections": [
+        [
+          "upnp",
+          "uuid:12345678-90ab-cdef-1234-567890abcdef"
+        ],
+        [
+          "bluetooth",
+          "AA:BB:CC:DD:EE:02"
+        ],
+        [
+          "mac",
+          "aa:bb:cc:dd:ee:03"
+        ]
+      ],
+      "identifiers": [
+        [
+          "matter",
+          "deviceid_0123456789ABCDEF-00000000000000B2-2"
+        ]
+      ],
+      "node_diagnostics": {
+        "network_type": "ethernet",
+        "node_type": "bridge",
+        "available": true,
+        "network_name": null,
+        "ip_addresses": [
+          "192.0.2.20"
+        ],
+        "mac_address": "aa:bb:cc:dd:ee:03",
+        "active_fabrics": [
+          {
+            "fabric_index": 1,
+            "fabric_id": 1,
+            "vendor_id": 4939,
+            "vendor_name": "Synthetic Vendor",
+            "fabric_label": "Home"
+          }
+        ],
+        "active_fabric_index": 1
+      }
+    },
+    "entities": [
+      {
+        "entity_id": "light.living_room_bulb",
+        "name": "Living room bulb",
+        "platform": "matter"
+      }
+    ],
+    "entity_count": 1,
+    "queried_by": "device_id",
+    "queried_entity_id": null
+  },
+  "list_z2m": {
+    "success": true,
+    "total_count": 2,
+    "offset": 0,
+    "limit": 50,
+    "count": 2,
+    "has_more": false,
+    "next_offset": null,
+    "total_devices": 7,
+    "devices": [
+      {
+        "device_id": "synthetic-z2m-bridge",
+        "name": "Zigbee2MQTT Bridge",
+        "manufacturer": "Zigbee2MQTT",
+        "model": "Bridge",
+        "sw_version": "1.0.0",
+        "area_id": null,
+        "integration_type": "zigbee2mqtt",
+        "integration_sources": [
+          "mqtt"
+        ],
+        "via_device_id": null,
+        "ieee_address": "0x00124b00aabbccdd",
+        "friendly_name": "Zigbee2MQTT Bridge",
+        "mqtt_topic_hint": "zigbee2mqtt/Zigbee2MQTT Bridge/..."
+      },
+      {
+        "device_id": "synthetic-z2m-device",
+        "name": "Kitchen button",
+        "manufacturer": "Synthetic",
+        "model": "ZB2",
+        "sw_version": "1.0.0",
+        "area_id": "kitchen",
+        "integration_type": "zigbee2mqtt",
+        "integration_sources": [
+          "mqtt"
+        ],
+        "via_device_id": "synthetic-z2m-bridge",
+        "ieee_address": "0x00124b0012345678",
+        "friendly_name": "Kitchen button",
+        "mqtt_topic_hint": "zigbee2mqtt/Kitchen button/..."
+      }
+    ],
+    "detail_level": "summary",
+    "integration_filter": "zigbee2mqtt",
+    "filters": [
+      "integration=zigbee2mqtt"
+    ],
+    "bridge": {
+      "device_id": "synthetic-z2m-bridge",
+      "name": "Zigbee2MQTT Bridge",
+      "ieee_address": "0x00124b00aabbccdd"
+    },
+    "usage_hint": "Use 'friendly_name' for MQTT topics: zigbee2mqtt/{friendly_name}/action"
+  }
+}

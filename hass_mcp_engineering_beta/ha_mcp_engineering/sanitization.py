@@ -10,6 +10,8 @@ import unicodedata
 from typing import Any, Iterable
 from urllib.parse import unquote
 
+from . import secret_paths
+
 
 # The marker grammar Engineering emits. HAMCP-191: no pass trusts input text
 # of this shape; it is only the form of the markers the sanitizer writes.
@@ -77,6 +79,20 @@ _MATTER_PAYLOAD_KEYS = frozenset(
         "matter_setup_payload",
         "qr_setup_payload",
         "matter_qr_payload",
+    }
+)
+# HAMCP-319 design section 6.5 optional backstop: Thread network credential
+# and operational-dataset keys. A second line of defense for a generic
+# attribute that carries them; the ha_get_device allowlist is the control.
+_THREAD_CREDENTIAL_KEYS = frozenset(
+    {
+        "network_key",
+        "pskc",
+        "pskd",
+        "active_dataset_tlvs",
+        "pending_dataset_tlvs",
+        "dataset_tlvs",
+        "tlv",
     }
 )
 
@@ -326,6 +342,9 @@ class ReferenceMarkerRegistry:
             return self._inherits is not None and self._inherits.output(
                 value, known_secrets
             )
+        if secret_paths.contains(value):
+            # HAMCP-288: identity never skips the secret-path check.
+            return False
         return not any(
             secret and secret not in entry[1] and secret in value
             for secret in known_secrets
@@ -457,6 +476,8 @@ def key_category(key: str, path: tuple[str, ...]) -> str | None:
         any("matter" in part for part in path) and key in {"payload", "qr_payload"}
     ):
         return "matter_setup_payload"
+    if key in _THREAD_CREDENTIAL_KEYS:
+        return "thread_credential"
     if key in _AUTH_FLOW_KEYS:
         return "auth_flow"
     if key == "webhook_id":
@@ -496,7 +517,7 @@ class SegmentMemo:
     is consulted before the memo, so a memo hit never trusts text.
     """
 
-    __slots__ = ("known_secrets", "hits", "misses", "_results", "_pass")
+    __slots__ = ("known_secrets", "hits", "misses", "_results", "_pass", "_generation")
 
     def __init__(self, known_secrets: tuple[str, ...]) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
@@ -506,6 +527,15 @@ class SegmentMemo:
         # The pass the memo serves, bound on first use: the strict scan and
         # the D11 stored-plan segment scan never share a memo.
         self._pass: str | None = None
+        # HAMCP-288: results hold for one secret-path configuration only.
+        self._generation = secret_paths.generation()
+
+    def _current(self) -> dict[str, tuple[Any, ...]]:
+        generation = secret_paths.generation()
+        if self._generation != generation:
+            self._results.clear()
+            self._generation = generation
+        return self._results
 
     def __len__(self) -> int:
         return len(self._results)
@@ -612,6 +642,26 @@ class _Sanitizer:
             output.append(piece[position:])
         return output
 
+    def _secret_path_pieces(self, value: str, categories: set[str]) -> list[Any]:
+        """HAMCP-288: the configured ha-mcp secret path, before every rule.
+
+        Every encoded form and a cut fragment at the string's edge (each
+        line's edge in the log window pass) become emitted token markers.
+        """
+
+        found = secret_paths.spans(value, per_line=self._LINE_WINDOW)
+        if not found:
+            return [value]
+        categories.add("token")
+        pieces: list[Any] = []
+        position = 0
+        for start, stop in found:
+            pieces.append(value[position:start])
+            pieces.append(_Emitted(self._marker("token")))
+            position = stop
+        pieces.append(value[position:])
+        return pieces
+
     def _scan(self, value: str) -> tuple[str, frozenset[str], bool]:
         """H3/HAMCP-191: every rule over the whole string, then the collision.
 
@@ -624,7 +674,7 @@ class _Sanitizer:
         """
 
         categories: set[str] = set()
-        pieces: list[Any] = [value]
+        pieces = self._secret_path_pieces(value, categories)
         for secret in self.known_secrets:
             pieces = self._apply(
                 pieces,
@@ -678,7 +728,8 @@ class _Sanitizer:
         memo = self.segment_memo
         if memo is None:
             return self._scan(value)
-        cached = memo._results.get(value)
+        results = memo._current()
+        cached = results.get(value)
         if cached is not None:
             memo.hits += 1
             return cached
@@ -686,9 +737,9 @@ class _Sanitizer:
         memo.misses += 1
         if (
             len(value) <= SEGMENT_MEMO_TEXT_LIMIT
-            and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT
+            and len(results) < SEGMENT_MEMO_ENTRY_LIMIT
         ):
-            memo._results[value] = result
+            results[value] = result
         return result
 
     def _sanitize_string(self, value: str) -> str:
@@ -835,7 +886,9 @@ class _StoredPlanSanitizer(_Sanitizer):
 
     def _segment_scan(self, text: str) -> tuple[str, frozenset[str]]:
         categories: set[str] = set()
-        safe = text
+        safe = secret_paths.redact(text)
+        if safe != text:
+            categories.add("token")
         for secret in self.known_secrets:
             if secret in safe:
                 safe = safe.replace(secret, self._marker("token"))
@@ -873,14 +926,15 @@ class _StoredPlanSanitizer(_Sanitizer):
         memo = self.segment_memo
         if memo is None:
             return self._segment_scan(text)
-        cached = memo._results.get(text)
+        results = memo._current()
+        cached = results.get(text)
         if cached is not None:
             memo.hits += 1
             return cached
         result = self._segment_scan(text)
         memo.misses += 1
-        if len(text) <= SEGMENT_MEMO_TEXT_LIMIT and len(memo._results) < SEGMENT_MEMO_ENTRY_LIMIT:
-            memo._results[text] = result
+        if len(text) <= SEGMENT_MEMO_TEXT_LIMIT and len(results) < SEGMENT_MEMO_ENTRY_LIMIT:
+            results[text] = result
         return result
 
     def _sanitize_string(self, value: str) -> str:

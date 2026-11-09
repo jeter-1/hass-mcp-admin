@@ -61,6 +61,10 @@ AUTHORITATIVE_VERSION_PATTERNS = {
 NORMALIZED_CATALOG_FINGERPRINT = (
     "389c33d95537d93ad96d33f2859716611c60fa53313c6d56a598fb3c9034a82b"
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def captured_tools() -> list[dict]:
@@ -246,14 +250,14 @@ class Beta25SearchPromotionTests(unittest.IsolatedAsyncioTestCase):
         tools = registered_tools(server)
         health = gateway.health_snapshot()
         self.assertEqual(health["exact_matched_automatic_read_count"], 25)
-        self.assertEqual(health["dynamically_exposed_count"], 25)
+        self.assertEqual(health["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["held_read_count"], 1)
         self.assertEqual(health["held_tools"], ["ha_get_operation_status"])
         self.assertEqual(health["fallback_count"], 0)
-        self.assertEqual(len(tools), 25)
+        self.assertEqual(len(tools), 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertIn("ha_search", tools)
         self.assertNotIn("ha_get_operation_status", tools)
-        self.assertEqual(len(dynamic_upstream_capabilities()), 25)
+        self.assertEqual(len(dynamic_upstream_capabilities()), 25 - RETIRED_COUNT)  # HAMCP-290
 
         delegated = json.loads(
             await tools.get("ha_search").run({"query": "porch", "limit": 1})

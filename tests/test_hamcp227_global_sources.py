@@ -861,7 +861,7 @@ class DashboardDependencyReaderTests(unittest.IsolatedAsyncioTestCase):
             if url_path == "synthetic-two":
                 authorize()
                 self.upstream.calls.append(("read", url_path))
-                return _analysis_configuration(oversize, url_path), {}
+                return _analysis_configuration(oversize, url_path, upstream_version="8.5.0"), {}
             return await original(url_path=url_path, authorize=authorize, budget=budget)
 
         self.upstream.get_analysis_configuration = read
