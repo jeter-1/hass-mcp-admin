@@ -16,17 +16,20 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.7**, the 2.5.0 build. It is in
-progress: its items land through reviewed pull requests into the
-`release/2.5.0` integration branch, and none has landed yet (HAMCP-331).
-Read the
-[2.4.2-beta.7 release notes](docs/V2_4_2_BETA7_RELEASE_NOTES.md) and the
+The current source version is **2.4.2-beta.7**, the 2.5.0 build
+(HAMCP-331). It admits ha-mcp 9.1.0 side by side with 8.5.0, refuses
+redirects on every ha-mcp connection, contains the ha-mcp secret path, adds
+the Engineering-owned Marketplace inventory read, and makes
+`control_helper` ask instead of acting without safety evidence. Read the
+[2.4.2-beta.7 release notes](docs/V2_4_2_BETA7_RELEASE_NOTES.md), including
+the deploy order, and the
 [2.4.2-beta.7 acceptance contract](docs/V2_4_2_BETA7_ACCEPTANCE.md).
 
-The most recent completed release is 2.4.2-beta.6; read its
-[release notes](docs/V2_4_2_BETA6_RELEASE_NOTES.md) for the reviewed
-delegated catalog and tool counts. The final 2.4.2-beta.7 release pull
-request states this version's catalog and rollback.
+This version's delegated catalog is reviewed against ha-mcp 9.1.0. Its source
+baseline is 109 expected connector tools (82 native/static plus 27 automatic
+delegated reads), or 110 (82 + 28) on the ha-mcp 8.5.0 capture with the
+optional reader. Rolling back to 2.4.2-beta.6 is safe after the ha-mcp app is
+back on 8.5.0 without `/catalog/full`.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
 Published images and notes are on
