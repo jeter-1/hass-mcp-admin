@@ -335,8 +335,14 @@ class NoRedirectBinding:
             # cancellation delivered here could otherwise replace it.
             waiter.cancel()
             self._record_step_failure(task)
+            # HAMCP-319 (Codex F2): this is the step's linearization point. An
+            # operation-phase refusal latched before it wins even when the
+            # step succeeded and the latch is ready at the same time. Only a
+            # cleanup-phase refusal leaves a successful step's outcome alone.
             if self.latch_code is not None and (
-                task.cancelled() or task.exception() is not None
+                self.latch_phase != "cleanup"
+                or task.cancelled()
+                or task.exception() is not None
             ):
                 raise self.latched_error()
             return task.result()

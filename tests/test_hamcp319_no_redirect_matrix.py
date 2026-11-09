@@ -25,8 +25,10 @@ network, Docker or Home Assistant. Secrets and canaries are synthetic.
 from __future__ import annotations
 
 import asyncio
+import json
 import contextvars
 from contextlib import ExitStack, contextmanager
+from dataclasses import replace
 import sys
 import time
 import traceback
@@ -792,6 +794,237 @@ class NoRedirectLatch(part1._NoRedirectAssertions, unittest.TestCase):
                 self.assertIsInstance(mapped, UpstreamEndpointRefused)
                 self.assertEqual(mapped.category, UPSTREAM_REDIRECT_REFUSED)
         self.assertEqual(binding.unfinished_error().category, UPSTREAM_REDIRECT_REFUSED)
+
+
+class NoRedirectLatchLinearization(part1._NoRedirectAssertions, unittest.TestCase):
+    """Codex F2 (PR #406 verdict 6731785026): an operation-phase redirect
+    refusal latched before the step's outcome is recorded wins, even when the
+    step succeeded and both the step and the latch are ready together. A
+    cleanup-phase refusal never flips an outcome already recorded.
+
+    Deterministic: ordering comes from events and the event loop's FIFO
+    scheduling, never from sleeps or retries.
+    """
+
+    URL = "http://127.0.0.1:9/private_synthetic/catalog/full?credential=synthetic"
+
+    def _race(self, step_factory, *, binding=None):
+        async def scenario():
+            bound = binding or NoRedirectBinding(endpoint_snapshot(self.URL))
+            completed = []
+
+            async def step():
+                value = await step_factory(bound)
+                completed.append(value)
+                return value
+
+            try:
+                outcome = ("result", await bound.run_until_latched(step()))
+            except UpstreamEndpointRefused as exc:
+                outcome = ("refused", exc)
+            return bound, completed, outcome
+
+        return asyncio.run(scenario())
+
+    def assert_operation_refused(self, binding, completed, outcome):
+        # The step itself succeeded: the latch, not a step failure, decides.
+        self.assertEqual(completed, ["synthetic-result"])
+        self.assertEqual(outcome[0], "refused")
+        self.assertEqual(outcome[1].category, UPSTREAM_REDIRECT_REFUSED)
+        self.assertFalse(outcome[1].retryable)
+        # Write uncertainty is preserved: the refusal never claims the call
+        # was not attempted.
+        self.assertTrue(outcome[1].tool_call_attempted)
+        self.assertEqual((binding.latch_code, binding.latch_phase),
+                         (UPSTREAM_REDIRECT_REFUSED, "operation"))
+        self.assertIsNone(binding.step_failure)
+
+    def test_operation_latch_set_inside_succeeding_step_wins(self):
+        async def latch_then_succeed(binding):
+            binding.refuse_redirect("operation")
+            return "synthetic-result"
+
+        self.assert_operation_refused(*self._race(latch_then_succeed))
+
+    def test_operation_latch_and_step_both_ready_latch_wins(self):
+        # The step schedules the latch with call_soon and returns at once, so
+        # the step's completion and the latch land in the same loop pass
+        # before run_until_latched resumes: both are ready.
+        async def schedule_latch_then_succeed(binding):
+            asyncio.get_running_loop().call_soon(binding.refuse_redirect, "operation")
+            return "synthetic-result"
+
+        self.assert_operation_refused(*self._race(schedule_latch_then_succeed))
+
+    def test_operation_latch_woken_together_with_step_latch_wins(self):
+        # The step waits on the same latch event as the waiter; one set()
+        # wakes both, so asyncio.wait returns with task and waiter done.
+        async def complete_on_latch(binding):
+            event = binding._latch_event()
+            asyncio.get_running_loop().call_soon(binding.refuse_redirect, "operation")
+            await event.wait()
+            return "synthetic-result"
+
+        self.assert_operation_refused(*self._race(complete_on_latch))
+
+    def test_cleanup_latch_does_not_flip_a_succeeding_step(self):
+        async def cleanup_latch_then_succeed(binding):
+            binding.refuse_redirect("cleanup")
+            return "synthetic-result"
+
+        binding, completed, outcome = self._race(cleanup_latch_then_succeed)
+        self.assertEqual(completed, ["synthetic-result"])
+        self.assertEqual(outcome, ("result", "synthetic-result"))
+        self.assertEqual(binding.latch_phase, "cleanup")
+
+    def test_latch_after_recorded_outcome_keeps_the_outcome(self):
+        async def scenario():
+            binding = NoRedirectBinding(endpoint_snapshot(self.URL))
+
+            async def step():
+                return "synthetic-result"
+
+            recorded = await binding.run_until_latched(step())
+            # A cleanup redirect after the outcome was recorded (the DELETE).
+            binding.refuse_redirect("cleanup")
+            return binding, recorded
+
+        binding, recorded = asyncio.run(scenario())
+        self.assertEqual(recorded, "synthetic-result")
+        self.assertEqual(binding.latch_phase, "cleanup")
+
+    def test_failing_step_with_operation_latch_still_refused(self):
+        async def latch_then_fail(binding):
+            binding.refuse_redirect("operation")
+            raise RuntimeError("synthetic step failure")
+
+        binding, completed, outcome = self._race(latch_then_fail)
+        self.assertEqual(completed, [])
+        self.assertEqual(outcome[0], "refused")
+        self.assertEqual(outcome[1].category, UPSTREAM_REDIRECT_REFUSED)
+        self.assertIsInstance(binding.step_failure, RuntimeError)
+
+    def test_caller_cancellation_still_propagates(self):
+        async def scenario():
+            binding = NoRedirectBinding(endpoint_snapshot(self.URL))
+            started = asyncio.Event()
+
+            async def step():
+                started.set()
+                await asyncio.Event().wait()
+
+            runner = asyncio.ensure_future(binding.run_until_latched(step()))
+            await started.wait()
+            runner.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await runner
+            return binding
+
+        binding = asyncio.run(scenario())
+        self.assertFalse(binding.latched)
+
+    def test_public_get_redirect_concurrent_with_tool_result_refused(self):
+        """Public gateway tool: a GET-stream 307 and the valid tools/call result
+        arrive together. The refusal wins in the result and in health, and
+        nothing reaches the redirect destination."""
+
+        import threading
+
+        from test_hamcp129_platform_reads import call
+        from test_hamcp319_no_redirect_useful import NoRedirectUseful, reviewed_catalog
+
+        holds: list[str] = []
+
+        class ConcurrentGetPeer(RedirectPeer):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.active = False
+                self.call_ready = threading.Event()
+                self.release_get = threading.Event()
+
+            def _origin_handler(self):  # noqa: N805 - mirrors the base factory
+                original = super()._origin_handler()
+                peer = self
+
+                class Handler(original):
+                    def _send(self, status, body=b"", headers=None, content_type=None):
+                        if self.command == "GET" and peer.active:
+                            # Bounded event wait, not a timing retry: the GET
+                            # is answered only after the client holds the tool
+                            # result (release_get, set by BothReadyBinding).
+                            if not peer.release_get.wait(DEADLINE_SECONDS):
+                                return super()._send(status, body, headers, content_type)
+                            return super()._send(
+                                307, headers={"Location": peer.destination_base + "/synthetic"})
+                        return super()._send(status, body, headers, content_type)
+
+                    def _json(self, request_id, result, headers=None):
+                        if isinstance(result, dict) and "structuredContent" in result:
+                            peer.call_ready.set()
+                        return super()._json(request_id, result, headers)
+
+                return Handler
+
+        class BothReadyBinding(NoRedirectBinding):
+            """Once the tool-call step holds its result, releases the peer's
+            GET 307 and completes the step on the same latch event the race's
+            waiter uses: one set() makes the step and the latch ready together
+            before the outcome is recorded (deterministic, no sleeps)."""
+
+            peer: ConcurrentGetPeer | None = None
+
+            async def run_until_latched(self, awaitable):
+                peer = type(self).peer
+
+                async def held():
+                    value = await awaitable
+                    if peer is not None and peer.active and peer.call_ready.is_set():
+                        event = self._latch_event()
+                        peer.release_get.set()
+                        await asyncio.wait_for(event.wait(), DEADLINE_SECONDS)
+                        holds.append(self.latch_phase)
+                    return value
+
+                return await super().run_until_latched(held())
+
+        async def one(version):
+            case = NoRedirectUseful()._delegated_read_case(version)
+            peer = ConcurrentGetPeer(
+                version=version,
+                form="strict_full" if version == "9.1.0" else "legacy",
+                tools=tuple(reviewed_catalog(version)),
+                call_handler=lambda _name, _arguments: case.structured,
+            )
+            BothReadyBinding.peer = peer
+            with peer.serve(), patch.object(upstream_read_module, "NoRedirectBinding", BothReadyBinding):
+                gateway = UpstreamReadGateway()
+                gateway.configure(
+                    replace(part1._settings(peer.url), ha_mcp_release_registry_enabled=False))
+                await asyncio.wait_for(gateway.initialize(FastMCP("x")), DEADLINE_SECONDS + 5)
+                peer.active = True
+                result = await asyncio.wait_for(
+                    call(gateway, case.public_tool, case.public_arguments), DEADLINE_SECONDS * 2)
+                health = gateway.health_snapshot()
+            return peer, result, health
+
+        for version in ("8.5.0", "9.1.0"):
+            with self.subTest(version=version):
+                holds.clear()
+                with part1.capture_all_logs() as capture:
+                    peer, result, health = asyncio.run(one(version))
+                # The hold engaged: the latch was set before the step's outcome.
+                self.assertEqual(holds, ["operation"])
+                self.assertEqual(peer.counters.executions, 1)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["details"]["failure_category"], UPSTREAM_REDIRECT_REFUSED)
+                self.assertIs(result["retryable"], False)
+                # The call was dispatched: the read is reported attempted.
+                self.assertTrue(result["metadata"]["upstream_dispatch_occurred"])
+                self.assertFalse(result["metadata"]["fallback_occurred"])
+                self.assertNotIn("data", result)
+                self.assertEqual(health["last_failure_category"], UPSTREAM_REDIRECT_REFUSED)
+                self.assertEqual(peer.counters.destination_total(), 0)
+                self.assert_no_canary(capture.lines + [json.dumps(result)], url=peer.url)
 
 
 # -- the analysis fence (S-d) ---------------------------------------------------
