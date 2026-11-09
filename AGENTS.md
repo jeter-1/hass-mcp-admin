@@ -113,8 +113,16 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Make the smallest coherent change and add regression coverage for defects.
 - Prepare draft pull requests by default. Review the complete final diff before
   declaring completion.
-- Complete Full/Evidence validation on a stable review candidate before
-  independent review. The implementer's self-review is not independent review.
+- Scope pre-review validation by change type. Complete Full/Evidence
+  validation on a stable review candidate before independent review when the
+  change touches any **Frozen or Protected Path**, anything under
+  `hass_mcp_engineering_beta/`, `tests/`, `scripts/`, `ci/`, or `.github/`,
+  or any dependency or tooling file (lock files, `pyproject.toml`,
+  requirements files, or check scripts). A change that touches none of those
+  (for example `docs/`, design notes, `*.md` outside those paths, or the root
+  `AGENTS.md` or `CLAUDE.md`) runs the Fast checks and CI only, and its pull
+  request states which tier ran and why. The implementer's self-review is not
+  independent review.
   Use a separately tasked reviewer/session that did not implement the change;
   a separate worktree provides optional file isolation, not independence.
   The default budget is one read-only independent review, one batch of accepted
