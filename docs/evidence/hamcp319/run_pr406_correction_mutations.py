@@ -2,8 +2,11 @@
 
 Codex verdict 6731785026 on PR #406 found three Medium defects:
 
-* F1: runtime admission on 8.5.0/9.1.0 bound the catalog order and the
-  presence of unused tools instead of only the tools Engineering uses.
+* F1: runtime admission on 9.1.0 bound the catalog order and the presence of
+  unused tools instead of only the tools Engineering uses. The fix is 9.1.0
+  only: 8.5.0 keeps its pre-existing order gate unchanged (architect ruling
+  2026-11-08, relayed; outside #406 scope), and the 8.5.0 pins must stay
+  green, so lifting the gate on 8.5.0 is itself a mutant.
 * F2: an operation-phase redirect refusal latched before a step's outcome was
   recorded lost to a succeeding step when both were ready together.
 * F3: dashboard analysis on 9.1.0 accepted an absent ``stored_config`` flag.
@@ -82,7 +85,7 @@ ORDER_EXEMPTION = ("            and selected_policy.reviewed_upstream_version\n"
                    "            not in USED_TOOL_ADMISSION_RELEASES\n")
 ORDER_TAIL = ("            and schema_fingerprint(observed_reviewed_order)\n"
               "            != expected_order_fingerprint\n        )\n")
-RELEASES = 'USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0", "9.1.0"})\n'
+RELEASES = 'USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0"})\n'
 DUPLICATE = ("                    catalog_has_invalid_structure = True\n"
              "                observed_reviewed.setdefault(name, []).append(item)\n")
 LATCH = ("            if self.latch_code is not None and (\n"
@@ -100,20 +103,29 @@ F2 = TESTS["matrix"] + ".NoRedirectLatchLinearization."
 F3 = TESTS["dashboard"] + ".AnalysisStoredConfigReleaseGate."
 
 mutants = [
-    # F1: catalog order and unused-tool presence are not runtime admission conditions.
-    ("F1", "re-add the order check on 8.5.0/9.1.0", GATEWAY, ORDER_EXEMPTION, "",
+    # F1: on 9.1.0 catalog order and unused-tool presence are not runtime
+    # admission conditions; 8.5.0's pre-existing order gate is unchanged.
+    ("F1", "re-add the order check on 9.1.0", GATEWAY, ORDER_EXEMPTION, "",
      F1_EXACT + "test_reordered_catalog_is_admitted"),
-    ("F1", "re-add the order check on 8.5.0/9.1.0 (paginated public catalog)", GATEWAY, ORDER_EXEMPTION, "",
+    ("F1", "re-add the order check on 9.1.0 (paginated public catalog)", GATEWAY, ORDER_EXEMPTION, "",
      F1_CATALOG + "test_91_catalog_order_resorted_pages_admitted"),
-    ("F1", "re-add the order check on 8.5.0/9.1.0 (unused tool removed/changed/extra)", GATEWAY,
-     ORDER_EXEMPTION, "", F1_CATALOG + "test_unused_tool_changes_admitted_both_versions"),
-    ("F1", "keep the order gate on 8.5.0 (release set 9.1.0 only)", POLICY, RELEASES,
-     'USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0"})\n', F1_CATALOG + "test_85_catalog_order_parity"),
-    ("F1", "keep the order gate on 9.1.0 (release set 8.5.0 only)", POLICY, RELEASES,
-     'USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0"})\n',
+    ("F1", "re-add the order check on 9.1.0 (unused tool removed)", GATEWAY,
+     ORDER_EXEMPTION, "", F1_CATALOG + "test_91_unused_tool_changes_admitted"),
+    ("F1", "re-add the order check on 9.1.0 (missing used read withholds only itself)", GATEWAY,
+     ORDER_EXEMPTION, "", F1_CATALOG + "test_91_catalog_missing_used_read_withheld_alone"),
+    ("F1", "empty the used-tool admission release set", POLICY, RELEASES,
+     'USED_TOOL_ADMISSION_RELEASES = frozenset()\n',
      F1_CATALOG + "test_91_catalog_order_resorted_pages_admitted"),
+    ("F1", "scope 8.5.0: lift the order gate on 8.5.0 too (exact admission pin)", POLICY, RELEASES,
+     'USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0", "9.1.0"})\n',
+     F1_EXACT + "test_85_order_gate_unchanged"),
+    ("F1", "scope 8.5.0: lift the order gate on 8.5.0 too (paginated public catalog pin)", POLICY, RELEASES,
+     'USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0", "9.1.0"})\n',
+     F1_CATALOG + "test_85_catalog_order_parity"),
+    ("F1", "scope 8.5.0: drop the order gate for every release", GATEWAY, ORDER_EXEMPTION + ORDER_TAIL,
+     "            and False\n        )\n", F1_EXACT + "test_85_order_gate_unchanged"),
     ("F1", "require every reviewed tool, used or not, to be present", GATEWAY, ORDER_TAIL,
-     ORDER_TAIL.rstrip("\n") + " or (\n            exact_catalog_structure_required\n"
+     ORDER_TAIL.rstrip("\n") + " or (\n            exact_catalog_order_required\n"
      "            and set(observed_reviewed_order) != set(policy_by_name)\n        )\n",
      F1_EXACT + "test_unused_tool_removal_is_admitted"),
     ("F1", "negative: accept a duplicate used tool on a reordered 9.1.0 catalog", GATEWAY, DUPLICATE,

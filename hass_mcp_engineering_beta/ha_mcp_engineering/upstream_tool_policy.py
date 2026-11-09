@@ -83,7 +83,10 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
 # catalog order nor the presence of an unused tool is a runtime admission
 # condition; their order fingerprints above remain offline evidence bindings,
 # and the CI exact-image lanes keep the strict full-catalog comparison.
-USED_TOOL_ADMISSION_RELEASES = frozenset({"8.5.0", "9.1.0"})
+# 9.1.0 only: the pre-existing order gate of every other release, 8.5.0
+# included, is deliberately unchanged (architect ruling 2026-11-08: outside
+# #406 scope).
+USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )

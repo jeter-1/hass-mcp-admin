@@ -330,8 +330,22 @@ class OrderAcrossPagesTests(unittest.TestCase):
         self.assertEqual(counters.destination_total(), 0)
         return exposed
 
+    def assert_blocked(self, version: str, tools, *, label: str):
+        health, exposed, counters, _url = self._run(version, tools)
+        with self.subTest(version=version, variant=label):
+            self.assertEqual(health["admission_status"], "blocked_incompatible_upstream")
+            self.assertEqual(health["compatibility_status"], "incompatible")
+            self.assertIn("catalog_order_mismatch", health["quarantine_reason_counts"])
+            # No stock reviewed tool is exposed; only the separately reviewed
+            # optional reader (HAMCP-162 behavior, unchanged) may remain.
+            self.assertLessEqual(exposed, frozenset({OPTIONAL_READER}))
+            self.assertNotIn(PROBE_TOOL, exposed)
+            self.assertGreaterEqual(counters.origin["tools/list:cursor"], 1)
+            self.assertEqual(counters.origin["tools/call"], 0)
+            self.assertEqual(counters.executions, 0)
+
     def assert_admitted_as(self, version: str, tools, baseline, *, label: str):
-        """Codex F1: a reorder or an unused-tool change admits the same reads."""
+        """Codex F1 (9.1.0): a reorder or an unused-tool change admits the same reads."""
         health, exposed, counters, _url = self._run(version, tools)
         with self.subTest(version=version, variant=label):
             self.assertEqual(health["admission_status"], "admitted_exact")
@@ -401,8 +415,8 @@ class OrderAcrossPagesTests(unittest.TestCase):
             "9.1.0", RUNTIME_91[:index] + RUNTIME_91[index + 1 :], baseline, label="missing"
         )
 
-    def test_unused_tool_changes_admitted_both_versions(self):
-        for version, tools in (("9.1.0", WIRE_91), ("8.5.0", CATALOG_85)):
+    def test_91_unused_tool_changes_admitted(self):
+        for version, tools in (("9.1.0", WIRE_91),):
             baseline = self._baseline(version, tools)
             index = _index(tools, "ha_restart")
             self.assert_admitted_as(
@@ -435,19 +449,39 @@ class OrderAcrossPagesTests(unittest.TestCase):
             )
 
     def test_85_catalog_order_parity(self):
+        # Architect ruling 2026-11-08 (relayed): the Codex F1 lift is 9.1.0
+        # only. 8.5.0 keeps its pre-existing order gate exactly: a reorder or
+        # an absent reviewed tool, used or unused, still quarantines.
         baseline = self._baseline("8.5.0", CATALOG_85)
-        self.assert_admitted_as(
-            "8.5.0", sorted(CATALOG_85, key=lambda t: t["name"]), baseline, label="alpha"
+        self.assert_blocked(
+            "8.5.0", sorted(CATALOG_85, key=lambda t: t["name"]), label="alpha"
         )
-        self.assert_admitted_as("8.5.0", _paged_resort(CATALOG_85), baseline, label="per_page")
-        self.assert_admitted_as(
-            "8.5.0", tuple(reversed(CATALOG_85)), baseline, label="reversed"
-        )
+        self.assert_blocked("8.5.0", _paged_resort(CATALOG_85), label="per_page")
+        self.assert_blocked("8.5.0", tuple(reversed(CATALOG_85)), label="reversed")
         index = _index(CATALOG_85, PROBE_TOOL)
-        self.assert_only_probe_missing(
-            "8.5.0", CATALOG_85[:index] + CATALOG_85[index + 1 :], baseline, label="missing"
+        self.assert_blocked(
+            "8.5.0", CATALOG_85[:index] + CATALOG_85[index + 1 :], label="missing"
+        )
+        index = _index(CATALOG_85, "ha_restart")
+        self.assert_blocked(
+            "8.5.0", CATALOG_85[:index] + CATALOG_85[index + 1 :], label="missing_unused"
         )
         self._quarantine_cases("8.5.0", CATALOG_85, baseline)
+
+    def test_85_tolerated_unused_changes_unchanged(self):
+        # Pre-existing 8.5.0 behavior, unchanged by #406: a changed unused
+        # descriptor and an unreviewed extra name never entered the order gate.
+        baseline = self._baseline("8.5.0", CATALOG_85)
+        self.assert_admitted_as(
+            "8.5.0", _changed(CATALOG_85, "ha_restart", _append_description), baseline,
+            label="changed_unused",
+        )
+        extra = dict(CATALOG_85[_index(CATALOG_85, PROBE_TOOL)], name="ha_synthetic_unreviewed_extra")
+        for position in (0, PAGE_SIZE, len(CATALOG_85)):
+            self.assert_admitted_as(
+                "8.5.0", tuple(CATALOG_85[:position]) + (extra,) + tuple(CATALOG_85[position:]),
+                baseline, label=f"extra_at_{position}",
+            )
 
     def _quarantine_cases(self, version, tools, baseline):
         index = _index(tools, PROBE_TOOL)

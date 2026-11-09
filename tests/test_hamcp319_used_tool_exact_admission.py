@@ -240,11 +240,17 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, tool=name):
                     gateway, transport = await self.gateway(
                         version, without(gateway_catalog(version), name))
-                    # Codex F1: only the missing used read is withheld; the
-                    # rest of the catalog is not quarantined by its absence.
-                    base = await self.baseline(version)
-                    self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
+                    self.assertNotIn(EXPOSED_AS.get(name, name), self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
+                    if version == '9.1.0':
+                        # Codex F1: on 9.1.0 only the missing used read is
+                        # withheld; the rest is not quarantined by its absence.
+                        base = await self.baseline(version)
+                        self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
+                    else:
+                        # 8.5.0 keeps its pre-existing order gate (architect
+                        # ruling 2026-11-08): the absence quarantines stock reads.
+                        self.assert_85_order_quarantine(gateway, transport)
 
     async def test_duplicate_used_read_fails_closed(self):
         for version in VERSIONS:
@@ -274,10 +280,12 @@ class ReadGatewayExactAdmission(adm.Harness):
                 self.assertNotIn(SETTER, self.exposed(gateway))
 
 
-    # Codex F1 (PR #406 verdict 6731785026): on 8.5.0 and 9.1.0 neither the
-    # catalog order nor the presence of an unused tool is a runtime admission
+    # Codex F1 (PR #406 verdict 6731785026): on 9.1.0 neither the catalog
+    # order nor the presence of an unused tool is a runtime admission
     # condition. Only the used tools are bound, each exactly. The strict
-    # full-catalog comparison stays in the CI exact-image lanes.
+    # full-catalog comparison stays in the CI exact-image lanes. 8.5.0 keeps
+    # its pre-existing order gate unchanged (architect ruling 2026-11-08,
+    # outside #406 scope); test_85_order_gate_unchanged pins it.
     def stock_reads(self, version):
         return {EXPOSED_AS.get(name, name) for name in used_reads(version)}
 
@@ -287,8 +295,14 @@ class ReadGatewayExactAdmission(adm.Harness):
         self.assertEqual(len(exposed - {YAML_TOOL}), 27)
         self.assertNotIn(EXTRA, exposed)
 
+    def assert_85_order_quarantine(self, gateway, transport):
+        health = gateway.health_snapshot()
+        self.assertIn('catalog_order_mismatch', health['quarantine_reason_counts'])
+        self.assertFalse(self.stock_reads('8.5.0') & self.exposed(gateway))
+        self.assertEqual(transport.sent, [])
+
     async def test_reordered_catalog_is_admitted(self):
-        for version in VERSIONS:
+        for version in ('9.1.0',):
             base = await self.baseline(version)
             self.assertEqual(len(base), 28)
             self.assertIn(YAML_TOOL, base)
@@ -307,7 +321,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_unused_tool_removal_is_admitted(self):
-        for version in VERSIONS:
+        for version in ('9.1.0',):
             base = await self.baseline(version)
             names = {tool['name'] for tool in gateway_catalog(version)}
             for name in ('ha_restart', 'ha_get_hacs_info'):
@@ -320,6 +334,8 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_extra_unused_tool_interspersed_is_admitted(self):
+        # 8.5.0 included: an unreviewed name never enters the reviewed-order
+        # fingerprint, so this was already admitted there before #406.
         for version in VERSIONS:
             base = await self.baseline(version)
             tools = gateway_catalog(version)
@@ -334,7 +350,7 @@ class ReadGatewayExactAdmission(adm.Harness):
 
     async def test_reordered_catalog_still_refuses_changed_missing_duplicate(self):
         """Lifting order does not lift the per-used-tool checks."""
-        for version in VERSIONS:
+        for version in ('9.1.0',):
             base = await self.baseline(version)
             cases = {
                 'changed': changed(gateway_catalog(version), 'ha_get_state', _set_description),
@@ -347,12 +363,49 @@ class ReadGatewayExactAdmission(adm.Harness):
                     exposed = self.exposed(gateway)
                     self.assertNotIn('ha_get_state', exposed)
                     self.assertEqual(transport.sent, [])
-                    if label == 'duplicate' and version == '9.1.0':
+                    if label == 'duplicate':
                         # 9.1 strict-full: a duplicate reviewed name blocks
                         # every stock read (HAMCP-319 sections 4 and 8.2).
                         self.assertLessEqual(exposed, {YAML_TOOL})
                     else:
                         self.assertEqual(exposed, base - {'ha_get_state'})
+
+    async def test_85_order_gate_unchanged(self):
+        """Architect ruling 2026-11-08: 8.5.0's pre-existing order gate stays.
+
+        F1 lifts the order and unused-presence condition on 9.1.0 only. On
+        8.5.0 a reorder or an absent reviewed tool, used or unused, still
+        quarantines every stock read (``catalog_order_mismatch``), exactly as
+        before #406; a changed unused descriptor and an unreviewed extra name
+        were already tolerated and still are.
+        """
+        version = '8.5.0'
+        base = await self.baseline(version)
+        tools = gateway_catalog(version)
+        blocked = {
+            'reversed': list(reversed(tools)),
+            'name_sorted': sorted(tools, key=lambda tool: tool['name']),
+            'rotated': tools[1:] + tools[:1],
+            'two_used_reads_swapped': _swap(tools, 'ha_get_state', 'ha_search'),
+            'unused_ha_restart_removed': without(tools, 'ha_restart'),
+            'used_ha_get_state_removed': without(tools, 'ha_get_state'),
+        }
+        for label, catalog in blocked.items():
+            with self.subTest(variant=label):
+                gateway, transport = await self.gateway(version, catalog)
+                self.assert_85_order_quarantine(gateway, transport)
+        extra = deepcopy(next(t for t in tools if t['name'] == 'ha_get_state'))
+        extra['name'] = EXTRA
+        tolerated = {
+            'unused_ha_restart_changed': changed(tools, 'ha_restart', _set_description),
+            'unreviewed_extra_interspersed': tools[:5] + [extra] + tools[5:],
+        }
+        for label, catalog in tolerated.items():
+            with self.subTest(variant=label):
+                gateway, transport = await self.gateway(version, catalog)
+                self.assertEqual(gateway.health_snapshot()['quarantine_reason_counts'], {})
+                self.assertEqual(self.exposed(gateway), base)
+                self.assertEqual(transport.sent, [])
 
 
 def _swap(tools, first, second):

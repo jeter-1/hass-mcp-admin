@@ -645,14 +645,16 @@ output-schema, duplicate-name and count checks are compiled from the Phase 1
 All 82 rows in [`provider-delta.json`](evidence/hamcp319/phase1/receipts/provider-delta.json)
 receive an explicit disposition, including prohibited and quarantined names.
 
-**Correction (Codex F1 on PR #406).** On 8.5.0 and 9.1.0 the order fingerprint
-is an offline evidence binding and the CI exact-image lanes' strict
-full-catalog comparison, not a runtime admission condition. Runtime admission
-binds each tool Engineering uses, exactly and once: a changed, missing or
-duplicate used tool fails closed, while a pagination-equivalent reorder, an
-absent unused tool or an extra unused tool leaves the 27 stock reads (28 with
-the optional YAML read) admitted. 8.4.x and 8.6.0 keep the order check
-(`USED_TOOL_ADMISSION_RELEASES` in `upstream_tool_policy.py`).
+**Correction (Codex F1 on PR #406).** On 9.1.0 the order fingerprint is an
+offline evidence binding and the CI exact-image lanes' strict full-catalog
+comparison, not a runtime admission condition. Runtime admission binds each
+tool Engineering uses, exactly and once: a changed, missing or duplicate used
+tool fails closed, while a pagination-equivalent reorder, an absent unused tool
+or an extra unused tool leaves the 27 stock reads (28 with the optional YAML
+read) admitted (`USED_TOOL_ADMISSION_RELEASES = {"9.1.0"}` in
+`upstream_tool_policy.py`). Every other release, 8.5.0 included, keeps its
+pre-existing runtime order check unchanged: by architect ruling (2026-11-08,
+relayed) the 8.5.0 order restriction is outside #406's scope.
 
 ## 4. The `/catalog/full` option
 

@@ -2954,17 +2954,18 @@ class UpstreamReadGateway:
                 selected_policy.reviewed_upstream_version
             )
         )
-        exact_catalog_structure_required = (
+        exact_catalog_order_required = (
             require_exact_order and expected_order_fingerprint is not None
         )
         catalog_structure_invalid = (
             catalog.catalog_complete is not True
-            or (exact_catalog_structure_required and catalog_has_invalid_structure)
+            or (exact_catalog_order_required and catalog_has_invalid_structure)
         )
-        # HAMCP-319 (Codex F1): 8.5.0 and 9.1.0 bind each used tool, not the
-        # catalog order; a reorder or an absent unused tool changes nothing.
+        # HAMCP-319 (Codex F1): 9.1.0 binds each used tool, not the catalog
+        # order; a reorder or an absent unused tool changes nothing there.
+        # Every other release keeps its pre-existing order gate unchanged.
         catalog_order_invalid = (
-            exact_catalog_structure_required
+            exact_catalog_order_required
             and selected_policy.reviewed_upstream_version
             not in USED_TOOL_ADMISSION_RELEASES
             and schema_fingerprint(observed_reviewed_order)
