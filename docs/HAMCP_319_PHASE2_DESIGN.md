@@ -645,6 +645,15 @@ output-schema, duplicate-name and count checks are compiled from the Phase 1
 All 82 rows in [`provider-delta.json`](evidence/hamcp319/phase1/receipts/provider-delta.json)
 receive an explicit disposition, including prohibited and quarantined names.
 
+**Correction (Codex F1 on PR #406).** On 8.5.0 and 9.1.0 the order fingerprint
+is an offline evidence binding and the CI exact-image lanes' strict
+full-catalog comparison, not a runtime admission condition. Runtime admission
+binds each tool Engineering uses, exactly and once: a changed, missing or
+duplicate used tool fails closed, while a pagination-equivalent reorder, an
+absent unused tool or an extra unused tool leaves the 27 stock reads (28 with
+the optional YAML read) admitted. 8.4.x and 8.6.0 keep the order check
+(`USED_TOOL_ADMISSION_RELEASES` in `upstream_tool_policy.py`).
+
 ## 4. The `/catalog/full` option
 
 **Operator configuration (Stage B, after the app is updated to 9.1.0).** Append
@@ -675,9 +684,11 @@ captured configuration:
    - protocol `2025-03-26`;
    - selector agreement (9.1.0 requires `strict_full`).
 3. At list, over the same transport:
-   - the exact 82-name order fingerprint;
-   - per-descriptor, annotation and output-schema fingerprints;
-   - no duplicates or missing names.
+   - per-descriptor, annotation and output-schema fingerprints of every
+     used tool;
+   - no duplicate or missing used tool, and no duplicate reviewed name;
+   - the exact 82-name order fingerprint only in the CI exact-image lanes,
+     not at runtime (section 3.4 correction).
 4. At call, the per-call catalog validator, the exact argument construction,
    and the version-keyed adapters.
 
