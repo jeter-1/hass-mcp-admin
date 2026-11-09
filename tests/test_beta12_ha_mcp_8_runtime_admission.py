@@ -45,6 +45,10 @@ EXACT_ARTIFACT_INSPECTION = (
     EVIDENCE / "ha-mcp-8.0.0-exact-artifact-inspection.json"
 )
 FIELD_DIFF_REPORT = EVIDENCE / "ha-mcp-8.0.0-live-addon-field-diff.json"
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def load_json(path: Path) -> dict:
@@ -98,7 +102,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
 
         gateway, target = await self.gateway_for(tools)
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 24)
+        self.assertEqual(health["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["exact_matched_automatic_read_count"], 24)
         self.assertEqual(health["runtime_contract_mismatch_count"], 0)
         self.assertEqual(health["quarantined_automatic_read_count"], 0)
@@ -113,7 +117,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["reviewed_automatic_read_count"], 24)
         self.assertEqual(health["missing_automatic_read_count"], 0)
         self.assertEqual(health["unreviewed_tool_count"], 0)
-        self.assertEqual(len(registered_tools(target)), 72)
+        self.assertEqual(len(registered_tools(target)), 72 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn("ha_search", registered_tools(target))
         self.assertNotIn("ha_get_operation_status", registered_tools(target))
         self.assertEqual(
@@ -154,8 +158,8 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["upstream_advertised_tool_count"], 78)
         self.assertEqual(health["reviewed_automatic_read_count"], 26)
         self.assertEqual(health["exact_matched_automatic_read_count"], 26)
-        self.assertEqual(health["dynamically_exposed_count"], 26)
-        self.assertEqual(len(registered_tools(target)), 74)
+        self.assertEqual(health["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(len(registered_tools(target)), 74 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             health["observed_catalog_fingerprint"],
             "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c",
@@ -235,7 +239,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["runtime_contract_mismatch_count"], 1)
         self.assertEqual(health["quarantined_automatic_read_count"], 1)
-        self.assertEqual(health["dynamically_exposed_count"], 23)
+        self.assertEqual(health["dynamically_exposed_count"], 23 - RETIRED_COUNT)  # HAMCP-290
         item = health["quarantined_tools"][0]
         self.assertEqual(item["upstream_name"], "ha_get_state")
         self.assertEqual(
@@ -300,7 +304,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     health["quarantined_automatic_read_count"], 1
                 )
-                self.assertEqual(health["dynamically_exposed_count"], 23)
+                self.assertEqual(health["dynamically_exposed_count"], 23 - RETIRED_COUNT)  # HAMCP-290
                 self.assertEqual(
                     health["quarantined_tools"][0]["upstream_name"],
                     "ha_get_state",

@@ -2,6 +2,34 @@
 
 Date: 2026-07-10
 
+## Installed-only Marketplace inventory (2.5.0, HAMCP-290)
+
+`get_marketplace_inventory` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider
+  `direct_home_assistant_marketplace`, policy
+  `bounded_marketplace_inventory_read` (route `marketplace_inventory_read_v1`);
+- risk `read`, writes `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- requires signed Core admission of `core.marketplace_read`. That profile is
+  not signed in 2.5.0, so the tool is listed but refuses on every Core until
+  the owner signs it after 2.5.0 merges.
+
+It lists and searches installed repositories only, through the constant
+WebSocket command `marketplace/repositories/list`. The single fallback is
+`hacs/repositories/list` on the same connection, used only when Core answers
+that command with error code exactly `unknown_command`. Results are paged and
+sanitized, and they name the backend that answered. The tool never lists
+uninstalled catalog repositories and reaches no management command.
+
+The delegated ha-mcp `ha_get_hacs_info` read is retired (Josh decision,
+2026-11-08). It is never exposed or dispatched on any reviewed ha-mcp release,
+with no alias and no fallback. The gateway withholds it with the disposition
+`retired_delegated_read`. The catalog is 82 static + 28 delegated = 110 on the
+exact ha-mcp 8.5.0 component capture, and 82 + 27 = 109 on stock 8.6.0. See
+[HAMCP_290_MARKETPLACE_READ_DESIGN.md](docs/HAMCP_290_MARKETPLACE_READ_DESIGN.md).
+
 ## Stuck governance record inspection (2.4.1-beta.63, HAMCP-253)
 
 `inspect_governance_record` is a native, read-only governance tool:

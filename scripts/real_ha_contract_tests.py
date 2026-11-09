@@ -94,6 +94,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READ_TOOLS  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
     DeviceRegistrySchema,
     assess_device_registry,
@@ -3776,8 +3777,10 @@ async def _run_core_2026_9_child_contract(
             for item in core_assessment["authority_profiles"]
             if not str(item["disposition"]).startswith("admitted")
         ]
+        # HAMCP-290: the retired delegated ha_get_hacs_info is matched but
+        # never exposed (28 matched automatic reads expose 27).
         _assert_device_contract(
-            len(tools) == 28,
+            len(tools) == 28 - len(RETIRED_DELEGATED_READ_TOOLS),
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
             diagnostic={

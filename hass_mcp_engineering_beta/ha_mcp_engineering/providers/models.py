@@ -29,6 +29,7 @@ class ProviderCapability(str, Enum):
     BACKUP_INVENTORY = "backup_inventory"
     RECORDER_SETTINGS = "recorder_settings"
     SCRIPT_TRACE = "script_trace"
+    MARKETPLACE_INVENTORY = "marketplace_inventory"
     UNREGISTERED_ENTITIES = "unregistered_entities"
     CONFIGURATION_DEFINITIONS = "configuration_definitions"
     AUTOMATION_BASELINE_CAPTURE = "automation_baseline_capture"

@@ -33,6 +33,7 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
 from ha_mcp_engineering.clients.upstream_read import McpReadCatalog
 from ha_mcp_engineering.errors import DashboardProviderError
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
 from ha_mcp_engineering.providers.upstream_dashboard import EXACT_GETTER_RELEASES
 from ha_mcp_engineering.providers.upstream_fan import REQUIRED_TOOLS
 from ha_mcp_engineering.providers.upstream_yaml_reader import TOOL_NAME as YAML_TOOL
@@ -53,10 +54,18 @@ EXTRA = 'ha_synthetic_unreviewed_extra'
 EXPOSED_AS = {'ha_manage_blueprints': 'ha_get_blueprint'}
 
 
-def used_reads(version):
-    """Every read route the gateway may dispatch for this release."""
+def policy_read_routes(version):
     policy = REGISTRY.by_version[version].policy
     return sorted(entry.upstream_name for entry in policy.tools if entry.is_read_route)
+
+
+def used_reads(version):
+    """Every read route the gateway may dispatch for this release.
+
+    HAMCP-290: a retired delegated read (ha_get_hacs_info) stays a reviewed
+    8.5.0 read route but is never exposed or dispatched, so it is not used.
+    """
+    return sorted(set(policy_read_routes(version)) - RETIRED_DELEGATED_READS)
 
 
 def _set_title(tool):
@@ -167,7 +176,12 @@ class Scope(unittest.TestCase):
             'ha_list_services', 'ha_manage_blueprints', 'ha_search',
         }
         self.assertEqual(set(used_reads('9.1.0')), expected_reads)
-        self.assertEqual(set(used_reads('8.5.0')), expected_reads | {'ha_get_hacs_info'})
+        # HAMCP-290: ha_get_hacs_info stays an 8.5.0 policy read route but is
+        # retired (never exposed or dispatched); 9.1.0 classifies it unsupported.
+        self.assertEqual(set(used_reads('8.5.0')), expected_reads)
+        self.assertEqual(RETIRED_DELEGATED_READS, frozenset({'ha_get_hacs_info'}))
+        self.assertEqual(set(policy_read_routes('8.5.0')), expected_reads | RETIRED_DELEGATED_READS)
+        self.assertEqual(set(policy_read_routes('9.1.0')), expected_reads)
         self.assertEqual(REQUIRED_TOOLS, ('ha_list_services', 'ha_get_state', 'ha_call_service'))
         self.assertEqual((GETTER, GUIDE, SETTER), (
             'ha_config_get_dashboard', 'ha_get_skill_guide', 'ha_config_set_dashboard'))
@@ -187,6 +201,7 @@ class ReadGatewayExactAdmission(adm.Harness):
         exposed = self.exposed(gateway)
         for name in used_reads(version):
             self.assertIn(EXPOSED_AS.get(name, name), exposed)
+        self.assertFalse(RETIRED_DELEGATED_READS & exposed)
         self.assertEqual(transport.sent, [])
         return exposed
 

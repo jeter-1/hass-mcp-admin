@@ -72,6 +72,10 @@ ADDON_RAW = (
 NORMALIZED = (
     "5ec7b1f4a4c2ffabb2acc14c73a230f08a5f94908b6f27e57cb6739d662f03d7"
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def capture(version: str) -> dict:
@@ -234,7 +238,7 @@ class ExactEightOneRegistryTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
 
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 24)
+        self.assertEqual(health["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["held_read_count"], 2)
         self.assertEqual(health["fallback_count"], 0)
         self.assertNotIn("ha_manage_hacs", gateway._registered_names)

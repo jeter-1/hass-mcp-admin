@@ -19,7 +19,8 @@ from ha_mcp_engineering.upstream_tool_policy import (
     validate_reviewed_release_catalog, schema_fingerprint,
 )
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
-from test_beta58_ha_mcp_8_4_3_continuity import EXACT_READS
+from test_beta58_ha_mcp_8_4_3_continuity import EXPOSED_READS  # HAMCP-290: omits the retired read
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # HAMCP-290
 import test_upstream_8_5_compatibility as previous
 import test_typed_power as power
 
@@ -65,7 +66,7 @@ class ReadCompatibilityTests(unittest.IsolatedAsyncioTestCase):
         g, t = await self.gateway()
         old, _ = await self.gateway(previous.capture()['tools'], '8.5.0')
         actual = g._registered_tool_registry.snapshot()
-        self.assertEqual(set(actual), EXACT_READS)
+        self.assertEqual(set(actual), EXPOSED_READS)  # HAMCP-290
         for name, tool in actual.items():
             with self.subTest(name=name):
                 if name == 'ha_get_skill_guide':
@@ -85,13 +86,20 @@ class ReadCompatibilityTests(unittest.IsolatedAsyncioTestCase):
             g, t = await self.gateway()
             for record in records:
                 with self.subTest(variant=variant, tool=record['public_name']):
+                    if record['upstream_name'] in RETIRED_DELEGATED_READS:
+                        # HAMCP-290: the retained result stays evidence, but the
+                        # retired read is never exposed, so it cannot be called.
+                        self.assertNotIn(record['public_name'], g._registered_tool_registry.snapshot())
+                        continue
                     args = dict(record['arguments'])
                     if record['public_name'] == 'ha_get_blueprint': args.pop('action')
                     t.override = record['result']
                     result, _ = await self.call(g, record['public_name'], args)
                     self.assertTrue(result['success'], result)
                     self.assertFalse(result['metadata']['fallback_occurred'])
-            self.assertEqual(len(t.sent), 25)
+            retired = sum(record['upstream_name'] in RETIRED_DELEGATED_READS for record in records)
+            self.assertEqual(len(t.sent), 25 - retired)  # HAMCP-290
+            self.assertFalse({tool for tool, _ in t.sent} & RETIRED_DELEGATED_READS)
 
     async def test_scene_lookup_cannot_become_search(self):
         g, t = await self.gateway()
@@ -301,7 +309,7 @@ class Signed860Tests(unittest.IsolatedAsyncioTestCase):
     async def test_signed_matching_entry_preserves_closed_wrapper_and_fan_authority(self):
         entry = _signed_entry_for(self.release, version='8.6.0')
         g, t, health = await self._initialize(raw=self._raw(entry=entry), version='8.6.0')
-        self.assertEqual(set(g._registered_tool_registry.snapshot()), EXACT_READS, health)
+        self.assertEqual(set(g._registered_tool_registry.snapshot()), EXPOSED_READS, health)  # HAMCP-290
         self.assertTrue(g.fan_provider_authority_token('8.6.0'))
         raw = next((x for x in entry['tool_contracts'] if x['tool_name'] == 'ha_manage_blueprints'))
         self.assertFalse(raw['reviewed_automatic_read'])
@@ -675,7 +683,7 @@ class SearchPairTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(validation.valid, validation)
                 g, t = await self.gateway(observed['tools'])
                 tools = g._registered_tool_registry.snapshot()
-                self.assertEqual(set(tools), EXACT_READS)
+                self.assertEqual(set(tools), EXPOSED_READS)  # HAMCP-290
                 current = tools['ha_search']
                 for field in ('parameters', 'description', 'annotations'):
                     self.assertEqual(getattr(current, field), getattr(before, field))
@@ -921,7 +929,7 @@ class ComponentSignedSearchTests(Signed860Tests):
                               'reviewed_strict_full_contract_fingerprint',
                               'observed_strict_full_contract_fingerprint'):
                     self.assertEqual(health[field], expected, field)
-                self.assertEqual(set(g._registered_tool_registry.snapshot()), EXACT_READS)
+                self.assertEqual(set(g._registered_tool_registry.snapshot()), EXPOSED_READS)  # HAMCP-290
                 self.assertEqual(t.calls, 0)
 
     async def test_search_authority_loss_before_commit_refuses_without_retry(self):

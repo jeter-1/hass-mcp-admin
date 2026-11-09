@@ -11,7 +11,7 @@ transport, real typed power service) against loopback ``RedirectPeer`` peers:
   time" (section 8.4).
 * ``test_85_useful_calls_per_row`` (8.5-only): on **both** accepted URL forms,
   one useful authorized call per 8.5.0 ledger row that the gateway serves
-  (rows 1-28), each answered by its committed fixture and attributed to
+  (rows 1-28 except row 15, retired by HAMCP-290), each answered by its committed fixture and attributed to
   8.5.0. Kills "Drop the 8.5.0 registry entry". Rows 25-28 are C (8.5.0
   evidence); rows 1-24 are S (8.6 replay), see the provenance list below.
 * ``test_91_strict_admission_positive`` (9.1-only): on a ``strict_full`` value
@@ -95,6 +95,7 @@ from ha_mcp_engineering.clients.ha_mcp_endpoint import (  # noqa: E402
 from ha_mcp_engineering.configuration import (  # noqa: E402
     parse_upstream_dashboard_endpoint,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
 from ha_mcp_engineering.power.contracts import POWER_RELEASES, digest  # noqa: E402
 from ha_mcp_engineering.power.service import PowerCoreAuthority, PowerService  # noqa: E402
 from ha_mcp_engineering.providers import upstream_platform_reads as platform  # noqa: E402
@@ -152,7 +153,7 @@ LEDGER = (
     "ha_config_get_yaml",
 )
 ROW = {name: index for index, name in enumerate(LEDGER, start=1)}
-HACS = "ha_get_hacs_info"  # row 15, H on 9.1.0
+HACS = "ha_get_hacs_info"  # row 15, H on 9.1.0; retired on 8.5.0 (HAMCP-290)
 YAML = "ha_config_get_yaml"  # row 29, optional; its own provider path
 # Rows whose 8.5.0 disposition is a bounded projection or redaction rather
 # than byte-identical pass-through (row 12 section 6.5 projection, row 15 the
@@ -330,13 +331,26 @@ class EightFiveOnlyTests(_Assertions, unittest.TestCase):
                 self.assertEqual(health["admission_status"], "admitted_exact")
                 self.assertEqual(health["upstream_server_version"], "8.5.0")
                 self.assertIn("8.5.0", health["reviewed_supported_versions"])
-                # Every ledger row the gateway serves on 8.5.0 (rows 1-28);
-                # row 29 is the optional reader on its own provider path
+                # Every ledger row the gateway serves on 8.5.0 (rows 1-28
+                # except row 15: HAMCP-290 retired the delegated
+                # ha_get_hacs_info on every reviewed release); row 29 is the
+                # optional reader on its own provider path
                 # (test_hamcp319_yaml.test_85_parity_row_29_positive).
-                self.assertEqual(sorted(exposed & set(LEDGER)), sorted(set(LEDGER) - {YAML}))
+                self.assertEqual(
+                    sorted(exposed & set(LEDGER)), sorted(set(LEDGER) - {HACS, YAML})
+                )
+                self.assertFalse(RETIRED_DELEGATED_READS & exposed)
+                self.assertEqual(
+                    health["core_withheld_read_count"], len(RETIRED_DELEGATED_READS)
+                )
                 self.assertEqual(counters.destination_total(), 0)
                 self.assertEqual(counters.injected, 0)
+            with self.subTest(form=form, row=ROW[HACS], tool=HACS):
+                # Retired: never exposed, so never called.
+                self.assertNotIn(HACS, results)
             for name in LEDGER[:-1]:
+                if name == HACS:
+                    continue
                 with self.subTest(form=form, row=ROW[name], tool=name):
                     result, sent = results[name]
                     upstream = (
@@ -563,8 +577,10 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 self.assertEqual(record["counters"].executions, 0)
                 self.assertEqual(_list_pages(record["counters"]), listed)
 
-        # A: 8.5.0 on its legacy value, exactly as today.
-        admitted("A", "8.5.0", 28)
+        # A: 8.5.0 on its legacy value, exactly as today less the retired
+        # row 15 (HAMCP-290).
+        admitted("A", "8.5.0", 27)
+        self.assertNotIn(HACS, records["A"]["exposed"])
         # B1: 9.1.0 on the unchanged legacy value: refused after initialize and
         # before any list, naming /catalog/full, with no partial surface.
         refused("B1", category=UPSTREAM_CATALOG_MODE_UNADMITTED, listed=0)
@@ -586,7 +602,8 @@ class SideBySideTests(_Assertions, unittest.TestCase):
             self.assertIsNot(stale.get("success"), True, stale)
         self.assertEqual(left["calls"], [])
         # Rollback with the suffix removed: back to the Stage A state.
-        admitted("rollback_suffix_removed", "8.5.0", 28)
+        admitted("rollback_suffix_removed", "8.5.0", 27)
+        self.assertNotIn(HACS, records["rollback_suffix_removed"]["exposed"])
         self.assertNotIn("engineering_rollback", records)
         # Every generation change replaced and abandoned the previous
         # transport; the previous snapshot is no longer current.

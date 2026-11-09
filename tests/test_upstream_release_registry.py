@@ -83,6 +83,10 @@ DASHBOARD_ATTESTATIONS = (
     / "contracts"
     / "upstream_dashboard_builtin_attestations.json"
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def captured_tools(version: str) -> list[dict]:
@@ -1010,7 +1014,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "7.14.1"
         )
         first = gateway.health_snapshot()
-        self.assertEqual(first["dynamically_exposed_count"], 26)
+        self.assertEqual(first["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             first["selected_compatibility_entry_id"],
             "ha-mcp-v7.14.1-68f386d9",
@@ -1026,7 +1030,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         await gateway.initialize(server)
         candidate = gateway.health_snapshot()
-        self.assertEqual(candidate["dynamically_exposed_count"], 26)
+        self.assertEqual(candidate["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             candidate["selected_compatibility_entry_id"],
             "ha-mcp-v7.14.2-7917b2d3",
@@ -1085,12 +1089,12 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         await gateway.initialize(server)
         rollback = gateway.health_snapshot()
-        self.assertEqual(rollback["dynamically_exposed_count"], 26)
+        self.assertEqual(rollback["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             rollback["selected_compatibility_entry_id"],
             "ha-mcp-v7.14.1-68f386d9",
         )
-        self.assertEqual(len(gateway._registered_names), 26)
+        self.assertEqual(len(gateway._registered_names), 26 - RETIRED_COUNT)  # HAMCP-290
 
     async def test_unknown_version_fails_closed_with_operator_action(self):
         gateway, server, transport = await self.configured_gateway(
@@ -1120,7 +1124,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "7.14.2", changed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 25)
+        self.assertEqual(health["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             health["quarantined_automatic_read_count"], 1
         )
@@ -1133,7 +1137,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "7.14.2", removed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 25)
+        self.assertEqual(health["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["missing_automatic_read_count"], 1)
 
         added = [
@@ -1153,7 +1157,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "7.14.2", added
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertEqual(health["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(health["unreviewed_observed_tool_count"], 1)
         self.assertNotIn(
             "ha_new_unreviewed_read", gateway._registered_names

@@ -620,6 +620,23 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "sanitized": "shared_untrusted_data_sanitizer",
     },
     {
+        # HAMCP-290: installed-only Marketplace inventory; dormant until the
+        # owner-signed registry admits core.marketplace_read.
+        "tool": "get_marketplace_inventory",
+        "category": "evidence",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "direct_home_assistant_marketplace",
+        "policy": "bounded_marketplace_inventory_read",
+        "core_capabilities": ["core.marketplace_read"],
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": "not_evaluated",
+        "fallback": "hacs_repositories_list_on_exact_unknown_command",
+        "sanitized": "shared_untrusted_data_sanitizer",
+    },
+    {
         "tool": "create_home_assistant_restart_plan",
         "category": "operational_administration",
         "status": "beta_native",
