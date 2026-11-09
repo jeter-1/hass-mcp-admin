@@ -2,8 +2,9 @@
 
 The side_by_side rollback stage runs ``scripts/exact_image_read_gateway_acceptance.py``
 against the previous published release 2.4.2-beta.6 (tag v2.4.2-beta.6, source
-af5ec837). That release predates HAMCP-290: it registers 81 static tools (no
-``get_marketplace_inventory``) and still delegates ``ha_get_hacs_info`` (nothing
+af5ec837). That release predates HAMCP-290 and HAMCP-229: it registers 81 static
+tools (no ``get_marketplace_inventory`` or ``automation_reliability_batch_analysis``)
+and still delegates ``ha_get_hacs_info`` (nothing
 retired, ``core_withheld_read_count`` 0). Applying the current source's
 expectation to it failed CI run 42547738402 (``sbs_rollback_85_legacy_useful``).
 
@@ -65,12 +66,14 @@ runners = _load_script("exact_image_admission_91_runners")
 
 ROLLBACK_VERSION = "2.4.2-beta.6"
 MARKETPLACE = "get_marketplace_inventory"
+RELIABILITY_BATCH = "automation_reliability_batch_analysis"
 CURRENT_STATIC = frozenset(
     tool.name for tool in registered_tools(get_registered_server()).values()
 )
 # Independently restated here (not read from the script): beta.6 is the current
-# static set without the HAMCP-290 marketplace tool.
-BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE}
+# static set without the HAMCP-290 marketplace tool and the HAMCP-229
+# reliability batch tool.
+BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH}
 RELEASE_850 = load_reviewed_upstream_release_registry().by_version["8.5.0"]
 POLICY_850 = RELEASE_850.policy
 READS_850 = frozenset(e.exposed_name for e in POLICY_850.tools if e.is_read_route)
@@ -190,7 +193,8 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
     def test_fixture_preconditions(self):
         self.assertEqual(RETIRED_850, {"ha_get_hacs_info"})
         self.assertIn(MARKETPLACE, CURRENT_STATIC)
-        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 1)
+        self.assertIn(RELIABILITY_BATCH, CURRENT_STATIC)
+        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 2)
         self.assertNotEqual(SERVER_VERSION, ROLLBACK_VERSION)
 
     def test_beta6_rollback_image_catalog_is_accepted(self):
@@ -259,6 +263,7 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertEqual(acceptance.BETA6_STATIC_TOOL_NAMES, BETA6_STATIC)
         self.assertEqual(acceptance.BETA6_RETIRED_DELEGATED_READS, frozenset())
         self.assertNotIn(MARKETPLACE, acceptance.BETA6_STATIC_TOOL_NAMES)
+        self.assertNotIn(RELIABILITY_BATCH, acceptance.BETA6_STATIC_TOOL_NAMES)
 
     def test_pinned_version_is_the_rollback_identity(self):
         self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, ROLLBACK_VERSION)
