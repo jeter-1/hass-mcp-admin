@@ -477,7 +477,8 @@ class GovernedPositive(Harness):
         payload = fill(ENVELOPES['get_stored_config'], config=config,
                        config_hash=compute_config_hash_91(config),
                        config_size_bytes=len(json.dumps(config)))
-        decoded = upstream_dashboard._analysis_configuration(text_result(payload), URL_PATH)
+        decoded = upstream_dashboard._analysis_configuration(
+            text_result(payload), URL_PATH, upstream_version='9.1.0')
         self.assertEqual(decoded['configuration'], config)
         self.assertEqual(decoded['config_hash'], compute_config_hash_91(config))
 
@@ -764,10 +765,16 @@ class NoConfigFailsClosed(Harness):
                     'config': {'views': []}, 'config_hash': compute_config_hash_91({'views': []})},
                 fill(ENVELOPES['get_stored_config'], config={'views': []},
                      config_hash=compute_config_hash_91({'views': []}),
-                     config_size_bytes=13) | {'stored_config': None}):
-            with self.subTest(payload=payload.get('stored_config')):
+                     config_size_bytes=13) | {'stored_config': None},
+                # Codex F3 on PR #406: on 9.1.0 an absent flag is refused too.
+                {key: value for key, value in fill(
+                    ENVELOPES['get_stored_config'], config={'views': []},
+                    config_hash=compute_config_hash_91({'views': []}),
+                    config_size_bytes=13).items() if key != 'stored_config'}):
+            with self.subTest(payload=payload.get('stored_config', 'absent')):
                 with self.assertRaises(analysis_contracts.AnalysisError) as caught:
-                    upstream_dashboard._analysis_configuration(text_result(payload), URL_PATH)
+                    upstream_dashboard._analysis_configuration(
+                        text_result(payload), URL_PATH, upstream_version='9.1.0')
                 self.assertEqual(caught.exception.reason, 'source_rejected')
 
 
@@ -839,6 +846,108 @@ class AnalysisOperatorRemediation(unittest.IsolatedAsyncioTestCase):
         error = analysis_contracts.AnalysisError(
             'authority_unavailable', operator_remediation='https://synthetic.invalid/x')
         self.assertEqual(error.details, {'reason': 'authority_unavailable'})
+
+
+
+class AnalysisStoredConfigReleaseGate(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-319 (Codex F3 on PR #406): dashboard analysis decodes with the
+    admitted release. On 9.1.0, whose get mode always reports stored_config,
+    anything but literal ``stored_config: true`` is refused before any
+    configuration or hash work, matching the governed getter. 8.5.0 omits the
+    flag and stays analyzable. The real provider admission runs over a
+    synthetic handshake; no endpoint is contacted."""
+
+    REFUSED_91 = (('missing', None), ('false', False), ('null', None),
+                  ('string_true', 'true'), ('one', 1), ('zero', 0),
+                  ('object', {}), ('list', [True]))
+
+    async def analyse(self, version, flag, value=None):
+        from types import SimpleNamespace
+        from ha_mcp_engineering.clients.dashboard_analysis import CollectionBudget
+        from ha_mcp_engineering.clients.mcp import McpDashboardHandshake, McpDashboardRead
+
+        provider = UpstreamDashboardProvider()
+        peer = DashboardPeer(version)
+        handshake = McpDashboardHandshake(
+            '2025-03-26', 'ha-mcp', version, tuple(peer.tools), 0)
+        provider._validate_handshake(handshake)
+        payload, _ = peer._get({'url_path': URL_PATH})
+        if flag == 'missing':
+            payload.pop('stored_config', None)
+        elif flag != 'unchanged':
+            payload['stored_config'] = value
+        exchanges = []
+
+        async def exchange(arguments, admit, **_kwargs):
+            exchanges.append(arguments)
+            await admit(handshake)
+            return McpDashboardRead(handshake, text_result(payload), 0)
+
+        provider._transport = SimpleNamespace(execute_analysis_read=exchange)
+        hashing = []
+        upstream_hash = upstream_dashboard._upstream_config_hash
+        engineering_hash = upstream_dashboard._engineering_config_hash
+
+        def spy(name, function):
+            def wrapped(*args, **kwargs):
+                hashing.append(name)
+                return function(*args, **kwargs)
+            return wrapped
+
+        with patch.object(upstream_dashboard, '_upstream_config_hash',
+                          spy('upstream', upstream_hash)), \
+                patch.object(upstream_dashboard, '_engineering_config_hash',
+                             spy('engineering', engineering_hash)):
+            try:
+                data, metadata = await asyncio.wait_for(
+                    provider.get_analysis_configuration(
+                        url_path=URL_PATH, authorize=lambda: None,
+                        budget=CollectionBudget()), 5)
+            except analysis_contracts.AnalysisError as error:
+                outcome = ('refused', error.reason, None, None)
+            else:
+                outcome = ('accepted', None, data, metadata)
+        self.assertEqual(len(exchanges), 1)
+        return outcome, hashing, peer
+
+    async def test_91_without_literal_true_refused_before_hash_work(self):
+        for label, value in self.REFUSED_91:
+            with self.subTest(stored_config=label):
+                flag = 'missing' if label == 'missing' else 'set'
+                (state, reason, data, metadata), hashing, _peer = await self.analyse(
+                    '9.1.0', flag, value)
+                self.assertEqual((state, reason), ('refused', 'source_rejected'))
+                self.assertIsNone(data)
+                self.assertIsNone(metadata)
+                self.assertEqual(hashing, [])
+
+    async def test_91_literal_true_accepted(self):
+        (state, reason, data, metadata), hashing, peer = await self.analyse(
+            '9.1.0', 'unchanged')
+        self.assertEqual((state, reason), ('accepted', None))
+        self.assertEqual(data['configuration'], peer.configuration)
+        self.assertEqual(data['config_hash'], compute_config_hash_91(peer.configuration))
+        self.assertEqual(metadata['upstream_version'], '9.1.0')
+        self.assertEqual(hashing, ['upstream', 'engineering'])
+
+    async def test_85_absent_flag_accepted(self):
+        (state, reason, data, metadata), hashing, peer = await self.analyse(
+            '8.5.0', 'missing')
+        self.assertEqual((state, reason), ('accepted', None))
+        self.assertEqual(data['configuration'], peer.configuration)
+        self.assertEqual(metadata['upstream_version'], '8.5.0')
+        self.assertEqual(hashing, ['upstream', 'engineering'])
+
+    async def test_85_present_flag_keeps_presence_rule(self):
+        (state, _r, _d, _m), _h, _p = await self.analyse('8.5.0', 'set', True)
+        self.assertEqual(state, 'accepted')
+        for label, value in (('false', False), ('null', None), ('string_true', 'true')):
+            with self.subTest(stored_config=label):
+                (state, reason, data, _m), hashing, _p = await self.analyse(
+                    '8.5.0', 'set', value)
+                self.assertEqual((state, reason), ('refused', 'source_rejected'))
+                self.assertIsNone(data)
+                self.assertEqual(hashing, [])
 
 
 if __name__ == '__main__':

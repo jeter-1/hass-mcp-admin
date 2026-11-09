@@ -829,10 +829,14 @@ class UpstreamDashboardProvider:
                 {"url_path": url_path, "force_reload": True, "list_only": False,
                  "include_screenshot": False}, admit, authorize=check, budget=budget)
             check()
-            data = await c.worker(_analysis_configuration, exchange.call_result, url_path)
-            check()
+            # HAMCP-319 (Codex F3): decode with the admitted release, so the
+            # admission must exist before any configuration or hash work.
             if metadata is None:
                 raise c.AnalysisError("authority_unavailable")
+            data = await c.worker(
+                _analysis_configuration, exchange.call_result, url_path,
+                upstream_version=metadata["upstream_version"])
+            check()
             return data, metadata
         except DashboardTransportError as error:
             reason = {"authentication_failed": "access_denied", "response_too_large": "response_limit",
@@ -2397,8 +2401,11 @@ def _analysis_handshake(handshake, expected):
             "upstream_authority_hash": c.digest([identity, asdict(decision.attestation), decision.source])}
 
 
-def _analysis_configuration(result, url_path):
-    """Decode strict inner JSON and verify raw source hashes before projection."""
+def _analysis_configuration(result, url_path, *, upstream_version):
+    """Decode strict inner JSON and verify raw source hashes before projection.
+
+    ``upstream_version`` is the admitted release (``_analysis_handshake``).
+    """
     from ..dashboard_analysis import contracts as c
 
     if type(result) is not dict or ("isError" in result and result["isError"] is not False):
@@ -2420,7 +2427,11 @@ def _analysis_configuration(result, url_path):
     if payload.get("url_path") != url_path:
         raise c.AnalysisError("identity_mismatch")
     # HAMCP-319 section 6.3 (F4): no saved config is not an analyzable source.
-    if "stored_config" in payload and payload["stored_config"] is not True:
+    # Codex F3 on PR #406: as in the governed getter, a release that always
+    # reports the flag must report literal ``true``; absence is not consent.
+    if ("stored_config" in payload and payload["stored_config"] is not True) or (
+            upstream_version in STORED_CONFIG_REQUIRED_RELEASES
+            and payload.get("stored_config") is not True):
         raise c.AnalysisError("source_rejected")
     configuration = payload.get("config")
     if (type(configuration) is not dict or not (
