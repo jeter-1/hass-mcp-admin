@@ -21,3 +21,5 @@ tests/fixtures/hamcp224_journal/*.gz binary
 # HAMCP-274: exact beta.58 plan records and audit chains; sha256-pinned in
 # tests/fixtures/hamcp274_beta58_input_select_v1_provenance.json.
 tests/fixtures/hamcp274_beta58_input_select_v1/** -text -whitespace
+# HAMCP-319: pinned dashboard guide blob (git bafb5456..., sha256 b4d42e93...).
+tests/fixtures/ha_mcp_9_1_0/dashboard/dashboard-guide.md -text

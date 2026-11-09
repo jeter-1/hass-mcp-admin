@@ -1,0 +1,310 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "entities",
+  "consumer": "tests/test_hamcp319_parity_entities.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "baseline_upstream": {
+    "name": "ha-mcp",
+    "version": "8.5.0",
+    "source_tag": "v8.5.0",
+    "source_commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"
+  },
+  "generation": "Hand-written structuredContent templates transcribed from the pinned source (read only, never executed); v91 keys from 9.1.0, v85 keys from 8.5.0. They are not captured records and carry no hashes. Entity IDs, names, timestamps and the acknowledgement key are synthetic. Phase 1 receipts (class C) are not copied: the test reads them from docs/evidence by JSON pointer and checks each file's sha256 against docs/evidence/hamcp319/phase1/SHA256SUMS.json before use.",
+  "source_files": {
+    "src/ha_mcp/server.py": "29d6d33d645117661f0e35945110ea21fb6650ae2c09b74398bdcc36f36931c1",
+    "src/ha_mcp/strict_bps.py": "f7be9802d83d900d38ebbada78f5759e30b76a792c1d5f17c4934562c5e416d8",
+    "src/ha_mcp/tools/tools_entities.py": "913107e9e337a12a7c8e3582286126ced1a0e7d9228a84d36ce1b15bb57983b7",
+    "src/ha_mcp/tools/tools_voice_assistant.py": "dc5ef4e98a5bf59fb1b7c85ee55aba85e3175fbd4d66ce299fdcec5e7f095744",
+    "src/ha_mcp/tools/tools_search.py": "4de6013f9888bd0994d72567052b42db91bc259272f5cda9daa9cfeca573d1b4",
+    "src/ha_mcp/tools/smart_search/_overview.py": "04b270b275cd09ada001db1a0ade17a9ebc7d01d2fb231eb9dd0adbf5481ea37",
+    "src/ha_mcp/tools/search/state.py": "4e431b58a1ea7b9a3f4f3af01d3cefa61ad13d7c30011090d08e2e1badd8b8e6",
+    "src/ha_mcp/tools/search/response.py": "fe776978341246e12a2ddcfd8a7ec3f66f8bbee5712d9697d4b8edc6d43af07c",
+    "src/ha_mcp/tools/response_helpers.py": "f7a2e6e3ec8602f58baade074c701e8c1712eb0cd0edd03adae95b34463b824a",
+    "src/ha_mcp/tools/tools_todo.py": "e55e77a1d78bdd3aa76df91f1d023fe8831a2a8c38b0203b543a12cba3498106",
+    "src/ha_mcp/tools/tools_zones.py": "c6c7eb9331f3566747f1d437b32f3c022864f70261c6aae344bcb8fdd9d9777c",
+    "src/ha_mcp/tools/tools_areas.py": "a4d83da7131fae539696cf72a0b24499317ff94c932bf90d4b3973f706398361",
+    "src/ha_mcp/tools/tools_services.py": "7dc427625b00e34b7560c2460047674b99b55399bbbf96c2ab8e28c5c97324ae"
+  },
+  "baseline_source_files": {
+    "src/ha_mcp/server.py": "53359c33184df5ffb363b3145dc9d5fc707407d6b49a2a711516c4556b61f4cf",
+    "src/ha_mcp/strict_bps.py": "9b4010d1c551671cd4701db58c439eb9c7af6555ee28f5f41d3bdc40c867788b",
+    "src/ha_mcp/tools/tools_search.py": "6ca22976cdd331a20b22ef9047adc61a56998c8792793e651cfafa954f930e56",
+    "src/ha_mcp/tools/tools_entities.py": "8baa98305838c790d1ffe827e6798f1bc3855ccdf0cbb9194ff2d41ba35617d4",
+    "src/ha_mcp/tools/tools_zones.py": "d653dfed40fb1514005489504cd267c58ab4a0669b06f009ca11a52b24cf70d7",
+    "src/ha_mcp/tools/tools_todo.py": "966710a232b716dc0d978bb978ef2146b2440005e7f5d578155300b31448772f",
+    "src/ha_mcp/tools/tools_areas.py": "481dcb24600429ac98abe7b1a11341a7feef3cc3cde1c7608b0420d499d64659",
+    "src/ha_mcp/tools/tools_services.py": "9626962851ac18d33f2f9beb339dd95c90fdb0c014c49cf58f4ac8b19dee8c29",
+    "src/ha_mcp/tools/tools_voice_assistant.py": "f0013c7795e05cf6705671b60b5355af6c3d8e51e258e80debabb258bbc4199f"
+  },
+  "fixtures": {
+    "v91/ha_get_entity/single": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_entities.py:86-110 (_format_fetched_entity keys incl. uses_device_name)",
+        "src/ha_mcp/tools/tools_entities.py:1943-1947 (single envelope)"
+      ]
+    },
+    "v91/ha_get_entity/bulk_partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_entities.py:1993-2002 (bulk envelope; errors and suggestions only when errors)"
+      ]
+    },
+    "v91/ha_get_entity_exposure/single": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_voice_assistant.py:146-164 (single-entity exposure envelope)"
+      ]
+    },
+    "v91/ha_get_entity_exposure/list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_voice_assistant.py:167-196 (exposed-entities list envelope)"
+      ]
+    },
+    "v91/ha_get_overview/minimal": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_search.py:614-646 (tool_discovery)",
+        "src/ha_mcp/tools/tools_search.py:653-679 (settings_url / settings_url_hint)",
+        "src/ha_mcp/tools/tools_search.py:695-699 (ha_mcp_update)",
+        "src/ha_mcp/tools/tools_search.py:701-703 (mcp_client always added)"
+      ]
+    },
+    "v91/ha_get_overview/partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/smart_search/_overview.py:534 (partial)",
+        "src/ha_mcp/tools/smart_search/_overview.py:537 (warnings)",
+        "src/ha_mcp/tools/tools_search.py:701-703 (mcp_client)"
+      ]
+    },
+    "v91/ha_get_skill_guide/file_skill_md": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/server.py:1043-1083 (_build_skill_guide_response: ack line prepended in strict mode; no skill_content_hint for SKILL.md; how_to_use only for SKILL.md; no skill key)",
+        "src/ha_mcp/strict_bps.py:202-216 (ack line text; key synthetic)"
+      ]
+    },
+    "v91/ha_get_skill_guide/file_reference": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/server.py:1043-1083 (reference file: skill_content_hint, no how_to_use)",
+        "src/ha_mcp/strict_bps.py:202-216 (ack line text; key synthetic)"
+      ]
+    },
+    "v91/ha_get_state/single": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/state.py:116-145 (single-entity projection, always wrapped)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data/metadata wrapper)"
+      ]
+    },
+    "v91/ha_get_state/bulk_partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/state.py:81-110 (_build_bulk_states_response: errors, error_count, suggestions, partial when states and errors)",
+        "src/ha_mcp/tools/response_helpers.py:392-433 (data/metadata wrapper)"
+      ]
+    },
+    "v91/ha_get_todo/lists": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_todo.py:365-370 (todo_lists envelope)"
+      ]
+    },
+    "v91/ha_get_todo/items": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_todo.py:395-402 (items envelope)"
+      ]
+    },
+    "v91/ha_get_todo/unavailable_items": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_todo.py:266-278 (unavailable list returns last-held items with a warning)"
+      ]
+    },
+    "v91/ha_get_zone/list_with_extra_rows": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_zones.py:61-70 (list envelope)",
+        "src/ha_mcp/tools/tools_zones.py:108-129 (rows carry id, entity_id, editable, source; home and YAML rows)",
+        "src/ha_mcp/tools/tools_zones.py:132-142 (icon)"
+      ]
+    },
+    "v91/ha_get_zone/single": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_zones.py:72-104 (single envelope)"
+      ]
+    },
+    "v91/ha_get_zone/list_with_gaps": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_zones.py:61-70 (gaps become warnings)"
+      ]
+    },
+    "v91/ha_list_floors_areas/all": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_areas.py:224-238 (floors/areas envelope)"
+      ]
+    },
+    "v91/ha_list_services/light": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_services.py:460-472 (services envelope with pagination metadata)"
+      ]
+    },
+    "v91/ha_search/no_warnings": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/response.py:603-636 (_new_search_response base envelope)",
+        "src/ha_mcp/tools/search/response.py:186-196 (_omit_empty_warnings drops an empty warnings list)"
+      ]
+    },
+    "v91/ha_search/partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/response.py:171-184 (_mirror_partial_to_warnings)"
+      ]
+    },
+    "v85/ha_get_entity/single": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_entities.py:2052 (single envelope; no uses_device_name)"
+      ]
+    },
+    "v85/ha_get_entity_exposure/single": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_voice_assistant.py:153 (single envelope)"
+      ]
+    },
+    "v85/ha_get_overview/minimal": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_search.py:1574-1579 (tool_discovery, settings_url*, read_only_mode*, ha_mcp_update keys; no mcp_client)"
+      ]
+    },
+    "v85/ha_get_skill_guide/tier1": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/server.py:1821-1841 (tier 1 inventory)"
+      ]
+    },
+    "v85/ha_get_skill_guide/tier2": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/server.py:1903-1920 (tier 2 file list)"
+      ]
+    },
+    "v85/ha_get_skill_guide/tier3": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/server.py:2002-2039 (tier 3; skill_content_hint for best practices; ack line prepended in strict mode)",
+        "8.5.0 src/ha_mcp/strict_bps.py:202-216 (ack line text; key synthetic)"
+      ]
+    },
+    "v85/ha_get_state/single": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_search.py:4800 (ha_get_state; same data/metadata wrapper as 9.1)"
+      ]
+    },
+    "v85/ha_get_todo/items": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_todo.py:173-175 (items envelope)"
+      ]
+    },
+    "v85/ha_get_zone/list": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_zones.py:54 (zones envelope; rows without entity_id/source)"
+      ]
+    },
+    "v85/ha_list_floors_areas/all": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_areas.py:352 (floors/areas envelope)"
+      ]
+    },
+    "v85/ha_list_services/light": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_services.py:482 (services envelope)"
+      ]
+    },
+    "v85/ha_search/no_warnings": {
+      "class": "S",
+      "sources": [
+        "8.5.0 src/ha_mcp/tools/tools_search.py:665-674 (base envelope always carries partial and warnings: [])"
+      ]
+    },
+    "receipt/visibility": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/visibility.json",
+      "sha256": "eb1adb287131c3504e99634d20557c8acb0fec964768747f8f82bba7452784e0",
+      "pointers": [
+        "/visible_nested_hidden",
+        "/invalid_visibility_config",
+        "/after_list_then_toggle_hidden",
+        "/missing_entity",
+        "/before_toggle",
+        "/search_hidden",
+        "/overview_domain",
+        "/guide_exemption"
+      ],
+      "use": "F3 replays: nested-visible omission, hidden-ID refusal, empty hidden search, overview, guide; /before_toggle supplies the hidden-attribute canary"
+    },
+    "receipt/visibility-registry": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/visibility-registry.json",
+      "sha256": "0d558e528f9da8b42d207ecf8b19f27f8f4805d93a6a54dc5e296ea609d9d9b2",
+      "pointers": [
+        "/area_hidden_state",
+        "/label_hidden_state",
+        "/area_alias_search",
+        "/area_visible_state"
+      ],
+      "use": "F3 replays: registry-alias hidden-ID refusal and empty alias search"
+    },
+    "receipt/more-edges": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/more-edges.json",
+      "sha256": "e534521376e660842517c548bcb900a7c7f7c12aa4d384fec68e08662c8f01a8",
+      "pointers": [
+        "/registry_unavailable_read",
+        "/registry_unavailable_guide"
+      ],
+      "use": "F3 replays: registry-unavailable read is a failure; guide still served"
+    },
+    "receipt/extended": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/extended.json",
+      "sha256": "412e1e41216d372f086cc748a552e22307bd85f9d1ed86f8f791d905c459d013",
+      "pointers": [
+        "/last_good_hidden_refusal",
+        "/last_good_visible_read"
+      ],
+      "use": "F3 replays: last-good visibility config"
+    },
+    "receipt/alternate": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp319/phase1/receipts/alternate.json",
+      "sha256": "fdbdcf7916dc79ba8a365b921b30fdd38c40b40f880fa1c69920e19a4fae645c",
+      "pointers": [
+        "/cold_invalid_visibility"
+      ],
+      "use": "F3 replay: malformed visibility config with no last-good is a failure"
+    }
+  }
+}

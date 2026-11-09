@@ -426,6 +426,29 @@ class ChokepointUnitTests(_GovernanceHarness):
         repository.save(plan)
         self.assertEqual(repository.get(plan_id).failure_information, {"reason": COLLISION})
 
+    async def test_restart_alone_keeps_an_awaiting_plan_and_a_newer_plan_supersedes_it(self):
+        # HAMCP-319 (Codex L1 on PR #406): a restart does not supersede a plan
+        # awaiting approval; startup recovery touches only APPLYING plans.
+        # Creating a newer plan for the same target is what supersedes it.
+        plan_id, path = await self.stored()
+        self.assertEqual(self.repository.get(plan_id).status, M.PlanStatus.AWAITING_APPROVAL)
+        stored = path.read_bytes()
+        repository = ChangePlanRepository(self.repository.root)
+        self.service = ChangeGovernanceService(
+            repository,
+            self.gateway,
+            AuditLogger(str(Path(self.temp.name) / "audit.jsonl"), self.access),
+            sensitive_values=(self.access,),
+        )
+        self.repository = repository
+        self.assertEqual(repository.get(plan_id).status, M.PlanStatus.AWAITING_APPROVAL)
+        self.assertEqual(path.read_bytes(), stored)
+        replacement = await self.create("Newer after restart")
+        self.assertNotEqual(replacement["plan_id"], plan_id)
+        self.assertEqual(repository.get(plan_id).status, M.PlanStatus.SUPERSEDED)
+        self.assertEqual(repository.get(replacement["plan_id"]).status,
+                         M.PlanStatus.AWAITING_APPROVAL)
+
     async def test_refused_recovery_write_is_counted_and_startup_continues(self):
         plan_id, path = await self.stored()
         plan = self.repository.get(plan_id)

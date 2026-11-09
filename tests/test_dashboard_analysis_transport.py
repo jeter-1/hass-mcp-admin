@@ -823,7 +823,8 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_redirect_auth_and_server_failure_no_retry_or_reflection(self):
         from ha_mcp_engineering.clients.mcp import DashboardTransportError
         self.failure_at = 'tools/call'
-        for status, category in ((302, 'endpoint_rejected'), (401, 'authentication_failed'),
+        # HAMCP-319 §3.3: a 3xx sets the shared latch; no redirect is followed.
+        for status, category in ((302, 'upstream_redirect_refused'), (401, 'authentication_failed'),
                                  (403, 'authentication_failed'), (503, 'upstream_error')):
             self.failure_status = status
             self.calls.clear()

@@ -63,6 +63,10 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
     McpReadResult,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins below drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.application import validate_settings  # noqa: E402
 from ha_mcp_engineering.errors import ConfigurationError  # noqa: E402
@@ -2650,7 +2654,7 @@ class SignedGatewayReadmissionTests(
         )
         server = FastMCP("signed-readmission-no-restart")
         first = await gateway.initialize(server)
-        self.assertEqual(first["dynamically_exposed_count"], 25)
+        self.assertEqual(first["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             first["readmission_authority_source"],
             "compiled_exact",
@@ -2666,7 +2670,7 @@ class SignedGatewayReadmissionTests(
             catalog_complete=True,
         )
         second = await gateway.initialize(server)
-        self.assertEqual(second["dynamically_exposed_count"], 25)
+        self.assertEqual(second["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             second["readmission_authority_source"],
             "signed_registry",
@@ -2694,12 +2698,16 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)
-        self.assertEqual(len(registered), 25)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
+        # 2026-11-08), so 25 matched reads expose 24 (83 + 24 = 107).
+        self.assertEqual(len(registered), 24)
+        self.assertFalse(set(registered) & RETIRED_DELEGATED_READS)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 107)
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
-            if policy_entry.classification != "automatic_read":
+            if (policy_entry.classification != "automatic_read"
+                    or policy_entry.upstream_name in RETIRED_DELEGATED_READS):
                 self.assertNotIn(policy_entry.exposed_name, registered)
         self.assertEqual(gateway._held_canaries, {})
 
@@ -2758,7 +2766,7 @@ class SignedGatewayReadmissionTests(
             FastMCP("signed-readmission-missing-release-refresh")
         )
         self.assertEqual(fetch_count, 2)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
         self.assertEqual(transport.calls, 0)
 
@@ -2827,7 +2835,7 @@ class SignedGatewayReadmissionTests(
             await asyncio.wait_for(gateway._reprobe_event.wait(), timeout=1)
             gateway._reprobe_event.clear()
             second_snapshot = await gateway.initialize(server)
-        self.assertEqual(second_snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(second_snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(len(responses), 0)
         self.assertEqual(transport.calls, 0)
 
@@ -2848,7 +2856,7 @@ class SignedGatewayReadmissionTests(
         )
         server = FastMCP("compiled-exact-feature-disabled")
         snapshot = await gateway.initialize(server)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(snapshot["held_tools"], ["ha_get_operation_status"])
         self.assertNotIn(
             "ha_get_operation_status",
@@ -2878,7 +2886,7 @@ class SignedGatewayReadmissionTests(
             raw=self._raw(entry=entry),
             version=version,
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(snapshot["quarantined_automatic_read_count"], 1)
         self.assertNotIn(automatic, snapshot["exposed_tools"])
         self.assertEqual(snapshot["fallback_count"], 0)
@@ -2914,7 +2922,7 @@ class SignedGatewayReadmissionTests(
                     raw=self._raw(entry=entry),
                     version=version,
                 )
-                self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+                self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
                 self.assertNotIn(automatic, snapshot["exposed_tools"])
                 self.assertEqual(transport.calls, 0)
 
@@ -2929,7 +2937,7 @@ class SignedGatewayReadmissionTests(
             version=version,
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn("ha_search", registered)
         self.assertIn("ha_get_state", registered)
         self.assertIn("ha_config_get_automation", registered)
@@ -2946,7 +2954,7 @@ class SignedGatewayReadmissionTests(
             version=version,
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(snapshot["dynamically_exposed_count"], 21)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 21 - RETIRED_COUNT)  # HAMCP-290
         for affected in (
             "ha_search",
             "ha_get_state",
@@ -2968,7 +2976,7 @@ class SignedGatewayReadmissionTests(
             version=version,
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn("ha_get_entity", registered)
         self.assertIn("ha_search", registered)
         self.assertEqual(snapshot["fallback_count"], 0)
@@ -2984,11 +2992,15 @@ class SignedGatewayReadmissionTests(
             raw=self._raw(entry=entry),
             version=version,
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn(affected, snapshot["exposed_tools"])
         self.assertEqual(transport.calls, 0)
 
-    async def test_future_release_executes_selected_compiled_hacs_adapter(self):
+    async def test_future_release_executes_selected_compiled_adapter(self):
+        # HAMCP-290: formerly exercised the removed HACS envelope adapter on
+        # ha_get_hacs_info, now a retired delegated read; the compiled
+        # adapter selection is proven on ha_get_state, whose payload passes
+        # through unchanged.
         version = "8.2.1"
         entry = _signed_entry_for(self.release, version=version)
         payload = {
@@ -3022,22 +3034,17 @@ class SignedGatewayReadmissionTests(
         )
         server = FastMCP("signed-adapter-binding")
         snapshot = await gateway.initialize(server)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
-        route = gateway._exposed["ha_get_hacs_info"]
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertNotIn("ha_get_hacs_info", gateway._exposed)
+        route = gateway._exposed["ha_get_state"]
         self.assertEqual(route.server_version, version)
         self.assertEqual(route.adapter_version, "8.2.0")
         encoded = await gateway._registered_tool_registry.snapshot()[
-            "ha_get_hacs_info"
-        ].run({"action": "search"})
+            "ha_get_state"
+        ].run({"entity_id": "sun.sun"})
         value = json.loads(encoded)
         self.assertTrue(value["success"], value)
-        self.assertEqual(
-            value["data"],
-            {
-                "data": {"success": True, "count": 1, "results": []},
-                "metadata": {"home_assistant_timezone": "UTC"},
-            },
-        )
+        self.assertEqual(value["data"], payload)
         self.assertEqual(transport.calls, 1)
 
     async def test_changed_argument_restriction_withholds_only_that_read(self):
@@ -3060,7 +3067,7 @@ class SignedGatewayReadmissionTests(
             raw=self._raw(entry=entry),
             version=version,
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn(automatic, snapshot["exposed_tools"])
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
@@ -3081,7 +3088,7 @@ class SignedGatewayReadmissionTests(
             version=version,
             tools=tools,
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertNotIn("synthetic_future_write", snapshot["exposed_tools"])
         self.assertEqual(snapshot["unreviewed_tool_count"], 1)
         self.assertEqual(transport.calls, 0)
@@ -3112,7 +3119,7 @@ class SignedGatewayReadmissionTests(
             "duplicate": (
                 self.capture["tools"] + [deepcopy(selected)],
                 True,
-                24,
+                24 - RETIRED_COUNT,  # HAMCP-290
             ),
             "malformed": (
                 [
@@ -3127,7 +3134,7 @@ class SignedGatewayReadmissionTests(
                     for item in self.capture["tools"]
                 ],
                 True,
-                24,
+                24 - RETIRED_COUNT,  # HAMCP-290
             ),
         }
         for name, (tools, complete, expected) in cases.items():
@@ -3223,7 +3230,7 @@ class SignedGatewayReadmissionTests(
         )
         server = FastMCP("signed-revocation-cache-failure")
         first_snapshot = await gateway.initialize(server)
-        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         old_tool = gateway._registered_tool_registry.snapshot()[
             "ha_list_services"
         ]
@@ -3298,7 +3305,7 @@ class SignedGatewayReadmissionTests(
         first = await gateway.initialize(
             FastMCP("signed-revocation-capacity")
         )
-        self.assertEqual(first["dynamically_exposed_count"], 25)
+        self.assertEqual(first["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         old_tool = gateway._registered_tool_registry.snapshot()[
             "ha_list_services"
         ]
@@ -3445,7 +3452,7 @@ class SignedGatewayReadmissionTests(
         first_snapshot = await gateway.initialize(
             FastMCP("signed-denial-journal-overflow")
         )
-        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         old_tool = gateway._registered_tool_registry.snapshot()[
             "ha_list_services"
         ]
@@ -3557,7 +3564,7 @@ class SignedGatewayReadmissionTests(
         snapshot = await gateway.initialize(
             FastMCP("signed-composed-storage-outage")
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         old_tool = gateway._registered_tool_registry.snapshot()[
             "ha_list_services"
         ]
@@ -3771,7 +3778,7 @@ class SignedGatewayReadmissionTests(
         snapshot = await gateway.initialize(
             FastMCP("signed-initial-outage")
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertFalse(registry.authority().surface_denied)
         self.assertTrue(registry._lifecycle_witness_path().exists())
         self.assertEqual(transport.calls, 0)
@@ -4061,9 +4068,9 @@ class SignedGatewayReadmissionTests(
             FastMCP("signed-pending-exact-cleanup")
         )
         self.assertFalse(restarted.authority().surface_denied)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
-            len(gateway._registered_tool_registry.snapshot()), 25
+            len(gateway._registered_tool_registry.snapshot()), 25 - RETIRED_COUNT  # HAMCP-290
         )
         self.assertEqual(transport.calls, 0)
 
@@ -4171,7 +4178,7 @@ class SignedGatewayReadmissionTests(
         snapshot = await gateway.initialize(
             FastMCP("signed-readmission-restarted-cache")
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(
             snapshot["readmission_authority_source"],
             "signed_registry",
@@ -4256,7 +4263,7 @@ class SignedGatewayReadmissionTests(
             raw=self._raw(entry=entry),
             version=version,
         )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         tool = gateway._registered_tool_registry.snapshot()[
             "ha_list_services"
         ]

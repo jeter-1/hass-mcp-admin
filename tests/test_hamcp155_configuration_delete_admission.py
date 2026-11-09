@@ -149,8 +149,9 @@ class DormantProfileTests(unittest.TestCase):
         self.assertNotIn(DELETE, ids(CORE_CAPABILITY_PROFILES))
         self.assertIn(DELETE, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
         # The sequence-13 batch ends with it; the HAMCP-232/145, HAMCP-106 and
-        # HAMCP-071 seq 16 November batch (dormant, unsigned) follows.
-        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-6].capability_id, DELETE)
+        # HAMCP-071 seq 16 November batch (dormant, unsigned) follows, then
+        # HAMCP-290: the dormant Marketplace read.
+        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-7].capability_id, DELETE)
         for version, _commit, _digest in SUPPORTED_CORE_RELEASES:
             with self.subTest(version=version):
                 self.assertNotIn(

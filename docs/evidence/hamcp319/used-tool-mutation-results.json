@@ -1,0 +1,93 @@
+{
+  "head": "16fbba6dc6a79558dbe8e068be5717b5c760f75d",
+  "python": "3.12.14",
+  "module": "tests.test_hamcp319_used_tool_exact_admission",
+  "mutants": [
+    {
+      "id": 1,
+      "name": "typed/dashboard-write: drop the per-component descriptor comparison",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "test": "TypedControlExactAdmission.test_each_field_class_change_of_each_used_tool_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "name": "typed/dashboard-write: drop only the whole-descriptor runtime fingerprint component",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "test": "TypedControlExactAdmission.test_each_field_class_change_of_each_used_tool_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "name": "typed/dashboard-write: accept a duplicated used tool",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "test": "TypedControlExactAdmission.test_missing_or_duplicate_used_tool_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "name": "dashboard-write: drop the dependency check entirely",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "DashboardExactAdmission.test_each_field_class_change_of_guide_or_setter_refuses_writes",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "name": "reads: drop the whole-descriptor runtime fingerprint comparison",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "ReadGatewayExactAdmission.test_title_only_change_fails_closed_for_every_used_read",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "name": "reads: accept a duplicated used read (non-strict-full catalogs)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "test": "ReadGatewayExactAdmission.test_duplicate_used_read_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "name": "dashboard-read: drop the new exact getter enforcement (HAMCP-319)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "DashboardExactAdmission.test_each_field_class_change_of_the_getter_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "name": "dashboard-read: shrink the exact release set to 9.1.0 only",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "test": "DashboardExactAdmission.test_each_field_class_change_of_the_getter_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "name": "yaml: drop the v2 fingerprint comparison",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
+      "test": "YamlReaderExactAdmission.test_each_field_class_change_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "name": "yaml: accept a duplicated reader",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
+      "test": "YamlReaderExactAdmission.test_missing_or_duplicate_reader_fails_closed",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 27 tests in 44.603s"
+  }
+}

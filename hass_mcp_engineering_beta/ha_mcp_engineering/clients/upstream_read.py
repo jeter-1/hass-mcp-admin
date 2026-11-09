@@ -23,9 +23,22 @@ from .mcp import (
     _classify_transport_exception,
     _iter_exceptions,
 )
+from .ha_mcp_endpoint import (
+    UPSTREAM_ENDPOINT_REJECTED,
+    EndpointSnapshot,
+    NoRedirectBinding,
+    UpstreamEndpointRefused,
+    endpoint_snapshot,
+    ha_mcp_no_redirect_client_factory,
+    latched_or_none,
+    require_selector_agreement,
+    snapshot_is_current,
+)
 
 
 MAX_GENERIC_UPSTREAM_RESPONSE_BYTES = 1_000_000
+# Bound on closing a retained worker of an earlier configuration generation.
+STALE_WORKER_CLOSE_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -86,13 +99,14 @@ class McpReadGatewayTransport:
 
     def __init__(
         self,
-        url: str,
+        url: EndpointSnapshot | str,
         *,
         timeout_seconds: float,
         client_version: str,
         retain_session: bool = False,
     ):
-        self._url = url
+        self._snapshot = endpoint_snapshot(url)
+        self._url = self._snapshot.url
         self._timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
         self._client_info = types.Implementation(
             name="hass-mcp-engineering-read-gateway",
@@ -152,6 +166,22 @@ class McpReadGatewayTransport:
                 raise
             raise self._copy_operation_error(exc) from None
 
+    def abandon(self) -> None:
+        """Cancel the retained worker from any thread without awaiting it.
+
+        Used when a reconfiguration replaces this transport. The worker's own
+        cancellation path exits the SDK session; nothing is reused afterwards.
+        """
+
+        worker = self._worker
+        if worker is None or worker.done():
+            return
+        try:
+            worker.get_loop().call_soon_threadsafe(worker.cancel)
+        except RuntimeError:
+            # The owning loop is already closed; its tasks are gone with it.
+            return
+
     def _new_operation(
         self,
         kind: str,
@@ -167,6 +197,15 @@ class McpReadGatewayTransport:
     async def _submit(self, operation: _TransportOperation) -> Any:
         if not self._retain_session:
             return await self._run_isolated(operation)
+        if not snapshot_is_current(self._snapshot):
+            # A retained worker from an earlier configuration generation is
+            # closed before reuse; it never reconnects with a stale endpoint.
+            await self._close_stale_worker()
+            if operation.kind == "close":
+                return None
+            raise UpstreamEndpointRefused(
+                UPSTREAM_ENDPOINT_REJECTED, tool_call_attempted=False
+            ) from None
         if self._operations is None:
             self._operations = asyncio.Queue(
                 maxsize=MAX_PENDING_TRANSPORT_OPERATIONS
@@ -213,6 +252,33 @@ class McpReadGatewayTransport:
             raise self._copy_operation_error(exc) from None
         raise DashboardTransportError("provider_unavailable") from None
 
+    async def _close_stale_worker(self) -> None:
+        """Close a retained worker of an earlier generation, bounded.
+
+        A close request wakes a worker that waits for work; cancellation ends
+        an exchange in flight. Cancellation that lands while the SDK's own
+        cancel scope is exiting can be absorbed, so it is repeated within a
+        fixed bound. A worker that still survives refuses every later request
+        itself (``_run_worker`` checks the generation before each session).
+        """
+
+        worker = self._worker
+        if worker is None or worker.done():
+            return
+        operations = self._operations
+        if operations is not None:
+            try:
+                operations.put_nowait(self._new_operation("close"))
+            except asyncio.QueueFull:
+                pass
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + STALE_WORKER_CLOSE_SECONDS
+        while not worker.done() and loop.time() < deadline:
+            worker.cancel()
+            await asyncio.wait((worker,), timeout=0.05)
+        if worker.done() and not worker.cancelled():
+            worker.exception()
+
     async def _run_isolated(self, operation: _TransportOperation) -> Any:
         """Preserve Beta 54's independent per-operation transport behavior."""
 
@@ -227,12 +293,16 @@ class McpReadGatewayTransport:
                 ),
             )
         )
+        binding = NoRedirectBinding(self._snapshot)
+        completed = False
+        result: Any = None
         try:
             async with streamablehttp_client(
                 self._url,
                 timeout=timeout,
                 sse_read_timeout=timeout,
                 terminate_on_close=True,
+                httpx_client_factory=ha_mcp_no_redirect_client_factory(binding),
             ) as (read_stream, write_stream, get_session_id):
                 async with ClientSession(
                     read_stream,
@@ -240,7 +310,9 @@ class McpReadGatewayTransport:
                     read_timeout_seconds=timeout,
                     client_info=self._client_info,
                 ) as session:
-                    initialize = await session.initialize()
+                    initialize = await binding.run_until_latched(
+                        session.initialize()
+                    )
                     fallback_session_id = (
                         "ha-mcp-exchange-" + uuid.uuid4().hex
                     )
@@ -248,19 +320,27 @@ class McpReadGatewayTransport:
                         get_session_id,
                         fallback_session_id,
                     )
-                    return await self._run_operation(
-                        operation,
-                        session=session,
-                        initialize=initialize,
-                        get_session_id=get_session_id,
-                        session_id=session_id,
-                        fallback_session_id=fallback_session_id,
-                        started=started,
+                    result = await binding.run_until_latched(
+                        self._run_operation(
+                            operation,
+                            session=session,
+                            initialize=initialize,
+                            get_session_id=get_session_id,
+                            session_id=session_id,
+                            fallback_session_id=fallback_session_id,
+                            started=started,
+                            binding=binding,
+                        )
                     )
+                    completed = True
+            if not completed:
+                # The SDK scopes exited normally without the step's outcome.
+                raise binding.unfinished_error()
+            return result
         except BaseException as exc:
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
-            raise self._map_operation_error(exc) from None
+            raise self._map_operation_error(exc, binding) from None
 
     async def _run_worker(self) -> None:
         operations = self._operations
@@ -277,6 +357,16 @@ class McpReadGatewayTransport:
             if pending.future.cancelled():
                 pending = None
                 continue
+            if not snapshot_is_current(self._snapshot):
+                # A worker of an earlier configuration generation never opens
+                # another session with its stale endpoint.
+                if not pending.future.done():
+                    pending.future.set_exception(
+                        UpstreamEndpointRefused(
+                            UPSTREAM_ENDPOINT_REJECTED, tool_call_attempted=False
+                        )
+                    )
+                return
             started = time.perf_counter()
             timeout = timedelta(
                 seconds=max(
@@ -288,12 +378,17 @@ class McpReadGatewayTransport:
                     ),
                 )
             )
+            binding = NoRedirectBinding(self._snapshot)
+            current: _TransportOperation | None = None
             try:
                 async with streamablehttp_client(
                     self._url,
                     timeout=timeout,
                     sse_read_timeout=timeout,
                     terminate_on_close=True,
+                    httpx_client_factory=ha_mcp_no_redirect_client_factory(
+                        binding
+                    ),
                 ) as (read_stream, write_stream, get_session_id):
                     async with ClientSession(
                         read_stream,
@@ -301,7 +396,9 @@ class McpReadGatewayTransport:
                         read_timeout_seconds=timeout,
                         client_info=self._client_info,
                     ) as session:
-                        initialize = await session.initialize()
+                        initialize = await binding.run_until_latched(
+                            session.initialize()
+                        )
                         fallback_session_id = (
                             "ha-mcp-exchange-" + uuid.uuid4().hex
                         )
@@ -322,14 +419,19 @@ class McpReadGatewayTransport:
                                     current.future.set_result(None)
                                 return
                             try:
-                                result = await self._run_operation(
-                                    current,
-                                    session=session,
-                                    initialize=initialize,
-                                    get_session_id=get_session_id,
-                                    session_id=session_id,
-                                    fallback_session_id=fallback_session_id,
-                                    started=time.perf_counter(),
+                                result = await binding.run_until_latched(
+                                    self._run_operation(
+                                        current,
+                                        session=session,
+                                        initialize=initialize,
+                                        get_session_id=get_session_id,
+                                        session_id=session_id,
+                                        fallback_session_id=(
+                                            fallback_session_id
+                                        ),
+                                        started=time.perf_counter(),
+                                        binding=binding,
+                                    )
                                 )
                                 if not current.future.done():
                                     current.future.set_result(result)
@@ -339,7 +441,9 @@ class McpReadGatewayTransport:
                                     (KeyboardInterrupt, SystemExit),
                                 ):
                                     raise
-                                mapped = self._map_operation_error(exc)
+                                mapped = self._map_operation_error(
+                                    exc, binding, caller_owns_task=False
+                                )
                                 if not current.future.done():
                                     current.future.set_exception(
                                         self._copy_operation_error(mapped)
@@ -349,16 +453,48 @@ class McpReadGatewayTransport:
                                 break
                             pending = await operations.get()
                             retain_connection = True
+                if current is not None and not current.future.done():
+                    # The SDK scopes exited normally without the outcome.
+                    current.future.set_exception(
+                        self._copy_operation_error(
+                            self._map_operation_error(
+                                binding.unfinished_error(),
+                                binding,
+                                caller_owns_task=False,
+                            )
+                        )
+                    )
+                if pending is not None and not pending.future.done():
+                    pending.future.set_exception(
+                        self._copy_operation_error(
+                            self._map_operation_error(
+                                binding.unfinished_error(),
+                                binding,
+                                caller_owns_task=False,
+                            )
+                        )
+                    )
+                    pending = None
             except asyncio.CancelledError:
                 if pending is not None and not pending.future.done():
-                    pending.future.cancel()
+                    latched = latched_or_none(binding)
+                    if latched is not None:
+                        pending.future.set_exception(
+                            self._copy_operation_error(latched)
+                        )
+                    else:
+                        pending.future.cancel()
                 raise
             except BaseException as exc:
                 if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                     raise
                 if pending is not None and not pending.future.done():
                     pending.future.set_exception(
-                        self._copy_operation_error(exc)
+                        self._copy_operation_error(
+                            self._map_operation_error(
+                                exc, binding, caller_owns_task=False
+                            )
+                        )
                     )
                 pending = None
 
@@ -372,6 +508,7 @@ class McpReadGatewayTransport:
         session_id: str,
         fallback_session_id: str,
         started: float,
+        binding: NoRedirectBinding | None = None,
     ) -> McpReadCatalog | McpReadResult:
         if operation.future.cancelled():
             raise asyncio.CancelledError
@@ -380,6 +517,11 @@ class McpReadGatewayTransport:
             session_id,
             fallback_session_id,
             require_observed=self._retain_session,
+        )
+        # Version is known only from initialize; admission runs before any
+        # list page, and again before every operation on a retained session.
+        require_selector_agreement(
+            str(initialize.serverInfo.version), self._snapshot, binding
         )
         tools = await self._list_all_tools(session)
         self._require_same_session(
@@ -519,7 +661,29 @@ class McpReadGatewayTransport:
             raise DashboardTransportError("protocol_error")
 
     @staticmethod
-    def _map_operation_error(exc: BaseException) -> BaseException:
+    def _map_operation_error(
+        exc: BaseException,
+        binding: NoRedirectBinding | None = None,
+        *,
+        caller_owns_task: bool = True,
+    ) -> BaseException:
+        # The refusal latch is consulted before any exception-shape mapping,
+        # including SDK task-group wrapping and latch-race cancellation.
+        # The retained worker task is never the caller: its cancellation comes
+        # from the SDK task group reacting to the latched refusal (or from a
+        # replacement closing it), so the latch wins there.
+        if caller_owns_task and isinstance(exc, asyncio.CancelledError):
+            try:
+                task = asyncio.current_task()
+            except RuntimeError:
+                # Called outside a running loop: no caller task can own it.
+                task = None
+            if task is not None and task.cancelling():
+                # The caller's own cancellation always propagates unchanged.
+                return exc
+        latched = latched_or_none(binding)
+        if latched is not None:
+            return latched
         if isinstance(
             exc,
             (

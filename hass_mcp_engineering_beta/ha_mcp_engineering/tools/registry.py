@@ -218,6 +218,7 @@ from .entity_reconciliation import registered_tool as entity_reconciliation_tool
 from .configuration_definitions import registered_tool as configuration_definitions_tool
 from .script_traces import registered_get_tool as script_trace_get_tool
 from .script_traces import registered_list_tool as script_trace_list_tool
+from .marketplace_inventory import registered_tool as marketplace_inventory_tool
 from .trace_snapshots import registered_tools as trace_snapshot_tools
 from .analysis import registered_reliability_batch_tool
 
@@ -231,6 +232,7 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integ
                     "get_configuration_definitions": configuration_definitions_tool(),
                     "list_script_traces": script_trace_list_tool(),
                     "get_script_trace": script_trace_get_tool(),
+                    "get_marketplace_inventory": marketplace_inventory_tool(),
                     # Codex M1 (PR #402): raw arguments are validated before
                     # SDK coercion; replaces the plain ANALYSIS_TOOLS entry
                     # in place, so its tools/list position is unchanged.

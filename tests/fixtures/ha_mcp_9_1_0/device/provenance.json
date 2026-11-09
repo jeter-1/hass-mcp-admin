@@ -1,0 +1,83 @@
+{
+  "schema": "hamcp319-fixture-provenance-v1",
+  "area": "device",
+  "design": "docs/HAMCP_319_PHASE2_DESIGN.md section 6.5 (DCL2), section 7 ledger row 12, section 5 Core readmission note",
+  "fixtures": {
+    "device-results.json": {
+      "class": "S",
+      "synthetic": true,
+      "captured_device_payload": false,
+      "sha256": "b4877da5c3197f3ecea3aa3e2831c2a4210204b1a33a7a1e93d1d6fd6e334ae7",
+      "generator": "deterministic synthetic generator run once by the HAMCP-319 DEV implementer; every value is invented (RFC 5737 / RFC 3849 documentation addresses, synthetic identifiers); no production record, receipt or captured payload was used",
+      "upstream_sources": {
+        "9.1.0": {
+          "repository": "homeassistant-ai/ha-mcp",
+          "tag": "v9.1.0",
+          "commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
+          "files": {
+            "src/ha_mcp/tools/tools_registry.py": "11dba943cca9836619f662d1fb0f1f492f9c4e34cebdeec286b63400b1a2a2c3",
+            "src/ha_mcp/tools/device_enrichment.py": "d86bfc45a389af0d106920f8f19d222d8db7399325ed73b33a4028210f0af79e"
+          }
+        },
+        "8.5.0": {
+          "repository": "homeassistant-ai/ha-mcp",
+          "tag": "v8.5.0",
+          "commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+          "files": {
+            "src/ha_mcp/tools/tools_registry.py": "a61d8e0671ec9f871b5882d42ccff4b547dabe636992c59d83eaf30ac1e86577"
+          }
+        }
+      },
+      "entries": {
+        "/single_zha": {
+          "shape": "single-device result; device summary, single-mode detail fields, ZHA radio_metrics",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:132-167", "src/ha_mcp/tools/tools_registry.py:450-484", "src/ha_mcp/tools/device_enrichment.py:28-31"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:128-163", "src/ha_mcp/tools/tools_registry.py:571-605", "src/ha_mcp/tools/tools_registry.py:437-440"]
+        },
+        "/single_zwave": {
+          "shape": "single-device result; zwave_js node_id derived from the identifier, node_status",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:58-72", "src/ha_mcp/tools/tools_registry.py:164-165", "src/ha_mcp/tools/device_enrichment.py:64-72"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:54-68", "src/ha_mcp/tools/tools_registry.py:160-161", "src/ha_mcp/tools/tools_registry.py:473-481"]
+        },
+        "/single_matter_wifi": {
+          "shape": "single-device result; Matter node_diagnostics with ip_addresses (read from upstream ip_adresses) and the five active_fabrics fields",
+          "9.1.0": ["src/ha_mcp/tools/device_enrichment.py:106-117"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:515-526"]
+        },
+        "/single_matter_thread": {
+          "shape": "as /single_matter_wifi with network_type thread and a mesh-local address",
+          "9.1.0": ["src/ha_mcp/tools/device_enrichment.py:106-117"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:515-526"]
+        },
+        "/single_z2m": {
+          "shape": "single-device result; zigbee2mqtt ieee_address from the mqtt identifier, friendly_name and mqtt_topic_hint",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:61-68", "src/ha_mcp/tools/tools_registry.py:157-159"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:57-64", "src/ha_mcp/tools/tools_registry.py:153-155"]
+        },
+        "/single_hassio": {
+          "shape": "single-device result; integration_type from the first identifier domain",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:117-129"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:113-125"]
+        },
+        "/single_child": {
+          "shape": "single-device result for a Core child row: via_device_id, effective area_id and config_entries from the child row",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:149", "src/ha_mcp/tools/tools_registry.py:170-186", "src/ha_mcp/tools/tools_registry.py:458"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:145", "src/ha_mcp/tools/tools_registry.py:166-182", "src/ha_mcp/tools/tools_registry.py:579"]
+        },
+        "/list_z2m": {
+          "shape": "list-mode result filtered by zigbee2mqtt; pagination metadata, filters, bridge and usage_hint",
+          "9.1.0": ["src/ha_mcp/tools/tools_registry.py:525-557", "src/ha_mcp/tools/tools_registry.py:560-607", "src/ha_mcp/tools/response_helpers.py:271-292"],
+          "8.5.0": ["src/ha_mcp/tools/tools_registry.py:646-678", "src/ha_mcp/tools/tools_registry.py:681-728"]
+        }
+      }
+    }
+  },
+  "core_domain_set": {
+    "class": "S",
+    "source": "home-assistant/core commit 74cf5a49c63ed8d4d87717844bf14f79c28c9cea (2026.11.0) homeassistant/components/*/manifest.json",
+    "derivation": "every directory holding manifest.json; manifest domain equals directory name for all 1562; SHA-256 of the sorted newline-terminated list",
+    "count": 1562,
+    "sha256": "5a77c4c12f8727e59d35b54ca40744de4590c3ce5cb2cba76d4f9a6642da7743",
+    "compiled_in": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py"
+  }
+}

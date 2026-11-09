@@ -626,7 +626,7 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
         self.assert_beta33_documents_resolve_exactly()
 
     def test_scope_adds_no_tool_provider_or_fallback(self):
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 57)  # + HAMCP-229
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 58)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
         source = (
             BETA_DIR
             / "ha_mcp_engineering"
