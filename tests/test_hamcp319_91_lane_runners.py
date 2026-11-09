@@ -60,7 +60,7 @@ SHORT_STRICT = "http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/catalog/f
 LEGACY = "http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp"
 PEER_STRICT = "http://127.0.0.1:18086/synthetic-upstream-secret/mcp/catalog/full"
 PEER_LEGACY = "http://127.0.0.1:18086/synthetic-upstream-secret/mcp"
-LANE_VERSION = "2.4.2-beta.7"
+LANE_VERSION = "2.4.2-beta.8"
 PROTOCOL = "2025-03-26"
 COMMIT = "a" * 40
 
