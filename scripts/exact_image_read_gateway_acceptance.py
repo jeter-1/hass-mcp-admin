@@ -17,7 +17,8 @@ import logging
 from pathlib import Path
 import sys
 import tempfile
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping, NamedTuple
 from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
@@ -95,6 +96,211 @@ from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 
 EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
+# HAMCP-319: the Engineering expectation is bound to the image under test,
+# selected by the image's self-reported get_server_health server.version. The
+# current source's expectation applies only to SERVER_VERSION. The side_by_side
+# rollback stage runs the previous published release, which predates HAMCP-290
+# (no get_marketplace_inventory; ha_get_hacs_info still delegated, nothing
+# retired, core_withheld_read_count 0). Any other version fails closed.
+BETA6_ENGINEERING_VERSION = "2.4.2-beta.6"
+# Provenance: tag v2.4.2-beta.6, commit af5ec8375401276f910804843c2ddb9180533c77
+# (the published rollback image ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:
+# 9284290132d1d4f06195f5ee5bb27797238b86d8a250db13c6c78f2171059f6a). Derived by
+# `git archive af5ec837 hass_mcp_engineering_beta`, importing that tree's
+# ha_mcp_engineering.tools and listing registered_tools(get_registered_server())
+# (81 names; its ENGINEERING_STATIC_TOOL_COUNT is 81). That tree has no
+# RETIRED_DELEGATED_READS or retired_delegated_read disposition.
+BETA6_STATIC_TOOL_NAMES = frozenset(
+    {
+        "apply_change_plan",
+        "approve_change_plan",
+        "automation_reliability_analysis",
+        "call_service",
+        "cancel_execution_task",
+        "capture_automation_baseline",
+        "capture_automation_trace",
+        "change_impact_analysis",
+        "check_config",
+        "compare_automation_baselines",
+        "configuration_integrity_analysis",
+        "control_fan",
+        "control_helper",
+        "control_power",
+        "create_addon_restart_plan",
+        "create_backup_plan",
+        "create_change_plan",
+        "create_configuration_delete_plan",
+        "create_configuration_plan",
+        "create_dashboard_metadata_plan",
+        "create_dashboard_update_plan",
+        "create_entity_availability_exposure_plan",
+        "create_entity_metadata_plan",
+        "create_helper_options_plan",
+        "create_helper_state_plan",
+        "create_home_assistant_restart_plan",
+        "create_input_select_option_plan",
+        "create_label_plan",
+        "create_reload_plan",
+        "create_scene_configuration_plan",
+        "dashboard_integrity_analysis",
+        "delete_automation",
+        "entity_dependency_analysis",
+        "get_audit_log",
+        "get_automation_config",
+        "get_automation_trace",
+        "get_backup_inventory",
+        "get_blueprint",
+        "get_change_plan",
+        "get_configuration_definitions",
+        "get_core_log_history",
+        "get_dashboard_config",
+        "get_entity",
+        "get_error_log",
+        "get_execution_task",
+        "get_history",
+        "get_history_slices",
+        "get_incident_logs",
+        "get_integration_inspection",
+        "get_logbook",
+        "get_recorder_settings",
+        "get_script_trace",
+        "get_server_health",
+        "get_trace_snapshot",
+        "get_unregistered_entities",
+        "handoff_generation",
+        "incident_correlation",
+        "inspect_governance_record",
+        "list_areas",
+        "list_automation_traces",
+        "list_automations",
+        "list_blueprints",
+        "list_capabilities",
+        "list_change_plans",
+        "list_dashboards",
+        "list_devices",
+        "list_entity_registry",
+        "list_execution_tasks",
+        "list_script_traces",
+        "list_services",
+        "list_trace_snapshots",
+        "reload_domain",
+        "render_template",
+        "reverify_configuration_task",
+        "rollback_change",
+        "run_held_read_canary",
+        "search_entities",
+        "search_services",
+        "server_info",
+        "set_automation_trace_watch",
+        "upsert_automation",
+    }
+)
+BETA6_RETIRED_DELEGATED_READS: frozenset[str] = frozenset()
+# The beta.6 tree's own reviewed 8.5.0 delegated read routes (same derivation:
+# that tree's load_reviewed_upstream_release_registry().by_version["8.5.0"]).
+# The rollback stage runs beta.6 only against 8.5.0; any other upstream version
+# has no reviewed beta.6 expectation and fails closed. With nothing retired,
+# beta.6's expected core_withheld_read_count is len(retired) == 0.
+BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
+    MappingProxyType(
+        {
+            "8.5.0": frozenset(
+                {
+                "ha_config_get_automation",
+                "ha_config_get_calendar_events",
+                "ha_config_get_category",
+                "ha_config_get_label",
+                "ha_config_get_scene",
+                "ha_config_get_script",
+                "ha_config_list_dashboard_resources",
+                "ha_config_list_groups",
+                "ha_config_list_helpers",
+                "ha_eval_template",
+                "ha_get_app",
+                "ha_get_automation_traces",
+                "ha_get_blueprint",
+                "ha_get_device",
+                "ha_get_entity",
+                "ha_get_entity_exposure",
+                "ha_get_hacs_info",
+                "ha_get_history",
+                "ha_get_integration",
+                "ha_get_overview",
+                "ha_get_skill_guide",
+                "ha_get_state",
+                "ha_get_system_health",
+                "ha_get_todo",
+                "ha_get_zone",
+                "ha_list_floors_areas",
+                "ha_list_services",
+                "ha_search",
+                }
+            ),
+        }
+    )
+)
+
+
+class EngineeringExpectation(NamedTuple):
+    version: str
+    static_names: frozenset[str]
+    retired_upstream: frozenset[str]
+    # None: derived from the current reviewed policy (current source image).
+    delegated_reads_by_upstream_version: Mapping[str, frozenset[str]] | None = None
+
+
+def reported_engineering_version(health: dict[str, Any]) -> Any:
+    data = health.get("data") if isinstance(health.get("data"), dict) else health
+    server = data.get("server") if isinstance(data.get("server"), dict) else {}
+    return server.get("version")
+
+
+def engineering_expectation(
+    reported_version: Any,
+    *,
+    current_static_names: frozenset[str] | set[str],
+) -> EngineeringExpectation:
+    """Select the reviewed expectation for exactly the self-reported version."""
+
+    if isinstance(reported_version, str) and reported_version == SERVER_VERSION:
+        return EngineeringExpectation(
+            SERVER_VERSION,
+            frozenset(current_static_names),
+            frozenset(RETIRED_DELEGATED_READS),
+        )
+    if (
+        isinstance(reported_version, str)
+        and reported_version == BETA6_ENGINEERING_VERSION
+    ):
+        return EngineeringExpectation(
+            BETA6_ENGINEERING_VERSION,
+            BETA6_STATIC_TOOL_NAMES,
+            BETA6_RETIRED_DELEGATED_READS,
+            BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION,
+        )
+    raise AcceptanceFailure(
+        "The Engineering image reported an unreviewed Engineering version.",
+        diagnostics={
+            "observed_engineering_version": (
+                reported_version[:64]
+                if isinstance(reported_version, str)
+                else type(reported_version).__name__
+            ),
+            "reviewed_engineering_versions": sorted(
+                {SERVER_VERSION, BETA6_ENGINEERING_VERSION}
+            ),
+        },
+    )
+
+
+def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[str]:
+    """Policy read routes whose upstream read the image under test retired."""
+
+    return {
+        entry.exposed_name
+        for entry in policy.tools
+        if entry.is_read_route and entry.upstream_name in retired_upstream
+    }
 # Releases whose exact evidence carries the app-tool transition (no
 # ha_get_addon) and held operational backup/lifecycle providers.
 APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0"})
@@ -1316,72 +1522,6 @@ async def inspect_engineering(
             f"{EXPECTED_ENGINEERING_BASELINE_COUNT} tools"
         ),
     )
-    automatic = {
-        entry.exposed_name
-        for entry in policy.tools
-        if entry.is_read_route
-    }
-    # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
-    # the gateway withholds them on every release, never aliased, delegated
-    # or dispatched, whether or not a native route is registered.
-    retired = {
-        entry.exposed_name
-        for entry in policy.tools
-        if entry.is_read_route and entry.upstream_name in RETIRED_DELEGATED_READS
-    }
-    automatic -= retired
-    held = {
-        entry.exposed_name
-        for entry in policy.tools
-        if entry.classification == "held_for_canary"
-    }
-    delegated_read_calls = {
-        name: arguments
-        for name, arguments in {
-            **DELEGATED_READ_CALLS,
-            **DELEGATED_READ_CALL_OVERRIDES_BY_VERSION.get(
-                expected_upstream_version, {}
-            ),
-        }.items()
-        if name in automatic
-    }
-    error_call_contracts = {
-        name: expected
-        for name, expected in UPSTREAM_ERROR_CALLS.items()
-        if expected["tool"] in automatic
-        and (
-            expected.get("reviewed_versions") is None
-            or expected_upstream_version in expected["reviewed_versions"]
-        )
-    }
-    expected_error_tools = {
-        expected["tool"] for expected in error_call_contracts.values()
-    }
-    require(
-        set(delegated_read_calls) | expected_error_tools == automatic,
-        "the exact-image harness does not exercise every admitted read",
-    )
-    partial_search_enabled = "ha_search" in automatic
-    expected_operational_error_calls = sum(
-        1
-        for value in error_call_contracts.values()
-        if value["failure_category"] == "upstream_error"
-    )
-    expected_outcome_category_counts: dict[str, int] = {}
-    for expected_error in error_call_contracts.values():
-        category = expected_error["failure_category"]
-        expected_outcome_category_counts[category] = (
-            expected_outcome_category_counts.get(category, 0) + 1
-        )
-    expected_last_call_failure_category = next(
-        (
-            value["failure_category"]
-            if value["failure_category"] == "upstream_error"
-            else None
-            for value in reversed(tuple(error_call_contracts.values()))
-        ),
-        None,
-    )
     async with streamablehttp_client(endpoint) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
@@ -1407,6 +1547,95 @@ async def inspect_engineering(
             health_before = decode_tool_result(
                 health_before_result,
                 context="engineering_health_before_calls",
+            )
+            expectation = engineering_expectation(
+                reported_engineering_version(health_before),
+                current_static_names=base_names,
+            )
+            # HAMCP-319: bind the expectation to the Engineering image under test.
+            base_names = set(expectation.static_names)
+            automatic = {
+                entry.exposed_name
+                for entry in policy.tools
+                if entry.is_read_route
+            }
+            # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
+            # the gateway withholds them on every release, never aliased, delegated
+            # or dispatched, whether or not a native route is registered. The retired
+            # set is the one of the image under test (empty for 2.4.2-beta.6).
+            retired = retired_exposed_names(policy, expectation.retired_upstream)
+            automatic -= retired
+            if expectation.delegated_reads_by_upstream_version is not None:
+                pinned_reads = expectation.delegated_reads_by_upstream_version.get(
+                    expected_upstream_version
+                )
+                if pinned_reads is None:
+                    raise AcceptanceFailure(
+                        "The Engineering image has no reviewed expectation for "
+                        "this upstream version.",
+                        diagnostics={
+                            "observed_engineering_version": expectation.version,
+                            "expected_upstream_version": str(
+                                expected_upstream_version
+                            )[:64],
+                        },
+                    )
+                require(
+                    automatic == pinned_reads,
+                    "the reviewed delegated read set differs from the "
+                    "Engineering image's own source",
+                )
+            held = {
+                entry.exposed_name
+                for entry in policy.tools
+                if entry.classification == "held_for_canary"
+            }
+            delegated_read_calls = {
+                name: arguments
+                for name, arguments in {
+                    **DELEGATED_READ_CALLS,
+                    **DELEGATED_READ_CALL_OVERRIDES_BY_VERSION.get(
+                        expected_upstream_version, {}
+                    ),
+                }.items()
+                if name in automatic
+            }
+            error_call_contracts = {
+                name: expected
+                for name, expected in UPSTREAM_ERROR_CALLS.items()
+                if expected["tool"] in automatic
+                and (
+                    expected.get("reviewed_versions") is None
+                    or expected_upstream_version in expected["reviewed_versions"]
+                )
+            }
+            expected_error_tools = {
+                expected["tool"] for expected in error_call_contracts.values()
+            }
+            require(
+                set(delegated_read_calls) | expected_error_tools == automatic,
+                "the exact-image harness does not exercise every admitted read",
+            )
+            partial_search_enabled = "ha_search" in automatic
+            expected_operational_error_calls = sum(
+                1
+                for value in error_call_contracts.values()
+                if value["failure_category"] == "upstream_error"
+            )
+            expected_outcome_category_counts: dict[str, int] = {}
+            for expected_error in error_call_contracts.values():
+                category = expected_error["failure_category"]
+                expected_outcome_category_counts[category] = (
+                    expected_outcome_category_counts.get(category, 0) + 1
+                )
+            expected_last_call_failure_category = next(
+                (
+                    value["failure_category"]
+                    if value["failure_category"] == "upstream_error"
+                    else None
+                    for value in reversed(tuple(error_call_contracts.values()))
+                ),
+                None,
             )
             if not base_names <= names or not automatic <= names:
                 raise AcceptanceFailure(
