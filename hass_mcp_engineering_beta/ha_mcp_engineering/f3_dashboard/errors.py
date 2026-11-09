@@ -6,6 +6,28 @@ import re
 
 
 _DIAGNOSTIC_TOKEN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+# HAMCP-337: a structural dashboard location made only of fixed container
+# tokens and ASCII list indexes; ``/`` is the dashboard root.
+STRUCTURAL_CARD_CONTAINERS = (
+    "views",
+    "sections",
+    "cards",
+    "badges",
+    "entities",
+    "features",
+    "elements",
+    "rows",
+)
+STRUCTURAL_CARD_WRAPPERS = ("card", "row")
+MAX_STRUCTURAL_CARD_PATH_SEGMENTS = 8
+MAX_STRUCTURAL_CARD_PATH_CHARS = 160
+_STRUCTURAL_CARD_PATH = re.compile(
+    r"^(?:/|(?:/(?:"
+    + "|".join(STRUCTURAL_CARD_CONTAINERS)
+    + r")/[0-9]{1,5}|/(?:"
+    + "|".join(STRUCTURAL_CARD_WRAPPERS)
+    + r"))+)$"
+)
 
 
 class DashboardFoundationError(ValueError):
@@ -166,7 +188,36 @@ class ApprovalProjectionError(DashboardFoundationError):
 
 
 class RiskAnalysisError(DashboardFoundationError):
+    """A bounded risk-analysis refusal (HAMCP-337).
+
+    ``card_path`` is structural only: fixed container tokens and list
+    indexes such as ``/views/7/sections/0/cards/3``.  It can never carry an
+    entity ID, name, mapping key, or any other configuration value.
+    """
+
     code = "dashboard_risk_analysis_failed"
+
+    def __init__(
+        self,
+        message: str = "Dashboard operation was rejected",
+        *,
+        card_path: str | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(message, **kwargs)  # type: ignore[arg-type]
+        if card_path is not None and (
+            not isinstance(card_path, str)
+            or len(card_path) > MAX_STRUCTURAL_CARD_PATH_CHARS
+            or not _STRUCTURAL_CARD_PATH.fullmatch(card_path)
+        ):
+            raise ValueError("Dashboard diagnostic card_path is not structural")
+        self.card_path = card_path
+
+    def diagnostic_details(self) -> dict[str, str | int]:
+        details = super().diagnostic_details()
+        if self.card_path is not None:
+            details["card_path"] = self.card_path
+        return details
 
 
 class ProviderAdmissionError(DashboardFoundationError):

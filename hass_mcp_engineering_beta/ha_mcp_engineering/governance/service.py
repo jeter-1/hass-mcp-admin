@@ -55,6 +55,7 @@ from ..f3_dashboard.artifact_store import DashboardArtifactStore
 from ..f3_dashboard.errors import (
     DashboardFoundationError,
     ProviderAuthorityUnavailableError,
+    RiskAnalysisError,
     is_compiler_limit_refusal,
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
@@ -5593,6 +5594,14 @@ class ChangeGovernanceService:
                 now=self.now(),
                 plan_id=self._new_id(),
             )
+        except RiskAnalysisError as exc:
+            # HAMCP-337: a genuine risk-analysis refusal names its rule and
+            # the structural card path only (fixed tokens, counts and list
+            # indexes), never a configuration value.
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={**exc.diagnostic_details(), "reason": exc.code},
+            ) from None
         except ProviderAuthorityUnavailableError:
             # The getter answered but the write dependencies were not
             # admitted; this is not a property of the dashboard configuration.
