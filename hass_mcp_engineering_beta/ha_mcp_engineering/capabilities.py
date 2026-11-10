@@ -621,6 +621,23 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "sanitized": "shared_untrusted_data_sanitizer",
     },
     {
+        # HAMCP-290: installed-only Marketplace inventory; dormant until the
+        # owner-signed registry admits core.marketplace_read.
+        "tool": "get_marketplace_inventory",
+        "category": "evidence",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "direct_home_assistant_marketplace",
+        "policy": "bounded_marketplace_inventory_read",
+        "core_capabilities": ["core.marketplace_read"],
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": "not_evaluated",
+        "fallback": "hacs_repositories_list_on_exact_unknown_command",
+        "sanitized": "shared_untrusted_data_sanitizer",
+    },
+    {
         "tool": "create_home_assistant_restart_plan",
         "category": "operational_administration",
         "status": "beta_native",
@@ -823,7 +840,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 def _platform_read_profile(kind: str) -> str:
     # Mirrors providers.upstream_platform_reads.ADAPTER_BINDINGS (test-bound);
     # importing it here would be circular through providers/__init__.
-    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0"))
+    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0", "9.1.0"))
 
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
@@ -1066,9 +1083,9 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "ha_mcp_delegated",
         "completeness": "best_effort_redaction_partial_disclosed",
         "fallback_policy": "none",
-        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true and include_content=false; every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0) is never default-admitted and is excluded from signed selections. Engineering makes no write or service call; the one accepted dependency (K1) is that the first call may make the component call POST ha_mcp_tools/get_caller_token and persist the admin caller token.",
+        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true; include_content is false on 8.4.3 and 8.5.0, and true on 9.1.0 only as transient input to a bounded, constructor-free YAML tag scan whose text is deleted from both response channels before projection and is never returned, logged or audited (tag loss or an unverifiable scan is disclosed as partial). Every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0, 9.1.0) is never default-admitted and is excluded from signed selections; the file siblings stay prohibited. Engineering makes no write or service call; the one accepted dependency (K1) is that the first call may make the component call POST ha_mcp_tools/get_caller_token and persist the admin caller token.",
         "trust_mode": "reviewed_argument_constrained",
-        "trust_profile": "ha-mcp-8.4.3-yaml-fragment-read-v1, ha-mcp-8.5.0-yaml-fragment-read-v1",
+        "trust_profile": "ha-mcp-8.4.3-yaml-fragment-read-v1, ha-mcp-8.5.0-yaml-fragment-read-v1, ha-mcp-9.1.0-yaml-fragment-read-v1",
         "dependencies": "ha_mcp_tools custom component; ha_mcp_filesystem_tools_flag",
         "core_applicability": "core.basic_rest_read + core.basic_websocket_read, component routes unattested",
         "writes": "none",

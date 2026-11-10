@@ -528,6 +528,10 @@ def _transport_category(category: str) -> str:
         "authentication_failed": "permission_failure",
         "connection_failed": "provider_unavailable",
         "endpoint_rejected": "provider_unavailable",
+        "upstream_redirect_refused": "provider_unavailable",
+        "upstream_endpoint_rejected": "provider_unavailable",
+        "upstream_catalog_mode_unadmitted": "provider_unavailable",
+        "upstream_catalog_selector_invalid": "provider_unavailable",
         "timeout": "provider_timeout",
         "response_too_large": "invalid_response",
     }.get(category, category if category in {

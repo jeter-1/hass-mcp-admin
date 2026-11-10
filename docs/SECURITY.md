@@ -437,6 +437,10 @@ Stable markers identify only the category:
 - `[REDACTED:auth_cookie]` and `[REDACTED:password]`;
 - `[REDACTED:webhook_secret]` and `[REDACTED:auth_flow]`;
 - `[REDACTED:matter_setup_code]` and `[REDACTED:matter_setup_payload]`;
+- `[REDACTED:thread_credential]` for Thread network credential and operational-dataset
+  keys (`network_key`, `pskc`, `pskd`, `active_dataset_tlvs`, `pending_dataset_tlvs`,
+  `dataset_tlvs`, `tlv`), a second line of defense behind the `ha_get_device`
+  radio-field allowlist (HAMCP-319 section 6.5);
 - `[REDACTED:url_credentials]`; and
 - `[REDACTED:sanitization_failure]` when a field cannot be processed safely.
 

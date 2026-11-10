@@ -1,0 +1,978 @@
+{
+ "timezone": "America/Chicago",
+ "scenarios": {
+  "history_minimal": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z"
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00"
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00"
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": true,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc",
+      "summary": false
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable."
+    }
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00"
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00"
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": true,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc"
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "history_attributes": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "minimal_response": false
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature"
+         }
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature",
+          "device_class": "temperature"
+         }
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc",
+      "summary": false
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable."
+    }
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature"
+         }
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature",
+          "device_class": "temperature"
+         }
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc"
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "history_attributes_absent": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "minimal_response": false
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature"
+         }
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00"
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc",
+      "summary": false
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable."
+    }
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00",
+         "attributes": {
+          "unit_of_measurement": "°C",
+          "friendly_name": "Synthetic temperature"
+         }
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00",
+         "attributes": {}
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": true,
+      "limit": 100,
+      "offset": 0,
+      "order": "desc"
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "history_fields_typo": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "fields": [
+     "entities",
+     "bogus"
+    ]
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00"
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00"
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ]
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable."
+    },
+    "warnings": [
+     "fields ['bogus'] not found in response — available keys: ['entities', 'period', 'query_params', 'source']"
+    ]
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T05:30:00-05:00",
+         "last_updated": "2026-10-19T05:30:00-05:00"
+        },
+        {
+         "state": "20.0",
+         "last_changed": "2026-10-18T19:00:00-05:00",
+         "last_updated": "2026-10-19T01:00:00-05:00"
+        }
+       ],
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "warnings": [
+      "fields ['bogus'] not found in response — available keys: ['entities', 'period', 'query_params', 'source']"
+     ]
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "history_timezone_failed": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "limit": 1
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T10:30:00+00:00",
+         "last_updated": "2026-10-19T10:30:00+00:00"
+        }
+       ],
+       "total_count": 1,
+       "offset": 0,
+       "limit": 1,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": true,
+      "significant_changes_only": true,
+      "limit": 1,
+      "offset": 0,
+      "order": "desc",
+      "summary": false
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "timestamp_format": "ISO 8601 (UTC)",
+     "note": "History event times use UTC. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable."
+    },
+    "warnings": [
+     "Could not fetch Home Assistant timezone; timezone context defaults to UTC."
+    ]
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "history",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": {
+        "start": "2026-10-19T00:00:00+00:00",
+        "end": "2026-10-19T12:00:00+00:00"
+       },
+       "states": [
+        {
+         "state": "21.5",
+         "last_changed": "2026-10-19T10:30:00+00:00",
+         "last_updated": "2026-10-19T10:30:00+00:00"
+        }
+       ],
+       "total_count": 1,
+       "offset": 0,
+       "limit": 1,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "query_params": {
+      "minimal_response": true,
+      "significant_changes_only": true,
+      "limit": 1,
+      "offset": 0,
+      "order": "desc"
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "timestamp_format": "ISO 8601 (UTC)",
+     "note": "Could not fetch Home Assistant timezone — timestamps are in UTC."
+    }
+   }
+  },
+  "statistics_default_types": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "source": "statistics",
+    "period": "hour"
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "end": 1792371600000.0,
+         "mean": 20.4,
+         "min": 20.0,
+         "max": 21.0
+        },
+        {
+         "start": 1792371600000.0,
+         "end": 1792375200000.0,
+         "mean": 21.1,
+         "min": 20.9,
+         "max": 21.5
+        }
+       ],
+       "unit_of_measurement": "°C",
+       "unit_source": "recorder_metadata",
+       "statistics_metadata": {
+        "statistic_id": "sensor.synthetic_temperature",
+        "display_unit_of_measurement": "°C",
+        "has_mean": true,
+        "has_sum": false,
+        "name": null,
+        "source": "recorder",
+        "statistics_unit_of_measurement": "°C",
+        "unit_class": "temperature"
+       },
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "max",
+      "mean",
+      "min"
+     ],
+     "query_params": {
+      "statistic_types": null,
+      "limit": 100,
+      "offset": 0
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "native",
+     "note": "Timestamp fields retain their native format; see the tool description for units."
+    }
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_temperature",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "mean": 20.4,
+         "min": 20.0,
+         "max": 21.0
+        },
+        {
+         "start": 1792371600000.0,
+         "mean": 21.1,
+         "min": 20.9,
+         "max": 21.5
+        }
+       ],
+       "unit_of_measurement": null,
+       "total_count": 2,
+       "offset": 0,
+       "limit": 100,
+       "count": 2,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "mean",
+      "min",
+      "max",
+      "sum",
+      "state",
+      "change"
+     ],
+     "query_params": {
+      "statistic_types": null,
+      "limit": 100,
+      "offset": 0
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "statistics_requested_units_unknown_and_empty": {
+   "arguments": {
+    "entity_ids": [
+     "sensor.synthetic_energy",
+     "sensor.synthetic_missing"
+    ],
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "source": "statistics",
+    "period": "hour",
+    "statistic_types": "sum,change"
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_energy",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "end": 1792371600000.0,
+         "state": 12.5,
+         "sum": 3.25,
+         "change": 0.75,
+         "last_reset": null
+        }
+       ],
+       "unit_of_measurement": null,
+       "unit_source": "unknown",
+       "unit_reason": "statistics_metadata_missing",
+       "statistics_metadata": null,
+       "total_count": 1,
+       "offset": 0,
+       "limit": 100,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      },
+      {
+       "entity_id": "sensor.synthetic_missing",
+       "period": "hour",
+       "statistics": [],
+       "unit_of_measurement": null,
+       "unit_source": "unknown",
+       "unit_reason": "statistics_metadata_missing",
+       "statistics_metadata": null,
+       "total_count": 0,
+       "offset": 0,
+       "limit": 100,
+       "count": 0,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "sum",
+      "change"
+     ],
+     "query_params": {
+      "statistic_types": [
+       "sum",
+       "change"
+      ],
+      "limit": 100,
+      "offset": 0
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "native",
+     "note": "Timestamp fields retain their native format; see the tool description for units."
+    },
+    "warnings": [
+     "sensor.synthetic_energy: statistics output unit is unknown (statistics_metadata_missing); do not infer it from current state attributes.",
+     "sensor.synthetic_missing: statistics output unit is unknown (statistics_metadata_missing); do not infer it from current state attributes.",
+     "sensor.synthetic_energy: last_reset omitted because its unconverted timestamp could not be read; Core may apply value-unit conversion to this field.",
+     "No statistics found for: sensor.synthetic_missing. These entities may not have state_class attribute or may not have recorded data yet."
+    ]
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "sensor.synthetic_energy",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "sum": 3.25,
+         "change": 0.75
+        }
+       ],
+       "unit_of_measurement": null,
+       "total_count": 1,
+       "offset": 0,
+       "limit": 100,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      },
+      {
+       "entity_id": "sensor.synthetic_missing",
+       "period": "hour",
+       "statistics": [],
+       "unit_of_measurement": null,
+       "total_count": 0,
+       "offset": 0,
+       "limit": 100,
+       "count": 0,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "sum",
+      "change"
+     ],
+     "query_params": {
+      "statistic_types": [
+       "sum",
+       "change"
+      ],
+      "limit": 100,
+      "offset": 0
+     },
+     "warnings": [
+      "No statistics found for: sensor.synthetic_missing. These entities may not have state_class attribute or may not have recorded data yet."
+     ]
+    },
+    "metadata": {
+     "home_assistant_timezone": "America/Chicago",
+     "timestamp_format": "ISO 8601 (America/Chicago)",
+     "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+   }
+  },
+  "statistics_unitless_timezone_failed": {
+   "arguments": {
+    "entity_ids": "counter.synthetic_events",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "source": "statistics",
+    "period": "hour",
+    "statistic_types": [
+     "state",
+     "mean"
+    ]
+   },
+   "ha_mcp_9_1_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "counter.synthetic_events",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "end": 1792371600000.0,
+         "state": 4.0,
+         "sum": 4.0,
+         "change": 1.0
+        }
+       ],
+       "unit_of_measurement": null,
+       "unit_source": "recorder_metadata",
+       "unit_reason": "statistics_are_unitless",
+       "statistics_metadata": {
+        "statistic_id": "counter.synthetic_events",
+        "display_unit_of_measurement": null,
+        "has_mean": false,
+        "has_sum": true,
+        "name": null,
+        "source": "recorder",
+        "statistics_unit_of_measurement": null,
+        "unit_class": null
+       },
+       "total_count": 1,
+       "offset": 0,
+       "limit": 100,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "state",
+      "mean"
+     ],
+     "query_params": {
+      "statistic_types": [
+       "state",
+       "mean"
+      ],
+      "limit": 100,
+      "offset": 0
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "timestamp_format": "native",
+     "note": "Timestamp fields retain their native format; see the tool description for units."
+    },
+    "warnings": [
+     "Could not fetch Home Assistant timezone; timezone context defaults to UTC."
+    ]
+   },
+   "ha_mcp_8_5_0": {
+    "data": {
+     "success": true,
+     "source": "statistics",
+     "entities": [
+      {
+       "entity_id": "counter.synthetic_events",
+       "period": "hour",
+       "statistics": [
+        {
+         "start": 1792368000000.0,
+         "state": 4.0
+        }
+       ],
+       "unit_of_measurement": null,
+       "total_count": 1,
+       "offset": 0,
+       "limit": 100,
+       "count": 1,
+       "has_more": false,
+       "next_offset": null
+      }
+     ],
+     "period_type": "hour",
+     "time_range": {
+      "start": "2026-10-19T00:00:00+00:00",
+      "end": "2026-10-19T12:00:00+00:00"
+     },
+     "statistic_types": [
+      "state",
+      "mean"
+     ],
+     "query_params": {
+      "statistic_types": [
+       "state",
+       "mean"
+      ],
+      "limit": 100,
+      "offset": 0
+     }
+    },
+    "metadata": {
+     "home_assistant_timezone": "UTC",
+     "timestamp_format": "ISO 8601 (UTC)",
+     "note": "Could not fetch Home Assistant timezone — timestamps are in UTC."
+    }
+   }
+  }
+ },
+ "refusals_8_5_0": {
+  "statistics_invalid_period": {
+   "arguments": {
+    "entity_ids": "sensor.synthetic_temperature",
+    "start_time": "2026-10-19T00:00:00Z",
+    "end_time": "2026-10-19T12:00:00Z",
+    "source": "statistics",
+    "period": "fortnight"
+   },
+   "error": {
+    "success": false,
+    "error": {
+     "code": "VALIDATION_INVALID_PARAMETER",
+     "message": "Invalid period: fortnight",
+     "suggestion": "Use one of: 5minute, hour, day, week, month, year"
+    },
+    "period": "fortnight",
+    "valid_periods": [
+     "5minute",
+     "hour",
+     "day",
+     "week",
+     "month",
+     "year"
+    ]
+   }
+  }
+ }
+}

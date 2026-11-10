@@ -78,6 +78,10 @@ ENTRY_ID = ENTRY_IDS["8.1.1"]
 CURRENT_TAXONOMY_FIXTURE = json.loads(
     TAXONOMY_FIXTURE_PATH.read_text(encoding="utf-8")
 )
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def captured_tools(version: str = "8.1.1") -> list[dict]:
@@ -179,10 +183,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             held_classifications,
             (("ha_get_operation_status", "held_for_canary"),),
         )
-        self.assertEqual(len(registered_dynamic_tools), 25)
+        self.assertEqual(len(registered_dynamic_tools), 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertIn("ha_search", registered_dynamic_tools)
         self.assertNotIn("ha_get_operation_status", registered_dynamic_tools)
-        self.assertEqual(len(dynamic_capabilities), 25)
+        self.assertEqual(len(dynamic_capabilities), 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertTrue(
             all(
                 item["operation_class"] == "automatic_read"
@@ -383,7 +387,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(evidence["promotion_performed"])
                 self.assertFalse(evidence["fallback_occurred"])
                 self.assertNotIn("ha_get_operation_status", registered_tools(server))
-                expected_reads = 24 if version in {"8.0.0", "8.1.0"} else 25
+                expected_reads = (24 if version in {"8.0.0", "8.1.0"} else 25) - RETIRED_COUNT  # HAMCP-290
                 self.assertEqual(
                     gateway.health_snapshot()["dynamically_exposed_count"],
                     expected_reads,

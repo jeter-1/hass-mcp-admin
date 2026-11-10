@@ -131,6 +131,7 @@ STATIC_CORE_TABLE = {
     "get_history": MAPPED,
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
+    "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
@@ -254,7 +255,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 82)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -358,8 +359,10 @@ class StaticCoreTableTests(unittest.TestCase):
         routes._validate_static_core_routes()
 
     def test_every_delegated_route_maps_a_non_empty_requirement_set(self):
-        # HAMCP-162 maps ha_config_get_yaml (30 -> 31).
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
+        # HAMCP-162 maps ha_config_get_yaml (30 -> 31); HAMCP-290 retired
+        # the delegated ha_get_hacs_info from the mapping (31 -> 30).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        self.assertNotIn("ha_get_hacs_info", DELEGATED_CORE_REQUIREMENTS)
         self.assertFalse(set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, values in DELEGATED_CORE_REQUIREMENTS.items():
             with self.subTest(tool=name):
@@ -513,6 +516,9 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                # HAMCP-290: the dormant Marketplace read is likewise refused
+                # pending signed admission (its own tests cover it).
+                "get_marketplace_inventory",
             }:
                 continue
             with self.subTest(tool=name):

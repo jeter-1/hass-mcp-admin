@@ -356,8 +356,9 @@ class RuleDerivationTests(unittest.TestCase):
         self.assertEqual(len(rules), len(set(rules)))
         self.assertEqual(len(S._SEGMENT_RULES), 12)
         self.assertEqual(len(S._SERIALIZED_PATTERNS), 8)
-        self.assertEqual(len(key_categories_from_code()), 8)
-        self.assertEqual(len(rules), 12 + 8 + 8 + 2)
+        # Nine key categories since HAMCP-319 section 6.5 (thread_credential).
+        self.assertEqual(len(key_categories_from_code()), 9)
+        self.assertEqual(len(rules), 12 + 8 + 9 + 2)
         self.assertEqual(
             {rule.split(":")[1] for rule in rules if rule.startswith("segment:")},
             set(SEGMENT_BUILDERS),
@@ -387,10 +388,11 @@ class RuleDerivationTests(unittest.TestCase):
         expected = (
             text_rules * len(WRAPPERS) * len(TEXT_POSITIONS)
             + len(WRAPPERS) * len(TEXT_POSITIONS) + 1  # look-alike, plus S9
-            + 8 * len(WRAPPERS) * len(KEY_RULE_POSITIONS)
+            + 9 * len(WRAPPERS) * len(KEY_RULE_POSITIONS)
         )
         self.assertEqual(len(cells), expected)
-        self.assertEqual(len(cells), 937)
+        # 937 before HAMCP-319 section 6.5 added the thread_credential key rule.
+        self.assertEqual(len(cells), 955)
         self.assertEqual({position for _r, _w, position in cells}, set(POSITIONS))
         self.assertEqual({wrapper for _r, wrapper, _p in cells}, set(WRAPPERS))
         self.assertEqual({rule for rule, _w, _p in cells}, set(rule_ids_from_code()))
@@ -631,6 +633,8 @@ SANITIZER_SITES = {
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_untrusted_text", "sanitize_untrusted_data"): (1, "audit"),
+    # HAMCP-290: the native get_marketplace_inventory Marketplace inventory read.
+    ("marketplace_inventory.py", "sanitize_records", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_log_lines"): (1, "logs"),
     ("providers/operational_lifecycle.py", "_safe_text", "sanitize_untrusted_data"): (1, "governance"),
     ("providers/upstream_dashboard.py", "UpstreamDashboardProvider._dashboard_metadata", "sanitize_untrusted_data"): (1, "dashboard"),

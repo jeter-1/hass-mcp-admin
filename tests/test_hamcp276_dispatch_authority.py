@@ -86,6 +86,7 @@ NOT_F3 = {
     "core.integration_inspection_metadata_read": "read",
     "core.automation_baseline_metadata_read": "read",
     "core.script_trace_read": "read",
+    "core.marketplace_read": "read",  # HAMCP-290: direct typed read, never an F3 plan
     "core.template_semantics": "planning",
     "core.configuration_validation": "planning",
     "core.dependency_helper_planning": "planning",
@@ -640,7 +641,9 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         # Every runtime-only write profile that gates an F3 entry is activated.
         # The script trace read and the direct typed helper value tool
         # (HAMCP-311) are listed there only to keep it "compiled minus shipped".
-        never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation"}
+        # HAMCP-290: and the dormant Marketplace read.
+        never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
+                    "core.marketplace_read"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
         self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
         self.assertFalse(never_f3 & required)

@@ -62,6 +62,10 @@ KINDS = {
     'fan': (FanProvider, FanRefusal, FanService, FanCoreAuthority, FAN_OPERATIONS,
             control_fan, 'fan.synthetic', 'ordinary_fan_binding', 'fan_outcome'),
 }
+from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
+# release (Josh decision 2026-11-08), so exposure pins drop by one.
+RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
 def catalog(extra_names=(), *, version='8.5.0', protocol='2025-03-26'):
@@ -359,7 +363,7 @@ class DependencyScopedAdmission(Harness):
         await gateway.initialize(FastMCP('synthetic-investigation'))
         tools = gateway._registered_tool_registry.snapshot()
         # 25 base reads plus the three exact-bound 8.5.0 platform reads (HAMCP-129).
-        self.assertEqual(len(tools), 28)
+        self.assertEqual(len(tools), 28 - RETIRED_COUNT)  # HAMCP-290
         self.assertLessEqual({'ha_get_system_health', 'ha_get_app', 'ha_get_integration'}, set(tools))
         self.assertFalse(set(EXTRAS).intersection(tools))
         self.assertNotIn('ha_call_service', tools)
