@@ -267,6 +267,11 @@ For the helper-value extension, see
 Its prerequisite PR must merge before the lane is executed. A failed group or
 cleanup without `clean: true` withholds seq 17; neither permits a substitute lane.
 
+For the security metadata extension, see
+[HAMCP-134 security_metadata local lane](evidence/hamcp134/lane/README.md).
+A failed group or cleanup without `clean: true` withholds
+`core.security_metadata_read` from seq 18; neither permits a substitute lane.
+
 ### O3 refusal notification and recovery
 
 A differing or missing contract-read file produces no candidate. The preparation

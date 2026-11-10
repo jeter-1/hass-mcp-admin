@@ -638,6 +638,23 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "sanitized": "shared_untrusted_data_sanitizer",
     },
     {
+        # HAMCP-134: security posture metadata; dormant until the owner-signed
+        # registry admits core.security_metadata_read.
+        "tool": "get_security_metadata",
+        "category": "evidence",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "direct_home_assistant_security_metadata",
+        "policy": "bounded_security_metadata_read",
+        "core_capabilities": ["core.security_metadata_read"],
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": "not_evaluated",
+        "fallback": "none",
+        "sanitized": "shared_untrusted_data_sanitizer",
+    },
+    {
         "tool": "create_home_assistant_restart_plan",
         "category": "operational_administration",
         "status": "beta_native",

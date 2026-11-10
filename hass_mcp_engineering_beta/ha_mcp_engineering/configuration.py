@@ -66,6 +66,12 @@ class Settings:
     dependency_index_hard_ttl_seconds: float = 3600.0
     mcp_allowed_hosts: tuple[str, ...] | None = field(default=None, repr=False)
     mcp_allowed_origins: tuple[str, ...] = field(default=(), repr=False)
+    # HAMCP-134: which variable supplied the Core URL and token.  Only the
+    # source name is recorded, never a value.  ``unknown`` is the default for
+    # settings not built by ``load_settings`` (tests, embedders), so the
+    # security metadata identity rule cannot claim the Supervisor topology.
+    ha_url_source: str = "unknown"
+    ha_token_source: str = "unknown"
 
     @property
     def api_url(self) -> str:
@@ -223,7 +229,14 @@ def load_settings() -> Settings:
             details={"issues": ["invalid_inbound_policy_list"]},
         ) from None
     ha_url = os.environ.get("HA_URL", "http://supervisor/core").rstrip("/")
+    ha_url_source = "ha_url_env" if "HA_URL" in os.environ else "default"
     token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN", "")
+    if os.environ.get("SUPERVISOR_TOKEN"):
+        ha_token_source = "supervisor_token"
+    elif os.environ.get("HA_TOKEN"):
+        ha_token_source = "ha_token"
+    else:
+        ha_token_source = "none"
     secret = (options.get("access_secret") or os.environ.get("ACCESS_SECRET", "")).strip()
     destructive = options.get("destructive_services") or DEFAULT_DESTRUCTIVE_SERVICES
     configured_proxies = options.get("trusted_proxy_cidrs", [])
@@ -232,6 +245,8 @@ def load_settings() -> Settings:
     return Settings(
         ha_url=ha_url,
         ha_token=token,
+        ha_url_source=ha_url_source,
+        ha_token_source=ha_token_source,
         access_secret=secret,
         port=int(os.environ.get("MCP_PORT", "8100")),
         mcp_allowed_hosts=allowed_hosts,

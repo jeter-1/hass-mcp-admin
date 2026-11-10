@@ -332,8 +332,8 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(registered, EXACT_8_4_1_READS - RETIRED_DELEGATED_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 24)
         self.assertEqual(snapshot["core_withheld_read_count"], 1)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 107)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 108)  # HAMCP-134
         for unreachable in (
             "ha_get_operation_status",
             "ha_get_app",
