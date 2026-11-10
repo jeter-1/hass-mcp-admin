@@ -197,3 +197,29 @@ Run 1 limitation, superseded by run 2: a fresh disposable Core has no
 installed repositories, so run 1 projected no real installed record. Run 2
 adds the install fixture above, which installs one theme into the disposable
 Core only.
+
+### Run 2: PASS with the install fixture (2026-11-10 06:07 CST)
+
+The committed `marketplace_read.json` is now this run's receipt. It supersedes
+run 1's receipt.
+
+- The lane ran under the host heavy-job gate as unit `hamcp290-lane2` (kind
+  `lane`) at source commit `cf0857e7cba0f43c0681d23e723fd2375b0fc089`, with Core
+  at `--memory 2g` and the fixture writer at `128m`.
+- The receipt's SHA-256 is
+  `a7e02385e5d5d4587bccd78ecc4eba4780c2f417aee82a25db84b92bd5ecee28`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`.
+- Install fixture: the fresh Core had 0 installed records and no GitHub account
+  connected. The pinned candidate `JuanMTech/google_light_theme` (id
+  `234032927`) installed anonymously at `v1.13`. No token was used and the
+  lane's network configuration did not change.
+- The routed read returned `core_marketplace`, `complete`, one command and no
+  fallback, with `installed_total` 1 and `count` 1, matching the raw list. The
+  record carried exactly the 10 projected fields, and every text field equalled
+  the raw value.
+- Redaction canary: with the record's description treated as a secret, the page
+  omitted it and reported `partial` with `sanitized_text`.
+- Authority, refusals, HACS and cleanup results are the same as run 1: 32 to 33
+  references, zero predecessor reads, 6,417 store records, no HACS command,
+  `fallback_count` 0, and cleanup read back as clean.
