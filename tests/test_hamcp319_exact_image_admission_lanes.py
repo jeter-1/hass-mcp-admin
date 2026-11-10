@@ -692,20 +692,25 @@ def readiness_body(*, deadline_elapsed=True, reconciled=False, mutate=None):
     return json.dumps(state, separators=(",", ":"), sort_keys=True)
 
 
-def gateway_health(*, failure=None, mutate=None, dynamic=0):
+def gateway_health(*, failure=None, mutate=None, dynamic=0, dashboard=False):
     """A real ``get_server_health`` envelope around the real gateway projection.
 
     ``failure`` drives the gateway's own disable-delegation path; ``mutate``
-    edits the decoded ``data`` to build each bad observation.
+    edits the decoded ``data`` to build each bad observation. ``dashboard``
+    adds the real dashboard provider block, which lists every failure category
+    with its count, as a configured container's health does.
     """
 
     from ha_mcp_engineering.models.responses import SuccessResponse
+    from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
 
     gateway = UpstreamReadGateway()
     if failure:
         gateway._record_failure(failure, disable_delegation=True)
     data = {"upstream_read_gateway": gateway.health_projection(), "dynamic_upstream_tool_count": dynamic}
+    if dashboard:
+        data["upstream_dashboard"] = UpstreamDashboardProvider().health_snapshot()
     if mutate:
         mutate(data)
     return SuccessResponse(operation="get_server_health", summary="Returned safe beta operational health.",
@@ -824,6 +829,42 @@ class RollbackReadyPathTests(unittest.TestCase):
             self.refused_pending(self.catalog(health=gateway_health(mutate=set_gateway(admission_status=status))),
                                  "fail_closed_gateway_admitted")
         self.refused_pending(self.catalog(), "fail_closed_static_catalog_unknown", static=frozenset())
+
+    def test_zero_redirect_count_in_dashboard_health_is_not_a_redirect(self):
+        # CI run 42747401274: the real dashboard block names the category with
+        # count 0, which the former substring check read as a redirect.
+        health = gateway_health(dashboard=True)
+        self.assertIn('"upstream_redirect_refused": 0', health.replace('":0', '": 0'))
+        self.assertFalse(LANES.redirect_reported_by_health(health))
+        observed = self.pending(self.catalog(health=health))
+        self.assertEqual(observed["path"], "pending_with_mcp_requests_accepted")
+        observed = LANES.evaluate_fail_closed(READY, None, self.catalog(health=health), self.static)
+        self.assertEqual(observed["path"], "ready_without_delegated_reads")
+
+    def test_a_redirect_reported_by_health_still_fails(self):
+        def counted(value):
+            return lambda data: data["upstream_dashboard"]["failure_counts"].update(upstream_redirect_refused=value)
+
+        reported = [counted(1), counted(True), counted("1"), counted(None),
+                    lambda data: data["upstream_dashboard"].update(last_failure_category="upstream_redirect_refused"),
+                    set_gateway(last_failure_category="upstream_redirect_refused"),
+                    set_gateway(failure_counts={"upstream_redirect_refused": 2}),
+                    lambda data: data.update(notes=["x upstream_redirect_refused y"]),
+                    lambda data: data.update(upstream_redirect_refused_total=0)]
+        for mutate in reported:
+            health = gateway_health(dashboard=True, mutate=mutate)
+            with self.subTest(health=health[-200:]):
+                self.assertTrue(LANES.redirect_reported_by_health(health))
+                self.refused_pending(self.catalog(health=health), "fail_closed_redirect_category_present")
+                self.refused(self.catalog(health=health), "fail_closed_redirect_category_present")
+        # Health that does not parse falls back to the substring check.
+        self.assertTrue(LANES.redirect_reported_by_health('{"upstream_redirect_refused": 0'))
+        self.assertFalse(LANES.redirect_reported_by_health("not json"))
+        # Readiness and session answers keep the substring check.
+        body = readiness_body(mutate=lambda state: state.update(note="upstream_redirect_refused"))
+        self.refused_pending(self.catalog(), "fail_closed_redirect_category_present", body=body)
+        self.refused_pending(self.catalog(), "fail_closed_redirect_category_present",
+                             session=(200, '{"upstream_redirect_refused": 0}'))
 
     def test_pending_acceptance_is_judged_on_the_last_answer(self):
         # Acceptance before the deadline, or a body that no longer reports

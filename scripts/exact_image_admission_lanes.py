@@ -483,14 +483,17 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
     readiness stays strict (503 ``initial_reconciliation_pending``) while,
     after the bounded startup wait, the readiness body itself reports
     ``accepting_mcp_requests`` and the session is accepted; that path needs the
-    same positive rollback evidence as the ready path. A redirect category
-    anywhere fails: the peer answers 404, not a 3xx.
+    same positive rollback evidence as the ready path. A redirect category in
+    a readiness or session answer fails, and so does a redirect that health
+    reports (``redirect_reported_by_health``): the peer answers 404, not a 3xx.
     """
 
     require(samples, "fail_closed_no_samples")
     texts = [body for _, body in samples] + ([mcp_attempt[1]] if mcp_attempt else [])
-    texts += [str(catalog.get("health_text") or "")] if isinstance(catalog, dict) else []
     require(not any(REDIRECT_CATEGORY in text for text in texts), "fail_closed_redirect_category_present")
+    if isinstance(catalog, dict):
+        require(not redirect_reported_by_health(str(catalog.get("health_text") or "")),
+                "fail_closed_redirect_category_present")
     ready = [status for status, _ in samples]
     # Status 0 means nothing was listening yet. Engineering must have answered
     # readiness at least once, so a container that never started cannot pass.
@@ -506,6 +509,37 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
         return without_delegated_reads("pending_with_mcp_requests_accepted", ready, catalog, static_names)
     require(isinstance(catalog, dict), "fail_closed_ready_without_catalog")
     return without_delegated_reads("ready_without_delegated_reads", ready, catalog, static_names)
+
+
+def redirect_reported_by_health(text: str) -> bool:
+    """Whether health reports a refused redirect, not merely names the category.
+
+    The dashboard provider's health lists every failure category as a key with
+    its count (``providers/upstream_dashboard.py`` ``failure_counts``), so the
+    category name is present even when no redirect happened. A redirect is
+    reported by a non-zero count under that key, or by the category in any
+    value (for example ``last_failure_category``). Health that does not parse
+    falls back to the substring check, which fails closed.
+    """
+
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return REDIRECT_CATEGORY in text
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if REDIRECT_CATEGORY in str(key) and not (key == REDIRECT_CATEGORY and type(child) is int
+                                                          and child == 0):
+                    return True
+                pending.append(child)
+        elif isinstance(item, list):
+            pending.extend(item)
+        elif isinstance(item, str) and REDIRECT_CATEGORY in item:
+            return True
+    return False
 
 
 def pending_with_mcp_requests_accepted(body: str) -> bool:
