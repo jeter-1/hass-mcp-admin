@@ -173,7 +173,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 5408,
+       "line": 5418,
        "anchor": "def create_plan"
       },
       {
@@ -200,12 +200,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 474,
+       "line": 477,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 476,
+       "line": 479,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -229,11 +229,11 @@
      ],
      "policy": "requires exact-hash external approval; F3 dispatch by f3_requirements(); downstream authority acquires the profile per step",
      "admission": "native (CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY); per-step core.governed_configuration_operation (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown)) + core.f3_mutation_verification (compiled-active, seq 15)",
-     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene adds core.scene_configuration_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
+     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene update adds core.scene_configuration_operation; scene create and created-scene delete add core.scene_create_delete_operation; created-helper delete adds core.created_helper_delete_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1065,
+       "line": 1088,
        "anchor": "def f3_requirements"
       },
       {
@@ -243,7 +243,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 123,
+       "line": 124,
        "anchor": "apply_change_plan"
       }
      ]
@@ -438,12 +438,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 474,
+       "line": 477,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 476,
+       "line": 479,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -467,11 +467,11 @@
      ],
      "policy": "requires exact-hash external approval; F3 dispatch by f3_requirements(); downstream authority acquires the profile per step",
      "admission": "native (CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY); per-step core.governed_configuration_operation (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown)) + core.f3_mutation_verification (compiled-active, seq 15)",
-     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene adds core.scene_configuration_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
+     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene update adds core.scene_configuration_operation; scene create and created-scene delete add core.scene_create_delete_operation; created-helper delete adds core.created_helper_delete_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1065,
+       "line": 1088,
        "anchor": "def f3_requirements"
       },
       {
@@ -481,7 +481,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 123,
+       "line": 124,
        "anchor": "apply_change_plan"
       }
      ]
@@ -551,7 +551,7 @@
    "name": "Scenes",
    "group": "Automations, scripts, scenes, groups and blueprints",
    "completeness": "partial",
-   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write is edit-only for existing UI scenes; scene create is absent.",
+   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write edits existing UI scenes; scene create and the delete of a created scene are implemented under a dormant profile no signed registry admits (HAMCP-329).",
    "read_paths": [
     {
      "tool": "ha_config_get_scene",
@@ -608,11 +608,12 @@
     {
      "tool": "create_scene_configuration_plan",
      "operations": [
-      "update"
+      "update",
+      "create"
      ],
-     "policy": "OPERATIONAL_ADMINISTRATION; exactly one existing UI-managed scene by exact config id; update only; saving never activates the scene",
-     "admission": "signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown)",
-     "detail": "Edits name/icon/entities of one existing UI scene. NEVER_SENT includes scene.create, scene.apply, scene.delete, scene.reload, scene.turn_on and DELETE config; YAML/integration/disabled scenes refused. Verification scope is stored_configuration_and_registry_identity; loaded state not verified.",
+     "policy": "OPERATIONAL_ADMINISTRATION; action update (default): exactly one existing UI-managed scene by exact config id; action create: one new UI scene under a config id no scene uses; saving never activates the scene",
+     "admission": "update: signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown). create: core.scene_create_delete_operation (runtime-only, compiled for Core 2026.11.0, signed in no registry: refuses with pending_signed_registry_admission)",
+     "detail": "Update edits name/icon/entities of one existing UI scene. Create (HAMCP-329) requires name and entities, refuses entity_id and null values, rechecks absence at preflight and awaits registration by a bounded poll; Home Assistant assigns the entity_id. The scene services scene.create, scene.apply, scene.delete, scene.reload and scene.turn_on are never sent. DELETE config is never sent by an update or a create; the only DELETE is the separately approved rollback_change of a verified create, under the same dormant profile. YAML/integration/disabled scenes refused. Verification scope is stored_configuration_and_registry_identity; loaded state not verified.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -622,6 +623,16 @@
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/scene_configuration.py",
        "line": 75,
+       "anchor": "CREATE_ACTION = \"create\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+       "line": 180,
+       "anchor": "SCENE_CREATE_DELETE_PROFILE ="
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/scene_configuration.py",
+       "line": 99,
        "anchor": "NEVER_SENT"
       },
       {
@@ -645,11 +656,11 @@
      ],
      "policy": "requires exact-hash external approval; F3 dispatch by f3_requirements(); downstream authority acquires the profile per step",
      "admission": "native (CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY); per-step core.governed_configuration_operation (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown)) + core.f3_mutation_verification (compiled-active, seq 15)",
-     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene adds core.scene_configuration_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
+     "detail": "f3_requirements() adds core.governed_configuration_operation for automation/script/input_boolean/input_number create|update; delete adds core.configuration_delete_operation; scene update adds core.scene_configuration_operation; scene create and created-scene delete add core.scene_create_delete_operation; created-helper delete adds core.created_helper_delete_operation; any other identity gets core.unsupported_f3_operation (no lease). Dormant profile -> pending_signed_registry_admission.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1065,
+       "line": 1088,
        "anchor": "def f3_requirements"
       },
       {
@@ -659,7 +670,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 123,
+       "line": 124,
        "anchor": "apply_change_plan"
       }
      ]
@@ -668,16 +679,17 @@
    "gaps": [
     {
      "id": "RCG-004",
-     "missing": "Scene create (new scene)",
+     "missing": "Scene create (new scene) is implemented but dormant: no signed registry admits core.scene_create_delete_operation",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-071 Part 3: a governed scene create (new config id, absence check, exact readback, never activated). scene.create is never sent and the scene profile covers update only, so create needs a new signed profile or profile version.",
+     "requirement": "HAMCP-329 (HAMCP-071 Part 3): create_scene_configuration_plan action=create (new config id, absence check, exact readback, never activated) runs only once a signed Core registry entry for Core 2026.11.0 admits core.scene_create_delete_operation; until then it refuses with pending_signed_registry_admission. scene.create is never sent and the update profile still covers update only.",
      "register": [
-      "HAMCP-071"
+      "HAMCP-071",
+      "HAMCP-329"
      ],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/scene_configuration.py",
-       "line": 75,
+       "line": 99,
        "anchor": "NEVER_SENT"
       },
       {
@@ -689,11 +701,13 @@
     },
     {
      "id": "RCG-005",
-     "missing": "Scene delete",
+     "missing": "Scene delete: only the rollback of a governed scene create, and that is dormant",
      "requirement_type": "new_signed_profile",
-     "requirement": "A signed scene delete (rollback of a create, or a delete plan): core.configuration_delete_operation covers automation and script only. Register 071 records this as a pending signed delete-profile decision.",
+     "requirement": "HAMCP-329/298: the only scene DELETE is the separately approved rollback_change of a scene Engineering created, under core.scene_create_delete_operation, which no signed registry admits yet. create_configuration_delete_plan and core.configuration_delete_operation still cover automation and script only; a delete plan for a scene Engineering did not create needs its own scope decision and signed profile.",
      "register": [
-      "HAMCP-071"
+      "HAMCP-071",
+      "HAMCP-329",
+      "HAMCP-298"
      ],
      "refs": [
       {
@@ -883,12 +897,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 474,
+       "line": 477,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 476,
+       "line": 479,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -1290,7 +1304,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 474,
+       "line": 477,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1428,7 +1442,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 474,
+       "line": 477,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1551,7 +1565,7 @@
    "name": "input_boolean and input_number helpers",
    "group": "UI helpers",
    "completeness": "partial",
-   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; delete does not.",
+   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; the only delete is the dormant rollback of a governed create (HAMCP-298).",
    "read_paths": [
     {
      "tool": "ha_config_list_helpers",
@@ -1583,7 +1597,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
-       "line": 753,
+       "line": 763,
        "anchor": "{resource_type}/list"
       },
       {
@@ -1658,16 +1672,16 @@
      ],
      "policy": "governed_configuration_operation: immutable plan, exact-hash external approval, ordered governed apply, exact read-back; create preceded by name-subset check, GET /states absence check, generated-id identity match",
      "admission": "signed:core.governed_configuration_operation (compiled profile)",
-     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback not supported for forward F3-C1 capabilities. Delete not available. (Researched for: input_boolean, input_number.)",
+     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback of a verified create is the separately approved delete of exactly that helper through rollback_change, under dormant core.created_helper_delete_operation (HAMCP-298); no delete plan tool accepts a helper. (Researched for: input_boolean, input_number.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 690,
+       "line": 705,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 187,
+       "line": 188,
        "anchor": "helper_type: NotRequired[Literal[\"input_boolean\", \"input_number\"]]"
       },
       {
@@ -1682,12 +1696,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
-       "line": 882,
+       "line": 892,
        "anchor": "{resource_type}/create"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
-       "line": 990,
+       "line": 1000,
        "anchor": "{resource_type}/update"
       },
       {
@@ -1774,9 +1788,9 @@
     },
     {
      "id": "RCG-023",
-     "missing": "No governed delete for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only.",
+     "missing": "No governed delete plan for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only. The only helper delete is the rollback of a governed create, and its profile is dormant.",
      "requirement_type": "new_signed_profile",
-     "requirement": "Owner scope decision, then a helper delete strategy and a new signed Core profile (or a new version of core.configuration_delete_operation) with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
+     "requirement": "HAMCP-298: rollback_change of a verified governed helper create plans a separately approved delete of exactly that helper under core.created_helper_delete_operation, which no signed registry admits yet (pending_signed_registry_admission). A delete plan for a helper Engineering did not create still needs an owner scope decision and its own signed profile with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
      "register": [
       "HAMCP-155"
      ],
@@ -1900,7 +1914,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 566,
+       "line": 581,
        "anchor": "\"tool\": \"create_input_select_option_plan\""
       },
       {
@@ -1938,12 +1952,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 690,
+       "line": 705,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 187,
+       "line": 188,
        "anchor": "helper_type: NotRequired[Literal[\"input_boolean\", \"input_number\"]]"
       },
       {
@@ -1969,7 +1983,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 566,
+       "line": 581,
        "anchor": "\"tool\": \"create_input_select_option_plan\""
       }
      ]
@@ -2135,12 +2149,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 690,
+       "line": 705,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 187,
+       "line": 188,
        "anchor": "helper_type: NotRequired[Literal[\"input_boolean\", \"input_number\"]]"
       },
       {
@@ -2441,12 +2455,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 690,
+       "line": 705,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 187,
+       "line": 188,
        "anchor": "helper_type: NotRequired[Literal[\"input_boolean\", \"input_number\"]]"
       },
       {
@@ -2647,12 +2661,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 690,
+       "line": 705,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 187,
+       "line": 188,
        "anchor": "helper_type: NotRequired[Literal[\"input_boolean\", \"input_number\"]]"
       },
       {
@@ -2756,7 +2770,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 663,
+       "line": 678,
        "anchor": "\"tool\": \"list_dashboards\""
       },
       {
@@ -2786,7 +2800,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 676,
+       "line": 691,
        "anchor": "\"tool\": \"get_dashboard_config\""
       },
       {
@@ -2924,12 +2938,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 709,
+       "line": 724,
        "anchor": "\"tool\": \"create_dashboard_update_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 459,
+       "line": 460,
        "anchor": "async def create_dashboard_update_plan"
       },
       {
@@ -3236,7 +3250,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1078,
+       "line": 1119,
        "anchor": "\"tool\": \"ha_config_get_yaml\""
       },
       {
@@ -3925,7 +3939,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1064,
+       "line": 1105,
        "anchor": "\"tool\": \"ha_get_integration\""
       },
       {
@@ -4263,7 +4277,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1003,
+       "line": 1044,
        "anchor": "explicit_signed_core.typed_power_operation_or_exact_legacy_core_2026.9.2"
       }
      ]
@@ -4284,7 +4298,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1014,
+       "line": 1055,
        "anchor": "explicit_signed_core.typed_helper_value_operation_only"
       }
      ]
@@ -4305,7 +4319,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1033,
+       "line": 1074,
        "anchor": "explicit_signed_core.typed_fan_operation_or_exact_legacy_core_2026.9.2"
       }
      ]
@@ -5420,7 +5434,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 98,
+       "line": 99,
        "anchor": "create_addon_restart_plan"
       },
       {
@@ -5783,7 +5797,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-       "line": 99,
+       "line": 100,
        "anchor": "create_home_assistant_restart_plan"
       },
       {
@@ -6361,7 +6375,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 499,
+     "line": 500,
      "anchor": "def get_change_plan"
     }
    ]
@@ -6372,7 +6386,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 530,
+     "line": 531,
      "anchor": "def list_change_plans"
     }
    ]
@@ -6383,7 +6397,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 560,
+     "line": 561,
      "anchor": "def get_execution_task"
     }
    ]
@@ -6394,7 +6408,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 582,
+     "line": 583,
      "anchor": "def inspect_governance_record"
     }
    ]
@@ -6405,7 +6419,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 615,
+     "line": 616,
      "anchor": "def list_execution_tasks"
     }
    ]
@@ -6537,7 +6551,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 120,
+     "line": 121,
      "anchor": "cancel_execution_task"
     }
    ]
@@ -6548,18 +6562,18 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 680,
+     "line": 681,
      "anchor": "async def approve_change_plan("
     }
    ]
   },
   {
    "tool": "rollback_change",
-   "reason": "Governance: replays a plan's own captured rollback through that plan's write path; no source of its own.",
+   "reason": "Governance: replays a plan's own captured rollback through that plan's write path, or plans the separately approved delete of objects that plan created; no source of its own.",
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 724,
+     "line": 725,
      "anchor": "async def rollback_change("
     }
    ]
@@ -6570,7 +6584,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 748,
+     "line": 754,
      "anchor": "async def reverify_configuration_task("
     }
    ]
@@ -6974,7 +6988,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "c5487556a05e516ef04fa7b8be67aad82b408797956c211167ea6ec8afb248ee",
+   "fingerprint": "71e8ece352ede880d9d610830197f7cc924d87e4d088b11d0856c69cb3b358ff",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7879,7 +7893,7 @@
     "native:create_input_select_option_plan": "6253fa184e6b79eb",
     "native:create_label_plan": "34179ace8e370f30",
     "native:create_reload_plan": "fdb140754ef5998f",
-    "native:create_scene_configuration_plan": "497a69de3762ac38",
+    "native:create_scene_configuration_plan": "2357d2af73865836",
     "native:dashboard_integrity_analysis": "f87f9bea7b99e4d2",
     "native:delete_automation": "3be2d494a6f61bdd",
     "native:entity_dependency_analysis": "410640103e0ff7fc",
@@ -7925,7 +7939,7 @@
     "native:reload_domain": "365625caccfc048a",
     "native:render_template": "5ba794e1315b731e",
     "native:reverify_configuration_task": "afb8f579a8ddc7f4",
-    "native:rollback_change": "d170c466523cfb73",
+    "native:rollback_change": "5ca030834ac57577",
     "native:run_held_read_canary": "1c7a43c34eaa302d",
     "native:search_entities": "4b30c103858b5555",
     "native:search_services": "bcdecf73c5575c39",

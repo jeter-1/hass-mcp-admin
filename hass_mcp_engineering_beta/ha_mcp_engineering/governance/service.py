@@ -17957,6 +17957,13 @@ class ChangeGovernanceService:
         operational["scene_configuration_provider"] = (
             self._scene_configuration_provider_health_snapshot(admission)
         )
+        # HAMCP-329/298: the two dormant created-object profiles.
+        operational["scene_create_delete_provider"] = (
+            self._scene_create_delete_provider_health_snapshot(admission)
+        )
+        operational["created_helper_delete_provider"] = (
+            self._created_helper_delete_provider_health_snapshot(admission)
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -18115,6 +18122,8 @@ class ChangeGovernanceService:
     # HAMCP-181 PR2 review 1 (M2): the Core-admitted provider groups that
     # health and list_capabilities both project from one admission snapshot:
     # (health provider key, catalog tool, Core profiles, pending reason).
+    # A group with no catalog tool of its own (HAMCP-329/298) names none; the
+    # catalog projects it by provider key into the entry that describes it.
     CORE_ADMISSION_SURFACES: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
         (
             "entity_metadata_provider",
@@ -18179,6 +18188,18 @@ class ChangeGovernanceService:
             (scene_configuration_contract.PROFILE,),
             scene_configuration_contract.PENDING_ADMISSION_REASON,
         ),
+        (
+            "scene_create_delete_provider",
+            "",
+            (created_object_delete.SCENE_PROFILE,),
+            created_object_delete.PENDING_ADMISSION_REASON,
+        ),
+        (
+            "created_helper_delete_provider",
+            "",
+            (created_object_delete.HELPER_PROFILE,),
+            created_object_delete.PENDING_ADMISSION_REASON,
+        ),
     )
     _CORE_ADMISSION_READ_ATTEMPTS = 3
 
@@ -18231,7 +18252,9 @@ class ChangeGovernanceService:
         for (key, tool, _capabilities, pending), (admitted, _generation) in zip(
             surfaces, reads
         ):
-            providers[key] = tools[tool] = "admitted" if admitted else pending
+            providers[key] = "admitted" if admitted else pending
+            if tool:
+                tools[tool] = providers[key]
         return {
             "status": (
                 "generation_unsettled"
@@ -18451,6 +18474,61 @@ class ChangeGovernanceService:
             ),
             "fields": list(scene_configuration_contract.FIELDS),
             "activation": "never",
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _scene_create_delete_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-329 scene create and delete profile."""
+
+        configured = (
+            self.scene_create_gateway is not None
+            and self.created_object_delete_gateway is not None
+        )
+        return {
+            "provider": scene_configuration_contract.PROVIDER,
+            "provider_contract": created_object_delete.PROVIDER_CONTRACTS[
+                "scene_configuration"
+            ],
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": created_object_delete.SCENE_PROFILE,
+            "core_admission": self._health_core_admission(
+                "scene_create_delete_provider", admission
+            ),
+            "create": "create_scene_configuration_plan_action_create",
+            "delete": "created_object_rollback_only",
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
+
+    def _created_helper_delete_provider_health_snapshot(
+        self, admission: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Report the dormant HAMCP-298 created-helper delete profile."""
+
+        configured = self.created_object_delete_gateway is not None
+        return {
+            "provider": created_object_delete.PROVIDER,
+            "provider_contract": created_object_delete.PROVIDER_CONTRACTS[
+                "input_boolean"
+            ],
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": created_object_delete.HELPER_PROFILE,
+            "core_admission": self._health_core_admission(
+                "created_helper_delete_provider", admission
+            ),
+            "resource_types": list(created_object_delete.HELPER_TYPES),
+            "delete": "created_object_rollback_only",
             "fallback": "none",
             "fallback_count": 0,
             "fallback_policy": "none",

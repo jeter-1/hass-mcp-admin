@@ -32,6 +32,7 @@ from ha_mcp_engineering.governance.policy import (  # noqa: E402
     evaluate_change_policy,
 )
 
+from tests.hamcp155_fixtures import PROFILES_155  # noqa: E402
 from tests.hamcp329_298_fixtures import (  # noqa: E402
     API_URL,
     CreatedObjectServiceTestCase,
@@ -167,6 +168,101 @@ class AdmissionRefusalTests(CreatedObjectServiceTestCase):
             created, {"create_helper": rollback_model.IDENTITY_NOT_CAPTURED}
         )
         self.assertEqual(self.reads_since(mark), [])
+
+    async def created_pair(self, *creates: dict) -> dict:
+        """Update an existing automation, then create two objects in order."""
+
+        self.add("automation", "consumer")
+        proposed = deepcopy(self.config_rest.configs["automation"]["consumer"])
+        proposed["description"] = "edited before the creates"
+        operations = [
+            {
+                "operation_id": "update_consumer",
+                "resource_type": "automation",
+                "action": "update",
+                "target_id": "consumer",
+                "depends_on": [],
+                "proposed_config": proposed,
+            }
+        ]
+        for create in creates:
+            operations.append(
+                {**create, "depends_on": [operations[-1]["operation_id"]]}
+            )
+        return await self.applied(await self.configuration_plan(*operations))
+
+    async def assert_unadmitted_delete_blocks_the_earlier_create(
+        self, created: dict, withdrawn: str, later: str, earlier: str
+    ) -> None:
+        self.core.withdraw(withdrawn)
+        mark = self.mark()
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_partial_plan_created", rollback)
+        self.assertEqual(rollback["operations_to_delete"], [])
+        self.assertEqual(len(rollback["operations_to_restore"]), 1)
+        self.assertEqual(
+            rollback["operations_excluded"],
+            [
+                {"operation_id": later, "reason": PENDING},
+                {
+                    "operation_id": earlier,
+                    "reason": rollback_model.PREREQUISITE_EXCLUDED,
+                    "prerequisite": later,
+                },
+            ],
+        )
+        self.assertEqual(
+            [
+                (item.resource_type, item.action)
+                for item in self.operations(rollback["rollback_plan_id"])
+            ],
+            [("automation", "update")],
+        )
+        # Neither excluded object is read: only the restore target is.
+        self.assertEqual(
+            set(self.reads_since(mark)),
+            {("GET", "/config/automation/config/consumer")},
+        )
+        self.assertEqual(self.writes_since(mark), [])
+
+    async def test_unadmitted_helper_delete_blocks_the_earlier_created_automation(
+        self,
+    ):
+        created = await self.created_pair(
+            {
+                "operation_id": "create_automation",
+                "resource_type": "automation",
+                "action": "create",
+                "target_id": "new_consumer",
+                "proposed_config": automation_config("new_consumer"),
+            },
+            helper_operation("input_boolean", boolean_config()),
+        )
+        await self.assert_unadmitted_delete_blocks_the_earlier_create(
+            created, HELPER_PROFILE, "create_helper", "create_automation"
+        )
+        self.assertIn("new_consumer", self.config_rest.configs["automation"])
+        self.assertIn("hvac_override", self.ws.helpers["input_boolean"])
+
+    async def test_unadmitted_automation_delete_blocks_the_earlier_created_helper(
+        self,
+    ):
+        created = await self.created_pair(
+            helper_operation("input_number", number_config()),
+            {
+                "operation_id": "create_automation",
+                "resource_type": "automation",
+                "action": "create",
+                "target_id": "new_consumer",
+                "proposed_config": automation_config("new_consumer"),
+            },
+        )
+        (delete_profile,) = PROFILES_155
+        await self.assert_unadmitted_delete_blocks_the_earlier_create(
+            created, delete_profile, "create_automation", "create_helper"
+        )
+        self.assertIn("new_consumer", self.config_rest.configs["automation"])
+        self.assertIn("hvac_target", self.ws.helpers["input_number"])
 
 
 class SceneCreateRefusalTests(CreatedObjectServiceTestCase):

@@ -398,6 +398,10 @@ class RC1PublicContractTests(unittest.TestCase):
             item.pop("operation_class", None)
         baseline_classifications["search_entities"].pop("routing")
         baseline_classifications["search_entities"].pop("provider")
+        # HAMCP-329/298: the created-object delete capabilities are additive
+        # blocks on ``rollback_change``; every Beta 26 key is unchanged.
+        for added in ("created_scene_delete", "created_helper_delete"):
+            baseline_classifications["rollback_change"].pop(added)
         baseline_classifications.update(
             {
                 "upsert_automation": {

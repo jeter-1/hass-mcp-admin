@@ -94,7 +94,8 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
     "create_input_select_option_plan": ("entity_id",),
     "create_helper_options_plan": ("changes[].entity_id",),
     "create_dashboard_metadata_plan": ("url_path",),
-    "create_scene_configuration_plan": ("config_id", "entity_id"),
+    # HAMCP-329: the optional action is screened like the other closed selectors.
+    "create_scene_configuration_plan": ("config_id", "entity_id", "action"),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -729,8 +730,10 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     governed automation or script create rolls back as a separately approved
     configuration delete plan of the created object, using the identity
     Engineering captured at creation; a registry entry modified since creation
-    needs elevated acknowledgement. Helper, scene and mixed create-and-update
-    creates and operational rollback remain unavailable.
+    needs elevated acknowledgement. A verified governed helper or scene create
+    rolls back the same way once a signed registry admits its delete. A plan
+    that created and updated objects rolls back as one plan in strict reverse
+    order. Operational rollback remains unavailable.
     """
     return await run_structured(
         "rollback_change",
@@ -1730,6 +1733,8 @@ _SCENE_MEMBER_SNAPSHOT_SCHEMA: dict[str, Any] = {
 
 #: The closed published input schema (HAMCP-071).  The planner re-validates
 #: every value before any Home Assistant read; values are stored exactly.
+#: HAMCP-329 adds only the optional ``action``; the planner applies the create
+#: rules (name and entities required, entity_id and null values refused).
 SCENE_CONFIGURATION_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "title": "create_scene_configuration_planArguments",
@@ -1778,6 +1783,11 @@ SCENE_CONFIGURATION_INPUT_SCHEMA: dict[str, Any] = {
             "maximum": 1440,
             "default": 120,
         },
+        "action": {
+            "type": "string",
+            "enum": ["update", "create"],
+            "default": "update",
+        },
     },
 }
 
@@ -1807,6 +1817,7 @@ async def create_scene_configuration_plan(
     icon: str | None = None,
     entities: dict[str, Any] | None = None,
     expiration_minutes: int = 120,
+    action: str = "update",
 ) -> str:
     """Propose a name, icon or member change to one existing UI scene.
 
@@ -1828,8 +1839,17 @@ async def create_scene_configuration_plan(
     Assistant has loaded. rollback_change plans a separately approved restore of the exact prior
     configuration. Until a signed registry admits this capability the tool
     refuses with pending_signed_registry_admission.
+
+    action "create" (default "update") instead proposes one new UI scene
+    under a config id no scene uses: name and entities are required,
+    entity_id and null values are refused, and every member must exist. Home
+    Assistant assigns the new scene's entity_id. Creation is admitted
+    separately from updates and refuses with
+    pending_signed_registry_admission until a signed registry admits it.
+    rollback_change of a verified create plans a separately approved delete
+    of that scene.
     """
-    del config_id, entity_id, name, icon, entities, expiration_minutes
+    del config_id, entity_id, name, icon, entities, expiration_minutes, action
     raise RuntimeError("scene configuration planning receives raw arguments")
 
 

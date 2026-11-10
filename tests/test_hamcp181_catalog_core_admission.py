@@ -60,6 +60,12 @@ TOOLS = {
     # HAMCP-071: the dormant scene configuration provider, same snapshot.
     "scene_configuration_provider": "create_scene_configuration_plan",
 }
+# HAMCP-329/298: a provider group with no catalog tool of its own projects
+# into a nested block of the entry that describes it: (tool, block).
+NESTED = {
+    "scene_create_delete_provider": ("create_scene_configuration_plan", "create"),
+    "created_helper_delete_provider": ("rollback_change", "created_helper_delete"),
+}
 # The script-trace provider backs a second tool, which must agree with the first.
 SECOND_SURFACES = {"get_script_trace": "script_trace_provider"}
 GOVERNED_TOOLS = (*TOOLS.values(), *SECOND_SURFACES)
@@ -119,6 +125,9 @@ def health_and_catalog(service):
     catalog = result["data"]
     by_tool = {item["tool"]: item for item in catalog["beta_native"]}
     tools = {key: by_tool[tool]["core_admission"] for key, tool in TOOLS.items()}
+    for key, (tool, block) in NESTED.items():
+        assert by_tool[tool][block]["core_admission_provider"] == key, by_tool[tool]
+        tools[key] = by_tool[tool][block]["core_admission"]
     second = {tool: by_tool[tool]["core_admission"] for tool in SECOND_SURFACES}
     return {
         "health": health,
@@ -127,7 +136,14 @@ def health_and_catalog(service):
         "catalog_second_surfaces": second,
         "catalog_admission": catalog["core_admission"],
         "requirements": {
-            tool: by_tool[tool]["core_admission_requirement"] for tool in GOVERNED_TOOLS
+            **{
+                tool: by_tool[tool]["core_admission_requirement"]
+                for tool in GOVERNED_TOOLS
+            },
+            **{
+                f"{tool}.{block}": by_tool[tool][block]["core_admission_requirement"]
+                for tool, block in NESTED.values()
+            },
         },
     }
 
