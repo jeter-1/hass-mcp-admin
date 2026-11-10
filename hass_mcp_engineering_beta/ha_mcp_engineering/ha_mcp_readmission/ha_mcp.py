@@ -159,6 +159,22 @@ _ERROR_ADAPTERS = (
         upstream_versions=frozenset({"9.1.0"}),
         evidence_class="source_derived",
     ),
+    # HAMCP-351: exact 9.1.2 is bound by its own adapter, never by analogy to
+    # 9.1.0. Source review of bab615df found no change to these four call
+    # paths, and the exact 9.1.2 OCI image reproduced every probe shape and the
+    # aggregate against the same synthetic loopback HA as the 9.1.0 probes.
+    _BinaryErrorContractAdapter(
+        adapter_id="ha_mcp_error_contract_9_1_2_v1",
+        aggregate_fingerprint="4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437",
+        probes=(
+            _BinaryErrorProbeContract('invalid_search', 'ha_search', 'VALIDATION_FAILED', 'fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939'),
+            _BinaryErrorProbeContract('missing_state', 'ha_get_state', 'ENTITY_NOT_FOUND', '8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c'),
+            _BinaryErrorProbeContract('missing_automation', 'ha_config_get_automation', 'RESOURCE_NOT_FOUND', '8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3'),
+            _BinaryErrorProbeContract('missing_registry_entity', 'ha_get_entity', 'SERVICE_CALL_FAILED', '3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8'),
+        ),
+        upstream_versions=frozenset({"9.1.2"}),
+        evidence_class="source_derived",
+    ),
     _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_8_5_0_v1",
         aggregate_fingerprint="4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437",

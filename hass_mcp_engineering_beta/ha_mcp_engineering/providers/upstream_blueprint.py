@@ -21,6 +21,11 @@ ADAPTER_BINDINGS = {
         "9.1.0", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
         "6a09a0f2e070835f0c93ba40c643069f15168d36dfd1d76815775190a194388f",
     ),
+    # HAMCP-351: exact 9.1.2 wire schema is unchanged from 9.1.0.
+    "ha-mcp-9.1.2-blueprint-list-get-v1": (
+        "9.1.2", "bab615dfc90cc510f5e19a9118707d0fae03a37c",
+        "6a09a0f2e070835f0c93ba40c643069f15168d36dfd1d76815775190a194388f",
+    ),
 }
 PUBLIC_SCHEMA = {'additionalProperties': False,
  'properties': {'domain': {'default': 'automation',

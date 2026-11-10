@@ -1,4 +1,4 @@
-"""Closed 9.1.0 public reads over the exact 9.1 wire (HAMCP-319 Phase 2).
+"""Closed 9.1.0 and 9.1.2 public reads over the exact 9.1 wire (HAMCP-319 Phase 2, HAMCP-351).
 
 The public schema of every read is the exact shipped 8.5.0 public schema (the
 8.6 module's binary-owned copies, bound below by fingerprint), so a 9.1 caller
@@ -40,6 +40,28 @@ INPUT_FINGERPRINTS = {'ha_config_get_automation': 'a4d7a28e64518ed0d8233a48310f0
  'ha_list_floors_areas': 'b81375d58db7ba1a03224194d3e054d4124e4261b99d76e54b7dda41cb38b55a',
  'ha_list_services': 'da65206809eafce40f77be1ef87045a4155fd4c085b149b85a41c7d5db280ce1',
  'ha_search': '58ed5cc91f928d9dc33437a97ad0ae46641b17891dfed2f7657f2658c83276c5'}
+# HAMCP-351: exact ha-mcp 9.1.2 (bab615df) keeps the 9.1.0 public surface. Of
+# the 23 adapter reads only ha_config_list_helpers changed its wire input
+# schema (a describe-only ``menu_choice`` description); the arguments
+# Engineering builds are unchanged. Each release binds its own adapter token,
+# source commit and exact wire fingerprints, so a policy for one release can
+# never satisfy the other's adapter.
+VERSION_9_1_2 = "9.1.2"
+ADAPTER_9_1_2 = "ha-mcp-9.1.2-public-reads-v1"
+SOURCE_9_1_2 = "bab615dfc90cc510f5e19a9118707d0fae03a37c"
+INPUT_FINGERPRINTS_9_1_2 = {
+    **INPUT_FINGERPRINTS,
+    "ha_config_list_helpers": "5d2f988dc6f34ea574d4576c55e099cfd17df738a7ec24cc301dd53754e7d16f",
+}
+# version -> (adapter token, source commit, exact wire input fingerprints)
+RELEASES = {
+    VERSION: (ADAPTER, SOURCE, INPUT_FINGERPRINTS),
+    VERSION_9_1_2: (ADAPTER_9_1_2, SOURCE_9_1_2, INPUT_FINGERPRINTS_9_1_2),
+}
+_RELEASE_BY_ADAPTER = {adapter: version for version, (adapter, _, _) in RELEASES.items()}
+if (len(_RELEASE_BY_ADAPTER) != len(RELEASES)
+        or any(set(fps) != set(INPUT_FINGERPRINTS) for _, _, fps in RELEASES.values())):
+    raise RuntimeError("upstream_reads_9_1_release_table_invalid")
 # Exact shipped 8.5.0 wire schema (no listing tier is synthesized; R4).
 SKILL_GUIDE_PUBLIC_SCHEMA = {'additionalProperties': False,
  'properties': {'file': {'anyOf': [{'type': 'string'}, {'type': 'null'}],
@@ -85,15 +107,42 @@ class ReadTierUnavailable(ValueError):
     """A shipped 8.5 public tier that 9.1 cannot serve; never synthesized (R4)."""
 
 
-def is_adapter(entry) -> bool:
-    return (
+def adapter_release(entry) -> str | None:
+    """The exact 9.1 release whose compiled adapter this entry satisfies, or None."""
+
+    restrictions = entry.argument_restrictions
+    if len(restrictions) != 1:
+        return None
+    version = _RELEASE_BY_ADAPTER.get(restrictions[0])
+    if version is None:
+        return None
+    fingerprints = RELEASES[version][2]
+    if not (
         entry.classification == "automatic_read"
         and entry.exposed_name == entry.upstream_name
-        and entry.argument_restrictions == (ADAPTER,)
-        and entry.input_schema_fingerprint == INPUT_FINGERPRINTS.get(entry.upstream_name)
+        and entry.input_schema_fingerprint == fingerprints.get(entry.upstream_name)
         and entry.reviewed_annotations.read_only
         and not entry.reviewed_annotations.destructive
-    )
+    ):
+        return None
+    return version
+
+
+def is_adapter(entry) -> bool:
+    return adapter_release(entry) is not None
+
+
+def names_adapter(entry) -> str | None:
+    """The 9.1 release named by any adapter token the entry carries, or None."""
+
+    for token in entry.argument_restrictions:
+        if token in _RELEASE_BY_ADAPTER:
+            return _RELEASE_BY_ADAPTER[token]
+    return None
+
+
+def adapter_token(entry) -> str:
+    return RELEASES[adapter_release(entry)][0]
 
 
 def public_schema(entry, observed: dict) -> dict:

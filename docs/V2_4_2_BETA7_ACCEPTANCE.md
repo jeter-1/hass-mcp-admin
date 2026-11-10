@@ -37,6 +37,9 @@ It authorizes none of the later stages.
 
 Each item was reviewed by Codex in its own pull request into
 `release/2.5.0` and merged at exactly the head its Ready verdict names.
+#408 was reviewed cumulatively inside #407, its base: its cited verdict was
+Ready after corrections, and the final #407 verdict closed the remaining
+finding and made the whole of #407, including #408, Ready.
 
 | Item | Pull request | Ready head | Merge commit | Codex Ready verdict (PR comment) |
 | --- | --- | --- | --- | --- |
@@ -45,12 +48,12 @@ Each item was reviewed by Codex in its own pull request into
 | HAMCP-319 Phase 2 design | #385 | `aa8e1582` | `88212703` | 6711391984 |
 | HAMCP-288: secret-path containment | #387 | `b1f38fbe` | `abfbfb13` | 6711411766 |
 | HAMCP-288: encoded-only route-word refusal | #403 | `49b5cc50` | `12d0fb2e` | 6713154629 |
-| HAMCP-319: 9.1.0 runtime | #404 | `24f8394f` | `62da9b6c` | 6713132005; post-merge full review 6713553830, F1 closed by #405 |
+| HAMCP-319: exact-image lanes (workflow-only) | #404 | `24f8394f` | `62da9b6c` | 6713132005; post-merge full review 6713553830, F1 closed by #405 |
 | HAMCP-319: #404 F1 correction | #405 | `121129a7` | `62008070` | 6715368567 |
 | HAMCP-290: Marketplace inventory read | #409 | `32da4997` | `19caf514` | 6724566361 |
-| HAMCP-319: build and exact-image lanes | #406 | `412dafb9` | `657fef21` | 6733207026 |
+| HAMCP-319: 9.1.0 runtime at parity with 8.5.0 | #406 | `412dafb9` | `657fef21` | 6733207026 |
 | HAMCP-319: lanes (into #406's branch) | #407 | `46e554ef` | `72d4048a` | 6729895046 (covers #407 and #408) |
-| HAMCP-319: 9.1 lanes (into #407's branch) | #408 | `4ca5450c` | `765a3d43` | 6725224530 (combined) |
+| HAMCP-319: 9.1 lanes (into #407's branch) | #408 | `4ca5450c` | `765a3d43` | 6725224530 (combined, Ready after corrections); closed by final #407 verdict 6729895046 |
 | HAMCP-278 / HAMCP-279 | none | n/a | n/a | status only (release notes) |
 
 The version transition `2.4.2-beta.6 -> 2.4.2-beta.7` is materialized once in
@@ -79,7 +82,14 @@ Bind:
 
 The review of each item carried a security section for its provider, write,
 workflow or persistence change. No item adds a write, service call, approval
-source or fallback path.
+source or unreviewed provider fallback. The one reviewed fallback is
+HAMCP-290's Marketplace-to-HACS protocol fallback in
+`get_marketplace_inventory`
+(`hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py`,
+design section 6): only on an exact `unknown_command` reply to
+`marketplace/repositories/list`, it sends the constant
+`hacs/repositories/list` on the same connection and reports it as
+`fallback_occurred`. It is dormant until `core.marketplace_read` is signed.
 
 Required offline evidence, by item:
 - **HAMCP-319:** `tests/test_hamcp319_*.py`, including the endpoint
