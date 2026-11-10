@@ -258,19 +258,30 @@ No new Home Assistant write, service call or Core command shape. Tests extend `t
 - **Live read-only measurement at 2.6 acceptance (authorized).** Josh decision (in-session 2026-11-08), item 21. It
   runs once, at 2.6 acceptance, against the deployed 2.6 beta after its separately authorized deployment. It is not
   part of source review and is not done.
-  - **Reads only.** It uses only existing Engineering read surfaces: the `get_server_health` `trace_watches` block
-    (section 3.4), the watch tool's `list` action and `list_trace_snapshots`. It records the active and limit
-    counts, ticks and failed ticks across a stated interval, snapshot counts against the section 3.6 bounds
-    (watch reservation 400, overall 500), and stored bytes as those surfaces report them.
-  - **Unknown, not inferred.** A value no read surface reports (for example per-tick Core read time or bytes on
-    disk) is recorded as `unknown`. It is never filled in by reading the add-on filesystem, a host shell or Home
-    Assistant directly.
-  - **Never.** No `add`, `remove`, `renew`, `displace` or manual capture. No Home Assistant write, service call,
-    configuration change, reload or restart. No credential or Supervisor token read.
+  - **Reads only: `get_server_health` alone.** The measurement uses only the `get_server_health` `trace_watches`
+    block (section 3.4). The block comes from `TraceSnapshotService.watch_health`, which returns the in-memory
+    summary with no disk I/O, no store lock and no Core call (`trace_snapshots/service.py:453-458`, reached through
+    `trace_snapshots/runtime.py:39-47` and `tools/compatibility.py:305-307`). It records the configured, paused,
+    active and limit values, ticks and failed ticks across a stated interval, and the expiring and lapsed counts.
+  - **Removed from the read-only set.** The watch tool's `list` action and `list_trace_snapshots` are not part of
+    the measurement, because both sweep and save the store. `list_trace_snapshots` calls `service.list`
+    (`tools/trace_snapshots.py:85`), which runs `_maintain` (`trace_snapshots/service.py:842`). `_maintain` sweeps,
+    writes the index when anything expired or the lifecycle state is dirty, unlinks removed record files and writes
+    `trace_watch_expired` audit rows (`trace_snapshots/service.py:520-529`). The watch `list` action reaches
+    `_change_watch` (`trace_snapshots/service.py:1180-1182`), which sweeps (`:1013`), saves on the same conditions
+    (`:1062-1063`), then tidies and audits (`:1064-1065`). Citations are at `origin/release/2.6.0` `8e19b401`.
+    Superseded (historical): the earlier text named both as read surfaces of this measurement.
+  - **Unknown, not inferred.** A value the `trace_watches` block does not report is recorded as `unknown`. That
+    includes snapshot counts and stored bytes against the section 3.6 bounds, per-tick Core read time and bytes on
+    disk. It is never filled in by calling the watch `list` action or `list_trace_snapshots`, or by reading the
+    add-on filesystem, a host shell or Home Assistant directly.
+  - **Never.** No `add`, `remove`, `list`, `renew` or `displace` watch action, no manual capture and no
+    `list_trace_snapshots` call. No Home Assistant write, service call, configuration change, reload or restart. No
+    credential or Supervisor token read.
   - **Required evidence.** The acceptance record states the interval, every value read (or `unknown`) and how each
     compares with the section 3.6 estimates: at most 40 `trace/list` reads a minute at the 30 s poll, 400 / 100 MiB
-    watch reservation, 500 / 128 MiB overall. A value outside those bounds is reported to Josh as a finding; it does
-    not change a bound by itself.
+    watch reservation, 500 / 128 MiB overall. A comparison the block cannot support is recorded as `unknown`. A
+    value outside those bounds is reported to Josh as a finding; it does not change a bound by itself.
 
 ## 8. Build slice and dependencies
 
@@ -321,3 +332,9 @@ None is open for the merged slice. The pre-build questions are resolved as follo
 Effect on the Codex corrections in section 10: none. The #401 capacity, persistence, reset and downgrade contract
 is unchanged, and the earlier Josh direction (register 2026-11-07; confirmed in-session 2026-11-08) still governs
 it. The live renew in section 7 still needs its own authorization.
+
+## 12. Cursor delta review 2026-11-09 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| M1: the read-only measurement named surfaces that write | Medium | Section 7 keeps the item 21 measurement on `get_server_health` (`trace_watches` block, `trace_snapshots/service.py:453-458`) only. The watch `list` action and `list_trace_snapshots` are removed from the read-only set and added to "Never", because both sweep and save the store (`_maintain`, `trace_snapshots/service.py:520-529`, reached from `list_trace_snapshots` through `service.list` at `:842`; the watch `list` action through `_change_watch`, sweep `:1013`, save `:1062-1063`). Values the block does not report, including snapshot counts and stored bytes, are `unknown`. Citations re-verified at `origin/release/2.6.0` `8e19b401`. Item 21 is unchanged. |

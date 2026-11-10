@@ -14,8 +14,14 @@ that base; runtime paths are under `hass_mcp_engineering_beta/ha_mcp_engineering
   (2026-11-07). Codex confirmed that PR #213 delivers the semantic-leaf limit diagnostic, but not clear diagnostics
   for every compiler limit. The remaining scope is a clear refusal diagnostic for each remaining dashboard
   compiler limit: operation count, byte bounds, pointer and JSON depth, node counts, and traversal and growth
-  bounds. The live limits stay **256 semantic leaves and 16 patch operations**, and neither changes. Status:
-  Backlog, a later 2.6 wave (wave 2 in the orchestrator's 2.6 plan), nothing built. No delivery is claimed.
+  bounds. The live limits stay **256 semantic leaves and 16 patch operations**, and neither changes.
+- **Built (2026-11-09 record).** The narrowed scope is built and merged into `release/2.6.0` as
+  [PR #412](https://github.com/jeter-1/hass-mcp-admin/pull/412): head `583f063fdd1d688bde593ad174cd178059c9615b`,
+  merge commit `50e127e5fd3fef0e22036082f440d29c50e91ffc`, merged 2026-11-08 2:13 PM CST.
+  `git merge-base --is-ancestor 50e127e5 origin/release/2.6.0` passes. It is not on `main` (the same check
+  against `origin/main` fails). This note claims no release, deployment or live acceptance for it. Superseded
+  (historical): "Status: Backlog, a later 2.6 wave (wave 2 in the orchestrator's 2.6 plan), nothing built. No
+  delivery is claimed."
 - **Not reopened.** Whether to close HAMCP-143 is not a question any more; the row answers it. The question is
   removed from section 9.
 - **Decided: not expanded.** Josh decision (in-session 2026-11-08), item 23: HAMCP-143 is not expanded beyond the
@@ -207,7 +213,8 @@ fingerprint changes, and nothing joins a signing batch.
 ## 6. Negative reachability and refusal tests
 
 The change adds no write, service, reload or fallback path. Tests:
-All of these are required future implementation evidence; none has been run.
+These were written as required implementation evidence before the build. The build is #412 (section 0); this
+note has not reconciled them with the #412 tests and claims none of them as run.
 - **One row per limit exit.** A table-driven test asserts the exact `details` for every
   compiler limit exit in section 2, including `category`, `constraint`, `stage`,
   `observed`/`limit` and indices. A second table asserts that every non-limit exit
@@ -264,8 +271,9 @@ All of these are required future implementation evidence; none has been run.
   `F3_DASHBOARD_WRITE_CONTRACT.md`. Its 2.6.0 notes and acceptance go in the
   release PR.
 - These are protected runtime paths, so the PR must authorize them by name.
-- Not built. Register status is Backlog, for a later 2.6 wave (wave 2 in the
-  orchestrator's 2.6 plan). The scope is the narrowed contract only (item 23).
+- Built: PR #412, merge `50e127e5` into `release/2.6.0`, not on `main` (section 0). The
+  scope is the narrowed contract only (item 23). Superseded (historical): "Not built.
+  Register status is Backlog, for a later 2.6 wave (wave 2 in the orchestrator's 2.6 plan)."
 - No dependency on signing or on a live HA. As of 2026-11-07 the heads of
   #384-#387 do not touch these files. If a 2.5.0 change touches `service.py`,
   2.5.0 wins and this PR merges `main`.
@@ -285,8 +293,8 @@ as "no" for this row:
 2. **Capacity enrichment: no.** The shipped five fields plus `category` stay.
 3. **Non-limit categorization: no.** Non-limit exits keep `{"reason": code}`.
 
-The proving tests are in section 6 ("Not expanded (item 23)"), as required future
-implementation evidence. Superseded (historical): the three were listed as "optional
+The proving tests are in section 6 ("Not expanded (item 23)"), as required implementation
+evidence (not reconciled with #412 here; section 0). Superseded (historical): the three were listed as "optional
 future scope, pending Josh" with these same defaults.
 
 ## 10. Codex design review 2026-11-08 — disposition
@@ -304,3 +312,9 @@ future scope, pending Josh" with these same defaults.
 
 Effect on the Codex corrections in section 10: F2's "lists the remaining choices only as optional" is now "closes
 them as not in scope (item 23)". F3 (preread, then compile, then setter admission) is unchanged.
+
+## 12. Cursor delta review 2026-11-09 — disposition
+
+| Finding | Severity | Correction in this note |
+| --- | --- | --- |
+| L1: section 0 said nothing is built | Low | Section 0 records the build: PR #412, merge `50e127e5` into `release/2.6.0` (2026-11-08 2:13 PM CST), not on `main`, ancestry checked. Sections 6, 8 and 9 no longer call it unbuilt; the section 6 tests are not claimed as run. The section 10 F2 text ("nothing built") is the 2026-11-08 record and is superseded by section 0. Item 23 is unchanged. |
