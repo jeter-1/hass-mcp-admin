@@ -96,6 +96,10 @@ NOT_F3 = {
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
     "core.typed_helper_value_operation": "direct_typed_tool",
+    # HAMCP-329/298: dormant runtime-only profiles; no signed registry entry
+    # binds them until the scene create and helper delete writers exist.
+    "core.scene_create_delete_operation": "dormant_unsigned",
+    "core.created_helper_delete_operation": "dormant_unsigned",
 }
 
 
@@ -645,8 +649,13 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
                     "core.marketplace_read"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
-        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
+        # HAMCP-329/298: gate F3 entries, but no signed entry binds them yet.
+        dormant = {"core.scene_create_delete_operation",
+                   "core.created_helper_delete_operation"}
+        self.assertLessEqual(dormant, F3_ENTRY_ADMISSION_PROFILES)
+        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3 - dormant, required)
         self.assertFalse(never_f3 & required)
+        self.assertFalse(dormant & required)
 
     async def test_admitted_identity_is_authorized_once(self):
         for entry in self.entries:
