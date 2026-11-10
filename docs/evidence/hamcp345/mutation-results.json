@@ -1,7 +1,8 @@
 {
-  "head": "5d2f16fb76f1d1816dbeefa7952e6d7d749b0f48",
+  "head": "22299f9c3ca61ef5b213b83555eea4227ec9bfe5",
   "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
   "first_head": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
+  "previous_head": "d220dfd907b04acd470a704d62056d1acda86cb3",
   "python": "3.12.14",
   "regressions": [
     {
@@ -179,6 +180,46 @@
       "test": "StrategyTests.test_malformed_strategy_types_disclose_without_crashing",
       "classification": "assertion",
       "exit_code": 1
+    },
+    {
+      "id": 23,
+      "area": "group non-row shapes",
+      "revision": "d220dfd907b04acd470a704d62056d1acda86cb3",
+      "test": "GroupNonRowShapeTests.test_group_default_controls_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 24,
+      "area": "group non-row shapes",
+      "revision": "d220dfd907b04acd470a704d62056d1acda86cb3",
+      "test": "GroupNonRowShapeTests.test_group_beside_other_toggle_group_entities_is_disclosed_alone",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 25,
+      "area": "group non-row shapes",
+      "revision": "d220dfd907b04acd470a704d62056d1acda86cb3",
+      "test": "GroupNonRowShapeTests.test_falsy_force_dialog_keeps_the_picture_glance_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 26,
+      "area": "group non-row shapes",
+      "revision": "d220dfd907b04acd470a704d62056d1acda86cb3",
+      "test": "GroupNonRowShapeTests.test_unchanged_group_card_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 27,
+      "area": "group non-row shapes",
+      "revision": "d220dfd907b04acd470a704d62056d1acda86cb3",
+      "test": "PlanLevelTests.test_group_tile_requires_manual_review",
+      "classification": "assertion",
+      "exit_code": 1
     }
   ],
   "mutants": [
@@ -310,6 +351,60 @@
     },
     {
       "id": 15,
+      "area": "group non-row",
+      "name": "a group default toggle goes quiet",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_group_default_controls_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "area": "group non-row",
+      "name": "a group default toggle is classified as a plain toggle",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_group_default_controls_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "area": "group non-row",
+      "name": "header/footer group chips go quiet",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_group_default_controls_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "area": "group non-row",
+      "name": "toggle-group group entities go quiet",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_group_beside_other_toggle_group_entities_is_disclosed_alone",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "area": "group non-row",
+      "name": "header/footer chips ignore their own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_an_explicit_action_replaces_the_group_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "area": "group non-row",
+      "name": "picture-glance items ignore their own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupNonRowShapeTests.test_an_explicit_action_replaces_the_group_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
       "area": "header toggle",
       "name": "the default ignores the title",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -318,7 +413,7 @@
       "exit_code": 1
     },
     {
-      "id": 16,
+      "id": 22,
       "area": "header toggle",
       "name": "one toggleable row shows the default toggle",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -327,7 +422,7 @@
       "exit_code": 1
     },
     {
-      "id": 17,
+      "id": 23,
       "area": "header toggle",
       "name": "an explicit key shows the toggle whatever its value",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -336,7 +431,7 @@
       "exit_code": 1
     },
     {
-      "id": 18,
+      "id": 24,
       "area": "header toggle",
       "name": "an explicit key never shows the toggle",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -345,7 +440,7 @@
       "exit_code": 1
     },
     {
-      "id": 19,
+      "id": 25,
       "area": "header toggle",
       "name": "group members are treated as a plain toggle",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -354,7 +449,7 @@
       "exit_code": 1
     },
     {
-      "id": 20,
+      "id": 26,
       "area": "header toggle",
       "name": "the toggled entities are not bound",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -363,7 +458,7 @@
       "exit_code": 1
     },
     {
-      "id": 21,
+      "id": 27,
       "area": "header toggle",
       "name": "the entity-filter inner card is ignored",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -372,7 +467,7 @@
       "exit_code": 1
     },
     {
-      "id": 22,
+      "id": 28,
       "area": "strategy",
       "name": "every strategy is treated as control-free",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -381,7 +476,7 @@
       "exit_code": 1
     },
     {
-      "id": 23,
+      "id": 29,
       "area": "strategy",
       "name": "iframe and map are not exempt",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -390,7 +485,7 @@
       "exit_code": 1
     },
     {
-      "id": 24,
+      "id": 30,
       "area": "strategy",
       "name": "a non-string strategy type reaches the membership test",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -399,7 +494,7 @@
       "exit_code": 1
     },
     {
-      "id": 25,
+      "id": 31,
       "area": "strategy",
       "name": "view sections are not visited",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -408,7 +503,7 @@
       "exit_code": 1
     },
     {
-      "id": 26,
+      "id": 32,
       "area": "strategy",
       "name": "nested sections are not visited",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -417,7 +512,7 @@
       "exit_code": 1
     },
     {
-      "id": 27,
+      "id": 33,
       "area": "strategy",
       "name": "the strategy configuration is not bound",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -430,6 +525,6 @@
     "name": "control (unmutated HEAD copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 33 tests in 3.333s"
+    "ran": "Ran 40 tests in 2.704s"
   }
 }

@@ -1,15 +1,15 @@
 {
   "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
-  "head": "5d2f16fb76f1d1816dbeefa7952e6d7d749b0f48",
+  "head": "22299f9c3ca61ef5b213b83555eea4227ec9bfe5",
   "python": "3.12.14",
-  "cards": 11,
+  "cards": 14,
   "strategies": 4,
-  "variants": 938,
-  "plans_per_revision": 1876,
+  "variants": 1071,
+  "plans_per_revision": 2142,
   "transitions": {
-    "existing: planned -> planned": 938,
-    "inserted: planned -> planned": 938,
-    "inserted: planned with changed classification": 516
+    "existing: planned -> planned": 1071,
+    "inserted: planned -> planned": 1071,
+    "inserted: planned with changed classification": 571
   },
   "non_planned_reasons": {},
   "newly_refused": 0,
