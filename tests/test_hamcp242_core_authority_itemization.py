@@ -182,12 +182,11 @@ EXPECTED_LIVE_WITHHELD = [
         "affected_tools": ["get_script_trace", "list_script_traces"],
     },
     # HAMCP-231: the dormant Thread/Matter topology read (projection order).
-    # Its static tool route is not wired yet, so it maps no tool.
     {
         "capability_id": TOPOLOGY,
         "disposition": "unavailable",
         "reason_code": MISSING,
-        "affected_tools": [],
+        "affected_tools": ["get_thread_matter_topology"],
     },
     {
         "capability_id": HELPER_VALUE,
@@ -260,6 +259,7 @@ EXPECTED_AFFECTED_TOOLS = {
     ],
     "core.dashboard_metadata_operation": ["create_dashboard_metadata_plan"],
     "core.marketplace_read": ["get_marketplace_inventory"],  # HAMCP-290
+    "core.thread_matter_topology_read": ["get_thread_matter_topology"],  # HAMCP-231
     "core.scene_configuration_operation": ["create_scene_configuration_plan"],
     "core.dependency_helper_planning": [
         "automation_reliability_analysis",

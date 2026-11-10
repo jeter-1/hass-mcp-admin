@@ -110,7 +110,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp294_descriptor_changes(self, actual)
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

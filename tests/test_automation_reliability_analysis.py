@@ -426,7 +426,7 @@ class ToolAndSanitizerTests(unittest.TestCase):
     def test_tool_is_registered_once_with_bounded_schema_and_total_is_49(self):
         tools = registered_tools(get_registered_server()).values()
         matches = [tool for tool in tools if tool.name == "automation_reliability_analysis"]
-        self.assertEqual(len(tools), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(tools), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
         self.assertEqual(

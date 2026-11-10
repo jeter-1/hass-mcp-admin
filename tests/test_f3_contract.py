@@ -344,7 +344,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
             },
         )
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(registered_tools(get_registered_server())), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

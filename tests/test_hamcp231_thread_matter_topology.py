@@ -16,9 +16,9 @@ over matter-python-client 1.5.5 ``NetworkTopology``.  Every value is synthetic;
 credential-shaped values are assembled at test time.  Signed admission uses
 the test-only ephemeral ``CoreSigner`` key.
 
-Gateway-level admission (``pending_signed_registry_admission`` before the
-app) needs the tool-keyed registration rows, which are staged for after #418
-in ``.artifacts/pending-wiring.md``; here admission is proven at the
+The static ``get_thread_matter_topology`` route is wired: the gateway refuses
+it with ``pending_signed_registry_admission`` before the app until a signed
+registry admits the profile, and admission is also proven at the
 ``CoreRuntime`` and service boundaries.
 """
 
@@ -51,8 +51,16 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
     CORE_RUNTIME_CAPABILITY_PROFILES,
     CORE_THREAD_MATTER_TOPOLOGY_PROFILES,
 )
+from ha_mcp_engineering.capabilities import (  # noqa: E402
+    build_capability_catalog,
+    capability_for_tool,
+)
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    DELEGATED_CORE_REQUIREMENTS,
     F3_ENTRY_ADMISSION_PROFILES,
+    PENDING_ADMISSION_TOOLS,
+    STATIC_TOOL_CORE_REQUIREMENTS,
+    static_tool_requirements,
     THREAD_MATTER_TOPOLOGY_PROFILE,
     THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE,
     THREAD_MATTER_TOPOLOGY_TOOL,
@@ -60,11 +68,19 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
 from ha_mcp_engineering.providers import upstream_device_projection as device_projection  # noqa: E402
 from ha_mcp_engineering.providers import upstream_platform_reads as platform_reads  # noqa: E402
 from ha_mcp_engineering.providers.models import ProviderCapability  # noqa: E402
+from ha_mcp_engineering.providers.routing import (  # noqa: E402
+    ANALYTICAL_PROVIDER_POLICIES,
+    TOOL_CAPABILITY_POLICY,
+    CapabilityRoute,
+    routing_for_tool,
+)
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import thread_matter_topology as public  # noqa: E402
+from ha_mcp_engineering.tools.registry import ENGINEERING_STATIC_TOOL_NAMES  # noqa: E402
 
 PROFILE = "core.thread_matter_topology_read"
 TOOL = "get_thread_matter_topology"
+PENDING = "pending_signed_registry_admission"
 HA_TOKEN = syn.needle("hatoken")
 ACCESS_SECRET = syn.needle("accesssecret")
 CORE_VERSION = "2026.11.0"
@@ -1261,6 +1277,25 @@ class UnadmittedCompiledCoreTests(unittest.IsolatedAsyncioTestCase):
         status = self.runtime.route_status((PROFILE,))
         self.assertIsNot(status.get("available"), True)
 
+    async def test_gateway_refuses_with_pending_admission_before_the_app(self):
+        import tests.test_hamcp069a_entity_metadata_readmission as readmission
+
+        self.assertIsNone(self.runtime.acquire(static_tool_requirements(TOOL, {})))
+        gateway, app = readmission.gateway_for(self.runtime)
+        for arguments in ({}, {"sections": ["datasets"]}, {"sections": ["topology"]},
+                          {"sections": ["topology"], "refresh": True}):
+            with self.subTest(arguments=arguments):
+                body = await readmission.call(gateway, TOOL, arguments)
+                self.assertIn(b"CoreCapabilityUnavailable", body)
+                self.assertIn(PENDING.encode(), body)
+                self.assertIn(
+                    f'"resource_type": "{THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE}"'.encode(),
+                    body.replace(b'\\"', b'"'),
+                )
+                self.assertIn(b'"provider_dispatch_occurred": false', body.replace(b'\\"', b'"'))
+        # Zero frames: the app (and so Home Assistant) is never reached.
+        self.assertEqual(app.calls, [])
+
 
 class SignedTestRegistryAdmissionTests(unittest.IsolatedAsyncioTestCase):
     """Test-only ephemeral CoreSigner key; nothing here is production-signed."""
@@ -1330,6 +1365,96 @@ class SignedTestRegistryAdmissionTests(unittest.IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 # Delegated surfaces this build must not change (section 8 items 11 and 12)
 # ---------------------------------------------------------------------------
+
+class GatewayWiringTests(unittest.TestCase):
+    """The static route is registered once, read-only, and policy bound."""
+
+    def test_tool_is_registered_read_only_and_policy_bound_under_its_own_name(self):
+        self.assertEqual(list(ENGINEERING_STATIC_TOOL_NAMES).count(TOOL), 1)
+        self.assertEqual(STATIC_TOOL_CORE_REQUIREMENTS[TOOL], (PROFILE,))
+        self.assertEqual(static_tool_requirements(TOOL, {}), (PROFILE,))
+        self.assertEqual(
+            PENDING_ADMISSION_TOOLS[TOOL], (THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE, PROFILE)
+        )
+        self.assertEqual(TOOL_CAPABILITY_POLICY[TOOL], ProviderCapability.THREAD_MATTER_TOPOLOGY)
+        self.assertEqual(routing_for_tool(TOOL).route, CapabilityRoute.ENGINEERING_NATIVE)
+        policy = ANALYTICAL_PROVIDER_POLICIES[TOOL]
+        self.assertEqual(policy["policy_id"], "thread_matter_topology_read_v1")
+        self.assertEqual(
+            (policy["access"], policy["writes_allowed"], policy["fallback_policy"]),
+            ("read", "none", "none"),
+        )
+        self.assertIn("refresh=false", policy["scope"])
+        # Engineering-owned name: no ha_ prefix and no delegated route.
+        self.assertFalse(TOOL.startswith("ha_"))
+        self.assertNotIn(TOOL, DELEGATED_CORE_REQUIREMENTS)
+        registered = public.registered_tool()
+        self.assertIs(registered.parameters.get("additionalProperties"), False)
+        self.assertNotIn("refresh", json.dumps(registered.parameters))
+
+    def test_profile_is_an_entry_profile_no_f3_entry_requires(self):
+        from ha_mcp_engineering.ha_core_readmission import routes
+
+        self.assertIn(PROFILE, F3_ENTRY_ADMISSION_PROFILES)
+        required = {
+            profile
+            for tool, profiles in STATIC_TOOL_CORE_REQUIREMENTS.items()
+            if tool != TOOL
+            for profile in profiles
+        }
+        self.assertNotIn(PROFILE, required)
+        for name in dir(routes):
+            table = getattr(routes, name)
+            if name.startswith("F3_") and name != "F3_ENTRY_ADMISSION_PROFILES" and isinstance(table, dict):
+                self.assertNotIn(PROFILE, json.dumps(table, default=str), name)
+
+    def test_catalog_states_the_requirement_and_never_claims_admission(self):
+        entry = capability_for_tool(TOOL)
+        self.assertEqual(entry["routing"], "engineering_native")
+        self.assertEqual(entry["risk"], "read")
+        self.assertEqual(entry["core_capabilities"], [PROFILE])
+        self.assertEqual(entry["core_admission_requirement"], "signed_core_registry_admission")
+        self.assertEqual(entry["core_admission"], "not_evaluated")
+        self.assertEqual(entry["fallback"], "none")
+        catalog = build_capability_catalog()
+        rows = [item for item in catalog["beta_native"] if item["tool"] == TOOL]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["operation_class"], "read")
+        # A governance snapshot that does not name this read never projects
+        # an admission onto it; the gateway refusal is the pending signal.
+        current = build_capability_catalog(core_admission={
+            "status": "current", "generation": 3, "providers": {},
+            "tools": {"create_entity_metadata_plan": "admitted"},
+        })
+        [row] = [item for item in current["beta_native"] if item["tool"] == TOOL]
+        self.assertEqual(row["core_admission"], "not_evaluated")
+
+
+def _native_server(name: str):
+    from mcp.server.fastmcp import FastMCP
+
+    server = FastMCP(name)
+    server.add_tool(public.registered_tool().fn, name=TOOL)
+    return server
+
+
+class GatewayImpostorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_upstream_tool_advertising_the_native_name_is_never_exposed_in_its_place(self):
+        from test_readonly_upstream_gateway import catalog_tool, initialize, policy_entry, registered_tools
+
+        for reviewed in (False, True):
+            with self.subTest(reviewed=reviewed):
+                server = _native_server("hamcp231-impostor")
+                original = registered_tools(server).get(TOOL)
+                entries = [policy_entry("ha_get_state")]
+                if reviewed:
+                    entries.append(policy_entry(TOOL))
+                gateway, server, transport = await initialize(
+                    entries, [catalog_tool("ha_get_state"), catalog_tool(TOOL)], server=server)
+                self.assertIs(registered_tools(server).get(TOOL), original)
+                self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+                self.assertEqual(transport.calls, [])
+
 
 class DelegatedSurfaceRegressionTests(unittest.TestCase):
     def test_ha_get_device_node_diagnostics_passthrough_is_pinned(self):

@@ -200,3 +200,45 @@ It is disposable evidence, not production authority.
 Limitation: this run does not prove A2 success. The Matter Server stub
 (HAMCP-297) is required for that, and **A2 signing evidence is incomplete until
 the A2 success lane runs.**
+
+## A2 success lane (harness built; run pending HAMCP-297)
+
+`scripts/core_thread_matter_topology_a2_local.py` and
+`scripts/thread_matter_topology_a2_acceptance.py` are the A2 success lane. It
+uses loopback port **18125** and its own container and network names. It runs
+exact Core 2026.11.0 with Matter configured through the config flow to the
+HAMCP-297 Matter Server stub at `ws://matter-stub:5580/ws`. The stub runs in the
+same Core image, read-only, with no published port.
+
+The stub is consumed by committed path and SHA-256 only. This lane never copies
+or edits it. `a2-stub-expectations.json` records the stub path and hash, the
+node-fixture path and hash, and the canary literals. Its field names come from
+matter-python-client 1.5.5's exact-version source, as HAMCP-297 reports them.
+Its status is `pending_hamcp297`, so the lane refuses `a2_stub_pending` before
+any input, image or container is touched.
+
+Once ready, the lane checks:
+
+- with the extended authority (32 predecessor references plus the compiled
+  profile), the default read and `sections: ["topology"]` each read the
+  topology once and return the same projection. Predecessor refusal is
+  already proven by the A1 lane;
+- the stub's command record shows that every `get_network_topology` carried
+  exactly `{"refresh": false}`. The recorded refresh must be the literal
+  `false`; `true`, `0`, `null`, a missing key or an extra argument fails;
+- after the mark, Engineering sends only `get_network_topology`, never a
+  commissioning, removal, ping or interview command;
+- the projection: status `ok`, not truncated, totals equal to the raw reply,
+  unique `g<k>` references, every edge resolved, at least one ghost edge
+  dropped and counted, and the required kinds present;
+- each Matter node's `ha_device_id` equals the device-registry id derived from
+  `deviceid_<fabric>-<node>-MatterNodeDevice`. Non-HA kinds are
+  `not_an_ha_device`, and the Wi-Fi AP name is withheld;
+- `rloc16` and the network type match the raw reply;
+- no canary leaks (extended address, BSSID, SSID, host name, key), and
+  `fallback_count` is 0.
+
+Offline tests are in `tests/test_core_thread_matter_topology_a2_local.py`.
+They use canary values generated at test time, never the stub's literals.
+
+**A2 signing evidence is incomplete until the A2 success lane runs.**

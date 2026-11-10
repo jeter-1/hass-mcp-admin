@@ -224,6 +224,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "inspect_governance_record",
                         # HAMCP-290: additive installed-only Marketplace read.
                         "get_marketplace_inventory",
+                        # HAMCP-231: additive dormant Thread/Matter topology read.
+                        "get_thread_matter_topology",
                     )
                 )
             ),
@@ -465,7 +467,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(classifications), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

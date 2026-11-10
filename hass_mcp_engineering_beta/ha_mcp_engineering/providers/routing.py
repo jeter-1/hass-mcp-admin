@@ -140,6 +140,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "list_script_traces": ProviderCapability.SCRIPT_TRACE,
     "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_marketplace_inventory": ProviderCapability.MARKETPLACE_INVENTORY,
+    "get_thread_matter_topology": ProviderCapability.THREAD_MATTER_TOPOLOGY,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -299,6 +300,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "scope": "constant marketplace/repositories/list; installed repositories only; bounded store, fixed projection, shared sanitizer, Engineering-side paging; admitted core.marketplace_read only",
         "writes_allowed": "none",
         "fallback_policy": "hacs/repositories/list on the same connection only when the Marketplace reply error.code is exactly unknown_command",
+    },
+    "get_thread_matter_topology": {
+        "policy_id": "thread_matter_topology_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "constant thread/list_datasets and matter/network_topology refresh=false; at most 2 commands on one connection; opaque per-response identifiers; credential-bearing sections refused whole; shared sanitizer; admitted core.thread_matter_topology_read only",
+        "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_history_slices": {
         "policy_id": "history_slices_read_v1", "access": "read", "orchestrator": "engineering",

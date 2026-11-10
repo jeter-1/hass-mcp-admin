@@ -325,6 +325,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
+    THREAD_MATTER_TOPOLOGY_TOOL: (THREAD_MATTER_TOPOLOGY_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -779,6 +780,10 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
+        THREAD_MATTER_TOPOLOGY_TOOL: (
+            THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE,
+            THREAD_MATTER_TOPOLOGY_PROFILE,
+        ),
     }
 )
 

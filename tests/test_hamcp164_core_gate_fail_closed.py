@@ -255,7 +255,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})

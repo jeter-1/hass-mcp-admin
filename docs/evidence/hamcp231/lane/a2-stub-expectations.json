@@ -1,0 +1,21 @@
+{
+  "model": "hamcp231-a2-stub-expectations-v1",
+  "status": "pending_hamcp297",
+  "note": "Filled from the HAMCP-297 committed Matter Server stub report: path and SHA-256 of the stub and its node fixtures, and the canary literals the stub emits. Field names come from matter-python-client 1.5.5 exact-version source (HAMCP-297). While status is not ready the A2 success lane refuses a2_stub_pending before any container starts.",
+  "matter_python_client": "1.5.5",
+  "stub": {
+    "path": null,
+    "sha256": null,
+    "nodes_path": null,
+    "nodes_sha256": null,
+    "port": 5580,
+    "record_name": "stub.jsonl"
+  },
+  "canaries": [],
+  "expected": {
+    "matter_node_ids": [61, 91, 199],
+    "required_kinds": ["border_router", "matter", "thread_unknown", "wifi_ap"],
+    "startup_commands": ["get_nodes", "server_info", "start_listening"],
+    "min_dropped_edges": 1
+  }
+}

@@ -328,7 +328,7 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
-            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 83  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 84  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
         )
         for version, delegated in (
             ("8.0.0", 24),
@@ -343,7 +343,7 @@ class ExactAddonProfileTests(unittest.TestCase):
                 snapshot = addon_acceptance._runtime_snapshot(
                     observed_catalog_fingerprint="a" * 64
                 )
-                self.assertEqual(snapshot["engineering_tool_count"], 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+                self.assertEqual(snapshot["engineering_tool_count"], 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
                 # HAMCP-290: the matched automatic reads include the retired
                 # ha_get_hacs_info, which is never exposed, so the runtime
                 # snapshot counts one fewer delegated tool (no over-count).
@@ -351,7 +351,7 @@ class ExactAddonProfileTests(unittest.TestCase):
                 self.assertEqual(addon_acceptance.EXPECTED_EXPOSED_READ_COUNT, delegated - 1)
                 self.assertEqual(snapshot["delegated_tool_count"], delegated - 1)
                 self.assertEqual(
-                    snapshot["registered_tool_count"], 83 + delegated - 1
+                    snapshot["registered_tool_count"], 84 + delegated - 1
                 )
 
     def test_packaging_probe_has_no_third_party_requirement_parser(self):
@@ -921,7 +921,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["attempt"], 2)
         self.assertEqual(result["probe"]["upstream_version"], "8.1.0")
         self.assertEqual(result["probe"]["fallback"], "none")
-        self.assertEqual(result["probe"]["engineering_tool_count"], 106)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 107)
         self.assertTrue(result["probe"]["held_tools_absent"])
         self.assertEqual(
             result["probe"]["gateway_health"][
@@ -943,7 +943,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 107)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 108)
         health = result["probe"]["gateway_health"]
         self.assertEqual(health["dynamically_exposed_count"], 24)  # HAMCP-290: 25 - retired ha_get_hacs_info
         self.assertEqual(health["held_tools"], [])
@@ -979,9 +979,9 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 107)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 108)
         self.assertEqual(
-            result["probe"]["engineering_local_tool_count"], 83  # + HAMCP-311, HAMCP-229, HAMCP-290
+            result["probe"]["engineering_local_tool_count"], 84  # + HAMCP-311, HAMCP-229, HAMCP-290, HAMCP-231
         )
         self.assertEqual(
             result["probe"]["gateway_health"][
@@ -1003,7 +1003,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 107)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 108)
         self.assertEqual(
             result["probe"]["gateway_health"][
                 "selected_compatibility_entry_id"
