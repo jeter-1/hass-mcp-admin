@@ -172,6 +172,43 @@ _F3_SCENE_CONFIGURATION_OPERATIONS = frozenset(
         ),
     }
 )
+# HAMCP-329/298: scene create and the created-object undo bind only their own
+# dormant 2026.11.0 runtime-only profiles.  Automation and script creation
+# identity capture uses only reads the signed delete v1 contract already
+# covers, so it maps to that unchanged profile.  Scene and helper deletion
+# identities exist only for created-object rollback children.
+SCENE_CREATE_DELETE_PROFILE = "core.scene_create_delete_operation"
+CREATED_HELPER_DELETE_PROFILE = "core.created_helper_delete_operation"
+_F3_CREATED_OBJECT_CAPTURE_DELETE_V1_OPERATIONS = frozenset(
+    {
+        ("capture_created_automation_identity", "capture_created_automation_identity"),
+        ("capture_created_script_identity", "capture_created_script_identity"),
+    }
+)
+_F3_SCENE_CREATE_DELETE_OPERATIONS = frozenset(
+    {
+        (
+            "create_scene_configuration_configuration",
+            "create_scene_configuration_configuration",
+        ),
+        ("capture_created_scene_identity", "capture_created_scene_identity"),
+        ("delete_created_scene_configuration", "delete_created_scene_configuration"),
+    }
+)
+_F3_CREATED_HELPER_DELETE_OPERATIONS = frozenset(
+    {
+        (
+            "capture_created_input_boolean_identity",
+            "capture_created_input_boolean_identity",
+        ),
+        (
+            "capture_created_input_number_identity",
+            "capture_created_input_number_identity",
+        ),
+        ("delete_created_input_boolean", "delete_created_input_boolean"),
+        ("delete_created_input_number", "delete_created_input_number"),
+    }
+)
 INPUT_SELECT_PROFILE = "core.typed_input_select_option_operation"
 INPUT_SELECT_TOOL = "create_input_select_option_plan"
 _F3_INPUT_SELECT_OPERATIONS = frozenset(
@@ -701,6 +738,15 @@ def static_tool_requirements(
                 value for value in requirements if value not in unselected
             )
 
+    elif (
+        tool_name == SCENE_CONFIGURATION_TOOL
+        and isinstance(arguments, dict)
+        and arguments.get("action") == "create"
+    ):
+        # HAMCP-329: a scene create needs only its own dormant profile; the
+        # update profile never covers a POST to an absent config id.
+        requirements = (SCENE_CREATE_DELETE_PROFILE,)
+
     elif tool_name == LABEL_TOOL and _label_plan_assigns_nothing(arguments):
         # Only entity assignment children read the dependency snapshot and
         # use the 069A profile; an invalid request keeps the full set and
@@ -1057,6 +1103,15 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         # Never governed_configuration_operation: that signed evidence did not
         # cover the scene configuration route.
         values.add(SCENE_CONFIGURATION_PROFILE)
+    elif identity in _F3_CREATED_OBJECT_CAPTURE_DELETE_V1_OPERATIONS:
+        # HAMCP-298: reads the signed delete v1 contract already covers.
+        values.add(CONFIGURATION_DELETE_PROFILE)
+    elif identity in _F3_SCENE_CREATE_DELETE_OPERATIONS:
+        # Never the scene update profile: its DELETE stays never-sent.
+        values.add(SCENE_CREATE_DELETE_PROFILE)
+    elif identity in _F3_CREATED_HELPER_DELETE_OPERATIONS:
+        # Never governed_configuration_operation: helper delete is new.
+        values.add(CREATED_HELPER_DELETE_PROFILE)
     elif identity in _F3_DASHBOARD_METADATA_OPERATIONS:
         # Never the signed dashboard write contract; the content fingerprint
         # readback uses the signed dashboard configuration read.
@@ -1087,6 +1142,9 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         INPUT_SELECT_PROFILE,
         DASHBOARD_METADATA_PROFILE,
         SCENE_CONFIGURATION_PROFILE,
+        # HAMCP-329/298: dormant until the combined 2.6 signing.
+        SCENE_CREATE_DELETE_PROFILE,
+        CREATED_HELPER_DELETE_PROFILE,
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
@@ -1182,6 +1240,8 @@ __all__ = [
     "DASHBOARD_METADATA_TOOL",
     "dashboard_metadata_target",
     "SCENE_CONFIGURATION_PROFILE",
+    "SCENE_CREATE_DELETE_PROFILE",
+    "CREATED_HELPER_DELETE_PROFILE",
     "SCENE_CONFIGURATION_RESOURCE_TYPE",
     "SCENE_CONFIGURATION_TOOL",
     "scene_configuration_target",

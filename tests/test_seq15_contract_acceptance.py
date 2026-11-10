@@ -166,7 +166,8 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
         # HAMCP-290: core.marketplace_read is a second signed-only dormant profile.
-        "batch_health": {"compatible_count": 31, "withheld_count": 2},
+        # HAMCP-329/298: + 2 dormant created-object profiles (signed-only set).
+        "batch_health": {"compatible_count": 31, "withheld_count": len(seq15.SIGNED_ONLY_DORMANT)},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},

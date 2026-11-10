@@ -82,6 +82,10 @@ DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
 SCENE_CONFIGURATION = "core.scene_configuration_operation"  # HAMCP-071 seq 16
 HELPER_VALUE = "core.typed_helper_value_operation"  # HAMCP-311 (signed-only)
 MARKETPLACE = "core.marketplace_read"  # HAMCP-290 (dormant, no sequence names it)
+# HAMCP-329/298 (dormant until the combined seq-18 signing names them).
+CREATED_HELPER_DELETE = "core.created_helper_delete_operation"
+SCENE_CREATE_DELETE = "core.scene_create_delete_operation"
+CREATED_OBJECT = (CREATED_HELPER_DELETE, SCENE_CREATE_DELETE)
 MISSING = "positive_authority_missing"
 
 # The public block before HAMCP-242, in order; it must survive unchanged.
@@ -154,6 +158,13 @@ EXPECTED_LIVE_WITHHELD = [
         "reason_code": MISSING,
         "affected_tools": ["create_helper_options_plan"],
     },
+    # HAMCP-329/298: dormant created-helper delete; no static tool maps it.
+    {
+        "capability_id": CREATED_HELPER_DELETE,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": [],
+    },
     {
         "capability_id": DASHBOARD_METADATA,
         "disposition": "unavailable",
@@ -172,6 +183,14 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["create_scene_configuration_plan"],
+    },
+    # HAMCP-329/298: dormant scene create/delete; only the argument-
+    # conditional create action requires it, so the static table maps none.
+    {
+        "capability_id": SCENE_CREATE_DELETE,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": [],
     },
     {
         "capability_id": SCRIPT_TRACE,
@@ -450,8 +469,9 @@ class LiveCaseTests(_LiveCase):
                 # +1 HAMCP-071 seq 16 scene configuration,
                 # +1 HAMCP-311 signed-only helper value (no sequence names it)
                 # +1 HAMCP-290 dormant Marketplace read (no sequence names it)
-                "unavailable_count": 7,
-                "withheld_count": 7,
+                # +2 HAMCP-329/298 dormant created-object profiles
+                "unavailable_count": 9,
+                "withheld_count": 9,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -469,7 +489,7 @@ class LiveCaseTests(_LiveCase):
         # The seven withheld profiles are still refused (HAMCP-290: + Marketplace).
         for capability in (
             INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
-            HELPER_VALUE, MARKETPLACE,
+            HELPER_VALUE, MARKETPLACE, *CREATED_OBJECT,
         ):
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -481,12 +501,13 @@ class LiveCaseTests(_LiveCase):
         # names the signed-only helper value profile, so it stays withheld too.
         # HAMCP-290: no sequence names the dormant Marketplace read either.
         self.assertEqual(projection["compatible_count"], 30)
-        self.assertEqual(projection["withheld_count"], 3)
-        self.assertEqual(projection["unavailable_count"], 3)
+        # HAMCP-329/298: + 2 dormant created-object profiles.
+        self.assertEqual(projection["withheld_count"], 5)
+        self.assertEqual(projection["unavailable_count"], 5)
         self.assertEqual(
             projection["withheld_capabilities"],
             [item for item in EXPECTED_LIVE_WITHHELD
-             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE, MARKETPLACE)],
+             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE, MARKETPLACE, *CREATED_OBJECT)],
         )
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual(
@@ -505,11 +526,12 @@ class LiveCaseTests(_LiveCase):
         projection = await self.admit(sequence_15_entry(sequence_16=True))
         # HAMCP-290: the dormant Marketplace read stays withheld as well.
         self.assertEqual(projection["compatible_count"], 31)
-        self.assertEqual(projection["compatible_count"] + 2, len(CORE_RUNTIME_CAPABILITY_PROFILES))
-        self.assertEqual(projection["withheld_count"], 2)
-        self.assertEqual(projection["unavailable_count"], 2)
+        # HAMCP-329/298: + 2 dormant created-object profiles.
+        self.assertEqual(projection["compatible_count"] + 4, len(CORE_RUNTIME_CAPABILITY_PROFILES))
+        self.assertEqual(projection["withheld_count"], 4)
+        self.assertEqual(projection["unavailable_count"], 4)
         expected = [item for item in EXPECTED_LIVE_WITHHELD
-                    if item["capability_id"] in (HELPER_VALUE, MARKETPLACE)]
+                    if item["capability_id"] in (HELPER_VALUE, MARKETPLACE, *CREATED_OBJECT)]
         self.assertEqual(projection["withheld_capabilities"], expected)
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual((await self.public_block())["withheld_capabilities"], expected)

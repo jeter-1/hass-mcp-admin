@@ -53,7 +53,10 @@ NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
                               "core.scene_configuration_operation"})
 # HAMCP-311: compiled and signed-only, in no predecessor and no signing batch yet.
 # HAMCP-311 helper value; HAMCP-290 Marketplace read (signed after 2.5).
-SIGNED_ONLY_DORMANT = frozenset({"core.typed_helper_value_operation", "core.marketplace_read"})
+# HAMCP-329/298: the created-object profiles join the seq-18 signing (design #395).
+SIGNED_ONLY_DORMANT = frozenset({"core.typed_helper_value_operation", "core.marketplace_read",
+                                 "core.scene_create_delete_operation",
+                                 "core.created_helper_delete_operation"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"
