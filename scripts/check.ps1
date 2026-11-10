@@ -6,7 +6,7 @@ param(
     [string]$Area,
     [string[]]$TestTarget,
     [string]$PythonExecutable,
-    [string]$BaseRef = "origin/main",
+    [string]$BaseRef,
     [string[]]$AuthorizedProtectedPath = @(),
     [ValidateRange(1, 4)]
     [int]$Parallel
@@ -42,12 +42,57 @@ if ($Parallel -and $Tier -eq "Fast") {
     throw "-Parallel is supported only with -Tier Full or -Tier Evidence."
 }
 
+# HAMCP-356: an explicit -BaseRef always wins. Without one, the base is
+# resolved in the "Verify base reference" step (Resolve-BaseReference).
+$script:BaseRefExplicit = $PSBoundParameters.ContainsKey("BaseRef")
+if ($script:BaseRefExplicit -and -not $BaseRef) {
+    throw "-BaseRef must name a Git reference, for example origin/main or origin/release/2.6.0."
+}
+$GhPullRequestTimeoutMilliseconds = 10000
+$GhAnswerBound = 4096
+# A branch name safe to pass to gh and to append to origin/.
+$SafeBranchNamePattern = '^(?!-)(?!.*\.\.)(?!.*//)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$'
+
 if (-not $PythonExecutable) {
     $pythonCommand = Get-Command python.exe, python -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $pythonCommand) {
-        throw "Python was not found. Provide -PythonExecutable with a Python 3.12 environment containing the repository test dependencies."
+    if ($pythonCommand) {
+        $PythonExecutable = $pythonCommand.Source
     }
-    $PythonExecutable = $pythonCommand.Source
+    else {
+        # HAMCP-356: with no -PythonExecutable and no python on PATH (for
+        # example under systemd-run), use this worktree's Python 3.12 venv
+        # from docs/CODEX_WORKFLOW.md "Sandbox-local scratch", and only if it
+        # really is Python 3.12.
+        $venvPython = if ($env:OS -eq "Windows_NT") {
+            Join-Path $ArtifactsPath "venv\Scripts\python.exe"
+        }
+        else {
+            Join-Path $ArtifactsPath "venv/bin/python"
+        }
+        if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+            throw "Python was not found on PATH and the worktree venv $venvPython does not exist. Provide -PythonExecutable with a Python 3.12 environment containing the repository test dependencies, or build .artifacts/venv (docs/CODEX_WORKFLOW.md, Sandbox-local scratch)."
+        }
+        $previousErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $venvVersion = @(& $venvPython -I -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null | ForEach-Object { "$_" })
+            $venvExit = $LASTEXITCODE
+        }
+        catch {
+            $venvVersion = @()
+            $venvExit = 1
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorPreference
+        }
+        $venvVersionText = [string]($venvVersion | Select-Object -First 1)
+        if ($venvExit -ne 0 -or $venvVersion.Count -ne 1 -or $venvVersionText -ne "3.12") {
+            $observed = if ($venvExit -eq 0 -and $venvVersionText -match '^[0-9]{1,2}\.[0-9]{1,3}$') { "Python $venvVersionText" } else { "an interpreter that did not report its version" }
+            throw "Python was not found on PATH, and the worktree venv $venvPython is $observed, not Python 3.12. Rebuild .artifacts/venv with Python 3.12 or provide -PythonExecutable."
+        }
+        Write-Host "No -PythonExecutable and no python on PATH: using the worktree venv Python 3.12 at $venvPython."
+        $PythonExecutable = $venvPython
+    }
 }
 
 function Write-Step {
@@ -356,7 +401,164 @@ function Get-ChangedPaths {
     return @($values)
 }
 
+function Invoke-GitProbe {
+    # Like Invoke-GitRead, but a failing command returns $null instead of throwing.
+    param([string[]]$Arguments)
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& git -C $RepoRoot @Arguments 2>$null | ForEach-Object { "$_" })
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        return $null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+    if ($exitCode -ne 0 -or $output.Count -eq 0) {
+        return $null
+    }
+    return [string]$output[0]
+}
+
+function Get-PullRequestBase {
+    # Ask gh for the open pull request whose head is this branch. Any reason gh
+    # cannot answer (absent, unauthenticated, offline, no pull request, or no
+    # answer within the timeout) returns $null with a note. An answer that is
+    # inconsistent with the request is refused instead of trusted or ignored.
+    param(
+        [string]$Branch,
+        [System.Collections.Generic.List[string]]$Notes
+    )
+    $gh = Get-Command gh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $gh) {
+        $Notes.Add("gh is not on PATH")
+        return $null
+    }
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $gh.Source
+    $start.Arguments = "pr view $Branch --json number,state,baseRefName,headRefName,isCrossRepository"
+    $start.WorkingDirectory = $RepoRoot
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.EnvironmentVariables["GH_PROMPT_DISABLED"] = "1"
+    $start.EnvironmentVariables["GH_NO_UPDATE_NOTIFIER"] = "1"
+    $start.EnvironmentVariables["NO_COLOR"] = "1"
+    try {
+        $process = [System.Diagnostics.Process]::Start($start)
+    }
+    catch {
+        $Notes.Add("gh could not be started")
+        return $null
+    }
+    try {
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $null = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($GhPullRequestTimeoutMilliseconds)) {
+            try { $process.Kill() } catch { }
+            $Notes.Add("gh pr view did not answer within $($GhPullRequestTimeoutMilliseconds / 1000) s")
+            return $null
+        }
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            # gh's own message is not printed: it is not needed to choose a base.
+            $Notes.Add("gh pr view $Branch failed with exit code $($process.ExitCode) (not authenticated, offline, or no pull request)")
+            return $null
+        }
+        $text = [string]$stdout.Result
+    }
+    finally {
+        $process.Dispose()
+    }
+    if ($text.Length -gt $GhAnswerBound) {
+        throw "gh pr view returned more than $GhAnswerBound characters; refusing to choose a base. Pass -BaseRef."
+    }
+    try {
+        $answer = $text | ConvertFrom-Json
+    }
+    catch {
+        throw "gh pr view returned output that is not JSON; refusing to choose a base. Pass -BaseRef."
+    }
+    $names = @(if ($answer -is [System.Management.Automation.PSCustomObject]) { $answer.PSObject.Properties | ForEach-Object { $_.Name } })
+    foreach ($name in @("number", "state", "baseRefName", "headRefName", "isCrossRepository")) {
+        if ($names -notcontains $name) {
+            throw "gh pr view did not report $name; refusing to choose a base. Pass -BaseRef."
+        }
+    }
+    if (-not ($answer.state -is [string]) -or $answer.state -cnotmatch '^[A-Z]{1,20}$') {
+        throw "gh pr view reported an unusable pull-request state; refusing to choose a base. Pass -BaseRef."
+    }
+    if ($answer.state -cne "OPEN") {
+        $Notes.Add("the pull request for $Branch is not open")
+        return $null
+    }
+    if (-not ($answer.number -is [int] -or $answer.number -is [long]) -or $answer.number -le 0) {
+        throw "gh pr view reported an invalid pull-request number; refusing to choose a base. Pass -BaseRef."
+    }
+    if (-not ($answer.headRefName -is [string]) -or $answer.headRefName -cne $Branch -or -not ($answer.isCrossRepository -is [bool]) -or $answer.isCrossRepository) {
+        throw "gh pr view reported pull request #$($answer.number), which is not this repository's branch $Branch; refusing to choose a base. Pass -BaseRef."
+    }
+    if (-not ($answer.baseRefName -is [string]) -or $answer.baseRefName -cnotmatch $SafeBranchNamePattern) {
+        throw "gh pr view reported an unusable base branch for pull request #$($answer.number); refusing to choose a base. Pass -BaseRef."
+    }
+    return [ordered]@{ ref = "origin/$($answer.baseRefName)"; source = "base of pull request #$($answer.number)" }
+}
+
+function Resolve-BaseReference {
+    if ($script:BaseRefExplicit) {
+        Write-Host "Base reference $BaseRef (explicit -BaseRef)."
+        return
+    }
+    $notes = New-Object System.Collections.Generic.List[string]
+    $found = $null
+    $branch = Invoke-GitProbe -Arguments @("symbolic-ref", "--quiet", "--short", "HEAD")
+    if (-not $branch) {
+        $notes.Add("HEAD is detached")
+    }
+    elseif ($branch -cnotmatch $SafeBranchNamePattern) {
+        $notes.Add("the branch name is not one this script passes to gh")
+    }
+    else {
+        $found = Get-PullRequestBase -Branch $branch -Notes $notes
+        if (-not $found) {
+            # Offline fallback: an upstream that is main or a release branch,
+            # never the branch's own pushed copy (git push -u resets upstream).
+            $upstream = Invoke-GitProbe -Arguments @("rev-parse", "--abbrev-ref", "--symbolic-full-name", '@{upstream}')
+            if ($upstream -and $upstream -cmatch '^origin/(main|release/[A-Za-z0-9._-]{1,100})$') {
+                if ($Matches[1] -cne $branch) {
+                    $found = [ordered]@{ ref = $upstream; source = "upstream of branch $branch" }
+                }
+                else {
+                    $notes.Add("the branch upstream $upstream is the branch's own remote copy")
+                }
+            }
+            elseif ($upstream) {
+                $notes.Add("the branch upstream $upstream is not origin/main or an origin/release/* branch")
+            }
+            else {
+                $notes.Add("the branch has no upstream")
+            }
+        }
+    }
+    if ($found) {
+        if (-not (Invoke-GitProbe -Arguments @("rev-parse", "--verify", "--quiet", "$($found.ref)^{commit}"))) {
+            throw "The $($found.source) is $($found.ref), which is not available locally. Fetch it (git fetch origin) or pass -BaseRef."
+        }
+        $script:BaseRef = $found.ref
+        Write-Host "Base reference $BaseRef (detected: $($found.source); pass -BaseRef to override)."
+        return
+    }
+    $script:BaseRef = "origin/main"
+    Write-Host "Base reference origin/main (default: no pull-request base was detected because $($notes -join '; ')). Pass -BaseRef if the pull request targets another branch." -ForegroundColor Yellow
+}
+
 function Test-BaseReference {
+    Resolve-BaseReference
     $resolved = @(Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}"))
     $script:ResolvedBaseSha = [string]($resolved | Select-Object -First 1)
     if (-not $script:ResolvedBaseSha) {
@@ -768,7 +970,8 @@ try {
             $script:GitIdentitySnapshot = Get-GitIdentitySnapshot
         }
     }
-    Invoke-LocalStep -Label "Verify base reference" -CommandText "git rev-parse --verify $BaseRef^{commit}" -Action { Test-BaseReference }
+    $baseCommandText = if ($script:BaseRefExplicit) { "git rev-parse --verify $BaseRef^{commit}" } else { "resolve the pull-request base (gh, then upstream, then origin/main), then git rev-parse --verify <base>^{commit}" }
+    Invoke-LocalStep -Label "Verify base reference" -CommandText $baseCommandText -Action { Test-BaseReference }
     if (-not $script:HadFailure -and $Tier -eq "Evidence") {
         Invoke-LocalStep -Label "Bind clean Evidence snapshot" -CommandText "resolve HEAD and require a clean working tree" -Action { Test-EvidenceSnapshot }
     }
