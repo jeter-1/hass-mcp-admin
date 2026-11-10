@@ -49,7 +49,7 @@ R = "DocumentedResidualTests."
 P = "PlanLevelTests."
 N = "GroupNonRowShapeTests."
 GROUP_SHAPES = N + "test_group_default_controls_disclose_unknown_members"
-GROUP_MIXED = N + "test_group_beside_other_toggle_group_entities_is_disclosed_alone"
+GROUP_MIXED = N + "test_group_beside_other_toggle_group_domains_is_one_mixed_disclosure"
 GROUP_FORCE_DIALOG = N + "test_falsy_force_dialog_keeps_the_picture_glance_default"
 GROUP_OVERRIDES = N + "test_an_explicit_action_replaces_the_group_default"
 GROUP_CARD_IDENTITY = N + "test_unchanged_group_card_is_not_newly_changed"
@@ -131,7 +131,10 @@ GROUP_HEADER_FOOTER = ("            if domain == _GROUP_DOMAIN:\n"
                        "            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:\n"
                        "                category = _domain_control_category(domain)\n"
                        '                reason = _domain_reason(category, "header_footer_button")\n')
-GROUP_TOGGLE_GROUP = GROUP_HEADER_FOOTER.replace('"header_footer_button"', '"toggle_group"')
+# The toggle-group loop is nested one level deeper (single-domain branch).
+GROUP_TOGGLE_GROUP = "".join(
+    "    " + line for line in GROUP_HEADER_FOOTER.replace(
+        '"header_footer_button"', '"toggle_group"').splitlines(keepends=True))
 GROUP_DEFAULT_ROW = ("        if domain == _GROUP_DOMAIN:\n"
                      "            return entity, domain, RiskCategory.UNKNOWN, _GROUP_MEMBERS_REASON\n"
                      "        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:\n")
