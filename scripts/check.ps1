@@ -22,6 +22,12 @@ $script:HadFailure = $false
 $script:NormalizedAuthorizedProtectedPaths = @()
 $script:ResolvedBaseSha = $null
 $script:ResolvedHeadSha = $null
+# HAMCP-356: the deployment-metadata version check compares with the deployed
+# line, origin/main, exactly as CI's "Validate deployment metadata" step does.
+# It is a separate value from the pull-request base above and never stands in
+# for it, or the other way round.
+$VersionCheckBaseRef = "origin/main"
+$script:VersionCheckBaseSha = $null
 $script:GitIdentitySnapshot = $null
 $script:GitIdentityPaths = $null
 $previousGitCeilings = $env:GIT_CEILING_DIRECTORIES
@@ -382,7 +388,11 @@ function Set-ScratchGitCeilings {
 
 function Get-ChangedPaths {
     $values = New-Object System.Collections.Generic.List[string]
-    $comparisonBase = if ($script:ResolvedBaseSha) { $script:ResolvedBaseSha } else { $BaseRef }
+    # HAMCP-356: compare only with the base commit pinned at the start.
+    if (-not $script:ResolvedBaseSha) {
+        throw "The base commit has not been pinned; refusing to compare changed paths."
+    }
+    $comparisonBase = $script:ResolvedBaseSha
     $comparisonHead = if ($script:ResolvedHeadSha) { $script:ResolvedHeadSha } else { "HEAD" }
     $commands = @(
         @("diff", "--name-only", "$comparisonBase...$comparisonHead"),
@@ -565,6 +575,13 @@ function Test-BaseReference {
         throw "Git returned no commit for base reference $BaseRef."
     }
     Write-Host "Verified base commit $BaseRef at $($script:ResolvedBaseSha)."
+    Write-Host "Every comparison in this run uses $($script:ResolvedBaseSha); a later move of $BaseRef does not change it."
+    $versionBase = Invoke-GitProbe -Arguments @("rev-parse", "--verify", "--quiet", "$VersionCheckBaseRef^{commit}")
+    if (-not $versionBase -or $versionBase -notmatch '^[0-9a-f]{40}([0-9a-f]{24})?$') {
+        throw "The version-check base $VersionCheckBaseRef does not resolve to a commit. CI checks the deployment-metadata version against $VersionCheckBaseRef; refusing to validate deployment metadata against another base. Fetch it (git fetch origin main)."
+    }
+    $script:VersionCheckBaseSha = $versionBase
+    Write-Host "Version-check base $VersionCheckBaseRef at $($script:VersionCheckBaseSha) (deployment-metadata version check, as in CI)."
 }
 
 function Get-WorkingTreeState {
@@ -589,11 +606,22 @@ function Test-EvidenceSnapshot {
 }
 
 function Test-EvidenceSnapshotConsistency {
-    $currentBase = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}")) | Select-Object -First 1)
-    $currentHead = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "HEAD^{commit}")) | Select-Object -First 1)
-    if ($currentBase -ne $script:ResolvedBaseSha) {
-        throw "The Evidence base moved during validation."
+    # HAMCP-356: the run used only the pinned base commits, so a reference
+    # that moved meanwhile (a fetch in another worktree) does not change the
+    # result. The pinned commits must still exist.
+    foreach ($pinned in @($script:ResolvedBaseSha, $script:VersionCheckBaseSha)) {
+        if (-not (Invoke-GitProbe -Arguments @("rev-parse", "--verify", "--quiet", "$pinned^{commit}"))) {
+            throw "The pinned base commit $pinned is no longer available."
+        }
     }
+    foreach ($pair in @(@($BaseRef, $script:ResolvedBaseSha), @($VersionCheckBaseRef, $script:VersionCheckBaseSha))) {
+        $current = Invoke-GitProbe -Arguments @("rev-parse", "--verify", "--quiet", "$($pair[0])^{commit}")
+        if ($current -ne $pair[1]) {
+            $now = if ($current) { $current } else { "nothing" }
+            Write-Host "$($pair[0]) moved to $now during the run; every comparison used the pinned base $($pair[1])." -ForegroundColor Yellow
+        }
+    }
+    $currentHead = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "HEAD^{commit}")) | Select-Object -First 1)
     if ($currentHead -ne $script:ResolvedHeadSha) {
         throw "HEAD moved during Evidence validation."
     }
@@ -905,6 +933,8 @@ function Write-Evidence {
         repository_root = $RepoRoot
         base_ref = $BaseRef
         base_sha = $baseSha
+        version_check_base_ref = $VersionCheckBaseRef
+        version_check_base_sha = $script:VersionCheckBaseSha
         head_sha = $headSha
         working_tree = $workingTree
         unit_test_execution = $script:UnitTestExecution
@@ -924,6 +954,8 @@ function Write-Evidence {
     $baseShaText = if ($baseSha) { $baseSha } else { "unresolved" }
     $headShaText = if ($headSha) { $headSha } else { "unresolved" }
     $summary.Add("- Base: ``$BaseRef`` at ``$baseShaText``")
+    $versionBaseShaText = if ($script:VersionCheckBaseSha) { $script:VersionCheckBaseSha } else { "unresolved" }
+    $summary.Add("- Version-check base: ``$VersionCheckBaseRef`` at ``$versionBaseShaText``")
     $summary.Add("- Head: ``$headShaText``")
     $summary.Add("- Working tree: **$workingTree**")
     $authorizedPathText = if ($script:NormalizedAuthorizedProtectedPaths.Count -gt 0) {
@@ -971,12 +1003,13 @@ try {
         }
     }
     $baseCommandText = if ($script:BaseRefExplicit) { "git rev-parse --verify $BaseRef^{commit}" } else { "resolve the pull-request base (gh, then upstream, then origin/main), then git rev-parse --verify <base>^{commit}" }
+    $baseCommandText += "; pin the version-check base with git rev-parse --verify $VersionCheckBaseRef^{commit}"
     Invoke-LocalStep -Label "Verify base reference" -CommandText $baseCommandText -Action { Test-BaseReference }
     if (-not $script:HadFailure -and $Tier -eq "Evidence") {
         Invoke-LocalStep -Label "Bind clean Evidence snapshot" -CommandText "resolve HEAD and require a clean working tree" -Action { Test-EvidenceSnapshot }
     }
     if (-not $script:HadFailure) {
-        Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths and explicit declarations against $BaseRef" -Action { Test-ScopeBoundaries }
+        Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths and explicit declarations against $BaseRef at $($script:ResolvedBaseSha)" -Action { Test-ScopeBoundaries }
     }
     if ($script:HadFailure) {
         Write-Host "`nValidation stopped during safe preflight. No repository code was executed." -ForegroundColor Red
@@ -1012,7 +1045,7 @@ try {
         )
         if ($Area -eq "Metadata" -or @($fastChangedPaths | Where-Object { $_ -in $metadataPaths }).Count -gt 0) {
             Invoke-NativeStep -Label "Validate add-on metadata" -Executable $PythonExecutable -Arguments @(
-                "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:ResolvedBaseSha
+                "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:VersionCheckBaseSha
             )
         }
         if (@($fastChangedPaths | Where-Object { $_ -match '\.ya?ml$' }).Count -gt 0) {
@@ -1034,7 +1067,7 @@ try {
             $script:UnitTestExecution.executed = $true
         }
         Invoke-NativeStep -Label "Validate add-on metadata" -Executable $PythonExecutable -Arguments @(
-            "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:ResolvedBaseSha
+            "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:VersionCheckBaseSha
         )
         $yamlProgram = "import pathlib,yaml; paths=sorted([*pathlib.Path('.').rglob('*.yml'),*pathlib.Path('.').rglob('*.yaml')]); [yaml.safe_load(p.read_text(encoding='utf-8')) for p in paths]; print(f'Parsed {len(paths)} YAML file(s).')"
         Invoke-NativeStep -Label "Parse repository YAML" -Executable $PythonExecutable -Arguments @("-c", $yamlProgram)

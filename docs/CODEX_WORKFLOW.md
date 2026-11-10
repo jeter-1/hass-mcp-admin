@@ -216,6 +216,24 @@ Keep publication eligibility/scheduling changes separate from action updates.
    `scripts/pr-evidence.py --base`. Evidence records the base it used in
    `base_ref`.
 
+   The step resolves the chosen base to a commit once and prints it. Every
+   comparison in the run (protected paths, changed files, committed
+   whitespace) uses that commit, which Evidence records in `base_sha`. A fetch
+   in another worktree that moves the reference meanwhile does not change the
+   result; the final snapshot recheck reports the move and still requires the
+   pinned commits to exist.
+
+   The deployment-metadata check (`scripts/validate_addon_metadata.py`,
+   including its "not bumped" version comparison) uses a second, separate
+   base: `origin/main`, the deployed line, exactly as CI's "Validate deployment
+   metadata" step does. It is never the pull-request base, so item pull
+   requests into a release branch, which share the release's declared
+   version, are judged as CI judges them. The same step pins `origin/main` to
+   a commit and prints it; Evidence records it in `version_check_base_ref` and
+   `version_check_base_sha`. If `origin/main` does not resolve to a commit, the
+   preflight refuses before any repository code runs instead of skipping the
+   check or using another base. There is no override.
+
 7. Generate or refresh the bounded draft body if needed:
 
    ```powershell

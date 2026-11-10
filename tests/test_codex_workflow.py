@@ -222,9 +222,18 @@ class CheckScriptRepositoryFixture:
         self.write("scripts/pr-evidence.py", EVIDENCE_SCRIPT.read_text(encoding="utf-8"))
         self.write(
             "scripts/validate_addon_metadata.py",
-            f"""from pathlib import Path
+            f"""import json
+from pathlib import Path
+import subprocess
+import sys
 
 print({REPOSITORY_CODE_SENTINEL!r})
+# HAMCP-356: record the arguments, and move a reference mid-run on request.
+Path('.artifacts').mkdir(exist_ok=True)
+Path('.artifacts/fixture-metadata-argv.json').write_text(json.dumps(sys.argv[1:]))
+if Path('.fixture-move-ref').exists():
+    moved_ref = Path('.fixture-move-ref').read_text().strip()
+    subprocess.run(['git', 'update-ref', moved_ref, 'HEAD'], check=True)
 if Path('.fixture-native-failure').exists():
     raise SystemExit(19)
 if Path('.fixture-mutate-worktree').exists():
@@ -2233,6 +2242,105 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
         self.assertEqual(code, 0, output)
         self.assertNotIn("worktree venv", output)
+
+
+class CheckScriptPinnedBaseTests(unittest.TestCase):
+    """HAMCP-356: one pinned base commit, and a separate version-check base.
+
+    The pull-request base is resolved to a commit once, at the start, and
+    every comparison in the run uses that commit, so a fetch elsewhere that
+    moves the reference cannot change the result. The deployment-metadata
+    version check compares against origin/main, as CI does, never against a
+    release base where item pull requests share the declared version.
+    """
+
+    BRANCH = "agent/HAMCP-1-fixture"
+    RELEASE = "origin/release/9.9.0"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.powershell = shutil.which("pwsh") or shutil.which("powershell")
+
+    def setUp(self) -> None:
+        if not self.powershell:
+            self.skipTest("PowerShell is unavailable")
+        self.fixture = CheckScriptRepositoryFixture()
+        self.main_sha = git(self.fixture.root, "rev-parse", "origin/main^{commit}")
+        self.fixture.write("release.md", "release change\n")
+        self.fixture.commit("fixture release change")
+        git(self.fixture.root, "update-ref", "refs/remotes/" + self.RELEASE, "HEAD")
+        self.release_sha = git(self.fixture.root, "rev-parse", "HEAD^{commit}")
+        git(self.fixture.root, "checkout", "-q", "-b", self.BRANCH)
+        self.fixture.write("docs.md", "branch change\n")
+
+    def tearDown(self) -> None:
+        if hasattr(self, "fixture"):
+            self.fixture.close()
+
+    def check(self, tier: str, base_ref: str = RELEASE) -> tuple[int, str]:
+        result = self.fixture.run_check(self.powershell, tier, base_ref=base_ref)
+        return result.returncode, result.stdout + result.stderr
+
+    def metadata_arguments(self) -> list[str]:
+        path = self.fixture.root / ".artifacts" / "fixture-metadata-argv.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def validation(self) -> dict:
+        path = self.fixture.root / ".artifacts" / "validation.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_version_check_uses_origin_main_when_the_preflight_base_is_a_release(self):
+        self.fixture.commit("fixture branch change")
+        code, output = self.check("Evidence")
+        self.assertEqual(code, 0, output)
+        self.assertNotEqual(self.main_sha, self.release_sha)
+        arguments = self.metadata_arguments()
+        self.assertEqual(arguments[arguments.index("--base-ref") + 1], self.main_sha)
+        self.assertIn(f"Verified base commit {self.RELEASE} at {self.release_sha}.", output)
+        self.assertIn(f"Version-check base origin/main at {self.main_sha}", output)
+        payload = self.validation()
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(payload["base_ref"], self.RELEASE)
+        self.assertEqual(payload["base_sha"], self.release_sha)
+        self.assertEqual(payload["version_check_base_ref"], "origin/main")
+        self.assertEqual(payload["version_check_base_sha"], self.main_sha)
+
+    def test_version_check_base_stays_origin_main_with_an_explicit_main_base(self):
+        self.fixture.commit("fixture branch change")
+        code, output = self.check("Full", base_ref="origin/main")
+        self.assertEqual(code, 0, output)
+        arguments = self.metadata_arguments()
+        self.assertEqual(arguments[arguments.index("--base-ref") + 1], self.main_sha)
+
+    def test_base_commit_is_pinned_when_the_reference_moves_mid_run(self):
+        # The metadata step moves the release reference to HEAD while the run
+        # is in progress, as a fetch in another worktree would.
+        self.fixture.write(".fixture-move-ref", "refs/remotes/" + self.RELEASE + "\n")
+        self.fixture.commit("fixture branch change that moves the base mid-run")
+        head_sha = git(self.fixture.root, "rev-parse", "HEAD^{commit}")
+        code, output = self.check("Evidence")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(git(self.fixture.root, "rev-parse", self.RELEASE + "^{commit}"), head_sha)
+        self.assertIn(f"{self.RELEASE} moved to {head_sha} during the run", output)
+        self.assertIn(f"used the pinned base {self.release_sha}", output)
+        self.assertNotIn("The Evidence base moved during validation", output)
+        payload = self.validation()
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(payload["base_sha"], self.release_sha)
+        steps = {step["name"]: step for step in payload["steps"]}
+        self.assertEqual(steps["Recheck Evidence snapshot"]["status"], "passed")
+        self.assertIn(self.release_sha, steps["Check committed Git whitespace"]["command"])
+
+    def test_unresolvable_origin_main_is_refused_before_repository_code(self):
+        self.fixture.commit("fixture branch change")
+        git(self.fixture.root, "update-ref", "-d", "refs/remotes/origin/main")
+        for tier in ("Fast", "Full", "Evidence"):
+            with self.subTest(tier=tier):
+                code, output = self.check(tier)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("The version-check base origin/main does not resolve to a commit", output)
+                self.assertIn("refusing to validate deployment metadata against another base", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
 
 
 class InstructionFileTests(unittest.TestCase):
