@@ -180,13 +180,12 @@ EXPECTED_LIVE_WITHHELD = [
         "reason_code": MISSING,
         "affected_tools": ["get_script_trace", "list_script_traces"],
     },
-    # HAMCP-134: the dormant security metadata read; its tool registers with
-    # the frozen application.py / capabilities.py wiring (#418).
+    # HAMCP-134: the dormant security metadata read (wired after #418).
     {
         "capability_id": SECURITY_METADATA,
         "disposition": "unavailable",
         "reason_code": MISSING,
-        "affected_tools": [],
+        "affected_tools": ["get_security_metadata"],
     },
     {
         "capability_id": HELPER_VALUE,
@@ -304,6 +303,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "list_entity_registry",
     ],
     "core.script_trace_read": ["get_script_trace", "list_script_traces"],
+    "core.security_metadata_read": ["get_security_metadata"],  # HAMCP-134
     "core.state_service_discovery": [
         "create_reload_plan",
         "list_services",

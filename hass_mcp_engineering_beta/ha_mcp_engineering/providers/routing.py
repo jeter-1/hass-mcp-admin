@@ -140,6 +140,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "list_script_traces": ProviderCapability.SCRIPT_TRACE,
     "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_marketplace_inventory": ProviderCapability.MARKETPLACE_INVENTORY,
+    "get_security_metadata": ProviderCapability.SECURITY_METADATA,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,

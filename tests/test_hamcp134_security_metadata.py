@@ -411,8 +411,8 @@ class ContractTests(unittest.TestCase):
                          ("read", "none", "none"))
         self.assertFalse(TOOL.startswith("ha_"))
         self.assertNotIn(TOOL, DELEGATED_CORE_REQUIREMENTS)
-        # Registration is pending wiring (application.py / capabilities.py frozen).
-        self.assertNotIn(TOOL, PENDING_ADMISSION_TOOLS)
+        # Wired (HAMCP-350 lifted the freeze): dormant until a signed registry admits it.
+        self.assertEqual(PENDING_ADMISSION_TOOLS[TOOL], ("security_metadata", PROFILE))
         registered = public.registered_tool()
         self.assertIs(registered.annotations.readOnlyHint, True)
         self.assertIs(registered.annotations.destructiveHint, False)
