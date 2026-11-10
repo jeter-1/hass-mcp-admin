@@ -364,8 +364,8 @@ class EntitiesRowClassificationTests(unittest.TestCase):
             ("sensor.synthetic_row", "object", ()),
             ("fan.synthetic_row", "bare", ()),
             ("input_boolean.synthetic_row", "object", ()),
-            ("valve.synthetic_row", "bare", ()),
-            ("valve.synthetic_row", "object", (RiskCategory.DISPLAY_ONLY,)),
+            # HAMCP-345 classifies valve rows as high-consequence controls
+            # (tests/test_hamcp345_dashboard_risk_breadth.py).
             ("garage_door.synthetic_row", "object", (RiskCategory.DISPLAY_ONLY,)),
         )
         for entity, shape, expected in cases:
