@@ -1,6 +1,7 @@
 {
-  "head": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
+  "head": "5d2f16fb76f1d1816dbeefa7952e6d7d749b0f48",
   "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+  "first_head": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
   "python": "3.12.14",
   "regressions": [
     {
@@ -168,6 +169,14 @@
       "area": "residual counts",
       "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
       "test": "DocumentedResidualTests.test_display_only_counts",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "area": "strategy type correction",
+      "revision": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
+      "test": "StrategyTests.test_malformed_strategy_types_disclose_without_crashing",
       "classification": "assertion",
       "exit_code": 1
     }
@@ -383,6 +392,15 @@
     {
       "id": 24,
       "area": "strategy",
+      "name": "a non-string strategy type reaches the membership test",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_malformed_strategy_types_disclose_without_crashing",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 25,
+      "area": "strategy",
       "name": "view sections are not visited",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
       "test": "StrategyTests.test_strategies_disclose_at_every_level",
@@ -390,7 +408,7 @@
       "exit_code": 1
     },
     {
-      "id": 25,
+      "id": 26,
       "area": "strategy",
       "name": "nested sections are not visited",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -399,7 +417,7 @@
       "exit_code": 1
     },
     {
-      "id": 26,
+      "id": 27,
       "area": "strategy",
       "name": "the strategy configuration is not bound",
       "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
@@ -412,6 +430,6 @@
     "name": "control (unmutated HEAD copy, whole module)",
     "classification": "pass",
     "exit_code": 0,
-    "ran": "Ran 31 tests in 2.835s"
+    "ran": "Ran 33 tests in 3.333s"
   }
 }
