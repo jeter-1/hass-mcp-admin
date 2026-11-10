@@ -14,7 +14,9 @@ read, and no plan is approved or applied.
    (4b8db82b), must fail each named positive test by an assertion; an
    ``ERROR:`` invalidates a result.  The correction test for the
    unhashable strategy ``type`` found by ``base_vs_head_planning.py`` must
-   likewise fail by assertion on the first PR head (57454d31).  Guard tests that also pass on the base
+   likewise fail by assertion on the first PR head (57454d31), and the
+   group non-row shape tests (owner direction 2026-11-10) on the previous
+   PR head (d220dfd9).  Guard tests that also pass on the base
    (explicit action overrides, platform groups, hidden header toggles,
    iframe/map strategies, residuals) are not regressions; they are mutant
    targets below.
@@ -33,6 +35,7 @@ ROOT = Path.cwd()
 OUT = ROOT / ".artifacts/mutation-hamcp345"
 BASE = "4b8db82bc30882b44214ba2d87867fa4e82af3cb"
 FIRST_HEAD = "57454d31aad4f17fbadd28dcab4a7c0074f3da6d"
+PREVIOUS_HEAD = "d220dfd907b04acd470a704d62056d1acda86cb3"
 MODULE = "tests.test_hamcp345_dashboard_risk_breadth"
 TEST_FILE = "tests/test_hamcp345_dashboard_risk_breadth.py"
 RISK = "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py"
@@ -44,6 +47,12 @@ H = "HeaderToggleTests."
 S = "StrategyTests."
 R = "DocumentedResidualTests."
 P = "PlanLevelTests."
+N = "GroupNonRowShapeTests."
+GROUP_SHAPES = N + "test_group_default_controls_disclose_unknown_members"
+GROUP_MIXED = N + "test_group_beside_other_toggle_group_entities_is_disclosed_alone"
+GROUP_FORCE_DIALOG = N + "test_falsy_force_dialog_keeps_the_picture_glance_default"
+GROUP_OVERRIDES = N + "test_an_explicit_action_replaces_the_group_default"
+GROUP_CARD_IDENTITY = N + "test_unchanged_group_card_is_not_newly_changed"
 ROWS = V + "test_entities_rows"
 BUTTONS = V + "test_buttons_row_buttons"
 SHAPES = V + "test_header_footer_toggle_group_and_area_controls"
@@ -106,7 +115,23 @@ regressions = [
     ("strategy", P + "test_strategy_view_requires_manual_review"),
     ("residual counts", COUNTS),
 ]
-corrections = [("strategy type correction", MALFORMED)]
+corrections = [
+    ("strategy type correction", FIRST_HEAD, MALFORMED),
+    ("group non-row shapes", PREVIOUS_HEAD, GROUP_SHAPES),
+    ("group non-row shapes", PREVIOUS_HEAD, GROUP_MIXED),
+    ("group non-row shapes", PREVIOUS_HEAD, GROUP_FORCE_DIALOG),
+    ("group non-row shapes", PREVIOUS_HEAD, GROUP_CARD_IDENTITY),
+    ("group non-row shapes", PREVIOUS_HEAD, P + "test_group_tile_requires_manual_review"),
+]
+GROUP_DEFAULT_TOGGLE = ("    if domain == _GROUP_DOMAIN:\n"
+                        "        return RiskCategory.UNKNOWN, _GROUP_CONTROL_REASON\n")
+GROUP_HEADER_FOOTER = ("            if domain == _GROUP_DOMAIN:\n"
+                       "                category = RiskCategory.UNKNOWN\n"
+                       "                reason = _GROUP_CONTROL_REASON\n"
+                       "            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:\n"
+                       "                category = _domain_control_category(domain)\n"
+                       '                reason = _domain_reason(category, "header_footer_button")\n')
+GROUP_TOGGLE_GROUP = GROUP_HEADER_FOOTER.replace('"header_footer_button"', '"toggle_group"')
 GROUP_DEFAULT_ROW = ("        if domain == _GROUP_DOMAIN:\n"
                      "            return entity, domain, RiskCategory.UNKNOWN, _GROUP_MEMBERS_REASON\n"
                      "        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:\n")
@@ -146,6 +171,21 @@ mutants = [
      NOT_OVER),
     ("group", "a group button row ignores its own tap_action", RISK,
      '        if isinstance(row, dict) and "tap_action" in row:\n            return None\n', "", GROUP_TAP),
+    ("group non-row", "a group default toggle goes quiet", RISK, GROUP_DEFAULT_TOGGLE, "",
+     GROUP_SHAPES),
+    ("group non-row", "a group default toggle is classified as a plain toggle", RISK,
+     GROUP_DEFAULT_TOGGLE,
+     GROUP_DEFAULT_TOGGLE.replace("RiskCategory.UNKNOWN, _GROUP_CONTROL_REASON",
+                                  'RiskCategory.TOGGLE, f"{shape}_toggle_control"'),
+     GROUP_SHAPES),
+    ("group non-row", "header/footer group chips go quiet", RISK, GROUP_HEADER_FOOTER,
+     GROUP_HEADER_FOOTER.replace("if domain == _GROUP_DOMAIN:", "if False:"), GROUP_SHAPES),
+    ("group non-row", "toggle-group group entities go quiet", RISK, GROUP_TOGGLE_GROUP,
+     GROUP_TOGGLE_GROUP.replace("if domain == _GROUP_DOMAIN:", "if False:"), GROUP_MIXED),
+    ("group non-row", "header/footer chips ignore their own tap_action", RISK,
+     '                if "tap_action" in chip:\n                    continue\n', "", GROUP_OVERRIDES),
+    ("group non-row", "picture-glance items ignore their own tap_action", RISK,
+     '                if "tap_action" in item:\n                    continue\n', "", GROUP_OVERRIDES),
     ("header toggle", "the default ignores the title", RISK,
      '            shown = "title" in header_config and len(toggleable) >= 2\n',
      "            shown = len(toggleable) >= 2\n", HEADER_HIDDEN),
@@ -183,7 +223,8 @@ mutants = [
      '                        "strategy": strategy,\n', "", STRATEGY_IDENTITY),
 ]
 
-results = {"head": HEAD, "base": BASE, "first_head": FIRST_HEAD, "python": sys.version.split()[0],
+results = {"head": HEAD, "base": BASE, "first_head": FIRST_HEAD, "previous_head": PREVIOUS_HEAD,
+           "python": sys.version.split()[0],
            "regressions": [], "mutants": [], "control": None}
 new_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
 checkout(BASE)
@@ -195,13 +236,13 @@ for index, (area, test) in enumerate(regressions, 1):
                                    "classification": classification, "exit_code": code})
     print("regression", index, area, test, classification, flush=True)
 
-checkout(FIRST_HEAD)
-(COPY / TEST_FILE).write_bytes(new_tests)
-for offset, (area, test) in enumerate(corrections, 1):
+for offset, (area, revision, test) in enumerate(corrections, 1):
+    checkout(revision)
+    (COPY / TEST_FILE).write_bytes(new_tests)
     index = len(regressions) + offset
     code, raw = run(test, f"regression-{index:02d}.log")
     classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
-    results["regressions"].append({"id": index, "area": area, "revision": FIRST_HEAD, "test": test,
+    results["regressions"].append({"id": index, "area": area, "revision": revision, "test": test,
                                    "classification": classification, "exit_code": code})
     print("regression", index, area, test, classification, flush=True)
 

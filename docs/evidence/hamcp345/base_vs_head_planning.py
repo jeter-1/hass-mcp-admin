@@ -63,6 +63,10 @@ CARDS = [
     {"type": "picture-glance", "image": "/local/synthetic.png", "entities": [VALVE, {"entity": GROUP}]},
     {"type": "toggle-group", "entities": [VALVE, GROUP]},
     {"type": "grid", "cards": [{"type": "tile", "entity": "sensor.synthetic_reading"}]},
+    # Group default controls on non-row shapes (owner direction 2026-11-10).
+    {"type": "button", "entity": GROUP},
+    {"type": "tile", "entity": GROUP},
+    {"type": "entities", "entities": [FAN], "footer": {"type": "buttons", "entities": [GROUP, {"entity": GROUP}]}},
 ]
 # Whole-dashboard, view and section strategy shapes, planned as the stored
 # configuration (existing) or as the proposed one (inserted).

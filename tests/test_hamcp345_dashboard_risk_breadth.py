@@ -5,7 +5,9 @@ Owner-approved outcome (2026-11-08): dashboard plans classify valve controls
 (for example a water main shutoff) as high-consequence actions with
 elevated review; entities-card group rows, whose members are not part of
 the dashboard configuration, disclose that they cannot be classified at
-plan time; controls rendered by dashboard strategies or by the entities-card
+plan time, and so does a group entity's default control on the button card,
+tile icon, picture-glance items, toggle-group and header/footer buttons
+(owner direction 2026-11-10); controls rendered by dashboard strategies or by the entities-card
 header toggle are analyzed or disclosed; the light/switch default-toggle and
 display-only count residuals are pinned.
 
@@ -54,6 +56,7 @@ HIGH = RiskCategory.HIGH_CONSEQUENCE
 UNKNOWN = RiskCategory.UNKNOWN
 TOGGLE = RiskCategory.TOGGLE
 GROUP_REASON = "group_row_members_not_established_at_plan_time"
+GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
 HEADER_GROUP_REASON = "header_toggle_group_members_not_established_at_plan_time"
 STRATEGY_REASON = "strategy_generated_controls_cannot_be_analyzed"
 
@@ -284,6 +287,137 @@ class GroupRowTests(unittest.TestCase):
         self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
 
 
+class GroupNonRowShapeTests(unittest.TestCase):
+    """Owner direction 2026-11-10: the group-row rule applies to a group
+    entity's default control on the button card, tile icon, picture-glance
+    items, toggle-group and header/footer ``buttons`` chips."""
+
+    def test_group_default_controls_disclose_unknown_members(self):
+        image = "/local/x.png"
+        for label, card, paths in (
+            ("button_card", {"type": "button", "entity": GROUP}, ["entity"]),
+            ("tile_icon", {"type": "tile", "entity": GROUP}, ["entity"]),
+            ("picture_glance_string",
+             {"type": "picture-glance", "image": image, "entities": [GROUP]},
+             ["entities/0"]),
+            ("picture_glance_object",
+             {"type": "picture-glance", "image": image, "entities": [{"entity": GROUP}]},
+             ["entities/0"]),
+            ("toggle_group", {"type": "toggle-group", "entities": [GROUP]},
+             ["entities/0"]),
+            ("footer_buttons_string",
+             {"type": "entities", "entities": [],
+              "footer": {"type": "buttons", "entities": [GROUP]}},
+             ["footer/entities/0"]),
+            ("header_buttons_object",
+             {"type": "entities", "entities": [],
+              "header": {"type": "buttons", "entities": [{"entity": GROUP}]}},
+             ["header/entities/0"]),
+        ):
+            with self.subTest(shape=label):
+                risk = card_risk(card)
+                self.assertEqual(
+                    changed(risk),
+                    [(f"{U}/{path}", UNKNOWN, GROUP_CONTROL_REASON) for path in paths],
+                )
+                self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+                self.assertTrue(risk.manual_review_required)
+                self.assertEqual(risk.high_consequence_action_count, 0)
+
+    def test_group_beside_other_toggle_group_entities_is_disclosed_alone(self):
+        risk = card_risk(
+            {"type": "toggle-group", "entities": ["light.synthetic_lamp", GROUP, LOCK]}
+        )
+        self.assertEqual(
+            changed(risk),
+            [
+                (f"{U}/entities/0", TOGGLE, "toggle_group_toggle_control"),
+                (f"{U}/entities/1", UNKNOWN, GROUP_CONTROL_REASON),
+                (f"{U}/entities/2", HIGH, "toggle_group_targets_high_consequence_domain"),
+            ],
+        )
+        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+
+    def test_falsy_force_dialog_keeps_the_picture_glance_default(self):
+        for value in (False, 0, "", None):
+            with self.subTest(force_dialog=value):
+                risk = card_risk(
+                    {"type": "picture-glance", "image": "/local/x.png",
+                     "force_dialog": value, "entities": [GROUP]}
+                )
+                self.assertEqual(
+                    changed(risk), [(f"{U}/entities/0", UNKNOWN, GROUP_CONTROL_REASON)]
+                )
+
+    def test_an_explicit_action_replaces_the_group_default(self):
+        more_info = {"action": "more-info"}
+        image = "/local/x.png"
+        for label, card in (
+            ("button_tap", {"type": "button", "entity": GROUP, "tap_action": more_info}),
+            ("tile_icon_tap",
+             {"type": "tile", "entity": GROUP, "icon_tap_action": more_info}),
+            ("picture_glance_force_dialog",
+             {"type": "picture-glance", "image": image, "force_dialog": True,
+              "entities": [GROUP]}),
+            ("picture_glance_item_tap",
+             {"type": "picture-glance", "image": image,
+              "entities": [{"entity": GROUP, "tap_action": more_info}]}),
+            ("footer_chip_tap",
+             {"type": "entities", "entities": [],
+              "footer": {"type": "buttons",
+                         "entities": [{"entity": GROUP, "tap_action": more_info}]}}),
+        ):
+            with self.subTest(shape=label):
+                risk = card_risk(card)
+                self.assertNotIn(
+                    GROUP_CONTROL_REASON, {item[2] for item in changed(risk)}
+                )
+                self.assertNotIn(UNKNOWN, {item[1] for item in changed(risk)})
+
+    def test_explicit_group_toggle_keeps_the_row_precedent(self):
+        # A row's explicit ``tap_action`` already bypasses the group-row rule;
+        # an explicit toggle of a group stays a toggle on cards as on rows.
+        for card in (
+            {"type": "button", "entity": GROUP, "tap_action": {"action": "toggle"}},
+            {"type": "entities", "entities": [
+                {"type": "button", "entity": GROUP, "tap_action": {"action": "toggle"}}]},
+        ):
+            with self.subTest(card=json.dumps(card)):
+                risk = card_risk(card)
+                self.assertEqual(
+                    [item[1:] for item in changed(risk)],
+                    [(TOGGLE, "frontend_toggle_action")],
+                )
+
+    def test_group_entities_outside_these_shapes_are_not_classified(self):
+        for card in (
+            {"type": "entity", "entity": GROUP},
+            {"type": "glance", "entities": [GROUP]},
+            {"type": "history-graph", "entities": [GROUP]},
+            {"type": "entities", "entities": [],
+             "footer": {"type": "graph", "entity": GROUP}},
+        ):
+            with self.subTest(card=json.dumps(card)):
+                risk = card_risk(card)
+                self.assertEqual(changed(risk), [])
+                self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
+
+    def test_unchanged_group_card_is_not_newly_changed(self):
+        tile = {"type": "tile", "entity": GROUP}
+        risk = analyze_dashboard_risk(
+            {"views": [{"cards": [tile]}]},
+            {"views": [{"cards": [tile, {"type": "markdown", "content": "x"}]}]},
+        )
+        self.assertEqual(changed(risk), [])
+        self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
+        # Retargeting the tile to a different group is a material change.
+        risk = analyze_dashboard_risk(
+            {"views": [{"cards": [tile]}]},
+            {"views": [{"cards": [{"type": "tile", "entity": "group.synthetic_windows"}]}]},
+        )
+        self.assertEqual(changed(risk), [(f"{U}/entity", UNKNOWN, GROUP_CONTROL_REASON)])
+
+
 class HeaderToggleTests(unittest.TestCase):
     """hui-entities-card.ts:31-52 computeShowHeaderToggle and
     hui-entities-toggle.ts:19-27, 61-65."""
@@ -501,18 +635,6 @@ class DocumentedResidualTests(unittest.TestCase):
                     self.assertEqual(changed(risk), [])
                     self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
 
-    def test_group_on_non_row_shapes_is_unclassified(self):
-        for card in (
-            {"type": "button", "entity": GROUP},
-            {"type": "tile", "entity": GROUP},
-            {"type": "picture-glance", "image": "/local/x.png", "entities": [GROUP]},
-            {"type": "toggle-group", "entities": [GROUP]},
-            {"type": "entities", "entities": [],
-             "footer": {"type": "buttons", "entities": [GROUP]}},
-        ):
-            with self.subTest(card=json.dumps(card)):
-                self.assertEqual(changed(card_risk(card)), [])
-
     def test_display_only_counts(self):
         # A valve tile with an explicit toggle: the tap toggle, the icon
         # default toggle and the nested-action display-only finding.
@@ -581,6 +703,12 @@ class PlanLevelTests(_PlanOnlyHarness):
             {"type": "entities", "entities": [GROUP]}
         )
         self.assertEqual(self.changed_at(update, f"{CARD}/entities/0"),
+                         {"unknown_action_semantics"})
+        self.assert_manual(created, stored, update)
+
+    async def test_group_tile_requires_manual_review(self):
+        created, stored, update = await self.plan_card({"type": "tile", "entity": GROUP})
+        self.assertEqual(self.changed_at(update, f"{CARD}/entity"),
                          {"unknown_action_semantics"})
         self.assert_manual(created, stored, update)
 

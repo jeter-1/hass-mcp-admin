@@ -114,9 +114,10 @@ _DOMAINS_TOGGLE = frozenset(
         "valve",
     }
 )
-# Of those default toggles only the high-consequence domain is classified
-# on the button, buttons, tile-icon and picture-glance shapes; their
-# light/switch-class defaults remain a documented residual.
+# Of those default toggles only the high-consequence domain and ``group``
+# (disclosed, members unknown) are classified on the button, buttons,
+# tile-icon and picture-glance shapes; their light/switch-class defaults
+# remain a documented residual.
 _DEFAULT_TOGGLE_HIGH_DOMAINS = _DOMAINS_TOGGLE & _HIGH_ENTITY_DOMAINS
 _GROUP_DOMAIN = "group"
 _GROUP_ROW_TYPE = "group-entity"
@@ -129,6 +130,10 @@ _GROUP_MEMBERS_REASON = "group_row_members_not_established_at_plan_time"
 _HEADER_TOGGLE_GROUP_REASON = (
     "header_toggle_group_members_not_established_at_plan_time"
 )
+# Owner direction 2026-11-10: the group-row rule also applies to a group
+# entity's default control on the button card, tile icon, picture-glance
+# items, toggle-group and header/footer ``buttons`` chips.
+_GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
 # strategies/get-strategy.ts: a ``strategy`` key on the dashboard, a view
 # or a section is replaced by cards generated in the browser.  Only the
 # built-in ``iframe`` and ``map`` strategies generate their cards from the
@@ -528,6 +533,23 @@ def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
     return None
 
 
+def _default_toggle_control(
+    domain: str | None, shape: str
+) -> tuple[RiskCategory, str] | None:
+    """Classify the default toggle of a button card, tile icon or
+    picture-glance item: a group discloses, valve is high-consequence and
+    the light/switch-class defaults remain a documented residual."""
+
+    if domain == _GROUP_DOMAIN:
+        return RiskCategory.UNKNOWN, _GROUP_CONTROL_REASON
+    if domain in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+        return (
+            RiskCategory.HIGH_CONSEQUENCE,
+            f"{shape}_default_toggle_targets_high_consequence_domain",
+        )
+    return None
+
+
 def _domain_reason(category: RiskCategory, shape: str) -> str:
     return (
         f"{shape}_targets_high_consequence_domain"
@@ -574,8 +596,9 @@ def _default_control_findings(
     entity-filter rows, ``buttons`` header/footer chips, toggle-group cards,
     area-controls features and the alarm-panel card.  HAMCP-345 adds valve
     controls, group rows, ``button``/``buttons`` rows, the entities-card
-    header toggle and the valve defaults of the button card, tile icon and
-    picture-glance items.  ``classified_locations`` are objects an enclosing
+    header toggle, the valve defaults of the button card, tile icon and
+    picture-glance items, and the group defaults of those shapes, the
+    toggle-group and header/footer chips.  ``classified_locations`` are objects an enclosing
     shape already classified (a ``button`` row is not also a button card).
     Returns the findings and the object locations already classified, which
     are therefore not also reported as display-only entities.
@@ -773,12 +796,17 @@ def _default_control_findings(
     elif value.get("type") == "tile" and "icon_tap_action" not in value:
         # tile-card-helpers.ts:10-25; hui-tile-card.ts:117-125 (defaults spread at 123).
         default_shape = "tile_icon"
-    if default_shape is not None and own_domain in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+    own_control = (
+        None
+        if default_shape is None
+        else _default_toggle_control(own_domain, default_shape)
+    )
+    if default_shape is not None and own_control is not None:
         add(
-            RiskCategory.HIGH_CONSEQUENCE,
+            own_control[0],
             (*tokens, "entity"),
             own_domain,
-            f"{default_shape}_default_toggle_targets_high_consequence_domain",
+            own_control[1],
             context_binding(
                 "f3-dashboard-default-control-semantic-binding-v1",
                 shape=default_shape,
@@ -806,14 +834,15 @@ def _default_control_findings(
             else:
                 item_entity = item
             item_domain = _entity_domain(item_entity)
-            if item_domain not in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+            item_control = _default_toggle_control(item_domain, "picture_glance")
+            if item_control is None:
                 continue
             location = (*tokens, "entities", str(index))
             add(
-                RiskCategory.HIGH_CONSEQUENCE,
+                item_control[0],
                 location,
                 item_domain,
-                "picture_glance_default_toggle_targets_high_consequence_domain",
+                item_control[1],
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
                     shape="picture_glance_entity",
@@ -847,15 +876,20 @@ def _default_control_findings(
             else:
                 entity = chip
             domain = _entity_domain(entity)
-            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+            if domain == _GROUP_DOMAIN:
+                category = RiskCategory.UNKNOWN
+                reason = _GROUP_CONTROL_REASON
+            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
+                category = _domain_control_category(domain)
+                reason = _domain_reason(category, "header_footer_button")
+            else:
                 continue
             location = (*tokens, "entities", str(index))
-            category = _domain_control_category(domain)
             add(
                 category,
                 location,
                 domain,
-                _domain_reason(category, "header_footer_button"),
+                reason,
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
                     shape="buttons_header_footer",
@@ -866,18 +900,26 @@ def _default_control_findings(
             if isinstance(chip, dict):
                 classified.add(location)
 
-    # Toggle-group card: one tap toggles every listed entity.
+    # Toggle-group card: one tap toggles every listed entity.  A group entity
+    # is passed to ``<first entity domain>.<toggle action>``
+    # (hui-toggle-group-card.ts:129-137), whose effect on the group's
+    # runtime members is not established at plan time.
     if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
         for index, entity in enumerate(value["entities"]):
             domain = _entity_domain(entity)
-            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+            if domain == _GROUP_DOMAIN:
+                category = RiskCategory.UNKNOWN
+                reason = _GROUP_CONTROL_REASON
+            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
+                category = _domain_control_category(domain)
+                reason = _domain_reason(category, "toggle_group")
+            else:
                 continue
-            category = _domain_control_category(domain)
             add(
                 category,
                 (*tokens, "entities", str(index)),
                 domain,
-                _domain_reason(category, "toggle_group"),
+                reason,
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
                     shape="toggle_group",
