@@ -760,9 +760,9 @@ class UnsignedAssembly(unittest.TestCase):
 
 class ManifestAndWorkflow(unittest.TestCase):
     def test_every_signed_profile_has_source_mapping(self):
-        m=e.manifest();self.assertEqual({r['capability_id'] for r in refs()} | {'core.typed_helper_value_operation'},
+        m=e.manifest();self.assertEqual({r['capability_id'] for r in refs()} | {'core.typed_helper_value_operation', 'core.marketplace_read'},
                                        set(m['profiles'])-{'binding_judgments'})
-        self.assertEqual(len(m['paths']),456)
+        self.assertEqual(len(m['paths']),509)
     def test_mechanical_literal_core_paths_covered(self):
         paths=set(e.manifest()['paths'])
         files=list((ROOT/'scripts').glob('*contract*.py'))+[ROOT/'scripts/generate_core_2026_10_device_fixture.py']

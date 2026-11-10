@@ -18,6 +18,8 @@ import traceback
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIRECTORY = Path.home() / '.local/state/hamcp-lane-failures'
 MAX_CHAIN, MAX_FRAMES, MAX_MESSAGE = 4, 8, 160
+# Explicitly integrated local lanes; any other name is recorded as 'unknown'.
+LANES = frozenset(('helper_value', 'marketplace_read'))
 STAGES = frozenset(('image_verify', 'container_start', 'core_boot', 'auth',
                     'helper_setup', 'operation', 'readback', 'cleanup', 'admission'))
 # Code-owned identifiers only: callers cannot echo arbitrary exception metadata.
@@ -49,8 +51,8 @@ _active = ContextVar('local_lane_diagnostics', default=None)
 
 @contextmanager
 def lane(name):
-    # Only this explicitly integrated lane is currently supported.
-    token = _active.set('helper_value' if name == 'helper_value' else 'unknown')
+    # Only explicitly integrated lanes are supported.
+    token = _active.set(name if name in LANES else 'unknown')
     try:
         yield
     finally:
