@@ -41,7 +41,9 @@ class Contracts(unittest.TestCase):
 
     def test_groups_file_is_append_only_with_marketplace_last(self):
         value = json.loads((ROOT / "ci/core-evidence-groups.json").read_text())
-        self.assertEqual(list(value)[-2:], ["helper_value", "marketplace_read"])
+        # HAMCP-231 appends thread_matter_topology after it; order is still append-only.
+        names = list(value)
+        self.assertEqual(names[names.index("helper_value") + 1], "marketplace_read")
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())

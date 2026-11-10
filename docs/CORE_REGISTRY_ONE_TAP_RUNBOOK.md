@@ -272,6 +272,13 @@ For the Marketplace extension, see
 A failed group or cleanup without `clean: true` withholds `core.marketplace_read`
 from seq 18; neither permits a substitute lane.
 
+For the Thread/Matter topology extension, see
+[HAMCP-231 thread_matter_topology local lane](evidence/hamcp231/lane/README.md).
+A failed group or cleanup without `clean: true` withholds
+`core.thread_matter_topology_read`; neither permits a substitute lane. That lane
+proves the Thread dataset read (A1) and the Matter-absent refusal only, so A2
+signing evidence stays incomplete until the A2 success lane runs.
+
 ### O3 refusal notification and recovery
 
 A differing or missing contract-read file produces no candidate. The preparation

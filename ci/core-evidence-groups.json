@@ -59,5 +59,8 @@
   ],
   "marketplace_read": [
     "core.marketplace_read"
+  ],
+  "thread_matter_topology": [
+    "core.thread_matter_topology_read"
   ]
 }
