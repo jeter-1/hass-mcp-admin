@@ -53,6 +53,24 @@ class Contracts(unittest.TestCase):
         self.assertEqual({fixtures.SCENE_PROFILE, fixtures.HELPER_PROFILE},
                          {capability for capability, _, _ in lane.LANES.values()})
 
+    def test_the_predecessor_route_probe_is_a_complete_create_request(self):
+        """The route derives its exact target from the whole request, before acquiring."""
+        from ha_mcp_engineering.ha_core_readmission import routes
+
+        probe = acceptance.scene_probe("hamcp_g4_withheld_route", "input_boolean.hamcp_g4_lamp")
+        self.assertEqual(
+            routes.static_tool_requirements(acceptance.SCENE_TOOL, probe),
+            (lane.LANES["scene_create_delete"][0],),
+        )
+        self.assertEqual(
+            routes.static_tool_target(acceptance.SCENE_TOOL, probe),
+            {"target_type": "scene_configuration", "target_id": "hamcp_g4_withheld_route"},
+        )
+        with self.assertRaises(routes.StaticToolTargetRefused):
+            routes.static_tool_target(
+                acceptance.SCENE_TOOL, {"action": "create", "config_id": probe["config_id"]}
+            )
+
     def test_a_changed_compiled_fingerprint_refuses(self):
         changed = {**acceptance.LANES["scene_create_delete"], "fingerprint": "sha256:" + "0" * 64}
         with patch.dict(acceptance.LANES, {"scene_create_delete": changed}):

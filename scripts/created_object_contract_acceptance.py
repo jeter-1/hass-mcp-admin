@@ -338,10 +338,15 @@ async def refusal(awaitable):
     return details.get("reason_code") or details.get("reason")
 
 
+def scene_probe(config_id, member):
+    """A complete scene create request: the route derives its exact target from all of it."""
+    return {"action": "create", "config_id": config_id, "name": "HAMCP G4 withheld",
+            "entities": {member: {"state": "on"}}}
+
+
 async def withheld_scene_create(c, plan):
     """Without the profile a scene create is refused: no plan stored, nothing written."""
-    probe = {"action": "create", "config_id": "hamcp_g4_withheld_" + c.suffix, "name": "HAMCP G4 withheld",
-             "entities": {c.members[0]: {"state": "on"}}}
+    probe = scene_probe("hamcp_g4_withheld_" + c.suffix, c.members[0])
     mark, plans = c.log.mark(), len(c.service.repository.list())
     reason = await refusal(plan(probe))
     return {"reason_code": reason, "undo_writes": c.log.writes_since(mark), "ha_requests": c.log.mark() - mark,
@@ -833,7 +838,7 @@ async def run(lane, configured, entry, directory):
                 if lane == "scene_create_delete":
                     # The MCP route does not acquire, and the service refuses on its own.
                     route, requests = await routed(
-                        predecessor, SCENE_TOOL, {"action": "create", "config_id": "hamcp_g4_withheld_route"},
+                        predecessor, SCENE_TOOL, scene_probe("hamcp_g4_withheld_route", before.members[0]),
                         lambda: None)
                     assert route is None and requests == 0
 
