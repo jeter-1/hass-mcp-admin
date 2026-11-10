@@ -55,6 +55,9 @@ from ha_mcp_engineering.tools.registry import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_NAMES,
 )
 
+from tests.test_beta_observability import (  # noqa: E402
+    preserve_create_application_state,
+)
 import tests.test_ha_core_2026_9_integration as core9  # noqa: E402
 from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
@@ -673,6 +676,14 @@ class F3UnmappedIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProductionCompositionTests(unittest.TestCase):
+    def setUp(self):
+        # HAMCP-361: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
+
     def test_production_gateway_is_built_with_the_core_runtime(self):
         from dataclasses import replace
 
