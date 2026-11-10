@@ -608,7 +608,7 @@ arm64 provenance verification does not claim arm64 execution.
 The exact list lives in `ci/core-contract-read-files.json`; profiles map to lane
 groups in `ci/core-evidence-groups.json`. Its 513 paths expand the historical
 HAMCP-222 relied-on scopes and the later helper/options, input-select, trace,
-dashboard, scene, security metadata (HAMCP-134) and Marketplace (HAMCP-290)
+dashboard, scene, Marketplace (HAMCP-290) and security metadata (HAMCP-134)
 source reviews. Maintain this list whenever a contract,
 source read, or binding judgment changes. The literal-path AST guard detects
 constant `homeassistant/.../*.py` paths in contract scripts and the device-fixture

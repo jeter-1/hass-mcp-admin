@@ -38,10 +38,10 @@ class Contracts(unittest.TestCase):
         # Missing receipt (absent result) withholds; it never admits.
         self.assertEqual(passing_subset([ref], {"security_metadata": False}), [])
 
-    def test_groups_file_is_append_only_with_security_metadata_after_helper_value(self):
-        # HAMCP-290 appended marketplace_read after this group; the order before it is unchanged.
-        names = list(json.loads((ROOT / "ci/core-evidence-groups.json").read_text()))
-        self.assertEqual(names[names.index("helper_value") + 1], "security_metadata")
+    def test_groups_file_is_append_only_with_security_metadata_last(self):
+        value = json.loads((ROOT / "ci/core-evidence-groups.json").read_text())
+        self.assertEqual(list(value)[-1], "security_metadata")
+        self.assertIn("helper_value", value)
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())

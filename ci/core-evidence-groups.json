@@ -57,10 +57,10 @@
   "helper_value": [
     "core.typed_helper_value_operation"
   ],
-  "security_metadata": [
-    "core.security_metadata_read"
-  ],
   "marketplace_read": [
     "core.marketplace_read"
+  ],
+  "security_metadata": [
+    "core.security_metadata_read"
   ]
 }

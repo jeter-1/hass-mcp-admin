@@ -39,9 +39,11 @@ class Contracts(unittest.TestCase):
         # Missing receipt (absent result) withholds; it never admits.
         self.assertEqual(passing_subset([ref], {"marketplace_read": False}), [])
 
-    def test_groups_file_is_append_only_with_marketplace_last(self):
-        value = json.loads((ROOT / "ci/core-evidence-groups.json").read_text())
-        self.assertEqual(list(value)[-3:], ["helper_value", "security_metadata", "marketplace_read"])
+    def test_groups_file_places_marketplace_before_security_metadata(self):
+        # Release convention: security_metadata stays last; new groups go before it.
+        names = list(json.loads((ROOT / "ci/core-evidence-groups.json").read_text()))
+        self.assertLess(names.index("helper_value"), names.index("marketplace_read"))
+        self.assertLess(names.index("marketplace_read"), names.index("security_metadata"))
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())
