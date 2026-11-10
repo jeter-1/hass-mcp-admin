@@ -415,6 +415,10 @@ def create_application(
     DEPENDENCY_ANALYSIS.require().index.provider.dashboard_reader_factory = (
         lambda: DASHBOARD_ANALYSIS.dependency_reader(audit=audit)
     )
+    # HAMCP-264: the reviewed YAML reader under its own dependency_index purpose, diagnostic only.
+    DEPENDENCY_ANALYSIS.require().index.provider.yaml_reader_factory = (
+        lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit, purpose="dependency_index")
+    )
     FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     POWER_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     HELPER_VALUE_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
