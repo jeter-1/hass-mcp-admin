@@ -64,6 +64,7 @@ def application_gateway(runtime, *, reconciled=True, deadline_elapsed=False):
             'CONFIGURATION_INTEGRITY_ANALYSIS', 'INCIDENT_CORRELATION',
             'HANDOFF_GENERATION', 'UPSTREAM_READ_GATEWAY', 'FAN_OPERATIONS',
             'POWER_OPERATIONS', 'HELPER_VALUE_OPERATIONS', 'HEALTH',  # + HAMCP-311
+            'DEVICE_CONFIGURATION_OPERATIONS',  # + HAMCP-297
         ):
             stack.enter_context(patch.object(application, name))
         stack.enter_context(patch('ha_mcp_engineering.audit_baseline.capture_runtime.AUTOMATION_BASELINE_CAPTURE'))

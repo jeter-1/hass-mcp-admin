@@ -223,6 +223,13 @@ SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
 MARKETPLACE_PROFILE = "core.marketplace_read"
 MARKETPLACE_TOOL = "get_marketplace_inventory"
 MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
+# HAMCP-134: Engineering-native read-only security and effective-permission
+# metadata read.  Runtime-only, Core 2026.11.0 only, dormant until signed.
+# The tool's requirement and pending-admission rows land with its
+# registration (application.py / capabilities.py, frozen until #418).
+SECURITY_METADATA_PROFILE = "core.security_metadata_read"
+SECURITY_METADATA_TOOL = "get_security_metadata"
+SECURITY_METADATA_RESOURCE_TYPE = "security_metadata"
 # HAMCP-290: reviewed ha-mcp reads Engineering retired (Josh, 2026-11-08).  The
 # read gateway never exposes or dispatches these on any reviewed ha-mcp release,
 # whether or not a native route is registered, and nothing aliases or falls
@@ -232,6 +239,9 @@ RETIRED_DELEGATED_READS = frozenset(RETIRED_DELEGATED_READ_TOOLS)
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
+# control_device_configuration (HAMCP-297): signed-only, acquired by the
+# device-configuration service itself; never an F3 plan requirement.
+DEVICE_CONFIGURATION_PROFILE = "core.device_configuration_entity_operation"
 
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
@@ -357,6 +367,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
+    SECURITY_METADATA_TOOL: (SECURITY_METADATA_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -543,6 +554,11 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "The typed helper value provider is configured with the Core runtime "
             "and acquires its own signed exact-target authority before dispatch.",
         ),
+        "control_device_configuration": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The device-configuration provider is configured with the Core runtime "
+            "and acquires its own signed exact-target authority before dispatch.",
+        ),
         "run_held_read_canary": CoreIndependence(
             CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
             "The upstream read gateway acquires the held route's delegated "
@@ -682,7 +698,8 @@ def delegated_provider_compatibility(
     # fetch, effective-area annotation, child-row config-entry selection and
     # device builder are byte-identical to 8.5.0 apart from the enrichment
     # helpers' module; signed Core profiles and fingerprints are unchanged.
-    if adapter_version == "9.1.0" and probe_profile in (
+    # HAMCP-351: exact 9.1.2 leaves those files unchanged (bab615df).
+    if adapter_version in {"9.1.0", "9.1.2"} and probe_profile in (
         CHILD_DEVICE_PROBE_PROFILE,
         CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
     ):
@@ -820,6 +837,7 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
+        SECURITY_METADATA_TOOL: (SECURITY_METADATA_RESOURCE_TYPE, SECURITY_METADATA_PROFILE),
     }
 )
 
@@ -1173,9 +1191,13 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         SCRIPT_TRACE_PROFILE,
         # HAMCP-290: read-only, never an F3 identity; same reason as above.
         MARKETPLACE_PROFILE,
+        # HAMCP-134: read-only, never an F3 identity; same reason as above.
+        SECURITY_METADATA_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
+        # HAMCP-297: direct typed tool, never an F3 identity; same reason.
+        DEVICE_CONFIGURATION_PROFILE,
     }
 )
 
@@ -1276,6 +1298,9 @@ __all__ = [
     "MARKETPLACE_PROFILE",
     "MARKETPLACE_RESOURCE_TYPE",
     "MARKETPLACE_TOOL",
+    "SECURITY_METADATA_PROFILE",
+    "SECURITY_METADATA_RESOURCE_TYPE",
+    "SECURITY_METADATA_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
     "StaticCoreRoute",

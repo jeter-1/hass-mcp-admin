@@ -201,6 +201,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         "run_held_read_canary",
                         "control_power",
                         "control_helper",
+                        "control_device_configuration",  # + HAMCP-297
                         "control_fan",
                         "automation_reliability_batch_analysis",
                         "create_dashboard_update_plan",
@@ -224,6 +225,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "inspect_governance_record",
                         # HAMCP-290: additive installed-only Marketplace read.
                         "get_marketplace_inventory",
+                        # HAMCP-134: additive security posture metadata read.
+                        "get_security_metadata",
                     )
                 )
             ),
@@ -469,7 +472,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(classifications), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

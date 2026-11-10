@@ -946,6 +946,133 @@ CORE_MARKETPLACE_PROFILES = (
         fallback="hacs_repositories_list_on_exact_unknown_command",
     ),
 )
+# HAMCP-134 (design docs/HAMCP_134_SECURITY_METADATA_FEASIBILITY.md, #392):
+# one read-only security and effective-permission metadata read.  Each
+# admitted command is sent at most once with a constant payload; the
+# ``assistant`` value is fixed to Core's KNOWN_ASSISTANTS.  The section 6
+# list is ``never_sent``.  Runtime-only and Core 2026.11.0 only; dormant until
+# the owner-signed registry selects it.  Nothing here is signed.
+CORE_SECURITY_METADATA_PROFILES = (
+    _contract(
+        "core.security_metadata_read",
+        CoreCapabilityClass.SECURITY_METADATA_READ,
+        "compiled-core-security-metadata-read-v1",
+        (
+            "auth_current_user_identity_and_mfa_catalog_contract",
+            "config_auth_list_bounded_user_projection_contract",
+            "http_config_active_slot_projection_contract",
+            "get_config_url_posture_contract",
+            "expose_new_entities_get_known_assistants_contract",
+            "assist_pipeline_list_projection_contract",
+            "conversation_agent_list_projection_contract",
+            "get_panels_listing_projection_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": [
+                "auth/current_user",
+                "config/auth/list",
+                "http/config",
+                "get_config",
+                "homeassistant/expose_new_entities/get",
+                "assist_pipeline/pipeline/list",
+                "conversation/agent/list",
+                "get_panels",
+            ],
+            "payloads": "constant_no_caller_argument_ever_forwarded",
+            "expose_new_entities_assistants": [
+                "cloud.alexa", "cloud.google_assistant", "conversation",
+            ],
+            "conversation_agent_list_arguments": "none_no_language_no_country",
+            "max_commands": 10,
+            "sections": ["users", "mfa", "http_boundary", "urls", "assist", "panels"],
+            "always_sent": ["auth/current_user"],
+            "users_only": ["config/auth/list"],
+            "projection": "positive_per_section_privacy_table_unknown_fields_dropped",
+            "identity": "supervisor_topology_plus_core_corroboration_else_other_or_unknown",
+            "http_active_slot": "active_config_type_only_never_substituted",
+            "missing_field": "not_provided_never_inferred",
+            "errors": "core_error_code_to_fixed_reason_code_text_never_echoed",
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "output": "fixed_byte_cap_whole_item_removal_lowest_priority_first",
+            "bounds": {"frame_bytes": 2097152, "auth_bytes": 65536, "max_frames": 12,
+                       "max_users": 1000, "max_list_items": 500,
+                       "output_bytes": 40000, "max_seconds": 30},
+            "never_sent": [
+                "auth/long_lived_access_token",
+                "auth/sign_path",
+                "auth/refresh_tokens",
+                "auth/delete_refresh_token",
+                "auth/delete_all_refresh_tokens",
+                "auth/refresh_token_set_expiry",
+                "auth/setup_mfa",
+                "auth/depose_mfa",
+                "config/auth/create",
+                "config/auth/update",
+                "config/auth/delete",
+                "http/config/configure",
+                "http/config/promote",
+                "cloud/status",
+                "homeassistant/expose_entity",
+                "homeassistant/expose_new_entities/set",
+                "homeassistant/expose_entity/list",
+                "assist_satellite/get_configuration",
+                "assist_pipeline/pipeline/create",
+                "assist_pipeline/pipeline/update",
+                "assist_pipeline/pipeline/delete",
+                "assist_pipeline/pipeline/set_preferred",
+                "frontend/update_panel",
+                "config_entries/options/flow",
+                "person/list",
+                "supervisor/*",
+                "hassio/*",
+            ],
+            "never_called": ["async_should_expose"],
+            "supervisor_requests": "none",
+            "write": "none",
+        },
+    ),
+)
+# HAMCP-297: one exact configuration-category device entity per call through
+# the direct Home Assistant API. Signed-only: dormant until an owner-signed
+# registry sequence names this profile for Core 2026.11.0.
+from ..device_configuration import contracts as _device_configuration
+
+CORE_DEVICE_CONFIGURATION_PROFILES = (
+    _contract(
+        _device_configuration.CAPABILITY_ID,
+        CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
+        _device_configuration.ADAPTER_ID,
+        ("rest_state_entity_shape", "entity_registry_get_contract",
+         "device_registry_list_contract", "service_domain_mapping"),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "provider_contract": _device_configuration.PROVIDER_CONTRACT,
+            "core_version": _device_configuration.CORE_VERSION,
+            "domains": sorted(_device_configuration.DOMAIN_ACTIONS),
+            "actions": list(_device_configuration.ACTIONS),
+            "target": "one_exact_registered_config_category_device_entity",
+            "target_kinds": [list(item) for item in _device_configuration.ALLOWLIST],
+            "null_translation_key": "never_admitted",
+            "rest_reads": list(_device_configuration.REST_READS),
+            "websocket_reads": list(_device_configuration.READ_COMMANDS),
+            "services": {domain: {service: list(keys) for service, keys in services.items()}
+                         for domain, services in sorted(_device_configuration.SERVICES.items())},
+            "never_sent": list(_device_configuration.NEVER_SENT),
+            "numeric": list(_device_configuration.NUMERIC_RULES),
+            "unit_converters": list(_device_configuration.UNIT_CONVERTERS),
+            "undo": list(_device_configuration.UNDO_RULES),
+            "locks": list(_device_configuration.LOCK_IDENTITY),
+            "dispatch": "at_most_once_composite_recheck_before_intent_return_response_false",
+            "recovery": "read_only_same_core_version_no_redispatch",
+            "plan_identity": "none",
+            "approval": "none_chat_confirmation_only_when_safety_critical",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation")
+        + _device_configuration.PREDISPATCH_CHECKS,
+    ),
+)
 # HAMCP-329/298 (Release 2.6.0): two additive runtime-only contracts for
 # Core 2026.11.0, dormant until the one combined 2.6 owner-signed
 # ``extend-capabilities`` extension references them exactly.  Like every
@@ -1129,6 +1256,8 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
+    + CORE_SECURITY_METADATA_PROFILES
+    + CORE_DEVICE_CONFIGURATION_PROFILES
     + CORE_CREATED_OBJECT_PROFILES
 )
 
@@ -1195,6 +1324,8 @@ __all__ = [
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
+    "CORE_SECURITY_METADATA_PROFILES",
+    "CORE_DEVICE_CONFIGURATION_PROFILES",
     "CORE_CREATED_OBJECT_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",

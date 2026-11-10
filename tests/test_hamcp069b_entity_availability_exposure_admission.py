@@ -135,7 +135,7 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(ids(CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES), {AVAILABILITY, EXPOSURE})
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
         # HAMCP-165 and HAMCP-155 add the dormant label and configuration delete profiles.
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 35)  # HAMCP-329/298: + 2 created-object profiles; + HAMCP-232/145 November batch, + HAMCP-106, + HAMCP-071, + HAMCP-311; HAMCP-290: + core.marketplace_read
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 37)  # + HAMCP-232/145 November batch, + HAMCP-106, + HAMCP-071, + HAMCP-311; HAMCP-290: + core.marketplace_read; HAMCP-134: + core.security_metadata_read; HAMCP-297: + device configuration; HAMCP-329/298: + 2 created-object profiles
         for capability_id in (AVAILABILITY, EXPOSURE):
             with self.subTest(capability_id=capability_id):
                 self.assertIn(capability_id, ids(CORE_RUNTIME_CAPABILITY_PROFILES))
@@ -660,6 +660,12 @@ class NeverSentBoundaryTests(unittest.IsolatedAsyncioTestCase):
                     for item in node.targets
                 ):
                     never_sent |= {id(item) for item in ast.walk(node.value)}
+                # HAMCP-134: a compiled contract's ``"never_sent"`` list is
+                # the same declaration in contract form.
+                if isinstance(node, ast.Dict):
+                    for key, value in zip(node.keys, node.values):
+                        if isinstance(key, ast.Constant) and key.value == "never_sent":
+                            never_sent |= {id(item) for item in ast.walk(value)}
                 if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
                                      ast.AsyncFunctionDef)) and ast.get_docstring(node):
                     docstrings.add(id(node.body[0].value))
@@ -677,6 +683,8 @@ class NeverSentBoundaryTests(unittest.IsolatedAsyncioTestCase):
             [
                 ("governance/entity_availability_exposure.py", "docstring"),
                 ("governance/entity_availability_exposure.py", "never_sent"),
+                ("ha_core_readmission/profiles.py", "never_sent"),
+                ("security_metadata.py", "never_sent"),
             ],
         )
 

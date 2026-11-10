@@ -8,8 +8,9 @@ indexes of its values (plus its profile id when that is not the compiled
 convention).  These tests prove every profile's disposition and reason code is
 reconstructable and that twice today's profile count, even with no two
 profiles sharing an outcome, fits in the unchanged 8192-character bound: in
-three quarters of it for the realistic doubled records and in 85% of it for
-the synthetic every-profile-its-own-reason worst case.
+three quarters of it for the realistic doubled records, and in the bound
+itself, with no truncation, for the synthetic every-profile-its-own-reason
+worst case.  The doubling is that worst case's margin.
 """
 
 from __future__ import annotations
@@ -48,14 +49,15 @@ from tests.test_ha_core_2026_9_integration import (  # noqa: E402
 AUDIT_BOUND = 8_192
 # Twice today's profile count must leave at least a quarter of the bound.
 HEADROOM_LIMIT = AUDIT_BOUND * 3 // 4
-# The synthetic worst case (no two profiles share a reason code) keeps 15%
-# of the bound.  At 32 profiles (HAMCP-311) it measured 6161 characters, 75.2%
-# of the bound; at 35 profiles (HAMCP-329/298 add the scene create/delete and
-# created-helper delete profiles) it measured 6673 characters, 81.5%, past the
-# earlier four-fifths margin.  The realistic doubled records keep the quarter
-# above (4163 characters, 50.8%), and every case still proves the event is
-# stored untruncated and fully reconstructable within the unchanged bound.
-WORST_CASE_LIMIT = AUDIT_BOUND * 17 // 20
+# The synthetic worst case (twice today's profiles, no two sharing a reason
+# code) must fit AUDIT_BOUND itself: it must not be truncated.  The doubling
+# is its margin, so it has no second fraction.
+# Measured at 35 profiles (2026-11-10): the real record emitted by
+# _reconcile() is 2179 characters, the realistic doubled record is 4161 and
+# the synthetic worst case is 6671, which leaves 1521.  One more profile adds
+# 152 to 196 characters to the worst case (mean 177), so the bound is 7 more
+# profiles away at the largest cost and 8 at the mean.  HAMCP-359 compacts the
+# record or restates this guard before the worst case reaches the bound.
 
 
 def _reconcile() -> tuple[CoreRuntime, dict]:
@@ -297,7 +299,7 @@ class CapacityTests(unittest.TestCase):
             len(event["analysis_summary"]["dispositions"]["reason_code"]),
             len(decisions),
         )
-        self._assert_fits(decisions, WORST_CASE_LIMIT)
+        self._assert_fits(decisions, AUDIT_BOUND)
 
     def test_v1_shape_would_not_have_fit(self):
         # Regression anchor: the per-profile v1 list exceeded the bound.

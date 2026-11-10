@@ -31,7 +31,9 @@ _KEY = re.compile(r"[a-z0-9_]{1,128}\Z", re.ASCII)
 _GAPS = (
     "State/registry discovery does not enumerate every stored or package-defined script.",
     "Script call paths cover literal supported invocations only; dynamic calls and undiscovered sources remain unknown.",
-    "Complete script enumeration beyond the state and registry inventory is deferred (HAMCP-264).",
+    ("Script enumeration beyond the state and registry inventory reads only configuration.yaml "
+     "and its inline packages, through the dependency_index YAML reader (HAMCP-264); scripts.yaml, "
+     "other included files and labeled keys are not followed."),
 )
 # HAMCP-212: scripts are read from Home Assistant's loaded configuration over
 # the provider's shared WebSocket batch; the delegated stored read remains only

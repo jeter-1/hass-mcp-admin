@@ -80,9 +80,12 @@ PINNED = {
         "sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4",
     ),
 }
-# sha256 of the canonical JSON of the 33 runtime references that existed at
-# the release/2.6.0 base 8e19b401, in tuple order.  Pinned, not derived.
-EXISTING_REFERENCES_SHA256 = "65f3a135d737894506d4c7ac4accbaa90f12865750a037bfcfeba4bd7055f66d"
+# sha256 of the canonical JSON of the 35 runtime references that exist at
+# the release/2.6.0 tip fcd6973f, in tuple order: the 33 of the base 8e19b401
+# (their own digest is still 65f3a135...f66d) followed by the HAMCP-134 and
+# HAMCP-297 references.  Computed from the tip's source, pinned here, never
+# derived from this branch.
+EXISTING_REFERENCES_SHA256 = "65c55c085f924b53f0311fc908c1feb0e2c252c5a4786e37a7db84fa7c72ea2d"
 
 
 def reference(profile) -> dict:
@@ -129,7 +132,7 @@ class ProfileContractTests(unittest.TestCase):
 
     def test_1_existing_references_are_byte_identical(self):
         existing = [reference(p) for p in existing_profiles()]
-        self.assertEqual(len(existing), 33)
+        self.assertEqual(len(existing), 35)
         self.assertEqual(hashlib.sha256(canonical(existing)).hexdigest(), EXISTING_REFERENCES_SHA256)
         # Compared, never trusted: every retained owner-signed reference at
         # the registry tip equals its compiled profile, for every carried
