@@ -783,8 +783,8 @@ def _default_control_findings(
                     ),
                 )
 
-    # Valve defaults of the card shapes that toggle a DOMAINS_TOGGLE entity
-    # when no action key replaces the default.
+    # Valve and group defaults of the card shapes that toggle a
+    # DOMAINS_TOGGLE entity when no action key replaces the default.
     own_entity = value.get("entity")
     own_domain = _entity_domain(own_entity)
     default_shape: str | None = None
@@ -902,7 +902,7 @@ def _default_control_findings(
 
     # Toggle-group card: one tap toggles every listed entity.  A group entity
     # is passed to ``<first entity domain>.<toggle action>``
-    # (hui-toggle-group-card.ts:129-137), whose effect on the group's
+    # (hui-toggle-group-card.ts:130-139), whose effect on the group's
     # runtime members is not established at plan time.
     if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
         for index, entity in enumerate(value["entities"]):
