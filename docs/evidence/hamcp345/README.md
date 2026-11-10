@@ -188,6 +188,11 @@ error. `base_vs_head_planning.py` checks the corpus for this.
   group non-row shapes on d220dfd9), mutants killed by assertion, and an
   unmutated control.
 - `base_vs_head_planning.py` writes `base-vs-head-results.json`.
+- Both runners pin the original release base 4b8db82b. The branch later
+  merged `release/2.6.0` at cb9d6783; between those commits `risk.py`,
+  `governance/`, `dashboard_analysis/` and `tests/test_dashboard_update_mvp.py`
+  are unchanged (`git diff --stat 4b8db82b cb9d6783 -- <those paths>` is
+  empty), so the recorded base comparisons still hold for the new base.
 
 ## Rollback
 
