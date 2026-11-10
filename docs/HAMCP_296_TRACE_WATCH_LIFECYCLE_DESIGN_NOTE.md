@@ -18,12 +18,11 @@ relative to `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a full path i
   section 8. Its citations are at `1c4c32b3`, in `trace_snapshots/contracts.py` and `trace_snapshots/store.py`.
 - **Not claimed.** This note claims no live acceptance, and no live measurement has been made.
 - **Decided: live measurement at 2.6 acceptance.** Josh decision (in-session 2026-11-08), item 21: the live
-  polling-load and storage measurement is authorized at 2.6 acceptance, at acceptance time and read-only only. The
-  procedure and its limits are in section 7. It authorizes no live access now, and it does not cover the live renew
-  (section 7), which still needs its own authorization. Superseded (historical): "needs Josh's separate
-  authorization (HAMCP-296 row)". Josh decision 2026-11-09 (in-session), option 1, full maintenance disclosure:
-  `get_server_health` is the read-only part; watch `list` and `list_trace_snapshots` are reads that also run the
-  routine store maintenance, disclosed in section 7 (section 12).
+  polling-load and storage measurement is authorized at 2.6 acceptance, at acceptance time. 2026-11-08 wording
+  "read-only only" — superseded by Josh decision 2026-11-09 (in-session), option 1, full maintenance disclosure
+  (section 12). Current scope: `get_server_health` is read-only; watch `list` and `list_trace_snapshots` also run the routine store maintenance, disclosed with `file:line` in section 7. The procedure and its limits are in section 7. It authorizes no live
+  access now, and it does not cover the live renew (section 7), which still needs its own authorization.
+  Superseded (historical): "needs Josh's separate authorization (HAMCP-296 row)".
 - **Deferred or optional.** No HAMCP-296 option is still open for the merged slice. Script traces stay out of scope
   (O1).
 
@@ -330,9 +329,9 @@ None is open for the merged slice. The pre-build questions are resolved as follo
 - **Q3 (bulk reinstatement): delivered in #401** as `include_lapsed` on `renew` with `automation_id: ""`, alongside
   named per-watch reinstatement.
 - **Live measurement at acceptance: decided.** Josh decision (in-session 2026-11-08), item 21: authorized at 2.6
-  acceptance, read-only only (section 7). It is an acceptance step, not a design question. Josh decision 2026-11-09
-  (in-session), option 1, full maintenance disclosure: watch `list` and `list_trace_snapshots` are reads that also run
-  the routine store maintenance; `get_server_health` is the read-only part (sections 7 and 12).
+  acceptance (section 7). 2026-11-08 wording "read-only only" — superseded by Josh decision 2026-11-09 (in-session),
+  option 1, full maintenance disclosure (section 12). Current scope: `get_server_health` is read-only; watch `list` and `list_trace_snapshots` also run the routine store maintenance, disclosed with `file:line` in section 7. It is an acceptance step, not a
+  design question.
 
 ## 10. Codex design review 2026-11-08 — disposition
 
@@ -345,7 +344,7 @@ None is open for the merged slice. The pre-build questions are resolved as follo
 
 | Item | Decision (Josh decision, in-session 2026-11-08) | Sections changed |
 | --- | --- | --- |
-| 21 | The live HAMCP-296 polling-load and storage measurement is authorized at 2.6 acceptance, acceptance-time and read-only only. | 0 (decided entry; old "needs separate authorization" text superseded), 7 (measurement procedure, read-only limits, `unknown` rule, required acceptance evidence), 9 (decided entry). |
+| 21 | 2026-11-08 wording, quoted: "The live HAMCP-296 polling-load and storage measurement is authorized at 2.6 acceptance, acceptance-time and read-only only." The "read-only only" scope is superseded by Josh decision 2026-11-09 (in-session), option 1, full maintenance disclosure (section 12). Current scope: `get_server_health` is read-only; watch `list` and `list_trace_snapshots` also run the routine store maintenance, disclosed with `file:line` in section 7. | 0 (decided entry; old "needs separate authorization" text superseded), 7 (measurement procedure, read-only limits, `unknown` rule, required acceptance evidence), 9 (decided entry). |
 
 Effect on the Codex corrections in section 10: none. The #401 capacity, persistence, reset and downgrade contract
 is unchanged, and the earlier Josh direction (register 2026-11-07; confirmed in-session 2026-11-08) still governs
