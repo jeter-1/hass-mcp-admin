@@ -37,9 +37,17 @@ could leak the same way.
 
 - **Between steps 2 and 3**, Engineering still holds the old path.
   Delegated (`ha-mcp`-backed) tools fail closed with an upstream-unavailable
-  error. Engineering-native tools keep working. Error text names only the
-  redacted marker `[REDACTED:token]`, never the old path. Nothing falls back
-  to a direct Home Assistant call.
+  error. Engineering-native tools keep working while Engineering keeps
+  running. Error text names only the redacted marker `[REDACTED:token]`,
+  never the old path. Nothing falls back to a direct Home Assistant call.
+- **If Engineering restarts while its path does not match ha-mcp** (between
+  steps 2 and 3, or after step 3 with a mistyped path), all MCP requests
+  return HTTP 503 for up to 20 seconds after its listener starts. After that,
+  Engineering-native tools work and delegated tools are not listed.
+  `server_info` and `get_server_health` show `delegated_tools.admitted` as
+  `false`. `/ready` stays 503 until the first ha-mcp reconcile returns.
+  Engineering keeps retrying. After the paths match and the delegated tools
+  are admitted, start a new MCP client session to load them.
 - **Throughout**, the ha-mcp app's own log source (`addon:<…>_ha_mcp`, and
   `ha_mcp_dev`) stays withheld in `get_incident_logs`. Its reason is
   `upstream_secret_path_source_withheld`. This holds while the new path is

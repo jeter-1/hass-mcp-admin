@@ -131,12 +131,18 @@ fallback; `fallback=none` and `fallback_occurred=false` remain authoritative.
 
 Use `/health` for process liveness and `/ready` for initial catalog readiness.
 The readiness response is deliberately bounded to `ready`,
-`initial_reconciliation_required`, `initial_reconciliation_complete`, and
+`initial_reconciliation_required`, `initial_reconciliation_complete`,
+`initial_reconciliation_deadline_elapsed`, `accepting_mcp_requests`, and
 `status=ready|initial_reconciliation_pending`. With upstream configured,
-HTTP 503 from `/ready` and authenticated MCP paths means the initial
-reconciliation has not yet returned a stable or terminal result. Do not point a
-schema-caching client at the MCP path until `/ready` returns HTTP 200 with
-`ready=true`; otherwise it could retain a transient static-only catalog.
+HTTP 503 from `/ready` means the initial reconciliation has not yet returned a
+stable or terminal result. Authenticated MCP paths return HTTP 503 for the same
+period, but for at most 20 seconds after the MCP listener starts (HAMCP-350).
+After that, `accepting_mcp_requests=true`: Engineering-native tools work and
+delegated tools are not listed until admitted. A schema-caching client that
+connects before `/ready` returns HTTP 200 with `ready=true` keeps the
+static-only catalog. `server_info` and `get_server_health` then report
+`delegated_tools.admitted=false`; start a new MCP client session after
+admission to load the delegated tools.
 
 Use the fast bounded retry state only for endpoint startup and transient
 transport availability. A discovered missing or incompatible contract uses the

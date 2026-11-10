@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from datetime import datetime, timezone
 import json
 import logging
 from typing import Any
+
+from uvicorn.config import LOGGING_CONFIG as _UVICORN_LOGGING_CONFIG
+from uvicorn.logging import AccessFormatter, DefaultFormatter
 
 from .request_context import current_request_id
 from .sanitization import (
@@ -45,6 +50,60 @@ def redact_data(
     return result.value
 
 
+def utc_timestamp(created: float) -> str:
+    """ISO-8601 UTC with milliseconds, e.g. ``2026-11-09T21:00:36.590Z``."""
+
+    return (
+        datetime.fromtimestamp(created, timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+class _UtcTimestampMixin:
+    """HAMCP-350 (c): one timestamp format on every line, whatever its source."""
+
+    def formatTime(self, record: logging.LogRecord, datefmt=None) -> str:
+        return utc_timestamp(record.created)
+
+
+class TimestampedTextFormatter(_UtcTimestampMixin, logging.Formatter):
+    """Root-logger lines (the MCP SDK and other libraries), text kept as is."""
+
+    def __init__(self) -> None:
+        super().__init__("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+class TimestampedUvicornFormatter(_UtcTimestampMixin, DefaultFormatter):
+    pass
+
+
+class TimestampedUvicornAccessFormatter(_UtcTimestampMixin, AccessFormatter):
+    pass
+
+
+def uvicorn_log_config() -> dict[str, Any]:
+    """Uvicorn's own logging configuration with a leading UTC timestamp."""
+
+    config = deepcopy(_UVICORN_LOGGING_CONFIG)
+    config["formatters"]["default"].update(
+        {
+            "()": TimestampedUvicornFormatter,
+            "fmt": "%(asctime)s %(levelprefix)s %(message)s",
+        }
+    )
+    config["formatters"]["access"].update(
+        {
+            "()": TimestampedUvicornAccessFormatter,
+            "fmt": (
+                '%(asctime)s %(levelprefix)s %(client_addr)s - '
+                '"%(request_line)s" %(status_code)s'
+            ),
+        }
+    )
+    return config
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         untrusted_payload = {
@@ -79,6 +138,8 @@ class JsonFormatter(logging.Formatter):
             )
             payload["redacted_field_count"] = tally.redacted_field_count
             payload["redaction_categories"] = sorted(tally.categories)
+            # HAMCP-350 (c): added after sanitization so it is never redacted.
+            payload["timestamp"] = utc_timestamp(record.created)
         return json.dumps(payload, sort_keys=True)
 
 
@@ -90,6 +151,16 @@ def configure_logging(level: str) -> None:
     root.addHandler(handler)
     root.setLevel(level.upper())
     root.propagate = False
+    # HAMCP-350 (c): the pinned MCP SDK's ``basicConfig`` gives the root
+    # logger a plain handler when FastMCP is constructed at import, bound to
+    # the stderr of that moment. Replace it with one timestamped handler on
+    # the current (stream-guarded) stderr; the root level is left unchanged.
+    process_root = logging.getLogger()
+    root_handler = logging.StreamHandler()
+    root_handler.setFormatter(TimestampedTextFormatter())
+    for existing in tuple(process_root.handlers):
+        process_root.removeHandler(existing)
+    process_root.addHandler(root_handler)
 
 
 def get_logger(subsystem: str) -> logging.Logger:

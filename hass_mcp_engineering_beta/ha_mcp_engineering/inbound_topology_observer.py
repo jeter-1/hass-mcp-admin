@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 import uvicorn
 
 from . import version
+from .logging_config import uvicorn_log_config
 
 PRIVATE_ROOT = Path("/data/private-topology-probe")
 MAX_ARM_BYTES = 4096
@@ -550,7 +551,8 @@ class ObservedServer(uvicorn.Server):
 def create_mcp_listener(app, *, port, log_level):
     observation = prepare_observation(port)
     options = {"host": "0.0.0.0", "port": port, "log_level": log_level,
-               "access_log": False, "proxy_headers": False}
+               "access_log": False, "proxy_headers": False,
+               "log_config": uvicorn_log_config()}
     if observation is None:
         return uvicorn.Server(uvicorn.Config(app, **options))
     try:
