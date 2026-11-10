@@ -9,6 +9,8 @@ import json
 
 from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
 from .helper_value.contracts import HELPER_CONTRACTS
+from .device_configuration.contracts import PROVIDER as DEVICE_CONFIGURATION_PROVIDER
+from .device_configuration.contracts import PROVIDER_CONTRACT as DEVICE_CONFIGURATION_PROVIDER_CONTRACT
 
 from typing import Any
 
@@ -236,6 +238,17 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "authenticated_exact_helper_value_operation",
         "external_approval_required": False, "direct_write_allowed": False,
         "verification": "exact_helper_value_or_documented_transition",
+    },
+    {
+        "tool": "control_device_configuration", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_device_configuration", "routing": "engineering_native",
+        "provider": "direct_home_assistant_device_configuration",
+        "provider_contract": "direct-ha-exact-device-configuration-v1", "fallback": "none",
+        "policy": "authenticated_exact_device_configuration_operation",
+        "core_capabilities": ["core.device_configuration_entity_operation"],
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_ha_state_readback_with_composite_fingerprint",
     },
     {
         "tool": "control_fan", "category": "ordinary_runtime_action",
@@ -1012,6 +1025,17 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": ", ".join(HELPER_CONTRACTS),
         "core_applicability": "explicit_signed_core.typed_helper_value_operation_only",
+    },
+    {
+        "tool": "control_device_configuration", "capability": "typed_device_configuration_execution",
+        "required_semantics": "One exact Matter device-configuration entity change (select option, switch on/off, or number value) on a config-category entity matched to a signed (domain, platform, translation_key) triple, under connector authority, durable ownership and exact readback.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "complete_with_bound",
+        "selected_provider": DEVICE_CONFIGURATION_PROVIDER, "fallback_policy": "none",
+        "completeness": "reported_state_only_physical_feedback_not_verified",
+        "security_justification": "Three signed (domain, platform, translation_key) triples and a closed per-domain service map fix target, service and data keys. No generic services, no return_response, no arbitrary data, no ha-mcp route and no uncertain-action replay.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": DEVICE_CONFIGURATION_PROVIDER_CONTRACT,
+        "core_applicability": "explicit_signed_core.device_configuration_entity_operation_only",
     },
     {
         "tool": "control_fan",

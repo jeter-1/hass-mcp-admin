@@ -2690,6 +2690,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_CONFIGURATION_DELETE_PROFILES,
             CORE_NOVEMBER_BATCH_PROFILES,
             CORE_MARKETPLACE_PROFILES,  # HAMCP-290
+            CORE_DEVICE_CONFIGURATION_PROFILES,  # HAMCP-297
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2718,7 +2719,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             + CORE_LABEL_REGISTRY_PROFILES
                                                             + CORE_NOVEMBER_BATCH_PROFILES
                                                             # HAMCP-290: the dormant Marketplace read is withheld.
-                                                            + CORE_MARKETPLACE_PROFILES))
+                                                            + CORE_MARKETPLACE_PROFILES
+                                                            # HAMCP-297: so is the dormant device configuration profile.
+                                                            + CORE_DEVICE_CONFIGURATION_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
@@ -2726,7 +2729,8 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
              + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
              + CORE_CONFIGURATION_DELETE_PROFILES
              + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES
-             + CORE_MARKETPLACE_PROFILES},  # HAMCP-290
+             + CORE_MARKETPLACE_PROFILES  # HAMCP-290
+             + CORE_DEVICE_CONFIGURATION_PROFILES},  # HAMCP-297
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
@@ -3010,7 +3014,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -3023,14 +3027,14 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         # HAMCP-290: the reviewed policy still classifies ha_get_hacs_info as
         # an automatic read; Engineering retires it (Josh, 2026-11-08), so
-        # one matched read is never exposed (83 + 28 - 1 = 110).
+        # one matched read is never exposed (84 + 28 - 1 = 111 with HAMCP-297).
         retired = {
             item.upstream_name
             for item in policy.tools
             if item.classification == "automatic_read"
         } & RETIRED_DELEGATED_READS
         self.assertEqual(retired, {"ha_get_hacs_info"})
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 110)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 111)
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
         # from the mapping (31 -> 30).
@@ -3102,9 +3106,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         # HAMCP-290: the retired delegated ha_get_hacs_info is subtracted
         # only when the newest policy classifies it automatic_read; 9.1.0
-        # already marks it unsupported, so 27 stay and 83 + 27 = 110.
+        # already marks it unsupported, so 27 stay and (HAMCP-297) 84 + 27 = 111.
         self.assertEqual(counts["expected_delegated_reads"], 27)
-        self.assertEqual(counts["expected_connector_total"], 110)
+        self.assertEqual(counts["expected_connector_total"], 111)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3182,7 +3186,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # device-dependent reads; 25 matched, 5 Core-withheld, 1 retired.
         self.assertEqual(health["core_withheld_read_count"], 5 + len(RETIRED_DELEGATED_READS))
         self.assertEqual(health["dynamically_exposed_count"], 20 - len(RETIRED_DELEGATED_READS))
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 102)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 103)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,

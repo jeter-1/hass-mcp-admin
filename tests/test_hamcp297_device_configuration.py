@@ -840,5 +840,137 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(set(UNIT_CONVERTERS)), 41)
         self.assertEqual(list(UNIT_CONVERTERS), sorted(UNIT_CONVERTERS))
 
+class GatewayWiringTests(unittest.TestCase):
+    """The tool through the real authenticated gateway, FastMCP and registration."""
+
+    SECRET = "synthetic-hamcp297-gateway-secret"
+    VALID = {"entity_id": SWITCH, "action": "turn_on",
+             "operation_id": "1767225600-" + "a" * 32}
+
+    def fixture(self, directory):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.configuration import Settings
+        from ha_mcp_engineering.mcp_server import create_mcp_server
+        from ha_mcp_engineering.request_context import current_telemetry
+        from ha_mcp_engineering.routing import AuthenticatedMcpGateway
+        from same_thread_asgi_client import SameThreadAsgiTestClient
+
+        settings = Settings(
+            ha_url="http://synthetic-ha.invalid", ha_token="synthetic-unused-token",
+            access_secret=self.SECRET, port=8100,
+            audit_path=str(Path(directory) / "audit.jsonl"),
+            governance_path=str(Path(directory) / "governance"),
+            rate_limit_per_minute=1000, rate_limit_burst=100,
+            destructive_services=frozenset(),
+        )
+        server = create_mcp_server(settings)
+        seen = []
+
+        @server.tool(name="control_device_configuration")
+        async def synthetic(entity_id: str, action: str, operation_id: str,
+                            value: str | None = None, undo_task_id: str | None = None,
+                            acknowledge_safety_critical: bool = False) -> str:
+            telemetry = current_telemetry()
+            seen.append((telemetry, telemetry.ordinary_device_configuration_binding))
+            telemetry.audit_context.update({
+                "operation_id": operation_id, "task_id": "b" * 32,
+                "device_configuration_outcome": "succeeded_verified",
+                "device_configuration_status": "succeeded",
+                "unreviewed_field": "must-not-appear",
+            })
+            return "synthetic-device-configuration-ok"
+
+        inner = server.streamable_http_app()
+        gateway = AuthenticatedMcpGateway(inner, settings, AuditLogger(settings.audit_path, self.SECRET))
+        client = SameThreadAsgiTestClient(gateway, lifespan_app=inner, base_url="http://127.0.0.1:8100")
+        return client, seen, Path(settings.audit_path)
+
+    def call(self, client, arguments):
+        return client.post(
+            "/" + self.SECRET + "/mcp",
+            headers={"accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": "control_device_configuration", "arguments": arguments}},
+        )
+
+    @staticmethod
+    def audit_records(path):
+        return [json.loads(line) for line in path.read_text().splitlines()
+                if '"control_device_configuration"' in line]
+
+    def test_valid_request_binds_the_exact_digest_resets_it_and_audits_the_typed_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client, seen, audit = self.fixture(directory)
+            with client:
+                response = self.call(client, self.VALID)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("synthetic-device-configuration-ok", response.text)
+            (telemetry, binding), = seen
+            self.assertEqual(binding, digest(DeviceConfigurationRequest.parse(self.VALID).model_dump()))
+            self.assertIsNone(telemetry.ordinary_device_configuration_binding)  # reset in finally
+            (record,) = self.audit_records(audit)
+            summary = record["analysis_summary"]
+            self.assertEqual(summary["operation_class"], "typed_device_configuration")
+            self.assertEqual(summary["provider"], "direct_home_assistant_device_configuration")
+            self.assertEqual(summary["fallback"], "none")
+            self.assertEqual(summary["device_configuration_outcome"], "succeeded_verified")
+            self.assertEqual(summary["task_id"], "b" * 32)
+            self.assertNotIn("unreviewed_field", json.dumps(record))
+
+    def test_changed_arguments_bind_a_different_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client, seen, _ = self.fixture(directory)
+            with client:
+                self.assertEqual(self.call(client, self.VALID).status_code, 200)
+                self.assertEqual(self.call(client, {**self.VALID, "action": "turn_off"}).status_code, 200)
+            self.assertNotEqual(seen[0][1], seen[1][1])
+
+    def test_invalid_request_is_400_before_the_tool(self):
+        for arguments in ({**self.VALID, "action": "toggle"},
+                          {**self.VALID, "data": {"x": 1}},
+                          {**self.VALID, "entity_id": "light.porch"},
+                          {**self.VALID, "action": "select_option"},
+                          {**self.VALID, "operation_id": "not-an-operation"}):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as directory:
+                client, seen, _ = self.fixture(directory)
+                with client:
+                    response = self.call(client, arguments)
+                self.assertEqual(response.status_code, 400)
+                body = response.json()
+                self.assertEqual(body["error"], "InvalidDeviceConfigurationRequest")
+                self.assertEqual(body["operation"], "control_device_configuration")
+                self.assertFalse(body["retryable"])
+                self.assertEqual(seen, [])
+
+    def test_registration_catalog_and_provider_contract(self):
+        from ha_mcp_engineering.capabilities import CAPABILITY_PROVIDER_MATRIX, capability_for_tool
+        from ha_mcp_engineering.device_configuration.contracts import PROVIDER, PROVIDER_CONTRACT
+        from ha_mcp_engineering.providers.models import ProviderCapability
+        from ha_mcp_engineering.providers.routing import routing_for_tool
+        from ha_mcp_engineering.tools.registry import ENGINEERING_STATIC_TOOL_NAMES, get_registered_server
+
+        self.assertIn("control_device_configuration", ENGINEERING_STATIC_TOOL_NAMES)
+        tools = {tool.name: tool for tool in asyncio.run(get_registered_server().list_tools())}
+        annotations = tools["control_device_configuration"].annotations
+        self.assertEqual(
+            (annotations.readOnlyHint, annotations.destructiveHint,
+             annotations.idempotentHint, annotations.openWorldHint),
+            (False, True, True, True),
+        )
+        catalog = capability_for_tool("control_device_configuration")
+        self.assertEqual(catalog["provider"], PROVIDER)
+        self.assertEqual(catalog["provider_contract"], PROVIDER_CONTRACT)
+        self.assertEqual(catalog["fallback"], "none")
+        self.assertFalse(catalog["external_approval_required"])
+        (row,) = [item for item in CAPABILITY_PROVIDER_MATRIX if item["tool"] == "control_device_configuration"]
+        self.assertEqual(row["selected_provider"], PROVIDER)
+        self.assertEqual(row["trust_profile"], PROVIDER_CONTRACT)
+        self.assertEqual(row["fallback_policy"], "none")
+        route = routing_for_tool("control_device_configuration")
+        self.assertEqual(route.capability, ProviderCapability.TYPED_DEVICE_CONFIGURATION_EXECUTION)
+        self.assertEqual(route.fallback_providers, ())
+        self.assertFalse(route.explicit_direct_fallback_allowed)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 """Authenticated ordinary device-configuration control (HAMCP-297).
 
-Not registered until the #418 wiring lands (``.artifacts/pending-wiring.md``).
-No general service exposure, no plan and no approval panel.
+Registered in tools/registry.py. No general service exposure, no plan and no
+approval panel.
 """
 from typing import Annotated, Literal
 from pydantic import Field, StrictBool, StrictStr

@@ -121,6 +121,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "set_automation_trace_watch",
                           "compare_automation_baselines",
                           "control_helper",  # + HAMCP-311
+                          "control_device_configuration",  # + HAMCP-297
                           "automation_reliability_batch_analysis",  # + HAMCP-229
                           "inspect_governance_record",
                           "get_marketplace_inventory"})  # + HAMCP-290

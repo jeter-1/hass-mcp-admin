@@ -152,6 +152,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "control_power": ProviderCapability.TYPED_POWER_EXECUTION,
     "control_helper": ProviderCapability.TYPED_HELPER_VALUE_EXECUTION,
+    "control_device_configuration": ProviderCapability.TYPED_DEVICE_CONFIGURATION_EXECUTION,
     "server_info": ProviderCapability.HANDOFF_GENERATION,
     "list_capabilities": ProviderCapability.HANDOFF_GENERATION,
     "render_template": ProviderCapability.TEMPLATE_RENDER,

@@ -509,6 +509,11 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "The typed helper value provider is configured with the Core runtime "
             "and acquires its own signed exact-target authority before dispatch.",
         ),
+        "control_device_configuration": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The device-configuration provider is configured with the Core runtime "
+            "and acquires its own signed exact-target authority before dispatch.",
+        ),
         "run_held_read_canary": CoreIndependence(
             CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
             "The upstream read gateway acquires the held route's delegated "

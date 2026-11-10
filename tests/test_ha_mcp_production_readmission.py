@@ -2698,12 +2698,12 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
-        # 2026-11-08), so 25 matched reads expose 24 (83 + 24 = 107).
+        # 2026-11-08), so 25 matched reads expose 24 (HAMCP-297: 84 + 24 = 108).
         self.assertEqual(len(registered), 24)
         self.assertFalse(set(registered) & RETIRED_DELEGATED_READS)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 107)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 108)
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
             if (policy_entry.classification != "automatic_read"

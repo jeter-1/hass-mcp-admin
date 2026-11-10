@@ -89,6 +89,7 @@ STATIC_CORE_TABLE = {
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
     "control_helper": DOWNSTREAM,
+    "control_device_configuration": DOWNSTREAM,
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
@@ -200,6 +201,9 @@ ALLOWLIST_ARGUMENTS = {
     "control_helper": {
         "entity_id": "input_boolean.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "control_device_configuration": {
+        "entity_id": "switch.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
+    },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},
     "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
@@ -255,7 +259,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -280,7 +284,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 23)  # + HAMCP-311 control_helper (downstream authority)
+        self.assertEqual(len(ALLOWLISTED), 24)  # + HAMCP-311 control_helper, HAMCP-297 control_device_configuration (downstream authority)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[
