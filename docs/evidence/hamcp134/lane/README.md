@@ -164,9 +164,30 @@ reference and fingerprint, source-hash digests, admission, container memory,
 running image identity and cleanup. It is disposable evidence, not production
 authority.
 
-### Runs
+### Run 1: PASS (2026-11-09 23:31 CST)
 
-Not yet run.
+- The lane ran under the host heavy-job gate as unit `hamcp134-lane` (kind `lane`)
+  at source commit `bf3c98847f2fd6b72e80c43cafbc2dec2c907b89`.
+- The Core container ran with `--memory 2g` and the cleanup fixture with `128m`.
+- The receipt's SHA-256 is
+  `799799a6844aa6769d2098a1fd09506c95f2d94ccfa5dc0f5f4d39f1c0d509a1`. It binds
+  `contract_fingerprint`
+  `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55`.
+- Authority went from 32 to 33 references. The predecessor made zero reads and
+  was refused with `authority_unavailable`.
+- The full report sent exactly the 10 planned commands (equal to the read plan and
+  the audit), with no fallback. `sections=["mfa"]` sent only `auth/current_user`.
+- Coverage: `users`, `http_boundary`, `urls`, `assist` and `panels` observed; `mfa`
+  `partial` with `connection_identity_not_supervisor` (connection identity
+  `other_connection_user`, `is_admin` true). Completeness `partial` for that reason.
+- Projected counts equal the raw Core reads: 2 users, 1 MFA module, 1 pipeline,
+  1 agent, 17 panels; HTTP `active_config_type` `stable`. Output was 6,856 bytes.
+  `redaction` is null: no Core value matched a redaction category, and the
+  identifier, token and secret absence checks passed.
+- Refusals: anonymous gave `authority_unavailable`, Core 2026.10.0/.1/.3 gave
+  `identity_mismatch`, five invalid argument sets were refused.
+- No never-sent command was sent, `fallback_count` was 0, the 7 before/after
+  snapshots were unchanged, and cleanup read back as clean.
 
 Limitation: the disposable Core has one owner (the onboarding user) and no
 non-admin user, no pending or trial HTTP configuration and no Supervisor
