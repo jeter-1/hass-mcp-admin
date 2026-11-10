@@ -37,6 +37,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     AuthorizationError, ErrorCode, HomeAssistantApiError, HomeAssistantTimeoutError,
 )
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope  # noqa: E402
+from ha_mcp_engineering.f3.contracts import NormalizedOperationOutcome as Outcome  # noqa: E402
 from ha_mcp_engineering.f3.models import LockOwner, LockTiming  # noqa: E402
 from ha_mcp_engineering.helper_value.safety import CONFIRMATION_SAFETY_CRITICAL  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
@@ -534,6 +535,62 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["terminal_outcome"], "preflight_rejected", result)
         self.assertEqual(result["reason"], "device_configuration_state_changed")
 
+    async def test_registry_id_drift_in_final_check_refuses_with_no_write(self):
+        """Mutation 1: once() must compare the registry entry, not only state."""
+        def drift(kind, count):
+            if kind == "registry" and count == 3:  # prepare, preflight, once()
+                # Only the registry id; state and attributes stay unchanged.
+                self.ha.entities[SELECT]["registry"]["id"] = "reg-replaced"
+        self.ha.on_read = drift
+        result = await self.call(self.request())
+        self.assertEqual(self.ha.writes, [])
+        self.assertEqual(result["terminal_outcome"], "failed_pre_dispatch", result)
+        self.assertEqual(result["reason"], "device_configuration_state_changed")
+        self.assertFalse(result["dispatch_intent_recorded"])
+        self.settled()
+
+    async def test_device_entry_drift_in_final_check_refuses_with_no_write(self):
+        """Mutation 1: once() must compare the device entry, not only state."""
+        def drift(kind, count):
+            if kind == "registry" and count == 3:  # the device list follows
+                self.ha.devices[0]["created_at"] = 1763000000.0
+                self.ha.devices[0]["identifiers"] = [["matter", "replaced-dev-plug"]]
+        self.ha.on_read = drift
+        result = await self.call(self.request())
+        self.assertEqual(self.ha.writes, [])
+        self.assertEqual(result["terminal_outcome"], "failed_pre_dispatch", result)
+        self.assertEqual(result["reason"], "device_configuration_state_changed")
+        self.assertFalse(result["dispatch_intent_recorded"])
+        self.settled()
+
+    async def test_second_once_entry_is_duplicate_dispatch_and_one_write(self):
+        """Mutation 5: a provider that runs the boundary twice never sends twice."""
+        self.ha.mode = "ack_only"  # state unchanged, so only the guard can refuse
+        request = self.request()
+        self.telemetry.ordinary_device_configuration_binding = digest(request.model_dump())
+        inner = self.service.adapter.inner
+        prepared = await inner.prepare(request)
+        real = inner.provider.dispatch
+        seen, boundaries = [], []
+
+        async def counting_boundary():
+            boundaries.append(1)
+
+        async def twice(entity_id, domain, value, once):
+            evidence = await real(entity_id, domain, value, once)
+            try:
+                return await real(entity_id, domain, value, once)
+            except ValueError as exc:
+                seen.append(str(exc))
+                raise
+            return evidence
+        with patch.object(inner.provider, "dispatch", twice):
+            result = await inner.dispatch(prepared, None, before_dispatch=counting_boundary)
+        self.assertEqual(seen, ["device_configuration_duplicate_dispatch"])
+        self.assertEqual(len(self.ha.writes), 1)
+        self.assertEqual(len(boundaries), 1)
+        self.assertNotEqual(result.outcome, Outcome.OBSERVING)  # never reported as clean
+
     async def test_missing_dispatch_boundary_stays_dispatch_refused(self):
         request = self.request()
         self.telemetry.ordinary_device_configuration_binding = digest(request.model_dump())
@@ -752,6 +809,41 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         # A same-task retry after a crash keeps its own claim.
         self.service._path(undo.task_id).unlink()
         self.assertEqual(self.service.save(prepared), prepared)
+
+    async def test_undo_claim_is_written_while_declarations_lock_is_held(self):
+        """Mutation 2: the claim write must happen inside the one transaction."""
+        import fcntl
+        import os as os_module
+        from ha_mcp_engineering.device_configuration import service as service_module
+        forward = await self.call(self.request())
+        undo = await self.undo(forward["task_id"])
+        self.telemetry.ordinary_device_configuration_binding = digest(undo.model_dump())
+        prepared = await self.service.adapter.inner.prepare(undo)
+        claim_path = self.service._claim_path(forward["task_id"])
+        lock_path = Path(self.service.root) / ".declarations.lock"
+        real_write, held = service_module._atomic_write, []
+
+        def probing_write(path, value, prefix):
+            if Path(path) == claim_path:
+                # flock is per open file description: a second open conflicts
+                # with the transaction's lock even in this process.
+                fd = os_module.open(lock_path, os_module.O_RDWR | os_module.O_CREAT)
+                try:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        held.append(True)
+                    else:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                        held.append(False)
+                finally:
+                    os_module.close(fd)
+            return real_write(path, value, prefix)
+        with patch.object(service_module, "_atomic_write", probing_write):
+            self.service.save(prepared)
+        self.assertEqual(held, [True])
+        self.assertTrue(claim_path.exists())
+        self.assertIsNotNone(self.service.load(undo.task_id))
 
     # --- Safety gate (Q8: empty production trigger; test-only trigger) ---
 
