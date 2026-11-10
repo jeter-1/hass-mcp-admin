@@ -201,7 +201,9 @@ async def _run_disposable(configured, *, expected_image, core_version):
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
                                        'core.marketplace_read',
                                        # HAMCP-134 dormant security metadata read (signed after 2.5).
-                                       'core.security_metadata_read'}]
+                                       'core.security_metadata_read',
+                                       # HAMCP-297 signed-only device configuration.
+                                       'core.device_configuration_entity_operation'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)

@@ -1090,8 +1090,15 @@ class ReachabilityTests(unittest.TestCase):
         helper_value = {PACKAGE / "helper_value" / "contracts.py",
                         PACKAGE / "helper_value" / "service.py",
                         PACKAGE / "tools" / "helper.py"}
+        # HAMCP-297: control_device_configuration names select.select_option
+        # (the select domain, not input_select) in its tool action literal and
+        # its closed per-domain service map; it sends only for the three signed
+        # Matter triples under core.device_configuration_entity_operation.
+        device_configuration = {PACKAGE / "device_configuration" / "contracts.py",
+                                PACKAGE / "tools" / "device_configuration.py"}
         expected = {"select_option": {gateway, extraction,
-                                      PACKAGE / "ha_core_readmission" / "profiles.py", *helper_value}}
+                                      PACKAGE / "ha_core_readmission" / "profiles.py", *helper_value,
+                                      *device_configuration}}
         extraction_source = extraction.read_text(encoding="utf-8")
         for transport in ("clients.", "websocket", "rest_path", "mark_provider_send"):
             self.assertNotIn(transport, extraction_source)

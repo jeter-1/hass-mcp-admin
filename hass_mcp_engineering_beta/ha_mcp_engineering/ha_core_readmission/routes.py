@@ -202,6 +202,9 @@ RETIRED_DELEGATED_READS = frozenset(RETIRED_DELEGATED_READ_TOOLS)
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
+# control_device_configuration (HAMCP-297): signed-only, acquired by the
+# device-configuration service itself; never an F3 plan requirement.
+DEVICE_CONFIGURATION_PROFILE = "core.device_configuration_entity_operation"
 
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
@@ -512,6 +515,11 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
         "control_helper": CoreIndependence(
             CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
             "The typed helper value provider is configured with the Core runtime "
+            "and acquires its own signed exact-target authority before dispatch.",
+        ),
+        "control_device_configuration": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The device-configuration provider is configured with the Core runtime "
             "and acquires its own signed exact-target authority before dispatch.",
         ),
         "run_held_read_canary": CoreIndependence(
@@ -1107,6 +1115,8 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
+        # HAMCP-297: direct typed tool, never an F3 identity; same reason.
+        DEVICE_CONFIGURATION_PROFILE,
     }
 )
 

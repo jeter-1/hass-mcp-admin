@@ -1,0 +1,35 @@
+{
+ "files": {
+  "driver.py": "363ecca6c4b4c35fcd6ec01ef757a790da79f927d4472ac1e8e6ab86de63f98f",
+  "nodes/aqara_door_window_p2.json": "5fdde93c56c824795be29ccbb2dd9b919f4ff5a4b17df0f9220d82c675e0836f",
+  "nodes/eve_energy_20ecn4101.json": "48a7a21131eee56e47a0db856d21134fd6bc983295f633ea9e3aef6d122de58d",
+  "nodes/eve_energy_plug.json": "1ed129e955c909f119e40303b234bdc2b83dfadd8347f26570e59e0ef71fa14d",
+  "run_lane.sh": "8d6fc4a4397449fc89e706ca6a99cdb753093e92ad5d614f8a7647ca5db51e40",
+  "stub.py": "4fd9d2576dea0f32217426463a012ef7921394bc5be5b2f849778b96fe48b514"
+ },
+ "generator": "stub.py, driver.py and run_lane.sh were written by hand for HAMCP-297 (no generator). TOPOLOGY in stub.py is static and synthetic.",
+ "node_dumps": {
+  "method": "Copied byte-for-byte from the source commit; not edited. stub.py refuses to start on a hash mismatch (PINNED_DUMPS).",
+  "node_ids": {
+   "aqara_door_window_p2.json": 91,
+   "eve_energy_20ecn4101.json": 199,
+   "eve_energy_plug.json": 61
+  },
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "source_license": "Apache-2.0",
+  "source_url": "https://github.com/home-assistant/core/tree/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/tests/components/matter/fixtures/nodes",
+  "source_version": "Home Assistant Core 2026.11.0"
+ },
+ "protocol_pins": {
+  "core_image": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "matter_python_client": "1.5.5 (the client Core 2026.11.0 pins); matter_server/common/models.py sha256 1298a14869957f813adc9db573bea7c2b00b62c186fc9a1c4ac5f538cd679279",
+  "matterjs_server": "matter-js/matterjs-server v1.5.5, commit a7922e85f4b94a5db94a1dbee1a02c685c2ec71d"
+ },
+ "residuals": [
+  "The stub applies write_attribute to its own attribute cache and reports it back. Upstream TestNodeCommandHandler.ts:187-190 only logs the write and returns success with no actual write. A lane on this stub proves the Core-side command and the read-back path, not a real device write.",
+  "get_network_topology returns static synthetic content (stub.py TOPOLOGY). Core forwards whatever the Matter Server builds, so a lane proves pass-through and projection, not topology construction.",
+  "server_info_schema_version takes effect for Core only after a reconnect, because Core caches schema_version at connect."
+ ],
+ "statement": "Test-only lane asset: a Matter Server stub (server side of a WebSocket subset), the lane driver, the runner, and three Matter node dumps. Never a product path. No live Home Assistant, deployed MCP endpoint, production credential or secret was used; the driver generates random disposable onboarding credentials inside the disposable Core container and never prints them.",
+ "task": "HAMCP-297"
+}

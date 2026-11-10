@@ -17,6 +17,7 @@ from .audit import AuditLogger
 from .fan.service import FAN_OPERATIONS
 from .power.service import POWER_OPERATIONS
 from .helper_value.service import HELPER_VALUE_OPERATIONS
+from .device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
 from .configuration import (
     MAX_TRUSTED_PROXY_CIDRS,
     MIN_ACCESS_SECRET_LENGTH,
@@ -421,6 +422,10 @@ def create_application(
     FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     POWER_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     HELPER_VALUE_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
+    # HAMCP-297: no safety trigger in production (the empty first-build trigger).
+    DEVICE_CONFIGURATION_OPERATIONS.configure(
+        settings, CORE_READMISSION, HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings), audit=audit)
     CORE_READMISSION.register_reconciliation_listener(
         UPSTREAM_READ_GATEWAY.request_core_reconciliation
     )
@@ -441,6 +446,7 @@ def create_application(
         FAN_OPERATIONS.service,
         POWER_OPERATIONS.service,
         HELPER_VALUE_OPERATIONS.service,
+        DEVICE_CONFIGURATION_OPERATIONS.service,
     )
     return gateway
 
@@ -646,6 +652,8 @@ async def _run_f3_recovery_pass(trigger: str, *, strict: bool = False) -> None:
                 await POWER_OPERATIONS.service.recover_once()
             if HELPER_VALUE_OPERATIONS.service is not None:
                 await HELPER_VALUE_OPERATIONS.service.recover_once()
+            if DEVICE_CONFIGURATION_OPERATIONS.service is not None:
+                await DEVICE_CONFIGURATION_OPERATIONS.service.recover_once()
         elif strict:
             raise RuntimeError("F3 runtime is not initialized")
         # Task rehydration validates durable authority and deadlines first.
@@ -853,6 +861,8 @@ async def _serve(settings: Settings) -> None:
                 await POWER_OPERATIONS.service.close()
             if HELPER_VALUE_OPERATIONS.service is not None:
                 await HELPER_VALUE_OPERATIONS.service.close()
+            if DEVICE_CONFIGURATION_OPERATIONS.service is not None:
+                await DEVICE_CONFIGURATION_OPERATIONS.service.close()
             await DEPENDENCY_ANALYSIS.shutdown()
             if trace_watch_task is not None:
                 await TRACE_SNAPSHOTS.shutdown()

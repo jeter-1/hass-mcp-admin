@@ -26,6 +26,7 @@ from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
 from .helper_value.service import request_summary as _helper_value_request_summary
+from .device_configuration.service import request_summary as _device_configuration_request_summary
 from .ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
     CORE_ROUTE_DELEGATED,
@@ -806,6 +807,14 @@ class AuthenticatedMcpGateway:
                                 telemetry.ordinary_helper_value_binding = digest(helper_request.model_dump())
                             except ValueError:
                                 pass
+                        if tool_name == "control_device_configuration" and isinstance(raw_parameters, dict):
+                            from .device_configuration.contracts import DeviceConfigurationRequest, digest
+                            try:
+                                device_configuration_request = DeviceConfigurationRequest.parse(raw_parameters)
+                                telemetry.ordinary_device_configuration_binding = digest(
+                                    device_configuration_request.model_dump())
+                            except ValueError:
+                                pass
                         telemetry.tool_name = tool_name
                         telemetry.tool_started = time.perf_counter()
                         METRICS.record_tool_call()
@@ -848,6 +857,20 @@ class AuthenticatedMcpGateway:
                     operation="control_helper", error="InvalidHelperValueRequest",
                     error_code=telemetry.error_code,
                     message="The helper value request is invalid or not allowlisted.",
+                    retryable=False, request_id=request_id,
+                )
+                return await self._respond(
+                    send, 400, failure.to_json(self.settings.response_size_limit).encode(),
+                    request_id, b"application/json",
+                )
+
+            if (tool_name == "control_device_configuration"
+                    and telemetry.ordinary_device_configuration_binding is None):
+                telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                failure = FailureResponse(
+                    operation="control_device_configuration", error="InvalidDeviceConfigurationRequest",
+                    error_code=telemetry.error_code,
+                    message="The device-configuration request is invalid or not admitted.",
                     retryable=False, request_id=request_id,
                 )
                 return await self._respond(
@@ -1240,6 +1263,7 @@ class AuthenticatedMcpGateway:
             telemetry.ordinary_fan_binding = None
             telemetry.ordinary_power_binding = None
             telemetry.ordinary_helper_value_binding = None
+            telemetry.ordinary_device_configuration_binding = None
             if core_authority is not None:
                 # A task that escaped the request lifetime must not inherit a
                 # callback that can authorize another provider interaction.
@@ -1661,6 +1685,8 @@ class AuthenticatedMcpGateway:
                         if tool_name == "control_power"
                         else _helper_value_request_summary(telemetry)
                         if tool_name == "control_helper"
+                        else _device_configuration_request_summary(telemetry)
+                        if tool_name == "control_device_configuration"
                         else
                         {
                             **dict(telemetry.audit_context),

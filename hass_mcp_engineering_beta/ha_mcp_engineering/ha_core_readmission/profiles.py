@@ -1033,6 +1033,46 @@ CORE_SECURITY_METADATA_PROFILES = (
         },
     ),
 )
+# HAMCP-297: one exact configuration-category device entity per call through
+# the direct Home Assistant API. Signed-only: dormant until an owner-signed
+# registry sequence names this profile for Core 2026.11.0.
+from ..device_configuration import contracts as _device_configuration
+
+CORE_DEVICE_CONFIGURATION_PROFILES = (
+    _contract(
+        _device_configuration.CAPABILITY_ID,
+        CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
+        _device_configuration.ADAPTER_ID,
+        ("rest_state_entity_shape", "entity_registry_get_contract",
+         "device_registry_list_contract", "service_domain_mapping"),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "provider_contract": _device_configuration.PROVIDER_CONTRACT,
+            "core_version": _device_configuration.CORE_VERSION,
+            "domains": sorted(_device_configuration.DOMAIN_ACTIONS),
+            "actions": list(_device_configuration.ACTIONS),
+            "target": "one_exact_registered_config_category_device_entity",
+            "target_kinds": [list(item) for item in _device_configuration.ALLOWLIST],
+            "null_translation_key": "never_admitted",
+            "rest_reads": list(_device_configuration.REST_READS),
+            "websocket_reads": list(_device_configuration.READ_COMMANDS),
+            "services": {domain: {service: list(keys) for service, keys in services.items()}
+                         for domain, services in sorted(_device_configuration.SERVICES.items())},
+            "never_sent": list(_device_configuration.NEVER_SENT),
+            "numeric": list(_device_configuration.NUMERIC_RULES),
+            "unit_converters": list(_device_configuration.UNIT_CONVERTERS),
+            "undo": list(_device_configuration.UNDO_RULES),
+            "locks": list(_device_configuration.LOCK_IDENTITY),
+            "dispatch": "at_most_once_composite_recheck_before_intent_return_response_false",
+            "recovery": "read_only_same_core_version_no_redispatch",
+            "plan_identity": "none",
+            "approval": "none_chat_confirmation_only_when_safety_critical",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation")
+        + _device_configuration.PREDISPATCH_CHECKS,
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
@@ -1042,6 +1082,7 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
     + CORE_SECURITY_METADATA_PROFILES
+    + CORE_DEVICE_CONFIGURATION_PROFILES
 )
 
 
@@ -1108,6 +1149,7 @@ __all__ = [
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
     "CORE_SECURITY_METADATA_PROFILES",
+    "CORE_DEVICE_CONFIGURATION_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

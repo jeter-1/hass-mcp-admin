@@ -69,7 +69,7 @@ MAX_STEP_WARNINGS = 10
 SUPERVISOR_INGRESS_PEER = "172.30.32.2"
 _INGRESS_PATH = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]{8,128}$")
 _TYPED_TASK_ID = re.compile(r"^[a-f0-9]{32}$")
-TYPED_HOLD_KINDS = ("fan", "power")
+TYPED_HOLD_KINDS = ("fan", "power", "device_configuration")
 _RECORD_KINDS = ("change_plan", "execution_task")
 _MAX_RECORD_ROWS = 8
 _MAX_REASON_CHARS = 500
@@ -820,8 +820,14 @@ class IngressApprovalApplication:
         if kind == "fan":
             from .fan.service import FAN_OPERATIONS
             return FAN_OPERATIONS.service
-        from .power.service import POWER_OPERATIONS
-        return POWER_OPERATIONS.service
+        if kind == "device_configuration":
+            from .device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
+            return DEVICE_CONFIGURATION_OPERATIONS.service
+        if kind == "power":
+            from .power.service import POWER_OPERATIONS
+            return POWER_OPERATIONS.service
+        # HAMCP-297 L2: never fall through to another kind's service.
+        return None
 
     async def typed_inbox(self, request: Request) -> Response:
         context = await self._require_administrator(request, "typed_inbox")
@@ -845,7 +851,7 @@ class IngressApprovalApplication:
                     )
                 )
         content = (
-            "<p>No typed fan or power manual-review holds.</p>"
+            "<p>No typed fan, power or device-configuration manual-review holds.</p>"
             if not rows else "<ul>" + "".join(rows) + "</ul>"
         )
         return self._response(_page("Typed hold release", content, prefix=prefix))

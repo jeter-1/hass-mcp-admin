@@ -69,7 +69,9 @@ DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
                      # HAMCP-290 dormant Marketplace read (signed after 2.5).
                      "core.marketplace_read",
                      # HAMCP-134 dormant security metadata read (signed after 2.5).
-                     "core.security_metadata_read"})
+                     "core.security_metadata_read",
+                     # HAMCP-297 signed-only device configuration (no signing batch yet).
+                     "core.device_configuration_entity_operation"})
 SHIPPED_SIGNED_COUNT = 22
 AUTHORITY_TRANSITION = [SHIPPED_SIGNED_COUNT, SHIPPED_SIGNED_COUNT + 1]
 REGISTRY_LIST = "config/entity_registry/list"

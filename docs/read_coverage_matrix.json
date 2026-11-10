@@ -34,7 +34,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 462,
+       "line": 464,
        "anchor": "bounded_automation_inventory_read"
       },
       {
@@ -44,7 +44,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 276,
+       "line": 279,
        "anchor": "\"list_automations\""
       }
      ]
@@ -59,7 +59,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 468,
+       "line": 470,
        "anchor": "exact_automation_config_read"
       },
       {
@@ -69,7 +69,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 277,
+       "line": 280,
        "anchor": "\"get_automation_config\""
       },
       {
@@ -99,7 +99,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 207,
+       "line": 210,
        "anchor": "\"ha_config_get_automation\""
       }
      ]
@@ -114,7 +114,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 264,
+       "line": 266,
        "anchor": "loaded_automation_entities-v1"
       },
       {
@@ -124,7 +124,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 247,
+       "line": 250,
        "anchor": "\"capture_automation_baseline\""
       }
      ]
@@ -163,12 +163,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 186,
+       "line": 188,
        "anchor": "\"create_change_plan\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 289,
+       "line": 292,
        "anchor": "\"create_change_plan\""
       },
       {
@@ -195,7 +195,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 187,
+       "line": 189,
        "anchor": "\"create_configuration_plan\""
       },
       {
@@ -233,7 +233,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1029,
+       "line": 1037,
        "anchor": "def f3_requirements"
       },
       {
@@ -259,7 +259,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 203,
+       "line": 205,
        "anchor": "\"create_configuration_delete_plan\""
       },
       {
@@ -286,7 +286,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 175,
+       "line": 177,
        "anchor": "\"upsert_automation\": ProviderCapability"
       },
       {
@@ -307,7 +307,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 182,
+       "line": 184,
        "anchor": "\"delete_automation\": ProviderCapability"
       },
       {
@@ -369,7 +369,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 212,
+       "line": 215,
        "anchor": "\"ha_config_get_script\""
       }
      ]
@@ -444,7 +444,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 419,
+       "line": 420,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -463,7 +463,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 187,
+       "line": 189,
        "anchor": "\"create_configuration_plan\""
       },
       {
@@ -501,7 +501,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1029,
+       "line": 1037,
        "anchor": "def f3_requirements"
       },
       {
@@ -527,7 +527,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 203,
+       "line": 205,
        "anchor": "\"create_configuration_delete_plan\""
       },
       {
@@ -603,7 +603,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 211,
+       "line": 214,
        "anchor": "\"ha_config_get_scene\""
       }
      ]
@@ -646,7 +646,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 210,
+       "line": 212,
        "anchor": "\"create_scene_configuration_plan\""
       },
       {
@@ -679,7 +679,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1029,
+       "line": 1037,
        "anchor": "def f3_requirements"
       },
       {
@@ -760,7 +760,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 210,
+       "line": 212,
        "anchor": "\"create_scene_configuration_plan\""
       }
      ]
@@ -794,7 +794,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 217,
+       "line": 220,
        "anchor": "\"ha_config_list_groups\""
       }
      ]
@@ -829,7 +829,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 320,
+       "line": 322,
        "anchor": "configuration_definitions_read_v1"
       },
       {
@@ -869,7 +869,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 215,
+       "line": 218,
        "anchor": "\"ha_config_get_yaml\""
       }
      ]
@@ -889,7 +889,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -908,7 +908,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 187,
+       "line": 189,
        "anchor": "\"create_configuration_plan\""
       },
       {
@@ -1005,7 +1005,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 420,
+       "line": 422,
        "anchor": "bounded_blueprint_source_read"
       },
       {
@@ -1015,7 +1015,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 368,
+       "line": 371,
        "anchor": "mounted_read_only_source"
       },
       {
@@ -1035,7 +1035,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 486,
+       "line": 488,
        "anchor": "bounded_blueprint_inventory_read"
       },
       {
@@ -1045,7 +1045,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 285,
+       "line": 288,
        "anchor": "\"list_blueprints\""
       },
       {
@@ -1075,7 +1075,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 221,
+       "line": 224,
        "anchor": "\"ha_get_blueprint\""
       }
      ]
@@ -1110,7 +1110,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 426,
+       "line": 428,
        "anchor": "configuration_validation_read"
       },
       {
@@ -1120,7 +1120,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 270,
+       "line": 273,
        "anchor": "\"check_config\""
       }
      ]
@@ -1169,7 +1169,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 320,
+       "line": 322,
        "anchor": "configuration_definitions_read_v1"
       },
       {
@@ -1209,7 +1209,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 215,
+       "line": 218,
        "anchor": "\"ha_config_get_yaml\""
       }
      ]
@@ -1224,12 +1224,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 402,
+       "line": 404,
        "anchor": "bounded_template_render_read"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 267,
+       "line": 270,
        "anchor": "\"render_template\""
       }
      ]
@@ -1259,7 +1259,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 419,
+       "line": 420,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -1369,7 +1369,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 215,
+       "line": 218,
        "anchor": "\"ha_config_get_yaml\""
       }
      ]
@@ -1384,7 +1384,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 320,
+       "line": 322,
        "anchor": "configuration_definitions_read_v1"
       },
       {
@@ -1507,7 +1507,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 215,
+       "line": 218,
        "anchor": "\"ha_config_get_yaml\""
       }
      ]
@@ -1522,7 +1522,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 320,
+       "line": 322,
        "anchor": "configuration_definitions_read_v1"
       },
       {
@@ -1608,7 +1608,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -1668,7 +1668,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 60,
+       "line": 62,
        "anchor": "\"tool\": \"get_entity\""
       }
      ]
@@ -1683,7 +1683,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 46,
+       "line": 48,
        "anchor": "\"tool\": \"search_entities\""
       }
      ]
@@ -1702,7 +1702,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 707,
+       "line": 720,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
@@ -1748,7 +1748,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 315,
+       "line": 328,
        "anchor": "\"tool\": \"create_helper_state_plan\""
       },
       {
@@ -1828,7 +1828,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 432,
+       "line": 445,
        "anchor": "\"tool\": \"create_configuration_delete_plan\""
       }
      ]
@@ -1867,7 +1867,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -1907,7 +1907,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 60,
+       "line": 62,
        "anchor": "\"tool\": \"get_entity\""
       }
      ]
@@ -1922,7 +1922,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 46,
+       "line": 48,
        "anchor": "\"tool\": \"search_entities\""
       }
      ]
@@ -1940,7 +1940,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 566,
+       "line": 579,
        "anchor": "\"tool\": \"create_input_select_option_plan\""
       },
       {
@@ -1978,7 +1978,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 707,
+       "line": 720,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
@@ -2009,7 +2009,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 566,
+       "line": 579,
        "anchor": "\"tool\": \"create_input_select_option_plan\""
       }
      ]
@@ -2072,7 +2072,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 432,
+       "line": 445,
        "anchor": "\"tool\": \"create_configuration_delete_plan\""
       }
      ]
@@ -2101,7 +2101,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -2141,7 +2141,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 60,
+       "line": 62,
        "anchor": "\"tool\": \"get_entity\""
       }
      ]
@@ -2156,7 +2156,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 46,
+       "line": 48,
        "anchor": "\"tool\": \"search_entities\""
       }
      ]
@@ -2175,7 +2175,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 707,
+       "line": 720,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
@@ -2253,7 +2253,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 432,
+       "line": 445,
        "anchor": "\"tool\": \"create_configuration_delete_plan\""
       }
      ]
@@ -2277,7 +2277,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 191,
+       "line": 193,
        "anchor": "\"tool\": \"get_configuration_definitions\""
       },
       {
@@ -2332,7 +2332,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -2372,7 +2372,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 60,
+       "line": 62,
        "anchor": "\"tool\": \"get_entity\""
       }
      ]
@@ -2387,7 +2387,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 46,
+       "line": 48,
        "anchor": "\"tool\": \"search_entities\""
       }
      ]
@@ -2405,7 +2405,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 460,
+       "line": 473,
        "anchor": "\"tool\": \"create_helper_options_plan\""
       },
       {
@@ -2465,7 +2465,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 460,
+       "line": 473,
        "anchor": "\"tool\": \"create_helper_options_plan\""
       }
      ]
@@ -2481,7 +2481,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 707,
+       "line": 720,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
@@ -2531,7 +2531,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 460,
+       "line": 473,
        "anchor": "\"tool\": \"create_helper_options_plan\""
       }
      ]
@@ -2577,7 +2577,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 191,
+       "line": 193,
        "anchor": "\"tool\": \"get_configuration_definitions\""
       },
       {
@@ -2627,7 +2627,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -2687,7 +2687,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 707,
+       "line": 720,
        "anchor": "\"tool\": \"create_configuration_plan\""
       },
       {
@@ -2731,7 +2731,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 218,
+       "line": 221,
        "anchor": "\"ha_config_list_helpers\""
       }
      ]
@@ -2796,7 +2796,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 680,
+       "line": 693,
        "anchor": "\"tool\": \"list_dashboards\""
       },
       {
@@ -2811,7 +2811,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 286,
+       "line": 289,
        "anchor": "\"list_dashboards\""
       }
      ]
@@ -2826,7 +2826,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 693,
+       "line": 706,
        "anchor": "\"tool\": \"get_dashboard_config\""
       },
       {
@@ -2866,7 +2866,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 96,
+       "line": 98,
        "anchor": "\"tool\": \"dashboard_integrity_analysis\""
       },
       {
@@ -2881,7 +2881,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 244,
+       "line": 247,
        "anchor": "\"dashboard_integrity_analysis\""
       }
      ]
@@ -2964,7 +2964,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 726,
+       "line": 739,
        "anchor": "\"tool\": \"create_dashboard_update_plan\""
       },
       {
@@ -3139,7 +3139,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 493,
+       "line": 506,
        "anchor": "\"tool\": \"create_dashboard_metadata_plan\""
       },
       {
@@ -3164,7 +3164,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 321,
+       "line": 324,
        "anchor": "DASHBOARD_METADATA_TOOL: ("
       }
      ]
@@ -3225,7 +3225,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 216,
+       "line": 219,
        "anchor": "\"ha_config_list_dashboard_resources\""
       },
       {
@@ -3276,7 +3276,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1095,
+       "line": 1119,
        "anchor": "\"tool\": \"ha_config_get_yaml\""
       },
       {
@@ -3353,7 +3353,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 45,
+       "line": 47,
        "anchor": "\"tool\": \"list_entity_registry\""
       },
       {
@@ -3363,12 +3363,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 480,
+       "line": 482,
        "anchor": "\"policy_id\": \"bounded_entity_registry_read\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 279,
+       "line": 282,
        "anchor": "\"list_entity_registry\""
       }
      ]
@@ -3426,7 +3426,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 338,
+       "line": 351,
        "anchor": "\"tool\": \"create_entity_metadata_plan\""
       },
       {
@@ -3462,7 +3462,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 366,
+       "line": 379,
        "anchor": "\"tool\": \"create_entity_availability_exposure_plan\""
       },
       {
@@ -3531,7 +3531,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 44,
+       "line": 46,
        "anchor": "\"tool\": \"list_devices\""
       },
       {
@@ -3541,7 +3541,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 474,
+       "line": 476,
        "anchor": "\"policy_id\": \"bounded_device_registry_read\""
       },
       {
@@ -3551,7 +3551,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 278,
+       "line": 281,
        "anchor": "\"list_devices\""
       }
      ]
@@ -3636,7 +3636,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 63,
+       "line": 65,
        "anchor": "\"tool\": \"list_areas\""
       },
       {
@@ -3646,12 +3646,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 492,
+       "line": 494,
        "anchor": "\"policy_id\": \"complete_area_registry_read\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 284,
+       "line": 287,
        "anchor": "\"list_areas\""
       },
       {
@@ -3676,7 +3676,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 238,
+       "line": 241,
        "anchor": "\"ha_list_floors_areas\""
       }
      ]
@@ -3722,7 +3722,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 238,
+       "line": 241,
        "anchor": "\"ha_list_floors_areas\""
       },
       {
@@ -3773,7 +3773,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 210,
+       "line": 213,
        "anchor": "\"ha_config_get_label\""
       },
       {
@@ -3797,7 +3797,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 399,
+       "line": 412,
        "anchor": "\"tool\": \"create_label_plan\""
       },
       {
@@ -3862,7 +3862,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 209,
+       "line": 212,
        "anchor": "\"ha_config_get_category\""
       },
       {
@@ -3930,7 +3930,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 163,
+       "line": 165,
        "anchor": "\"tool\": \"get_integration_inspection\""
       },
       {
@@ -3965,7 +3965,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1081,
+       "line": 1105,
        "anchor": "\"tool\": \"ha_get_integration\""
       },
       {
@@ -3980,7 +3980,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 234,
+       "line": 237,
        "anchor": "\"ha_get_integration\""
       }
      ]
@@ -3995,7 +3995,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 191,
+       "line": 193,
        "anchor": "\"tool\": \"get_configuration_definitions\""
       },
       {
@@ -4010,7 +4010,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 262,
+       "line": 265,
        "anchor": "\"get_configuration_definitions\""
       },
       {
@@ -4030,7 +4030,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 184,
+       "line": 186,
        "anchor": "\"tool\": \"get_unregistered_entities\""
       },
       {
@@ -4040,7 +4040,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 259,
+       "line": 262,
        "anchor": "\"get_unregistered_entities\""
       }
      ]
@@ -4115,7 +4115,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 60,
+       "line": 62,
        "anchor": "\"tool\": \"get_entity\""
       },
       {
@@ -4125,7 +4125,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 450,
+       "line": 452,
        "anchor": "\"policy_id\": \"exact_entity_state_read\""
       }
      ]
@@ -4140,7 +4140,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 46,
+       "line": 48,
        "anchor": "\"tool\": \"search_entities\""
       },
       {
@@ -4150,7 +4150,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 456,
+       "line": 458,
        "anchor": "\"policy_id\": \"bounded_entity_state_search\""
       }
      ]
@@ -4170,7 +4170,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 235,
+       "line": 238,
        "anchor": "\"ha_get_state\""
       }
      ]
@@ -4230,7 +4230,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 33,
+       "line": 35,
        "anchor": "\"tool\": \"render_template\""
       },
       {
@@ -4240,12 +4240,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 377,
+       "line": 379,
        "anchor": "DIRECT_HA_TOOL_EXCEPTIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 267,
+       "line": 270,
        "anchor": "\"render_template\""
       }
      ]
@@ -4265,7 +4265,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 219,
+       "line": 222,
        "anchor": "\"ha_eval_template\""
       }
      ]
@@ -4298,12 +4298,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 223,
+       "line": 225,
        "anchor": "\"tool\": \"control_power\", \"category\": \"ordinary_runtime_action\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1020,
+       "line": 1033,
        "anchor": "explicit_signed_core.typed_power_operation_or_exact_legacy_core_2026.9.2"
       }
      ]
@@ -4319,13 +4319,34 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 232,
+       "line": 234,
        "anchor": "\"tool\": \"control_helper\", \"category\": \"ordinary_runtime_action\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1031,
+       "line": 1044,
        "anchor": "explicit_signed_core.typed_helper_value_operation_only"
+      }
+     ]
+    },
+    {
+     "tool": "control_device_configuration",
+     "operations": [
+      "state: one Matter device-configuration entity (select option, switch on/off, number value) matched to a signed (domain, platform, translation_key) triple"
+     ],
+     "policy": "authenticated_exact_device_configuration_operation",
+     "admission": "Core profile core.device_configuration_entity_operation (signed only, dormant until a signed sequence names it; no legacy Core path)",
+     "detail": "One exact config-category entity change with a composite registry/device/state check before dispatch; exact reported-state readback only, physical feedback not verified.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+       "line": 243,
+       "anchor": "\"tool\": \"control_device_configuration\", \"category\": \"ordinary_runtime_action\""
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+       "line": 1055,
+       "anchor": "explicit_signed_core.device_configuration_entity_operation_only"
       }
      ]
     },
@@ -4340,12 +4361,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 241,
+       "line": 254,
        "anchor": "\"tool\": \"control_fan\", \"category\": \"ordinary_runtime_action\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 1050,
+       "line": 1074,
        "anchor": "explicit_signed_core.typed_fan_operation_or_exact_legacy_core_2026.9.2"
       }
      ]
@@ -4370,7 +4391,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 62,
+       "line": 64,
        "anchor": "\"tool\": \"list_services\""
       },
       {
@@ -4385,7 +4406,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 504,
+       "line": 506,
        "anchor": "\"policy_id\": \"bounded_service_schema_read\""
       }
      ]
@@ -4400,7 +4421,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-       "line": 61,
+       "line": 63,
        "anchor": "\"tool\": \"search_services\""
       },
       {
@@ -4410,7 +4431,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 498,
+       "line": 500,
        "anchor": "\"policy_id\": \"bounded_service_catalog_search\""
       }
      ]
@@ -4430,7 +4451,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 239,
+       "line": 242,
        "anchor": "\"ha_list_services\""
       }
      ]
@@ -4476,7 +4497,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 237,
+       "line": 240,
        "anchor": "\"ha_get_zone\""
       },
       {
@@ -4501,7 +4522,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 236,
+       "line": 239,
        "anchor": "\"ha_get_todo\""
       }
      ]
@@ -4521,7 +4542,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 208,
+       "line": 211,
        "anchor": "\"ha_config_get_calendar_events\""
       }
      ]
@@ -4562,7 +4583,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 166,
+       "line": 168,
        "anchor": "\"get_error_log\""
       },
       {
@@ -4592,7 +4613,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 533,
+       "line": 535,
        "anchor": "def core_log_policy_allows_read"
       },
       {
@@ -4892,7 +4913,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 159,
+       "line": 161,
        "anchor": "\"list_automation_traces\""
       },
       {
@@ -4912,7 +4933,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 160,
+       "line": 162,
        "anchor": "\"get_automation_trace\""
       },
       {
@@ -4932,7 +4953,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 220,
+       "line": 223,
        "anchor": "ha_get_automation_traces"
       },
       {
@@ -5131,7 +5152,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 164,
+       "line": 166,
        "anchor": "\"get_history\""
       },
       {
@@ -5181,7 +5202,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 226,
+       "line": 229,
        "anchor": "ha_get_history"
       }
      ]
@@ -5236,7 +5257,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 165,
+       "line": 167,
        "anchor": "\"get_logbook\""
       },
       {
@@ -5427,7 +5448,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 233,
+       "line": 236,
        "anchor": "ha_get_app"
       }
      ]
@@ -5634,7 +5655,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 232,
+       "line": 235,
        "anchor": "ha_get_system_health"
       }
      ]
@@ -5848,7 +5869,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
-       "line": 162,
+       "line": 164,
        "anchor": "\"check_config\""
       },
       {
@@ -6471,7 +6492,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 560,
+     "line": 565,
      "anchor": "def get_execution_task"
     }
    ]
@@ -6482,7 +6503,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 582,
+     "line": 587,
      "anchor": "def inspect_governance_record"
     }
    ]
@@ -6493,7 +6514,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 615,
+     "line": 620,
      "anchor": "def list_execution_tasks"
     }
    ]
@@ -6636,7 +6657,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 680,
+     "line": 685,
      "anchor": "async def approve_change_plan("
     }
    ]
@@ -6647,7 +6668,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 724,
+     "line": 729,
      "anchor": "async def rollback_change("
     }
    ]
@@ -6658,7 +6679,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/governance.py",
-     "line": 748,
+     "line": 753,
      "anchor": "async def reverify_configuration_task("
     }
    ]
@@ -6669,7 +6690,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-     "line": 66,
+     "line": 68,
      "anchor": "\"tool\": \"call_service\", \"category\": \"execution\", \"status\": \"deprecated\""
     }
    ]
@@ -6680,7 +6701,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-     "line": 77,
+     "line": 79,
      "anchor": "\"tool\": \"reload_domain\", \"category\": \"execution\", \"status\": \"deprecated\""
     }
    ]
@@ -6906,6 +6927,13 @@
    ],
    "note": "Runtime-only and signed-only: needs signed Core registry admission for the observed Core release; no sequence names it yet and no legacy Core path exists."
   },
+  "core.device_configuration_entity_operation": {
+   "probe_profile": false,
+   "used_by": [
+    "entity_states"
+   ],
+   "note": "Runtime-only and signed-only: needs signed Core registry admission for Core 2026.11.0; no sequence names it yet and no legacy Core path exists."
+  },
   "core.integration_inspection_metadata_read": {
    "probe_profile": false,
    "used_by": [
@@ -7064,7 +7092,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "7e9c8a48139814de6113ec9400cdfb22045e80b145e8dd2c0c2bf16692f75dfb",
+   "fingerprint": "1cadb1088f6bedce0cfc1c57212c52b5558085a13e2cd5edcb571ddc19cfc92f",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -8032,6 +8060,7 @@
     "native:check_config": "89bff9b2956afac8",
     "native:compare_automation_baselines": "554b517fd808dce4",
     "native:configuration_integrity_analysis": "4b66ab4c7224239e",
+    "native:control_device_configuration": "008a7bc9bec1741c",
     "native:control_fan": "9dda0784d2d6680f",
     "native:control_helper": "83fe8ba593a3dd23",
     "native:control_power": "3fa31f0bf72612f6",
@@ -8118,7 +8147,7 @@
    }
   },
   "core_profiles": {
-   "fingerprint": "0c001193ca7bd5fa959e8baf6e985366c79ce4c5e841ab0835a557e607d3f2cd",
+   "fingerprint": "723f47ddf419a5e3432d86ec79c0e57f8e653135a4a236bb4931b4d09b6bc953",
    "items": {
     "core.automation_baseline_metadata_read": "f8c04b01aba5e280",
     "core.automation_configuration_read": "3125b3bdc771fcf3",
@@ -8132,6 +8161,7 @@
     "core.dashboard_metadata_operation": "02e0672c5bb4968f",
     "core.delegated_device_effective_area": "d2f837685afdd394",
     "core.dependency_helper_planning": "baf45f88dbd4bf1e",
+    "core.device_configuration_entity_operation": "15d9fea58fe094db",
     "core.direct_device_registry_read": "aeb2d3da8381dfdd",
     "core.direct_entity_state_read": "55a554217407dffa",
     "core.entity_assistant_exposure_operation": "9a65ddfeff6cf4d2",
@@ -8157,7 +8187,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "9187025cbf4c69134e6445a0f37f630d5f204da185918a8e9213aac2d4f999b1",
+   "fingerprint": "1243c3a27289bdb7da0c7e480dcb40f1915cdbf8e285b6245d585260bec17583",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -8202,6 +8232,7 @@
     "provider_matrix:change_impact_analysis": "53d3639a1a62f082",
     "provider_matrix:compare_automation_baselines": "86e8c20eabd39f36",
     "provider_matrix:configuration_integrity_analysis": "402caf050426dd74",
+    "provider_matrix:control_device_configuration": "2072d7fe4b9f2191",
     "provider_matrix:control_fan": "728d4cb3cddba817",
     "provider_matrix:control_helper": "c6208ee827d22704",
     "provider_matrix:control_power": "3ecaf601aab46f09",
@@ -8280,6 +8311,7 @@
     "route:service_discovery": "19ab6e4933ec5d69",
     "route:template_render": "19ab6e4933ec5d69",
     "route:trace_snapshots": "e568704b8e5d25a8",
+    "route:typed_device_configuration_execution": "e568704b8e5d25a8",
     "route:typed_fan_execution": "e568704b8e5d25a8",
     "route:typed_helper_value_execution": "e568704b8e5d25a8",
     "route:typed_power_execution": "e568704b8e5d25a8",
@@ -8298,6 +8330,7 @@
     "tool_capability:check_config": "4ef56a2385f8a3a3",
     "tool_capability:compare_automation_baselines": "77645eeac7c0d467",
     "tool_capability:configuration_integrity_analysis": "662971d34a5e15b3",
+    "tool_capability:control_device_configuration": "d196c7a08addda76",
     "tool_capability:control_fan": "0b8132da942571a7",
     "tool_capability:control_helper": "0e8ccd9ce2b49ac2",
     "tool_capability:control_power": "4807d1abbdbfe32e",

@@ -270,11 +270,11 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         )
         registered = set(gateway._registered_tool_registry.snapshot())
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
-        # 2026-11-08), so 28 matched reads expose 27 (83 + 27 = 110).
+        # 2026-11-08), so 28 matched reads expose 27 (84 + 27 = 111 with HAMCP-297).
         self.assertEqual(registered, EXACT_READS - RETIRED_DELEGATED_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 27)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 111)  # HAMCP-134
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 112)  # HAMCP-134; HAMCP-297: + device configuration
         self.assertNotIn("ha_get_operation_status", registered)
         self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
         self.assertEqual(snapshot["readmission_withheld_tools"], [])

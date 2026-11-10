@@ -166,8 +166,9 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
         # HAMCP-290: core.marketplace_read is a second signed-only dormant profile;
-        # HAMCP-134: core.security_metadata_read is a third.
-        "batch_health": {"compatible_count": 31, "withheld_count": 3},
+        # HAMCP-134: core.security_metadata_read is a third;
+        # HAMCP-297: core.device_configuration_entity_operation is a fourth.
+        "batch_health": {"compatible_count": 31, "withheld_count": 4},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
@@ -439,8 +440,8 @@ class ReceiptTests(unittest.TestCase):
             lambda v: v["fixture_absence"].update(unverified=True),
             lambda v: v.update(provider_identity="supervisor"),
             lambda v: v["batch_health"].update(withheld_count=0),
-            lambda v: v["batch_health"].update(withheld_count=2),
-            lambda v: v["batch_health"].update(withheld_count=4),
+            lambda v: v["batch_health"].update(withheld_count=3),
+            lambda v: v["batch_health"].update(withheld_count=5),
             lambda v: v["batch_health"].update(compatible_count=30),
             lambda v: v.update(predecessor_capabilities_sha256="2" * 64),
             lambda v: v["predecessor_admission"].update(route_acquired=True),

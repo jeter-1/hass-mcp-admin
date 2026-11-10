@@ -817,7 +817,9 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
                                        "core.marketplace_read",
                                        # HAMCP-134 dormant security metadata read (signed after 2.5).
-                                       "core.security_metadata_read"}]
+                                       "core.security_metadata_read",
+                                       # HAMCP-297 signed-only device configuration.
+                                       "core.device_configuration_entity_operation"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
