@@ -310,8 +310,12 @@ def observed_ownership(
     only ``modified_at`` changed), or a refusal reason.  Never "proven".
     """
 
-    if entry is None or body_fingerprint is None:
+    if body_fingerprint is None:
         return {"status": "created_object_already_absent"}
+    if entry is None:
+        # The stored object is still there but no registry entry corresponds
+        # to the captured (domain, platform, unique_id): not an absence.
+        return {"status": "created_object_identity_changed"}
     if body_fingerprint != identity["created_fingerprint"]:
         return {"status": "created_object_changed"}
     try:

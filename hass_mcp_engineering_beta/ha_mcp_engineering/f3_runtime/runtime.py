@@ -2610,7 +2610,9 @@ class F3RuntimeIntegration:
 
         ``None`` for an ordinary HAMCP-155 delete.  Raises when the stored
         plan, its operation or its risk evidence no longer matches the
-        prepared operation, so the preflight refuses with zero writes.
+        prepared operation, or when the marker's provenance does not verify
+        against the stored source plan and creation-identity record, so the
+        preflight refuses with zero writes.
         """
 
         plan = self.service._load(operation.plan_id)
@@ -2628,7 +2630,55 @@ class F3RuntimeIntegration:
             found[0], source
         ):
             raise ValueError("created object binding invalid")
+        if not self._created_object_provenance_verifies(found[0], source):
+            raise ValueError("created object binding unverified")
         return dict(found[0])
+
+    def _created_object_provenance_verifies(
+        self, marker: dict[str, Any], operation: Any
+    ) -> bool:
+        """HAMCP-298 §3.5: the marker names a verified create of this object.
+
+        Local facts only, no Home Assistant I/O: the stored source plan still
+        hashes to the marker's source hash, the named source child is a
+        rollback-eligible create of this exact type and target, and its
+        stored creation identity carries the marker's captured values.  A
+        self-consistent marker that names anything else is not an ownership
+        claim this executor accepts.
+        """
+
+        try:
+            source_plan = self.service.repository.get(marker["source_plan_id"])
+            if (
+                source_plan is None
+                or self.service.plan_hash(source_plan) != marker["source_plan_hash"]
+                or not _created_object_rollback_plan(source_plan)
+            ):
+                return False
+            task = self.service.task_repository.get_for_plan(source_plan.plan_id)
+            candidates, _excluded = self._created_object_candidates(
+                source_plan, task
+            )
+        except Exception:
+            return False
+        for created, child_id, identity, _resulting in candidates:
+            if created.operation_id != marker["source_operation_id"]:
+                continue
+            return bool(
+                identity is not None
+                and created.action == "create"
+                and child_id == marker["source_child_id"]
+                and identity["resource_type"] == _delete_child_type(operation)
+                and identity["resource_target"] == operation.target_id
+                and identity["capture_fingerprint"] == marker["capture_fingerprint"]
+                and identity["created_fingerprint"] == marker["created_fingerprint"]
+                and identity["registry_entry_id"] == marker["registry_entry_id"]
+                and identity["registry_created_at"] == marker["registry_created_at"]
+                and identity["registry_modified_at"]
+                == marker["captured_modified_at"]
+                and identity["entity_id"] == marker["captured_entity_id"]
+            )
+        return False
 
     def _created_delete_admitted(self, resource_type: str) -> bool:
         """Whether a signed registry admits this created type's delete profile."""

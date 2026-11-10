@@ -23,6 +23,7 @@ Every value is synthetic.  Nothing here contacts Home Assistant.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 import re
 import sys
@@ -33,14 +34,17 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+from ha_mcp_engineering.clients import paths  # noqa: E402
 from ha_mcp_engineering.clients.rest import ExpectedHttpStatus  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
     GovernanceError,
     HomeAssistantApiError,
 )
 from ha_mcp_engineering.governance import (  # noqa: E402
     created_object_delete,
     created_object_identity as identity_model,
+    created_object_rollback as rollback_model,
     scene_configuration as scene_contract,
 )
 
@@ -64,6 +68,7 @@ from tests.hamcp155_fixtures import (  # noqa: E402
 
 
 SCENE_PREFIX = "/config/scene/config/"
+API_URL = "http://supervisor/core/api"
 HELPER_DOMAINS = ("input_boolean", "input_number")
 SCENE_PROFILE = created_object_delete.SCENE_PROFILE
 HELPER_PROFILE = created_object_delete.HELPER_PROFILE
@@ -123,6 +128,19 @@ def helper_operation(
         "depends_on": list(depends_on or []),
         "proposed_config": deepcopy(config),
     }
+
+
+def _ws_not_found(kind: str) -> HomeAssistantApiError:
+    """What ``HomeAssistantWebSocketClient.command`` raises for ``not_found``."""
+
+    return HomeAssistantApiError(
+        details={
+            "method": "WEBSOCKET",
+            "endpoint_category": kind,
+            "status": 404,
+            "provider_response_received": True,
+        }
+    )
 
 
 class SyntheticCreatedObjectWebSocket(SyntheticExposureWebSocket):
@@ -202,9 +220,7 @@ class SyntheticCreatedObjectWebSocket(SyntheticExposureWebSocket):
         if verb == "update":
             object_id = message[id_field]
             if object_id not in store:
-                raise HomeAssistantApiError(
-                    details={"code": "not_found", "provider_response_received": True}
-                )
+                raise _ws_not_found(kind)
             store[object_id] = {
                 "id": object_id,
                 **{
@@ -221,9 +237,7 @@ class SyntheticCreatedObjectWebSocket(SyntheticExposureWebSocket):
             if self.before_helper_delete is not None:
                 self.before_helper_delete(domain, object_id)
             if object_id not in store:
-                raise HomeAssistantApiError(
-                    details={"code": "not_found", "provider_response_received": True}
-                )
+                raise _ws_not_found(kind)
             if self.ignore_helper_deletes:
                 return None
             del store[object_id]
@@ -305,9 +319,13 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
 
     # -- Core model -----------------------------------------------------
     async def request(self, method: str, path: Any, **kwargs: Any) -> Any:
-        path = str(path)
-        if not path.startswith(SCENE_PREFIX):
+        if not str(path).startswith(SCENE_PREFIX):
             return await super().request(method, path, **kwargs)
+        # The shipped transport guard (clients/rest.py ``request``): an issued
+        # route, a reviewed method and, for a DELETE, the unclaimed
+        # single-use permit for exactly this config id.
+        paths.request_url(API_URL, paths.require_route(path, method), method)
+        path = str(path)
         require_core_authority(self, method, path)
         self.requests.append((method, path))
         config_id = path.removeprefix(SCENE_PREFIX)
@@ -392,6 +410,10 @@ class CreatedObjectCore(AdmittingDeleteCore):
         return set(requirements) & self.GATED <= self.admitted
 
 
+class SimulatedProcessLoss(BaseException):
+    """The process dies here: nothing after the raise point runs."""
+
+
 def _with_created_at(original: Any) -> Any:
     def build(entity_id: str, **changes: Any) -> dict[str, Any]:
         changes.setdefault("created_at", CREATED_AT)
@@ -427,7 +449,11 @@ class CreatedObjectServiceTestCase(ConfigurationDeleteServiceTestCase):
         async def no_capture_sleep(seconds: float) -> None:
             self.capture_sleeps.append(seconds)
 
-        sleeper = mock.patch.object(identity_model.asyncio, "sleep", no_capture_sleep)
+        # ``capture`` binds its sleep as a keyword default; replace exactly that
+        # default and leave ``asyncio.sleep`` itself alone.
+        sleeper = mock.patch.dict(
+            identity_model.capture.__kwdefaults__, {"sleep": no_capture_sleep}
+        )
         sleeper.start()
         self.addCleanup(sleeper.stop)
         await super().asyncSetUp()
@@ -499,6 +525,72 @@ class CreatedObjectServiceTestCase(ConfigurationDeleteServiceTestCase):
             await self.service.rollback_change(plan_id)
         return raised.exception
 
+    async def rollback_plan(
+        self, created: dict[str, Any], *, approve: bool = True
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The reverse plan for ``created``, approved unless told otherwise."""
+
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_plan_created", rollback)
+        plan = self.service.get_plan(rollback["rollback_plan_id"])
+        if approve:
+            await self.approve(plan)
+        return rollback, plan
+
+    async def plan_approval_only(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """The first external approval step alone (no acknowledgement)."""
+
+        pending = self.service.approve(plan["plan_id"], plan["plan_hash"])
+        _review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        return await self.service.decide_external_approval(
+            plan_id=plan["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=fixtures155.REVIEWER,
+        )
+
+    async def refused_rollback(
+        self, created: dict[str, Any], excluded: dict[str, str]
+    ) -> GovernanceError:
+        """``rollback_change`` refuses, sends nothing, and says why per child."""
+
+        before = len(self.writes())
+        error = await self.refused(created["plan_id"])
+        self.assertEqual(error.code, ErrorCode.ROLLBACK_NOT_AVAILABLE, error.details)
+        self.assertEqual(
+            error.details["reason"], rollback_model.NO_ELIGIBLE_CHILD, error.details
+        )
+        self.assertIs(error.details["provider_dispatch_occurred"], False)
+        self.assertEqual(
+            {
+                item["operation_id"]: item["reason"]
+                for item in error.details["operations_excluded"]
+            },
+            excluded,
+            error.details,
+        )
+        self.assertEqual(self.writes()[before:], [])
+        return error
+
+    async def crash_during(self, plan: dict[str, Any]) -> None:
+        """Apply ``plan`` expecting the armed hook to end the process."""
+
+        with self.assertRaises(SimulatedProcessLoss):
+            await self.apply(plan)
+
+    async def restart_after(self, **delta: float) -> None:
+        """A later process: the worker lease has lapsed, then start-up recovery."""
+
+        self.clock[0] += timedelta(**(delta or {"minutes": 2}))
+        await self.restart_runtime()
+        await self.runtime.recover_once("synthetic_restart")
+
     # -- inspection -----------------------------------------------------
     def identity_values(self, plan_id: str) -> list[dict[str, Any] | None]:
         task = self.service.task_repository.get_for_plan(plan_id)
@@ -513,6 +605,67 @@ class CreatedObjectServiceTestCase(ConfigurationDeleteServiceTestCase):
     def task_id(self, plan_id: str) -> str:
         return self.service.task_repository.get_for_plan(plan_id).task_id
 
+    def task_state(self, plan_id: str) -> str:
+        return self.service.task_repository.get_for_plan(plan_id).state.value
+
+    def children(self, plan_id: str) -> list[tuple[Any, ...]]:
+        """(operation id, state, normalized outcome, dispatch count) per child."""
+
+        task = self.service.task_repository.get_for_plan(plan_id)
+        return [
+            (
+                item["operation_id"],
+                item["state"],
+                item.get("normalized_outcome"),
+                item.get("dispatch_count"),
+            )
+            for item in task.verification_summary["children"]
+        ]
+
+    def codes(self, plan_id: str) -> set[str]:
+        return self.child_codes(self.task_id(plan_id))
+
+    def markers(self, plan_id: str) -> list[dict[str, Any]]:
+        """The created-object rollback marker of every delete child, in order."""
+
+        return [
+            marker
+            for operation in self.operations(plan_id)
+            for marker in rollback_model.markers(operation)
+        ]
+
+    def policy(self, plan_id: str) -> Any:
+        return self.service._load(plan_id).policy_decision
+
+    def remove_helper(self, domain: str, object_id: str) -> None:
+        """A user deleted the helper outside governance."""
+
+        del self.ws.helpers[domain][object_id]
+        key = self.ws._helper_entry_key(domain, object_id)
+        if key is not None:
+            del self.ws.entries[key]
+            self.config_rest.states.discard(key)
+
+    def remove_scene(self, config_id: str = EVENING) -> None:
+        """A user deleted the scene outside governance."""
+
+        del self.config_rest.scenes[config_id]
+        key = self.config_rest.scene_entity(config_id)
+        if key is not None:
+            del self.ws.entries[key]
+            self.config_rest.states.discard(key)
+
+    def service_calls(self) -> list[Any]:
+        """Any service dispatch on either transport (there must be none)."""
+
+        return [
+            item for item in self.config_rest.requests if "/services/" in item[1]
+        ] + [
+            command
+            for command in self.ws.commands
+            if command.get("type") in {"call_service", "execute_script"}
+        ]
+
     def rename_entity(self, entity_id: str, new_entity_id: str | None = None) -> str:
         """A user rename: new name (and optionally entity id), same entry."""
 
@@ -526,6 +679,34 @@ class CreatedObjectServiceTestCase(ConfigurationDeleteServiceTestCase):
             self.config_rest.states.discard(entity_id)
             self.config_rest.states.add(target)
         return target
+
+    def mark(self) -> tuple[int, int]:
+        """A position in both transports' request logs."""
+
+        return len(self.config_rest.requests), len(self.ws.commands)
+
+    def writes_since(self, mark: tuple[int, int]) -> list[Any]:
+        """Provider writes sent after ``mark``: REST first, then WebSocket."""
+
+        return [
+            item
+            for item in self.config_rest.requests[mark[0] :]
+            if item[0] in {"POST", "PUT", "PATCH", "DELETE"}
+            and item != fixtures155.CHECK_CONFIG
+        ] + [
+            command
+            for command in self.ws.commands[mark[1] :]
+            if str(command.get("type")).split("/")[0] in HELPER_DOMAINS
+            and str(command.get("type")).rpartition("/")[2]
+            in {"create", "update", "delete"}
+        ]
+
+    def reads_since(self, mark: tuple[int, int]) -> list[Any]:
+        """Every provider request of any kind sent after ``mark``."""
+
+        return list(self.config_rest.requests[mark[0] :]) + list(
+            self.ws.commands[mark[1] :]
+        )
 
     def writes(self) -> list[Any]:
         """Every provider write sent: REST POST/DELETE and helper mutations."""
@@ -551,6 +732,7 @@ __all__ = [
     "SCENE_PROFILE",
     "SCENE_UPDATE_PROFILE",
     "STRIP",
+    "SimulatedProcessLoss",
     "SyntheticCreatedObjectRest",
     "SyntheticCreatedObjectWebSocket",
     "automation_config",
