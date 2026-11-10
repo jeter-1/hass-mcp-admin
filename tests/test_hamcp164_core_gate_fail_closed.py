@@ -132,6 +132,7 @@ STATIC_CORE_TABLE = {
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
     "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
+    "get_thread_matter_topology": MAPPED,  # HAMCP-231: dormant core.thread_matter_topology_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
@@ -519,6 +520,7 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed admission (its own tests cover it).
                 "get_marketplace_inventory",
+                "get_thread_matter_topology",  # HAMCP-231: likewise
             }:
                 continue
             with self.subTest(tool=name):

@@ -654,6 +654,8 @@ SANITIZER_SITES = {
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
     ("request_context.py", "request_id_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
+    # HAMCP-231: the native get_thread_matter_topology free-text screen.
+    ("thread_matter_topology.py", "_Screen.apply", "sanitize_untrusted_data"): (1, "identifier"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
     ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),

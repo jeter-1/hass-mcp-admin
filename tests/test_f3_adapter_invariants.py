@@ -92,8 +92,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
         # HAMCP-253: +1 read-only inspect_governance_record.
         # HAMCP-229: +1 read-only automation_reliability_batch_analysis.
         # HAMCP-290: +1 read-only get_marketplace_inventory.
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 58)
-        self.assertEqual(len(local_tools), 83)
+        # HAMCP-231: +1 read-only get_thread_matter_topology.
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 59)
+        self.assertEqual(len(local_tools), 84)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

@@ -2,8 +2,9 @@
 
 The side_by_side rollback stage runs ``scripts/exact_image_read_gateway_acceptance.py``
 against the previous published release 2.4.2-beta.6 (tag v2.4.2-beta.6, source
-af5ec837). That release predates HAMCP-290 and HAMCP-229: it registers 81 static
-tools (no ``get_marketplace_inventory`` or ``automation_reliability_batch_analysis``)
+af5ec837). That release predates HAMCP-290, HAMCP-229 and HAMCP-231: it registers 81 static
+tools (no ``get_marketplace_inventory``, ``automation_reliability_batch_analysis``
+or ``get_thread_matter_topology``)
 and still delegates ``ha_get_hacs_info`` (nothing
 retired, ``core_withheld_read_count`` 0). Applying the current source's
 expectation to it failed CI run 42547738402 (``sbs_rollback_85_legacy_useful``).
@@ -67,13 +68,14 @@ runners = _load_script("exact_image_admission_91_runners")
 ROLLBACK_VERSION = "2.4.2-beta.6"
 MARKETPLACE = "get_marketplace_inventory"
 RELIABILITY_BATCH = "automation_reliability_batch_analysis"
+THREAD_MATTER = "get_thread_matter_topology"  # HAMCP-231
 CURRENT_STATIC = frozenset(
     tool.name for tool in registered_tools(get_registered_server()).values()
 )
 # Independently restated here (not read from the script): beta.6 is the current
-# static set without the HAMCP-290 marketplace tool and the HAMCP-229
-# reliability batch tool.
-BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH}
+# static set without the HAMCP-290 marketplace tool, the HAMCP-229
+# reliability batch tool and the HAMCP-231 thread/matter topology tool.
+BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH, THREAD_MATTER}
 RELEASE_850 = load_reviewed_upstream_release_registry().by_version["8.5.0"]
 POLICY_850 = RELEASE_850.policy
 READS_850 = frozenset(e.exposed_name for e in POLICY_850.tools if e.is_read_route)
@@ -194,7 +196,8 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
         self.assertEqual(RETIRED_850, {"ha_get_hacs_info"})
         self.assertIn(MARKETPLACE, CURRENT_STATIC)
         self.assertIn(RELIABILITY_BATCH, CURRENT_STATIC)
-        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 2)
+        self.assertIn(THREAD_MATTER, CURRENT_STATIC)
+        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 3)
         self.assertNotEqual(SERVER_VERSION, ROLLBACK_VERSION)
 
     def test_beta6_rollback_image_catalog_is_accepted(self):

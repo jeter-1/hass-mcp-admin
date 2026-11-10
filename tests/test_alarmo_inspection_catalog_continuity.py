@@ -94,7 +94,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "control_helper",  # + HAMCP-311
                                                           "automation_reliability_batch_analysis",  # + HAMCP-229
                                                           "inspect_governance_record",
-                                                          "get_marketplace_inventory"})  # + HAMCP-290
+                                                          "get_marketplace_inventory",  # + HAMCP-290
+                                                          "get_thread_matter_topology"})  # + HAMCP-231
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         actual["get_server_health"] = _without_hamcp242_health_disclosure(self, actual["get_server_health"])

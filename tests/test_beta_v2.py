@@ -774,6 +774,7 @@ class ToolParityTests(unittest.TestCase):
                 "list_script_traces",
                 "get_script_trace",
                 "get_marketplace_inventory",  # HAMCP-290
+                "get_thread_matter_topology",  # HAMCP-231
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",

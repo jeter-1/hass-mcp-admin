@@ -486,6 +486,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             if tool.name
             not in {
                 "get_marketplace_inventory",  # HAMCP-290: additive native read
+                "get_thread_matter_topology",  # HAMCP-231: additive native read
                 "get_integration_inspection",
                 "get_backup_inventory",
                 "get_recorder_settings",

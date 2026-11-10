@@ -707,6 +707,7 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed-registry admission (its own tests cover it).
                 "get_marketplace_inventory",
+                "get_thread_matter_topology",  # HAMCP-231: likewise
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):
