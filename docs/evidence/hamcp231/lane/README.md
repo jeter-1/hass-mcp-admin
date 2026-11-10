@@ -8,10 +8,11 @@ separate owner action.
 
 **Scope of this evidence.** A1 (`thread/list_datasets`) is proven end to end
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
-proven only for its fail-closed case: with Matter not set up, Core answers
-`unknown_command` and the read reports `matter_not_loaded`. The A2 success lane
-needs the HAMCP-297 Matter Server stub and has not run. **A2 signing evidence is
-incomplete until the A2 success lane runs.**
+proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
+and, against the HAMCP-297 Matter Server stub, for success and two upstream
+faults. **A2 signing evidence is complete** (run 2 below, PASS). The A2 lane
+depends on HAMCP-297 draft PR #428: its committed stub path resolves only after
+#428 merges.
 
 ## Exact authority and scope
 
@@ -197,48 +198,101 @@ It is disposable evidence, not production authority.
   - seven invalid argument sets were refused.
 - `fallback_count` was 0, and cleanup read back as clean.
 
-Limitation: this run does not prove A2 success. The Matter Server stub
-(HAMCP-297) is required for that, and **A2 signing evidence is incomplete until
-the A2 success lane runs.**
+This run covers A2 only for its fail-closed case. The A2 success lane below
+covers success.
 
-## A2 success lane (harness built; run pending HAMCP-297)
+## A2 success lane
 
 `scripts/core_thread_matter_topology_a2_local.py` and
 `scripts/thread_matter_topology_a2_acceptance.py` are the A2 success lane. It
-uses loopback port **18125** and its own container and network names. It runs
-exact Core 2026.11.0 with Matter configured through the config flow to the
-HAMCP-297 Matter Server stub at `ws://matter-stub:5580/ws`. The stub runs in the
-same Core image, read-only, with no published port.
+runs exact Core 2026.11.0
+(`sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e`)
+with Matter configured through the config flow to the HAMCP-297 Matter Server
+stub at `ws://matter-stub:5580/ws`. The stub runs in the same Core image, as
+`python3 -I`, from a read-only mount.
 
-The stub is consumed by committed path and SHA-256 only. This lane never copies
-or edits it. `a2-stub-expectations.json` records the stub path and hash, the
-node-fixture path and hash, and the canary literals. Its field names come from
-matter-python-client 1.5.5's exact-version source, as HAMCP-297 reports them.
-Its status is `pending_hamcp297`, so the lane refuses `a2_stub_pending` before
-any input, image or container is touched.
+**Network.** The lane uses its own Docker bridge created with `--internal`,
+and the lane refuses unless Docker reports `Internal: true`. No port is
+published. The host reaches Core by its address on that bridge. Before
+dispatch, an egress probe from the Core container must read `blocked`. Memory
+is explicit: Core 2g, stub 256m, fixture 128m. Cleanup must read back as
+clean: no containers, no network, no configuration.
 
-Once ready, the lane checks:
+**Stub pinning.** HAMCP-297 owns the stub, so this lane never copies or edits
+it. `a2-stub-expectations.json` pins its owner (HAMCP-297, draft PR #428), its
+commit `aa25c56498194c493b468db1faa842018e04acd2`, its committed directory
+`tests/fixtures/hamcp297_matter_server_stub/` and the SHA-256 of all seven
+files. `--stub-dir` accepts only two locations: that committed directory, or a
+copy under `.artifacts/` extracted from the pinned commit with `git archive`.
+The lane refuses a missing file, an extra file, a hash mismatch or a symlink.
+A test checks that no file in `docs/`, `scripts/` or `tests/` has a pinned stub
+hash.
 
-- with the extended authority (32 predecessor references plus the compiled
-  profile), the default read and `sections: ["topology"]` each read the
-  topology once and return the same projection. Predecessor refusal is
-  already proven by the A1 lane;
-- the stub's command record shows that every `get_network_topology` carried
-  exactly `{"refresh": false}`. The recorded refresh must be the literal
-  `false`; `true`, `0`, `null`, a missing key or an extra argument fails;
-- after the mark, Engineering sends only `get_network_topology`, never a
-  commissioning, removal, ping or interview command;
-- the projection: status `ok`, not truncated, totals equal to the raw reply,
-  unique `g<k>` references, every edge resolved, at least one ghost edge
-  dropped and counted, and the required kinds present;
-- each Matter node's `ha_device_id` equals the device-registry id derived from
-  `deviceid_<fabric>-<node>-MatterNodeDevice`. Non-HA kinds are
-  `not_an_ha_device`, and the Wi-Fi AP name is withheld;
-- `rloc16` and the network type match the raw reply;
-- no canary leaks (extended address, BSSID, SSID, host name, key), and
-  `fallback_count` is 0.
+The lane checks:
+
+- the default read and `sections: ["topology"]` each read the topology once
+  and return the same projection;
+- every `get_network_topology` the stub recorded carries exactly
+  `{"refresh": false}`, and the stub's own state agrees;
+- after the mark, the only commands are `get_network_topology` plus Core's own
+  background traffic;
+- the projection:
+  - status `ok`, not truncated, with totals equal to the raw reply;
+  - unique `g<k>` references, and every kept edge resolved;
+  - the ghost edge to `thread_FFFF00000000DEAD` dropped and counted;
+  - Matter nodes resolved to their HA device ids, and non-HA kinds marked
+    `not_an_ha_device`;
+  - the Wi-Fi station's and AP's network names withheld;
+  - the border router's untrusted `vendor_name` withheld;
+- the kept network-level values (section 5.1.2): `network_name`, `rloc16` and
+  `ext_pan_id` are kept, never made opaque. Hex values come out in the
+  module's normalized form: lowercase, separators removed. Each is also
+  checked against Core's raw reply;
+- no canary leaks, and `fallback_count` is 0. 16 canaries are checked: 14
+  stub literals (the network-key-shaped string, the extended addresses and
+  graph ids, the BSSID in both forms, the SSID, the host name and the fault
+  message) plus the lane's HA token and access secret;
+- fault `topology_error` (Matter Server error_code 7): one dispatch, section
+  `upstream_command_failed`, read `partial`;
+- fault `server_info_schema_version: 12` with a Matter reload: Core refuses
+  before calling the server, giving section `matter_server_schema_below_13`.
+
+### Run 2: PASS (2026-11-10 02:14 CST)
+
+`thread_matter_topology_a2.json` records this run:
+
+- source commit `f1f824c91b1a93a556ebbffe57d821e0ae457a5b`;
+- profile `core_thread_matter_topology_read_v1`, fingerprint
+  `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c`;
+- stub at `extracted_pinned_commit`, with 7 files verified;
+- egress probe `blocked`.
+
+Results:
+
+- 6 nodes, 4 kept connections, 1 dropped (the ghost), and 3 Matter nodes
+  resolved (61, 91, 199);
+- the stub recorded 4 `get_network_topology` commands, all with
+  `refresh: false`. One was the harness's raw baseline read and three were
+  Engineering's. Under the schema-12 fault, Core forwarded nothing;
+- `topology_error` gave `upstream_command_failed`, and schema 12 gave
+  `matter_server_schema_below_13`;
+- 0 canary leaks, `fallback_count` 0, and cleanup clean.
+
+Run 1 (2026-11-10 02:11 CST) was withheld. The acceptance compared
+`ext_pan_id` with the stub's upper-case form, but the module emits it
+lowercased by design. The fix compares in normalized form. Run 1 also led to a
+module fix: the stub's diagnostic mesh ids (`thread_…`, `meshrloc_…`) are now
+screened as graph ids on nodes and edge endpoints.
+
+**Residuals.**
+
+- The topology is static and synthetic: the stub serves one fixed graph, not
+  a real Thread or Wi-Fi mesh.
+- The stub applies writes to its own cache. The only writes it saw were Core's
+  own `set_default_fabric_label` and `start_listening` during Matter setup and
+  reload. Engineering sent none.
+- The committed stub path depends on HAMCP-297 PR #428 merging.
 
 Offline tests are in `tests/test_core_thread_matter_topology_a2_local.py`.
-They use canary values generated at test time, never the stub's literals.
-
-**A2 signing evidence is incomplete until the A2 success lane runs.**
+They use canary values generated at test time, never the stub's literals, and
+include an upper-case `ext_pan_id`.
