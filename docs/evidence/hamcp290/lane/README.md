@@ -138,3 +138,31 @@ from the run directory. It records the source commit, journal hash, profile
 reference and fingerprint, source-hash digests, admission, container memory,
 running image identity and cleanup. It is disposable evidence, not production
 authority.
+
+### Run 1: PASS (2026-11-09 22:35 CST)
+
+- The lane ran under the host heavy-job gate as unit `hamcp290-lane` (kind `lane`)
+  at source commit `83a14e003ed7ccad847a85676c6bdd9259fabcac`.
+- The Core container ran with `--memory 2g` and the fixture writer with `128m`.
+- The receipt's SHA-256 is
+  `2cf03764f3f51c5de8bac048a5493b0e7fb680b91f8f7a436a4bdce624723e0c`. It binds
+  `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`.
+- Authority went from 32 to 33 references. The predecessor made zero reads and
+  was refused with `authority_unavailable`.
+- Marketplace reached stage `running` with 6,417 store records, and every record
+  passed whole-envelope validation.
+- The routed read returned `core_marketplace` with `complete` completeness, one
+  command and no fallback. `installed_total` was 0, which matches the raw list.
+- Refusals: anonymous gave `authority_unavailable`, wrong Core version gave
+  `identity_mismatch`, four invalid argument sets were refused, and the disabled
+  entry gave `marketplace_not_loaded`.
+- No HACS command was sent, and `fallback_count` was 0. Cleanup read back as
+  clean.
+
+Limitation: the service projects installed repositories only, and a fresh
+disposable Core has none. This run therefore does not project a real installed
+record. The 10-field projection of installed records is proven offline in
+`tests/test_hamcp290_marketplace_inventory.py`. Installing a repository into
+the disposable Core would add a write and a download to the lane, and that is
+not done here.
