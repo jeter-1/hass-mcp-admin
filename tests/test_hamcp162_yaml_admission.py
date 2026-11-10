@@ -696,7 +696,8 @@ class AdmissionTests(Harness):
         self.assertEqual(y.withheld_reason(None, signed_selection=False), "optional_binding_absent")
         for release in self.compiled.releases:
             # HAMCP-319: 9.1.0 is admitted; tests/test_hamcp319_yaml.py covers it.
-            if release.version in VERSIONS or release.version == "9.1.0":
+            # HAMCP-351: 9.1.2 is admitted at 9.1.0 parity.
+            if release.version in VERSIONS or release.version in {"9.1.0", "9.1.2"}:
                 continue
             with self.subTest(version=release.version):
                 self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS[release.version], "held")
@@ -786,7 +787,7 @@ class AdmissionTests(Harness):
     def test_every_registry_version_has_an_explicit_disposition(self):
         self.assertEqual(set(y.OPTIONAL_TOOL_DISPOSITIONS), {r.version for r in self.compiled.releases})
         self.assertEqual({v for v, d in y.OPTIONAL_TOOL_DISPOSITIONS.items() if d == "admitted"},
-                         set(VERSIONS) | {"9.1.0"})
+                         set(VERSIONS) | {"9.1.0", "9.1.2"})
         self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS["8.6.0"], "held")
 
     def test_captures_are_pinned_with_provenance(self):
