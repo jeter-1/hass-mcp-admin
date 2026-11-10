@@ -7,7 +7,9 @@ reshaped where item 25 required it (§14). Q8 (empty first-build safety
 trigger) and Q9 (compiled `(domain, platform, translation_key)` allowlist) are
 decided, and the first build is narrowed to three source-confirmed Matter
 target kinds (B14–B17, §4.1). Q10 (breadth of the power-on triple) is
-decided (B17); nothing is pending Josh (§13.2).** This
+decided (B17); nothing is pending Josh (§13.2). The Cursor full review of
+2026-11-09 at `84f0c5be` (Ready after corrections) is corrected in this
+revision: F1–F3, L1 and L2, with no decision reopened (§16).** This
 document changes no runtime code, schema, tool registration, policy, workflow,
 signed registry, release declaration or version. It is the one new file in its
 pull request.
@@ -198,17 +200,17 @@ changes. The source is read-only here (protected path).
 | "Ordinary control, like a switch: no plan or panel approval" | `E/tools/helper.py:21@1c4c32b3` | Same (B8) |
 | `operation_id` `^[0-9]{10}-[a-f0-9]{32}$`; five-minute freshness; `task_id` derived from it | `E/tools/helper.py:15@1c4c32b3`; `E/helper_value/contracts.py:151-152`, `:172-173@1c4c32b3` | Same |
 | Same id with changed arguments refuses (`*_operation_id_rebound`); stale id refuses (`*_operation_id_expired`); receipt capacity refuses (`*_receipt_capacity_exhausted`); a repeated call only reconciles | `E/fan/service.py:171-203`, `:275-312` | Same; replaces plan hash, approval and expiry (§5.2) |
-| Durable receipt `<governance_path>/<namespace>/<task_id>.json` (≤16384 bytes, ≤4096 records), atomic temp-file + fsync + `os.replace` + directory fsync, under the `.declarations.lock` flock; signed model `<ns>-core-bound-v2` with keys `model`, `request`, `baseline`, `prepared_hash`, `provider_contract`, `core_binding` | `E/fan/service.py:31`, `:120-169` | Same writer, new namespace `ordinary-device-configuration-v1` (§5.13) |
-| Preparation before declaration, then a specialization hook (`before_declaration`) whose refusal leaves no task and proves no dispatch | `E/fan/service.py:253-258`, `:275-312`; `E/fan/adapter.py:70-83` | The confirmation gate (§5.6) and the undo claim (§5.11) use this hook |
+| Durable receipt `<governance_path>/<namespace>/<task_id>.json` (≤16384 bytes, ≤4096 records), atomic temp-file + fsync + `os.replace` + directory fsync, under the `.declarations.lock` flock; signed model `<ns>-core-bound-v2` with keys `model`, `request`, `baseline`, `prepared_hash`, `provider_contract`, `core_binding` | `E/fan/service.py:31`, `:120-169` | Same receipt bytes and checks, new namespace `ordinary-device-configuration-v1`; `save` is overridden to write the undo claim in the same single transaction (§5.11.2, §5.13) |
+| Preparation before declaration, then a specialization hook (`before_declaration`) whose refusal leaves no task and proves no dispatch | `E/fan/service.py:253-258`, `:275-312`; `E/fan/adapter.py:70-83` | The confirmation gate (§5.6) uses this hook. The undo claim does **not**: the hook runs outside the `.declarations.lock` flock, so the claim is written in the `save` override instead (§5.11.2, review F3) |
 | Shared lock store on the un-namespaced root; exclusive `entity:<entity_id>` | `E/fan/service.py:105-118`; `E/fan/adapter.py:85-93` | Same store and same exclusive key; different shared keys (§5.7) |
 | Locked preflight re-prepares and compares the fingerprint (`*_state_changed` → `PREFLIGHT_REJECTED`); an already-reached state is `SUCCEEDED_VERIFIED` `desired_state_already_reached` with no dispatch | `E/fan/adapter.py:95-106` | Same; the fingerprint is the composite observation of §5.7 |
-| Dispatch `once()`: re-read and compare with the prepared fingerprint, then the executor's `before_dispatch`; callback failure → `FAILED_PRE_DISPATCH` (not sent); provider `call_not_sent` → `DISPATCH_FAILED_CONFIRMED`; any other post-send exception → `DISPATCH_INDETERMINATE`; success → `OBSERVING` | `E/fan/adapter.py:108-158` | Same (§5.8) |
+| Dispatch `once()`: re-read and compare with the prepared fingerprint, then the executor's `before_dispatch`; callback failure → `FAILED_PRE_DISPATCH` (not sent); provider `call_not_sent` → `DISPATCH_FAILED_CONFIRMED`; any other post-send exception → `DISPATCH_INDETERMINATE`; success → `OBSERVING` | `E/fan/adapter.py:108-158` | Same outcome mapping; `dispatch` is overridden so the `once()` re-read is the full §5.7 composite (state, registry entry, device), not the shipped state-only digest at `:115-119` (§5.7, §5.8, review F2) |
 | Executor `before_dispatch`: revalidates the lock handle (lease and generation) and commits durable dispatch intent before the send; lease renewer | `E/f3/executor.py:619-665` (`validate_handle` at `:638`, `commit_dispatch_intent` at `:660`), `:697-702` | Same: this is the D1 lease/fencing check before send |
 | Executor timing `LockTiming(30, 10, 0)`, `ExecutorTiming(180, 120, 6, 6)`, `final_read_at_deadline=True`; inline polls `(1, 1, 2, 2, 2, 2)` within 10 s | `E/fan/service.py:34-35`, `:77-82`, `:205-211` | Same |
 | Observe / verify / recover: readback fingerprint is the digest of the observation; recover is read-only observe | `E/fan/adapter.py:160-179` | Same; observation is the composite projection (§5.9) |
 | Receipt facts: `redispatch_prohibited: true`, `physical_feedback_verified: false`, consequence coverage `incomplete`, retained locks, dispatch phase | `E/fan/service.py:334-371` | Same |
 | Selective `entity:` hold on unresolved dispatch; reconciliation to a terminal hold | `E/fan/locks.py:14-65` | Same (§5.12) |
-| HAMCP-192 typed hold release: read-only review, then an owner release recorded in an additive `hold-releases/<task>.json` sidecar (`typed-hold-release-v1`, ≤4096 bytes) with audit and dispatch `none`; Ingress page kinds `TYPED_HOLD_KINDS = ("fan", "power")` | `E/fan/service.py:40`, `:504-700`, `:766-806`; `E/approval_web.py:72`, `:805-840` | Same release path; kind `device_configuration` added (§5.12). Observed: `helper` is not in `TYPED_HOLD_KINDS` at `1c4c32b3` |
+| HAMCP-192 typed hold release: read-only review, then an owner release recorded in an additive `hold-releases/<task>.json` sidecar (`typed-hold-release-v1`, ≤4096 bytes) with audit and dispatch `none`; Ingress page kinds `TYPED_HOLD_KINDS = ("fan", "power")` | `E/fan/service.py:40`, `:504-700`, `:766-806`; `E/approval_web.py:72`, `:805-840` | Same release path; kind `device_configuration` added to `TYPED_HOLD_KINDS` and given its own branch in `_typed_service` (`E/approval_web.py:814-824`), which otherwise resolves every non-fan kind to the power service (§5.12, review L2). Observed: `helper` is not in `TYPED_HOLD_KINDS` at `1c4c32b3` |
 | Signed-only Core authority (no legacy compiled fallback); preparation refuses when no core binding exists | `E/helper_value/service.py:41-60@1c4c32b3`; `E/helper_value/adapter.py:19-39@1c4c32b3`; `E/fan/authority.py:6-45` | Same (§5.3) |
 | Chat confirmation: `acknowledge_safety_critical`, `CONFIRMATION = "model_conveyed_chat_confirmation"`, `confirmation_required` payload with `dispatch: no_dispatch`, `task_created: false`, no `task_id`; gates `acknowledged` / `acknowledged_evidence_unavailable` / `not_safety_critical`; audit `safety_gate`, `safety_confirmation`, `external_approval: false` | `E/helper_value/safety.py:27-56`, `:158-223@1c4c32b3`; `E/helper_value/service.py:68-123@1c4c32b3`, `:182-211@1c4c32b3`; `E/tools/helper.py:42-43`, `:55-59@1c4c32b3` | Mechanism and argument reused verbatim; the first-build trigger is empty (B14, §5.6) |
 | Status vocabulary `succeeded_verified`, `no_change`, `changed_unverified`, `verification_failed`, `confirmation_required`, `refused`, `provider_unavailable`, `in_progress` | `E/helper_value/service.py:133-147@1c4c32b3` | Same |
@@ -663,10 +665,11 @@ before its first signature.
    options are recorded in the observation fingerprint. Residual: an
    integration that supplies a translated display unit instead of a native
    unit (`core:components/number/entity.py:342-356`) is not distinguishable
-   from the registry or state reads. The lane fixture (§9.2) must include a
-   converter-class number with a translated unit; if 2026.11.0 does not
-   behave as identity for it, the build must refuse converter-class numbers
-   it cannot prove before the profile is frozen.
+   from the registry or state reads. No admitted first-build kind is converter-class (the Matter
+   `sensitivity_level` number has no device class). The §9.2 refusal fixture
+   includes a converter-class number with a translated unit, which must be
+   refused with zero sends; a later kind that is converter-class needs its
+   own exact-version lane proof before it is admitted.
 3. **No ambiguous unit.** A `number` that reports `assumed_state: true` is
    allowed only with the disclosure of §5.6; it is not refused.
 4. **Range and step.** With `v = Decimal(value)`: `min <= v <= max`, else
@@ -815,11 +818,50 @@ sha256 of its canonical JSON. Because readback uses the same projection, the
 verified readback fingerprint **is** the post-change observation fingerprint
 that undo requires (§5.11).
 
-**Stale-state chain (shipped, §2.5).** Preparation fingerprint → locked
-preflight re-prepares and compares (`*_state_changed` refuses, no dispatch;
-`E/fan/adapter.py:95-106`) → `once()` re-reads and compares immediately before
-the executor's `before_dispatch` (`E/fan/adapter.py:108-158`). Any difference
-refuses with no send.
+**Stale-state chain (shipped pattern, §2.5; composite at every step).**
+Preparation fingerprint → locked preflight re-prepares and compares
+(`*_state_changed` refuses, no dispatch; `E/fan/adapter.py:95-106`) → `once()`
+re-reads and compares immediately before the executor's `before_dispatch`.
+Any difference refuses with no send.
+
+**The final pre-send check is the full composite, not the state digest
+(review F2).** The shipped `FanAdapter.dispatch` `once()` re-reads REST state
+only and compares `digest(state)` with `prepared.current_state_fingerprint`
+(`E/fan/adapter.py:111-125`, read and compare at `:115-119`). Inherited unchanged, that check would either
+always refuse (a state digest never equals the composite fingerprint) or, if
+the fingerprint were narrowed to match it, miss a registry or device identity
+replacement that leaves state unchanged in the window between the locked
+preflight and the send. So `DeviceConfigurationAdapter` **overrides
+`dispatch`**. Its `once()`:
+
+1. raises `device_configuration_duplicate_dispatch` if it already ran (the
+   shipped guard, `E/fan/adapter.py:113-114`);
+2. reads the full §5.7 projection through the same reader as preparation and
+   the preflight: REST state, `config/entity_registry/get` for the entity_id,
+   and the `config/device_registry/list` entry for the registry `device_id`;
+3. recomputes the composite fingerprint and compares it with
+   `prepared.current_state_fingerprint`. Every field of the projection is
+   compared, including the registry `id`, `created_at`, `unique_id`,
+   `device_id`, `platform` and `translation_key` and the device `id`,
+   `created_at` and `identifiers`. A difference, or a registry or device read
+   that fails or returns no entry, raises the refusal
+   `device_configuration_state_changed` before `before_dispatch`, so nothing
+   is sent and no intent is committed;
+4. re-checks the compiled allowlist against the re-read `(domain, platform,
+   translation_key)` and `entity_category == "config"` (a pure function of
+   the re-read, no new I/O);
+5. only then runs the executor's `before_dispatch` and marks the call as
+   dispatched.
+
+The outcome mapping after `once()` is the shipped one, unchanged
+(`E/fan/adapter.py:126-158`): a `before_dispatch` failure is
+`FAILED_PRE_DISPATCH` (`:133-143`); not dispatched without a callback failure
+is the refusal (`:144`), which is how a composite mismatch ends; a provider `call_not_sent` is `DISPATCH_FAILED_CONFIRMED`; any other
+exception is `DISPATCH_INDETERMINATE`. The undo path (§5.11) uses the same
+override, so an undo's last pre-send check also covers the full recorded
+identity. The three reads add three round trips inside the held lock set and
+before the send; they add no write and no new endpoint (all three are already
+used by preparation, §5.5).
 
 **Lock set (forward change and undo alike).** `DeviceConfigurationAdapter`
 overrides `lock_requests`:
@@ -872,9 +914,11 @@ There is no ha-mcp provider lock (the provider is the direct HA API) and no
 
 ### 5.8 At-most-once dispatch
 
-The shipped `FanAdapter.dispatch` contract (`E/fan/adapter.py:108-158`):
+The shipped `FanAdapter.dispatch` contract (`E/fan/adapter.py:108-158`), with
+the `once()` re-read replaced by the composite (§5.7, review F2):
 
-1. `once()` re-reads and compares, then runs the executor's
+1. `once()` re-reads the full composite observation (state, registry entry
+   and device) and compares its fingerprint, then runs the executor's
    `before_dispatch` (lock currentness, durable intent). If either fails, the
    command is never sent (`FAILED_PRE_DISPATCH`).
 2. Send exactly one WebSocket `call_service`. There is no retry, ever
@@ -990,17 +1034,71 @@ operation_id=<new>)`:
   `on`/`off`; `select` prior option still in the current `options`; `number`
   §5.5.1 rule 8. Otherwise `device_configuration_baseline_not_restorable`,
   reporting the prior value for manual handling.
-- **Consumed once.** In the same declaration transaction as the undo receipt
-  (the `.declarations.lock` flock, `E/fan/service.py:120-127`), the service
-  writes `undo-claims/<original_task_id>.json`, model
+- **Consumed once: the claim is written inside the receipt write (review
+  F3).** The claim record is `undo-claims/<original_task_id>.json`, model
   `device-configuration-undo-claim-v1` (≤4096 bytes): `original_task_id`,
   `original_prepared_hash`, `undo_task_id`, `undo_prepared_hash`,
-  `claimed_at`. The claim is written before the undo receipt. A later undo for
-  the same original refuses `device_configuration_undo_already_claimed`,
-  except that a claim may be superseded when its undo task has no receipt, or
-  its receipt proves zero dispatch (refused before intent, `FAILED_PRE_DISPATCH`
-  or `DISPATCH_FAILED_CONFIRMED`). A dispatched or unknown undo consumes the
-  claim for good.
+  `claimed_at`. It is **not** written in `before_declaration`. That hook runs
+  after preparation and before `save`, outside any lock
+  (`E/fan/service.py:253-258`, called at `:292`, `save` at `:295`), so a claim
+  written there could race a second undo and could not be decided together
+  with the receipt.
+
+  Instead `DeviceConfigurationService` overrides `save`
+  (`E/fan/service.py:171-203`). The override enters `self.transaction()` (the
+  exclusive `.declarations.lock` flock, `E/fan/service.py:120-127`) **exactly
+  once** and does all of the following inside that one block, in this order:
+
+  1. the shipped checks, unchanged in order and diagnostics: load the prior
+     receipt (`:174-178`; a matching retry returns it with no claim work, a
+     different request refuses rebound), freshness (`:179-180`) and capacity
+     (`:181-182`, counted over `*.json` in the namespace root, which the
+     `undo-claims/` subdirectory does not affect);
+  2. for an `undo` request only: read `undo-claims/<original_task_id>.json`.
+     If it exists and names a different undo task, refuse
+     `device_configuration_undo_already_claimed` unless the supersede rule
+     below holds. If it names this undo task and prepared hash (a crash
+     retry), keep it;
+  3. write the claim atomically: mkstemp in `undo-claims/`, write, flush,
+     fsync, `os.replace`, fsync of `undo-claims/` (the shipped receipt write
+     sequence, `:189-202`);
+  4. write the receipt bytes exactly as the shipped `save` builds them
+     (`:183-202`), then return.
+
+  It does not call `super().save()` and does not call `self.transaction()`
+  again. `fcntl.flock` locks belong to the open file description, so a second
+  `open()` of `.declarations.lock` inside the block would get a new
+  description and block on the first one in the same process: a nested
+  `transaction()` deadlocks. A build may move the shipped body of steps 1
+  and 4 into a shared helper that expects the lock to be held already, and
+  have `FanService.save` call it under its own single `transaction()`, but
+  only if the fan and power receipt bytes and refusal order stay identical
+  (P9, §5.13).
+
+  **Supersede rule, decided under the same lock.** A claim naming another
+  undo task may be replaced only when that task has no receipt (possible only
+  after a crash or an exception between steps 3 and 4), or its receipt's
+  execution record is terminal with zero dispatch proven (refused at the
+  locked preflight or at `once()`, `FAILED_PRE_DISPATCH`, or
+  `DISPATCH_FAILED_CONFIRMED`). The records are read, not written, while the
+  lock is held; the build must show that this read takes no lock that a
+  holder of `.declarations.lock` could wait on in reverse order. A
+  dispatched, possibly dispatched or still running undo keeps the claim for
+  good. An undo refused before `save` (input, admission, identity, post-state,
+  confirmation gate) never writes a claim at all.
+
+  **Why this makes the claim atomic.** Every writer of an undo claim and every
+  writer of an undo receipt in this namespace is this one `save`, and it holds
+  the exclusive flock from the claim check through the receipt write. Two
+  concurrent undos of one original therefore serialize: the second enters
+  after the first has written both its claim and its receipt, sees the claim,
+  finds a receipt whose task is not proven zero-dispatch, and refuses. No
+  interleaving lets both pass the check. A claim without a receipt can exist
+  only if the process stopped or raised inside the block, and since execution
+  starts only after `save` returns (`E/fan/service.py:295` onward), that state
+  proves the claimed undo never started and may be superseded. The check, the
+  supersede decision and both writes form one critical section; the earlier
+  hook-based wording did not provide that.
 - **Confirmation.** The undo passes the same safety gate as a forward change
   (§5.6).
 - **Reporting.** A `succeeded_verified` undo is reported as **"original change
@@ -1059,8 +1157,26 @@ the task and current observation, then an owner release recorded in the
 additive `hold-releases/<task>.json` sidecar with audit and dispatch `none`
 (`E/fan/service.py:504-700`, `:766-806`). The build adds the kind
 `device_configuration` to the Ingress page's `TYPED_HOLD_KINDS`
-(`E/approval_web.py:72`, `:805-840`; a protected path the build task must
-name). That page is the **recovery** surface `control_power` and `control_fan`
+(`E/approval_web.py:72`; a protected path the build task must name) **and a
+dedicated branch in `ApprovalWebApp._typed_service`** (review L2). Today that
+resolver returns `FAN_OPERATIONS.service` for `fan` and falls through to
+`POWER_OPERATIONS.service` for every other admitted kind
+(`E/approval_web.py:814-824`), and both the inbox (`:826` onward) and the
+release handler (`typed_release`, `:945` onward; the service is resolved at
+`:975-977`) use it (`:833`, `:860`, `:975`). Adding the kind to the tuple alone would therefore show
+and release device-configuration holds against the power service. The build
+changes the resolver to:
+
+- `fan` → `FAN_OPERATIONS.service` (unchanged);
+- `device_configuration` → `DEVICE_CONFIGURATION_OPERATIONS.service`;
+- `power` → `POWER_OPERATIONS.service`, now as an explicit `kind == "power"`
+  branch;
+- anything else → `None`, so the existing `service is None` refusal
+  (`:976-977`) fails closed instead of reaching the power service.
+
+The injected `_typed_services` mapping (`:817-819`, used by tests) gets the
+same key. The release page text, CSRF binding and `Dispatch: none` outcome
+(`:1016`) are unchanged. That page is the **recovery** surface `control_power` and `control_fan`
 already use for unresolved sends. It approves no change, dispatches nothing,
 and is not part of the normal change path (B8). Releasing a hold never makes
 undo available; the recovery is a compensating change (§5.11.3).
@@ -1085,12 +1201,12 @@ persisted records are:
 
 | Record | Location | Format | Writer |
 |---|---|---|---|
-| Receipt (declaration) | `<governance_path>/ordinary-device-configuration-v1/<task_id>.json` | shipped receipt format, model `ordinary-device-configuration-v1-core-bound-v2` (§2.5) | shipped `FanService.save`, unchanged |
+| Receipt (declaration) | `<governance_path>/ordinary-device-configuration-v1/<task_id>.json` | shipped receipt format, model `ordinary-device-configuration-v1-core-bound-v2` (§2.5) | `DeviceConfigurationService.save` override: shipped checks and receipt bytes of `FanService.save` unchanged, plus the undo claim in the same transaction (§5.11.2) |
 | Execution record | the service's executions repository under the namespace root | shipped execution format | shipped executor, unchanged |
 | Locks and holds | `<governance_path>/f3-operation-locks-v1` | shipped lock format; new owner/task ids only | shipped `DurableLockStore` / `FanLockStore` |
 | Hold release | `.../ordinary-device-configuration-v1/hold-releases/<task>.json` | shipped `typed-hold-release-v1` | shipped HAMCP-192 writer |
 | Verified observation | `.../verified-observations/<task_id>.json` | **new** `device-configuration-verified-observation-v1` | new (§5.11.1) |
-| Undo claim | `.../undo-claims/<original_task_id>.json` | **new** `device-configuration-undo-claim-v1` | new (§5.11.2) |
+| Undo claim | `.../undo-claims/<original_task_id>.json` | **new** `device-configuration-undo-claim-v1` | new; written only by the `DeviceConfigurationService.save` override, in the same single `.declarations.lock` transaction as the undo receipt (§5.11.2) |
 
 No existing record format changes. There is no legacy (`<ns>`, unsigned)
 receipt model for this namespace: it is signed-only from the first build, so
@@ -1123,7 +1239,7 @@ the legacy-hash recovery path is not used.
 **Required proof (persisted-state gate; required future implementation
 evidence, none run):** fixtures generated by the new writer (no hand-built
 records, per AGENTS.md "Persisted Compatibility Fixtures"), loaded by the
-exact preceding shipped image, plus restart tests at each boundary (§8 P1–P8).
+exact preceding shipped image, plus restart tests at each boundary (§8 P1–P9).
 
 ### 5.14 Audit
 
@@ -1171,7 +1287,9 @@ contract id and fingerprint is byte-identical to the base; the 2026.11.0
 extension's `previous_capabilities` equals the current entry's list and its
 `added_capabilities` contains only reviewed new 2.6 profiles, including this
 one exactly once. Signing-plan gates: G4 (lane evidence bound to the final
-fingerprint, §9.2) and G5 (the evidence-group mapping in
+fingerprint, §9.2: the run executes the signed three-triple build, and every
+admitted kind is dispatched and verified through Core's real `matter`
+integration; a kind the signed allowlist refuses cannot count, review F1) and G5 (the evidence-group mapping in
 `ci/core-evidence-groups.json` and the read-file mapping in
 `ci/core-contract-read-files.json` before signing).
 
@@ -1219,7 +1337,7 @@ unless the row says otherwise.
 | N9 | State `unavailable`/`unknown` | `device_configuration_entity_unavailable` | reads only |
 | N10 | `select` value not in `options` | `device_configuration_value_not_offered` | reads only |
 | N11 | Value equals the current state (numerically for `number`, for example `"30"` vs state `30.0`) | `no_change`, declared, zero sends, no undo sidecar | reads only |
-| N12 | Any observation field changes between preparation and the locked preflight, or between the preflight and `once()` (state, `last_changed`, `last_updated`, context, options, `min`/`max`/`step`/unit, registry `modified_at`, `device_id`, category, `options["number"]`, device identity) | refused stale, no `call_service` sent | reads only |
+| N12 | Any observation field changes between preparation and the locked preflight, or between the preflight and `once()` (state, `last_changed`, `last_updated`, context, options, `min`/`max`/`step`/unit, registry `modified_at`, `device_id`, category, `options["number"]`, device identity). **Variant (F2):** between the locked preflight and `once()`, the registry entry is deleted and re-registered at the same entity_id so the registry `id` and `created_at` change while state, value and every state attribute stay identical | refused stale at `once()` by the composite comparison (`device_configuration_state_changed`), no `before_dispatch`, no intent, no `call_service` sent | reads only |
 | N13 | `before_dispatch` raises (including a lost or fenced lease) | `FAILED_PRE_DISPATCH`, `call_not_sent` | reads only |
 | N14 | Gateway is asked for any never-sent service (§5.4) | Unreachable: payload builder has no branch for it. Test asserts the exact payloads and that no other is constructible | none |
 | N15 | Timeout after send | `DISPATCH_INDETERMINATE`, one send only, readback runs, `entity:` hold retained | one send |
@@ -1274,7 +1392,7 @@ dispatches in any of these:
 | C5 | Unresolved send, then process restart | `entity:` hold present after restart; `control_power`, another change and undo all refuse until the HAMCP-192 typed hold release for kind `device_configuration` |
 | C6 | Governed registry metadata or availability plan on the same entity while the set is held | that plan ends `lock_conflict`; no registry write during the send |
 | C7 | Lock-key regression | the lock set is exactly `entity:<entity_id>` exclusive, `entity_registry:<entity_id>` shared, `home_assistant:core` shared; no `helper:`, `device_configuration:`, `reload:` or ha-mcp provider key |
-| C8 | Hold release reachability | the Ingress release records `typed-hold-release-v1`, dispatches nothing, and does not make undo available |
+| C8 | Hold release reachability | the Ingress inbox lists and the release resolves `DeviceConfigurationService` for kind `device_configuration` (never `PowerService`; a device-configuration task id is never looked up on the power service), records `typed-hold-release-v1`, dispatches nothing, and does not make undo available; an unknown kind resolves to `None` and is refused (L2) |
 
 **Undo identity tests (Codex D2).**
 
@@ -1289,9 +1407,12 @@ dispatches in any of these:
 | R7 | Undo after an indeterminate or mismatched send | `device_configuration_undo_unavailable`; a compensating forward change is possible after release and is never reported as undo |
 | R8 | Undo of an undo | `device_configuration_undo_not_eligible` |
 | R9 | Second undo of one original after a dispatched or unknown first undo | `device_configuration_undo_already_claimed` |
-| R10 | Second undo after the first undo was refused before intent (zero dispatch proven) | claim superseded; the second undo proceeds |
+| R10 | Second undo after the first undo was declared and then refused before intent (locked preflight or `once()` stale, zero dispatch proven) | claim superseded under the `.declarations.lock`; the second undo proceeds. An undo refused before `save` wrote no claim at all |
 | R11 | Verified-observation sidecar missing (crash after verification) | `device_configuration_undo_unavailable` |
 | R12 | `undo_task_id` names a task of another entity, of another namespace, a `no_change` task, or does not exist | `device_configuration_undo_unavailable`, no HA I/O |
+| R13 | Two undos of one original, different `operation_id`s, released together so both pass preparation and the confirmation gate (F3) | exactly one claim and one undo receipt; the other refuses `device_configuration_undo_already_claimed` inside `save`; exactly one `call_service` across both |
+| R14 | Exception or kill after the claim is written and before the undo receipt is written (F3) | no receipt, no execution; a later undo supersedes the claim under the lock and proceeds; never two sends |
+| R15 | Deadlock guard (F3) | the undo `save` path enters `transaction()` exactly once (counted by a test double) and never calls `super().save()`; a test with a bounded timeout fails if the path blocks on `.declarations.lock` |
 
 **Persistence and downgrade tests (§5.13; #395 §7.3 N4).** Fixtures come from
 the new writer only.
@@ -1304,16 +1425,18 @@ the new writer only.
 | P4 | Restart after dispatch intent, before the send | treated as possibly sent; no redispatch; held |
 | P5 | Restart after the send, before readback | recovery is read-only observe; no redispatch; outcome from readback; held unless verified |
 | P6 | Restart after verification, before the verified-observation sidecar | undo refuses `device_configuration_undo_unavailable` |
-| P7 | Restart during an undo, after the claim and before the undo receipt | claim superseded only because no undo receipt exists; no double undo |
+| P7 | Restart during an undo `save`, after the claim and before the undo receipt (the only way a claim exists without a receipt, §5.11.2) | claim superseded only because no undo receipt exists; no double undo |
 | P8 | Registry reverted (profile absent) with an in-flight task | new calls refuse before HA I/O; the in-flight task stays held with no redispatch; undo refuses |
-| P9 | New runtime loads existing power, fan and helper records and locks | hashes and behavior identical |
+| P9 | New runtime loads existing power, fan and helper records and locks; new fan and power receipts are written | hashes and behavior identical; fan and power receipt bytes and refusal order identical to the base, including if the build extracts a shared locked helper from `FanService.save` (§5.11.2) |
 
 **Success tests (required alongside the refusals).** `select` power-on
 behavior change verified and undone (verified); `switch` child lock on to off
 verified and undone; `number` sensitivity (the Matter 1..N integer range) set
-and undone (verified); through the §9.2 test seam only (no such kind is
-admitted in the first build), a `select` enumerated sensitivity verified and
-a `number` duration timeout set and undone (verified) with no unit option
+and undone (verified), each also in the §9.2 lane on the signed build; as
+offline unit tests only, through the unit-test hook that is absent from the
+signed build (§9.2; no such kind is admitted in the first build and these
+results never count toward G4), a `select` enumerated sensitivity verified
+and a `number` duration timeout set and undone (verified) with no unit option
 present, proving the generic contract; an
 asynchronous readback that succeeds on a later poll; a compensating forward
 change after drift that is verified and not labelled as undo; an exact
@@ -1350,38 +1473,109 @@ disposable lane. No household access is needed for this.
   `core.device_configuration_entity_operation`, run by a new
   `run_disposable` acceptance module wired into `scripts/core_evidence_lanes.py`
   like the existing groups (`run_specialized`, `:27-58`).
-- **Fixture:** a repo-owned, test-only custom component in the style of
+- **The signed build only (review F1).** The G4 run executes the exact
+  build whose compiled profile carries the final three-triple allowlist (B15,
+  §4.1) and the final fingerprint. It contains no test seam, no extra triple
+  and no test-only confirmation trigger; a check before the run asserts that
+  the profile fingerprint the lane loads equals the fingerprint recorded for
+  signing, and the run fails if it does not. A fixture kind that the signed
+  allowlist refuses can only appear in the run as a refusal case; it can
+  never contribute a verified dispatch to G4.
+- **Admitted kinds, through Core's real `matter` integration.** Each of the
+  three admitted kinds must exist in the lane as a real Core 2026.11.0
+  `matter` entity, so the registry `platform` is `matter` and the
+  `translation_key` comes from Core's own discovery schema, not from fixture
+  code. Core's Matter integration talks to a Matter Server over WebSocket
+  (`MatterClient(entry.data[CONF_URL], ...)`,
+  `core:components/matter/__init__.py:106`; `start_listening` at `:362`;
+  requirement `matter-python-client==1.5.5`, `manifest.json`). The lane
+  therefore runs a **lane-owned, test-only Matter Server stub** next to the
+  Core container and creates the `matter` config entry with the stub's URL:
+  - The stub implements only the server side of the WebSocket protocol subset
+    that `matter-python-client==1.5.5` uses for connect, `start_listening`,
+    node delivery, `write_attribute` and attribute-updated events. That
+    subset is derived from the pinned client source at build time and is
+    **unknown at this head**; if the client needs a command the stub cannot
+    answer faithfully, the build stops and reports it rather than patching
+    Core or the client.
+  - It serves node dumps taken unchanged from Core's own test fixtures at
+    `74cf5a49`, identified by sha256:
+    `tests/components/matter/fixtures/nodes/eve_energy_20ecn4101.json`
+    (`48a7a21131eee56e47a0db856d21134fd6bc983295f633ea9e3aef6d122de58d`),
+    whose Core snapshot entities include
+    `switch.eve_energy_20ecn4101_child_lock_top`
+    (`tests/components/matter/snapshots/test_switch.ambr:570`) and the
+    `power_on_behavior` selects (`test_select.ambr:1212`, `:1275`);
+    `eve_energy_plug.json`
+    (`1ed129e955c909f119e40303b234bdc2b83dfadd8347f26570e59e0ef71fa14d`;
+    `select.eve_energy_plug_power_on_behavior`, `test_select.ambr:1338`); and
+    `aqara_door_window_p2.json`
+    (`5fdde93c56c824795be29ccbb2dd9b919f4ff5a4b17df0f9220d82c675e0836f`;
+    `number.aqara_door_and_window_sensor_p2_sensitivity`,
+    `test_number.ambr:21`). Those snapshots are Core's own record that the
+    dumps produce the three admitted `(domain, platform, translation_key)`
+    kinds with `entity_category: config`.
+  - All three admitted kinds write through `write_attribute`
+    (`core:components/matter/select.py:121-123` for
+    `MatterAttributeSelectEntity`; `switch.py:274` for `MatterNumericSwitch`,
+    the `EveChildLock` class at `:536-545`; `number.py:143-145` for
+    `MatterRangeNumber`, whose `sensitivity_level` description has no
+    `command`, `:540-563`; client call at `entity.py:459-477`). The stub
+    records each write (node, endpoint, attribute path, value), applies it to
+    its node model and pushes the attribute-updated event, so Core's state
+    changes through its normal update path.
+  - Fault modes live in the stub, so they apply to the admitted kinds: delay
+    the attribute update past the first readback poll, return an error for a
+    write, stall a write past the send timeout, store a different value than
+    written, and report the attribute update without the write (drift).
+  - The stub, its node-dump copies and their hashes, and the lane step that
+    starts it are protected-path changes the build task must name (a
+    `.github/workflows/` overlay plus a test-only lane asset); the stub's
+    source sha256 and the three dump hashes are recorded in the PASS receipt.
+  - Residual: the stub stands in for the Matter Server and the device. It
+    proves Core 2026.11.0's entity creation, registry fields, service
+    handling, write path and state update for the admitted kinds, not a real
+    Matter Server's or a real device's timing. Real devices are proven only at
+    deployed acceptance (§9.3).
+- **Refusal fixture (not counted as dispatch evidence).** The repo-owned,
+  test-only custom component in the style of
   `tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture`
-  that registers one device with config-category `select`, `switch` and
-  `number` entities (a plain integer-range number with integration-set step,
-  and a `duration` number), plus a non-config switch, a diagnostic select, a
-  disabled config entity, a config entity without a device, an unavailable
-  duplicate, and a select whose kind is outside the admitted list. It can
-  delay its state report, reject a send, stall past the send timeout, quantize
-  a numeric write, and change its options. Lane setup may use
-  `config/entity_registry/update` to set a number unit option on the fixture;
-  that is fixture setup, never the product path. Installing it in the lane
-  needs a workflow overlay step (a protected `.github/workflows/` path that the
-  build task must name).
-- **Target-kind residual (Q9 test seam, kept after B15; a review question,
-  not an owner question).** The fixture's platform is not `matter`, so the
-  signed three-triple allowlist (B15) does not admit it. The lane then proves
-  the generic mechanism with a build-time test seam that adds the fixture
-  kind (unreachable in a production build, asserted by a test), and
-  separately proves that the production list refuses the fixture kind (T2).
-  The admitted Matter kinds are proven offline against their cited source
-  (T4, T6) and on real devices only at deployed acceptance (§9.3). Codex
-  should judge whether that seam is acceptable lane evidence for signing.
-- **Lane tests (Codex D4):** registered config entities across `select`,
-  `switch` and `number` verified; wrong-domain, disabled, diagnostic,
-  non-config, device-less and non-admitted-kind entities refused with no
-  `call_service`; delayed state reporting verified on a later poll; rejected
-  send and indeterminate send each followed by readback, exactly one send
-  each, and the `entity:` hold present; numeric bounds, step, unit-conversion
-  and quantization cases per N22–N26; verified undo for each domain;
-  identity-replacement undo refusal (R1); the confirmation path with the
-  test-only trigger (S1–S2); and C1/C2 against the lane's `control_power` on
-  the fixture config switch.
+  stays, for refusals only: config-category `select`, `switch` and `number`
+  entities on a non-`matter` platform (T2), a non-config switch, a diagnostic
+  select, a disabled config entity, a config entity without a device, an
+  unavailable duplicate, and a converter-class number with a translated unit
+  (§5.5.1 rule 2). Every case must end with zero `call_service` sends. Lane
+  setup may use `config/entity_registry/update` to set a number unit option
+  or disable an entity on the fixture; that is fixture setup, never the
+  product path. Installing it needs the same workflow overlay.
+- **Former Q9 test seam (superseded by F1).** The seam that added the
+  fixture kind to the allowlist is removed from the lane. It may remain only
+  as a unit-test hook for the generic `select`/`number` mechanism (the generic
+  success tests in §8), it is not compiled into the signed build (asserted by
+  a test that loads the signed profile and finds exactly three triples and no
+  hook), and no result obtained through it counts toward G4.
+- **Lane tests (Codex D4), all on the signed build:** for each admitted kind
+  (the `startup_on_off` select, the `child_lock` switch in both directions,
+  the `sensitivity_level` number) a verified forward change and a verified
+  undo, each with exactly one recorded stub write; delayed state reporting
+  verified on a later poll; rejected and stalled writes each followed by
+  readback, exactly one write each, and the `entity:` hold present; a
+  stored-value mismatch held as `verification_failed`; numeric bounds and
+  step per N22–N26 on the sensitivity number (1..N from
+  `SupportedSensitivityLevels`); the composite-identity checks at `once()`
+  (N12 including the registry-id variant, R1, R4); wrong-domain, disabled,
+  diagnostic, non-config, device-less and non-admitted-kind entities refused
+  with zero sends; S8 (no `confirmation_required` for any admitted kind); and
+  C1/C2 against the lane's `control_power` on the Matter child-lock switch.
+  The confirmation mechanism with its test-only trigger (S1–S7, B14) is proven
+  offline in the build PR, outside the G4 run, because that trigger is not
+  constructible in the signed build.
+- **Receipt contents required for G4:** the lane image, the profile
+  fingerprint loaded (equal to the signing fingerprint), the stub and dump
+  hashes, and for every admitted kind at least one `succeeded_verified`
+  forward change and one `succeeded_verified` undo with the recorded stub
+  write and the readback fingerprint. A receipt missing any admitted kind
+  does not satisfy G4.
 - **Binding to signing:** the group's PASS receipt is recorded against the
   exact final profile fingerprint and lane image. Its sha256 is one of the
   `review_artifacts_sha256` of the single combined 2.6 2026.11.0
@@ -1518,15 +1712,25 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
   entity until the typed hold release (§5.7, §5.12).
 - **Recovery surface (flag for review):** the build adds the kind
   `device_configuration` to the Ingress typed hold release
-  (`E/approval_web.py:72`). That page releases a durable hold after a
+  (`E/approval_web.py:72`) and a dedicated `device_configuration` branch in
+  `_typed_service` (`:814-824`), whose last branch becomes an explicit
+  `power` case with `None` for anything else, so a device-configuration hold
+  is never reviewed or released against the power service (§5.12, review
+  L2). That page releases a durable hold after a
   read-only review and dispatches nothing. It is a recovery surface, not a
   change approval, and it never makes undo available. Codex should confirm
   that this addition does not reintroduce an approval step into the change
   path.
 - **Undo authority:** undo is bound to registry and device identity and the
   exact post-change observation, consumed at most once through a durable claim
-  written in the declaration transaction; compensating changes are ordinary
-  forward changes and never claim undo (§5.11).
+  that the `save` override checks and writes in the same single
+  `.declarations.lock` transaction as the undo receipt, without nesting that
+  lock; two concurrent undos serialize on it (§5.11.2, review F3).
+  Compensating changes are ordinary forward changes and never claim undo
+  (§5.11).
+- **Final pre-send identity check:** the `once()` re-read immediately before
+  the send compares the full composite observation, registry `id` and device
+  identity included, not only the state (§5.7, review F2).
 - **Numeric exactness:** Engineering refuses rather than rounds, clamps or
   converts; readback compares numerically and never upgrades a changed value
   (§5.5.1).
@@ -1561,24 +1765,32 @@ Base URL: `https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844
    `E/device_configuration/adapter.py` (`DeviceConfigurationAdapter`, lock set,
    payload builder, composite observation, numeric contract),
    `E/device_configuration/service.py` (`DeviceConfigurationService`, signed-only
-   authority, confirmation gate, sidecars, undo claim, request summary),
+   authority, confirmation gate in `before_declaration`, sidecars, the `save`
+   override that writes the undo claim and receipt under one transaction
+   (§5.11.2), request summary), with the adapter's `dispatch` override for
+   the composite `once()` re-read (§5.7),
    `E/tools/device_configuration.py` (the tool), `E/tools/registry.py`, the
    `CoreIndependence` entry and constants in `E/ha_core_readmission/routes.py`,
    the explicit `_contract` in `E/ha_core_readmission/profiles.py`, the
    `ProviderCapability` member in `E/providers/routing.py`, the capabilities
    and provider-contract entries in `E/capabilities.py`, and the
-   `TYPED_HOLD_KINDS` entry in `E/approval_web.py`. **No change** to
+   `TYPED_HOLD_KINDS` entry and the dedicated `_typed_service` branch in
+   `E/approval_web.py` (§5.12). **No change** to
    `E/f3_configuration/locks.py`, the F3 plan tools or `control_power`.
-   Tests per §8, including the three-triple allowlist (T1–T6) and the
-   test-only-trigger confirmation proof (S7, S8).
+   Tests per §8, including the three-triple allowlist (T1–T6), the
+   test-only-trigger confirmation proof (S7, S8), the composite `once()`
+   variant (N12), the undo-claim concurrency and deadlock tests (R13–R15)
+   and the hold-release resolver (C8).
 3. Compute and record the new fingerprint. Assert that every existing
    fingerprint is unchanged.
 4. Persisted-state evidence per §5.13 (P1–P9), including the run against the
    exact preceding shipped image with writer-generated fixtures.
-5. Core 2026.11.0 lane acceptance per §9.2: fixture component, acceptance
-   module, evidence group, and the workflow overlay step (protected
-   `.github/workflows/` path, named in that task). PASS receipt bound to the
-   final fingerprint.
+5. Core 2026.11.0 lane acceptance per §9.2 on the signed three-triple build:
+   the test-only Matter Server stub with the pinned upstream node dumps, the
+   refusal fixture component, acceptance module, evidence group, and the
+   workflow overlay step (protected `.github/workflows/` path and lane asset,
+   named in that task). PASS receipt bound to the final fingerprint, with a
+   verified forward change and undo for every admitted kind (review F1).
 6. Signing: the one combined 2.6 `extend-capabilities` for 2026.11.0 (B5),
    including this profile and its lane receipt. This is a separate,
    owner-authorized action.
@@ -1684,3 +1896,19 @@ power-on triple), is decided (B17); nothing is pending Josh.
 No decision conflicted with the stated architecture or safety constraints.
 Undo is newly specified, because the shipped `control_*` tools have none
 (§2.5); B2 and B8 require it.
+
+## 16. Cursor full review 2026-11-09 — disposition
+
+Independent review (Cursor) of head `84f0c5be` against base `7246f2d2`,
+posted 2026-11-09 5:48 PM CST on PR #389, verdict "Ready after corrections".
+No Critical or High finding. All five findings are corrected in this
+revision; none is deferred. Josh's recorded decisions (B9–B17, §15) are
+unchanged. No source code changes.
+
+| ID | Severity | Finding (short) | Correction (sections) | Proving tests |
+|---|---|---|---|---|
+| F1 | Medium | The lane seam admits a fixture kind the signed allowlist refuses, so its PASS is evidence of a different fingerprint and cannot satisfy G4 | §9.2 rewritten: the G4 run executes only the signed three-triple build (fingerprint asserted equal to the signing fingerprint); each admitted kind is a real Core 2026.11.0 `matter` entity created from Core's pinned test node dumps served by a lane-owned test-only Matter Server stub; all three write through `write_attribute`; fault modes move into the stub; the custom component remains for refusals only; the seam survives only as a unit-test hook absent from the signed build and never counts toward G4. Also §5.5.1 rule 2, §6 (G4 sentence), §8 success tests, §12 step 5 | §9.2 lane tests and receipt contents (a verified forward change and undo per admitted kind); T2; the signed-profile test that finds exactly three triples and no hook |
+| F2 | Medium | The cited `once()` re-reads state only (`E/fan/adapter.py:115-119`), so inherited it always refuses or misses an identity replacement before the send | §5.7: `DeviceConfigurationAdapter` overrides `dispatch`; `once()` re-reads the full composite (state, registry get, device list), compares it with the prepared fingerprint, re-checks the allowlist, then runs `before_dispatch`; shipped outcome mapping (`:126-158`) kept; undo uses the same override. Also §5.8 item 1, §2.5 `once()` row, §11 | N12 registry-id variant; R1; R4 |
+| F3 | Medium | The undo claim was placed in `before_declaration`, outside the `.declarations.lock`, so two undos could both pass the check | §5.11.2: the claim is checked, superseded if allowed, and written by a `DeviceConfigurationService.save` override inside the one existing `transaction()` (`E/fan/service.py:120-127`), before the receipt bytes; no `super().save()` and no second `transaction()` (a nested flock deadlocks); the atomicity argument is stated. Also §2.5 rows, §5.13 table, §11, §12 step 2 | R10 (reworded), R13 (concurrent undos), R14 (claim without receipt), R15 (single transaction, deadlock guard), P7, P9 |
+| L1 | Low | §5.13 cited §8 P1–P8; the table ends at P9 | §5.13 now cites P1–P9 | — |
+| L2 | Low | `_typed_service` resolves every non-fan kind to the power service (`E/approval_web.py:814-824`), so adding the kind to `TYPED_HOLD_KINDS` alone would release against power | §5.12: a dedicated `device_configuration` branch, an explicit `power` branch and `None` (refused) for anything else; injected test mapping gets the key. Also §2.5 hold-release row, §11 recovery surface, §12 step 2 | C8 (resolves `DeviceConfigurationService`, never power; unknown kind refused) |
