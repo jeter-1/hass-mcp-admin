@@ -589,6 +589,8 @@ class PublicSurfaceTests(CreatedObjectServiceTestCase):
                 )
                 self.assertEqual(error.details["field"], "resource_type")
                 self.assertEqual(self.writes_since(mark), [])
+                # Refused by request validation, before any Home Assistant read.
+                self.assertEqual(self.reads_since(mark), [])
         self.assertIn(EVENING, self.config_rest.scenes)
         self.assertIn("hvac_override", self.ws.helpers["input_boolean"])
 

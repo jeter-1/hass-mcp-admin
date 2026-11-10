@@ -4,12 +4,15 @@ The contract is ``docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md`
 §3.3-§3.5 and the §6 rows on eligibility, replacement, the option-E negatives
 and the preflight-stale checks.  Each case covers the created scene and both
 created helper domains; the automation and script cases are in
-``test_hamcp298_created_object_rollback.py``.  Every refusal proves that no
-write was sent and that the created object is still there.
+``test_hamcp298_created_object_rollback.py``.  The prerequisite-rule and
+equivalence-verified cases use automations, alone or in a plan with a helper.
+Every refusal proves that no write was sent and that the created object is
+still there.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 import sys
@@ -20,8 +23,13 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
+    GovernanceError,
+    HomeAssistantApiError,
+)
 from ha_mcp_engineering.governance import (  # noqa: E402
+    created_object_identity,
     created_object_rollback as rollback_model,
 )
 
@@ -618,6 +626,312 @@ class EligibilityTests(OwnershipTestCase):
         self.assertIs(projected["available"], False)
         self.assertEqual(projected["status"], "unavailable_for_create")
         self.assertIn("legacy_one", self.config_rest.configs["automation"])
+
+    async def equivalence_verified_create(self) -> tuple[dict, str]:
+        """A verified automation create whose stored body is not the planned one.
+
+        Home Assistant stores the approved legacy ``service`` step key as
+        ``action``.  The create verifies by that reviewed equivalence through
+        the ordinary public flow, and its resulting fingerprint is the stored
+        body's, not the planned hash.
+        """
+
+        proposed = automation_config("aliased")
+        (step,) = proposed["actions"]
+        step["service"] = step.pop("action")
+        plan = await self.configuration_plan(
+            {
+                "operation_id": "create_automation",
+                "resource_type": "automation",
+                "action": "create",
+                "target_id": "aliased",
+                "depends_on": [],
+                "proposed_config": proposed,
+            }
+        )
+        await self.approve(plan)
+        real = self.config_rest.request
+
+        async def canonicalizing(method: str, path: object, **kwargs: object) -> object:
+            answer = await real(method, path, **kwargs)
+            if method == "POST" and str(path).endswith("/automation/config/aliased"):
+                (stored,) = self.config_rest.configs["automation"]["aliased"]["actions"]
+                stored["action"] = stored.pop("service")
+            return answer
+
+        with mock.patch.object(self.config_rest, "request", canonicalizing):
+            result = await self.apply(plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(
+            self.children(plan["plan_id"]),
+            [("create_automation", "terminal", "succeeded_verified", 1)],
+        )
+        (operation,) = self.operations(plan["plan_id"])
+        (declaration,) = self.runtime.children.declarations_for_task(
+            self.task_id(plan["plan_id"])
+        )
+        child_id = declaration["child_id"]
+        resulting = self.runtime.children.get(child_id).evidence[
+            "resulting_state_fingerprint"
+        ]
+        self.assertIsInstance(resulting, str)
+        self.assertNotEqual(resulting, operation.proposed_config_hash)
+        return plan, child_id
+
+    async def assert_equivalence_verified_create_is_kept(self, plan: dict) -> None:
+        mark = self.mark()
+        await self.refused_rollback(
+            plan, {"create_automation": rollback_model.NOT_VERIFIED}
+        )
+        self.assertEqual(self.reads_since(mark), [])
+        self.assertIn("aliased", self.config_rest.configs["automation"])
+        projected = self.service.get_plan(plan["plan_id"])["rollback"]
+        self.assertIs(projected["available"], False)
+
+    async def test_a_create_verified_only_by_a_reviewed_equivalence_is_not_eligible(
+        self,
+    ):
+        plan, _child_id = await self.equivalence_verified_create()
+        # Its identity is never captured, and rollback reports the create
+        # itself, not the missing capture, as the reason.
+        self.assertEqual(self.identity_values(plan["plan_id"]), [None])
+        await self.assert_equivalence_verified_create_is_kept(plan)
+
+    async def test_a_planted_identity_does_not_make_that_create_eligible(self):
+        plan, child_id = await self.equivalence_verified_create()
+        resulting = self.runtime.children.get(child_id).evidence[
+            "resulting_state_fingerprint"
+        ]
+        # A hash-consistent identity record for the stored body, written
+        # outside the governed capture: rollback still refuses on the
+        # create's own evidence and reads nothing.
+        planted = self.runtime.created_identities.put(
+            child_id=child_id,
+            plan_id=plan["plan_id"],
+            operation_id="create_automation",
+            resulting_state_fingerprint=resulting,
+            outcome=created_object_identity.CAPTURED,
+            identity=created_object_identity.identity_from(
+                "automation",
+                "aliased",
+                self.ws.entries["automation.aliased"],
+                resulting,
+            ),
+        )
+        self.assertEqual(
+            self.runtime.created_identities.captured_for(
+                child_id=child_id,
+                plan_id=plan["plan_id"],
+                operation_id="create_automation",
+                resulting_state_fingerprint=resulting,
+            ),
+            planted["identity"],
+        )
+        await self.assert_equivalence_verified_create_is_kept(plan)
+
+
+def unavailable() -> HomeAssistantApiError:
+    """Home Assistant answered a read with a server error."""
+
+    return HomeAssistantApiError(
+        details={"status": 500, "provider_response_received": True}
+    )
+
+
+def automation_create(target_id: str = "new_consumer") -> dict:
+    return {
+        "operation_id": "create_automation",
+        "resource_type": "automation",
+        "action": "create",
+        "target_id": target_id,
+        "proposed_config": automation_config(target_id),
+    }
+
+
+CONSUMER_GET = ("GET", "/config/automation/config/consumer")
+CONSUMER_POST = ("POST", "/config/automation/config/consumer")
+NEW_CONSUMER_GET = ("GET", "/config/automation/config/new_consumer")
+
+
+class PrerequisiteRuleTests(OwnershipTestCase):
+    """§3.4.2: a candidate that cannot be undone keeps every earlier create.
+
+    Every plan here has more than one rollback candidate, so what happens to
+    the later candidates depends on the first one being recorded as the block.
+    """
+
+    def consumer_update(self, description: str, depends_on: list[str]) -> dict:
+        self.add("automation", "consumer")
+        proposed = deepcopy(self.config_rest.configs["automation"]["consumer"])
+        proposed["description"] = description
+        return {
+            "operation_id": "update_consumer",
+            "resource_type": "automation",
+            "action": "update",
+            "target_id": "consumer",
+            "depends_on": depends_on,
+            "proposed_config": proposed,
+        }
+
+    async def created_pair(self, earlier: dict, later: dict) -> dict:
+        """Update an existing automation, then create two objects in order."""
+
+        return await self.applied(
+            await self.configuration_plan(
+                self.consumer_update("edited before the creates", []),
+                {**earlier, "depends_on": ["update_consumer"]},
+                {**later, "depends_on": [earlier["operation_id"]]},
+            )
+        )
+
+    def fail_config_reads(self, resource_type: str, target_id: str) -> None:
+        def refuse(kind: str, target: str, _ordinal: int) -> None:
+            if (kind, target) == (resource_type, target_id):
+                raise unavailable()
+
+        self.config_rest.after_config_get = refuse
+
+    def helper_reads_since(self, mark: tuple[int, int], domain: str) -> list:
+        return [
+            command
+            for command in self.ws.commands[mark[1] :]
+            if str(command.get("type")).startswith(f"{domain}/")
+        ]
+
+    async def assert_later_create_keeps_the_earlier_one(
+        self, created: dict, mark: tuple[int, int], later: str, earlier: str, reason: str
+    ) -> None:
+        """Only the restore is planned; applying it deletes neither object."""
+
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_partial_plan_created", rollback)
+        self.assertEqual(rollback["operations_to_delete"], [])
+        self.assertEqual(len(rollback["operations_to_restore"]), 1)
+        self.assertEqual(
+            rollback["operations_excluded"],
+            [
+                {"operation_id": later, "reason": reason},
+                {
+                    "operation_id": earlier,
+                    "reason": rollback_model.PREREQUISITE_EXCLUDED,
+                    "prerequisite": later,
+                },
+            ],
+        )
+        self.assertEqual(
+            [
+                (item.resource_type, item.action)
+                for item in self.operations(rollback["rollback_plan_id"])
+            ],
+            [("automation", "update")],
+        )
+        self.assertEqual(self.writes_since(mark), [])
+        result = await self.apply_rollback(rollback)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        # The reverse plan dispatched the restore and nothing else.
+        self.assertEqual(self.writes_since(mark), [CONSUMER_POST])
+        self.assertEqual(
+            self.config_rest.configs["automation"]["consumer"]["description"], ""
+        )
+        self.assertIn("new_consumer", self.config_rest.configs["automation"])
+        self.assertIn("hvac_override", self.ws.helpers["input_boolean"])
+
+    async def test_an_unreadable_restore_target_keeps_the_created_helper(self):
+        created = await self.applied(
+            await self.configuration_plan(
+                helper_operation("input_boolean", boolean_config()),
+                self.consumer_update("uses the helper", ["create_helper"]),
+            )
+        )
+        self.fail_config_reads("automation", "consumer")
+        mark = self.mark()
+        error = await self.refused_rollback(
+            created,
+            {
+                "update_consumer": rollback_model.READ_UNAVAILABLE,
+                "create_helper": rollback_model.PREREQUISITE_EXCLUDED,
+            },
+        )
+        self.assertEqual(
+            error.details["operations_excluded"],
+            [
+                {
+                    "operation_id": "update_consumer",
+                    "reason": rollback_model.READ_UNAVAILABLE,
+                },
+                {
+                    "operation_id": "create_helper",
+                    "reason": rollback_model.PREREQUISITE_EXCLUDED,
+                    "prerequisite": "update_consumer",
+                },
+            ],
+        )
+        # The helper is never read once the restore before it is blocked.
+        self.assertEqual(self.reads_since(mark), [CONSUMER_GET])
+        self.assertIn("hvac_override", self.ws.helpers["input_boolean"])
+        self.assertEqual(self.ws.helper_commands("delete"), [])
+
+    async def test_an_unreadable_created_helper_keeps_the_earlier_automation(self):
+        created = await self.created_pair(
+            automation_create(), helper_operation("input_boolean", boolean_config())
+        )
+        self.ws.failures["input_boolean/list"] = unavailable()
+        mark = self.mark()
+        await self.assert_later_create_keeps_the_earlier_one(
+            created,
+            mark,
+            "create_helper",
+            "create_automation",
+            rollback_model.READ_UNAVAILABLE,
+        )
+        self.assertNotIn(NEW_CONSUMER_GET, self.reads_since(mark))
+
+    async def test_an_unreadable_created_automation_keeps_the_earlier_helper(self):
+        created = await self.created_pair(
+            helper_operation("input_boolean", boolean_config()), automation_create()
+        )
+        self.fail_config_reads("automation", "new_consumer")
+        mark = self.mark()
+        await self.assert_later_create_keeps_the_earlier_one(
+            created,
+            mark,
+            "create_automation",
+            "create_helper",
+            rollback_model.READ_UNAVAILABLE,
+        )
+        self.assertEqual(self.helper_reads_since(mark, "input_boolean"), [])
+
+    async def test_a_replaced_created_helper_keeps_the_earlier_automation(self):
+        created = await self.created_pair(
+            automation_create(), helper_operation("input_boolean", boolean_config())
+        )
+        self.ws.entries["input_boolean.hvac_override"]["id"] = "replacemententry1"
+        mark = self.mark()
+        await self.assert_later_create_keeps_the_earlier_one(
+            created,
+            mark,
+            "create_helper",
+            "create_automation",
+            rollback_model.IDENTITY_CHANGED,
+        )
+        self.assertNotIn(NEW_CONSUMER_GET, self.reads_since(mark))
+
+    async def test_a_changed_created_automation_keeps_the_earlier_helper(self):
+        created = await self.created_pair(
+            helper_operation("input_boolean", boolean_config()), automation_create()
+        )
+        self.config_rest.configs["automation"]["new_consumer"]["description"] = (
+            "changed by the user"
+        )
+        mark = self.mark()
+        await self.assert_later_create_keeps_the_earlier_one(
+            created,
+            mark,
+            "create_automation",
+            "create_helper",
+            rollback_model.CHANGED,
+        )
+        self.assertEqual(self.helper_reads_since(mark, "input_boolean"), [])
 
 
 if __name__ == "__main__":
