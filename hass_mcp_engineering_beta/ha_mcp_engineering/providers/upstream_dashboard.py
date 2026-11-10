@@ -116,7 +116,7 @@ DASHBOARD_WRITE_DEPENDENCIES = (
 # HAMCP-319: releases on which the getter read path also requires the getter's
 # whole descriptor to equal its reviewed release runtime contract. Older
 # releases keep their previously reviewed read-path admission.
-EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0"})
+EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0", "9.1.2"})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
         "ha_config_set_dashboard",
@@ -187,11 +187,12 @@ RESPONSE_ENVELOPE_RESERVE = 16_000
 # whether Home Assistant holds a saved config (9.1.0 _finalize_get_result).
 # On these releases anything but ``stored_config: true`` never yields a
 # readable configuration, and no hash is derived first.
-STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0"})
+# HAMCP-351: tools_config_dashboards.py is unchanged at 9.1.2 (bab615df).
+STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0", "9.1.2"})
 # HAMCP-319 section 6.3 (F4): exact releases whose list mode is decoded here
 # and whose ``[]`` cannot prove absence (9.1.0 ``fetch_dashboards_list(...) or
 # []``). An empty inventory from them is reported as not complete.
-COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0"})
+COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0", "9.1.2"})
 # HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
 # provider result in. The size estimate serializes this exact wrapper.
 CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"

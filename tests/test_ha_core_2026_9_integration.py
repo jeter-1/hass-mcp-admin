@@ -3096,12 +3096,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         counts = json.loads(result.stdout)["tool_counts"]
-        # HAMCP-319: the newest reviewed registry row is ha-mcp 9.1.0, whose
-        # policy admits 27 automatic reads (ha_get_hacs_info is unsupported).
-        self.assertEqual(counts["reviewed_upstream_version"], "9.1.0")
+        # HAMCP-351: the newest reviewed registry row is ha-mcp 9.1.2 (the
+        # HAMCP-319 9.1.0 row stays admitted), whose policy, like 9.1.0's,
+        # admits 27 automatic reads (ha_get_hacs_info is unsupported).
+        self.assertEqual(counts["reviewed_upstream_version"], "9.1.2")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         # HAMCP-290: the retired delegated ha_get_hacs_info is subtracted
-        # only when the newest policy classifies it automatic_read; 9.1.0
+        # only when the newest policy classifies it automatic_read; 9.1.2
         # already marks it unsupported, so 27 stay and 83 + 27 = 110.
         self.assertEqual(counts["expected_delegated_reads"], 27)
         self.assertEqual(counts["expected_connector_total"], 110)

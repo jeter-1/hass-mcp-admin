@@ -81,8 +81,8 @@ EFFECTIVE_BEFORE = {
 }
 # Entries reviewed after HAMCP-184, each pinned by its own task. HAMCP-319
 # admits 9.1.0 at 8.5.0 parity: backup and lifecycle stay held, exactly as on
-# 8.5.0 and 8.6.0.
-REVIEWED_AFTER_HAMCP184 = {"9.1.0": OPERATIONAL_HELD}
+# 8.5.0 and 8.6.0. HAMCP-351 admits 9.1.2 at 9.1.0 parity.
+REVIEWED_AFTER_HAMCP184 = {"9.1.0": OPERATIONAL_HELD, "9.1.2": OPERATIONAL_HELD}
 # HAMCP-184 effective dispositions: identical to EFFECTIVE_BEFORE except that
 # 8.2.0 backup and lifecycle become held, plus the later reviewed entries.
 EFFECTIVE_AFTER = {

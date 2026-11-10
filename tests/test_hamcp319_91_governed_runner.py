@@ -404,8 +404,8 @@ class BindingNegativeTests(Harness):
 
     def test_typed_wrong_provider_contract_duplicate_or_extra_dispatch_fails(self):
         breaks = {
-            "provider": ("upstream_read_gateway", "reviewed 9.1.0 provider"),
-            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.1.0 provider"),
+            "provider": ("upstream_read_gateway", "reviewed 9.1.2 provider"),
+            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.1.2 provider"),
             "provider_attempt_count": (2, "single recorded attempt"),
             "upstream_dispatches": (2, "exactly one ha_call_service"),
             "duplicate_dispatches": (1, "duplicate request"),
@@ -782,14 +782,14 @@ class SideBySideStageTests(Harness):
                 try:
                     result = self.sbs_break(stage.dashboard_case,
                                             no_guide(self.core_version, stage.dashboard_case,
-                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"]))
+                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.2"]))
                     self.assert_rejected(result, stage.dashboard_case, "guide read arguments")
                 finally:
                     self.tearDown()
             with self.subTest(stage=stage.key, kind="contract"):
                 self.setUp()
                 try:
-                    specs = ev.typed_specs(self.core_version, "9.1.0")
+                    specs = ev.typed_specs(self.core_version, "9.1.2")
                     result = self.sbs_break(stage.typed_case, rebuild(stage.typed_case, specs, self.core_version))
                     self.assert_rejected(result, stage.typed_case, "reviewed 8.5.0 provider")
                 finally:
@@ -803,7 +803,7 @@ class SideBySideStageTests(Harness):
         self.setUp()
         result = self.pipeline(self.good(typed=rebuild(TYPED, ev.typed_specs(self.core_version, "8.5.0"),
                                                        self.core_version)))
-        self.assert_rejected(result, TYPED, "reviewed 9.1.0 provider")
+        self.assert_rejected(result, TYPED, "reviewed 9.1.2 provider")
 
     def test_a_release_without_a_reviewed_guide_read_is_not_accepted(self):
         # Neither an unknown release nor an empty compiled read falls back to another release's guide read.
@@ -877,7 +877,7 @@ class SideBySideStageTests(Harness):
             "missing": (lambda i: None, "stage identity was not recorded"),
             "other stage": (lambda i: dict(i, key="91_only" if i["key"] != "91_only" else "stage_a"),
                             "evidence belongs to another stage"),
-            "9.1 peer": (lambda i: dict(i, upstream_version="9.1.0"), "stage peer is not ha-mcp 8.5.0"),
+            "9.1 peer": (lambda i: dict(i, upstream_version="9.1.2"), "stage peer is not ha-mcp 8.5.0"),
             "strict endpoint": (lambda i: dict(i, endpoint_path=governed.STRICT_PATH),
                                 "stage endpoint is not the legacy value"),
             "other architecture": (lambda i: dict(i, architecture="arm64"), "stage architecture"),
@@ -894,7 +894,7 @@ class SideBySideStageTests(Harness):
     def test_91_only_identity_must_name_the_strict_9_1_stage(self):
         for label, mutate, fragment in (
                 ("legacy endpoint", lambda i: dict(i, endpoint_path=governed.SECRET_PATH), "strict_full value"),
-                ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.1.0"),
+                ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.1.2"),
                 ("rollback image", lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE), "lane-built")):
             with self.subTest(case=label):
                 self.setUp()
@@ -994,7 +994,7 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         sw = support_window()
         matrix = sw.admission_matrix(sw.load(ROOT), registry_matrix())
         typed = __import__("exact_image_admission_91_typed")
-        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.1.0")):
+        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.1.2")):
             row = next(r for r in matrix["include"] if r["configuration"] == configuration)
             peer = governed.select_peer(row["peers"], configuration, "amd64", typed.reviewed_release)
             self.assertEqual((peer["role"], peer["version"]), (role, version))
@@ -1014,9 +1014,9 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         from ha_mcp_engineering.power.contracts import POWER_SEMANTIC_CONTRACTS
         self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"], dict(client.BEST_PRACTICES_GUIDE_ARGUMENTS))
         self.assertNotIn(("8.5.0", governed.GUIDE_TOOL), client._BEST_PRACTICES_ARGUMENT_REWRITES)
-        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"],
-                         dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.1.0", governed.GUIDE_TOOL)]))
-        for version in ("8.5.0", "9.1.0"):
+        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.2"],
+                         dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.1.2", governed.GUIDE_TOOL)]))
+        for version in ("8.5.0", "9.1.2"):
             self.assertEqual(governed.PROVIDER_CONTRACTS[version], {
                 "control_power": POWER_SEMANTIC_CONTRACTS[version], "control_fan": FAN_SEMANTIC_CONTRACTS[version],
                 "control_helper": HELPER_SEMANTIC_CONTRACTS[version]})
