@@ -1693,6 +1693,7 @@ class AuthenticatedMcpGateway:
                             "capture_automation_baseline",
                             "compare_automation_baselines",
                             "dashboard_integrity_analysis",
+                            "get_security_metadata",
                             *TRACE_SNAPSHOT_TOOLS,
                         }
                         else {

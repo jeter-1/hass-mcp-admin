@@ -273,8 +273,8 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         # 2026-11-08), so 28 matched reads expose 27 (83 + 27 = 110).
         self.assertEqual(registered, EXACT_READS - RETIRED_DELEGATED_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 27)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 110)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 111)  # HAMCP-134
         self.assertNotIn("ha_get_operation_status", registered)
         self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
         self.assertEqual(snapshot["readmission_withheld_tools"], [])

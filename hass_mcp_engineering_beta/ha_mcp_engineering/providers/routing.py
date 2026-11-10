@@ -44,6 +44,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.RECORDER_SETTINGS,
     ProviderCapability.SCRIPT_TRACE,
     ProviderCapability.MARKETPLACE_INVENTORY,
+    ProviderCapability.SECURITY_METADATA,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
@@ -139,6 +140,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "list_script_traces": ProviderCapability.SCRIPT_TRACE,
     "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_marketplace_inventory": ProviderCapability.MARKETPLACE_INVENTORY,
+    "get_security_metadata": ProviderCapability.SECURITY_METADATA,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -298,6 +300,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "scope": "constant marketplace/repositories/list; installed repositories only; bounded store, fixed projection, shared sanitizer, Engineering-side paging; admitted core.marketplace_read only",
         "writes_allowed": "none",
         "fallback_policy": "hacs/repositories/list on the same connection only when the Marketplace reply error.code is exactly unknown_command",
+    },
+    "get_security_metadata": {
+        "policy_id": "security_metadata_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "constant reads of auth/current_user, config/auth/list, http/config, get_config, homeassistant/expose_new_entities/get (KNOWN_ASSISTANTS), assist_pipeline/pipeline/list, conversation/agent/list and get_panels, each at most once; positive privacy projection, shared sanitizer, fixed byte cap; no Supervisor request; admitted core.security_metadata_read only",
+        "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_history_slices": {
         "policy_id": "history_slices_read_v1", "access": "read", "orchestrator": "engineering",
