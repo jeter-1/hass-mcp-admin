@@ -1158,7 +1158,7 @@ additive `hold-releases/<task>.json` sidecar with audit and dispatch `none`
 (`E/fan/service.py:504-700`, `:766-806`). The build adds the kind
 `device_configuration` to the Ingress page's `TYPED_HOLD_KINDS`
 (`E/approval_web.py:72`; a protected path the build task must name) **and a
-dedicated branch in `ApprovalWebApp._typed_service`** (review L2). Today that
+dedicated branch in `IngressApprovalApplication._typed_service`** (`E/approval_web.py:379`; review L2). Today that
 resolver returns `FAN_OPERATIONS.service` for `fan` and falls through to
 `POWER_OPERATIONS.service` for every other admitted kind
 (`E/approval_web.py:814-824`), and both the inbox (`:826` onward) and the
