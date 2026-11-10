@@ -34,6 +34,7 @@ import threading
 import time
 from typing import Any, Awaitable, Callable
 
+from ..clients.paths import UnsafeRequestPathError, rest_path
 from .normalize import stable_hash
 from .resources import resource_fingerprint
 
@@ -162,8 +163,21 @@ def delete_argument(resource_type: str, target_id: str) -> dict[str, str]:
             "type": f"{resource_type}/delete",
             f"{resource_type}_id": storage_id,
         }
-    path_type = "scene" if resource_type == "scene_configuration" else resource_type
-    return {"method": "DELETE", "path": f"/api/config/{path_type}/config/{storage_id}"}
+    # The REST client's route (relative to ``/api``), built only from the
+    # registered literal templates, so the descriptor names exactly the route
+    # the guarded DELETE uses (as ``configuration_delete.provider_payload``).
+    try:
+        if resource_type == "automation":
+            route = rest_path("/config/automation/config/{}", storage_id)
+        elif resource_type == "script":
+            route = rest_path("/config/script/config/{}", storage_id)
+        elif resource_type == "scene_configuration":
+            route = rest_path("/config/scene/config/{}", storage_id)
+        else:
+            raise IdentityMismatch("unsupported_created_type")
+    except UnsafeRequestPathError as exc:
+        raise IdentityMismatch("storage_object_id_unroutable") from exc
+    return {"method": "DELETE", "path": str(route)}
 
 
 def identity_from(

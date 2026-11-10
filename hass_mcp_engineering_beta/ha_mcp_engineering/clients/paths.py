@@ -309,12 +309,9 @@ def _route_methods(route: Route) -> frozenset[str] | None:
     # HAMCP-298 §3.5: a DELETE is reachable only under the single-use
     # ``scene_delete_permit`` the created-object delete gateway installs for
     # exactly one config id (``_scene_delete_permitted``).
-    if route.template == SCENE_CONFIG_TEMPLATE:
+    if route.template == "/config/scene/config/{}":
         return frozenset({"GET", "POST", "DELETE"})
     return None
-
-
-SCENE_CONFIG_TEMPLATE = "/config/scene/config/{}"
 
 
 class _SceneDeletePermit:
@@ -371,7 +368,7 @@ def require_route(path: Any, method: Any = None) -> Route:
     if allowed is not None and method not in allowed:
         raise UnsafeRequestPathError("route_method_not_allowed")
     if (
-        path.template == SCENE_CONFIG_TEMPLATE
+        path.template == "/config/scene/config/{}"
         and method == "DELETE"
         and not _scene_delete_permitted(path, claim=False)
     ):
@@ -415,7 +412,7 @@ def request_url(api_url: str, path: Any, method: Any = None) -> URL:
     ):
         raise UnsafeRequestPathError("route_mismatch")
     if (
-        route.template == SCENE_CONFIG_TEMPLATE
+        route.template == "/config/scene/config/{}"
         and method == "DELETE"
         and not _scene_delete_permitted(route, claim=True)
     ):

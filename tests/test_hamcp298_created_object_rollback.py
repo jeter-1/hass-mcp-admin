@@ -112,7 +112,7 @@ class CaptureTests(CreatedObjectRollbackTestCase):
         self.assertEqual(identity["registry_created_at"], "0.5")
         self.assertEqual(
             identity["delete_argument"],
-            {"method": "DELETE", "path": "/api/config/automation/config/porch_light"},
+            {"method": "DELETE", "path": "/config/automation/config/porch_light"},
         )
         self.assertEqual(
             value["resulting_state_fingerprint"], identity["created_fingerprint"]
