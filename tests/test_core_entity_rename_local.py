@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import socket
 from pathlib import Path
 import sys
 import tarfile
@@ -46,14 +47,22 @@ class Contracts(unittest.TestCase):
             self.assertEqual(record["hashes"][row["path"]], row["sha256"])
 
     def test_disposable_shape(self):
-        # A known lane label (other lanes refuse unknown ownership), not 18123,
+        # A known lane label (other lanes refuse unknown ownership), not 18123 or the
+        # HAMCP-231 lane's 18124,
         # file-backed automation/script stores and an explicit Core memory bound.
         self.assertIn(lane.LABEL, core_local_resources.LANE_LABELS)
-        self.assertEqual(lane.PORTS, (18124,))
+        self.assertEqual(lane.PORTS, (18125,))
         self.assertIn("automation: !include automations.yaml", lane.CONFIG)
         self.assertIn("script: !include scripts.yaml", lane.CONFIG)
         self.assertEqual(lane.CORE_MEMORY, "2g")
         self.assertFalse(lane.NETWORK_POSTURE["egress_required"])
+
+    def test_occupied_port_is_a_named_refusal(self):
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            with patch.object(lane, "PORTS", (holder.getsockname()[1],)):
+                with self.assertRaisesRegex(lane.Refusal, "lane_port_in_use"):
+                    lane.require_free_ports()
 
 
 class Inputs(unittest.TestCase):

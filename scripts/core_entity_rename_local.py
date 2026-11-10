@@ -44,8 +44,8 @@ NETWORK_POSTURE = {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress
                    "egress_required": False}
 # A label core_local_resources already attributes to one lane job.
 LABEL = "org.hamcp.lane"
-# Not 18123: concurrent local lanes of other items use it.
-PORT = 18124
+# Not 18123 (concurrent local lanes) or 18124 (the HAMCP-231 lane).
+PORT = 18125
 PORTS = (PORT,)
 CORE_MEMORY = "2g"
 RECEIPT = "entity_registry_rename.json"
@@ -166,7 +166,10 @@ def cached_image(image):
 def require_free_ports():
     for port in PORTS:
         with socket.socket() as sock:
-            sock.bind(("127.0.0.1", port))
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                raise Refusal("lane_port_in_use") from None
 
 
 def inspect_owned(kind, name, run_id):
