@@ -49,7 +49,7 @@ from ha_mcp_engineering.signed_registry import canonical_json
 from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
 from ha_mcp_engineering.thread_matter_topology import (
     NETWORK_TOPOLOGY_COMMAND, NEVER_SENT_COMMANDS, PAYLOADS, TOPOLOGY, NON_HA_KINDS,
-    ThreadMatterTopologyService, validate_arguments)
+    ThreadMatterTopologyService, normalize_identifier, validate_arguments)
 from ha_mcp_engineering.request_context import begin_request, end_request
 
 import lane_failure_diagnostics as diagnostics
@@ -63,6 +63,7 @@ NODE_DEVICE_IDENTIFIER = re.compile(r"deviceid_[0-9A-F]{16}-([0-9A-F]{16})-Matte
 TOPOLOGY_READS = 2  # the default read and the topology-only read
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REQUIRED_STUB_FILES = ("stub.py", "provenance.json")
+KEPT_HEX = frozenset({"ext_pan_id"})
 
 
 class ExpectationsPending(Exception):
@@ -187,8 +188,13 @@ def check_topology_success(section, *, raw, devices, expected, kept_raw):
     routers = [node for node in nodes if node["kind"] == "border_router"]
     assert len(routers) == 1
     router = routers[0]
+    upstream_router = next(node for node in raw["nodes"] if node["kind"] == "border_router")
     for key, value in kept_raw["border_router"].items():
-        assert router[key] == value, key
+        # Kept, not made opaque; network-level hex is emitted in the module's
+        # normalized form (lowercase, no separators), never otherwise changed.
+        kept = normalize_identifier(value).lower() if key in KEPT_HEX else value
+        assert router[key] == kept, key
+        assert upstream_router[key] == value, key
     assert router["network_name_withheld"] is False
     for key in expected.get("withheld_border_router_text", ()):
         assert router[key] is None

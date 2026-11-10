@@ -51,8 +51,9 @@ def canaries():
 
 
 def kept_raw():
-    return {"border_router": {"network_name": "StubMesh-" + secrets.token_hex(3), "ext_pan_id": base.EXT_PAN_ID,
-                              "rloc16": 0x4400}}
+    # Upper-case hex, as the stub sends it; the projection emits it lowercased.
+    return {"border_router": {"network_name": "StubMesh-" + secrets.token_hex(3),
+                              "ext_pan_id": "DEADBEEF" + secrets.token_hex(4).upper(), "rloc16": 0x4400}}
 
 
 def device_id(node_id):
@@ -357,7 +358,10 @@ class TopologySuccessTests(unittest.TestCase):
             self.check(section=projected(deepcopy(reply))[tm.TOPOLOGY], reply=reply)
 
     def test_changed_kept_raw_value_or_unwithheld_text_fails(self):
-        for key, value in (("rloc16", 0x4401), ("ext_pan_id", "0" * 16), ("network_name", "other")):
+        router = next(node for node in self.result[tm.TOPOLOGY]["nodes"] if node["kind"] == "border_router")
+        self.assertEqual(router["ext_pan_id"], self.kept["border_router"]["ext_pan_id"].lower())
+        for key, value in (("rloc16", 0x4401), ("ext_pan_id", "0" * 16), ("network_name", "other"),
+                           ("ext_pan_id", self.kept["border_router"]["ext_pan_id"][:-1] + "Z")):
             kept = deepcopy(self.kept)
             kept["border_router"][key] = value
             with self.subTest(key=key), self.assertRaises(AssertionError):
