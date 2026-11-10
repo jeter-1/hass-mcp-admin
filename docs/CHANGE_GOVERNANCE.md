@@ -533,6 +533,39 @@ configuration, and runs configuration validation. External changes cause
 automation would require deletion, which is explicitly excluded; create
 rollback returns `rollback_not_available`. No automatic rollback occurs.
 
+## Dependency-bound compensating execution (HAMCP-295/109, 2.6.0)
+
+[`ADR-025`](architecture/ADR-025-DEPENDENCY-BOUND-COMPENSATING-EXECUTION.md)
+amends three ADR-018 statements for one execution mode only,
+`dependency_bound_compensating_v1`. The rename planner selects it for an
+entity rename plan with dependent reference rewrites. It is not
+caller-selectable, and every other plan keeps `ordered_stop_on_failure` and
+the "non-atomic, stops on the first failure, no automatic rollback" contract
+above.
+
+In this mode:
+
+- Every compensation payload is exact, precomputed, shown for approval, and
+  bound into the plan hash.
+- After a determinate forward failure, the owned and verified forward prefix
+  is compensated automatically, in reverse order, under the forward plan's
+  single consumed approval.
+- An indeterminate outcome holds and never triggers compensation. A
+  full-bundle state check runs before each compensation child; drift stops
+  compensation and ends in manual review without overwriting the foreign
+  change.
+- The forward lock union is held through compensation.
+- Each forward and compensation child is one F3 child with its own Core
+  admission and at most one dispatch.
+- A reference that the plan does not rewrite (a template, event data, a
+  blueprint input, a dashboard or another holder without a governed writer)
+  is listed. The plan then requires one plan-level elevated acknowledgement
+  bound to the plan hash. A rename of an actuator entity is `elevated_admin`;
+  other renames are `standard_admin`.
+
+Owner rollback after a verified rename is still `rollback_change`, with its
+own new approval.
+
 ## Persistence, retention, and recovery
 
 Plans are stored only in beta add-on data, by default under

@@ -1322,6 +1322,16 @@
       "homeassistant/helpers/service.py",
       "homeassistant/helpers/storage.py",
       "homeassistant/util/dt.py"
+    ],
+    "core.entity_registry_rename_operation": [
+      "homeassistant/components/automation/config.py",
+      "homeassistant/components/config/automation.py",
+      "homeassistant/components/config/entity_registry.py",
+      "homeassistant/components/config/scene.py",
+      "homeassistant/components/config/script.py",
+      "homeassistant/components/config/view.py",
+      "homeassistant/helpers/entity_platform.py",
+      "homeassistant/helpers/entity_registry.py"
     ]
   },
   "model": "core-contract-read-files-v1",

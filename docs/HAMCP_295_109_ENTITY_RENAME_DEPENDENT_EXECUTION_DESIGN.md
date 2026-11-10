@@ -1283,8 +1283,9 @@ merge `main` after 2.5.0 lands (never rebase):
 - PR #384 (HAMCP-309 Part 3) changes [`CORE_RELEASE_REGISTRY.md`](CORE_RELEASE_REGISTRY.md),
   which S5 documentation touches.
 - No overlap with #386 (HAMCP-327) or #385 (HAMCP-319 design).
-- HAMCP-290 and the other new 2.6 profiles share the one combined 2.6
-  signing; there is no separate envelope for this profile.
+- The other new 2.6 profiles in the combined signing plan (#395) share the
+  one combined 2.6 signing; there is no separate envelope for this profile.
+  HAMCP-290 is not one of them: signing plan #395 (L481, L638) excludes it.
 
 **Rollback of the feature.**
 

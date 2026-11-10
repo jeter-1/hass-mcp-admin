@@ -277,7 +277,9 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
              # HAMCP-311: direct typed tool, never an F3 identity.
              HELPER_VALUE_PROFILE,
              # HAMCP-290: direct typed read, never an F3 identity.
-             MARKETPLACE_PROFILE},
+             MARKETPLACE_PROFILE,
+             # HAMCP-295: dormant entity rename (seq 18 signing batch).
+             "core.entity_registry_rename_operation"},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),

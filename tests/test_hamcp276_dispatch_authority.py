@@ -96,6 +96,9 @@ NOT_F3 = {
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
     "core.typed_helper_value_operation": "direct_typed_tool",
+    # HAMCP-295: the rename F3 identity is not registered until the Phase B
+    # wiring (.artifacts/pending-wiring.md); that wiring removes this row.
+    "core.entity_registry_rename_operation": "f3_identity_not_yet_registered",
 }
 
 
@@ -645,7 +648,12 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
                     "core.marketplace_read"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
-        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
+        # HAMCP-295: an F3 profile whose identity registers in the Phase B
+        # wiring; it already gates F3 entry (fail closed) and is not never-F3.
+        pending_f3 = {"core.entity_registry_rename_operation"}
+        self.assertLessEqual(pending_f3, F3_ENTRY_ADMISSION_PROFILES)
+        self.assertFalse(pending_f3 & (never_f3 | required))
+        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3 - pending_f3, required)
         self.assertFalse(never_f3 & required)
 
     async def test_admitted_identity_is_authorized_once(self):

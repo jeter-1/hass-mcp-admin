@@ -29,6 +29,8 @@ from .physical_effects import (
     plan_acknowledgement_binding,
 )
 from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
+from .entity_rename import ENTITY_RENAME_RESOURCE_TYPE
+from . import entity_rename_policy
 from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
 from .entity_availability_exposure import (
     BINDINGS_KEY as AVAILABILITY_EXPOSURE_BINDINGS_KEY,
@@ -1435,6 +1437,9 @@ def configuration_operation_policy(
     """
     if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
         return _entity_metadata_operation_policy(operation)
+    if operation.resource_type == ENTITY_RENAME_RESOURCE_TYPE:
+        # HAMCP-295: actuator and not-rewritten bases; never prohibited alone.
+        return entity_rename_policy.entity_rename_operation_policy(operation)
     if operation.resource_type == LABEL_RESOURCE_TYPE:
         return _label_operation_policy(operation)
     if operation.resource_type == dashboard_metadata_contract.RESOURCE_TYPE:
@@ -1930,11 +1935,26 @@ def _single_plan_policy(
                     (DASHBOARD_METADATA_INCOMPLETE,),
                 ),
             )
+        if (
+            entity_rename_policy.plan_contains_rename(plan)
+            or getattr(plan, "execution_mode", None) is not None
+        ) and not entity_rename_policy.rename_plan_complete(plan):
+            # HAMCP-295: a rename, and the dependency-bound mode, are only
+            # ever the planner's exact shape.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    (entity_rename_policy.INCOMPLETE_REASON,),
+                ),
+            )
         if len(plan.operations) != 1 and any(
             op.resource_type == scene_configuration_contract.RESOURCE_TYPE
             for op in plan.operations
-        ):
-            # HAMCP-071: a scene configuration update is always alone.
+        ) and not entity_rename_policy.plan_contains_rename(plan):
+            # HAMCP-071: a scene configuration update is always alone, except
+            # as a generated HAMCP-295 reference rewrite of a complete plan.
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.PROHIBITED,
@@ -2181,6 +2201,8 @@ def policy_subject_payload(plan: ChangePlan) -> dict[str, Any]:
             if operational is not None
             else None
         ),
+        # HAMCP-295/109: empty unless the plan is dependency-bound.
+        **entity_rename_policy.policy_subject_extension(plan),
     }
 
 
@@ -2207,6 +2229,9 @@ def _evaluate_change_policy_version(
     )
     exact_owner_authoritative = bool(
         owner_authoritative
+        # HAMCP-295 N35: no exactness shortcut ever removes the rename
+        # acknowledgement, forward or owner rollback (C10).
+        and not entity_rename_policy.plan_contains_rename(plan)
         and (
             (
                 isinstance(dependency_binding, dict)

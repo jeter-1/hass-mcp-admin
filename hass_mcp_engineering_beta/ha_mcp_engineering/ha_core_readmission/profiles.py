@@ -946,6 +946,50 @@ CORE_MARKETPLACE_PROFILES = (
         fallback="hacs_repositories_list_on_exact_unknown_command",
     ),
 )
+# HAMCP-295/109 (Release 2.6.0, design #390 section 5): the governed entity
+# ID rename.  A separate runtime-only mutation contract, never part of
+# CORE_CAPABILITY_PROFILES, so no signed probe fingerprint changes and the
+# signed metadata contract keeps its closed field list.  The one write is
+# ``config/entity_registry/update`` with exactly ``entity_id`` and
+# ``new_entity_id`` (Core 2026.11.0 74cf5a49
+# ``components/config/entity_registry.py:153-283``).  The same contract serves
+# the pre-approved rename compensation and the owner rollback rename.  Dormant
+# until an owner-signed registry reference for Core 2026.11.0 selects it.
+CORE_ENTITY_RENAME_PROFILES = (
+    _contract(
+        "core.entity_registry_rename_operation",
+        CoreCapabilityClass.ENTITY_REGISTRY_RENAME_OPERATION,
+        "compiled-core-entity-registry-rename-operation-v1",
+        (
+            "websocket_entity_registry_get_old_and_new_entity_id",
+            "websocket_entity_registry_update_new_entity_id_only",
+            "rest_state_get_by_entity_id_absence",
+            "entity_registry_rename_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_entity_registry_entry_to_an_absent_same_domain_entity_id",
+            "commands": {
+                "read": ["config/entity_registry/get"],
+                "write": ["config/entity_registry/update"],
+            },
+            "write_arguments": ["entity_id", "new_entity_id"],
+            "state_reads": ["new_entity_id_absence_before_dispatch"],
+            "never_sent": [
+                "aliases", "area_id", "categories", "device_class",
+                "disabled_by", "hidden_by", "icon", "labels", "name",
+                "new_unique_id", "options", "options_domain",
+            ],
+            "dispatch": "at_most_once_entity_registry_rename",
+            "readback": "authoritative_exact_entity_registry_entry_renamed",
+            "readback_identity": ["id", "unique_id", "platform", "config_entry_id"],
+            "state_machine_outcome": "observation_not_verified",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
@@ -954,6 +998,7 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
+    + CORE_ENTITY_RENAME_PROFILES
 )
 
 
@@ -1019,6 +1064,7 @@ __all__ = [
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
+    "CORE_ENTITY_RENAME_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

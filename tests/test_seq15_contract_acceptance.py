@@ -166,7 +166,8 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
         # HAMCP-290: core.marketplace_read is a second signed-only dormant profile.
-        "batch_health": {"compatible_count": 31, "withheld_count": 2},
+        # HAMCP-295: core.entity_registry_rename_operation is a third.
+        "batch_health": {"compatible_count": 31, "withheld_count": 3},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
@@ -439,7 +440,8 @@ class ReceiptTests(unittest.TestCase):
             lambda v: v.update(provider_identity="supervisor"),
             lambda v: v["batch_health"].update(withheld_count=0),
             lambda v: v["batch_health"].update(withheld_count=1),
-            lambda v: v["batch_health"].update(withheld_count=3),
+            lambda v: v["batch_health"].update(withheld_count=2),
+            lambda v: v["batch_health"].update(withheld_count=4),
             lambda v: v["batch_health"].update(compatible_count=30),
             lambda v: v.update(predecessor_capabilities_sha256="2" * 64),
             lambda v: v["predecessor_admission"].update(route_acquired=True),

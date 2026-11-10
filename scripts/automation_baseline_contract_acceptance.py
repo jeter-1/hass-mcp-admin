@@ -199,7 +199,9 @@ async def _run_disposable(configured, *, expected_image, core_version):
                                        'core.scene_configuration_operation',
                                        'core.typed_helper_value_operation',
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
-                                       'core.marketplace_read'}]
+                                       'core.marketplace_read',
+                                       # HAMCP-295 dormant entity rename (seq 18 signing batch).
+                                       'core.entity_registry_rename_operation'}]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)

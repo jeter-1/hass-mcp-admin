@@ -195,6 +195,14 @@ RETIRED_DELEGATED_READS = frozenset(RETIRED_DELEGATED_READ_TOOLS)
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
+# HAMCP-295: the exact entity registry rename binds only its own dormant
+# runtime profile; never the signed entity metadata profile.
+ENTITY_RENAME_PROFILE = "core.entity_registry_rename_operation"
+ENTITY_RENAME_TOOL = "create_entity_rename_plan"
+ENTITY_RENAME_RESOURCE_TYPE = "entity_registry_rename"
+_F3_ENTITY_RENAME_OPERATIONS = frozenset(
+    {("rename_entity_registry_entry", "rename_entity_registry_entry")}
+)
 
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
@@ -1066,6 +1074,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         # Never the signed governed_configuration_operation contract: that
         # evidence did not cover the entity registry write adapter.
         values.add("core.entity_registry_metadata_operation")
+    elif identity in _F3_ENTITY_RENAME_OPERATIONS:
+        # HAMCP-295: never the signed entity metadata contract, whose closed
+        # field set excludes new_entity_id.
+        values.add(ENTITY_RENAME_PROFILE)
     else:
         # There is deliberately no profile for this requirement. Unknown or
         # conflicting identities therefore cannot acquire a Core route lease.
@@ -1095,6 +1107,9 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
+        # HAMCP-295: dormant until seq 18 signs it; a rename plan refuses at
+        # F3 entry, before any persistence, while Core does not admit it.
+        ENTITY_RENAME_PROFILE,
     }
 )
 
@@ -1184,6 +1199,9 @@ __all__ = [
     "SCENE_CONFIGURATION_PROFILE",
     "SCENE_CONFIGURATION_RESOURCE_TYPE",
     "SCENE_CONFIGURATION_TOOL",
+    "ENTITY_RENAME_PROFILE",
+    "ENTITY_RENAME_RESOURCE_TYPE",
+    "ENTITY_RENAME_TOOL",
     "scene_configuration_target",
     "PENDING_ADMISSION_TOOLS",
     "SCRIPT_TRACE_PROFILE",

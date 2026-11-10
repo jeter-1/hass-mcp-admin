@@ -1309,6 +1309,8 @@ HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
     ("seq13_contract_acceptance.py", "self.api_url + path"),
     ("seq15_contract_acceptance.py", "self.api_url + path"),
+    # HAMCP-295: loopback-only, one fullmatched disposable automation route.
+    ("entity_rename_contract_acceptance.py", "self.base + '/api' + path"),
 })
 
 

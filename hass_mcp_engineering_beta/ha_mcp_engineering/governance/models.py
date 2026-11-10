@@ -359,6 +359,10 @@ class ConfigurationOperation:
     verification: ChangeVerification = field(default_factory=ChangeVerification)
     post_apply_fingerprint: str | None = None
     failure_information: dict[str, Any] | None = None
+    # HAMCP-109: the precomputed, hash-bound inverse step.  Persisted only on
+    # ``dependency_bound_compensating_v1`` plans, so every existing record and
+    # hash is unchanged and an older reader refuses a new record.
+    compensation: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ConfigurationOperation":
@@ -383,6 +387,7 @@ class ConfigurationOperation:
         data.setdefault("execution_receipt", None)
         data.setdefault("post_apply_fingerprint", None)
         data.setdefault("failure_information", None)
+        data.setdefault("compensation", None)
         return cls(**data)
 
 
@@ -473,6 +478,11 @@ class ChangePlan:
     configuration_check_status: str | None = None
     plan_family: str = "configuration_change"
     operational: OperationalPlanDetails | None = None
+    # HAMCP-109/295: present only on rename plans in the dependency-bound
+    # mode.  Absent (``None``) keys are never persisted (see ``to_dict``).
+    execution_mode: str | None = None
+    not_rewritten_references: list[dict[str, Any]] | None = None
+    not_rewritten_count: int | None = None
 
     @property
     def target_type(self) -> str:
@@ -545,6 +555,13 @@ class ChangePlan:
                 operation.pop("semantic_projection_hash", None)
             if operation.get("called_scripts") is None:
                 operation.pop("called_scripts", None)
+            if operation.get("compensation") is None:
+                operation.pop("compensation", None)
+        # HAMCP-109: the dependency-bound discriminator keys exist only on
+        # plans of that mode; every other plan keeps its exact shape.
+        for key in ("execution_mode", "not_rewritten_references", "not_rewritten_count"):
+            if value.get(key) is None:
+                value.pop(key, None)
         return value
 
     @classmethod
@@ -558,6 +575,9 @@ class ChangePlan:
         data.setdefault("execution_outcome", None)
         data.setdefault("configuration_check_status", None)
         data.setdefault("plan_family", "configuration_change")
+        data.setdefault("execution_mode", None)
+        data.setdefault("not_rewritten_references", None)
+        data.setdefault("not_rewritten_count", None)
         data["policy_decision"] = (
             ChangePolicyDecision.from_dict(data["policy_decision"])
             if isinstance(data.get("policy_decision"), dict)
