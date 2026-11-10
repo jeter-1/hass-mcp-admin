@@ -653,7 +653,8 @@ def delegated_provider_compatibility(
     # fetch, effective-area annotation, child-row config-entry selection and
     # device builder are byte-identical to 8.5.0 apart from the enrichment
     # helpers' module; signed Core profiles and fingerprints are unchanged.
-    if adapter_version == "9.1.0" and probe_profile in (
+    # HAMCP-351: exact 9.1.2 leaves those files unchanged (bab615df).
+    if adapter_version in {"9.1.0", "9.1.2"} and probe_profile in (
         CHILD_DEVICE_PROBE_PROFILE,
         CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
     ):

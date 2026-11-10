@@ -293,8 +293,13 @@ smaller compatible subset; read `tools/list` on the running system.
 ## Unchanged by design
 
 No governance, plan, approval or audit storage format changes. No new write,
-service call, approval source or fallback path; every new or changed read
-fails closed. Stable v1 (`hass_mcp_admin/`) is unchanged.
+service call, approval source or unreviewed provider fallback; every new or
+changed read fails closed. The one reviewed fallback is HAMCP-290's
+Marketplace-to-HACS protocol fallback in `get_marketplace_inventory`: only on
+an exact `unknown_command` reply to `marketplace/repositories/list`, it sends
+the constant `hacs/repositories/list` on the same connection and reports it
+as `fallback_occurred`. It is dormant until `core.marketplace_read` is signed.
+Stable v1 (`hass_mcp_admin/`) is unchanged.
 
 ## Rollback
 

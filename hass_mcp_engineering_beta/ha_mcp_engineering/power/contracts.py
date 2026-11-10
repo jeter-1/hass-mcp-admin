@@ -16,6 +16,9 @@ POWER_RELEASES = {
     # HAMCP-319: exact reviewed registry entry ha-mcp-v9.1.0-4259f247.
     "9.1.0": ("ha-mcp-v9.1.0-4259f247", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
               "core-2026.9.2-ha-mcp-9.1.0-single-power-v1"),
+    # HAMCP-351: exact reviewed registry entry ha-mcp-v9.1.2-381b1e01.
+    "9.1.2": ("ha-mcp-v9.1.2-381b1e01", "bab615dfc90cc510f5e19a9118707d0fae03a37c",
+              "core-2026.9.2-ha-mcp-9.1.2-single-power-v1"),
 }
 POWER_CONTRACTS = tuple(item[2] for item in POWER_RELEASES.values())
 POWER_SEMANTIC_CONTRACTS = {version: "ha-mcp-" + version + "-single-power-v2"

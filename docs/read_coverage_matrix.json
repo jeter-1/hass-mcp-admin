@@ -233,7 +233,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1027,
+       "line": 1028,
        "anchor": "def f3_requirements"
       },
       {
@@ -330,7 +330,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -471,7 +471,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1027,
+       "line": 1028,
        "anchor": "def f3_requirements"
       },
       {
@@ -649,7 +649,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1027,
+       "line": 1028,
        "anchor": "def f3_requirements"
       },
       {
@@ -824,17 +824,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 243,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -932,7 +932,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -1164,17 +1164,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 243,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1271,7 +1271,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -1314,17 +1314,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 243,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1393,7 +1393,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -1414,7 +1414,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1973,
+       "line": 1977,
        "anchor": "yaml-fragment-read"
       }
      ]
@@ -1452,17 +1452,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 243,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1509,7 +1509,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 249,
+       "line": 251,
        "anchor": "_L2_BASENAMES ="
       }
      ]
@@ -1534,7 +1534,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 243,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1603,17 +1603,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2159,
+       "line": 2183,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1746,7 +1746,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1842,17 +1842,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2159,
+       "line": 2183,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -1990,7 +1990,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2076,17 +2076,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 95,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2159,
+       "line": 2183,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2171,7 +2171,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       }
      ]
@@ -2262,7 +2262,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       },
       {
@@ -2562,7 +2562,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2169,
+       "line": 2193,
        "anchor": "\"8.6.0\": \"held\""
       },
       {
@@ -2761,7 +2761,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 504,
+       "line": 505,
        "anchor": "async def list_dashboards"
       },
       {
@@ -2791,17 +2791,17 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 609,
+       "line": 610,
        "anchor": "async def get_dashboard_config"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 204,
+       "line": 205,
        "anchor": "CONFIGURATION_TOOL_GROWING_TIMING = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 2454,
+       "line": 2455,
        "anchor": "def _estimated_configuration_response_size"
       },
       {
@@ -2831,7 +2831,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 803,
+       "line": 804,
        "anchor": "async def get_analysis_configuration"
       },
       {
@@ -2944,7 +2944,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/raw_evidence.py",
-       "line": 114,
+       "line": 115,
        "anchor": "exact_rows[0].mode != \"storage\""
       },
       {
@@ -2959,7 +2959,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
-       "line": 1068,
+       "line": 1069,
        "anchor": "async def execute_governed_dashboard_update"
       }
      ]
@@ -3246,12 +3246,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2137,
+       "line": 2161,
        "anchor": "OPTIONAL_TOOL_BINDINGS: dict"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2085,
+       "line": 2092,
        "anchor": "\"8.5.0\": ("
       },
       {
@@ -3273,7 +3273,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 87,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       }
      ]
@@ -3289,7 +3289,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2085,
+       "line": 2092,
        "anchor": "\"8.5.0\": ("
       }
      ]
@@ -3930,12 +3930,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 135,
+       "line": 144,
        "anchor": "UPSTREAM_INTEGRATION_WINDOW = 200"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 689,
+       "line": 698,
        "anchor": "upstream_window_exceeded"
       },
       {
@@ -4051,7 +4051,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 135,
+       "line": 144,
        "anchor": "UPSTREAM_INTEGRATION_WINDOW = 200"
       }
      ]
@@ -4723,7 +4723,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 412,
+       "line": 421,
        "anchor": "supervisor_version"
       }
      ]
@@ -5137,7 +5137,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 35,
+       "line": 36,
        "anchor": "REVIEWED_VERSIONS"
       },
       {
@@ -5193,7 +5193,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 35,
+       "line": 36,
        "anchor": "REVIEWED_VERSIONS"
       }
      ]
@@ -5610,7 +5610,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 50,
+       "line": 59,
        "anchor": "_EXCLUDED_KEYS"
       },
       {
@@ -5662,7 +5662,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 50,
+       "line": 59,
        "anchor": "_EXCLUDED_KEYS"
       }
      ]
@@ -5686,12 +5686,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 424,
+       "line": 433,
        "anchor": "_REPAIR_ISSUE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 46,
+       "line": 55,
        "anchor": "SECTIONS"
       }
      ]
@@ -5708,7 +5708,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 424,
+       "line": 433,
        "anchor": "_REPAIR_ISSUE"
       }
      ]
@@ -5732,7 +5732,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
-       "line": 602,
+       "line": 611,
        "anchor": "_APP"
       }
      ]
@@ -6988,7 +6988,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "f67e080f1d29f86089be6cf17387b1d3aa008e18ed6fbfe140328415d1d5eee5",
+   "fingerprint": "172f7ff3c1e62a3b851edf706204e6b1d239ee9741b1e87fc54a4fc4c221e8d9",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7007,6 +7007,10 @@
     "adapter:ha-mcp-9.1.0-platform-apps-v1": "64568a024212c154",
     "adapter:ha-mcp-9.1.0-platform-health-v1": "ed689bed6ceca58f",
     "adapter:ha-mcp-9.1.0-platform-integrations-v1": "aa57762433076091",
+    "adapter:ha-mcp-9.1.2-blueprint-list-get-v1": "a23f427ab89cca99",
+    "adapter:ha-mcp-9.1.2-platform-apps-v1": "e3af10d0de2ea6e2",
+    "adapter:ha-mcp-9.1.2-platform-health-v1": "a42c5c820183ef1e",
+    "adapter:ha-mcp-9.1.2-platform-integrations-v1": "165e0560d8f141ea",
     "adapter:ha_config_get_yaml": "6f132512e8ffe15f",
     "ha_mcp_7.14.1:ha_bulk_control": "8c7d2bf6015904b3",
     "ha_mcp_7.14.1:ha_call_event": "2c6f95b236dffbef",
@@ -7863,6 +7867,83 @@
     "ha_mcp_9.1.0:ha_set_integration": "061530d9c09dea42",
     "ha_mcp_9.1.0:ha_set_todo_item": "051e83a9c3147b4f",
     "ha_mcp_9.1.0:ha_set_zone": "b5868bba1909f15a",
+    "ha_mcp_9.1.2:ha_bulk_control": "b23076a3c92505ca",
+    "ha_mcp_9.1.2:ha_call_event": "8bd61d3484e9cf5b",
+    "ha_mcp_9.1.2:ha_call_service": "3479b8dd8d4a53e1",
+    "ha_mcp_9.1.2:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
+    "ha_mcp_9.1.2:ha_config_delete_dashboard_resource": "5e09e65d0299d81a",
+    "ha_mcp_9.1.2:ha_config_get_automation": "33893d35cf9c7200",
+    "ha_mcp_9.1.2:ha_config_get_calendar_events": "1b598c09aea37a01",
+    "ha_mcp_9.1.2:ha_config_get_category": "9589b1ceb240fdd6",
+    "ha_mcp_9.1.2:ha_config_get_dashboard": "b15a800becf3b204",
+    "ha_mcp_9.1.2:ha_config_get_label": "f53b38c4b4651202",
+    "ha_mcp_9.1.2:ha_config_get_scene": "68f8abec17ef8e6a",
+    "ha_mcp_9.1.2:ha_config_get_script": "b4c42d23a0ab65a8",
+    "ha_mcp_9.1.2:ha_config_list_dashboard_resources": "cae70d387a3bea67",
+    "ha_mcp_9.1.2:ha_config_list_groups": "bf31fce97bf09cf1",
+    "ha_mcp_9.1.2:ha_config_list_helpers": "8b43b302c48eb6c1",
+    "ha_mcp_9.1.2:ha_config_remove_automation": "61aa5be9666b1baf",
+    "ha_mcp_9.1.2:ha_config_remove_calendar_event": "f0c00494ad24c0cc",
+    "ha_mcp_9.1.2:ha_config_remove_category": "422ae33e586ac656",
+    "ha_mcp_9.1.2:ha_config_remove_group": "0d510d5fb562a441",
+    "ha_mcp_9.1.2:ha_config_remove_label": "79021cb249de86fc",
+    "ha_mcp_9.1.2:ha_config_remove_scene": "0c7f7f6c62d52b43",
+    "ha_mcp_9.1.2:ha_config_remove_script": "a3d7d43d4a079e1a",
+    "ha_mcp_9.1.2:ha_config_set_automation": "4aff6f2e3dcb5bfa",
+    "ha_mcp_9.1.2:ha_config_set_calendar_event": "0e98aa754d3112d7",
+    "ha_mcp_9.1.2:ha_config_set_category": "0c6d478d7e8e2e8a",
+    "ha_mcp_9.1.2:ha_config_set_dashboard": "ec41632a8689a13d",
+    "ha_mcp_9.1.2:ha_config_set_dashboard_resource": "2fda9aea0b01627b",
+    "ha_mcp_9.1.2:ha_config_set_group": "41792599a1ef68cd",
+    "ha_mcp_9.1.2:ha_config_set_helper": "b8270e49b433e805",
+    "ha_mcp_9.1.2:ha_config_set_label": "6a254b6664c4083a",
+    "ha_mcp_9.1.2:ha_config_set_scene": "3274b2a201a217b4",
+    "ha_mcp_9.1.2:ha_config_set_script": "9335b08acaab39b0",
+    "ha_mcp_9.1.2:ha_eval_template": "289af5e1e68c1fab",
+    "ha_mcp_9.1.2:ha_get_app": "f30e609df72b9ae6",
+    "ha_mcp_9.1.2:ha_get_automation_traces": "78d5c3da073aab67",
+    "ha_mcp_9.1.2:ha_get_camera_image": "e15e28637fa727ca",
+    "ha_mcp_9.1.2:ha_get_device": "7747e246c1fe7c03",
+    "ha_mcp_9.1.2:ha_get_entity": "c5d415ca85435865",
+    "ha_mcp_9.1.2:ha_get_entity_exposure": "9c4fed35a86ddbec",
+    "ha_mcp_9.1.2:ha_get_hacs_info": "cc7f3537efb571a8",
+    "ha_mcp_9.1.2:ha_get_history": "53dc3e9c68dfc4cf",
+    "ha_mcp_9.1.2:ha_get_integration": "dfd354b27b376573",
+    "ha_mcp_9.1.2:ha_get_logs": "6474823c8a66451d",
+    "ha_mcp_9.1.2:ha_get_operation_status": "2b1347525cc2aecb",
+    "ha_mcp_9.1.2:ha_get_overview": "c60ce8cd0b8feaca",
+    "ha_mcp_9.1.2:ha_get_skill_guide": "813e50cfd6b697eb",
+    "ha_mcp_9.1.2:ha_get_state": "782b9dc0a078610b",
+    "ha_mcp_9.1.2:ha_get_system_health": "fdd9e7eea087d9fb",
+    "ha_mcp_9.1.2:ha_get_todo": "305841fc7d039b45",
+    "ha_mcp_9.1.2:ha_get_zone": "4e9f2e6e77f0ff7f",
+    "ha_mcp_9.1.2:ha_list_floors_areas": "742e487b335c2566",
+    "ha_mcp_9.1.2:ha_list_services": "4ff9bc4d4fd5776d",
+    "ha_mcp_9.1.2:ha_manage_app": "ef5114a956709cfe",
+    "ha_mcp_9.1.2:ha_manage_backup": "14839e432bf4c889",
+    "ha_mcp_9.1.2:ha_manage_blueprints": "bd5f639ec25c34a7",
+    "ha_mcp_9.1.2:ha_manage_energy_prefs": "ea11f22a5415f4d2",
+    "ha_mcp_9.1.2:ha_manage_hacs": "f493da2f2170652d",
+    "ha_mcp_9.1.2:ha_manage_pipeline": "e87a42dcf1e9cd1d",
+    "ha_mcp_9.1.2:ha_manage_radio": "6c8915e83180e0e9",
+    "ha_mcp_9.1.2:ha_manage_theme": "6b1bc8975d4a6240",
+    "ha_mcp_9.1.2:ha_manage_updates": "7f54f6a9a7245316",
+    "ha_mcp_9.1.2:ha_reload_core": "a7421f415081db49",
+    "ha_mcp_9.1.2:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
+    "ha_mcp_9.1.2:ha_remove_device": "447798ffcbcba46a",
+    "ha_mcp_9.1.2:ha_remove_entity": "626a6790eec71f26",
+    "ha_mcp_9.1.2:ha_remove_helpers_integrations": "0fab6da4e7919f26",
+    "ha_mcp_9.1.2:ha_remove_todo_item": "36b3738029bf2bac",
+    "ha_mcp_9.1.2:ha_remove_zone": "ee56ff52c1161944",
+    "ha_mcp_9.1.2:ha_report_issue": "34334d0e3a096c37",
+    "ha_mcp_9.1.2:ha_restart": "fa53839652546809",
+    "ha_mcp_9.1.2:ha_search": "8977d887e5770b67",
+    "ha_mcp_9.1.2:ha_set_area_or_floor": "7ce9f9b5f35fee8a",
+    "ha_mcp_9.1.2:ha_set_device": "66fc7aa2e0372759",
+    "ha_mcp_9.1.2:ha_set_entity": "7d947e0ef2fa71e8",
+    "ha_mcp_9.1.2:ha_set_integration": "7c8930a01478a0ea",
+    "ha_mcp_9.1.2:ha_set_todo_item": "051e83a9c3147b4f",
+    "ha_mcp_9.1.2:ha_set_zone": "b5868bba1909f15a",
     "native:apply_change_plan": "4188caaf9dea47e6",
     "native:approve_change_plan": "76070feb4f3bcf43",
     "native:automation_reliability_analysis": "569207f7b97f4f7a",
@@ -7999,7 +8080,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "9c56a2f93de18e5b1679ac81c12bdcc83bff660ebcb0e09840fa48c88b903879",
+   "fingerprint": "f14442810998397456c8d3f1dd6525414ea5b7f2a2d7cda500aefdcfc00a4654",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -8044,9 +8125,9 @@
     "provider_matrix:compare_automation_baselines": "86e8c20eabd39f36",
     "provider_matrix:configuration_integrity_analysis": "402caf050426dd74",
     "provider_matrix:control_device_configuration": "2072d7fe4b9f2191",
-    "provider_matrix:control_fan": "662d8d3869416029",
-    "provider_matrix:control_helper": "1b4bf920cbd17f18",
-    "provider_matrix:control_power": "12333afb8289758b",
+    "provider_matrix:control_fan": "728d4cb3cddba817",
+    "provider_matrix:control_helper": "c6208ee827d22704",
+    "provider_matrix:control_power": "3ecaf601aab46f09",
     "provider_matrix:dashboard_integrity_analysis": "672e9d35dfc77afa",
     "provider_matrix:get_backup_inventory": "5f1b549a3648492a",
     "provider_matrix:get_configuration_definitions": "cf7bae4a78afe9d2",
@@ -8059,10 +8140,10 @@
     "provider_matrix:get_recorder_settings": "65cf21ccb99937ff",
     "provider_matrix:get_trace_snapshot": "e183257486d1b011",
     "provider_matrix:get_unregistered_entities": "8fe52b963d3faa93",
-    "provider_matrix:ha_config_get_yaml": "a5bcf89ef4e52201",
-    "provider_matrix:ha_get_app": "41f04315394cd6bd",
-    "provider_matrix:ha_get_integration": "41b23be72219c636",
-    "provider_matrix:ha_get_system_health": "2e27b72349695c65",
+    "provider_matrix:ha_config_get_yaml": "df156385b9fb0b22",
+    "provider_matrix:ha_get_app": "08319b6c03779252",
+    "provider_matrix:ha_get_integration": "f5d7796c90176134",
+    "provider_matrix:ha_get_system_health": "4ec4333955f0b280",
     "provider_matrix:handoff_generation": "a09ba7747e029885",
     "provider_matrix:incident_correlation": "333171d6247e731f",
     "provider_matrix:list_areas": "8f0fa6b1d409eabd",

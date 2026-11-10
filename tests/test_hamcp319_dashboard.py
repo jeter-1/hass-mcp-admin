@@ -62,7 +62,10 @@ GUIDE_SHA256 = 'b4d42e9383fe929ecc87fb52150ceb3222173b528b1cf9f8663218c65544d293
 GUIDE_GIT_BLOB = 'bafb545627ca4aac44eb439400f30d77f24eacf8'
 # Synthetic strict_full value (design section 3.3); nothing is contacted.
 STRICT_URL = 'http://synthetic.invalid/base/catalog/full'
-URLS = {'9.1.0': STRICT_URL, '8.5.0': ''}
+# HAMCP-351: exact 9.1.2 serves the dashboard tools unchanged from 9.1.0, so
+# the 9.1 peer shapes below serve both (tests/test_hamcp319_used_tool_exact_admission).
+NINE_ONE = ('9.1.0', '9.1.2')
+URLS = {'9.1.0': STRICT_URL, '9.1.2': STRICT_URL, '8.5.0': ''}
 KEY_PATTERN = re.compile(r'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}')
 KEY_91 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-9a1b2c3d'
 KEY_85 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd'
@@ -129,7 +132,7 @@ class DashboardPeer:
         self.get_payload = None    # callable(args) -> (payload, is_error)
         self.setter_payload = None  # callable(args) -> (payload, is_error)
         self.native_write = False
-        self.key = KEY_91 if version == '9.1.0' else KEY_85
+        self.key = KEY_91 if version in NINE_ONE else KEY_85
 
     def names(self):
         return [name for name, _ in self.calls]
@@ -142,7 +145,7 @@ class DashboardPeer:
         if self.list_payload is not None:
             return self.list_payload(args), False
         rows = deepcopy(self.rows)
-        if self.version == '9.1.0':
+        if self.version in NINE_ONE:
             return fill(ENVELOPES['list'], rows=rows, count=len(rows)), False
         return {'success': True, 'action': 'list', 'count': len(rows), 'dashboards': rows}, False
 
@@ -150,7 +153,7 @@ class DashboardPeer:
         if self.get_payload is not None:
             return self.get_payload(args)
         config = deepcopy(self.configuration)
-        if self.version == '9.1.0':
+        if self.version in NINE_ONE:
             return fill(ENVELOPES['get_stored_config'], config=config,
                         config_hash=compute_config_hash_91(config),
                         config_size_bytes=len(json.dumps(config))) | {
@@ -159,7 +162,7 @@ class DashboardPeer:
                 'config': config, 'config_hash': compute_config_hash_91(config)}, False
 
     def _guide(self, args):
-        if self.version == '9.1.0':
+        if self.version in NINE_ONE:
             # Exact 9.1 input schema: only ``file`` (additionalProperties false).
             if set(args) - {'file'} or args.get('file', 'SKILL.md') != GUIDE_FILE:
                 return None
@@ -181,7 +184,7 @@ class DashboardPeer:
             return error_envelope('VALIDATION_FAILED', 'Synthetic strict BPS refusal',
                                   action='set'), True
         self.configuration = deepcopy(args['config'])
-        if self.version == '9.1.0':
+        if self.version in NINE_ONE:
             template = 'set_update_native' if self.native_write else 'set_update'
             return fill(ENVELOPES[template],
                         config_hash=compute_config_hash_91(self.configuration)) | {

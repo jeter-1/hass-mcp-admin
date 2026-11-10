@@ -45,6 +45,10 @@ _BEST_PRACTICES_ARGUMENT_REWRITES = {
     ("9.1.0", REQUIRED_BEST_PRACTICES_TOOL): (
         ("file", "references/dashboard-guide.md"),
     ),
+    # HAMCP-351: the exact 9.1.2 ha_get_skill_guide descriptor equals 9.1.0's.
+    ("9.1.2", REQUIRED_BEST_PRACTICES_TOOL): (
+        ("file", "references/dashboard-guide.md"),
+    ),
 }
 MAX_GROUPED_ERROR_CATEGORIES = 8
 TRANSPORT_FAILURE_KINDS = frozenset(
