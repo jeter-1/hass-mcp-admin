@@ -2690,6 +2690,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_CONFIGURATION_DELETE_PROFILES,
             CORE_NOVEMBER_BATCH_PROFILES,
             CORE_MARKETPLACE_PROFILES,  # HAMCP-290
+            CORE_SECURITY_METADATA_PROFILES,  # HAMCP-134
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2718,7 +2719,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             + CORE_LABEL_REGISTRY_PROFILES
                                                             + CORE_NOVEMBER_BATCH_PROFILES
                                                             # HAMCP-290: the dormant Marketplace read is withheld.
-                                                            + CORE_MARKETPLACE_PROFILES))
+                                                            + CORE_MARKETPLACE_PROFILES
+                                                            # HAMCP-134: the dormant security metadata read too.
+                                                            + CORE_SECURITY_METADATA_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
@@ -2726,7 +2729,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
              + CORE_ENTITY_METADATA_PROFILES + CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES
              + CORE_CONFIGURATION_DELETE_PROFILES
              + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES
-             + CORE_MARKETPLACE_PROFILES},  # HAMCP-290
+             + CORE_MARKETPLACE_PROFILES + CORE_SECURITY_METADATA_PROFILES},  # HAMCP-290, HAMCP-134
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
