@@ -379,6 +379,10 @@ class AuthenticatedMcpGateway:
         self._initial_catalog_reconciliation_complete = not (
             self._initial_catalog_reconciliation_required
         )
+        # HAMCP-350: set once the bounded startup wait for the first ha-mcp
+        # reconcile has elapsed. It admits authenticated MCP requests (the
+        # Engineering-native catalog) but never marks the catalog reconciled.
+        self._initial_catalog_deadline_elapsed = False
         self._catalog_readiness_lock = threading.Lock()
         self._execution_readiness = execution_readiness
         self._core_runtime = core_runtime
@@ -405,9 +409,22 @@ class AuthenticatedMcpGateway:
         with self._catalog_readiness_lock:
             self._initial_catalog_reconciliation_complete = True
 
+    def mark_initial_catalog_deadline_elapsed(self) -> None:
+        """Accept MCP requests while the first reconcile keeps retrying.
+
+        HAMCP-350: the delegated catalog stays unregistered until a later
+        reconcile admits it, so a session opened now sees only the
+        Engineering-native catalog. ``/ready`` stays pending until
+        :meth:`mark_initial_catalog_reconciled`.
+        """
+
+        with self._catalog_readiness_lock:
+            self._initial_catalog_deadline_elapsed = True
+
     def catalog_readiness_state(self) -> dict[str, bool | str]:
         with self._catalog_readiness_lock:
             complete = self._initial_catalog_reconciliation_complete
+            deadline_elapsed = self._initial_catalog_deadline_elapsed
         request_ready = execution_ready = self._execution_readiness is None
         f3_status = "unavailable"
         if self._execution_readiness is not None:
@@ -424,10 +441,14 @@ class AuthenticatedMcpGateway:
         ready = complete and request_ready
         state: dict[str, bool | str] = {
             "ready": ready,
+            "accepting_mcp_requests": (
+                (complete or deadline_elapsed) and request_ready
+            ),
             "initial_reconciliation_required": (
                 self._initial_catalog_reconciliation_required
             ),
             "initial_reconciliation_complete": complete,
+            "initial_reconciliation_deadline_elapsed": deadline_elapsed,
             "status": (
                 "ready" if ready and execution_ready
                 else "ready_f3_execution_unavailable" if ready
@@ -694,7 +715,7 @@ class AuthenticatedMcpGateway:
                 return await self._respond(send, status, body, request_id)
 
             readiness = self.catalog_readiness_state()
-            if not readiness["ready"]:
+            if not readiness["accepting_mcp_requests"]:
                 telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
