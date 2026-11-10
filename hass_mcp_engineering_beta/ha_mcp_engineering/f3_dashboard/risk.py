@@ -134,6 +134,11 @@ _HEADER_TOGGLE_GROUP_REASON = (
 # entity's default control on the button card, tile icon, picture-glance
 # items, toggle-group and header/footer ``buttons`` chips.
 _GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
+# Owner ruling 2026-11-10: a toggle-group card sends one service, taken from
+# its first entity's domain, to every listed entity
+# (hui-toggle-group-card.ts:130-141).  A list whose domains differ is
+# disclosed as one group finding and requires manual review.
+_TOGGLE_GROUP_MIXED_REASON = "toggle_group_mixed_domains_receive_first_entity_service"
 # strategies/get-strategy.ts: a ``strategy`` key on the dashboard, a view
 # or a section is replaced by cards generated in the browser.  Only the
 # built-in ``iframe`` and ``map`` strategies generate their cards from the
@@ -900,33 +905,57 @@ def _default_control_findings(
             if isinstance(chip, dict):
                 classified.add(location)
 
-    # Toggle-group card: one tap toggles every listed entity.  A group entity
-    # is passed to ``<first entity domain>.<toggle action>``
-    # (hui-toggle-group-card.ts:130-139), whose effect on the group's
-    # runtime members is not established at plan time.
+    # Toggle-group card: one tap sends one service to every listed entity.
+    # The domain and the service come from the first entity alone
+    # (hui-toggle-group-card.ts:130-141: ``computeDomain(entities[0])``,
+    # ``getToggleAction`` for that domain, then ``callService`` with the whole
+    # list; get_toggle_action.ts:16-72).  When every entity shares the first
+    # entity's domain, each one receives its own domain's service and is
+    # classified by that domain.  A group entity is passed to ``group.<toggle
+    # action>``, whose effect on the group's runtime members is not
+    # established at plan time.  When any domain differs, the later entities
+    # receive a service of another domain; that is one disclosed finding for
+    # the card and requires manual review (owner ruling 2026-11-10).
     if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
-        for index, entity in enumerate(value["entities"]):
-            domain = _entity_domain(entity)
-            if domain == _GROUP_DOMAIN:
-                category = RiskCategory.UNKNOWN
-                reason = _GROUP_CONTROL_REASON
-            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
-                category = _domain_control_category(domain)
-                reason = _domain_reason(category, "toggle_group")
-            else:
-                continue
+        group_entities = value["entities"]
+        group_domains = [_entity_domain(entity) for entity in group_entities]
+        if any(domain != group_domains[0] for domain in group_domains[1:]):
             add(
-                category,
-                (*tokens, "entities", str(index)),
-                domain,
-                reason,
+                RiskCategory.UNKNOWN,
+                (*tokens, "entities"),
+                group_domains[0],
+                _TOGGLE_GROUP_MIXED_REASON,
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
-                    shape="toggle_group",
-                    complete_control=value["entities"],
-                    control_entity=entity,
+                    shape="toggle_group_mixed_domains",
+                    complete_control=group_entities,
+                    control_entity=group_entities[0],
                 ),
             )
+        else:
+            for index, (entity, domain) in enumerate(
+                zip(group_entities, group_domains)
+            ):
+                if domain == _GROUP_DOMAIN:
+                    category = RiskCategory.UNKNOWN
+                    reason = _GROUP_CONTROL_REASON
+                elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
+                    category = _domain_control_category(domain)
+                    reason = _domain_reason(category, "toggle_group")
+                else:
+                    continue
+                add(
+                    category,
+                    (*tokens, "entities", str(index)),
+                    domain,
+                    reason,
+                    context_binding(
+                        "f3-dashboard-default-control-semantic-binding-v1",
+                        shape="toggle_group",
+                        complete_control=group_entities,
+                        control_entity=entity,
+                    ),
+                )
 
     # Area-controls feature: toggles whole domains of the area; with falsy
     # ``controls`` it shows every default domain, cover classes included

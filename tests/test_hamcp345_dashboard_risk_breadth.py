@@ -11,6 +11,11 @@ tile icon, picture-glance items, toggle-group and header/footer buttons
 header toggle are analyzed or disclosed; the light/switch default-toggle and
 display-only count residuals are pinned.
 
+Owner ruling 2026-11-10 (review correction): a toggle-group card is
+classified by what the card sends, one service from ``entities[0]`` for the
+whole list; a list whose domains differ requires manual review; no shape
+gets a lower disposition than on the release base.
+
 Frontend rules are read at frontend a67b691a (pinned by Core 2026.11.0);
 the group-toggle service semantics at Core 74cf5a49.  See
 docs/evidence/hamcp345/README.md.
@@ -59,6 +64,7 @@ GROUP_REASON = "group_row_members_not_established_at_plan_time"
 GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
 HEADER_GROUP_REASON = "header_toggle_group_members_not_established_at_plan_time"
 STRATEGY_REASON = "strategy_generated_controls_cannot_be_analyzed"
+MIXED_REASON = "toggle_group_mixed_domains_receive_first_entity_service"
 
 
 def card_risk(card: dict):
@@ -324,19 +330,29 @@ class GroupNonRowShapeTests(unittest.TestCase):
                 self.assertTrue(risk.manual_review_required)
                 self.assertEqual(risk.high_consequence_action_count, 0)
 
-    def test_group_beside_other_toggle_group_entities_is_disclosed_alone(self):
+    def test_group_beside_other_toggle_group_domains_is_one_mixed_disclosure(self):
+        # The card sends ``light.turn_on``/``light.turn_off`` to the group and
+        # to the lock: neither receives a service of its own domain, so the
+        # card is one disclosed finding, not a light toggle, a group
+        # disclosure and a lock action.
         risk = card_risk(
             {"type": "toggle-group", "entities": ["light.synthetic_lamp", GROUP, LOCK]}
+        )
+        self.assertEqual(changed(risk), [(f"{U}/entities", UNKNOWN, MIXED_REASON)])
+        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+        self.assertEqual(risk.high_consequence_action_count, 0)
+        # Several groups and nothing else share the first entity's domain:
+        # each stays disclosed by the group rule.
+        risk = card_risk(
+            {"type": "toggle-group", "entities": [GROUP, "group.synthetic_windows"]}
         )
         self.assertEqual(
             changed(risk),
             [
-                (f"{U}/entities/0", TOGGLE, "toggle_group_toggle_control"),
+                (f"{U}/entities/0", UNKNOWN, GROUP_CONTROL_REASON),
                 (f"{U}/entities/1", UNKNOWN, GROUP_CONTROL_REASON),
-                (f"{U}/entities/2", HIGH, "toggle_group_targets_high_consequence_domain"),
             ],
         )
-        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
 
     def test_falsy_force_dialog_keeps_the_picture_glance_default(self):
         for value in (False, 0, "", None):
@@ -416,6 +432,212 @@ class GroupNonRowShapeTests(unittest.TestCase):
             {"views": [{"cards": [{"type": "tile", "entity": "group.synthetic_windows"}]}]},
         )
         self.assertEqual(changed(risk), [(f"{U}/entity", UNKNOWN, GROUP_CONTROL_REASON)])
+
+
+class ToggleGroupSingleServiceTests(unittest.TestCase):
+    """Owner ruling 2026-11-10: a toggle-group is classified by what the card
+    sends.  ``hui-toggle-group-card.ts:130-141`` computes the domain from
+    ``entities[0]``, takes ``getToggleAction`` for that domain and calls that
+    one service with the whole list.  A list whose domains differ is one
+    disclosed finding and requires manual review."""
+
+    LIGHT = "light.synthetic_lamp"
+    LIGHT2 = "light.synthetic_second"
+    VALVE2 = "valve.synthetic_second"
+    LOCK2 = "lock.synthetic_back_door"
+
+    # Dispositions of ``analyze_dashboard_risk`` on the release base
+    # (release/2.6.0 at cb9d6783) for a toggle-group card with these entities
+    # added to an empty view, recorded by
+    # docs/evidence/hamcp345/toggle_group_base_vs_head.py.
+    BASE_DISPOSITIONS = (
+        ([LOCK, LOCK2], "elevated_manual_review"),
+        ([VALVE], "standard_review"),
+        ([VALVE, VALVE2], "standard_review"),
+        ([LIGHT, LIGHT2], "elevated_manual_review"),
+        ([GROUP], "standard_review"),
+        ([LIGHT, LOCK], "elevated_manual_review"),
+        ([LIGHT, VALVE], "elevated_manual_review"),
+        ([VALVE, LIGHT], "elevated_manual_review"),
+        ([LIGHT, LIGHT2, VALVE], "elevated_manual_review"),
+        ([LOCK, LIGHT], "elevated_manual_review"),
+        ([LIGHT, GROUP, LOCK], "elevated_manual_review"),
+        ([GROUP, LOCK], "elevated_manual_review"),
+        (["fan.synthetic", "input_boolean.synthetic"], "standard_review"),
+        (["fan.synthetic", "fan.synthetic"], "standard_review"),
+        ([5, LOCK], "elevated_manual_review"),
+        ([LOCK, 5], "elevated_manual_review"),
+        ([5, None], "standard_review"),
+        ([{"entity": LOCK}, LIGHT], "elevated_manual_review"),
+        ([], "standard_review"),
+    )
+    RANK = {
+        "standard_review": 0,
+        "elevated_manual_review": 1,
+        "manual_review_required": 2,
+    }
+
+    def assert_mixed(self, entities: list, domain: str | None) -> None:
+        risk = card_risk({"type": "toggle-group", "entities": entities})
+        self.assertEqual(changed(risk), [(f"{U}/entities", UNKNOWN, MIXED_REASON)])
+        self.assertEqual(
+            [item.entity_domain for item in risk.findings if item.introduced_or_changed],
+            [domain],
+        )
+        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+        self.assertTrue(risk.manual_review_required)
+        self.assertEqual(risk.high_consequence_action_count, 0)
+
+    def test_valve_that_is_not_the_first_entity_is_not_a_valve_action(self):
+        # The card calls ``light.turn_on``/``light.turn_off`` with both IDs;
+        # the valve is never sent ``valve.open_valve``/``valve.close_valve``.
+        for entities in (
+            [self.LIGHT, VALVE],
+            [self.LIGHT, self.LIGHT2, VALVE],
+            [self.LIGHT, VALVE, self.LIGHT2],
+        ):
+            with self.subTest(entities=entities):
+                risk = card_risk({"type": "toggle-group", "entities": entities})
+                self.assertNotIn(HIGH, {item[1] for item in changed(risk)})
+                self.assertNotIn(
+                    "toggle_group_targets_high_consequence_domain",
+                    {item[2] for item in changed(risk)},
+                )
+                self.assert_mixed(entities, "light")
+
+    def test_mixed_domains_are_one_manual_review_finding(self):
+        for label, entities, domain in (
+            ("light_lock", [self.LIGHT, LOCK], "light"),
+            ("lock_light", [LOCK, self.LIGHT], "lock"),
+            ("valve_light", [VALVE, self.LIGHT], "valve"),
+            ("valve_lock", [VALVE, LOCK], "valve"),
+            ("lock_valve", [LOCK, VALVE], "lock"),
+            ("light_switch", [self.LIGHT, "switch.synthetic"], "light"),
+            ("light_group", [self.LIGHT, GROUP], "light"),
+            ("group_lock", [GROUP, LOCK], "group"),
+            ("fan_input_boolean", ["fan.synthetic", "input_boolean.synthetic"], "fan"),
+            ("sensor_binary_sensor", ["sensor.synthetic", "binary_sensor.synthetic"],
+             "sensor"),
+            ("differs_only_in_last",
+             [LOCK, self.LOCK2, "lock.synthetic_side_door", self.LIGHT], "lock"),
+            ("malformed_first", [5, LOCK], None),
+            ("malformed_later", [LOCK, 5], "lock"),
+            ("no_domain_later", [self.LIGHT, "nodot"], "light"),
+        ):
+            with self.subTest(entities=label):
+                self.assert_mixed(entities, domain)
+
+    def test_a_single_domain_list_is_classified_by_that_domain(self):
+        high = "toggle_group_targets_high_consequence_domain"
+        toggle = "toggle_group_toggle_control"
+        for label, entities, category, reason, disposition in (
+            ("valve_only", [VALVE], HIGH, high, RiskDisposition.ELEVATED_REVIEW),
+            ("valves", [VALVE, self.VALVE2], HIGH, high, RiskDisposition.ELEVATED_REVIEW),
+            ("valve_twice", [VALVE, VALVE], HIGH, high, RiskDisposition.ELEVATED_REVIEW),
+            ("locks", [LOCK, self.LOCK2], HIGH, high, RiskDisposition.ELEVATED_REVIEW),
+            ("covers", ["cover.synthetic_a", "cover.synthetic_b"], HIGH, high,
+             RiskDisposition.ELEVATED_REVIEW),
+            ("lights", [self.LIGHT, self.LIGHT2], TOGGLE, toggle,
+             RiskDisposition.ELEVATED_REVIEW),
+            ("switches", ["switch.synthetic_a", "switch.synthetic_b"], TOGGLE, toggle,
+             RiskDisposition.ELEVATED_REVIEW),
+            ("groups", [GROUP, "group.synthetic_windows"], UNKNOWN, GROUP_CONTROL_REASON,
+             RiskDisposition.MANUAL_REVIEW_REQUIRED),
+        ):
+            with self.subTest(entities=label):
+                risk = card_risk({"type": "toggle-group", "entities": entities})
+                self.assertEqual(
+                    changed(risk),
+                    [
+                        (f"{U}/entities/{index}", category, reason)
+                        for index in range(len(entities))
+                    ],
+                )
+                self.assertIs(risk.disposition, disposition)
+                self.assertEqual(
+                    risk.high_consequence_action_count,
+                    len(entities) if category is HIGH else 0,
+                )
+
+    def test_first_entity_valve_keeps_the_valve_action(self):
+        risk = card_risk({"type": "toggle-group", "entities": [VALVE, self.VALVE2]})
+        self.assertEqual(
+            [
+                (item.path, item.category, item.entity_domain)
+                for item in risk.findings
+                if item.introduced_or_changed
+            ],
+            [
+                (f"{U}/entities/0", HIGH, "valve"),
+                (f"{U}/entities/1", HIGH, "valve"),
+            ],
+        )
+        self.assertEqual(risk.high_consequence_action_count, 2)
+        self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+        self.assertFalse(risk.manual_review_required)
+
+    def test_single_domain_lists_outside_the_control_domains_stay_unclassified(self):
+        # Unchanged from the base: these lists were not classified before
+        # this change and share one domain (or name none at all).
+        for entities in (
+            ["fan.synthetic_a", "fan.synthetic_b"],
+            ["sensor.synthetic"],
+            [5, None],
+            ["nodot", ""],
+            [],
+        ):
+            with self.subTest(entities=entities):
+                risk = card_risk({"type": "toggle-group", "entities": entities})
+                self.assertEqual(changed(risk), [])
+                self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
+        for entities in (None, LOCK, {"0": LOCK}):
+            with self.subTest(not_a_list=entities):
+                risk = card_risk({"type": "toggle-group", "entities": entities})
+                self.assertNotIn(MIXED_REASON, {item[2] for item in changed(risk)})
+
+    def test_unchanged_mixed_toggle_group_is_not_newly_changed(self):
+        mixed = {"type": "toggle-group", "entities": [self.LIGHT, VALVE]}
+        risk = analyze_dashboard_risk(
+            {"views": [{"cards": [mixed]}]},
+            {"views": [{"cards": [mixed, {"type": "markdown", "content": "x"}]}]},
+        )
+        self.assertEqual(changed(risk), [])
+        self.assertIs(risk.disposition, RiskDisposition.STANDARD_REVIEW)
+        self.assertEqual(
+            [(item.path, item.category, item.reason_code) for item in risk.findings],
+            [(f"{U}/entities", UNKNOWN, MIXED_REASON)],
+        )
+        # Reordering, appending, retargeting a later entity and moving
+        # between a single-domain and a mixed list are material changes.
+        for label, proposed, expected in (
+            ("reordered", [VALVE, self.LIGHT], [(f"{U}/entities", UNKNOWN, MIXED_REASON)]),
+            ("appended", [self.LIGHT, VALVE, LOCK],
+             [(f"{U}/entities", UNKNOWN, MIXED_REASON)]),
+            ("retargeted", [self.LIGHT, self.VALVE2],
+             [(f"{U}/entities", UNKNOWN, MIXED_REASON)]),
+            ("made_single_domain", [self.LIGHT],
+             [(f"{U}/entities/0", TOGGLE, "toggle_group_toggle_control")]),
+        ):
+            with self.subTest(change=label):
+                risk = analyze_dashboard_risk(
+                    {"views": [{"cards": [mixed]}]},
+                    {"views": [{"cards": [{"type": "toggle-group", "entities": proposed}]}]},
+                )
+                self.assertEqual(changed(risk), expected)
+        risk = analyze_dashboard_risk(
+            {"views": [{"cards": [{"type": "toggle-group", "entities": [self.LIGHT]}]}]},
+            {"views": [{"cards": [mixed]}]},
+        )
+        self.assertEqual(changed(risk), [(f"{U}/entities", UNKNOWN, MIXED_REASON)])
+        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+
+    def test_no_toggle_group_shape_is_below_its_base_disposition(self):
+        for entities, base in self.BASE_DISPOSITIONS:
+            with self.subTest(entities=json.dumps(entities)):
+                risk = card_risk({"type": "toggle-group", "entities": entities})
+                self.assertGreaterEqual(
+                    self.RANK[risk.disposition.value], self.RANK[base]
+                )
 
 
 class HeaderToggleTests(unittest.TestCase):
@@ -711,6 +933,27 @@ class PlanLevelTests(_PlanOnlyHarness):
         self.assertEqual(self.changed_at(update, f"{CARD}/entity"),
                          {"unknown_action_semantics"})
         self.assert_manual(created, stored, update)
+
+    async def test_mixed_toggle_group_requires_manual_review(self):
+        # A valve after a light: the plan is disclosed for manual review,
+        # carries no valve action, and stays approvable.
+        created, stored, update = await self.plan_card(
+            {"type": "toggle-group", "entities": ["light.synthetic_lamp", VALVE]}
+        )
+        self.assertEqual(self.changed_at(update, f"{CARD}/entities"),
+                         {"unknown_action_semantics"})
+        self.assertEqual(self.changed_at(update, f"{CARD}/entities/1"), set())
+        self.assertEqual(update["risk"]["high_consequence_action_count"], 0)
+        self.assert_manual(created, stored, update)
+
+    async def test_valve_toggle_group_is_high_consequence(self):
+        created, stored, update = await self.plan_card(
+            {"type": "toggle-group", "entities": [VALVE]}
+        )
+        self.assertEqual(self.changed_at(update, f"{CARD}/entities/0"),
+                         {"high_consequence_action"})
+        self.assertEqual(update["risk"]["high_consequence_action_count"], 1)
+        self.assert_elevated(created, stored, update)
 
     async def test_malformed_strategy_type_plans_with_manual_review(self):
         configuration = background_dashboard(0)
