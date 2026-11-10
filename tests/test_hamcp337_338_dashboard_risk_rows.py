@@ -726,9 +726,10 @@ class NativeControlShapeTests(unittest.TestCase):
                     ],
                 )
                 self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
-        # HAMCP-345 correction (owner ruling 2026-11-10): the lock in a
+        # HAMCP-345 correction (owner rulings 2026-11-10): the lock in a
         # light-first list receives the light service, not a lock service.
-        # A list whose domains differ is one disclosed finding for the card.
+        # A list whose domains differ is one disclosed finding for the card,
+        # and the lock stays counted as one listed high-consequence entity.
         risk = self.card_risk(
             {"type": "toggle-group", "entities": ["light.synthetic", LOCK]}
         )
@@ -737,9 +738,12 @@ class NativeControlShapeTests(unittest.TestCase):
             [
                 ("/views/0/cards/0/entities", RiskCategory.UNKNOWN,
                  "toggle_group_mixed_domains_receive_first_entity_service"),
+                ("/views/0/cards/0/entities/1", RiskCategory.HIGH_CONSEQUENCE,
+                 "toggle_group_mixed_domains_lists_high_consequence_entity"),
             ],
         )
         self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+        self.assertEqual(risk.high_consequence_action_count, 1)
 
     def test_area_controls_feature_is_classified_from_its_domains(self):
         cases = (

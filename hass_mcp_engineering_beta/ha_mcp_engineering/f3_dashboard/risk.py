@@ -134,11 +134,23 @@ _HEADER_TOGGLE_GROUP_REASON = (
 # entity's default control on the button card, tile icon, picture-glance
 # items, toggle-group and header/footer ``buttons`` chips.
 _GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
-# Owner ruling 2026-11-10: a toggle-group card sends one service, taken from
+# Owner rulings 2026-11-10: a toggle-group card sends one service, taken from
 # its first entity's domain, to every listed entity
 # (hui-toggle-group-card.ts:130-141).  A list whose domains differ is
-# disclosed as one group finding and requires manual review.
+# disclosed as one group finding and requires manual review when it names a
+# domain this module classifies or holds an entry with no domain.
 _TOGGLE_GROUP_MIXED_REASON = "toggle_group_mixed_domains_receive_first_entity_service"
+# "A domain this module classifies": the direct-control domains, the
+# high-consequence entity domains and ``group``, taken from the tables above.
+_TOGGLE_GROUP_CLASSIFIED_DOMAINS = (
+    _ENTITY_ROW_CONTROL_DOMAINS | _HIGH_ENTITY_DOMAINS | {_GROUP_DOMAIN}
+)
+# In such a mixed list every entry of a high-consequence domain is one
+# ``high_consequence_action`` finding.  For that card the count is the
+# high-consequence entities listed on the card, not actions the card sends.
+_TOGGLE_GROUP_LISTED_HIGH_REASON = (
+    "toggle_group_mixed_domains_lists_high_consequence_entity"
+)
 # strategies/get-strategy.ts: a ``strategy`` key on the dashboard, a view
 # or a section is replaced by cards generated in the browser.  Only the
 # built-in ``iframe`` and ``map`` strategies generate their cards from the
@@ -914,12 +926,27 @@ def _default_control_findings(
     # classified by that domain.  A group entity is passed to ``group.<toggle
     # action>``, whose effect on the group's runtime members is not
     # established at plan time.  When any domain differs, the later entities
-    # receive a service of another domain; that is one disclosed finding for
-    # the card and requires manual review (owner ruling 2026-11-10).
+    # receive a service of another domain (owner rulings 2026-11-10):
+    #
+    # * If the list names a domain this module classifies, or holds an entry
+    #   with no domain (not a string, or no ``domain.`` prefix), the card is
+    #   one disclosed finding and requires manual review.  Each entry of a
+    #   high-consequence domain is also one ``high_consequence_action``
+    #   finding, so the count is never below the count before this rule.
+    #   That count is the high-consequence entities listed on the card, not
+    #   actions the card sends.
+    # * Otherwise (for example fan + input_boolean, sensor + binary_sensor)
+    #   the card stays unclassified, as a single-domain list of those domains
+    #   does: it is an ordinary control that sends the first entity's
+    #   service for the whole list.
     if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
         group_entities = value["entities"]
         group_domains = [_entity_domain(entity) for entity in group_entities]
-        if any(domain != group_domains[0] for domain in group_domains[1:]):
+        mixed = any(domain != group_domains[0] for domain in group_domains[1:])
+        if mixed and any(
+            domain is None or domain in _TOGGLE_GROUP_CLASSIFIED_DOMAINS
+            for domain in group_domains
+        ):
             add(
                 RiskCategory.UNKNOWN,
                 (*tokens, "entities"),
@@ -932,7 +959,23 @@ def _default_control_findings(
                     control_entity=group_entities[0],
                 ),
             )
-        else:
+            for index, (entity, domain) in enumerate(
+                zip(group_entities, group_domains)
+            ):
+                if domain in _HIGH_ENTITY_DOMAINS:
+                    add(
+                        RiskCategory.HIGH_CONSEQUENCE,
+                        (*tokens, "entities", str(index)),
+                        domain,
+                        _TOGGLE_GROUP_LISTED_HIGH_REASON,
+                        context_binding(
+                            "f3-dashboard-default-control-semantic-binding-v1",
+                            shape="toggle_group_mixed_domains_listed_entity",
+                            complete_control=group_entities,
+                            control_entity=entity,
+                        ),
+                    )
+        elif not mixed:
             for index, (entity, domain) in enumerate(
                 zip(group_entities, group_domains)
             ):
