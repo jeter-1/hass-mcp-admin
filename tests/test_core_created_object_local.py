@@ -27,7 +27,7 @@ import core_created_object_local as lane
 import created_object_contract_acceptance as acceptance
 from core_release_evidence import groups, manifest, passing_subset, read_json
 
-import hamcp329_298_fixtures as fixtures
+import tests.hamcp329_298_fixtures as fixtures
 
 SOURCE = {"commit": "a" * 40, "runtime_tree": "b" * 40}
 ABSENT = dict.fromkeys(("scenes", "automations", "helpers", "registry_entries"), True)
