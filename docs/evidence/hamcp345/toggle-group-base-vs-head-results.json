@@ -1,43 +1,90 @@
 {
   "base": "cb9d67833082d517d7155e99481d4fd517c5d43d",
-  "head": "909d81aa64d2f1bab77a6807ef8e9854440ab49b",
+  "head": "8e05dd8962100d5defdff5df352b4e204a64b4ae",
   "python": "3.12.14",
   "order": "standard_review < elevated_manual_review < manual_review_required",
-  "cases": 10990,
+  "cases": 35562,
   "cases_by_scenario": {
-    "existing": 699,
-    "inserted": 703,
-    "inserted in conditional": 699,
-    "inserted in vertical-stack": 699,
-    "transition": 8190
+    "existing": 2376,
+    "inserted": 2380,
+    "inserted in conditional": 2376,
+    "inserted in vertical-stack": 2376,
+    "transition": 26054
   },
   "transitions": {
-    "existing: standard_review -> standard_review": 699,
-    "inserted in conditional: elevated_manual_review -> elevated_manual_review": 22,
-    "inserted in conditional: elevated_manual_review -> manual_review_required": 394,
+    "existing: standard_review -> standard_review": 2376,
+    "inserted in conditional: elevated_manual_review -> elevated_manual_review": 36,
+    "inserted in conditional: elevated_manual_review -> manual_review_required": 1838,
     "inserted in conditional: standard_review -> elevated_manual_review": 9,
-    "inserted in conditional: standard_review -> manual_review_required": 206,
-    "inserted in conditional: standard_review -> standard_review": 68,
-    "inserted in vertical-stack: elevated_manual_review -> elevated_manual_review": 22,
-    "inserted in vertical-stack: elevated_manual_review -> manual_review_required": 394,
+    "inserted in conditional: standard_review -> manual_review_required": 398,
+    "inserted in conditional: standard_review -> standard_review": 95,
+    "inserted in vertical-stack: elevated_manual_review -> elevated_manual_review": 36,
+    "inserted in vertical-stack: elevated_manual_review -> manual_review_required": 1838,
     "inserted in vertical-stack: standard_review -> elevated_manual_review": 9,
-    "inserted in vertical-stack: standard_review -> manual_review_required": 206,
-    "inserted in vertical-stack: standard_review -> standard_review": 68,
-    "inserted: elevated_manual_review -> elevated_manual_review": 22,
-    "inserted: elevated_manual_review -> manual_review_required": 394,
+    "inserted in vertical-stack: standard_review -> manual_review_required": 398,
+    "inserted in vertical-stack: standard_review -> standard_review": 95,
+    "inserted: elevated_manual_review -> elevated_manual_review": 36,
+    "inserted: elevated_manual_review -> manual_review_required": 1838,
     "inserted: standard_review -> elevated_manual_review": 9,
-    "inserted: standard_review -> manual_review_required": 206,
-    "inserted: standard_review -> standard_review": 72,
-    "transition: elevated_manual_review -> elevated_manual_review": 720,
-    "transition: elevated_manual_review -> manual_review_required": 4680,
-    "transition: standard_review -> elevated_manual_review": 180,
-    "transition: standard_review -> manual_review_required": 1980,
-    "transition: standard_review -> standard_review": 630
+    "inserted: standard_review -> manual_review_required": 398,
+    "inserted: standard_review -> standard_review": 99,
+    "transition: elevated_manual_review -> elevated_manual_review": 1652,
+    "transition: elevated_manual_review -> manual_review_required": 15080,
+    "transition: standard_review -> elevated_manual_review": 380,
+    "transition: standard_review -> manual_review_required": 6086,
+    "transition: standard_review -> standard_review": 2856
   },
   "head_lower_than_base": 0,
   "head_lower_than_base_examples": [],
+  "count": "high_consequence_action_count, base -> head",
+  "count_transitions": {
+    "existing: 0 -> 0": 2376,
+    "inserted in conditional: 0 -> 0": 507,
+    "inserted in conditional: 0 -> 1": 319,
+    "inserted in conditional: 0 -> 2": 82,
+    "inserted in conditional: 0 -> 3": 7,
+    "inserted in conditional: 1 -> 1": 605,
+    "inserted in conditional: 1 -> 2": 322,
+    "inserted in conditional: 1 -> 3": 48,
+    "inserted in conditional: 2 -> 2": 325,
+    "inserted in conditional: 2 -> 3": 96,
+    "inserted in conditional: 3 -> 3": 65,
+    "inserted in vertical-stack: 0 -> 0": 507,
+    "inserted in vertical-stack: 0 -> 1": 319,
+    "inserted in vertical-stack: 0 -> 2": 82,
+    "inserted in vertical-stack: 0 -> 3": 7,
+    "inserted in vertical-stack: 1 -> 1": 605,
+    "inserted in vertical-stack: 1 -> 2": 322,
+    "inserted in vertical-stack: 1 -> 3": 48,
+    "inserted in vertical-stack: 2 -> 2": 325,
+    "inserted in vertical-stack: 2 -> 3": 96,
+    "inserted in vertical-stack: 3 -> 3": 65,
+    "inserted: 0 -> 0": 511,
+    "inserted: 0 -> 1": 319,
+    "inserted: 0 -> 2": 82,
+    "inserted: 0 -> 3": 7,
+    "inserted: 1 -> 1": 605,
+    "inserted: 1 -> 2": 322,
+    "inserted: 1 -> 3": 48,
+    "inserted: 2 -> 2": 325,
+    "inserted: 2 -> 3": 96,
+    "inserted: 3 -> 3": 65,
+    "transition: 0 -> 0": 9702,
+    "transition: 0 -> 1": 4658,
+    "transition: 0 -> 2": 560,
+    "transition: 1 -> 1": 7220,
+    "transition: 1 -> 2": 1984,
+    "transition: 2 -> 2": 1884,
+    "transition: 3 -> 3": 46
+  },
+  "head_count_lower_than_base": 0,
+  "head_count_lower_than_base_examples": [],
+  "head_count_higher_than_base": 9824,
   "head_raises_where_base_did_not": 0,
   "head_raises_where_base_did_not_examples": [],
+  "unclassified_mixed_lists": 1084,
+  "unclassified_mixed_lists_differing_from_base": 0,
+  "unclassified_mixed_lists_differing_from_base_examples": [],
   "named_shapes": {
     "single domain high (lock, lock)": {
       "entities": [
@@ -47,6 +94,8 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "elevated_manual_review",
+        "base_count": 2,
+        "head_count": 2,
         "head_changed": [
           [
             "high_consequence_action",
@@ -63,6 +112,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -73,6 +124,8 @@
       "inserted": {
         "base": "standard_review",
         "head": "elevated_manual_review",
+        "base_count": 0,
+        "head_count": 1,
         "head_changed": [
           [
             "high_consequence_action",
@@ -84,6 +137,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -95,6 +150,8 @@
       "inserted": {
         "base": "standard_review",
         "head": "elevated_manual_review",
+        "base_count": 0,
+        "head_count": 2,
         "head_changed": [
           [
             "high_consequence_action",
@@ -111,6 +168,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -122,6 +181,8 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "elevated_manual_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": [
           [
             "toggle",
@@ -138,6 +199,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -148,6 +211,8 @@
       "inserted": {
         "base": "standard_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": [
           [
             "unknown_action_semantics",
@@ -159,6 +224,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -170,6 +237,8 @@
       "inserted": {
         "base": "standard_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": [
           [
             "unknown_action_semantics",
@@ -186,6 +255,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -197,7 +268,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -208,6 +286,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -219,7 +299,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -230,6 +317,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -241,7 +330,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -252,6 +348,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -264,7 +362,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -275,6 +380,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -286,7 +393,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -297,6 +411,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -309,7 +425,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -320,6 +443,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -331,7 +456,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -342,6 +474,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -352,18 +486,16 @@
       ],
       "inserted": {
         "base": "standard_review",
-        "head": "manual_review_required",
-        "head_changed": [
-          [
-            "unknown_action_semantics",
-            "/views/0/cards/0/entities",
-            "toggle_group_mixed_domains_receive_first_entity_service"
-          ]
-        ]
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
       },
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -375,11 +507,15 @@
       "inserted": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       },
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -391,7 +527,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -402,6 +545,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -413,7 +558,14 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
         "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
           [
             "unknown_action_semantics",
             "/views/0/cards/0/entities",
@@ -424,6 +576,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -435,11 +589,15 @@
       "inserted": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       },
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -453,6 +611,8 @@
       "inserted": {
         "base": "elevated_manual_review",
         "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": [
           [
             "entity_display_only",
@@ -469,6 +629,8 @@
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     },
@@ -477,11 +639,908 @@
       "inserted": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       },
       "existing": {
         "base": "standard_review",
         "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "unclassified pair (sensor + binary_sensor)": {
+      "entities": [
+        "sensor.synthetic",
+        "binary_sensor.synthetic"
+      ],
+      "inserted": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "unclassified first, classified later (fan + light)": {
+      "entities": [
+        "fan.synthetic",
+        "light.synthetic_lamp"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": [
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "unclassified first, classified later (sensor + lock)": {
+      "entities": [
+        "sensor.synthetic",
+        "lock.synthetic_front_door"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "classified first, unclassified later (light + fan)": {
+      "entities": [
+        "light.synthetic_lamp",
+        "fan.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": [
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "classified first, unclassified later (lock + sensor)": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "sensor.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 1,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "malformed in an unclassified list (fan, 5)": {
+      "entities": [
+        "fan.synthetic",
+        5
+      ],
+      "inserted": {
+        "base": "standard_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": [
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "malformed in an unclassified list (5, fan)": {
+      "entities": [
+        5,
+        "fan.synthetic"
+      ],
+      "inserted": {
+        "base": "standard_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": [
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "object entry in an unclassified list (fan, {entity: fan})": {
+      "entities": [
+        "fan.synthetic",
+        {
+          "entity": "fan.synthetic"
+        }
+      ],
+      "inserted": {
+        "base": "standard_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": [
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + cover": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "cover + lock": {
+      "entities": [
+        "cover.synthetic_garage",
+        "lock.synthetic_front_door"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + alarm_control_panel": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "alarm_control_panel.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + cover + alarm_control_panel": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage",
+        "alarm_control_panel.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 3,
+        "head_count": 3,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + lock + light": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "lock.synthetic_back_door",
+        "light.synthetic_lamp"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "light + lock + lock": {
+      "entities": [
+        "light.synthetic_lamp",
+        "lock.synthetic_front_door",
+        "lock.synthetic_back_door"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "light + lock + cover": {
+      "entities": [
+        "light.synthetic_lamp",
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "cover + alarm_control_panel + light": {
+      "entities": [
+        "cover.synthetic_garage",
+        "alarm_control_panel.synthetic",
+        "light.synthetic_lamp"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "cover + cover + switch": {
+      "entities": [
+        "cover.synthetic_garage",
+        "cover.synthetic_shade",
+        "switch.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "fan + lock + cover": {
+      "entities": [
+        "fan.synthetic",
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "group + lock + cover": {
+      "entities": [
+        "group.synthetic_doors",
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "malformed + lock + cover": {
+      "entities": [
+        5,
+        "lock.synthetic_front_door",
+        "cover.synthetic_garage"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 2,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "light + lock + valve": {
+      "entities": [
+        "light.synthetic_lamp",
+        "lock.synthetic_front_door",
+        "valve.synthetic_water_main"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/2",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + valve": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "valve.synthetic_water_main"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "valve + lock": {
+      "entities": [
+        "valve.synthetic_water_main",
+        "lock.synthetic_front_door"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "lock + garage_door": {
+      "entities": [
+        "lock.synthetic_front_door",
+        "garage_door.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 1,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "valve + valve + light": {
+      "entities": [
+        "valve.synthetic_water_main",
+        "valve.synthetic_second",
+        "light.synthetic_lamp"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 2,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/0",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "light + garage_door": {
+      "entities": [
+        "light.synthetic_lamp",
+        "garage_door.synthetic"
+      ],
+      "inserted": {
+        "base": "elevated_manual_review",
+        "head": "manual_review_required",
+        "base_count": 0,
+        "head_count": 1,
+        "head_changed": [
+          [
+            "high_consequence_action",
+            "/views/0/cards/0/entities/1",
+            "toggle_group_mixed_domains_lists_high_consequence_entity"
+          ],
+          [
+            "unknown_action_semantics",
+            "/views/0/cards/0/entities",
+            "toggle_group_mixed_domains_receive_first_entity_service"
+          ]
+        ]
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      }
+    },
+    "single domain (garage_door, garage_door)": {
+      "entities": [
+        "garage_door.synthetic",
+        "garage_door.synthetic_second"
+      ],
+      "inserted": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
+        "head_changed": []
+      },
+      "existing": {
+        "base": "standard_review",
+        "head": "standard_review",
+        "base_count": 0,
+        "head_count": 0,
         "head_changed": []
       }
     }

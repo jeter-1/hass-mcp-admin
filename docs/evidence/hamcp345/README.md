@@ -46,17 +46,21 @@ paths are under `src/panels/lovelace/` unless noted.
 - Tables: `valve` added to `_ENTITY_ROW_CONTROL_DOMAINS` (line 79) and the
   `valve-entity` typed row (line 97); `_DOMAINS_TOGGLE` (105-116),
   `_DEFAULT_TOGGLE_HIGH_DOMAINS` (121), group-row, header, group-control,
-  mixed toggle-group and strategy reasons (129-146).
-- `_row_control` (482-538): button row default (509-523), group rows
-  (514-515, 525-526).
-- `_default_toggle_control` (541-555): the group and valve defaults of the
+  mixed toggle-group and strategy reasons (129-158), with the set of domains
+  a mixed toggle-group is checked against,
+  `_TOGGLE_GROUP_CLASSIFIED_DOMAINS` (145-147), and the listed-entity reason
+  (151-153).
+- `_row_control` (494-550): button row default (521-535), group rows
+  (526-527, 537-538).
+- `_default_toggle_control` (553-567): the group and valve defaults of the
   button card, tile icon and picture-glance items.
-- `_default_control_findings` (588-1031): buttons-row buttons (670-728), the
-  header toggle (730-789), button card and tile icon defaults (791-825),
-  picture-glance items (826-863), header/footer `buttons` chips (865-906),
-  toggle-group (908-958: mixed-domain check 922-934, single-domain list
-  935-958).
-- `_strategy_findings` (1075-1158), called first by `_scan` (1161-1163).
+- `_default_control_findings` (600-1074): buttons-row buttons (682-740), the
+  header toggle (742-801), button card and tile icon defaults (803-837),
+  picture-glance items (838-875), header/footer `buttons` chips (877-918),
+  toggle-group (920-1001: mixed-domain check 944-949, group disclosure
+  950-961, listed high-consequence entries 962-977, single-domain list
+  978-1001).
+- `_strategy_findings` (1118-1201), called first by `_scan` (1204-1206).
 
 ## What is classified
 
@@ -65,7 +69,8 @@ paths are under `src/panels/lovelace/` unless noted.
 | Valve on every default control shape: entities rows (default, `valve-entity`, `toggle-entity`, falsy type, conditional, entity-filter), button and buttons rows, header/footer buttons, single-domain toggle-group, area-controls entity, button card, tile icon, picture-glance item, header toggle | `high_consequence_action` | `entity_row_valve_control`, `button_row_default_toggle_targets_high_consequence_domain`, `buttons_row_default_toggle_targets_high_consequence_domain`, `button_card_default_toggle_targets_high_consequence_domain`, `tile_icon_default_toggle_targets_high_consequence_domain`, `picture_glance_default_toggle_targets_high_consequence_domain`, `header_toggle_targets_high_consequence_domain`; existing codes for the other shapes |
 | Group row in an entities card (default, `group-entity`, `toggle-entity`, button, buttons, conditional) | `unknown_action_semantics` (disclosed) | `group_row_members_not_established_at_plan_time` |
 | Group default control on the button card, tile icon, picture-glance item (string or object, no truthy `force_dialog`), entry of a toggle-group that lists only groups, header/footer `buttons` chip | `unknown_action_semantics` (disclosed) | `group_control_members_not_established_at_plan_time` |
-| Toggle-group whose entities do not all share the first entity's domain: one finding at the card's `entities` list | `unknown_action_semantics` (disclosed) | `toggle_group_mixed_domains_receive_first_entity_service` |
+| Toggle-group whose entities do not all share the first entity's domain, when the list names a domain the module classifies or holds an entry with no domain: one finding at the card's `entities` list | `unknown_action_semantics` (disclosed) | `toggle_group_mixed_domains_receive_first_entity_service` |
+| Each lock, cover, alarm_control_panel, garage_door or valve entry of such a mixed list, at `<card>/entities/<index>` | `high_consequence_action` (an entity listed on the card, not an action the card sends) | `toggle_group_mixed_domains_lists_high_consequence_entity` |
 | Header toggle over group entities | `unknown_action_semantics` (disclosed) | `header_toggle_group_members_not_established_at_plan_time` |
 | Header toggle over lock/cover/alarm/valve rows | `high_consequence_action` | `header_toggle_targets_high_consequence_domain` |
 | Header toggle over other `DOMAINS_TOGGLE` rows | `toggle` | `header_toggle_toggle_control` |
@@ -171,42 +176,127 @@ Owner ruling (Josh, 2026-11-10, relayed by the orchestrator), quoted:
 > lower disposition than on base. Add tests for a valve that is not
 > entities[0] and for mixed domains.
 
-As implemented (`risk.py:908-958`):
+Second owner rulings (Josh, in session, 2026-11-10, relayed by the
+orchestrator), quoted. They narrow the first ruling for lists of unclassified
+domains and restore the high-consequence count:
 
-- The domain of an entry is the text before the first dot of a string entry.
-  An entry that is not a string, or has no dot or an empty domain, has no
-  domain.
-- Every entry has the domain of `entities[0]`: each entry receives its own
-  domain's service and is classified by that domain, as before (lock, cover,
-  alarm and valve `high_consequence_action`; light and switch `toggle`;
-  group disclosed; other domains unclassified). A first-entity valve is
-  therefore still `high_consequence_action`.
-- Any entry's domain differs from that of `entities[0]`: one
-  `unknown_action_semantics` finding at the card's `entities` list, reason
-  code `toggle_group_mixed_domains_receive_first_entity_service`,
-  `entity_domain` set to the first entity's domain and bound to the whole
-  list. There is no per-entry finding, so a valve or lock in a later position
-  is not reported as a valve or lock action. The disposition is
-  `manual_review_required`.
+> 1. Mixed-domain toggle-groups are manual_review_required only when the
+> list contains at least one domain the risk module classifies, or an entry
+> that can't be classified (malformed). A mixed list with no classified
+> domain (fan + input_boolean, sensor + binary_sensor) keeps the ordinary
+> disposition, described as entities[0]'s service sent for the whole list.
+> Test each case.
 
-Consequences of reading the ruling literally, for review:
+Ruling 2, as given in session in place of an earlier ruling 2:
 
-- The rule compares domains over the whole list and does not depend on which
-  domains they are. A mixed list of domains that are otherwise unclassified
-  (fan with input_boolean, sensor with binary_sensor), or a control domain
-  beside a malformed entry, requires manual review. On the base these were
-  `standard_review` or `elevated_manual_review`.
-- For a mixed list the single disclosure replaces the per-entry `toggle` and
-  `high_consequence_action` findings of the base, so those entries no longer
-  add to `high_consequence_count`. The disposition they selected was
-  `elevated_manual_review`; the disclosure selects `manual_review_required`.
-- A list in which no entry has a domain (malformed entries only) and the
-  empty list are not mixed and stay unclassified, as on the base.
+> option A. A mixed toggle-group counts one high-consequence action per
+> high-consequence entry it lists (lock, cover, alarm_control_panel, and now
+> valve and garage_door). No card's count may fall below base. The
+> disclosure says the count is high-consequence entities listed on the card,
+> not actions the card sends. Tests: every shape in your table, plus light +
+> valve and lock + valve.
+
+> 3. Upper-case id gap: keep it out of #429. File a Medium row, target 2.7:
+> the dashboard risk analyzer must normalize domain and entity-id case the
+> way pinned Core does before classifying, on every card type, with tests
+> per card type that upper-case light/switch ids classify the same as
+> lower-case and no shape classifies lower than before. Cite
+> ~/handoffs/hass-mcp-admin-hamcp-345-toggle-group-shape-facts.md. Disclose
+> the gap in #429's PR body and delta request as a known pre-existing limit.
+
+The row for ruling 3 is HAMCP-360. The reason for option A: at b4c05e56 the
+single disclosure replaced the per-entry findings of the base, so a mixed
+list with lock, cover or alarm entries reported a
+`high_consequence_action_count` of 0 where the base reported 1 to 3.
+
+As implemented (`risk.py:920-1001`):
+
+- The domain of an entry is the text before the first dot of a string entry
+  (`_entity_domain`, `risk.py:267-271`). An entry with no domain is the
+  "entry that can't be classified (malformed)" of ruling 1: any entry that
+  is not a string (a number, `null`, a list, and an object entry such as
+  `{entity: lock.a}`), a string with no dot, and a string with an empty
+  domain (`.a`). Object entries are included because the pinned card never
+  converts one to an entity id: with an object at `entities[0]` the tap
+  handler throws before any service call, and with an object in a later
+  position Core rejects the whole call when it validates the entity list
+  (fact record E1,
+  `~/handoffs/hass-mcp-admin-hamcp-345-toggle-group-shape-facts.md`; both
+  are read from source, not executed). An object entry naming a
+  high-consequence entity keeps its display-only finding at
+  `entities/<index>/entity`, as on the base.
+- "A domain the risk module classifies" is
+  `_TOGGLE_GROUP_CLASSIFIED_DOMAINS = _ENTITY_ROW_CONTROL_DOMAINS |
+  _HIGH_ENTITY_DOMAINS | {_GROUP_DOMAIN}` (`risk.py:145-147`), built from the
+  module's own tables (`:79-81`, `:41-43`, `:122`). Its value is
+  alarm_control_panel, cover, garage_door, group, light, lock, switch,
+  valve.
+- A high-consequence entry is one whose domain is in `_HIGH_ENTITY_DOMAINS`
+  (`risk.py:41-43`): lock, cover, alarm_control_panel, garage_door, valve.
+- Every entry has the domain of `entities[0]` (not mixed, `risk.py:978`):
+  each entry receives its own domain's service and is classified by that
+  domain, as before (lock, cover, alarm and valve `high_consequence_action`;
+  light and switch `toggle`; group disclosed; other domains unclassified). A
+  first-entity valve is therefore still `high_consequence_action`, and
+  `lock.a` with `lock.b` still counts 2.
+- Mixed, and the list names a classified domain or holds an entry with no
+  domain (`risk.py:945-949`): one `unknown_action_semantics` finding at the
+  card's `entities` list, reason code
+  `toggle_group_mixed_domains_receive_first_entity_service`, `entity_domain`
+  set to the first entity's domain and bound to the whole list
+  (`risk.py:950-961`). The disposition is `manual_review_required`. Then one
+  `high_consequence_action` finding for each high-consequence entry, at
+  `<card>/entities/<index>`, reason code
+  `toggle_group_mixed_domains_lists_high_consequence_entity`
+  (`risk.py:962-977`). Light, switch and group entries of a mixed list have
+  no finding of their own.
+- Mixed, and every entry has an unclassified domain (fan with input_boolean,
+  sensor with binary_sensor): no finding, the same result as on the base and
+  as a single-domain list of those domains. The card is an ordinary control
+  described as `entities[0]`'s service sent for the whole list. The module
+  has no human-readable text for standard controls and no output field for
+  one, so this description is in the code comment (`risk.py:938-941`) and
+  here.
+
+What the count means for a mixed toggle-group: `high_consequence_action_count`
+is the high-consequence entities listed on the card, not actions the card
+sends. The card sends one service, taken from `entities[0]`, for the whole
+list. `light.a` with `lock.b` counts 1 although the card sends
+`light.turn_on` or `light.turn_off`; `lock.a` with `valve.b` counts 2
+although the card sends one lock service. The module carries no
+human-readable text for findings (a finding has a category, a pointer, a
+domain and a reason code), so the wording is in the reason-code name, in the
+code comments (`risk.py:148-150`, `933-937`) and here.
+
+Consequences, for review:
+
+- A control domain beside a malformed entry (`light.a` with `5`), and an
+  unclassified domain beside a malformed entry (`fan.a` with `5`, or with
+  `{entity: fan.b}`), require manual review. On the base the first was
+  `elevated_manual_review` and the second `standard_review`.
+- The count of a mixed list is never below the base count, and is higher
+  where the list holds a valve or garage_door entry, which the base did not
+  classify on a toggle-group (`lock.a` with `valve.b`: base 1, head 2;
+  `light.a` with `garage_door.b`: base 0, head 1).
+- A single-domain garage_door list stays unclassified, as on the base:
+  `garage_door` is in `_HIGH_ENTITY_DOMAINS` but not in
+  `_ENTITY_ROW_CONTROL_DOMAINS`, and the single-domain branch is unchanged.
+  Only a mixed list counts a garage_door entry.
+- A list in which no entry has a domain (malformed entries only, object
+  entries only) and the empty list are not mixed and stay as on the base.
 - The review's suggested correction (classify the list by `entities[0]`
-  alone) is superseded by the ruling for mixed lists.
+  alone) is superseded by the rulings for mixed lists.
+
+Known limit, present on the base and not changed here (HAMCP-360, Medium,
+target 2.7): the analyzer compares domains case-sensitively, and pinned Core
+lower-cases the domain and entity ids. An upper-case `LIGHT.a` or `SWITCH.a`
+list is a real toggle and is not classified, on the toggle-group and on every
+other card type. The shape facts are in
+`~/handoffs/hass-mcp-admin-hamcp-345-toggle-group-shape-facts.md` (E2).
 
 No toggle-group shape has a lower disposition than on the base
-(`release/2.6.0` at cb9d6783); see `toggle_group_base_vs_head.py` under
+(`release/2.6.0` at cb9d6783) and no card a lower
+`high_consequence_action_count`; see `toggle_group_base_vs_head.py` under
 Evidence.
 
 ## Review level changes
@@ -219,7 +309,8 @@ Only introduced or changed findings drive the disposition (`analyze_dashboard_ri
 | Group row, header toggle over groups, strategy | `standard_review` | `manual_review_required` | `high` / `elevated_admin` |
 | Group default control on the button card, tile icon, picture-glance item, groups-only toggle-group or header/footer `buttons` chip | `standard_review` | `manual_review_required` | `high` / `elevated_admin` |
 | Toggle-group of valves only | `standard_review` | `elevated_manual_review` | `high` / `elevated_admin` |
-| Toggle-group whose entries do not all share the first entry's domain | `standard_review` (no lock, cover, alarm, light or switch entry) or `elevated_manual_review` | `manual_review_required` | `high` / `elevated_admin` |
+| Mixed toggle-group that names a classified domain or holds an entry with no domain | `standard_review` (no lock, cover, alarm, light or switch entry) or `elevated_manual_review` | `manual_review_required` | `high` / `elevated_admin` |
+| Mixed toggle-group of unclassified domains only | `standard_review` | `standard_review` | unchanged |
 
 The governance mapping is unchanged (`governance/service.py`): any non-standard
 disposition already maps to `high` and `elevated_admin`, and the plan stays
@@ -230,18 +321,22 @@ its classification.
 ## Public output
 
 Additive only: new `reason_code` string values on existing finding objects
-(`toggle_group_mixed_domains_receive_first_entity_service` among them), and
+(`toggle_group_mixed_domains_receive_first_entity_service` and
+`toggle_group_mixed_domains_lists_high_consequence_entity` among them), and
 more findings in `findings` and `evidence_sha256`. No field, category or
-disposition value is added or removed. One shape reports fewer findings than
-on the base: a mixed-domain toggle-group yields one finding at
-`<card>/entities` in place of one per lock, cover, alarm, light or switch
-entry.
+disposition value is added or removed. A mixed toggle-group that requires
+manual review yields one finding at `<card>/entities` and one per
+high-consequence entry at `<card>/entities/<index>`. Against the base that is
+one more finding plus one per valve or garage_door entry, and one fewer per
+light or switch entry, whose `toggle` finding is replaced by the disclosure.
 
 Compatibility: every finding, changed or not, counts toward
 `MAX_RISK_EVIDENCE_FINDINGS` (256, `f3_dashboard/constants.py:71`), and changed
 findings toward `MAX_RISK_FINDINGS` (64). A dashboard near those bounds that
 planned on the base could now be refused with the existing bounded-analysis
-error. `base_vs_head_planning.py` checks the corpus for this.
+error. `base_vs_head_planning.py` checks the corpus for this. Not measured: a
+mixed toggle-group with many valve or garage_door entries, which adds changed
+findings the base did not have.
 
 ## Documented residuals (unchanged by design)
 
@@ -257,41 +352,64 @@ error. `base_vs_head_planning.py` checks the corpus for this.
 ## Evidence
 
 - `tests/test_hamcp345_dashboard_risk_breadth.py`: positive, negative,
-  identity, residual and plan-level tests. The toggle-group correction is
-  `ToggleGroupSingleServiceTests` (a valve that is not `entities[0]`, mixed
-  domains, single-domain lists, first-entity valve, unchanged-control
-  identity, the base disposition floor),
+  identity, residual and plan-level tests. The toggle-group tests are
+  `ToggleGroupSingleServiceTests`:
+  `test_valve_that_is_not_the_first_entity_is_listed_not_sent_a_valve_service`,
+  `test_mixed_domains_with_a_classified_or_malformed_entry_are_manual_review`,
+  `test_mixed_lists_of_unclassified_domains_keep_the_base_result`,
+  `test_unclassified_first_and_classified_later_is_manual_review`,
+  `test_classified_first_and_unclassified_later_is_manual_review`,
+  `test_malformed_entry_in_an_unclassified_list_is_manual_review`,
+  `test_mixed_group_counts_each_high_consequence_entry_listed` (the 22
+  measured shapes, each with its base count),
+  `test_a_single_domain_list_is_classified_by_that_domain`,
+  `test_first_entity_valve_keeps_the_valve_action`,
+  `test_single_domain_lists_outside_the_control_domains_stay_unclassified`,
+  `test_unchanged_mixed_toggle_group_is_not_newly_changed` and
+  `test_no_toggle_group_shape_is_below_its_base_disposition_or_count`; with
   `GroupNonRowShapeTests.test_group_beside_other_toggle_group_domains_is_one_mixed_disclosure`,
-  `PlanLevelTests.test_mixed_toggle_group_requires_manual_review` and
+  `PlanLevelTests.test_mixed_toggle_group_requires_manual_review`,
+  `test_mixed_toggle_group_counts_listed_high_consequence_entities`,
+  `test_unclassified_mixed_toggle_group_keeps_standard_review`,
+  `test_malformed_entry_in_a_toggle_group_requires_manual_review` and
   `test_valve_toggle_group_is_high_consequence`, and
   `tests/test_hamcp337_338_dashboard_risk_rows.py`
   `NativeControlShapeTests.test_toggle_group_card_targets_each_entity`.
 - `toggle_group_base_vs_head.py` writes
   `toggle-group-base-vs-head-results.json`: the pure analyzer of the release
-  base (cb9d6783) and of the correction (909d81aa; `risk.py` is unchanged
-  after that commit) over 10990 toggle-group cases. 2101 are a card added to
-  an empty view, alone or inside a `vertical-stack` or `conditional` card:
-  every entity list of length 0-2 over 21 entries, of length 3 over 6
-  entries, the 20 named shapes, and 4 `entities` values that are not a list.
-  699 are the same card already stored beside an unrelated edit. 8190 are
-  transitions between two lists. Result: 0 cases where HEAD ranks below the
-  base and 0 where HEAD raises and the base did not. Of the 2101 added-card
-  cases, 1182 move from `elevated_manual_review` and 618 from
-  `standard_review` to `manual_review_required`, 27 move from
-  `standard_review` to `elevated_manual_review`, and 274 keep their
-  disposition; the 699 stored cards stay `standard_review` on both.
+  base (cb9d6783) and of the second correction (8e05dd89; `risk.py` and the
+  tests are unchanged after that commit) over 35562 toggle-group cases,
+  comparing the disposition and `high_consequence_action_count`. 7132 are a
+  card added to an empty view: 2380 alone (every entity list of length 0-2
+  over 24 entries, of length 3 over 12 entries, the 47 named shapes, and 4
+  `entities` values that are not a list) and the 2376 lists again inside a
+  `vertical-stack` and inside a `conditional` card. 2376 are the same card
+  already stored beside an unrelated edit. 26054 are transitions between two
+  lists.
+  Result: 0 cases where HEAD ranks below the base, 0 where the HEAD count is
+  below the base count, 0 where HEAD raises and the base did not, and 0 of
+  the 1084 mixed lists of unclassified domains differing from the base. The
+  HEAD count is above the base count in 9824 cases (for example a valve or
+  garage_door entry, which the base did not classify on a toggle-group; the
+  cases are not broken down by cause). Of the 2380 cards added
+  alone, 1838 move from `elevated_manual_review` and 398 from
+  `standard_review` to `manual_review_required`, 9 move from
+  `standard_review` to `elevated_manual_review`, and 135 keep their
+  disposition; the 2376 stored cards stay `standard_review` with count 0 on
+  both.
 - `run_mutations.py` writes `mutation-results.json`. It records the base
   regressions, the correction regressions (strategy types on 57454d31, the
   group non-row shapes on d220dfd9), mutants killed by assertion, and an
   unmutated control.
 - `base_vs_head_planning.py` writes `base-vs-head-results.json`.
 - `mutation-results.json` and `base-vs-head-results.json` were recorded at
-  22299f9c, before the toggle-group correction, and were not regenerated.
-  For the correction `run_mutations.py` was updated to the renamed test and
-  the re-indented toggle-group block and checked statically (each pattern
-  occurs once in `risk.py`; each named test exists); it was not rerun.
-  Mutation checks for the correction are run separately and reported in
-  the pull request, not in this directory.
+  22299f9c, before the toggle-group corrections, and were not regenerated.
+  For the first correction `run_mutations.py` was updated to the renamed
+  test and the re-indented toggle-group block. It needed no change for the
+  second correction and was checked statically against that tree (each of
+  its 33 patterns occurs once in `risk.py`; each of its 34 named tests
+  exists); it was not rerun. Mutation checks for the corrections are run
+  separately and reported in the pull request, not in this directory.
 - Both runners pin the original release base 4b8db82b. The branch later
   merged `release/2.6.0` at cb9d6783; between those commits `risk.py`,
   `governance/`, `dashboard_analysis/` and `tests/test_dashboard_update_mvp.py`
