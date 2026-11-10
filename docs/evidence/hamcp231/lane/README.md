@@ -153,7 +153,50 @@ Offline tests are in `tests/test_core_thread_matter_topology_local.py`.
 ## Receipt
 
 `thread_matter_topology.json` is the receipt of the local run, copied
-byte-for-byte from the run directory. It is disposable evidence, not production
-authority.
+byte-for-byte from the run directory. It records:
 
-Not yet run.
+- the source commit, journal hash, profile reference and fingerprint;
+- the source-hash digests and admission;
+- container memory, running image identity and cleanup.
+
+It is disposable evidence, not production authority.
+
+### Run 1: PASS (2026-11-09 23:30 CST)
+
+- The lane ran under the host heavy-job gate as unit `hamcp231-lane` (kind
+  `lane`) at source commit `d7b7f9366c33bcf1a151fb32c276225468b62640`.
+- The Core container ran with `--memory 2g` and the fixture writer with
+  `128m`. The image was
+  `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e`.
+- The receipt's SHA-256 is
+  `6c976d24bcd44a111306c5da797d6c0b5606c4e8e426b4f72c0182765aacc15d`. It binds
+  `contract_fingerprint`
+  `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c`
+  and 38 profile paths.
+- Authority went from 32 to 33 references. The predecessor made zero reads and
+  was refused with `authority_unavailable`.
+- Two synthetic datasets were seeded. Raw `matter/network_topology` with
+  `refresh: false` answered `unknown_command`.
+- Datasets read:
+  - The routed default read sent exactly `thread/list_datasets` then
+    `matter/network_topology`.
+  - Both datasets were `ok`, with one withheld identifier field (the
+    secret-bearing `source`).
+  - PAN IDs kept by design (§5.1.2).
+- Topology and completeness:
+  - Topology was `matter_not_loaded`.
+  - Completeness was `partial`, with `section_unavailable` and
+    `sanitized_text`.
+  - Across the two routed reads, Engineering sent
+    `[list_datasets, network_topology, list_datasets, network_topology]`
+    (the default read, then the datasets-only and topology-only reads).
+- Leak check: eight canaries were checked and none leaked.
+- Refusals:
+  - anonymous gave `authority_unavailable`;
+  - wrong Core version gave `identity_mismatch`;
+  - seven invalid argument sets were refused.
+- `fallback_count` was 0, and cleanup read back as clean.
+
+Limitation: this run does not prove A2 success. The Matter Server stub
+(HAMCP-297) is required for that, and **A2 signing evidence is incomplete until
+the A2 success lane runs.**
