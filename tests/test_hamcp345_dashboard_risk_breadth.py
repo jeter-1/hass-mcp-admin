@@ -46,7 +46,10 @@ from ha_mcp_engineering.f3_dashboard.models import (  # noqa: E402
     RiskCategory,
     RiskDisposition,
 )
-from ha_mcp_engineering.f3_dashboard.risk import analyze_dashboard_risk  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.risk import (  # noqa: E402
+    _TOGGLE_GROUP_CLASSIFIED_DOMAINS,
+    analyze_dashboard_risk,
+)
 from test_hamcp337_338_dashboard_risk_rows import (  # noqa: E402
     GLANCE_CARDS,
     _PlanOnlyHarness,
@@ -335,12 +338,12 @@ class GroupNonRowShapeTests(unittest.TestCase):
                 self.assertTrue(risk.manual_review_required)
                 self.assertEqual(risk.high_consequence_action_count, 0)
 
-    def test_group_beside_other_toggle_group_domains_is_one_mixed_disclosure(self):
+    def test_group_beside_other_toggle_group_domains_is_mixed_disclosure_and_listed_lock(self):
         # The card sends ``light.turn_on``/``light.turn_off`` to the group and
         # to the lock: neither receives a service of its own domain, so the
-        # card is one disclosed finding, not a light toggle and a group
-        # disclosure.  The lock is counted as a listed high-consequence
-        # entity.
+        # card is one disclosed group finding, not a light toggle and a
+        # group disclosure.  The lock is counted as a listed
+        # high-consequence entity.
         risk = card_risk(
             {"type": "toggle-group", "entities": ["light.synthetic_lamp", GROUP, LOCK]}
         )
@@ -495,6 +498,10 @@ class ToggleGroupSingleServiceTests(unittest.TestCase):
         ([FAN, FAN], "standard_review", 0),
         ([FAN, LIGHT], "elevated_manual_review", 0),
         ([SENSOR, LOCK], "elevated_manual_review", 1),
+        ([FAN, COVER], "elevated_manual_review", 1),
+        ([COVER, FAN], "elevated_manual_review", 1),
+        ([FAN, ALARM], "elevated_manual_review", 1),
+        ([ALARM, FAN], "elevated_manual_review", 1),
         ([FAN, 5], "standard_review", 0),
         ([5, LOCK], "elevated_manual_review", 1),
         ([LOCK, 5], "elevated_manual_review", 1),
@@ -526,6 +533,10 @@ class ToggleGroupSingleServiceTests(unittest.TestCase):
         ("valve_lock", [VALVE, LOCK], 1, (0, 1)),
         ("lock_garage_door", [LOCK, GARAGE], 1, (0, 1)),
         ("sensor_lock", [SENSOR, LOCK], 1, (1,)),
+        ("fan_cover", [FAN, COVER], 1, (1,)),
+        ("cover_fan", [COVER, FAN], 1, (0,)),
+        ("fan_alarm", [FAN, ALARM], 1, (1,)),
+        ("alarm_fan", [ALARM, FAN], 1, (0,)),
         ("light_valve", [LIGHT, VALVE], 0, (1,)),
         ("valve_valve2_light", [VALVE, VALVE2, LIGHT], 0, (0, 1)),
         ("light_garage_door", [LIGHT, GARAGE], 0, (1,)),
@@ -535,6 +546,25 @@ class ToggleGroupSingleServiceTests(unittest.TestCase):
         "elevated_manual_review": 1,
         "manual_review_required": 2,
     }
+    # Every domain a mixed toggle-group is classified by, written out here
+    # so that a domain added to or removed from the module set fails
+    # ``test_every_classified_domain_beside_an_unclassified_entity_is_manual``
+    # until its case is written.  Columns: domain; whether it is a
+    # high-consequence domain; and the disposition and
+    # high_consequence_action_count ``analyze_dashboard_risk`` returns on
+    # the release base (release/2.6.0 at cb9d6783) for a toggle-group of
+    # ``fan.synthetic`` and ``<domain>.synthetic``, which are the same in
+    # either order there (measured on a clone of that commit).
+    CLASSIFIED_DOMAINS_BESIDE_FAN = (
+        ("alarm_control_panel", True, "elevated_manual_review", 1),
+        ("cover", True, "elevated_manual_review", 1),
+        ("garage_door", True, "standard_review", 0),
+        ("group", False, "standard_review", 0),
+        ("light", False, "elevated_manual_review", 0),
+        ("lock", True, "elevated_manual_review", 1),
+        ("switch", False, "elevated_manual_review", 0),
+        ("valve", True, "standard_review", 0),
+    )
 
     def assert_mixed(
         self, entities: list, domain: str | None, high: tuple[int, ...] = ()
@@ -629,6 +659,8 @@ class ToggleGroupSingleServiceTests(unittest.TestCase):
             ("fan_group", [self.FAN, GROUP], "fan", ()),
             ("fan_valve", [self.FAN, VALVE], "fan", (1,)),
             ("fan_garage_door", [self.FAN, self.GARAGE], "fan", (1,)),
+            ("fan_cover", [self.FAN, self.COVER], "fan", (1,)),
+            ("fan_alarm", [self.FAN, self.ALARM], "fan", (1,)),
             ("fan_input_boolean_light",
              [self.FAN, self.INPUT_BOOLEAN, self.LIGHT], "fan", ()),
         ):
@@ -643,9 +675,43 @@ class ToggleGroupSingleServiceTests(unittest.TestCase):
             ("group_fan", [GROUP, self.FAN], "group", ()),
             ("valve_fan", [VALVE, self.FAN], "valve", (0,)),
             ("garage_door_fan", [self.GARAGE, self.FAN], "garage_door", (0,)),
+            ("cover_fan", [self.COVER, self.FAN], "cover", (0,)),
+            ("alarm_fan", [self.ALARM, self.FAN], "alarm_control_panel", (0,)),
         ):
             with self.subTest(entities=label):
                 self.assert_mixed(entities, domain, high)
+
+    def test_every_classified_domain_beside_an_unclassified_entity_is_manual(self):
+        # The classified domain is the only reason each of these lists is
+        # manual review: its companion is a fan, which the module does not
+        # classify.  With cover or alarm_control_panel left out of the
+        # guard, its list was observed to have no finding at all:
+        # standard review and a count of zero, below the release base.
+        table = self.CLASSIFIED_DOMAINS_BESIDE_FAN
+        self.assertEqual(
+            sorted(domain for domain, *_rest in table),
+            sorted(_TOGGLE_GROUP_CLASSIFIED_DOMAINS),
+        )
+        for domain, high_consequence, base, base_count in table:
+            entity = f"{domain}.synthetic"
+            for order, entities, first, position in (
+                ("classified_later", [self.FAN, entity], "fan", 1),
+                ("classified_first", [entity, self.FAN], domain, 0),
+            ):
+                with self.subTest(domain=domain, order=order):
+                    count = 1 if high_consequence else 0
+                    self.assert_mixed(
+                        entities, first, (position,) if high_consequence else ()
+                    )
+                    risk = card_risk({"type": "toggle-group", "entities": entities})
+                    self.assertEqual(risk.disposition.value, "manual_review_required")
+                    self.assertEqual(risk.high_consequence_action_count, count)
+                    self.assertGreaterEqual(
+                        self.RANK[risk.disposition.value], self.RANK[base]
+                    )
+                    self.assertGreaterEqual(
+                        risk.high_consequence_action_count, base_count
+                    )
 
     def test_malformed_entry_in_an_unclassified_list_is_manual_review(self):
         # An entry with no domain cannot be classified: not a string, or a

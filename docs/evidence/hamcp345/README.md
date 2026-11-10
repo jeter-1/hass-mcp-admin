@@ -334,9 +334,22 @@ Compatibility: every finding, changed or not, counts toward
 `MAX_RISK_EVIDENCE_FINDINGS` (256, `f3_dashboard/constants.py:71`), and changed
 findings toward `MAX_RISK_FINDINGS` (64). A dashboard near those bounds that
 planned on the base could now be refused with the existing bounded-analysis
-error. `base_vs_head_planning.py` checks the corpus for this. Not measured: a
-mixed toggle-group with many valve or garage_door entries, which adds changed
-findings the base did not have.
+error. `base_vs_head_planning.py` checks the corpus for this.
+
+Bound effects for a mixed toggle-group, measured by calling the pure analyzer
+for one toggle-group card added to an empty view (head `risk.py` as at
+5b4e26c9, base cb9d6783; N of 1, 2, 3, 63, 64 and 65): a mixed group that
+requires manual review and lists N high-consequence entries has 1+N changed
+findings on the head. Both versions refuse with `RiskAnalysisError`
+(`changed_risk_findings` above 64 changed findings, `risk_evidence_findings`
+above 256 findings); neither returned a shortened findings list in any probed
+case. `fan` + 64 locks is accepted on the base (64 findings, elevated, count
+64) and refused on the head (65 changed findings), as is `light` + 64 valves
+(base: 1 finding, elevated, count 0). In the other direction, 64 or more
+lights + one lock is refused on the base (one finding per entry) and on the
+head is `manual_review_required` with 2 findings and a count of 1 (also probed
+at 100, 200, 255, 256, 257 and 300 lights). `light` + N locks (refused from
+N=64) and N locks alone (refused from N=65) are the same on both.
 
 ## Documented residuals (unchanged by design)
 
@@ -359,15 +372,18 @@ findings the base did not have.
   `test_mixed_lists_of_unclassified_domains_keep_the_base_result`,
   `test_unclassified_first_and_classified_later_is_manual_review`,
   `test_classified_first_and_unclassified_later_is_manual_review`,
+  `test_every_classified_domain_beside_an_unclassified_entity_is_manual` (each
+  domain of the classified set beside a fan, in both orders, with its base
+  result; the test's literal list must equal the module set),
   `test_malformed_entry_in_an_unclassified_list_is_manual_review`,
-  `test_mixed_group_counts_each_high_consequence_entry_listed` (the 22
+  `test_mixed_group_counts_each_high_consequence_entry_listed` (the 26
   measured shapes, each with its base count),
   `test_a_single_domain_list_is_classified_by_that_domain`,
   `test_first_entity_valve_keeps_the_valve_action`,
   `test_single_domain_lists_outside_the_control_domains_stay_unclassified`,
   `test_unchanged_mixed_toggle_group_is_not_newly_changed` and
   `test_no_toggle_group_shape_is_below_its_base_disposition_or_count`; with
-  `GroupNonRowShapeTests.test_group_beside_other_toggle_group_domains_is_one_mixed_disclosure`,
+  `GroupNonRowShapeTests.test_group_beside_other_toggle_group_domains_is_mixed_disclosure_and_listed_lock`,
   `PlanLevelTests.test_mixed_toggle_group_requires_manual_review`,
   `test_mixed_toggle_group_counts_listed_high_consequence_entities`,
   `test_unclassified_mixed_toggle_group_keeps_standard_review`,
@@ -408,7 +424,10 @@ findings the base did not have.
   test and the re-indented toggle-group block. It needed no change for the
   second correction and was checked statically against that tree (each of
   its 33 patterns occurs once in `risk.py`; each of its 34 named tests
-  exists); it was not rerun. Mutation checks for the corrections are run
+  exists); it was not rerun. One test it names was later renamed to
+  `test_group_beside_other_toggle_group_domains_is_mixed_disclosure_and_listed_lock`
+  (from `..._is_one_mixed_disclosure`) and the name was updated in the
+  script; every test it names still exists. Mutation checks for the corrections are run
   separately and reported in the pull request, not in this directory.
 - Both runners pin the original release base 4b8db82b. The branch later
   merged `release/2.6.0` at cb9d6783; between those commits `risk.py`,
