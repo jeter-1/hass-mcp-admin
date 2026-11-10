@@ -6614,13 +6614,13 @@ class ChangeGovernanceService:
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self._entity_metadata_refusal_error(exc, {}) from None
         creating = request.action == scene_configuration_contract.CREATE_ACTION
-        lease = self._scene_configuration_planning_lease(
-            request.lease_target_id,
-            profile=(
-                scene_configuration_contract.CREATE_PROFILE
-                if creating
-                else scene_configuration_contract.PROFILE
-            ),
+        lease = (
+            self._scene_configuration_planning_lease(
+                request.lease_target_id,
+                profile=scene_configuration_contract.CREATE_PROFILE,
+            )
+            if creating
+            else self._scene_configuration_planning_lease(request.lease_target_id)
         )
         async with lease:
             try:
@@ -6909,14 +6909,17 @@ class ChangeGovernanceService:
         delete profile.  Admission is checked before any read or persistence.
         """
 
+        items = getattr(prepared, "items", None)
+        if not isinstance(items, (tuple, list)) or not items:
+            # Not a prepared delete context: the HAMCP-155 admission still
+            # runs first, and the exact-context checks refuse it afterwards.
+            return self._configuration_delete_core()
         core = None
-        for item in prepared.items:
+        for item in items:
             if item.resource_type in created_object_delete.RESOURCE_TYPES:
                 core = self._created_object_delete_core(item.resource_type)
             else:
                 core = self._configuration_delete_core()
-        if core is None:
-            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         return core
 
     def _configuration_delete_planning_lease(self, request: Any) -> Any:

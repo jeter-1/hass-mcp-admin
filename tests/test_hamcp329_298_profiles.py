@@ -306,10 +306,13 @@ class SignedSelectionTests(unittest.IsolatedAsyncioTestCase):
         create = {"action": "create", "config_id": "synthetic_evening", "name": "Evening",
                   "entities": {"light.synthetic": {"state": "on"}}}
         body = await readmission.call(gateway, SCENE_CONFIGURATION_TOOL, create)
-        # Until the scene create planner and its per-action pending-admission
-        # wiring land, ``action`` is refused at target validation: no plan, no
-        # Core lease, no dispatch, no Home Assistant request.
-        self.assertIn(b"InvalidStaticToolTarget", body)
+        # The create is gated by its own profile, not the admitted update
+        # profile: it is refused as pending admission before the request is
+        # validated: no plan, no Core lease, no dispatch, no Home Assistant
+        # request.
+        self.assertIn(b"CoreCapabilityUnavailable", body)
+        self.assertIn(b'\\"reason_code\\": \\"pending_signed_registry_admission\\"', body)
+        self.assertIn(b'\\"core_capability\\": \\"core.scene_create_delete_operation\\"', body)
         self.assertIn(b'\\"plan_created\\": false', body)
         self.assertIn(b'\\"provider_dispatch_occurred\\": false', body)
         self.assertEqual(app.calls, [])

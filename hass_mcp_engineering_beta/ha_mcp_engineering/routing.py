@@ -34,6 +34,7 @@ from .ha_core_readmission.routes import (
     AVAILABILITY_EXPOSURE_OPERATIONS,
     AVAILABILITY_EXPOSURE_TOOL,
     PENDING_ADMISSION_TOOLS,
+    pending_admission_selection,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -503,7 +504,8 @@ class AuthenticatedMcpGateway:
         if self._core_runtime is None:
             return {}
         if tool_name in PENDING_ADMISSION_TOOLS:
-            selected = PENDING_ADMISSION_TOOLS[tool_name]
+            # HAMCP-329: a scene create reports its own create/delete profile.
+            selected = pending_admission_selection(tool_name, parameters)
         elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
             parameters, dict
         ):

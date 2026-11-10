@@ -34,6 +34,8 @@ from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     LABEL_REGISTRATIONS,
     OPERATIONAL_REGISTRATIONS,
     SCENE_CONFIGURATION_REGISTRATION,
+    SCENE_CREATE_REGISTRATION,
+    CREATED_OBJECT_DELETE_REGISTRATIONS,
 )
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
     CHILD_EXECUTION_NAMESPACE,
@@ -1055,6 +1057,10 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     DASHBOARD_METADATA_REGISTRATION,
                     # HAMCP-071: the dormant scene configuration identity.
                     SCENE_CONFIGURATION_REGISTRATION,
+                    # HAMCP-329/298: the dormant scene create identity and the
+                    # three dormant created-object delete identities.
+                    SCENE_CREATE_REGISTRATION,
+                    *CREATED_OBJECT_DELETE_REGISTRATIONS,
                 )
             },
         )
@@ -1062,8 +1068,9 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         # refuses until a signed registry admits the delete profile.
         # +2 HAMCP-165 label identities, +2 HAMCP-232/145 dormant identities,
         # +1 HAMCP-106 dormant dashboard metadata identity,
-        # +1 HAMCP-071 dormant scene configuration identity
-        self.assertEqual(len(identities), 25)
+        # +1 HAMCP-071 dormant scene configuration identity,
+        # +4 HAMCP-329/298 dormant scene create and created-object deletes
+        self.assertEqual(len(identities), 29)
         # One full dashboard update; HAMCP-106 adds only the metadata update.
         self.assertEqual(
             sorted(item for item in identities if "dashboard" in item),
@@ -1075,8 +1082,8 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
         # +2 HAMCP-165, +2 HAMCP-155, +2 HAMCP-232/145, +1 HAMCP-106,
-        # +1 HAMCP-071
-        self.assertEqual(health["activated_capability_count"], 25)
+        # +1 HAMCP-071, +4 HAMCP-329/298 (registered, dormant until admitted)
+        self.assertEqual(health["activated_capability_count"], 29)
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)

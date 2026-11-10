@@ -96,10 +96,6 @@ NOT_F3 = {
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
     "core.typed_helper_value_operation": "direct_typed_tool",
-    # HAMCP-329/298: dormant runtime-only profiles; no signed registry entry
-    # binds them until the scene create and helper delete writers exist.
-    "core.scene_create_delete_operation": "dormant_unsigned",
-    "core.created_helper_delete_operation": "dormant_unsigned",
 }
 
 
@@ -626,10 +622,11 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
     def test_activated_identities_and_counts(self):
         health = self.runtime.registry.health()
         self.assertEqual(health["activated_capability_count"], len(self.entries))
-        self.assertEqual(len(self.entries), 25)
-        # 18 configuration adapters, one shared operational adapter, one
+        self.assertEqual(len(self.entries), 29)
+        # 22 configuration adapters (HAMCP-329/298 adds scene create and the
+        # three created-object deletes), one shared operational adapter, one
         # dashboard adapter.
-        self.assertEqual(health["registered_adapter_count"], 20)
+        self.assertEqual(health["registered_adapter_count"], 24)
 
     def test_activated_set_matches_compiled_profiles_with_justified_gaps(self):
         required = set()
@@ -653,9 +650,11 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         dormant = {"core.scene_create_delete_operation",
                    "core.created_helper_delete_operation"}
         self.assertLessEqual(dormant, F3_ENTRY_ADMISSION_PROFILES)
-        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3 - dormant, required)
+        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
         self.assertFalse(never_f3 & required)
-        self.assertFalse(dormant & required)
+        # Their four F3 identities are registered and require them, so an
+        # unsigned profile refuses each one at the Core lease boundary.
+        self.assertLessEqual(dormant, required)
 
     async def test_admitted_identity_is_authorized_once(self):
         for entry in self.entries:

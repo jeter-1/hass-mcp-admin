@@ -823,6 +823,29 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
     }
 )
 
+
+
+def pending_admission_selection(
+    tool_name: Any, arguments: Any
+) -> tuple[str, str] | None:
+    """The (resource type, profile) whose admission gates this exact request.
+
+    HAMCP-329: ``create_scene_configuration_plan`` with ``action: create`` is
+    gated by the separate scene create/delete profile, never by the scene
+    update profile; every other request keeps its tool's one profile.
+    """
+
+    if not isinstance(tool_name, str):
+        return None
+    if (
+        tool_name == SCENE_CONFIGURATION_TOOL
+        and isinstance(arguments, dict)
+        and arguments.get("action") == "create"
+    ):
+        return (SCENE_CONFIGURATION_RESOURCE_TYPE, SCENE_CREATE_DELETE_PROFILE)
+    return PENDING_ADMISSION_TOOLS.get(tool_name)
+
+
 STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
 STATIC_TARGET_INVALID_OPERATION = "entity_availability_exposure_invalid_operation"
 STATIC_TARGET_INVALID_ENTITY_IDS = "entity_availability_exposure_invalid_entity_ids"
@@ -1244,6 +1267,7 @@ __all__ = [
     "CREATED_HELPER_DELETE_PROFILE",
     "SCENE_CONFIGURATION_RESOURCE_TYPE",
     "SCENE_CONFIGURATION_TOOL",
+    "pending_admission_selection",
     "scene_configuration_target",
     "PENDING_ADMISSION_TOOLS",
     "SCRIPT_TRACE_PROFILE",

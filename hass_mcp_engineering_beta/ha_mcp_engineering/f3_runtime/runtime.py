@@ -148,6 +148,7 @@ from ..governance.entity_metadata import (
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
+from ..governance import created_object_delete_planning
 from ..governance import created_object_identity
 from ..governance import created_object_delete as created_object_delete_contract
 from ..governance import created_object_rollback
@@ -5919,29 +5920,66 @@ class F3RuntimeIntegration:
         candidates, excluded = self._created_object_candidates(source_plan, task)
         if not candidates:
             raise refuse(created_object_rollback.NO_ELIGIBLE_CHILD, excluded)
-        deletes = [item for item in candidates if item[2] is not None]
-        if deletes:
-            # Admission before any Home Assistant read (raises
-            # pending_signed_registry_admission with nothing read or stored
-            # when no restore remains).
-            try:
-                self.service._configuration_delete_core()
-            except GovernanceError:
-                if len(deletes) == len(candidates):
-                    raise
-                for operation, _child, _identity, _resulting in deletes:
+        created_profiles = created_object_delete_contract.PROFILES
+        delete_gateway = self.service.configuration_delete_gateway
+        created_gateway = getattr(self.service, "created_object_delete_gateway", None)
+
+        def gateway_for(kind: str | None) -> Any:
+            return created_gateway if kind in created_profiles else delete_gateway
+
+        if any(item[2] is not None for item in candidates):
+            # Admission before any Home Assistant read, per created type
+            # (§3.4.1 step 3): automation/script by the HAMCP-155 profile,
+            # a scene or helper by its own created-object delete profile.
+            # An unadmitted delete is excluded and is a prerequisite of
+            # every later delete (§3.4.4).  With no child left, the refusal
+            # is pending_signed_registry_admission with nothing read or
+            # stored.
+            admission_error: GovernanceError | None = None
+            admitted: list[tuple[Any, str, dict[str, Any] | None, str]] = []
+            unadmitted: str | None = None
+            for item in candidates:
+                operation = item[0]
+                if item[2] is None:
+                    admitted.append(item)
+                    continue
+                kind = created_object_identity.created_type(operation)
+                try:
+                    if kind in created_profiles:
+                        self.service._created_object_delete_core(kind)
+                    else:
+                        self.service._configuration_delete_core()
+                except GovernanceError as exc:
+                    admission_error = admission_error or exc
                     excluded.append(
                         {
                             "operation_id": operation.operation_id,
                             "reason": created_object_rollback.PENDING_ADMISSION,
                         }
                     )
-                candidates = [item for item in candidates if item[2] is None]
-                deletes = []
-        gateway = self.service.configuration_delete_gateway
-        if deletes and gateway is None:
+                    unadmitted = unadmitted or operation.operation_id
+                    continue
+                if unadmitted is not None:
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.PREREQUISITE_EXCLUDED,
+                            "prerequisite": unadmitted,
+                        }
+                    )
+                    continue
+                admitted.append(item)
+            if not admitted and admission_error is not None:
+                raise admission_error
+            candidates = admitted
+        deletes = [item for item in candidates if item[2] is not None]
+        delete_kinds = [
+            created_object_identity.created_type(item[0]) for item in deletes
+        ]
+        if any(gateway_for(kind) is None for kind in delete_kinds):
             raise refuse(created_object_rollback.READ_UNAVAILABLE, excluded)
-        if deletes:
+        if deletes and not any(kind in created_profiles for kind in delete_kinds):
+            # Automation and script only: the unchanged HAMCP-155 lease.
             try:
                 lease_request = configuration_delete_planning.validate_request(
                     {
@@ -5959,6 +5997,37 @@ class F3RuntimeIntegration:
                 raise self.service._entity_metadata_refusal_error(exc, {}) from None
             planning_lease: Any = self.service._configuration_delete_planning_lease(
                 lease_request
+            )
+        elif deletes:
+            # A scene or helper child: the lease holds every involved delete
+            # profile for exactly these targets.
+            try:
+                lease_request = created_object_delete_planning.lease_request(
+                    [
+                        (kind, operation.target_id)
+                        for kind, (operation, _child, _identity, _resulting) in zip(
+                            delete_kinds, deletes, strict=True
+                        )
+                    ],
+                    created_object_rollback.REASON,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self.service._entity_metadata_refusal_error(exc, {}) from None
+            planning_lease = _rollback_planning_lease(
+                self.core_runtime,
+                (
+                    "core.dependency_helper_planning",
+                    *sorted(
+                        {
+                            created_profiles.get(kind, CONFIGURATION_DELETE_PROFILE)
+                            for kind in delete_kinds
+                        }
+                    ),
+                ),
+                target={
+                    "target_type": "configuration_deletion",
+                    "target_id": lease_request.lease_target_id,
+                },
             )
         else:
             planning_lease = _rollback_planning_lease(
@@ -6010,13 +6079,11 @@ class F3RuntimeIntegration:
                         }
                     )
                     continue
+                kind = created_object_identity.created_type(operation)
+                gateway = gateway_for(kind)
                 try:
-                    entry = await gateway.registry_entry(
-                        operation.resource_type, operation.target_id
-                    )
-                    body = await gateway.read_config(
-                        operation.resource_type, operation.target_id
-                    )
+                    entry = await gateway.registry_entry(kind, operation.target_id)
+                    body = await gateway.read_config(kind, operation.target_id)
                 except Exception:
                     excluded.append(
                         {
@@ -6029,11 +6096,7 @@ class F3RuntimeIntegration:
                 ownership = created_object_identity.observed_ownership(
                     identity,
                     entry,
-                    (
-                        resource_fingerprint(operation.resource_type, body)
-                        if body is not None
-                        else None
-                    ),
+                    resource_fingerprint(kind, body) if body is not None else None,
                 )
                 status = ownership["status"]
                 if status == created_object_rollback.ALREADY_ABSENT:
@@ -6114,25 +6177,52 @@ class F3RuntimeIntegration:
                     _before_persist=lease.require_current,
                 )
             else:
+                included_kinds = [
+                    created_object_identity.created_type(operation)
+                    for operation, _binding in delete_included
+                ]
                 try:
-                    request = configuration_delete_planning.validate_request(
-                        {
-                            "deletions": [
-                                {
-                                    "resource_type": operation.resource_type,
-                                    "target_id": operation.target_id,
-                                }
-                                for operation, _binding in delete_included
-                            ],
-                            "reason": created_object_rollback.REASON,
-                        }
-                    )
-                    prepared = await configuration_delete_planning.prepare(
-                        gateway,
-                        request,
-                        known_secrets=self.service.sensitive_values,
-                        global_reader=self.service.global_reference_snapshot_reader,
-                    )
+                    if any(kind in created_profiles for kind in included_kinds):
+                        prepared = await created_object_delete_planning.prepare_mixed(
+                            delete_gateway,
+                            created_gateway,
+                            created_object_delete_planning.lease_request(
+                                [
+                                    (kind, operation.target_id)
+                                    for kind, (operation, _binding) in zip(
+                                        included_kinds, delete_included, strict=True
+                                    )
+                                ],
+                                created_object_rollback.REASON,
+                            ),
+                            known_secrets=self.service.sensitive_values,
+                            global_reader=(
+                                self.service.global_reference_snapshot_reader
+                            ),
+                        )
+                    else:
+                        # Automation and script only: the unchanged
+                        # HAMCP-155 preparation.
+                        request = configuration_delete_planning.validate_request(
+                            {
+                                "deletions": [
+                                    {
+                                        "resource_type": operation.resource_type,
+                                        "target_id": operation.target_id,
+                                    }
+                                    for operation, _binding in delete_included
+                                ],
+                                "reason": created_object_rollback.REASON,
+                            }
+                        )
+                        prepared = await configuration_delete_planning.prepare(
+                            delete_gateway,
+                            request,
+                            known_secrets=self.service.sensitive_values,
+                            global_reader=(
+                                self.service.global_reference_snapshot_reader
+                            ),
+                        )
                 except entity_metadata_planning.EntityMetadataRefusal as exc:
                     raise self.service._entity_metadata_refusal_error(exc, {}) from None
                 delete_ids: dict[str, str] = {}
@@ -6145,9 +6235,11 @@ class F3RuntimeIntegration:
                         item.target_id != operation.target_id
                         or item.registry_entry_id != identity["registry_entry_id"]
                         or item.entity_id != ownership["observed_entity_id"]
-                        or configuration_delete_intent(item.intent).get(
-                            "pre_image_fingerprint"
-                        )
+                        or (
+                            created_object_delete_contract.intent(item.intent)
+                            if created_object_delete_contract.is_intent(item.intent)
+                            else configuration_delete_intent(item.intent)
+                        ).get("pre_image_fingerprint")
                         != identity["created_fingerprint"]
                     ):
                         # Changed between the ownership read and the delete read.
