@@ -1224,6 +1224,56 @@ def _configuration_delete_operation_policy(
     )
 
 
+def _created_object_rollback_policy(
+    operation: ConfigurationOperation,
+    delete_policy: OperationPolicyClassification,
+) -> OperationPolicyClassification:
+    """HAMCP-298 option E on top of the unchanged HAMCP-155 delete policy.
+
+    A delete without the created-object marker keeps its 155 policy.  A
+    marker that is not closed and bound to this exact child is prohibited.
+    An ``owned`` child keeps its 155 policy; a ``modified_since_create``
+    child is elevated with the ownership basis, which never sets a physical
+    consequence on its own.
+    """
+
+    from . import created_object_rollback
+
+    found = created_object_rollback.markers(operation)
+    if not found:
+        return delete_policy
+    if len(found) != 1 or not created_object_rollback.valid_marker(
+        found[0], operation
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.PROHIBITED,
+            RiskDelta.CRITICAL,
+            PhysicalConsequence.UNKNOWN,
+            (created_object_rollback.INCOMPLETE,),
+        )
+    if (
+        delete_policy.policy_class is ApprovalPolicyClass.PROHIBITED
+        or found[0]["ownership"] != created_object_rollback.MODIFIED_SINCE_CREATE
+    ):
+        return delete_policy
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        delete_policy.physical_consequence,
+        tuple(
+            sorted(
+                {
+                    *delete_policy.reason_codes,
+                    created_object_rollback.BASIS_MODIFIED_SINCE_CREATE,
+                }
+            )
+        ),
+        safety_critical_acknowledgement=(
+            delete_policy.safety_critical_acknowledgement
+        ),
+    )
+
+
 HELPER_OPTIONS_INCOMPLETE = "config_entry_helper_options_contract_incomplete"
 
 
@@ -1446,7 +1496,9 @@ def configuration_operation_policy(
     if operation.resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
         return _helper_options_operation_policy(operation)
     if operation.action == CONFIGURATION_DELETE_ACTION:
-        return _configuration_delete_operation_policy(operation)
+        return _created_object_rollback_policy(
+            operation, _configuration_delete_operation_policy(operation)
+        )
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)

@@ -308,20 +308,31 @@ def risk_assessment(
             + " (elevated approval required)",
             *reasons,
         ][:MAX_STATEMENTS]
+    evidence = [
+        {
+            "field": operation_id,
+            "trigger": POLICY_TRIGGER,
+            "policy": classification["policy"],
+            "physical_consequence": classification["physical_consequence"],
+            "basis": ",".join(classification["basis"]),
+        }
+    ]
+    # HAMCP-298: a created-object rollback child carries one more closed
+    # ownership marker beside (never inside) the unchanged delete marker.
+    created_object = classification.get("created_object_rollback")
+    if created_object is not None:
+        from . import created_object_rollback
+
+        evidence.append(dict(created_object))
+        reasons = [*created_object_rollback.statements(created_object), *reasons][
+            :MAX_STATEMENTS
+        ]
     return ChangeRiskAssessment(
         # A delete is destructive even when nothing protected is removed.
         level=RiskLevel.HIGH if elevated else RiskLevel.MEDIUM,
         reasons=reasons or ["Configuration delete"],
         apply_allowed=True,
-        evidence=[
-            {
-                "field": operation_id,
-                "trigger": POLICY_TRIGGER,
-                "policy": classification["policy"],
-                "physical_consequence": classification["physical_consequence"],
-                "basis": ",".join(classification["basis"]),
-            }
-        ],
+        evidence=evidence,
         warnings=list(classification["warnings"]),
     )
 
