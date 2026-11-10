@@ -1470,8 +1470,9 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.fixture.asyncTearDown()
 
-    async def _request(self, path='/ready', *, reconciled=True):
-        gateway, app = application_gateway(self.runtime, reconciled=reconciled)
+    async def _request(self, path='/ready', *, reconciled=True, deadline_elapsed=False):
+        gateway, app = application_gateway(
+            self.runtime, reconciled=reconciled, deadline_elapsed=deadline_elapsed)
         with patch.object(application, 'GOVERNANCE', gateway._test_governance):
             status, body = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, path)
         return status, json.loads(body), app.calls
@@ -1739,6 +1740,18 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         status, state, calls = await self._request(reconciled=False)
         self.assertEqual((status, calls), (503, 0))
         self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertFalse(state['accepting_mcp_requests'])
+        # HAMCP-350 (inverted): once the bounded startup wait has elapsed the
+        # authenticated endpoint serves the native catalog while /ready stays
+        # pending until the first ha-mcp reconcile returns.
+        status, state, calls = await self._request(reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (503, 0))
+        self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertTrue(state['initial_reconciliation_deadline_elapsed'])
+        self.assertTrue(state['accepting_mcp_requests'])
+        status, _, calls = await self._request(
+            f'/{gateway_fixtures.SECRET}/mcp', reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (200, 1))
 
 
     async def test_projection_failure_requires_that_projection_to_succeed(self):

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering import inbound_topology_observer as observer
 from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
+from ha_mcp_engineering.logging_config import uvicorn_log_config  # noqa: E402
 from ha_mcp_engineering.inbound_topology_observer import (
     BoundaryObserver, MAX_EXPORT_BYTES, MAX_HEADERS, MAX_RECORDS, MARKER_HEADER, REQUEST_HEADER,
     ObservedConfig, Recorder, WINDOW_SECONDS, encoded, project_value,
@@ -482,7 +483,8 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(observer.uvicorn, "Config") as config, \
                 patch.object(observer.uvicorn, "Server") as server:
             app = object();result = observer.create_mcp_listener(app, port=8100, log_level="info")
-        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False, proxy_headers=False)
+        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False, proxy_headers=False,
+                                       log_config=uvicorn_log_config())
         server.assert_called_once_with(config.return_value)
         self.assertIs(result, server.return_value)
 

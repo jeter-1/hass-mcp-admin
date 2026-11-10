@@ -1,5 +1,38 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.6.0 build startup readiness, phase timing and log timestamps (HAMCP-350)
+
+- **Bounded startup wait.** With ha-mcp configured, authenticated MCP traffic
+  waits at most 20 seconds after the MCP listener starts for the first ha-mcp
+  reconcile ([`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md),
+  Recovery and reprobe cadence). `/ready` adds two booleans:
+  `initial_reconciliation_deadline_elapsed` and `accepting_mcp_requests`.
+  `ready` and `status` keep their meaning: HTTP 503 with
+  `status=initial_reconciliation_pending` until the first reconcile returns.
+- **Delegated tool status.** `server_info` and `get_server_health` add
+  `delegated_tools`: `configured`, `admitted`, `admitted_tool_count`,
+  `reconciliation_status` and `notice`. While ha-mcp is configured but no
+  delegated tool is admitted, `notice` is fixed text saying that only
+  Engineering-native tools are available, that Engineering keeps retrying,
+  and that a new MCP client session is needed after admission. Otherwise it
+  is `null`. It never carries a URL, host, path or upstream detail.
+- **Startup phase timing.** Each phase logs one `startup_phase_timing` event
+  with `phase` (`store_load`, `core_boot`, `f3_recovery`, `listener_start`,
+  `first_reconcile`), `outcome` (`completed`, `skipped`, `failed`,
+  `cancelled`) and `duration_ms`. `completed` and `skipped` log at INFO, the
+  others at WARNING. `first_reconcile` also reports
+  `readiness_deadline_elapsed` and the bounded `reconciliation_status`. When
+  the 20-second limit passes first, a WARNING
+  `initial_reconciliation_deadline_elapsed` event is logged. No event carries
+  exception text.
+- **Log timestamps.** Every log line starts with, or carries, an ISO-8601 UTC
+  time with milliseconds (`2026-11-09T21:00:36.590Z`): the JSON `timestamp`
+  field of Engineering's structured lines (added after sanitization, from the
+  record time), and a leading timestamp on uvicorn's default and access lines
+  and on root-logger lines such as the MCP SDK's. Engineering replaces the
+  root logger's import-time handler with one timestamped handler on the
+  stream-guarded stderr; the root level and filters are unchanged.
+
 ## 2.4.1-beta.52 incremental governance health (HAMCP-097)
 
 `get_server_health(check_ha=false)` no longer re-decodes and re-projects
@@ -387,10 +420,13 @@ they introduced.
 `/health` remains process liveness. The separate bounded `/ready` response
 contains only `ready`, `initial_reconciliation_required`,
 `initial_reconciliation_complete`, and
-`status=ready|initial_reconciliation_pending`. When upstream is configured,
-`/ready` and authenticated MCP traffic return HTTP 503 until
-`reconcile_until_initialized` returns its first stable or terminal result. An
-unconfigured gateway reports ready immediately for its truthful static catalog.
+`status=ready|initial_reconciliation_pending` (HAMCP-350 adds
+`initial_reconciliation_deadline_elapsed` and `accepting_mcp_requests`). When
+upstream is configured, `/ready` returns HTTP 503 until
+`reconcile_until_initialized` returns its first stable or terminal result.
+Authenticated MCP traffic returns HTTP 503 for the same period, but for at
+most 20 seconds after the MCP listener starts. An unconfigured gateway reports
+ready immediately for its truthful static catalog.
 
 `get_server_health.upstream_read_gateway` reports:
 

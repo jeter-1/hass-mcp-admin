@@ -330,8 +330,9 @@ F3 dispatch or healthy storage for every tool. A detected F3 fault returns HTTP
 200 with `status=ready_f3_execution_unavailable`, `f3_execution_ready=false`
 and `f3_readiness_status=faulted`. Independent authenticated reads remain
 reachable; a read requiring corrupt storage still returns its original failure.
-Pending initial catalog reconciliation continues to return HTTP 503. The
-liveness endpoint is unchanged.
+Pending initial catalog reconciliation continues to return HTTP 503 on
+`/ready`; authenticated MCP paths return it for at most 20 seconds after the
+MCP listener starts (HAMCP-350). The liveness endpoint is unchanged.
 
 Deep F3 health remains an expensive diagnostic operation. Startup and recovery
 of a detected read/pass fault perform full storage validation, including child
