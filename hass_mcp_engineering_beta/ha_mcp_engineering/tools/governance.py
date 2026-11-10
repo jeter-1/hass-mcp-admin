@@ -725,9 +725,12 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     """Create a separate governed reverse-update plan from exact evidence.
 
     The request performs no Home Assistant mutation. Approve and apply the
-    returned rollback plan through the ordinary governance tools. Creation and
-    operational rollback remain unavailable because deletion and generalized
-    compensation are outside this milestone.
+    returned rollback plan through the ordinary governance tools. A verified
+    governed automation or script create rolls back as a separately approved
+    configuration delete plan of the created object, using the identity
+    Engineering captured at creation; a registry entry modified since creation
+    needs elevated acknowledgement. Helper, scene and mixed create-and-update
+    creates and operational rollback remain unavailable.
     """
     return await run_structured(
         "rollback_change",
