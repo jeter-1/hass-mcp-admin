@@ -926,9 +926,15 @@ class LegacyRetainedEffectProjectionTests(
                     encoding="utf-8",
                 )
                 before = path.read_bytes()
+                # HAMCP-355: retention cleanup at service start uses the
+                # injected clock; the real clock prunes this terminal
+                # record once its updated_at is 90 days old.
                 service = ChangeGovernanceService(
                     ChangePlanRepository(root),
                     _NoWriteGateway(),
+                    now=lambda: datetime(
+                        2026, 8, 12, 12, 0, tzinfo=timezone.utc
+                    ),
                 )
                 loaded = service.repository.get(plan_id)
                 self.assertIsNotNone(loaded)
