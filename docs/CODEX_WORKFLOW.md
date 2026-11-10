@@ -191,6 +191,49 @@ Keep publication eligibility/scheduling changes separate from action updates.
    does not grant authorization or waive tests, review, release, or deployment
    restrictions.
 
+   The protected-path preflight, changed-file inference and Evidence compare
+   against one base reference. An explicit `-BaseRef` always wins. Without one,
+   the "Verify base reference" step chooses the base in this order and prints
+   which one it chose and why:
+
+   1. The base of the open pull request whose head is the current branch, from
+      `gh pr view <branch> --json number,state,baseRefName,headRefName,isCrossRepository`
+      (prompts disabled, 10-second limit). A base of `release/2.6.0` becomes
+      `origin/release/2.6.0`. It must already exist locally; the wrapper never
+      fetches, so fetch it or pass `-BaseRef`. An answer for another branch or
+      a fork, or with an unusable number, state or base name, fails the
+      preflight instead of being trusted or ignored.
+   2. If gh is not on PATH, is not authenticated, is offline, does not answer
+      in time, or finds no open pull request: the branch upstream, but only when
+      it is `origin/main` or an `origin/release/*` branch other than the
+      branch's own remote copy (`git push -u` changes the upstream to that copy).
+   3. Otherwise `origin/main`, with a message naming each reason detection did
+      not apply and suggesting `-BaseRef`.
+
+   A detached HEAD skips gh and the upstream. gh's own output is not printed.
+   Pass `-BaseRef` whenever the base matters for a record, for example the
+   Evidence run of a stable review candidate, and use the same value as
+   `scripts/pr-evidence.py --base`. Evidence records the base it used in
+   `base_ref`.
+
+   The step resolves the chosen base to a commit once and prints it. Every
+   comparison in the run (protected paths, changed files, committed
+   whitespace) uses that commit, which Evidence records in `base_sha`. A fetch
+   in another worktree that moves the reference meanwhile does not change the
+   result; the final snapshot recheck reports the move and still requires the
+   pinned commits to exist.
+
+   The deployment-metadata check (`scripts/validate_addon_metadata.py`,
+   including its "not bumped" version comparison) uses a second, separate
+   base: `origin/main`, the deployed line, exactly as CI's "Validate deployment
+   metadata" step does. It is never the pull-request base, so item pull
+   requests into a release branch, which share the release's declared
+   version, are judged as CI judges them. The same step pins `origin/main` to
+   a commit and prints it; Evidence records it in `version_check_base_ref` and
+   `version_check_base_sha`. If `origin/main` does not resolve to a commit, the
+   preflight refuses before any repository code runs instead of skipping the
+   check or using another base. There is no override.
+
 7. Generate or refresh the bounded draft body if needed:
 
    ```powershell
@@ -274,7 +317,13 @@ git clone --shared --no-checkout . "$A/clones/review"
 git -C "$A/clones/review" checkout --detach <commit>
 ```
 
-Then pass `-PythonExecutable "$A/venv/bin/python"` to `check.ps1`.
+Then pass `-PythonExecutable "$A/venv/bin/python"` to `check.ps1`. When no
+`-PythonExecutable` is given and no `python` is on PATH (for example under
+`systemd-run`), `check.ps1` uses this worktree's `.artifacts/venv` interpreter
+(`.artifacts/venv/Scripts/python.exe` on Windows) itself. It first checks that
+the interpreter reports Python 3.12 and stops if it reports another version,
+does not answer, or does not exist. A `python` on PATH still takes precedence,
+so pass `-PythonExecutable` when PATH may hold another interpreter.
 
 `git worktree add` writes into the main checkout's `.git/worktrees`, which is
 outside the writable root or protected. A `--shared` clone borrows objects
@@ -1062,7 +1111,9 @@ new exact head receives fresh authorization after the bounded delta rereview.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to
 `check.ps1` with `-PythonExecutable` and use that same interpreter for the Python
-commands. If Windows policy blocks repository scripts, use an approved
+commands. Without either, `check.ps1` falls back to the worktree's Python 3.12
+`.artifacts/venv` (see **Sandbox-local scratch**) and stops if it is missing or
+is another version. If Windows policy blocks repository scripts, use an approved
 process-scoped invocation such as `powershell.exe -NoProfile -ExecutionPolicy
 Bypass -File .\scripts\check.ps1 -Tier Fast`; do not weaken the machine-wide
 policy.

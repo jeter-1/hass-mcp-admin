@@ -303,7 +303,7 @@ def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[
     }
 # Releases whose exact evidence carries the app-tool transition (no
 # ha_get_addon) and held operational backup/lifecycle providers.
-APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0"})
+APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"})
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -395,6 +395,16 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
     # HAMCP-319: the reviewed 9.1.0 policy reclassifies ha_get_hacs_info from
     # automatic_read to unsupported; every other count equals 8.5.0.
     "9.1.0": {
+        "automatic_read": 27,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 10,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 2,
+    },
+    # HAMCP-351: the reviewed 9.1.2 policy keeps every 9.1.0 disposition.
+    "9.1.2": {
         "automatic_read": 27,
         "held_for_canary": 1,
         "mixed_or_requires_wrapper": 10,
@@ -657,6 +667,13 @@ DELEGATED_READ_CALL_OVERRIDES_BY_VERSION: dict[str, dict[str, dict[str, Any]]] =
             "file": "SKILL.md",
         },
     },
+    # HAMCP-351: 9.1.2 keeps the 9.1.0 skill-guide tiers.
+    "9.1.2": {
+        "ha_get_skill_guide": {
+            "skill": "home-assistant-best-practices",
+            "file": "SKILL.md",
+        },
+    },
 }
 UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "source": "installed",
@@ -748,6 +765,8 @@ EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
     "invalid_search": {
         # HAMCP-319: reviewed capture ha-mcp-9.1.0.json error_shapes.
         "9.1.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+        # HAMCP-351: reviewed capture ha-mcp-9.1.2.json error_shapes.
+        "9.1.2": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.6.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
@@ -823,13 +842,13 @@ def upstream_wire_arguments(
 ) -> dict[str, Any]:
     """Direct-upstream arguments for one exact release.
 
-    Engineering keeps the shipped 8.5 public schema for 9.1.0 and rebuilds the
-    exact 9.1 wire arguments through the compiled adapter (HAMCP-319 section
-    7). A direct upstream probe of 9.1.0 sends those same wire arguments; every
+    Engineering keeps the shipped 8.5 public schema for 9.1.0 and 9.1.2 and
+    rebuilds the exact 9.1 wire arguments through the compiled adapter (HAMCP-319
+    section 7; HAMCP-351). A direct upstream probe of a 9.1 release sends those same wire arguments; every
     other release takes the public arguments unchanged.
     """
 
-    if version != upstream_reads_9_1.VERSION:
+    if version not in upstream_reads_9_1.RELEASES:
         return dict(arguments)
     release = load_reviewed_upstream_release_registry().by_version[version]
     return upstream_reads_9_1.read_arguments(release.policy.by_name[tool], arguments)
@@ -1718,7 +1737,7 @@ async def inspect_engineering(
                         in (value.get("warnings") or [])
                     )
                     visible_scope_only = (
-                        expected_upstream_version == upstream_reads_9_1.VERSION
+                        expected_upstream_version in upstream_reads_9_1.RELEASES
                     )
                     if visible_scope_only:
                         # HAMCP-319 design F3: 9.1.0 hides filtered entities
@@ -2075,7 +2094,7 @@ async def inspect_engineering(
                         for item in calls.values()
                         if item.get("completeness") == "partial"
                     )
-                    if expected_upstream_version == upstream_reads_9_1.VERSION
+                    if expected_upstream_version in upstream_reads_9_1.RELEASES
                     else int(partial_search_enabled)
                 ),
                 "partial delegated-read accounting mismatch",
