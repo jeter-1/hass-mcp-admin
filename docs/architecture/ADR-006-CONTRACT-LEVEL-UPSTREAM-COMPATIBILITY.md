@@ -293,14 +293,40 @@ signatures, endpoint material, credentials, or raw exceptions.
 
 Liveness and initial catalog readiness are separate. The bounded `/ready`
 response contains only `ready`, `initial_reconciliation_required`,
-`initial_reconciliation_complete`, and
-`status=ready|initial_reconciliation_pending`. When upstream is configured,
-authenticated MCP traffic returns HTTP 503 until
+`initial_reconciliation_complete`, `initial_reconciliation_deadline_elapsed`,
+`accepting_mcp_requests`, and `status=ready|initial_reconciliation_pending`.
+When upstream is configured, authenticated MCP traffic returns HTTP 503 until
 `reconcile_until_initialized` returns the first stable or terminal
-reconciliation result. This prevents a schema-caching client from accepting the
-transient 41-tool static catalog during upstream startup. An unconfigured
+reconciliation result, or until 20 seconds after the MCP listener starts,
+whichever is first. This prevents a schema-caching client from accepting the
+transient static catalog during normal upstream startup. An unconfigured
 gateway does not require initial reconciliation and is ready for its truthful
 static catalog.
+
+HAMCP-350 bounds that startup wait. The 20-second limit
+(`INITIAL_RECONCILIATION_READINESS_DEADLINE_SECONDS`) is measured from the
+MCP listener's startup completion, so the fast-lane retries at 1, 2, 4 and 8
+seconds (about 15 seconds in total) finish inside it. When the limit passes
+first:
+
+- authenticated MCP traffic is accepted: `initialize`, `tools/list` and the
+  Engineering-native tools work, and `accepting_mcp_requests` becomes true;
+- `/ready` stays HTTP 503 with `status=initial_reconciliation_pending` until
+  the first reconcile returns, so a readiness probe still sees the catalog as
+  incomplete;
+- the first reconcile keeps retrying unchanged; delegated tools stay
+  unregistered until admitted, so a delegated call is refused as an unknown
+  tool and sends no upstream request;
+- `server_info` and `get_server_health` report `delegated_tools` with
+  `admitted=false` and a fixed notice that a new MCP client session is needed
+  to load the delegated tools after ha-mcp is admitted.
+
+A client that lists tools during that interval caches the static catalog. The
+notice is the remedy; Engineering does not claim `tools/list_changed`
+delivery. The secret-path 404, rate limit and F3 request-readiness 503 are
+unchanged and still apply before the limit passes, after it passes, and after
+reconciliation. Each startup phase (store load, Core boot, F3 recovery,
+listener start, first reconcile) logs one `startup_phase_timing` event.
 
 Two supervised cadences serve different failure classes:
 
@@ -349,7 +375,9 @@ Engineering-native. The reviewed generic set contains 26 reads.
 - New or newly visible blocked tools: the registered count does not increase.
 
 After initial reconciliation, clients that cache `tools/list` must re-list or
-reconnect after a later dynamic subset change. This decision does not claim
+reconnect after a later dynamic subset change. The same applies to a client
+that listed tools after the 20-second startup limit and before the first
+reconcile admitted the delegated reads. This decision does not claim
 `tools/list_changed` notification delivery.
 
 ## Acceptance examples
