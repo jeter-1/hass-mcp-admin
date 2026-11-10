@@ -479,6 +479,14 @@ class HttpParserTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_actual_factory_http_parser_health_auth_and_header_refusals(self):
         from ha_mcp_engineering.application import create_application
+        from tests.test_beta_observability import preserve_create_application_state
+
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
         with tempfile.TemporaryDirectory() as directory:
             gateway = create_application(settings_for(directory))
             config = self.config(gateway)

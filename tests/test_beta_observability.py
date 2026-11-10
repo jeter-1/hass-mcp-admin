@@ -74,6 +74,10 @@ def preserve_create_application_state(test):
     of each singleton it configures (container contents included), the
     capability catalog's published gateway snapshot, the FastMCP server's
     session manager, and the root logger's SDK diagnostic filter.
+
+    HAMCP-362: pass the test from ``setUp`` when a test builds the
+    application, or the class from ``setUpClass`` when the class builds it
+    once; the restore then runs as a class cleanup, after ``tearDownClass``.
     """
 
     import logging
@@ -164,7 +168,10 @@ def preserve_create_application_state(test):
         refill(published[1], published[2])
         root.filters[:] = root_filters
 
-    test.addCleanup(restore)
+    if isinstance(test, type):
+        test.addClassCleanup(restore)
+    else:
+        test.addCleanup(restore)
 
 
 class _RestResponse:
