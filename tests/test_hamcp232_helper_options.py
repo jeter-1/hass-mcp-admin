@@ -1451,11 +1451,26 @@ class ReachabilityTests(unittest.TestCase):
         found = set()
         for path in PACKAGE.rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
+            # HAMCP-134: a never-sent denial list (a ``NEVER_SENT_COMMANDS``
+            # assignment or a compiled profile's ``never_sent`` value) names
+            # the route only to refuse it before I/O; it is not a carrier.
+            denied: set[int] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "NEVER_SENT_COMMANDS"
+                    for t in node.targets
+                ):
+                    denied |= {id(item) for item in ast.walk(node.value)}
+                if isinstance(node, ast.Dict):
+                    for key, value in zip(node.keys, node.values):
+                        if isinstance(key, ast.Constant) and key.value == "never_sent":
+                            denied |= {id(item) for item in ast.walk(value)}
             for node in ast.walk(tree):
                 if (
                     isinstance(node, ast.Constant)
                     and isinstance(node.value, str)
                     and "config_entries/options/flow" in node.value
+                    and id(node) not in denied
                 ):
                     found.add(path)
         self.assertTrue(found)

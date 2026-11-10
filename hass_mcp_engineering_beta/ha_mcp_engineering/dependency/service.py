@@ -18,6 +18,7 @@ from .global_sources import GLOBAL_SOURCE_TYPES
 from .index import DependencyIndex
 from .models import DependencyFinding, SOURCE_TYPES, SourceCoverageItem
 from .script_calls import traverse_script_calls, MAX_GRAPH_RESULTS, MAX_GRAPH_STEPS
+from .script_sources import _GAPS as SCRIPT_GAPS
 
 
 @dataclass
@@ -125,7 +126,7 @@ class EntityDependencyAnalysisService:
         analysis_findings = (
             snapshot.findings
             + (diagnostic.findings if diagnostic else ())
-            + (global_sources.findings if global_sources else ())
+            + partition_findings(global_sources, diagnostic)
         )
         call_findings = diagnostic.call_findings if diagnostic else ()
         # Prefer the invocation classification to a duplicate structured target
@@ -316,14 +317,54 @@ def merged_coverage(coverage, scripts=None, global_sources=None) -> tuple[Source
     analysis output shows the diagnostic partitions' real completeness.
     """
     output = []
+    yaml_scripts = global_sources.coverage_for("script") if global_sources is not None else None
     for item in coverage:
         if scripts is not None and item.source_type == "script":
-            output.append(scripts.coverage)
+            output.append(_with_yaml_scripts(scripts.coverage, yaml_scripts))
+        elif yaml_scripts is not None and item.source_type == "script":
+            # HAMCP-264: no loaded-script diagnostic; the YAML script row stands in.
+            output.append(yaml_scripts)
         elif global_sources is not None and item.source_type in GLOBAL_SOURCE_TYPES:
             output.append(global_sources.coverage_for(item.source_type) or item)
         else:
             output.append(item)
     return tuple(output)
+
+
+def partition_findings(global_sources, scripts=None) -> tuple[DependencyFinding, ...]:
+    """The partition findings, without YAML scripts the script diagnostic analysed.
+
+    HAMCP-264: a script whose loaded or stored configuration the diagnostic
+    read is authoritative there; only YAML-only scripts are added.
+    """
+    if global_sources is None:
+        return ()
+    analysed = {key for key, _ in scripts.source_providers} if scripts is not None else set()
+    seen = {item.evidence_id for item in scripts.findings} if scripts is not None else set()
+    return tuple(
+        item for item in global_sources.findings
+        if item.source_type != "script"
+        or (item.source_id not in analysed and item.evidence_id not in seen)
+    )
+
+
+def _with_yaml_scripts(row: SourceCoverageItem, yaml_row: SourceCoverageItem | None) -> SourceCoverageItem:
+    """The script diagnostic row with the YAML script row's evidence and limits."""
+    if yaml_row is None:
+        return row
+    if yaml_row.provider == "none":
+        return replace(row, warnings=[*row.warnings, *yaml_row.warnings[:1]])
+    providers = [name for name in (*row.provider.split("+"), yaml_row.provider) if name != "none"]
+    return replace(
+        row,
+        provider="+".join(dict.fromkeys(providers)),
+        # The diagnostic is partial by design and YAML is at most partial.
+        completeness="partial",
+        failed_item_count=row.failed_item_count + yaml_row.failed_item_count,
+        # After the diagnostic's fixed gaps, so the public 10-warning bound keeps them.
+        warnings=[*row.warnings[:len(SCRIPT_GAPS)], *yaml_row.warnings, *row.warnings[len(SCRIPT_GAPS):]],
+        policy=f"{row.policy}; YAML scripts: {yaml_row.policy}",
+    )
 
 
 def index_fingerprint(snapshot, scripts=None, global_sources=None) -> str:

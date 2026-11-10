@@ -17,6 +17,7 @@ from .audit import AuditLogger
 from .fan.service import FAN_OPERATIONS
 from .power.service import POWER_OPERATIONS
 from .helper_value.service import HELPER_VALUE_OPERATIONS
+from .device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
 from .configuration import (
     MAX_TRUSTED_PROXY_CIDRS,
     MIN_ACCESS_SECRET_LENGTH,
@@ -212,6 +213,7 @@ def create_application(
     from .recorder_settings.service import RECORDER_SETTINGS
     from .script_traces import SCRIPT_TRACES
     from .marketplace_inventory import MARKETPLACE_INVENTORY, MarketplaceReader
+    from .security_metadata import SECURITY_METADATA, SecurityMetadataReader
     from .entity_reconciliation.service import ENTITY_RECONCILIATION
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
@@ -240,6 +242,8 @@ def create_application(
     SCRIPT_TRACES.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     # HAMCP-290: dormant until a signed registry admits core.marketplace_read.
     MARKETPLACE_INVENTORY.configure(MarketplaceReader(settings), CORE_READMISSION, settings)
+    # HAMCP-134: dormant until a signed registry admits core.security_metadata_read.
+    SECURITY_METADATA.configure(SecurityMetadataReader(settings), CORE_READMISSION, settings)
     ENTITY_RECONCILIATION.configure(HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
                                     CORE_READMISSION, settings)
     CONFIGURATION_DEFINITIONS.configure(
@@ -411,9 +415,17 @@ def create_application(
     DEPENDENCY_ANALYSIS.require().index.provider.dashboard_reader_factory = (
         lambda: DASHBOARD_ANALYSIS.dependency_reader(audit=audit)
     )
+    # HAMCP-264: the reviewed YAML reader under its own dependency_index purpose, diagnostic only.
+    DEPENDENCY_ANALYSIS.require().index.provider.yaml_reader_factory = (
+        lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit, purpose="dependency_index")
+    )
     FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     POWER_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     HELPER_VALUE_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
+    # HAMCP-297: no safety trigger in production (the empty first-build trigger).
+    DEVICE_CONFIGURATION_OPERATIONS.configure(
+        settings, CORE_READMISSION, HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings), audit=audit)
     CORE_READMISSION.register_reconciliation_listener(
         UPSTREAM_READ_GATEWAY.request_core_reconciliation
     )
@@ -434,6 +446,7 @@ def create_application(
         FAN_OPERATIONS.service,
         POWER_OPERATIONS.service,
         HELPER_VALUE_OPERATIONS.service,
+        DEVICE_CONFIGURATION_OPERATIONS.service,
     )
     return gateway
 
@@ -639,6 +652,8 @@ async def _run_f3_recovery_pass(trigger: str, *, strict: bool = False) -> None:
                 await POWER_OPERATIONS.service.recover_once()
             if HELPER_VALUE_OPERATIONS.service is not None:
                 await HELPER_VALUE_OPERATIONS.service.recover_once()
+            if DEVICE_CONFIGURATION_OPERATIONS.service is not None:
+                await DEVICE_CONFIGURATION_OPERATIONS.service.recover_once()
         elif strict:
             raise RuntimeError("F3 runtime is not initialized")
         # Task rehydration validates durable authority and deadlines first.
@@ -846,6 +861,8 @@ async def _serve(settings: Settings) -> None:
                 await POWER_OPERATIONS.service.close()
             if HELPER_VALUE_OPERATIONS.service is not None:
                 await HELPER_VALUE_OPERATIONS.service.close()
+            if DEVICE_CONFIGURATION_OPERATIONS.service is not None:
+                await DEVICE_CONFIGURATION_OPERATIONS.service.close()
             await DEPENDENCY_ANALYSIS.shutdown()
             if trace_watch_task is not None:
                 await TRACE_SNAPSHOTS.shutdown()

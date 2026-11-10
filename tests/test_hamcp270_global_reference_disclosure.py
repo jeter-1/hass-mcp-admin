@@ -128,6 +128,7 @@ def diagnostics(
             coverage("group", group),
             coverage("dashboard", dashboard, "Dashboard provider read is partial (HAMCP-277)."),
             coverage("template", "unavailable", "Template references are deferred (HAMCP-264)."),
+            coverage("script", "unavailable", "YAML script references are unavailable (HAMCP-264)."),
         ),
         fingerprint,
         authority_current=authority_current,
@@ -202,12 +203,13 @@ class DisclosureModuleTests(FieldAssertions, unittest.TestCase):
         self.assertEqual(
             list(self.field(block, "completeness").items()),
             [("scene", "complete"), ("group", "complete"),
-             ("dashboard", "partial"), ("template", "unavailable")],
+             ("dashboard", "partial"), ("template", "unavailable"), ("script", "unavailable")],
         )
         # Reasons are carried for incomplete sources only.
         self.assertEqual(self.field(block, "reasons"), {
             "dashboard": "Dashboard provider read is partial (HAMCP-277).",
             "template": "Template references are deferred (HAMCP-264).",
+            "script": "YAML script references are unavailable (HAMCP-264).",
         })
         self.assertEqual(self.field(block, "provenance"), {"fingerprint": "1" * 16, "generation": 7})
         self.assertEqual(self.field(child, "target"), LIGHT)
@@ -323,7 +325,7 @@ class DisclosureModuleTests(FieldAssertions, unittest.TestCase):
         block, _ = self.disclose(lambda: held(sources))
         self.assertEqual(self.field(block, "completeness")["scene"], "complete")
         self.assertNotIn("scene", self.field(block, "reasons"))
-        self.assertEqual(set(block["reasons"]), {"dashboard", "template"})
+        self.assertEqual(set(block["reasons"]), {"dashboard", "template", "script"})
 
     def test_truncation_keeps_the_count_and_says_so(self):
         findings = [member(LIGHT, "scene", f"scene_{index:02d}") for index in range(10)]

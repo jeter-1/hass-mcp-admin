@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW_DIRECTORY = Path.home() / '.local/state/hamcp-lane-failures'
 MAX_CHAIN, MAX_FRAMES, MAX_MESSAGE = 4, 8, 160
 # Explicitly integrated local lanes; any other name is recorded as 'unknown'.
-LANES = frozenset(('helper_value', 'marketplace_read'))
+LANES = frozenset(('helper_value', 'security_metadata', 'marketplace_read'))
 STAGES = frozenset(('image_verify', 'container_start', 'core_boot', 'auth',
                     'helper_setup', 'operation', 'readback', 'cleanup', 'admission'))
 # Code-owned identifiers only: callers cannot echo arbitrary exception metadata.

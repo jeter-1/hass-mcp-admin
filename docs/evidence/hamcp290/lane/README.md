@@ -38,8 +38,9 @@ The lane proves exactly one profile reference, with contract fingerprint
 
 ## Source manifest
 
-`ci/core-contract-read-files.json` grows from 456 to **509** paths. The 53 added
-paths include no removals, and every prior profile mapping is retained.
+This item adds 53 paths to `ci/core-contract-read-files.json`. With the 4 paths
+HAMCP-134 added, the manifest grows from 456 to **513** paths. There are no
+removals, and every prior profile mapping is retained.
 
 The new `core.marketplace_read` profile maps **75** files:
 
