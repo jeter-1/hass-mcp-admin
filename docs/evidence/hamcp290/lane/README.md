@@ -213,8 +213,7 @@ Core only.
 
 ### Run 2: PASS with the install fixture (2026-11-10 06:07 CST)
 
-The committed `marketplace_read.json` is now this run's receipt. It supersedes
-run 1's receipt.
+This run's receipt superseded run 1's. Run 3's receipt supersedes it.
 
 - The lane ran under the host heavy-job gate as unit `hamcp290-lane2` (kind
   `lane`) at source commit `cf0857e7cba0f43c0681d23e723fd2375b0fc089`, with Core
@@ -236,3 +235,41 @@ run 1's receipt.
 - Authority, refusals, HACS and cleanup results are the same as run 1: 32 to 33
   references, zero predecessor reads, 6,417 store records, no HACS command,
   `fallback_count` 0, and cleanup read back as clean.
+
+### Run 3: PASS on the corrected lane (2026-11-10 17:07 CST)
+
+The committed `marketplace_read.json` is now this run's receipt. It supersedes
+run 2's receipt.
+
+- The lane ran under the host heavy-job gate as unit `hamcp290-lane3` (kind
+  `lane`) at source commit `398ca8888b7abe324027b55668a1baa60606ac68`, with Core
+  at `--memory 2g` and the fixture writer at `128m`. That commit carries the
+  release/2.6.0 catch-up and the correction batch: the derived
+  `fallback_count`, the named-candidates-only install fixture and the guard
+  tests.
+- The receipt's SHA-256 is
+  `da7a40ac435a5347c73615fea27bfe081bd6b0d26e42a019f60bb0019c302b93`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` and
+  the manifest SHA-256
+  `b058369d2a9587593eefdae7a8eae3f69e480753735d37e552b5e71b603521c7` (513 paths,
+  75 in the profile).
+- Install fixture: the fresh Core had 0 installed records and no GitHub account
+  connected. The named candidate `JuanMTech/google_light_theme` (id `234032927`)
+  installed anonymously at `v1.13`. The receipt's `install_fixture` records the
+  repository, id, category and installed version. It no longer has a
+  `selection` field, because only a named candidate can be installed.
+- `fallback_count` is 0, counted from the commands the four readers admitted or
+  wrote. The health snapshot `fallback_count` was also 0, and no HACS command
+  was sent.
+- The routed read returned `core_marketplace`, `complete`, one command and no
+  fallback, with `installed_total` 1 and `count` 1, matching the raw list. The
+  record carried exactly the 10 projected fields, and every text field equalled
+  the raw value.
+- Redaction canary: with the record's description treated as a secret, the page
+  omitted it and reported `partial` with `sanitized_text`.
+- Authority, refusals and cleanup results are the same as run 2: 32 to 33
+  references, zero predecessor reads, 6,417 store records, and cleanup read
+  back as clean.
+- The receipt names source commit `398ca888`, the commit the lane ran on. The
+  commit that adds this receipt and this record changes only these two files.
