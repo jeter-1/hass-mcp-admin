@@ -1,4 +1,4 @@
-"""Informational scene, group and dashboard references for governed plans.
+"""Informational scene, group, dashboard, template and YAML script references for governed plans.
 
 HAMCP-270: availability/exposure, delete, entity metadata and helper options
 plans disclose the HAMCP-227 global-source findings for their targets before
@@ -24,9 +24,11 @@ from typing import Any, Callable, Iterable
 
 KEY = "global_source_consumers"
 MODEL = "global_source_consumers_v1"
-# Disclosure order; templates are always listed so their gap stays visible.
-SOURCE_TYPES = ("scene", "group", "dashboard", "template")
-REFERENCE_SOURCE_TYPES = ("scene", "group", "dashboard")
+# Disclosure order. HAMCP-264: template and YAML script references come from
+# the dependency_index YAML reader; their rows are at most partial, so their
+# gaps stay visible. ``script`` here is the YAML script row only.
+SOURCE_TYPES = ("scene", "group", "dashboard", "template", "script")
+REFERENCE_SOURCE_TYPES = ("scene", "group", "dashboard", "template", "script")
 COMPLETENESS = ("complete", "partial", "unavailable")
 # One plan shares a small item budget; display fields have fixed caps.
 MAX_REFERENCES = 8
