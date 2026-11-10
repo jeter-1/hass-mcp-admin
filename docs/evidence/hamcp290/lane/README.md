@@ -117,10 +117,14 @@ Engineering:
   (`github_connected` is `false`). No token is used or supplied, and no secret
   is read.
 - It refuses unless the Core is fresh, with no installed record.
-- It picks the first pinned candidate present in the store
-  (`JuanMTech/google_light_theme`, then `catppuccin/home-assistant`), or else
-  the first installable default-catalog theme by name. It makes one install
-  attempt, with `marketplace/warning/accept` then `marketplace/repository/install`.
+- It installs only a named candidate: `JuanMTech/google_light_theme`, or
+  `catppuccin/home-assistant` when the first is not in the store. No other
+  repository can be installed. If neither is in the store, the fixture fails
+  with `install_candidate_missing` before any install command and the lane
+  withholds its receipt. It makes one install attempt, with
+  `marketplace/warning/accept` then `marketplace/repository/install`.
+- The receipt records the installed repository and its installed version
+  (`install_fixture.repository` and `install_fixture.installed_version`).
 - A theme is YAML only, so Core imports no downloaded code.
 - Core downloads it anonymously from public GitHub hosts over the lane's existing
   bridge. The lane's network configuration is unchanged.
@@ -149,8 +153,16 @@ Engineering:
   treats one of the record's own strings as a secret. The page must omit that
   string and report `partial` with `sanitized_text` and a redaction summary;
 - after the disposable Marketplace entry is disabled, the result is
-  `marketplace_not_loaded`, with one list command, no HACS fallback and
-  `fallback_count` 0.
+  `marketplace_not_loaded`, with one list command, no HACS fallback and a
+  health snapshot `fallback_count` of 0;
+- the receipt's `fallback_count` is counted from the commands the lane's four
+  readers admitted or wrote: every command other than
+  `marketplace/repositories/list` counts, including one that was admitted but
+  never written. The lane fails unless that count is 0.
+
+The lane refuses under GitHub Actions or with `CORE_EVIDENCE_CONTEXT` set,
+before any command. The harness's raw Core socket is opened with
+`trust_env=False`, so proxy variables in the environment are not used.
 
 The lane is local-only. It refuses unless the checkout is clean and committed,
 the run directory is new and under `.artifacts/`, and the container names and

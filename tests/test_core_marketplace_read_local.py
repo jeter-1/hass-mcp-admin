@@ -363,6 +363,43 @@ class Orchestration(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     lane.main([*sum(base.items(), ()), "--journal", "j", "--source-archive", "a", "--run-dir", "r"])
 
+    def test_actions_or_evidence_context_refuses_before_any_command(self):
+        # Cursor M1 (#421): the lane is local-only. Either CI marker refuses before
+        # git, Docker, the inputs, the run directory or the acceptance are touched.
+        for variable, value in (("GITHUB_ACTIONS", "true"), ("CORE_EVIDENCE_CONTEXT", "pull_request")):
+            with self.subTest(variable=variable), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / ".artifacts").mkdir()
+                out = root / ".artifacts" / "run"
+                argv = ["--mode", "local", "--pull", "never", "--journal", "journal",
+                        "--source-archive", "archive", "--run-dir", str(out)]
+                reached = AssertionError("the lane went past the CI-context refusal")
+                with patch.dict(os.environ, {variable: value}, clear=True), \
+                        patch.object(lane, "ROOT", root), \
+                        patch.object(lane, "command", side_effect=reached) as command, \
+                        patch.object(lane.subprocess, "run", side_effect=reached) as process, \
+                        patch.object(lane, "inputs", side_effect=reached) as inputs, \
+                        patch.object(lane, "images", side_effect=reached) as images, \
+                        patch.object(lane, "require_free_ports", side_effect=reached), \
+                        patch.object(lane.resources, "wait_for_admission", side_effect=reached), \
+                        patch.object(lane.diagnostics, "_raw_log", return_value=False), \
+                        patch.object(lane, "exercise", new=AsyncMock(side_effect=reached)) as exercise:
+                    with self.assertRaises(lane.Refusal) as caught:
+                        lane.main(argv)
+                    self.assertEqual(str(caught.exception), "local_only_closed_lane")
+                    for mock in (command, process, inputs, images, exercise):
+                        mock.assert_not_called()
+                    self.assertFalse(out.exists())
+
+    def test_missing_install_candidate_withholds_the_receipt(self):
+        # Josh ruling 2026-11-10: with neither named candidate in the store the
+        # lane withholds its receipt; the code-owned reason is the only detail.
+        code, result = self.run_lane(exercise_error=acceptance.FixtureError("install_candidate_missing"))
+        self.assertEqual((code, result["result"]), (1, "WITHHELD"))
+        self.assertEqual(result["failure"]["exception_chain"][0]["message"], "install_candidate_missing")
+        self.assertNotIn("install_fixture", result)
+        self.assertTrue(result["cleanup"]["clean"])
+
 
 class RunningIdentity(unittest.IsolatedAsyncioTestCase):
     async def test_wrong_running_core_version_refuses_before_acceptance(self):
@@ -388,12 +425,12 @@ class RunningIdentity(unittest.IsolatedAsyncioTestCase):
             accept.assert_not_called()
 
 
-def store(installed=(), total=3):
-    """Synthetic raw Core list: two integrations and the pinned theme candidate."""
+def store(installed=(), total=3, theme=acceptance.INSTALL_CANDIDATES[0]):
+    """Synthetic raw Core list: two integrations and one theme (the first named candidate)."""
     rows = [{"id": str(100 + i), "full_name": f"owner/repo{i}", "name": f"Repo {i}", "category": "integration",
              "domain": f"repo{i}", "available_version": "1.0", "description": "synthetic integration"}
             for i in range(total - 1)]
-    rows.append({"id": "200", "full_name": acceptance.INSTALL_CANDIDATES[0], "name": "Google Light Theme",
+    rows.append({"id": "200", "full_name": theme, "name": "Google Light Theme",
                  "category": "theme", "domain": None, "available_version": "v2.0",
                  "description": "A light theme for the disposable lane"})
     for row in rows:
@@ -419,8 +456,12 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     """Exercise the script with synthetic Core/transport; never Core evidence."""
 
     async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
-                             github_connected=False, install_success=True, installs=True, project=None):
-        created, sent_frames, raw_sent = [], [], []
+                             github_connected=False, install_success=True, installs=True, project=None,
+                             inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0]):
+        # inject=(n, written): the n-th reader call also admits (and, if written,
+        # writes) the HACS list command while the backend stays core_marketplace.
+        # Calls: 1 routed read, 2 redaction canary, 3 wrong identity, 4 disabled entry.
+        created, sent_frames, raw_sent, read_calls = [], [], [], []
         state = {"disabled": False, "installed": ()}
         self.raw_sent = raw_sent
 
@@ -456,9 +497,10 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 pass
 
             def health_snapshot(self):
-                return {"fallback_count": 0}
+                return {"fallback_count": health_fallback_count}
 
         async def read(reader, *, core_version, authorize, on_dispatch, on_sent):
+            read_calls.append(core_version)
             authorize()
             if core_version != reply_version or core_version == "2026.10.3":
                 raise MarketplaceError("identity_mismatch")
@@ -468,10 +510,16 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 on_dispatch(command)
                 sent_frames.append(command)
                 on_sent(command)
+            if inject is not None and inject[0] == len(read_calls):
+                authorize()
+                on_dispatch(HACS_LIST_COMMAND)
+                if inject[1]:
+                    sent_frames.append(HACS_LIST_COMMAND)
+                    on_sent(HACS_LIST_COMMAND)
             if state["disabled"]:
                 raise MarketplaceError("marketplace_not_loaded")
             authorize()
-            value = store(state["installed"])
+            value = store(state["installed"], theme=theme)
             return ("hacs" if fallback else "core_marketplace"), (project(value) if project else value)
 
         async def raw(_self, payload, seconds=60):
@@ -491,7 +539,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             if kind == MARKETPLACE_LIST_COMMAND:
                 if state["disabled"]:
                     return {"success": False, "error": {"code": "not_loaded"}}
-                return {"success": True, "result": store(state["installed"])}
+                return {"success": True, "result": store(state["installed"], theme=theme)}
             if kind == "config_entries/get":
                 return {"success": True, "result": [{"entry_id": "synthetic-entry"}]}
             if kind == "config_entries/disable":
@@ -536,8 +584,12 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["raw_installed"], 1)
         self.assertEqual(result["inventory"]["installed_total"], 1)
         fixture = result["install_fixture"]
-        self.assertEqual((fixture["repository"], fixture["id"], fixture["selection"]),
-                         (acceptance.INSTALL_CANDIDATES[0], "200", "pinned"))
+        # Josh ruling 2026-11-10: the receipt records the installed repository and version.
+        self.assertEqual((fixture["repository"], fixture["id"], fixture["installed_version"]),
+                         (acceptance.INSTALL_CANDIDATES[0], "200", "v2.0"))
+        self.assertEqual(fixture["candidates"], list(acceptance.INSTALL_CANDIDATES))
+        self.assertNotIn("selection", fixture)  # only named candidates exist: nothing to select between
+        self.assertEqual(result["fallback_count"], 0)
         self.assertFalse(fixture["github_connected"])
         self.assertFalse(fixture["network_change"])
         record = result["installed_record"]
@@ -581,6 +633,102 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def test_hacs_fallback_fails_the_lane(self):
         with self.assertRaises(AssertionError):
             await self.run_acceptance(fallback=True)
+
+    async def test_injected_fallback_command_fails_the_lane(self):
+        # Cursor M2 (#421): the backend still says core_marketplace, so only the
+        # commands the lane observed can show the fallback. Admitted counts even
+        # when the frame was never written.
+        for call in (1, 2, 4):
+            for written in (False, True):
+                with self.subTest(reader_call=call, written=written):
+                    with self.assertRaises(AssertionError):
+                        await self.run_acceptance(inject=(call, written))
+
+    async def test_health_snapshot_fallback_fails_the_lane(self):
+        # Cursor M2 (#421): Marketplace-only commands and backend core_marketplace,
+        # but Engineering's own health snapshot counts a fallback.
+        with self.assertRaises(AssertionError):
+            await self.run_acceptance(health_fallback_count=1)
+
+    def test_fallback_count_is_derived_from_observed_commands(self):
+        def reader(admitted, sent):
+            return SimpleNamespace(admitted=admitted, sent=sent)
+        market, hacs = MARKETPLACE_LIST_COMMAND, HACS_LIST_COMMAND
+        count = acceptance.observed_fallbacks
+        self.assertEqual(count(reader([market], [market]), reader([], [])), 0)
+        self.assertEqual(count(reader([market, hacs], [market])), 1)          # admitted, never written
+        self.assertEqual(count(reader([market, hacs], [market, hacs])), 1)    # one command, counted once
+        self.assertEqual(count(reader([market], [market, "hacs/info"])), 1)   # any other command counts
+        self.assertEqual(count(reader([market, hacs], [market, hacs]), reader([hacs], [])), 2)
+
+    async def test_receipt_fallback_count_is_the_derived_value(self):
+        # False == 0, so the script's own zero check passes and the receipt shows
+        # where its value came from: the derivation over all four lane readers.
+        with patch.object(acceptance, "observed_fallbacks", return_value=False) as derived:
+            result, _ = await self.run_acceptance()
+        self.assertIs(result["fallback_count"], False)
+        derived.assert_called_once()
+        readers = derived.call_args.args
+        self.assertEqual(len(readers), 4)
+        self.assertEqual(len({id(reader) for reader in readers}), 4)
+        self.assertTrue(all(isinstance(reader, acceptance.ObservedReader) for reader in readers))
+
+    async def test_store_without_a_named_candidate_fails_before_any_install(self):
+        # Josh ruling 2026-11-10: another installable default-catalog theme is not a fallback.
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await self.run_acceptance(theme="Alpha/theme")
+        self.assertEqual(caught.exception.reason, "install_candidate_missing")
+        self.assertFalse(set(acceptance.INSTALL_COMMANDS) & set(self.raw_sent))
+
+
+class RawSocket(unittest.IsolatedAsyncioTestCase):
+    async def test_disposable_core_socket_never_trusts_the_proxy_environment(self):
+        # Cursor M3 (#421): the session that carries the disposable token is built
+        # with trust_env=False before ws_connect, whatever the environment says.
+        events = []
+
+        class Socket:
+            def __init__(self):
+                self.replies = iter(({"type": "auth_required"}, {"type": "auth_ok"},
+                                     {"type": "result", "id": 1, "success": True, "result": None}))
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def receive_json(self):
+                return next(self.replies)
+
+            async def send_json(self, payload):
+                events.append(("send", payload))
+
+        class Session:
+            def __init__(self, **kwargs):
+                events.append(("session", kwargs))
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def ws_connect(self, url, **kwargs):
+                events.append(("ws_connect", url, kwargs))
+                return Socket()
+
+        configured = SimpleNamespace(websocket_url="ws://127.0.0.1:18123/api/websocket", ha_token="synthetic-token")
+        proxies = {name: "http://proxy.invalid:3128" for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                                                  "WS_PROXY", "WSS_PROXY")}
+        with patch.dict(os.environ, proxies), patch.object(acceptance.aiohttp, "ClientSession", new=Session):
+            reply = await acceptance.RawCore(configured).command({"type": "marketplace/info"})
+        self.assertEqual(reply, {"type": "result", "id": 1, "success": True, "result": None})
+        self.assertEqual([event[0] for event in events], ["session", "ws_connect", "send", "send"])
+        self.assertIs(events[0][1].get("trust_env"), False)
+        self.assertEqual(events[1][1:], (configured.websocket_url, {"max_msg_size": acceptance.HARNESS_FRAME_BYTES}))
+        self.assertEqual(events[2][1], {"type": "auth", "access_token": "synthetic-token"})
+        self.assertEqual(events[3][1], {"id": 1, "type": "marketplace/info"})
 
 
 class InstallFixture(unittest.IsolatedAsyncioTestCase):
@@ -640,19 +788,28 @@ class InstallFixture(unittest.IsolatedAsyncioTestCase):
             acceptance.check_installed_record(page_for([leaked]), row, self.secrets)
         self.assertEqual(caught.exception.reason, "secret_in_page")
 
-    def test_candidate_selection_is_pinned_then_deterministic(self):
+    def test_named_candidates_are_chosen_in_declared_order(self):
+        first, second = acceptance.INSTALL_CANDIDATES
         rows = store()
-        self.assertEqual(acceptance.choose_candidate(rows)[1], "pinned")
-        others = [dict(rows[-1], full_name=name, id=str(i))
-                  for i, name in enumerate(("zeta/theme", "Alpha/theme"))] + rows[:-1]
-        chosen, selection = acceptance.choose_candidate(others)
-        self.assertEqual((chosen["full_name"], selection), ("Alpha/theme", "fallback"))
-        with self.assertRaises(acceptance.FixtureError) as caught:
-            acceptance.choose_candidate(rows[:-1])
-        self.assertEqual(caught.exception.reason, "install_candidate_missing")
-        custom = [dict(rows[-1], custom=True)]
-        with self.assertRaises(acceptance.FixtureError):
-            acceptance.choose_candidate(custom)
+        self.assertEqual(acceptance.choose_candidate(rows)["full_name"], first)
+        only_second = store(theme=second)
+        self.assertEqual(acceptance.choose_candidate(only_second)["full_name"], second)
+        # Declared order, not store order.
+        self.assertEqual(acceptance.choose_candidate([dict(only_second[-1], id="201")] + rows)["id"], "200")
+
+    def test_unnamed_installable_theme_is_never_chosen(self):
+        # Josh ruling 2026-11-10: no "first installable default-catalog theme" fallback.
+        named = store()[-1]
+        unnamed = [dict(named, full_name=name, id=str(i)) for i, name in enumerate(("zeta/theme", "Alpha/theme"))]
+        cases = {"other themes": unnamed + store()[:-1], "no theme": store()[:-1], "empty store": [],
+                 "custom": [dict(named, custom=True)], "already installed": [dict(named, installed=True)],
+                 "wrong category": [dict(named, category="integration")],
+                 "name differs by case": [dict(named, full_name=named["full_name"].upper())]}
+        for label, rows in cases.items():
+            with self.subTest(label):
+                with self.assertRaises(acceptance.FixtureError) as caught:
+                    acceptance.choose_candidate(rows)
+                self.assertEqual(caught.exception.reason, "install_candidate_missing")
 
     async def test_non_fresh_core_and_second_installed_record_refuse(self):
         class Raw:
@@ -675,6 +832,13 @@ class InstallFixture(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(acceptance.FixtureError) as caught:
             await acceptance.install_fixture(raw, store(), sleep=AsyncMock())
         self.assertEqual(caught.exception.reason, "more_than_one_installed")
+        # No named candidate: refused after the read-only info command, before
+        # the warning accept and the install.
+        raw = Raw(store(("200",), theme="Alpha/theme"))
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await acceptance.install_fixture(raw, store(theme="Alpha/theme"), sleep=AsyncMock())
+        self.assertEqual(caught.exception.reason, "install_candidate_missing")
+        self.assertEqual(raw.sent, ["marketplace/info"])
 
     def test_canary_and_reason_vocabulary(self):
         self.assertEqual(acceptance.redaction_canary(self.raw_row)[0], "description")

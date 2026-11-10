@@ -50,8 +50,9 @@ CALLER = "hamcp290-disposable-admin"
 HARNESS_FRAME_BYTES = 16 * 1024 * 1024
 STORE_READY_SECONDS = 600
 # Install fixture: exactly one inert theme (YAML only, no code Core imports).
-# The first pinned candidate present in the store is used; otherwise the first
-# installable default-catalog theme by name. One install attempt, never more.
+# Only these named repositories may be installed, the first one present in the
+# store. With neither present the fixture fails and the lane withholds its
+# receipt. One install attempt, never more.
 INSTALL_CANDIDATES = ("JuanMTech/google_light_theme", "catppuccin/home-assistant")
 INSTALL_CATEGORY = "theme"
 INSTALL_COMMANDS = ("marketplace/warning/accept", "marketplace/repository/install")
@@ -131,21 +132,27 @@ class RawCore:
                 return reply
 
 
+def observed_fallbacks(*readers):
+    """Count the commands the readers admitted or wrote other than the Marketplace list.
+
+    A command admitted and then written is one command; one admitted but never
+    written still counts.
+    """
+    def others(commands):
+        return sum(1 for command in commands if command != MARKETPLACE_LIST_COMMAND)
+    return sum(max(others(reader.admitted), others(reader.sent)) for reader in readers)
+
+
 def choose_candidate(store):
-    """Return (record, selection) for the one repository the fixture installs."""
+    """Return the store record of the one named repository the fixture installs."""
     themes = [record for record in store if type(record) is dict
               and record.get("category") == INSTALL_CATEGORY and record.get("installed") is False
               and record.get("custom") is False]
     for name in INSTALL_CANDIDATES:
         for record in themes:
             if record.get("full_name") == name:
-                return record, "pinned"
-    installable = sorted((record for record in themes if record.get("can_install") is True
-                          and type(record.get("full_name")) is str),
-                         key=lambda record: (record["full_name"].casefold(), str(record.get("id"))))
-    if not installable:
-        raise FixtureError("install_candidate_missing")
-    return installable[0], "fallback"
+                return record
+    raise FixtureError("install_candidate_missing")
 
 
 async def install_fixture(raw, store, *, sleep=asyncio.sleep):
@@ -159,7 +166,7 @@ async def install_fixture(raw, store, *, sleep=asyncio.sleep):
         raise FixtureError("github_account_connected")
     if any(type(record) is dict and record.get("installed") is True for record in store):
         raise FixtureError("disposable_core_not_fresh")
-    candidate, selection = choose_candidate(store)
+    candidate = choose_candidate(store)
     repository_id = str(candidate["id"])
     accepted = await raw.command({"type": INSTALL_COMMANDS[0]})
     if accepted.get("success") is not True:
@@ -180,7 +187,7 @@ async def install_fixture(raw, store, *, sleep=asyncio.sleep):
                           and record.get("installed") is True and str(record.get("id")) != repository_id]
                 if others:
                     raise FixtureError("more_than_one_installed")
-                return matches[0], selection, reply["result"]
+                return matches[0], reply["result"]
         await sleep(5)
     raise FixtureError("installed_record_missing")
 
@@ -341,7 +348,7 @@ async def run(configured, entry, directory):
     try:
         info, fresh = await store_ready()
         with diagnostics.check("operation", "install_fixture"):
-            raw_record, selection, baseline = await install_fixture(raw, fresh)
+            raw_record, baseline = await install_fixture(raw, fresh)
         store_sha256 = hashlib.sha256(json.dumps(baseline, sort_keys=True, separators=(",", ":"),
                                                  ensure_ascii=False).encode()).hexdigest()
         raw_installed = sum(1 for record in baseline if record.get("installed") is True)
@@ -431,15 +438,17 @@ async def run(configured, entry, directory):
             assert exc.reason == "marketplace_not_loaded" and exc.fallback_occurred is False
             assert reader.sent[sent:] == [MARKETPLACE_LIST_COMMAND] and HACS_LIST_COMMAND not in reader.sent
             assert after.health_snapshot()["fallback_count"] == 0
+            # Every reader this lane built, over every read it made.
+            fallback_count = observed_fallbacks(withheld_reader, reader, canary_reader, direct)
+            assert fallback_count == 0
         return {"result": "PASS", "group": "marketplace_read", "profile": reference(),
                 "authority_transition": [32, 33], "predecessor_reads": 0,
                 "marketplace_stage": info["stage"], "store_records": len(baseline),
                 "fresh_installed": 0, "install_fixture": {
                     "repository": raw_record["full_name"], "id": str(raw_record["id"]),
                     "category": raw_record["category"], "installed_version": raw_record["installed_version"],
-                    "selection": selection, "candidates": list(INSTALL_CANDIDATES),
-                    "commands": list(INSTALL_COMMANDS), "github_connected": False,
-                    "disposable_only": True, "network_change": False},
+                    "candidates": list(INSTALL_CANDIDATES), "commands": list(INSTALL_COMMANDS),
+                    "github_connected": False, "disposable_only": True, "network_change": False},
                 "installed_record": installed_record,
                 "redaction_canary": {"field": canary_field, "completeness": screened["completeness"],
                                      "partial_reasons": screened["partial_reasons"], "leaked": False},
@@ -451,7 +460,7 @@ async def run(configured, entry, directory):
                 "refusals": {"predecessor": "authority_unavailable", "anonymous": "authority_unavailable",
                              "wrong_core_version": "identity_mismatch", "invalid_arguments": 4,
                              "entry_disabled": "marketplace_not_loaded"},
-                "hacs_commands_sent": 0, "fallback_count": 0, "production_authority": False}
+                "hacs_commands_sent": 0, "fallback_count": fallback_count, "production_authority": False}
     finally:
         with diagnostics.check("cleanup", "service_close"):
             for runtime in runtimes:
