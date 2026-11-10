@@ -479,8 +479,12 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
     session (no ``tools/call`` is possible), or Engineering became ready and
     positively shows the rollback state: the complete delegated-read set equals
     the exact expected set (empty), and valid health reports the gateway
-    explicitly unadmitted with nothing exposed. A redirect category anywhere
-    fails: the peer answers 404, not a 3xx.
+    explicitly unadmitted with nothing exposed. HAMCP-350 adds a third path:
+    readiness stays strict (503 ``initial_reconciliation_pending``) while,
+    after the bounded startup wait, the readiness body itself reports
+    ``accepting_mcp_requests`` and the session is accepted; that path needs the
+    same positive rollback evidence as the ready path. A redirect category
+    anywhere fails: the peer answers 404, not a 3xx.
     """
 
     require(samples, "fail_closed_no_samples")
@@ -492,15 +496,39 @@ def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int,
     # readiness at least once, so a container that never started cannot pass.
     require(any(status != 0 for status in ready), "fail_closed_engineering_never_answered")
     if all(status != 200 for status in ready):
-        require(mcp_attempt is not None and mcp_attempt[0] >= 400 and not 300 <= mcp_attempt[0] < 400,
-                "fail_closed_session_not_refused")
-        return {"path": "never_ready", "ready_statuses": sorted(set(ready)), "session_status": mcp_attempt[0]}
+        require(mcp_attempt is not None, "fail_closed_session_not_refused")
+        if mcp_attempt[0] >= 400:
+            return {"path": "never_ready", "ready_statuses": sorted(set(ready)), "session_status": mcp_attempt[0]}
+        require(200 <= mcp_attempt[0] < 300, "fail_closed_session_not_refused")
+        require(pending_with_mcp_requests_accepted([body for status, body in samples if status != 0][-1]),
+                "fail_closed_session_accepted_without_pending_readiness")
+        require(isinstance(catalog, dict), "fail_closed_session_without_catalog")
+        return without_delegated_reads("pending_with_mcp_requests_accepted", ready, catalog, static_names)
     require(isinstance(catalog, dict), "fail_closed_ready_without_catalog")
+    return without_delegated_reads("ready_without_delegated_reads", ready, catalog, static_names)
+
+
+def pending_with_mcp_requests_accepted(body: str) -> bool:
+    """Whether a strict 503 readiness body shows HAMCP-350 bounded-wait acceptance."""
+
+    try:
+        state = json.loads(body)
+    except ValueError:
+        return False
+    return (isinstance(state, dict) and state.get("ready") is False
+            and state.get("status") == "initial_reconciliation_pending"
+            and state.get("initial_reconciliation_complete") is False
+            and state.get("initial_reconciliation_deadline_elapsed") is True
+            and state.get("accepting_mcp_requests") is True)
+
+
+def without_delegated_reads(path: str, ready: list[int], catalog: dict[str, Any],
+                            static_names: frozenset[str] | None) -> dict[str, Any]:
     delegated = delegated_reads(catalog, static_names)
     require(not delegated - ROLLBACK_EXPECTED_DELEGATED_READS, "fail_closed_delegated_read_exposed")
     require(not ROLLBACK_EXPECTED_DELEGATED_READS - delegated, "fail_closed_expected_delegated_read_missing")
     gateway = unadmitted_gateway(catalog.get("health_is_error"), catalog.get("health_text"))
-    return {"path": "ready_without_delegated_reads", "ready_statuses": sorted(set(ready)),
+    return {"path": path, "ready_statuses": sorted(set(ready)),
             "engineering_tool_count": sum(len(page) for page in catalog["pages"]),
             "catalog_pages": len(catalog["pages"]), "delegated_read_count": len(delegated),
             "admission_status": gateway.get("admission_status")}
@@ -525,6 +553,11 @@ def command_fail_closed(args: argparse.Namespace) -> int:
         static_names = None
         if all(status != 200 for status, _ in samples):
             mcp_attempt = http_post_initialize(args.engineering_endpoint)
+            if 200 <= mcp_attempt[0] < 300:
+                # HAMCP-350: accepted after the bounded wait while /ready stays
+                # strict; read the catalog and health for positive evidence.
+                catalog = asyncio.run(engineering_catalog(args.engineering_endpoint))
+                static_names = engineering_static_tool_names()
         else:
             catalog = asyncio.run(engineering_catalog(args.engineering_endpoint))
             static_names = engineering_static_tool_names()
