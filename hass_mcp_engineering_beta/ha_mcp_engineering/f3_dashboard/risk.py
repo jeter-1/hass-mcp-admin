@@ -1024,9 +1024,12 @@ def _strategy_findings(configuration: dict[str, Any]) -> list[RiskFinding]:
         if not isinstance(container, dict) or "strategy" not in container:
             return
         strategy = container["strategy"]
+        # A non-string ``type`` is never a built-in strategy and must not
+        # reach the set membership test (unhashable values raise).
         if (
             isinstance(strategy, dict)
-            and strategy.get("type") in _NO_CONTROL_STRATEGY_TYPES
+            and isinstance(strategy.get("type"), str)
+            and strategy["type"] in _NO_CONTROL_STRATEGY_TYPES
         ):
             return
         findings.append(

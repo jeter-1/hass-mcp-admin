@@ -1,0 +1,417 @@
+{
+  "head": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
+  "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+  "python": "3.12.14",
+  "regressions": [
+    {
+      "id": 1,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_entities_rows",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_buttons_row_buttons",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_header_footer_toggle_group_and_area_controls",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_card_defaults",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_button_row_is_not_also_a_button_card",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "ValveControlTests.test_unchanged_valve_control_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "PlanLevelTests.test_water_main_valve_tile_is_high_consequence",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "area": "valve",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "PlanLevelTests.test_valve_row_is_high_consequence",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "area": "group",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "GroupRowTests.test_group_rows_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "area": "group",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "PlanLevelTests.test_group_row_requires_manual_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "HeaderToggleTests.test_explicit_true_shows_the_toggle",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "HeaderToggleTests.test_title_and_two_toggleable_rows_show_it_by_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "HeaderToggleTests.test_one_finding_per_toggled_domain",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "HeaderToggleTests.test_entity_filter_inner_card",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "HeaderToggleTests.test_unchanged_header_toggle_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "area": "header toggle",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "PlanLevelTests.test_header_toggle_is_elevated",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "area": "strategy",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "StrategyTests.test_strategies_disclose_at_every_level",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "area": "strategy",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "StrategyTests.test_unchanged_strategy_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "area": "strategy",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "StrategyTests.test_deep_section_nesting_is_disclosed_or_refused_never_dropped",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "area": "strategy",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "PlanLevelTests.test_strategy_view_requires_manual_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
+      "area": "residual counts",
+      "revision": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+      "test": "DocumentedResidualTests.test_display_only_counts",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "area": "valve",
+      "name": "valve is not a row control domain",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_entities_rows",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "area": "valve",
+      "name": "the valve-entity row type is not a control",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_entities_rows",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "area": "valve",
+      "name": "a button row ignores its own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_explicit_actions_replace_the_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "area": "valve",
+      "name": "buttons-row buttons ignore their own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_explicit_actions_replace_the_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "area": "valve",
+      "name": "the button card ignores its own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_explicit_actions_replace_the_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "area": "valve",
+      "name": "the tile icon default is not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_card_defaults",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "area": "valve",
+      "name": "picture-glance ignores force_dialog",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_explicit_actions_replace_the_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "area": "valve",
+      "name": "picture-glance treats null force_dialog as set",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_card_defaults",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "area": "valve",
+      "name": "a button row is also classified as a button card",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ValveControlTests.test_button_row_is_not_also_a_button_card",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "area": "valve",
+      "name": "light/switch defaults are classified like valves",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "DocumentedResidualTests.test_light_and_switch_defaults_on_button_shapes_are_unclassified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "area": "group",
+      "name": "a default group row goes quiet",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupRowTests.test_group_rows_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "area": "group",
+      "name": "the group-entity row type is not analyzed",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupRowTests.test_group_rows_disclose_unknown_members",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "area": "group",
+      "name": "platform groups are over-classified by name",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupRowTests.test_platform_groups_and_ordinary_rows_are_not_over_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "area": "group",
+      "name": "a group button row ignores its own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "GroupRowTests.test_group_row_with_its_own_tap_action_is_classified_from_it",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "area": "header toggle",
+      "name": "the default ignores the title",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_hidden_header_toggle_is_not_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "area": "header toggle",
+      "name": "one toggleable row shows the default toggle",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_hidden_header_toggle_is_not_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "area": "header toggle",
+      "name": "an explicit key shows the toggle whatever its value",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_hidden_header_toggle_is_not_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "area": "header toggle",
+      "name": "an explicit key never shows the toggle",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_explicit_true_shows_the_toggle",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 19,
+      "area": "header toggle",
+      "name": "group members are treated as a plain toggle",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_one_finding_per_toggled_domain",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 20,
+      "area": "header toggle",
+      "name": "the toggled entities are not bound",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_unchanged_header_toggle_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 21,
+      "area": "header toggle",
+      "name": "the entity-filter inner card is ignored",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "HeaderToggleTests.test_entity_filter_inner_card",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 22,
+      "area": "strategy",
+      "name": "every strategy is treated as control-free",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_strategies_disclose_at_every_level",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 23,
+      "area": "strategy",
+      "name": "iframe and map are not exempt",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_iframe_and_map_strategies_are_not_over_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 24,
+      "area": "strategy",
+      "name": "view sections are not visited",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_strategies_disclose_at_every_level",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 25,
+      "area": "strategy",
+      "name": "nested sections are not visited",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_strategies_disclose_at_every_level",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 26,
+      "area": "strategy",
+      "name": "the strategy configuration is not bound",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StrategyTests.test_unchanged_strategy_is_not_newly_changed",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated HEAD copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 31 tests in 2.835s"
+  }
+}

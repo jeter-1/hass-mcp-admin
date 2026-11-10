@@ -49,7 +49,7 @@ paths are under `src/panels/lovelace/` unless noted.
 - `_default_control_findings` (561-960): buttons-row buttons (636-700), the header
   toggle (702-761), button card and tile icon defaults (763-792),
   picture-glance items (793-829).
-- `_strategy_findings` (1004-1084), called first by `_scan` (1087-1089).
+- `_strategy_findings` (1004-1087), called first by `_scan` (1090-1092).
 
 ## What is classified
 
@@ -61,6 +61,13 @@ paths are under `src/panels/lovelace/` unless noted.
 | Header toggle over lock/cover/alarm/valve rows | `high_consequence_action` | `header_toggle_targets_high_consequence_domain` |
 | Header toggle over other `DOMAINS_TOGGLE` rows | `toggle_action` | `header_toggle_toggle_control` |
 | `strategy` on the dashboard, a view or a section, except object `iframe`/`map` | `unknown` (disclosed) | `strategy_generated_controls_cannot_be_analyzed` |
+
+A strategy whose `type` is not a string (for example an object or a list)
+is never a built-in strategy and is disclosed like any other. The
+base-vs-head planning check found that the first PR head (57454d31) raised
+on such values, which planning reported as
+`dashboard_provider_identity_unavailable`. The correction test is
+`StrategyTests.test_malformed_strategy_types_disclose_without_crashing`.
 
 An explicit action key (`tap_action`, `icon_tap_action`, picture-glance
 `force_dialog`) replaces the default and is classified from that action, as
@@ -120,8 +127,9 @@ error. `base_vs_head_planning.py` checks the corpus for this.
 
 - `tests/test_hamcp345_dashboard_risk_breadth.py`: positive, negative,
   identity, residual and plan-level tests.
-- `run_mutations.py` writes `mutation-results.json`: base regressions,
-  mutants killed by assertion, and an unmutated control.
+- `run_mutations.py` writes `mutation-results.json`. It records the base
+  regressions, the correction regression on 57454d31, mutants killed by
+  assertion, and an unmutated control.
 - `base_vs_head_planning.py` writes `base-vs-head-results.json`.
 
 ## Rollback

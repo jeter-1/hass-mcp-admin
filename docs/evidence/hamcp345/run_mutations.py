@@ -12,7 +12,9 @@ read, and no plan is approved or applied.
 
 1. Regressions: the new test module, run against the release base
    (4b8db82b), must fail each named positive test by an assertion; an
-   ``ERROR:`` invalidates a result.  Guard tests that also pass on the base
+   ``ERROR:`` invalidates a result.  The correction test for the
+   unhashable strategy ``type`` found by ``base_vs_head_planning.py`` must
+   likewise fail by assertion on the first PR head (57454d31).  Guard tests that also pass on the base
    (explicit action overrides, platform groups, hidden header toggles,
    iframe/map strategies, residuals) are not regressions; they are mutant
    targets below.
@@ -30,6 +32,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 OUT = ROOT / ".artifacts/mutation-hamcp345"
 BASE = "4b8db82bc30882b44214ba2d87867fa4e82af3cb"
+FIRST_HEAD = "57454d31aad4f17fbadd28dcab4a7c0074f3da6d"
 MODULE = "tests.test_hamcp345_dashboard_risk_breadth"
 TEST_FILE = "tests/test_hamcp345_dashboard_risk_breadth.py"
 RISK = "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py"
@@ -61,6 +64,7 @@ STRATEGIES = S + "test_strategies_disclose_at_every_level"
 NO_CONTROL = S + "test_iframe_and_map_strategies_are_not_over_classified"
 STRATEGY_IDENTITY = S + "test_unchanged_strategy_is_not_newly_changed"
 DEPTH = S + "test_deep_section_nesting_is_disclosed_or_refused_never_dropped"
+MALFORMED = S + "test_malformed_strategy_types_disclose_without_crashing"
 LIGHT_RESIDUAL = R + "test_light_and_switch_defaults_on_button_shapes_are_unclassified"
 COUNTS = R + "test_display_only_counts"
 
@@ -102,6 +106,7 @@ regressions = [
     ("strategy", P + "test_strategy_view_requires_manual_review"),
     ("residual counts", COUNTS),
 ]
+corrections = [("strategy type correction", MALFORMED)]
 GROUP_DEFAULT_ROW = ("        if domain == _GROUP_DOMAIN:\n"
                      "            return entity, domain, RiskCategory.UNKNOWN, _GROUP_MEMBERS_REASON\n"
                      "        if domain not in _ENTITY_ROW_CONTROL_DOMAINS:\n")
@@ -162,10 +167,12 @@ mutants = [
     ("header toggle", "the entity-filter inner card is ignored", RISK,
      '        header_config = value.get("card")\n', "        header_config = None\n", HEADER_FILTER),
     ("strategy", "every strategy is treated as control-free", RISK,
-     "            and strategy.get(\"type\") in _NO_CONTROL_STRATEGY_TYPES\n", "", STRATEGIES),
+     "            and strategy[\"type\"] in _NO_CONTROL_STRATEGY_TYPES\n", "", STRATEGIES),
     ("strategy", "iframe and map are not exempt", RISK,
-     "            and strategy.get(\"type\") in _NO_CONTROL_STRATEGY_TYPES\n",
+     "            and strategy[\"type\"] in _NO_CONTROL_STRATEGY_TYPES\n",
      "            and False\n", NO_CONTROL),
+    ("strategy", "a non-string strategy type reaches the membership test", RISK,
+     "            and isinstance(strategy.get(\"type\"), str)\n", "", MALFORMED),
     ("strategy", "view sections are not visited", RISK,
      '                for index, section in enumerate(view["sections"])\n',
      '                for index, section in enumerate([])\n', STRATEGIES),
@@ -176,7 +183,7 @@ mutants = [
      '                        "strategy": strategy,\n', "", STRATEGY_IDENTITY),
 ]
 
-results = {"head": HEAD, "base": BASE, "python": sys.version.split()[0],
+results = {"head": HEAD, "base": BASE, "first_head": FIRST_HEAD, "python": sys.version.split()[0],
            "regressions": [], "mutants": [], "control": None}
 new_tests = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{HEAD}:{TEST_FILE}"])
 checkout(BASE)
@@ -185,6 +192,16 @@ for index, (area, test) in enumerate(regressions, 1):
     code, raw = run(test, f"regression-{index:02d}.log")
     classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
     results["regressions"].append({"id": index, "area": area, "revision": BASE, "test": test,
+                                   "classification": classification, "exit_code": code})
+    print("regression", index, area, test, classification, flush=True)
+
+checkout(FIRST_HEAD)
+(COPY / TEST_FILE).write_bytes(new_tests)
+for offset, (area, test) in enumerate(corrections, 1):
+    index = len(regressions) + offset
+    code, raw = run(test, f"regression-{index:02d}.log")
+    classification = "assertion" if assertion_failure(code, raw) else ("invalid" if code else "passed")
+    results["regressions"].append({"id": index, "area": area, "revision": FIRST_HEAD, "test": test,
                                    "classification": classification, "exit_code": code})
     print("regression", index, area, test, classification, flush=True)
 

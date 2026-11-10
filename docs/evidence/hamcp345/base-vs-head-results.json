@@ -1,0 +1,491 @@
+{
+  "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+  "head": "57454d31aad4f17fbadd28dcab4a7c0074f3da6d",
+  "python": "3.12.14",
+  "cards": 11,
+  "strategies": 4,
+  "variants": 938,
+  "plans_per_revision": 1876,
+  "transitions": {
+    "existing: planned -> planned": 902,
+    "existing: planned -> refused": 36,
+    "inserted: planned -> planned": 902,
+    "inserted: planned -> refused": 36,
+    "inserted: planned with changed classification": 480
+  },
+  "non_planned_reasons": {
+    "existing: head=dashboard_provider_identity_unavailable": 36,
+    "inserted: head=dashboard_provider_identity_unavailable": 36
+  },
+  "newly_refused": 72,
+  "newly_refused_examples": [
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [],
+      "key": "strategy",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [],
+      "key": "strategy",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [],
+      "key": "strategy",
+      "value": {
+        "type": [
+          "synthetic"
+        ]
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [],
+      "key": "strategy",
+      "value": {
+        "type": [
+          "synthetic"
+        ]
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": "synthetic"
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": "synthetic"
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "description": "synthetic"
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "description": "synthetic"
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": [
+        "synthetic"
+      ],
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": [
+        "synthetic"
+      ],
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {},
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {},
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": [],
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": [],
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": [
+          "synthetic"
+        ]
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 0,
+      "node": [
+        "strategy"
+      ],
+      "key": "type",
+      "value": {
+        "type": [
+          "synthetic"
+        ]
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "existing",
+      "kind": "dashboard",
+      "index": 1,
+      "node": [
+        "views",
+        0
+      ],
+      "key": "strategy",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    },
+    {
+      "scenario": "inserted",
+      "kind": "dashboard",
+      "index": 1,
+      "node": [
+        "views",
+        0
+      ],
+      "key": "strategy",
+      "value": {
+        "type": {
+          "description": "synthetic"
+        }
+      },
+      "base": {
+        "outcome": "planned",
+        "disposition": "standard_review",
+        "policy_class": "standard_admin",
+        "high": 0
+      },
+      "head": {
+        "outcome": "refused",
+        "code": "operational_provider_unavailable",
+        "reason": "dashboard_provider_identity_unavailable"
+      }
+    }
+  ],
+  "existing_scenario_changed": 0,
+  "existing_scenario_changed_examples": []
+}

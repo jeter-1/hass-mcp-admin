@@ -414,6 +414,27 @@ class StrategyTests(unittest.TestCase):
                 self.assertEqual(changed(risk), [(path, UNKNOWN, STRATEGY_REASON)])
                 self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
 
+    def test_malformed_strategy_types_disclose_without_crashing(self):
+        # Correction (base-vs-head planning check on 57454d31): an
+        # unhashable ``type`` raised TypeError in the iframe/map membership
+        # test, which planning reported as provider identity unavailable.
+        # get-strategy.ts:104-119 renders an error for such a strategy, so
+        # it is disclosed like any other strategy.
+        for strategy_type in ({}, [], {"description": "x"}, ["map"], {"type": "map"}, 5, True):
+            strategy = {"type": strategy_type}
+            for configuration, path in (
+                ({"strategy": strategy}, "/strategy"),
+                ({"views": [{"strategy": strategy}]}, "/views/0/strategy"),
+                ({"views": [{"type": "sections", "sections": [{"strategy": strategy}]}]},
+                 "/views/0/sections/0/strategy"),
+            ):
+                with self.subTest(path=path, strategy=json.dumps(strategy)):
+                    try:
+                        risk = analyze_dashboard_risk({"views": []}, configuration)
+                    except Exception as error:  # the corrected defect
+                        self.fail(f"strategy analysis raised {type(error).__name__}")
+                    self.assertEqual(changed(risk), [(path, UNKNOWN, STRATEGY_REASON)])
+
     def test_iframe_and_map_strategies_are_not_over_classified(self):
         risk = analyze_dashboard_risk(
             {"views": []},
@@ -561,6 +582,20 @@ class PlanLevelTests(_PlanOnlyHarness):
         )
         self.assertEqual(self.changed_at(update, f"{CARD}/entities/0"),
                          {"unknown_action_semantics"})
+        self.assert_manual(created, stored, update)
+
+    async def test_malformed_strategy_type_plans_with_manual_review(self):
+        configuration = background_dashboard(0)
+        created, stored, update = await self.plan(
+            configuration,
+            [{"operation_id": "add-strategy-view", "operation": "add",
+              "path": "/views/-",
+              "value": {"title": "Generated", "strategy": {"type": {"description": "x"}}}}],
+        )
+        self.assertEqual(
+            self.changed_at(update, f"/views/{len(configuration['views'])}/strategy"),
+            {"unknown_action_semantics"},
+        )
         self.assert_manual(created, stored, update)
 
     async def test_strategy_view_requires_manual_review(self):
