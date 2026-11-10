@@ -12,6 +12,7 @@ literals; the stub itself is never copied into this branch.
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import sys
@@ -208,16 +209,28 @@ class StubPinTests(unittest.TestCase):
             calls.append(args)
             return mock.Mock(returncode=0, stdout=b"", stderr=b"")
         run_dir = ROOT / ".artifacts/never-created"
-        with mock.patch.object(lane, "command", command), \
-                mock.patch.object(a1, "inputs", side_effect=AssertionError("inputs")) as inputs, \
-                mock.patch.object(a1, "images", side_effect=AssertionError("images")):
-            with self.assertRaises(a1.Refusal) as caught:
-                lane._main(["--mode", "local", "--pull", "never", "--journal", "j", "--source-archive", "a",
-                            "--run-dir", str(run_dir), "--stub-dir", str(self.directory / "absent")])
-        self.assertEqual(str(caught.exception), "a2_stub_missing")
-        inputs.assert_not_called()
-        self.assertFalse(any(args[0] == "docker" for args in calls))
-        self.assertFalse(run_dir.exists())
+        argv = ["--mode", "local", "--pull", "never", "--journal", "j", "--source-archive", "a",
+                "--run-dir", str(run_dir), "--stub-dir", str(self.directory / "absent")]
+        # The closed-lane guard refuses first under CI or Evidence; clear it to reach the stub check.
+        local = {k: v for k, v in os.environ.items() if k not in CLOSED_LANE_MARKERS}
+        for environment, refusal in ((local, "a2_stub_missing"),
+                                     ({**local, "GITHUB_ACTIONS": "true"}, "local_only_closed_lane"),
+                                     ({**local, "CORE_EVIDENCE_CONTEXT": "1"}, "local_only_closed_lane")):
+            calls.clear()
+            with self.subTest(refusal=refusal, environment=sorted(set(environment) - set(local))), \
+                    mock.patch.dict(os.environ, environment, clear=True), \
+                    mock.patch.object(lane, "command", command), \
+                    mock.patch.object(a1, "inputs", side_effect=AssertionError("inputs")) as inputs, \
+                    mock.patch.object(a1, "images", side_effect=AssertionError("images")):
+                with self.assertRaises(a1.Refusal) as caught:
+                    lane._main(argv)
+                self.assertEqual(str(caught.exception), refusal)
+                inputs.assert_not_called()
+                self.assertFalse(any(args[0] == "docker" for args in calls))
+                self.assertFalse(run_dir.exists())
+
+
+CLOSED_LANE_MARKERS = ("GITHUB_ACTIONS", "CORE_EVIDENCE_CONTEXT")
 
 
 class NetworkPostureTests(unittest.TestCase):
