@@ -53,7 +53,7 @@ assert acceptance_spec.loader is not None
 acceptance_spec.loader.exec_module(acceptance)
 
 
-def application_gateway(runtime, *, reconciled=True):
+def application_gateway(runtime, *, reconciled=True, deadline_elapsed=False):
     """Exercise the real composition callback without configuring live clients."""
     app = gateway_fixtures.RecordingApp()
     with ExitStack() as stack:
@@ -78,6 +78,8 @@ def application_gateway(runtime, *, reconciled=True):
         ))
     # The composition's late-bound facade remains replaced only for each call.
     gateway._test_governance = governance
+    if deadline_elapsed:
+        gateway.mark_initial_catalog_deadline_elapsed()
     if reconciled:
         gateway.mark_initial_catalog_reconciled()
     return gateway, app

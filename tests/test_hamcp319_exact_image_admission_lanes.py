@@ -565,8 +565,18 @@ class CaseRunnerTests(unittest.TestCase):
     def test_fail_closed_paths(self):
         observed = LANES.evaluate_fail_closed([(503, "{}")] * 3, (503, "{}"), None)
         self.assertEqual(observed["path"], "never_ready")
-        with self.assertRaises(LANES.LaneFailure):
+        # HAMCP-350: an accepted session while /ready is 503 needs the strict
+        # pending body with acceptance; a bare 503 body is not that evidence.
+        with self.assertRaises(LANES.LaneFailure) as caught:
             LANES.evaluate_fail_closed([(503, "{}")], (200, "{}"), None)
+        self.assertEqual(str(caught.exception), "fail_closed_session_accepted_without_pending_readiness")
+        for redirect in (302, 307):
+            with self.assertRaises(LANES.LaneFailure) as caught:
+                LANES.evaluate_fail_closed([(503, "{}")], (redirect, ""), None)
+            self.assertEqual(str(caught.exception), "fail_closed_session_not_refused")
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            LANES.evaluate_fail_closed([(503, "{}")], None, None)
+        self.assertEqual(str(caught.exception), "fail_closed_session_not_refused")
         with self.assertRaises(LANES.LaneFailure):
             LANES.evaluate_fail_closed([(503, '{"code":"upstream_redirect_refused"}')], (503, ""), None)
         with self.assertRaises(LANES.LaneFailure):
@@ -656,20 +666,52 @@ STRICT_URL = "http://127.0.0.1:18086/synthetic-upstream-secret/catalog/full"
 READY = [(503, "{}"), (200, "{}")]
 
 
-def gateway_health(*, failure=None, mutate=None, dynamic=0):
+def readiness_body(*, deadline_elapsed=True, reconciled=False, mutate=None):
+    """The exact ``/ready`` body the real gateway serves (HAMCP-350)."""
+
+    from ha_mcp_engineering.audit import AuditLogger
+    from ha_mcp_engineering.configuration import Settings
+    from ha_mcp_engineering.routing import AuthenticatedMcpGateway
+
+    with tempfile.TemporaryDirectory() as directory:
+        settings = Settings(
+            ha_url="http://synthetic-ha.invalid", ha_token="synthetic-token",
+            access_secret="synthetic-hamcp350-lane-secret", port=8100,
+            audit_path=str(Path(directory) / "audit.jsonl"), audit_enabled=False,
+            rate_limit_per_minute=120, rate_limit_burst=25, destructive_services=frozenset(),
+        )
+        gateway = AuthenticatedMcpGateway(
+            object(), settings, AuditLogger(settings.audit_path, "synthetic-hamcp350-lane-secret", enabled=False),
+            require_initial_catalog_reconciliation=True)
+        if deadline_elapsed:
+            gateway.mark_initial_catalog_deadline_elapsed()
+        if reconciled:
+            gateway.mark_initial_catalog_reconciled()
+        state = gateway.catalog_readiness_state()
+    if mutate:
+        mutate(state)
+    return json.dumps(state, separators=(",", ":"), sort_keys=True)
+
+
+def gateway_health(*, failure=None, mutate=None, dynamic=0, dashboard=False):
     """A real ``get_server_health`` envelope around the real gateway projection.
 
     ``failure`` drives the gateway's own disable-delegation path; ``mutate``
-    edits the decoded ``data`` to build each bad observation.
+    edits the decoded ``data`` to build each bad observation. ``dashboard``
+    adds the real dashboard provider block, which lists every failure category
+    with its count, as a configured container's health does.
     """
 
     from ha_mcp_engineering.models.responses import SuccessResponse
+    from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
 
     gateway = UpstreamReadGateway()
     if failure:
         gateway._record_failure(failure, disable_delegation=True)
     data = {"upstream_read_gateway": gateway.health_projection(), "dynamic_upstream_tool_count": dynamic}
+    if dashboard:
+        data["upstream_dashboard"] = UpstreamDashboardProvider().health_snapshot()
     if mutate:
         mutate(data)
     return SuccessResponse(operation="get_server_health", summary="Returned safe beta operational health.",
@@ -738,6 +780,105 @@ class RollbackReadyPathTests(unittest.TestCase):
     def test_never_ready_with_authenticated_refusal_still_passes(self):
         observed = LANES.evaluate_fail_closed([(503, "{}")] * 3, (503, "{}"), None)
         self.assertEqual(observed["path"], "never_ready")
+
+    # -- HAMCP-350: strict /ready, MCP accepted after the bounded wait --------
+
+    def pending(self, catalog, *, body=None, session=(200, "{}"), static=None):
+        samples = [(0, ""), (503, readiness_body(deadline_elapsed=False)), (503, body or readiness_body())]
+        return LANES.evaluate_fail_closed(samples, session, catalog, self.static if static is None else static)
+
+    def refused_pending(self, catalog, category, **kwargs):
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            self.pending(catalog, **kwargs)
+        self.assertEqual(str(caught.exception), category)
+
+    def test_real_pending_body_is_recognized_only_after_the_deadline(self):
+        self.assertTrue(LANES.pending_with_mcp_requests_accepted(readiness_body()))
+        self.assertFalse(LANES.pending_with_mcp_requests_accepted(readiness_body(deadline_elapsed=False)))
+        # Reconciled is /ready 200, never the pending path.
+        self.assertFalse(LANES.pending_with_mcp_requests_accepted(readiness_body(reconciled=True)))
+        for text in ("", "{}", "not json", "[]", '"initial_reconciliation_pending"'):
+            self.assertFalse(LANES.pending_with_mcp_requests_accepted(text))
+        for field, value in (("accepting_mcp_requests", False), ("accepting_mcp_requests", "true"),
+                             ("ready", True), ("status", "f3_execution_pending"),
+                             ("initial_reconciliation_complete", True),
+                             ("initial_reconciliation_deadline_elapsed", None)):
+            with self.subTest(field=field, value=value):
+                body = readiness_body(mutate=lambda state: state.update({field: value}))
+                self.assertFalse(LANES.pending_with_mcp_requests_accepted(body))
+        body = readiness_body(mutate=lambda state: state.pop("accepting_mcp_requests"))
+        self.assertFalse(LANES.pending_with_mcp_requests_accepted(body))
+
+    def test_pending_acceptance_with_exact_empty_delegated_set_passes(self):
+        for failure in (None, "invalid_response", "http_error"):
+            observed = self.pending(self.catalog(health=gateway_health(failure=failure)))
+            self.assertEqual(observed["path"], "pending_with_mcp_requests_accepted")
+            self.assertEqual(observed["ready_statuses"], [0, 503])
+            self.assertEqual(observed["delegated_read_count"], 0)
+            self.assertIn(observed["admission_status"], LANES.UNADMITTED_STATUSES)
+
+    def test_pending_acceptance_needs_the_same_positive_rollback_evidence(self):
+        self.refused_pending(None, "fail_closed_session_without_catalog")
+        self.refused_pending(self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]),
+                             "fail_closed_delegated_read_exposed")
+        self.refused_pending(self.catalog(pages=[sorted(self.static), ["ha_get_state"]]),
+                             "fail_closed_delegated_read_exposed")
+        self.refused_pending(self.catalog(complete=False), "fail_closed_catalog_incomplete")
+        self.refused_pending(self.catalog(health=""), "fail_closed_health_missing")
+        self.refused_pending(self.catalog(is_error=True), "fail_closed_health_error")
+        for status in ("admitted_exact", "partially_admitted"):
+            self.refused_pending(self.catalog(health=gateway_health(mutate=set_gateway(admission_status=status))),
+                                 "fail_closed_gateway_admitted")
+        self.refused_pending(self.catalog(), "fail_closed_static_catalog_unknown", static=frozenset())
+
+    def test_zero_redirect_count_in_dashboard_health_is_not_a_redirect(self):
+        # CI run 42747401274: the real dashboard block names the category with
+        # count 0, which the former substring check read as a redirect.
+        health = gateway_health(dashboard=True)
+        self.assertIn('"upstream_redirect_refused": 0', health.replace('":0', '": 0'))
+        self.assertFalse(LANES.redirect_reported_by_health(health))
+        observed = self.pending(self.catalog(health=health))
+        self.assertEqual(observed["path"], "pending_with_mcp_requests_accepted")
+        observed = LANES.evaluate_fail_closed(READY, None, self.catalog(health=health), self.static)
+        self.assertEqual(observed["path"], "ready_without_delegated_reads")
+
+    def test_a_redirect_reported_by_health_still_fails(self):
+        def counted(value):
+            return lambda data: data["upstream_dashboard"]["failure_counts"].update(upstream_redirect_refused=value)
+
+        reported = [counted(1), counted(True), counted("1"), counted(None),
+                    lambda data: data["upstream_dashboard"].update(last_failure_category="upstream_redirect_refused"),
+                    set_gateway(last_failure_category="upstream_redirect_refused"),
+                    set_gateway(failure_counts={"upstream_redirect_refused": 2}),
+                    lambda data: data.update(notes=["x upstream_redirect_refused y"]),
+                    lambda data: data.update(upstream_redirect_refused_total=0)]
+        for mutate in reported:
+            health = gateway_health(dashboard=True, mutate=mutate)
+            with self.subTest(health=health[-200:]):
+                self.assertTrue(LANES.redirect_reported_by_health(health))
+                self.refused_pending(self.catalog(health=health), "fail_closed_redirect_category_present")
+                self.refused(self.catalog(health=health), "fail_closed_redirect_category_present")
+        # Health that does not parse falls back to the substring check.
+        self.assertTrue(LANES.redirect_reported_by_health('{"upstream_redirect_refused": 0'))
+        self.assertFalse(LANES.redirect_reported_by_health("not json"))
+        # Readiness and session answers keep the substring check.
+        body = readiness_body(mutate=lambda state: state.update(note="upstream_redirect_refused"))
+        self.refused_pending(self.catalog(), "fail_closed_redirect_category_present", body=body)
+        self.refused_pending(self.catalog(), "fail_closed_redirect_category_present",
+                             session=(200, '{"upstream_redirect_refused": 0}'))
+
+    def test_pending_acceptance_is_judged_on_the_last_answer(self):
+        # Acceptance before the deadline, or a body that no longer reports
+        # acceptance at the end of the observation window, is not evidence.
+        for body in (readiness_body(deadline_elapsed=False), "{}",
+                     readiness_body(mutate=lambda state: state.update(accepting_mcp_requests=False))):
+            self.refused_pending(self.catalog(), "fail_closed_session_accepted_without_pending_readiness",
+                                 body=body)
+        self.refused_pending(self.catalog(), "fail_closed_session_not_refused", session=(307, ""))
+        samples = [(503, readiness_body()), (503, readiness_body(deadline_elapsed=False))]
+        with self.assertRaises(LANES.LaneFailure) as caught:
+            LANES.evaluate_fail_closed(samples, (200, "{}"), self.catalog(), self.static)
+        self.assertEqual(str(caught.exception), "fail_closed_session_accepted_without_pending_readiness")
 
     def test_expected_delegated_set_is_empty_and_static_catalog_is_source_frozen(self):
         self.assertEqual(LANES.ROLLBACK_EXPECTED_DELEGATED_READS, frozenset())
@@ -862,7 +1003,7 @@ class RollbackReadyPathTests(unittest.TestCase):
 
     # -- case writer, manifest writer and aggregate gate ---------------------
 
-    def run_case(self, directory, *, ready_status=200, catalog=None, session=(503, "{}")):
+    def run_case(self, directory, *, ready_status=200, catalog=None, session=(503, "{}"), ready_body="{}"):
         cases = directory / "cases"
         cases.mkdir(exist_ok=True)
         args = LANES.argparse.Namespace(case=ROLLBACK_CASE, configured_url=STRICT_URL, form="strict_full",
@@ -874,7 +1015,7 @@ class RollbackReadyPathTests(unittest.TestCase):
             return copy.deepcopy(catalog)
 
         patch = unittest.mock.patch.object
-        with patch(LANES, "http_get", lambda url: (ready_status, "{}")), \
+        with patch(LANES, "http_get", lambda url: (ready_status, ready_body)), \
                 patch(LANES, "http_post_initialize", lambda url: session), \
                 patch(LANES, "engineering_catalog", fake_catalog), \
                 patch(LANES, "engineering_static_tool_names", lambda: self.static):
@@ -924,6 +1065,25 @@ class RollbackReadyPathTests(unittest.TestCase):
                 writer, manifest, gate, summary = self.propagate(directory)
                 self.assertEqual((writer, manifest["result"], gate, summary["errors"]), (0, "PASS", 0, []))
                 self.assertEqual(summary["acceptance"]["85_only"], "ACCEPTED")
+
+    def test_hamcp350_pending_acceptance_passes_writer_and_gate_only_with_evidence(self):
+        pending = {"ready_status": 503, "session": (200, "{}"), "ready_body": readiness_body()}
+        with tempfile.TemporaryDirectory() as raw, contextlib.redirect_stdout(io.StringIO()):
+            directory = Path(raw)
+            code, case = self.run_case(directory, catalog=self.catalog(), **pending)
+            self.assertEqual((code, case["status"]), (0, "passed"), case)
+            self.assertEqual(case["observed"]["path"], "pending_with_mcp_requests_accepted")
+            writer, manifest, gate, summary = self.propagate(directory)
+        self.assertEqual((writer, manifest["result"], gate, summary["errors"]), (0, "PASS", 0, []))
+        self.assertEqual(summary["acceptance"]["85_only"], "ACCEPTED")
+        self.assert_propagates_failure("fail_closed_delegated_read_exposed",
+                                       catalog=self.catalog(pages=[sorted(self.static) + ["ha_get_history"]]),
+                                       **pending)
+        self.assert_propagates_failure("fail_closed_session_accepted_without_pending_readiness",
+                                       catalog=self.catalog(), ready_status=503, session=(200, "{}"))
+        # The pre-HAMCP-350 CI reproduction: accepted session, bare 503 body.
+        self.assert_propagates_failure("fail_closed_session_accepted_without_pending_readiness",
+                                       ready_status=503, session=(200, "{}"))
 
     def test_extra_delegated_read_fails_writer_and_gate(self):
         self.assert_propagates_failure("fail_closed_delegated_read_exposed",
