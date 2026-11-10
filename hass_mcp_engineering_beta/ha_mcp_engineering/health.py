@@ -12,6 +12,7 @@ from .sanitization import marker_collision_health
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
     CAPABILITIES,
+    delegated_tool_status,
     dynamic_upstream_capabilities,
 )
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
@@ -95,6 +96,18 @@ class HealthRegistry:
         *, governance_summary: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         metrics = METRICS.snapshot()
+        upstream_read_gateway = (
+            self.upstream_read_gateway.health_projection()
+            if self.upstream_read_gateway
+            else {
+                "configured": False,
+                "initialized": False,
+                "generic_delegation_available": False,
+                "dynamically_exposed_count": 0,
+                "writes_allowed": False,
+                "direct_ha_fallback_allowed": False,
+            }
+        )
         return {
             "server": {"id": SERVER_ID, "name": SERVER_NAME, "version": SERVER_VERSION},
             "runtime": "home_assistant_addon" if self.settings and self.settings.ha_url == "http://supervisor/core" else "standalone",
@@ -185,18 +198,8 @@ class HealthRegistry:
                     "writes_allowed": False,
                 }
             ),
-            "upstream_read_gateway": (
-                self.upstream_read_gateway.health_projection()
-                if self.upstream_read_gateway
-                else {
-                    "configured": False,
-                    "initialized": False,
-                    "generic_delegation_available": False,
-                    "dynamically_exposed_count": 0,
-                    "writes_allowed": False,
-                    "direct_ha_fallback_allowed": False,
-                }
-            ),
+            "upstream_read_gateway": upstream_read_gateway,
+            "delegated_tools": delegated_tool_status(upstream_read_gateway),
             "home_assistant_core_authority": (
                 self.core_readmission.health_projection()
                 if self.core_readmission

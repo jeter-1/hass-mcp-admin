@@ -2,10 +2,12 @@
 
 import asyncio
 import base64
+from contextlib import contextmanager
 import logging
 import os
 import sys
 import ipaddress
+import time
 
 import uvicorn
 
@@ -26,7 +28,12 @@ from .configuration import (
 )
 from .errors import ConfigurationError
 from . import secret_paths
-from .logging_config import configure_logging, get_logger, log_event
+from .logging_config import (
+    configure_logging,
+    get_logger,
+    log_event,
+    uvicorn_log_config,
+)
 from .health import HEALTH
 from .clients import HomeAssistantRestClient
 from .clients import HomeAssistantWebSocketClient
@@ -58,6 +65,11 @@ from .inbound_topology_observer import create_mcp_listener, finish_mcp_observati
 from .inbound_security import compile_policy
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
+# HAMCP-350: the longest the authenticated MCP endpoint waits, after the MCP
+# listener starts, for the first ha-mcp reconcile. 20 s covers the fifth
+# transient attempt (backoff 1, 2, 4, 8 s lands it at about 15 s).
+INITIAL_RECONCILIATION_READINESS_DEADLINE_SECONDS = 20.0
+STARTUP_PHASE_EVENT = "startup_phase_timing"
 
 
 def validate_settings(settings: Settings) -> None:
@@ -443,18 +455,168 @@ def create_approval_application(settings=None):
     )
 
 
+@contextmanager
+def _startup_phase(phase: str):
+    """Log one ``startup_phase_timing`` event when a startup phase ends.
+
+    HAMCP-350 (b1): the caller may add bounded closed-vocabulary details to
+    the yielded dict. The event is written on success, failure and
+    cancellation; it never carries exception text.
+    """
+
+    started = time.monotonic()
+    details: dict = {}
+    outcome = "failed"
+    try:
+        yield details
+        outcome = details.pop("outcome", "completed")
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        details.pop("outcome", None)
+        log_event(
+            get_logger("application"),
+            logging.INFO if outcome in {"completed", "skipped"} else logging.WARNING,
+            STARTUP_PHASE_EVENT,
+            "Startup phase finished.",
+            context={
+                "phase": phase,
+                "outcome": outcome,
+                "duration_ms": round((time.monotonic() - started) * 1000, 1),
+                **details,
+            },
+        )
+
+
+def _observe_listener_start(server, started: asyncio.Event) -> bool:
+    """Time the MCP listener's startup and signal when it accepts connections.
+
+    Returns ``False`` for a listener without a uvicorn ``startup`` coroutine;
+    the caller then starts the readiness deadline without waiting for it.
+    """
+
+    startup = getattr(server, "startup", None)
+    if not callable(startup):
+        return False
+    created = time.monotonic()
+
+    async def observed_startup(*args, **kwargs):
+        listening = False
+        try:
+            result = await startup(*args, **kwargs)
+            listening = bool(getattr(server, "started", False)) and not bool(
+                getattr(server, "should_exit", False)
+            )
+            return result
+        finally:
+            log_event(
+                get_logger("application"),
+                logging.INFO if listening else logging.WARNING,
+                STARTUP_PHASE_EVENT,
+                "Startup phase finished.",
+                context={
+                    "phase": "listener_start",
+                    "outcome": "completed" if listening else "failed",
+                    "duration_ms": round((time.monotonic() - created) * 1000, 1),
+                },
+            )
+            if listening:
+                started.set()
+
+    server.startup = observed_startup
+    return True
+
+
+async def _initial_reconcile_finished_within_deadline(
+    reconcile: asyncio.Future,
+    listener_started: asyncio.Event | None,
+    deadline_seconds: float,
+) -> bool:
+    """Wait for the reconcile, or ``deadline_seconds`` after the listener starts."""
+
+    if listener_started is not None:
+        waiter = asyncio.ensure_future(listener_started.wait())
+        try:
+            await asyncio.wait(
+                {reconcile, waiter}, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            waiter.cancel()
+        if reconcile.done():
+            return True
+    done, _ = await asyncio.wait({reconcile}, timeout=deadline_seconds)
+    return bool(done)
+
+
+def _bounded_upstream_status() -> dict:
+    snapshot = UPSTREAM_READ_GATEWAY.health_snapshot()
+    if not isinstance(snapshot, dict):
+        return {}
+    return {
+        key: snapshot.get(key)
+        for key in (
+            "reconciliation_status",
+            "last_discovery_failure_category",
+        )
+        if isinstance(snapshot.get(key), str)
+    }
+
+
 async def _supervise_upstream_reconciliation(
     gateway: AuthenticatedMcpGateway,
+    *,
+    listener_started: asyncio.Event | None = None,
+    deadline_seconds: float = INITIAL_RECONCILIATION_READINESS_DEADLINE_SECONDS,
 ) -> None:
-    """Publish the first stable catalog before accepting MCP sessions."""
+    """Publish the first stable catalog, waiting a bounded time for it.
+
+    HAMCP-350 (Josh, 2026-11-09): when the first ha-mcp reconcile has not
+    returned ``deadline_seconds`` after the MCP listener starts, the endpoint
+    accepts MCP requests with the Engineering-native catalog while the same
+    reconcile keeps retrying. Delegated tools stay unregistered until it
+    admits them, and ``/ready`` stays pending until it returns.
+    """
 
     server = get_registered_server()
     initial_snapshot = None
     if getattr(gateway, "initial_catalog_reconciliation_required", False):
-        initial_snapshot = (
-            await UPSTREAM_READ_GATEWAY.reconcile_until_initialized(server)
-        )
+        with _startup_phase("first_reconcile") as phase:
+            reconcile = asyncio.ensure_future(
+                UPSTREAM_READ_GATEWAY.reconcile_until_initialized(server)
+            )
+            try:
+                if not await _initial_reconcile_finished_within_deadline(
+                    reconcile, listener_started, deadline_seconds
+                ):
+                    gateway.mark_initial_catalog_deadline_elapsed()
+                    phase["readiness_deadline_elapsed"] = True
+                    log_event(
+                        get_logger("application"),
+                        logging.WARNING,
+                        "initial_reconciliation_deadline_elapsed",
+                        "Serving Engineering-native tools; delegated ha-mcp "
+                        "tools stay unavailable until ha-mcp is admitted.",
+                        context={
+                            "deadline_seconds": deadline_seconds,
+                            **_bounded_upstream_status(),
+                        },
+                    )
+                initial_snapshot = await reconcile
+            finally:
+                if not reconcile.done():
+                    reconcile.cancel()
+            phase.setdefault("readiness_deadline_elapsed", False)
+            if isinstance(initial_snapshot, dict) and isinstance(
+                initial_snapshot.get("reconciliation_status"), str
+            ):
+                phase["reconciliation_status"] = initial_snapshot[
+                    "reconciliation_status"
+                ]
         gateway.mark_initial_catalog_reconciled()
+    else:
+        with _startup_phase("first_reconcile") as phase:
+            phase["outcome"] = "skipped"
     await UPSTREAM_READ_GATEWAY.supervise_reconciliation(
         server,
         initial_snapshot=initial_snapshot,
@@ -524,7 +686,8 @@ async def _supervise_operational_reconciliation() -> None:
 async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
-    gateway = create_application(settings)
+    with _startup_phase("store_load"):
+        gateway = create_application(settings)
     # Tests and embedding callers may replace ``create_application`` with a
     # pre-built gateway.  The production composition above always configures
     # Core authority before this point; an intentionally unconfigured test
@@ -533,12 +696,18 @@ async def _serve(settings: Settings) -> None:
         isinstance(gateway, AuthenticatedMcpGateway)
         and CORE_READMISSION.configured
     )
-    if core_reconciliation_enabled:
-        await CORE_READMISSION.reconcile_until_initialized()
+    with _startup_phase("core_boot") as phase:
+        if core_reconciliation_enabled:
+            await CORE_READMISSION.reconcile_until_initialized()
+        else:
+            phase["outcome"] = "skipped"
     # No public listener exists until stores, registry, ownership, and the
     # initial cheap recovery pass have all succeeded.
-    if isinstance(gateway, AuthenticatedMcpGateway):
-        await _run_f3_recovery_pass("startup", strict=True)
+    with _startup_phase("f3_recovery") as phase:
+        if isinstance(gateway, AuthenticatedMcpGateway):
+            await _run_f3_recovery_pass("startup", strict=True)
+        else:
+            phase["outcome"] = "skipped"
     # HAMCP-097: validate retained history in the background, after strict
     # recovery; health reports it as in progress until it completes.
     historical_validation_task = (
@@ -567,6 +736,9 @@ async def _serve(settings: Settings) -> None:
         port=settings.port,
         log_level=settings.log_level.lower(),
     )
+    listener_started = asyncio.Event()
+    if not _observe_listener_start(mcp_server, listener_started):
+        listener_started = None
     try:
         approval_server = uvicorn.Server(
             uvicorn.Config(
@@ -575,6 +747,7 @@ async def _serve(settings: Settings) -> None:
                 port=settings.ingress_port,
                 log_level=settings.log_level.lower(),
                 access_log=False,
+                log_config=uvicorn_log_config(),
             )
         )
         # Let the MCP server own process signals. The private listener follows its
@@ -584,7 +757,9 @@ async def _serve(settings: Settings) -> None:
         mcp_task = asyncio.create_task(mcp_server.serve())
         approval_task = asyncio.create_task(approval_server.serve())
         upstream_reconciliation_task = asyncio.create_task(
-            _supervise_upstream_reconciliation(gateway),
+            _supervise_upstream_reconciliation(
+                gateway, listener_started=listener_started
+            ),
             name="upstream-read-gateway-reconciliation",
         )
         core_reconciliation_task = (
