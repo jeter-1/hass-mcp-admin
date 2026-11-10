@@ -54,6 +54,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.TYPED_POWER_EXECUTION,
     ProviderCapability.TYPED_HELPER_VALUE_EXECUTION,
+    ProviderCapability.TYPED_DEVICE_CONFIGURATION_EXECUTION,
     ProviderCapability.GOVERNANCE_PERSISTENCE,
     ProviderCapability.OPERATIONAL_ADMINISTRATION,
     ProviderCapability.RISK_ASSESSMENT,

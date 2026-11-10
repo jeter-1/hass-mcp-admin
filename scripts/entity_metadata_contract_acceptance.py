@@ -421,7 +421,9 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                                        "core.scene_configuration_operation",
                                        "core.typed_helper_value_operation",
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
-                                       "core.marketplace_read"}]
+                                       "core.marketplace_read",
+                                       # HAMCP-297 signed-only device configuration.
+                                       "core.device_configuration_entity_operation"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]
     new = old + [added]
     assert len(old) == 21 and len(new) == 22 and len({r["capability_id"] for r in new}) == 22

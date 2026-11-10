@@ -301,6 +301,8 @@ def capability_evidence_for_probes(
                 "core.scene_configuration_operation",
                 # HAMCP-290 Release 2.5.0 (dormant until signed).
                 "core.marketplace_read",
+                # HAMCP-297 Release 2.6.0 (dormant until signed).
+                "core.device_configuration_entity_operation",
             ):
                 add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence
