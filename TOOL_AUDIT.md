@@ -16,9 +16,10 @@ cannot read `sql`, `group`, `sensor` and the other definition paths).
 (`global_source_consumers`, informational and outside every plan hash) gain
 template and YAML script rows, at most `partial`; `!secret`/`!env_var` are
 never resolved or emitted; UI template helpers stay unread.
-`configuration_integrity_analysis` keeps template `not_supported`. The
-dependency provider's reader wiring in `application.py` is pending; until it
-lands both rows are `unavailable`.
+`configuration_integrity_analysis` keeps template `not_supported`.
+`application.py` wires the dependency provider's reader to
+`yaml_config_reader(purpose="dependency_index")` with the shared audit; without
+an admitted catalog both rows are `unavailable`.
 
 ## Installed-only Marketplace inventory (2.5.0, HAMCP-290)
 

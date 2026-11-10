@@ -423,7 +423,7 @@
      "tool": "internal:dependency_yaml_scripts",
      "provider": "upstream_read_gateway (dependency_index YAML reader)",
      "purpose_binding": "YAML_READER_PURPOSES dependency_index (dependency_index_yaml_read) [yaml_reader:dependency_index, gateway_reader:yaml_config_reader]",
-     "admission": "upstream:ha_config_get_yaml (same admission as the special adapter); the dependency provider's yaml_reader_factory wiring in application.py is pending (HAMCP-264), so until it is wired the rows are unavailable with yaml_reader_not_admitted",
+     "admission": "upstream:ha_config_get_yaml (same admission as the special adapter); application.py wires the dependency provider's yaml_reader_factory to yaml_config_reader(purpose=dependency_index) with the shared audit; without an admitted catalog the rows are unavailable with yaml_reader_not_admitted",
      "completeness": "partial",
      "detail": "YAML scripts under script: in configuration.yaml and inline packages, keyed by object id, join entity_dependency_analysis (a loaded-script diagnostic analysis of the same script wins), change_impact_analysis and plan disclosures as the partition's script row. No script-call graph edges. scripts.yaml is not followed.",
      "refs": [
@@ -441,6 +441,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/yaml_sources.py",
        "line": 322,
        "anchor": "async def collect_yaml_sources("
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+       "line": 416,
+       "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
     }
@@ -1152,7 +1157,7 @@
    "name": "YAML templates",
    "group": "YAML, packages, secrets and restore state",
    "completeness": "partial",
-   "completeness_reason": "The dependency index reads template: from configuration.yaml and its inline packages through the dependency_index YAML reader purpose (HAMCP-264), at most partial because labeled keys, includes and package directories are not read, and unwired at runtime until application.py wiring lands; get_configuration_definitions projects template: from configuration.yaml; UI template helpers unreadable without an options flow.",
+   "completeness_reason": "The dependency index reads template: from configuration.yaml and its inline packages through the dependency_index YAML reader purpose (HAMCP-264), at most partial because labeled keys, includes and package directories are not read; application.py wires the reader; get_configuration_definitions projects template: from configuration.yaml; UI template helpers unreadable without an options flow.",
    "read_paths": [
     {
      "tool": "get_configuration_definitions",
@@ -1233,7 +1238,7 @@
      "tool": "internal:dependency_yaml_templates",
      "provider": "upstream_read_gateway (dependency_index YAML reader)",
      "purpose_binding": "YAML_READER_PURPOSES dependency_index (dependency_index_yaml_read) [yaml_reader:dependency_index, gateway_reader:yaml_config_reader]",
-     "admission": "upstream:ha_config_get_yaml (same admission as the special adapter); the dependency provider's yaml_reader_factory wiring in application.py is pending (HAMCP-264), so until it is wired the rows are unavailable with yaml_reader_not_admitted",
+     "admission": "upstream:ha_config_get_yaml (same admission as the special adapter); application.py wires the dependency provider's yaml_reader_factory to yaml_config_reader(purpose=dependency_index) with the shared audit; without an admitted catalog the rows are unavailable with yaml_reader_not_admitted",
      "completeness": "partial",
      "detail": "Reads the fixed configuration.yaml paths template, script and homeassistant.packages (homeassistant only to classify packages). Template entities in configuration.yaml and inline packages feed entity_dependency_analysis, change_impact_analysis and plan disclosures through the HAMCP-227 diagnostic partition. At most partial: labeled keys, includes and package directories are not read; UI template helpers are counted, never read; !secret/!env_var markers are replaced before extraction. configuration_integrity_analysis does not consume them.",
      "refs": [
@@ -1251,6 +1256,11 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/yaml_sources.py",
        "line": 322,
        "anchor": "async def collect_yaml_sources("
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+       "line": 416,
+       "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
     }
@@ -1276,9 +1286,9 @@
    "gaps": [
     {
      "id": "RCG-013",
-     "missing": "Template references beyond configuration.yaml and its inline packages, and runtime wiring of the dependency_index reader (HAMCP-264 implements the purpose and extraction in source)",
-     "requirement_type": "new_reader_purpose",
-     "requirement": "Wire UpstreamReadGateway.yaml_config_reader(purpose='dependency_index') into the dependency provider (application.py, outside HAMCP-264's authorized surfaces). Templates in packages/ and !include files need the reader contract in RCG-014 and RCG-016; labeled top-level keys need a reader path form that can name them.",
+     "missing": "Template references beyond configuration.yaml and its inline packages (HAMCP-264 reads configuration.yaml and inline packages through the dependency_index reader)",
+     "requirement_type": "new_reader_contract",
+     "requirement": "Templates in packages/ and !include files need the reader contract in RCG-014 and RCG-016; labeled top-level keys need a reader path form that can name them.",
      "register": [
       "HAMCP-264"
      ],

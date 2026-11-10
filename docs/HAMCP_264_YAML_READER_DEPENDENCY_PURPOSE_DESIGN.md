@@ -189,11 +189,11 @@ meaning. `governance/service.py` and `approval_web.py` are not touched.
 
 - `application.py` wiring (`DEPENDENCY_ANALYSIS...provider.yaml_reader_factory =
   lambda: UPSTREAM_READ_GATEWAY.yaml_config_reader(audit=audit,
-  purpose="dependency_index")`) sits next to the script and dashboard factories.
-  `application.py` is not in this task's authorized protected surfaces, so the
-  exact wiring is recorded in `.artifacts/pending-wiring.md` for the
-  orchestrator. Until it is wired, runtime behavior is the truthful
-  `unavailable` row.
+  purpose="dependency_index")`) sits next to the script and dashboard factories,
+  one contiguous block, with the shared audit sink. It was added after the
+  orchestrator authorized `application.py` for this line only. Without an
+  admitted `ha_config_get_yaml` catalog the factory yields no reader and both
+  rows are `unavailable` (`yaml_reader_not_admitted`).
 - Limits: includes, package directories, labeled keys and `scripts.yaml` are
   not read. YAML-only scripts get no script-call graph edges. Template
   entities without a unique id get no registry identity.

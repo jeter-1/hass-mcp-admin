@@ -613,5 +613,73 @@ class BoundTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(code, json.dumps(table, default=str))
 
 
+class ApplicationWiringTests(unittest.TestCase):
+    """The runtime wires the reader only under ``dependency_index`` with the shared audit."""
+
+    def setUp(self):
+        from test_beta_observability import preserve_create_application_state
+
+        preserve_create_application_state(self)
+
+    def _application(self):
+        import tempfile
+
+        from ha_mcp_engineering import application
+        from test_beta_observability import settings
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        application.create_application(settings(str(Path(directory.name) / "audit.jsonl")))
+        return application
+
+    def test_application_wires_dependency_index_reader_with_shared_audit(self):
+        application = self._application()
+        provider = application.DEPENDENCY_ANALYSIS.require().index.provider
+        self.assertIsNotNone(provider.yaml_reader_factory)
+        gateway = application.UPSTREAM_READ_GATEWAY
+        yaml_calls, script_calls = [], []
+        with patch.object(gateway, "yaml_config_reader",
+                          side_effect=lambda **kw: yaml_calls.append(kw)), \
+                patch.object(gateway, "script_dependency_reader",
+                             side_effect=lambda **kw: script_calls.append(kw)):
+            provider.yaml_reader_factory()
+            provider.script_reader_factory()
+        # Exactly one capture, only under the dependency_index purpose, never
+        # the recorder_settings default or any other purpose.
+        self.assertEqual(len(yaml_calls), 1)
+        self.assertEqual(set(yaml_calls[0]), {"audit", "purpose"})
+        self.assertEqual(yaml_calls[0]["purpose"], ys.READER_PURPOSE)
+        # The same audit sink as the build's other diagnostic readers.
+        self.assertIsNotNone(yaml_calls[0]["audit"])
+        self.assertIs(yaml_calls[0]["audit"], script_calls[0]["audit"])
+
+    def test_unadmitted_or_unwired_reader_is_yaml_reader_not_admitted(self):
+        from ha_mcp_engineering.dependency.script_sources import create_script_reader
+
+        application = self._application()
+        provider = application.DEPENDENCY_ANALYSIS.require().index.provider
+        wired = provider.yaml_reader_factory
+        self.assertIsNotNone(wired)
+        # No upstream catalog is admitted in this process: the wired factory
+        # yields no reader, and an unwired provider has no factory at all.
+        for factory in (wired, None):
+            with self.subTest(wired=factory is not None):
+                sources = asyncio.run(ys.collect_yaml_sources(
+                    create_script_reader(factory), [], registry_complete=True, secret=SECRET,
+                ))
+                self.assertEqual(sources.profile["read_attempts"], 0)
+                for row in (sources.template_coverage, sources.script_coverage):
+                    self.assertEqual((row.provider, row.completeness), ("none", "unavailable"))
+                    self.assertIn(ys.UNAVAILABLE_WARNINGS["yaml_reader_not_admitted"], row.warnings)
+
+
+def tearDownModule():
+    # HAMCP-288: ApplicationWiringTests calls create_application, which installs
+    # the process-wide secret-path redaction; reset it for the next module.
+    from ha_mcp_engineering import secret_paths
+
+    secret_paths.reset()
+
+
 if __name__ == "__main__":
     unittest.main()
