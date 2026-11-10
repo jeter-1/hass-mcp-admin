@@ -232,7 +232,7 @@ class DormantProfileTests(unittest.TestCase):
         # 22 through 069A, plus the two dormant 069B profiles, the dormant
         # 165 label profile and the dormant HAMCP-155 deletion profile.
         # + HAMCP-232/145 November batch, + HAMCP-106, + HAMCP-071 seq 16
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 34)  # + HAMCP-311; HAMCP-290: + core.marketplace_read; HAMCP-297: + device configuration
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 35)  # + HAMCP-311; HAMCP-290: + core.marketplace_read; HAMCP-134: + core.security_metadata_read; HAMCP-297: + device configuration
         (profile,) = CORE_ENTITY_METADATA_PROFILES
         mapping = profile.to_mapping()
         self.assertEqual(
@@ -708,6 +708,8 @@ class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed-registry admission (its own tests cover it).
                 "get_marketplace_inventory",
+                # HAMCP-134: the dormant security metadata read, likewise.
+                "get_security_metadata",
             }:
                 continue
             for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):

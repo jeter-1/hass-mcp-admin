@@ -586,7 +586,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(self.beta_tools), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -650,6 +650,7 @@ class ToolParityTests(unittest.TestCase):
                 "control_fan",
                 "run_held_read_canary",
                 "get_marketplace_inventory",  # HAMCP-290: Engineering-native read
+                "get_security_metadata",  # HAMCP-134: Engineering-native read
             },
         )
 
@@ -724,7 +725,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(result["data"]["tool_count"], 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -734,7 +735,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(catalog["registered_count"], 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -775,6 +776,7 @@ class ToolParityTests(unittest.TestCase):
                 "list_script_traces",
                 "get_script_trace",
                 "get_marketplace_inventory",  # HAMCP-290
+                "get_security_metadata",  # HAMCP-134
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -933,7 +935,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(names), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]

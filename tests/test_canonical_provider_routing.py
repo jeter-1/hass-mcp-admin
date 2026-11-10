@@ -415,7 +415,7 @@ class ToolListSerializationTests(unittest.TestCase):
     def test_all_registered_tools_have_serializable_json_schemas(self):
         tools = registered_tools(get_registered_server()).values()
         names = [tool.name for tool in tools]
-        self.assertEqual(len(names), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(names), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertIn("reverify_configuration_task", names)
         self.assertEqual(len(names), len(set(names)))
         self.assertIn("entity_dependency_analysis", names)

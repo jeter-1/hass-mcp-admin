@@ -555,7 +555,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         # 2026-11-08) and never exposed, so 28 matched reads expose 27.
         self.assertEqual(len(tools), 27)
         self.assertNotIn("ha_get_hacs_info", tools)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 111)  # + HAMCP-297
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 112)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])

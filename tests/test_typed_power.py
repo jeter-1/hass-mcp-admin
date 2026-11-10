@@ -373,7 +373,7 @@ class PowerBoundaryTests(unittest.TestCase):
         self.assertEqual(set(tool.parameters['properties']), {'entity_id','action','operation_id'})
         self.assertEqual(tool.parameters['properties']['action']['enum'], ['turn_on','turn_off'])
         self.assertFalse(tool.annotations.readOnlyHint)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         self.assertEqual(capability_for_tool('control_power')['provider'], 'upstream_typed_power')
         self.assertEqual(routing_for_tool('control_power').fallback_providers, ())
         matrix = next(x for x in CAPABILITY_PROVIDER_MATRIX if x['tool']=='control_power')

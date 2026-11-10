@@ -133,6 +133,7 @@ STATIC_CORE_TABLE = {
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
     "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
+    "get_security_metadata": MAPPED,  # HAMCP-134: dormant core.security_metadata_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
@@ -259,7 +260,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -523,6 +524,8 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed admission (its own tests cover it).
                 "get_marketplace_inventory",
+                # HAMCP-134: the dormant security metadata read, likewise.
+                "get_security_metadata",
             }:
                 continue
             with self.subTest(tool=name):

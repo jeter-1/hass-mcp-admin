@@ -233,7 +233,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json")
                     for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 111)  # HAMCP-297: +1 control_device_configuration; HAMCP-253: +1 inspect_governance_record; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read
+        self.assertEqual(len(baseline), 112)  # HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspect_governance_record; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration
         self.assertNotIn("ha_get_operation_status", baseline)
         cases = {"ha_get_device": {"device_id": "parent-garage"},
                  "ha_get_entity": {"entity_id": "cover.synthetic_garage_door"},
@@ -255,7 +255,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.network.records[2]["identifiers"] = [["test", 1]]
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 106)  # HAMCP-297: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1
+        self.assertEqual(len(postcore.registered_tools(server)), 107)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration
         self.assertEqual(len(transport.calls), calls)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
             {"entity_id": "sensor.synthetic"}))

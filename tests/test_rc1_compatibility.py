@@ -225,6 +225,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "inspect_governance_record",
                         # HAMCP-290: additive installed-only Marketplace read.
                         "get_marketplace_inventory",
+                        # HAMCP-134: additive security posture metadata read.
+                        "get_security_metadata",
                     )
                 )
             ),
@@ -466,7 +468,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(classifications), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

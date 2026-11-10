@@ -186,6 +186,13 @@ SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
 MARKETPLACE_PROFILE = "core.marketplace_read"
 MARKETPLACE_TOOL = "get_marketplace_inventory"
 MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
+# HAMCP-134: Engineering-native read-only security and effective-permission
+# metadata read.  Runtime-only, Core 2026.11.0 only, dormant until signed.
+# The tool's requirement and pending-admission rows land with its
+# registration (application.py / capabilities.py, frozen until #418).
+SECURITY_METADATA_PROFILE = "core.security_metadata_read"
+SECURITY_METADATA_TOOL = "get_security_metadata"
+SECURITY_METADATA_RESOURCE_TYPE = "security_metadata"
 # HAMCP-290: reviewed ha-mcp reads Engineering retired (Josh, 2026-11-08).  The
 # read gateway never exposes or dispatches these on any reviewed ha-mcp release,
 # whether or not a native route is registered, and nothing aliases or falls
@@ -323,6 +330,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
+    SECURITY_METADATA_TOOL: (SECURITY_METADATA_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -783,6 +791,7 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
+        SECURITY_METADATA_TOOL: (SECURITY_METADATA_RESOURCE_TYPE, SECURITY_METADATA_PROFILE),
     }
 )
 
@@ -1101,6 +1110,8 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         SCRIPT_TRACE_PROFILE,
         # HAMCP-290: read-only, never an F3 identity; same reason as above.
         MARKETPLACE_PROFILE,
+        # HAMCP-134: read-only, never an F3 identity; same reason as above.
+        SECURITY_METADATA_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
@@ -1203,6 +1214,9 @@ __all__ = [
     "MARKETPLACE_PROFILE",
     "MARKETPLACE_RESOURCE_TYPE",
     "MARKETPLACE_TOOL",
+    "SECURITY_METADATA_PROFILE",
+    "SECURITY_METADATA_RESOURCE_TYPE",
+    "SECURITY_METADATA_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
     "StaticCoreRoute",

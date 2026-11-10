@@ -517,7 +517,7 @@ class ToolContractTests(unittest.TestCase):
     def test_tool_is_registered_once_and_schema_is_exact(self):
         tools = registered_tools(get_registered_server()).values()
         matches = [tool for tool in tools if tool.name == "entity_dependency_analysis"]
-        self.assertEqual(len(tools), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(tools), 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
         self.assertEqual(

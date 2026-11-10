@@ -699,6 +699,13 @@ class NeverSentTests(ExecutionTestCase):
                     for t in node.targets
                 ):
                     allowed |= {id(item) for item in ast.walk(node.value)}
+                # HAMCP-134: a compiled profile's declarative ``never_sent``
+                # denial list (ha_core_readmission/profiles.py) is the same
+                # kind of declaration; the gate refuses those before I/O.
+                if isinstance(node, ast.Dict):
+                    for key, value in zip(node.keys, node.values):
+                        if isinstance(key, ast.Constant) and key.value == "never_sent":
+                            allowed |= {id(item) for item in ast.walk(value)}
             for node in ast.walk(tree):
                 if (
                     isinstance(node, ast.Constant)

@@ -5006,7 +5006,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     def test_public_tool_schemas_are_bounded_and_catalog_is_51(self):
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-297: + reliability batch, marketplace inventory, device configuration
+        self.assertEqual(len(tools), 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         reload_schema = tools["create_reload_plan"].parameters
         self.assertEqual(
             reload_schema["properties"]["reload_target"]["enum"],
