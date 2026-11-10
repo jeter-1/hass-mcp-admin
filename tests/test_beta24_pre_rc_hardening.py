@@ -122,12 +122,37 @@ class CatalogReadinessBarrierTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             json.loads(ready_body),
             {
+                "accepting_mcp_requests": False,
                 "initial_reconciliation_complete": False,
+                "initial_reconciliation_deadline_elapsed": False,
                 "initial_reconciliation_required": True,
                 "ready": False,
                 "status": "initial_reconciliation_pending",
             },
         )
+
+        # HAMCP-350 (inverted): after the bounded startup wait the endpoint
+        # serves MCP while /ready stays pending until the first reconcile.
+        gateway.mark_initial_catalog_deadline_elapsed()
+        ready_status, ready_body = await self.request(gateway, "/ready")
+        mcp_status, _ = await self.request(gateway, f"/{SECRET}/mcp")
+        unknown_status, _ = await self.request(gateway, "/not-authorized")
+
+        self.assertEqual(ready_status, 503)
+        self.assertEqual(
+            json.loads(ready_body),
+            {
+                "accepting_mcp_requests": True,
+                "initial_reconciliation_complete": False,
+                "initial_reconciliation_deadline_elapsed": True,
+                "initial_reconciliation_required": True,
+                "ready": False,
+                "status": "initial_reconciliation_pending",
+            },
+        )
+        self.assertEqual(mcp_status, 200)
+        self.assertEqual(unknown_status, 404)
+        self.assertEqual(app.calls, 1)
 
         gateway.mark_initial_catalog_reconciled()
         ready_status, ready_body = await self.request(gateway, "/ready")
@@ -135,7 +160,41 @@ class CatalogReadinessBarrierTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ready_status, 200)
         self.assertTrue(json.loads(ready_body)["ready"])
+        self.assertTrue(json.loads(ready_body)["accepting_mcp_requests"])
         self.assertEqual(mcp_status, 200)
+        self.assertEqual(app.calls, 2)
+
+    async def test_deadline_keeps_rate_limit_and_f3_request_barrier(self):
+        app = RecordingApp()
+        request_ready = False
+        gateway = AuthenticatedMcpGateway(
+            app,
+            settings("unused"),
+            AuditLogger("unused", SECRET, enabled=False),
+            require_initial_catalog_reconciliation=True,
+            execution_readiness=lambda: {
+                "request_ready": request_ready,
+                "execution_ready": request_ready,
+                "status": "ready" if request_ready else "initializing",
+            },
+        )
+        gateway.mark_initial_catalog_deadline_elapsed()
+
+        mcp_status, body = await self.request(gateway, f"/{SECRET}/mcp")
+        self.assertEqual(mcp_status, 503)
+        self.assertFalse(json.loads(body)["accepting_mcp_requests"])
+        self.assertEqual(app.calls, 0)
+
+        request_ready = True
+        mcp_status, _ = await self.request(gateway, f"/{SECRET}/mcp")
+        self.assertEqual(mcp_status, 200)
+        self.assertEqual(app.calls, 1)
+
+        unknown_status, _ = await self.request(gateway, "/not-authorized/mcp")
+        self.assertEqual(unknown_status, 404)
+        gateway.global_bucket.tokens = 0
+        limited_status, _ = await self.request(gateway, f"/{SECRET}/mcp")
+        self.assertEqual(limited_status, 429)
         self.assertEqual(app.calls, 1)
 
     async def test_unconfigured_native_catalog_is_ready_immediately(self):

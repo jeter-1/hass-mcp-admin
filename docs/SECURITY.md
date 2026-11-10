@@ -120,10 +120,22 @@ No fallback or write authority is introduced during this interval.
 
 When upstream is configured, the initial catalog is a readiness boundary:
 authenticated MCP traffic returns HTTP 503 until the first stable or terminal
-`reconcile_until_initialized` result. `/ready` exposes only bounded booleans and
+`reconcile_until_initialized` result, for at most 20 seconds after the MCP
+listener starts (HAMCP-350). `/ready` exposes only bounded booleans and
 `status=ready|initial_reconciliation_pending`; `/health` remains liveness. This
 prevents a schema-caching client from treating the transient static-only catalog
-as the initialized capability set.
+as the initialized capability set during a normal start.
+
+If the 20-second limit passes first, Engineering accepts authenticated MCP
+traffic for `initialize`, `tools/list` and Engineering-native tools while the
+first reconcile keeps retrying. This adds no write, fallback or upstream
+dispatch path. Delegated tools stay unregistered until the existing admission
+checks pass, so a delegated call is refused before any upstream request.
+`/ready` stays 503 `initial_reconciliation_pending` until the first reconcile
+returns. `server_info` and `get_server_health` report
+`delegated_tools.admitted=false` with fixed notice text that carries no URL,
+host, path or upstream detail. The authentication, secret-path 404, rate limit
+and F3 request-readiness 503 checks run before this gate and are unchanged.
 
 ## RC2dev13 reviewed read-gateway recovery
 

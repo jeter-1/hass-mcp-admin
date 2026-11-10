@@ -1257,6 +1257,37 @@ def capability_for_tool(tool_name: str | None) -> dict[str, Any]:
     return {}
 
 
+# HAMCP-350 (a): fixed text, no URL, host, path or upstream detail.
+DELEGATED_TOOLS_UNAVAILABLE_NOTICE = (
+    "Delegated ha-mcp tools are not admitted, so only Engineering-native "
+    "tools are available. Engineering keeps retrying ha-mcp in the "
+    "background. After ha-mcp is admitted, start a new MCP client session "
+    "to load the delegated tools."
+)
+
+
+def delegated_tool_status(gateway: dict[str, Any]) -> dict[str, Any]:
+    """Say plainly whether delegated ha-mcp tools are currently admitted."""
+
+    configured = gateway.get("configured") is True
+    count = gateway.get("dynamically_exposed_count")
+    if not configured or not isinstance(count, int) or isinstance(count, bool):
+        count = 0
+    admitted = configured and count > 0
+    status = gateway.get("reconciliation_status")
+    return {
+        "configured": configured,
+        "admitted": admitted,
+        "admitted_tool_count": count,
+        "reconciliation_status": status if isinstance(status, str) else None,
+        "notice": (
+            DELEGATED_TOOLS_UNAVAILABLE_NOTICE
+            if configured and not admitted
+            else None
+        ),
+    }
+
+
 def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict[str, Any]) -> dict[str, Any]:
     """Return stable server identity and runtime metadata."""
     return {
@@ -1285,6 +1316,7 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
         ),
         "dynamic_upstream_tool_count": len(_DYNAMIC_UPSTREAM_CAPABILITIES),
         "upstream_read_gateway": dict(_UPSTREAM_READ_GATEWAY_SUMMARY),
+        "delegated_tools": delegated_tool_status(_UPSTREAM_READ_GATEWAY_SUMMARY),
     }
 
 
