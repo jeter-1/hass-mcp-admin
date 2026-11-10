@@ -6766,14 +6766,20 @@ class ChangeGovernanceService:
             # HAMCP-329: one absent-id create under the create profile; it is
             # never a restore.
             self._scene_create_core()
-            if isinstance(caller_context, dict) and (
+            # The only rollback that is a scene create is the recreate of a
+            # verified created-scene delete (HAMCP-329 §3.4.3).
+            recreating = isinstance(caller_context, dict) and (
                 "rollback_source_plan_id" in caller_context
+            )
+            if recreating and caller_context.get("rollback_model") != (
+                created_object_rollback.SCENE_RECREATE_MODEL
             ):
                 raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+            verb = "Recreate" if recreating else "Create"
             return await self._create_configuration_plan(
-                title=f"Create scene configuration {item.config_id}"[:160],
+                title=f"{verb} scene configuration {item.config_id}"[:160],
                 description=(
-                    f"Create scene (config id {item.config_id}) with "
+                    f"{verb} scene (config id {item.config_id}) with "
                     f"{len(item.proposed['entities'])} member entities. "
                     "Saving does not activate the scene; Home Assistant "
                     "assigns its entity id."

@@ -22,6 +22,8 @@ from typing import Any
 from . import created_object_identity as identity_model
 
 MODEL = "hamcp298-created-object-rollback-v1"
+# HAMCP-329 §3.4.3: the rollback of a created-scene delete (a scene create).
+SCENE_RECREATE_MODEL = "hamcp329-created-scene-recreate-v1"
 SOURCE = "created_object_rollback"
 POLICY_TRIGGER = "created_object_rollback_policy"
 BASIS_MODIFIED_SINCE_CREATE = "created_object_registry_modified_since_create"
@@ -231,6 +233,7 @@ __all__ = [
     "BASIS_MODIFIED_SINCE_CREATE",
     "E_DISCLOSURE",
     "MODEL",
+    "SCENE_RECREATE_MODEL",
     "POLICY_TRIGGER",
     "SOURCE",
     "disclosure",
