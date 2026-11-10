@@ -114,14 +114,14 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Prepare draft pull requests by default. Review the complete final diff before
   declaring completion.
 - Scope pre-review validation by change type. A change runs the Fast checks
-  and CI only when every changed file is under `docs/`, is a Markdown file
-  outside code and data directories, or is the root `AGENTS.md` or
-  `CLAUDE.md`; every top-level directory other than `docs/` is a code or data
-  directory. Any other change, including one under `f3_contracts/`,
-  `foundations/`, `update_recovery_foundation/`, `upstream-trust/`, or
-  `promotion/`, requires Full/Evidence validation on a stable review
-  candidate before independent review. The pull request states which tier ran
-  and why. The implementer's self-review is not independent review.
+  and CI only when every changed file is a Markdown (`.md`) file at the
+  repository root or under `docs/` outside `docs/evidence/`. Any other change,
+  including any file under `docs/evidence/`, any non-Markdown file under
+  `docs/`, and anything under `f3_contracts/`, `foundations/`,
+  `update_recovery_foundation/`, `upstream-trust/` or `promotion/`, requires
+  Full/Evidence validation on a stable review candidate before independent
+  review. The pull request states which tier ran and why. The implementer's
+  self-review is not independent review.
   Use a separately tasked reviewer/session that did not implement the change;
   a separate worktree provides optional file isolation, not independence.
   The default budget is one read-only independent review, one batch of accepted
