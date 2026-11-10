@@ -33,7 +33,36 @@ from .models import ChangeRiskAssessment, RiskLevel
 
 
 ALLOWED_INPUT_FIELDS = frozenset(
-    {"config_id", "entity_id", *contract.FIELDS, "expiration_minutes"}
+    {"config_id", "entity_id", *contract.FIELDS, "expiration_minutes", "action"}
+)
+# HAMCP-329 §3.3: the optional action; ``update`` keeps every existing call.
+ACTIONS = ("update", contract.CREATE_ACTION)
+CREATE_OPERATION_ID = "scene_create_1"
+CREATE_DISCLOSURE_MODEL = "scene_create_disclosure_v1"
+CREATE_ENTITY_ID_DISCLOSURE = (
+    "Home Assistant assigns the new scene's entity_id and registry id when "
+    "it reloads scenes after the save; neither can be predicted (a recently "
+    "deleted registry entry for this config id can be restored with its old "
+    "entity_id, area, labels, exposure and enabled or hidden state). Both "
+    "are reported after the readback."
+)
+CREATE_CONSUMER_DISCLOSURE = (
+    "A new scene has no consumers by identity. An automation or script that "
+    "already names the entity_id Home Assistant assigns would start "
+    "referencing this scene; the dependency index cannot predict that id."
+)
+CREATE_CONCURRENCY_DISCLOSURE = (
+    "Core has no compare-and-swap for scene configuration, and its save is "
+    "an upsert. The config id is rechecked as free immediately before the "
+    "one save, but a concurrent create of the same id between that check "
+    "and the save is overwritten without being detected."
+)
+CREATE_ROLLBACK_DISCLOSURE = (
+    "rollback_change on a verified create plans a separate governed delete "
+    "of exactly this scene (by config id), bound to the registry identity "
+    "observed after the create; it needs its own approval. A create stored "
+    "without a registry entry within the readback bound has no governed "
+    "undo."
 )
 INVALID_VALUE = "scene_configuration_invalid_value"
 FIELD_NOT_SUPPORTED = "scene_configuration_field_not_supported"
@@ -159,6 +188,8 @@ class Request:
     expiration_minutes: int
     # Set only by the F3 restore route: the exact captured prior config.
     restore_config: dict[str, Any] | None = None
+    # HAMCP-329: ``create`` plans a new scene for an absent config id.
+    action: str = "update"
 
     @property
     def requested(self) -> tuple[str, ...]:
@@ -196,9 +227,14 @@ def validate_request(arguments: Any) -> Request:
     unsupported = sorted(set(arguments) - ALLOWED_INPUT_FIELDS)
     if unsupported:
         raise Refusal(FIELD_NOT_SUPPORTED, fields=unsupported[:16])
+    action = arguments.get("action", "update")
+    if action not in ACTIONS:
+        raise Refusal(INVALID_VALUE, field="action")
     config_id = arguments.get("config_id")
     if not contract.config_id_valid(config_id):
         raise Refusal(INVALID_VALUE, field="config_id")
+    if action == contract.CREATE_ACTION:
+        return _validate_create_request(arguments, config_id)
     entity_id = arguments.get("entity_id")
     if entity_id is not None:
         try:
@@ -248,6 +284,75 @@ def validate_request(arguments: Any) -> Request:
     if type(expiration) is not int or not 5 <= expiration <= 1440:
         raise Refusal(INVALID_VALUE, field="expiration_minutes")
     return Request(config_id, entity_id, tuple(values), tuple(patch), expiration)
+
+
+def _validate_create_request(arguments: dict[str, Any], config_id: str) -> Request:
+    """HAMCP-329 §3.3: the create fields, validated before any read.
+
+    ``entity_id`` is refused (Core assigns it); ``name`` and ``entities`` are
+    required; a ``null`` icon or member (merge-patch removal) is refused.
+    """
+
+    if "entity_id" in arguments:
+        raise Refusal(FIELD_NOT_SUPPORTED, fields=["entity_id"])
+    if "name" not in arguments or "entities" not in arguments:
+        raise Refusal(
+            "scene_configuration_create_fields_required",
+            fields=sorted({"name", "entities"} - set(arguments)),
+        )
+    name = arguments["name"]
+    if not contract.requested_name_valid(name):
+        raise Refusal(INVALID_VALUE, field="name")
+    if _withheld(name):
+        raise Refusal("scene_configuration_text_withheld", field="name")
+    values: list[tuple[str, Any]] = [("name", name)]
+    if "icon" in arguments:
+        icon = arguments["icon"]
+        if icon is None or not contract.requested_icon_valid(icon):
+            raise Refusal(INVALID_VALUE, field="icon")
+        values.append(("icon", icon))
+    entities = arguments["entities"]
+    if (
+        type(entities) is not dict
+        or not entities
+        or len(entities) > contract.MAX_ENTITIES
+    ):
+        raise Refusal(INVALID_VALUE, field="entities")
+    patch: list[tuple[str, Any]] = []
+    for member, value in entities.items():
+        try:
+            validate_entity_id(member)
+        except ValueError:
+            raise Refusal(INVALID_VALUE, field="entities") from None
+        if member.startswith("scene.") or value is None:
+            raise Refusal(INVALID_VALUE, field="entities")
+        if not contract.snapshot_valid(value, requested=True):
+            raise Refusal(INVALID_VALUE, field="entities")
+        if _withheld(value):
+            raise Refusal("scene_configuration_text_withheld", field="entities")
+        patch.append((member, deepcopy(value)))
+    expiration = arguments.get("expiration_minutes", 120)
+    if type(expiration) is not int or not 5 <= expiration <= 1440:
+        raise Refusal(INVALID_VALUE, field="expiration_minutes")
+    return Request(
+        config_id,
+        None,
+        tuple(values),
+        tuple(patch),
+        expiration,
+        action=contract.CREATE_ACTION,
+    )
+
+
+def create_config(request: Request) -> dict[str, Any]:
+    """The exact proposed stored configuration of a scene create."""
+
+    values = dict(request.values)
+    config: dict[str, Any] = {"id": request.config_id, "name": values["name"]}
+    if "icon" in values:
+        config["icon"] = values["icon"]
+    config["entities"] = {member: deepcopy(value) for member, value in request.entity_patch}
+    return config
 
 
 def restore_request(config_id: str, prior: dict[str, Any]) -> Request:
@@ -662,6 +767,130 @@ async def prepare(
     )
 
 
+async def prepare_create(gateway: Any, request: Request) -> Preparation:
+    """HAMCP-329 §3.3 planning steps 3-6; nothing is dispatched.
+
+    ``gateway`` is the create gateway (admitted only by the create/delete
+    profile).  The config id must be free (config GET 404 and no ``scene.*``
+    registry entry with that unique_id on any platform).
+    """
+
+    if request.action != contract.CREATE_ACTION:
+        raise Refusal("scene_configuration_invalid_request")
+    try:
+        absent = await gateway.target_absent_reason(request.config_id)
+    except AuthorizationError:
+        raise Refusal(
+            "scene_configuration_permission_failure", kind="permission"
+        ) from None
+    except contract.SceneConfigurationContractError as exc:
+        reason, kind = _REFUSALS.get(
+            exc.category, ("scene_configuration_target_unreviewable", "unreviewable")
+        )
+        raise Refusal(reason, kind=kind) from None
+    except (EntityMetadataProviderError, HomeAssistantApiError, ValueError):
+        raise Refusal(
+            "scene_configuration_provider_unavailable", kind="unavailable"
+        ) from None
+    if absent is not None:
+        raise Refusal(absent)
+    proposed = create_config(request)
+    if contract.create_proposed_errors(request.config_id, proposed):
+        raise Refusal(INVALID_VALUE, field="proposed_state")
+    members = list(proposed["entities"])
+    try:
+        unknown = await gateway.unknown_entities(members)
+    except AuthorizationError:
+        raise Refusal(
+            "scene_configuration_permission_failure", kind="permission"
+        ) from None
+    except Exception:
+        raise Refusal(
+            "scene_configuration_provider_unavailable", kind="unavailable"
+        ) from None
+    if unknown:
+        raise Refusal(UNKNOWN_ENTITIES, fields=sorted(unknown)[:16])
+    reasons = await protection_reasons(gateway, members)
+    switches = switch_members(members)
+    mode_helpers = mode_helper_members(members)
+    classification = classify(reasons, switches, mode_helpers)
+    rows, _unchanged = entity_rows({}, proposed["entities"])
+    requested = tuple(
+        name for name in contract.FIELDS if name in {*dict(request.values), "entities"}
+    )
+    disclosure = {
+        "model": CREATE_DISCLOSURE_MODEL,
+        "action": contract.CREATE_ACTION,
+        "config_id": request.config_id,
+        "entity_id": None,
+        "registry_entry_id": None,
+        "entity_id_assignment": CREATE_ENTITY_ID_DISCLOSURE,
+        "fields": [
+            {
+                "field": name,
+                "before": None,
+                "after": proposed.get(name),
+                "requested": name in requested,
+                "changed": name in proposed,
+            }
+            for name in ("name", "icon")
+        ],
+        "entities": rows,
+        "entity_count_after": len(proposed["entities"]),
+        "requested_fields": list(requested),
+        "member_order": MEMBER_ORDER_DISCLOSURE,
+        "configuration_fingerprint_bound": True,
+        "absence_fingerprint_bound": True,
+        "activation": NOT_ACTIVATED_DISCLOSURE,
+        "activated": False,
+        "reload": RELOAD_DISCLOSURE,
+        "id_assignment": ID_ASSIGNMENT_DISCLOSURE,
+        "consumers": {
+            "status": "not_applicable_new_scene",
+            "consumers": [],
+            "consumer_count": 0,
+            "evidence_complete": False,
+            "evidence_gaps": ["assigned_entity_id_not_predictable"],
+            "statement": CREATE_CONSUMER_DISCLOSURE,
+        },
+        "consequence_statements": list(classification["statements"]),
+        "switch_members": switches,
+        "mode_helper_members": mode_helpers,
+        "create_disclosures": list(contract.CREATE_DISCLOSURES),
+        "untrusted_text": UNTRUSTED_DISCLOSURE,
+        "provider": contract.PROVIDER,
+        "fallback": "none",
+    }
+    item = Item(
+        operation_id=CREATE_OPERATION_ID,
+        config_id=request.config_id,
+        current=None,  # type: ignore[arg-type]
+        proposed=proposed,
+        changed=requested,
+        disclosure=disclosure,
+        classification=classification,
+    )
+    return Preparation(
+        request=request,
+        items=[item],
+        plan_disclosure={
+            "model": CREATE_DISCLOSURE_MODEL,
+            "target_count": 1,
+            "execution": "single_create_at_most_once",
+            "provider": contract.PROVIDER,
+            "fallback": "none",
+            "activation": NOT_ACTIVATED_DISCLOSURE,
+            "never_sent": list(contract.NEVER_SENT),
+            "reload": RELOAD_DISCLOSURE,
+            "rollback": CREATE_ROLLBACK_DISCLOSURE,
+            "residual_concurrency_window": CREATE_CONCURRENCY_DISCLOSURE,
+            **contract.verification_scope_fields(),
+            "verification_scope_disclosure": VERIFICATION_SCOPE_DISCLOSURE,
+            "registry_unverified_outcome": contract.CREATE_REGISTRY_UNVERIFIED,
+        },
+    )
+
+
 def projection(item: Item) -> dict[str, Any]:
     """The bounded per-child plan projection."""
 
@@ -676,7 +905,9 @@ def projection(item: Item) -> dict[str, Any]:
 
 
 __all__ = [
+    "ACTIONS",
     "ALLOWED_INPUT_FIELDS",
+    "CREATE_OPERATION_ID",
     "BASELINE_NOT_RESTORABLE",
     "BASELINE_NOT_SENDABLE",
     "FIELD_NOT_SUPPORTED",
@@ -695,7 +926,9 @@ __all__ = [
     "classify",
     "id_protection_reasons",
     "mode_helper_members",
+    "create_config",
     "prepare",
+    "prepare_create",
     "projection",
     "restore_request",
     "risk_assessment",

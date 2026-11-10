@@ -224,6 +224,8 @@ from . import label_registry
 from . import label_registry_planning
 from . import configuration_delete
 from . import configuration_delete_planning
+from . import created_object_delete
+from . import created_object_delete_planning
 from . import created_object_rollback
 from . import helper_options as helper_options_contract
 from . import helper_options_planning
@@ -759,6 +761,8 @@ class ChangeGovernanceService:
         helper_options_gateway: Any | None = None,
         dashboard_metadata_gateway: Any | None = None,
         scene_configuration_gateway: Any | None = None,
+        scene_create_gateway: Any | None = None,
+        created_object_delete_gateway: Any | None = None,
         input_select_dependency_risk_reader: Callable[..., Awaitable[
             dict[str, Any]
         ]] | None = None,
@@ -807,6 +811,11 @@ class ChangeGovernanceService:
         # HAMCP-071: the scene config reads and the one config POST, inactive
         # until a signed registry admits core.scene_configuration_operation.
         self.scene_configuration_gateway = scene_configuration_gateway
+        # HAMCP-329/298: the absent-scene reads and the one create POST, and
+        # the created-object reads and the one delete; each inactive until a
+        # signed registry admits its own 2026.11.0 runtime-only profile.
+        self.scene_create_gateway = scene_create_gateway
+        self.created_object_delete_gateway = created_object_delete_gateway
         self.input_select_dependency_risk_reader = (
             input_select_dependency_risk_reader
             or read_input_select_dependency_risk
@@ -6265,12 +6274,34 @@ class ChangeGovernanceService:
             scene_configuration_context is not None
             or scene_configuration_contract.RESOURCE_TYPE in resource_types
         )
+        # HAMCP-329/298: a scene create or delete is admitted only by the
+        # separate create/delete profile, never by the update profile.
+        scene_actions = {
+            item.get("action")
+            for item in (operations if isinstance(operations, list) else [])
+            if isinstance(item, dict)
+            and item.get("resource_type") == scene_configuration_contract.RESOURCE_TYPE
+        }
+        if scene_configuration_context is not None:
+            scene_actions.add(
+                getattr(scene_configuration_context.request, "action", "update")
+            )
         if helper_options:
             self._helper_options_core()
         if dashboard_metadata:
             self._dashboard_metadata_core()
         if scene_configuration:
-            self._scene_configuration_core()
+            if scene_configuration_contract.CREATE_ACTION in scene_actions:
+                self._scene_create_core()
+            if created_object_delete.ACTION in scene_actions:
+                self._created_object_delete_core(
+                    scene_configuration_contract.RESOURCE_TYPE
+                )
+            if scene_actions - {
+                scene_configuration_contract.CREATE_ACTION,
+                created_object_delete.ACTION,
+            } or not scene_actions:
+                self._scene_configuration_core()
         if label:
             self._label_core()
         for resource_type in sorted(availability_exposure):
@@ -6568,21 +6599,45 @@ class ChangeGovernanceService:
         dispatched and the scene is never activated.
         """
 
-        self._scene_configuration_core()
+        # HAMCP-329: a create is admitted only by its own runtime-only
+        # profile, checked first like the update profile.
+        creating = (
+            isinstance(arguments, dict)
+            and arguments.get("action") == scene_configuration_contract.CREATE_ACTION
+        )
+        if creating:
+            self._scene_create_core()
+        else:
+            self._scene_configuration_core()
         try:
             request = scene_configuration_planning.validate_request(arguments)
         except entity_metadata_planning.EntityMetadataRefusal as exc:
             raise self._entity_metadata_refusal_error(exc, {}) from None
-        lease = self._scene_configuration_planning_lease(request.lease_target_id)
+        creating = request.action == scene_configuration_contract.CREATE_ACTION
+        lease = self._scene_configuration_planning_lease(
+            request.lease_target_id,
+            profile=(
+                scene_configuration_contract.CREATE_PROFILE
+                if creating
+                else scene_configuration_contract.PROFILE
+            ),
+        )
         async with lease:
             try:
-                if self.scene_configuration_gateway is None:
+                gateway = (
+                    self.scene_create_gateway
+                    if creating
+                    else self.scene_configuration_gateway
+                )
+                if gateway is None:
                     raise scene_configuration_planning.Refusal(
                         "scene_configuration_provider_unavailable",
                         kind="unavailable",
                     )
-                prepared = await scene_configuration_planning.prepare(
-                    self.scene_configuration_gateway, request
+                prepared = await (
+                    scene_configuration_planning.prepare_create(gateway, request)
+                    if creating
+                    else scene_configuration_planning.prepare(gateway, request)
                 )
             except entity_metadata_planning.EntityMetadataRefusal as exc:
                 raise self._entity_metadata_refusal_error(
@@ -6625,15 +6680,66 @@ class ChangeGovernanceService:
             )
         return core
 
-    def _scene_configuration_planning_lease(self, target_id: str) -> Any:
+    def _scene_create_core(self) -> Any:
+        """Return Core only if a signed registry admits scene create/delete.
+
+        HAMCP-329/298: ``core.scene_create_delete_operation`` is a separate
+        2026.11.0 runtime-only profile; the update profile never admits a
+        create or a delete.
+        """
+
+        return self._created_object_profile_core(
+            created_object_delete.SCENE_PROFILE,
+            scene_configuration_contract.RESOURCE_TYPE,
+        )
+
+    def _created_object_delete_core(self, resource_type: str) -> Any:
+        """Return Core only if the created type's own delete profile is admitted."""
+
+        if resource_type not in created_object_delete.RESOURCE_TYPES:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        return self._created_object_profile_core(
+            created_object_delete.profile_for(resource_type), resource_type
+        )
+
+    def _created_object_profile_core(self, profile: str, resource_type: str) -> Any:
+        core = getattr(self.f3_runtime, "core_runtime", None)
+        try:
+            available = (
+                core is not None
+                and core.route_status((profile,)).get("available") is True
+            )
+        except Exception:
+            available = False
+        if not available:
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={
+                    "reason": created_object_delete.PENDING_ADMISSION_REASON,
+                    "reason_code": created_object_delete.PENDING_ADMISSION_REASON,
+                    "resource_type": resource_type,
+                    "core_capability": profile,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        return core
+
+    def _scene_configuration_planning_lease(
+        self, target_id: str, *, profile: str = scene_configuration_contract.PROFILE
+    ) -> Any:
         """Hold exact-target Core authority across one scene planning."""
 
         from ..f3_runtime.runtime import _rollback_planning_lease
 
-        core = self._scene_configuration_core()
+        core = (
+            self._scene_create_core()
+            if profile == scene_configuration_contract.CREATE_PROFILE
+            else self._scene_configuration_core()
+        )
         return _rollback_planning_lease(
             core,
-            (scene_configuration_contract.PROFILE,),
+            (profile,),
             target={
                 "target_type": scene_configuration_contract.RESOURCE_TYPE,
                 "target_id": target_id,
@@ -6649,10 +6755,44 @@ class ChangeGovernanceService:
     ) -> dict[str, Any]:
         # Every scene persistence path re-checks admission and must hold a
         # current Core lease; neither ever depends on the caller alone.
-        self._scene_configuration_core()
         if _before_persist is None or len(prepared.items) != 1:
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         item = prepared.items[0]
+        if (
+            prepared.request.action == scene_configuration_contract.CREATE_ACTION
+        ) != (item.current is None):
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        if item.current is None:
+            # HAMCP-329: one absent-id create under the create profile; it is
+            # never a restore.
+            self._scene_create_core()
+            if isinstance(caller_context, dict) and (
+                "rollback_source_plan_id" in caller_context
+            ):
+                raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+            return await self._create_configuration_plan(
+                title=f"Create scene configuration {item.config_id}"[:160],
+                description=(
+                    f"Create scene (config id {item.config_id}) with "
+                    f"{len(item.proposed['entities'])} member entities. "
+                    "Saving does not activate the scene; Home Assistant "
+                    "assigns its entity id."
+                )[:2000],
+                operations=[
+                    {
+                        "operation_id": item.operation_id,
+                        "resource_type": scene_configuration_contract.RESOURCE_TYPE,
+                        "action": scene_configuration_contract.CREATE_ACTION,
+                        "target_id": item.config_id,
+                        "proposed_config": deepcopy(item.proposed),
+                    }
+                ],
+                expiration_minutes=prepared.request.expiration_minutes,
+                caller_context=caller_context,
+                _scene_configuration_context=prepared,
+                _before_persist=_before_persist,
+            )
+        self._scene_configuration_core()
         verb = (
             "Restore"
             if isinstance(caller_context, dict)
@@ -6761,6 +6901,24 @@ class ChangeGovernanceService:
             )
         return core
 
+    def _delete_context_core(self, prepared: Any) -> Any:
+        """Admit every delete child of a prepared delete context by its type.
+
+        HAMCP-298: an automation or script child needs the HAMCP-155
+        profile; a created scene or helper child needs its own created-object
+        delete profile.  Admission is checked before any read or persistence.
+        """
+
+        core = None
+        for item in prepared.items:
+            if item.resource_type in created_object_delete.RESOURCE_TYPES:
+                core = self._created_object_delete_core(item.resource_type)
+            else:
+                core = self._configuration_delete_core()
+        if core is None:
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        return core
+
     def _configuration_delete_planning_lease(self, request: Any) -> Any:
         """Hold exact-target Core authority across one delete planning."""
 
@@ -6834,25 +6992,33 @@ class ChangeGovernanceService:
         operation (the existing restore child, a generic update) and each
         prepared delete child's operation id.  ``restores`` binds each
         restore to the fingerprint observed inside the caller's lease.
-        Supplied only by the F3 created-object rollback route.
+        Supplied only by the F3 created-object rollback route.  A created
+        helper child is stored as ``resource_type: helper`` with its
+        ``helper_type``, as its create was.
         """
 
-        self._configuration_delete_core()
+        self._delete_context_core(prepared)
         operations: list[dict[str, Any]] = []
         for entry in order:
             if isinstance(entry, dict):
                 operations.append(deepcopy(entry))
                 continue
             item = prepared.item(entry)
-            operations.append(
-                {
-                    "operation_id": item.operation_id,
-                    "resource_type": item.resource_type,
-                    "action": configuration_delete.ACTION,
-                    "target_id": item.target_id,
-                    "proposed_config": deepcopy(item.intent),
-                }
+            operation = {
+                "operation_id": item.operation_id,
+                "resource_type": created_object_delete_planning.plan_resource_type(
+                    item.resource_type
+                ),
+                "action": configuration_delete.ACTION,
+                "target_id": item.target_id,
+                "proposed_config": deepcopy(item.intent),
+            }
+            helper_type = created_object_delete_planning.plan_helper_type(
+                item.resource_type
             )
+            if helper_type is not None:
+                operation["helper_type"] = helper_type
+            operations.append(operation)
         return await self._create_configuration_plan(
             title=f"Rollback governed change {caller_context.get('rollback_source_plan_id')}"[:160],
             description=(
@@ -6958,8 +7124,8 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
         if _configuration_delete_context is not None:
             # HAMCP-155: admission first for the internal builder too, before
-            # any read or persistence.
-            self._configuration_delete_core()
+            # any read or persistence (HAMCP-298: per child type).
+            self._delete_context_core(_configuration_delete_context)
         if (
             sum(
                 context is not None
@@ -7249,7 +7415,11 @@ class ChangeGovernanceService:
                 if _label_context is not None
                 else {_availability_exposure_context.request.resource_type}
                 if _availability_exposure_context is not None
-                else set(configuration_delete.RESOURCE_TYPES)
+                else {
+                    created_object_delete_planning.plan_resource_type(
+                        _configuration_delete_context.item(operation_id).resource_type
+                    )
+                }
                 if deleting
                 else created_object_rollback.RESTORE_RESOURCE_TYPES
                 if restoring
@@ -7271,12 +7441,30 @@ class ChangeGovernanceService:
                         ]
                     },
                 )
+            # HAMCP-329: a prepared scene create is a create; every other
+            # prepared scene or metadata child is an update.
+            scene_create = (
+                _scene_configuration_context is not None
+                and getattr(_scene_configuration_context.request, "action", "update")
+                == scene_configuration_contract.CREATE_ACTION
+            )
+            if scene_create and raw_operation["action"] != (
+                scene_configuration_contract.CREATE_ACTION
+            ):
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={
+                        "validation_errors": [
+                            f"{operation_id}: a prepared scene create is a create"
+                        ]
+                    },
+                )
             if (
                 _entity_metadata_context is not None
                 or _availability_exposure_context is not None
                 or _helper_options_context is not None
                 or _dashboard_metadata_context is not None
-                or _scene_configuration_context is not None
+                or (_scene_configuration_context is not None and not scene_create)
                 or (
                     _label_context is not None
                     and resource_type == ENTITY_METADATA_RESOURCE_TYPE
@@ -7414,8 +7602,14 @@ class ChangeGovernanceService:
                 valid, warnings = not errors, []
             elif _scene_configuration_context is not None:
                 scene_item = _scene_configuration_context.item(operation_id)
-                errors = scene_configuration_contract.proposed_errors(
-                    target_id, proposed_config
+                errors = (
+                    scene_configuration_contract.create_proposed_errors(
+                        target_id, proposed_config
+                    )
+                    if scene_create
+                    else scene_configuration_contract.proposed_errors(
+                        target_id, proposed_config
+                    )
                 )
                 if (
                     depends_on
@@ -7429,13 +7623,22 @@ class ChangeGovernanceService:
                 valid, warnings = not errors, []
             elif deleting:
                 delete_item = _configuration_delete_context.item(operation_id)
-                errors = configuration_delete.intent_errors(
-                    resolved_type, target_id, proposed_config
+                # HAMCP-298: a created scene or helper child carries the
+                # closed created-object intent; automation/script the 155 one.
+                errors = (
+                    created_object_delete.intent_errors(
+                        resolved_type, target_id, proposed_config
+                    )
+                    if delete_item.resource_type
+                    in created_object_delete.RESOURCE_TYPES
+                    else configuration_delete.intent_errors(
+                        resolved_type, target_id, proposed_config
+                    )
                 )
                 if (
                     depends_on
                     or (delete_item.resource_type, delete_item.target_id)
-                    != (resource_type, target_id)
+                    != (resolved_type, target_id)
                     or proposed_config != delete_item.intent
                 ):
                     errors.append("delete operation does not match its preparation")
@@ -7565,8 +7768,10 @@ class ChangeGovernanceService:
 
             try:
                 if deleting:
-                    normalized_proposed = configuration_delete.normalize_intent(
-                        proposed_config
+                    normalized_proposed = (
+                        created_object_delete.normalize_intent(proposed_config)
+                        if created_object_delete.is_intent(proposed_config)
+                        else configuration_delete.normalize_intent(proposed_config)
                     )
                 else:
                     normalized_proposed = (
@@ -15741,18 +15946,43 @@ class ChangeGovernanceService:
                 )
                 deleting = operation.action == configuration_delete.ACTION
                 if deleting:
-                    # HAMCP-155: the proposal is the closed delete intent.
-                    valid = not configuration_delete.intent_errors(
+                    # HAMCP-155: the proposal is the closed delete intent
+                    # (HAMCP-298: the created-object intent for a created
+                    # scene or helper).
+                    created = created_object_delete.is_intent(
+                        operation.proposed_config
+                    )
+                    valid = not (
+                        created_object_delete.intent_errors
+                        if created
+                        else configuration_delete.intent_errors
+                    )(
                         resource_type,
                         operation.target_id,
                         operation.proposed_config,
                     ) and isinstance(operation.current_config, dict)
                     normalized_proposed = (
-                        configuration_delete.normalize_intent(
-                            operation.proposed_config
-                        )
+                        (
+                            created_object_delete.normalize_intent
+                            if created
+                            else configuration_delete.normalize_intent
+                        )(operation.proposed_config)
                         if valid
                         else None
+                    )
+                elif (
+                    resource_type == scene_configuration_contract.RESOURCE_TYPE
+                    and operation.action == scene_configuration_contract.CREATE_ACTION
+                ):
+                    # HAMCP-329: the exact proposed stored configuration.
+                    valid = (
+                        not scene_configuration_contract.create_proposed_errors(
+                            operation.target_id, operation.proposed_config
+                        )
+                        and operation.current_config is None
+                    )
+                    normalized_proposed = normalize_resource_config(
+                        resource_type, operation.proposed_config
                     )
                 else:
                     valid, _, _ = validate_resource(

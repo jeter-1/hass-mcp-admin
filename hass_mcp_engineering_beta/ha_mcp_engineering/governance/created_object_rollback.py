@@ -131,6 +131,7 @@ def markers(operation: Any) -> list[dict[str, Any]]:
 def valid_marker(value: Any, operation: Any) -> bool:
     """Closed, self-consistent and bound to this exact delete child."""
 
+    from . import created_object_delete
     from .configuration_delete import intent as delete_intent
 
     if not isinstance(value, dict) or set(value) != MARKER_FIELDS:
@@ -138,7 +139,16 @@ def valid_marker(value: Any, operation: Any) -> bool:
     if not all(isinstance(item, str) for item in value.values()):
         return False
     try:
-        intent = delete_intent(operation.proposed_config)
+        # HAMCP-298: a created scene or helper child carries the created
+        # delete intent; an automation or script child the 155 intent.
+        proposed = operation.proposed_config
+        intent = (
+            created_object_delete.intent(proposed)
+            if created_object_delete.is_intent(proposed)
+            else delete_intent(proposed)
+        )
+        if not isinstance(intent, dict):
+            return False
     except (TypeError, KeyError, ValueError, AttributeError):
         return False
     modified = value["captured_modified_at"] != value["observed_modified_at"]

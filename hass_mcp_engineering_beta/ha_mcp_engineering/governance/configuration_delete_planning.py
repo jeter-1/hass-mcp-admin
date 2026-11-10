@@ -370,6 +370,171 @@ async def _read(call: Any, reason_code: str, **details: Any) -> Any:
         raise Refusal(reason_code, kind="unavailable", **details) from None
 
 
+async def prepare_item(
+    gateway: Any,
+    index: int,
+    resource_type: str,
+    target_id: str,
+    *,
+    known_secrets: tuple[str, ...],
+    global_context: Any,
+    global_limit: int,
+) -> Item:
+    """Read, refuse, bind and classify one automation or script delete child.
+
+    Extracted unchanged from :func:`prepare` so a HAMCP-298 mixed
+    created-object rollback can prepare its 155 children in its own order.
+    """
+
+    from .resources import normalize_resource_config, resource_fingerprint
+    from .resources import resource_identity_matches
+
+    target = {"resource_type": resource_type, "target_id": target_id}
+    current = await _read(
+        gateway.read_config(resource_type, target_id),
+        "configuration_delete_target_unreadable",
+        **target,
+    )
+    if current is None:
+        # A YAML-package or !include item has no config GET either.
+        raise Refusal(
+            "configuration_delete_target_not_found", kind="not_found", **target
+        )
+    if not isinstance(current, dict) or not resource_identity_matches(
+        resource_type, target_id, current
+    ):
+        raise Refusal(
+            "configuration_delete_target_unreviewable",
+            kind="unreviewable",
+            **target,
+        )
+    entry = await _read(
+        gateway.registry_entry(resource_type, target_id),
+        "configuration_delete_registry_unreadable",
+        **target,
+    )
+    if entry is None:
+        # Without the entry Core would not unload the entity, and the
+        # runtime half of the absence proof could not be read.
+        raise Refusal(
+            "configuration_delete_registry_entry_missing",
+            kind="not_found",
+            **target,
+        )
+    entity_id = entry["entity_id"]
+    registry_entry_id = entry["id"]
+    evidence = await _read(
+        gateway.consumer_evidence(entity_id),
+        "configuration_delete_dependency_evidence_unavailable",
+        **target,
+    )
+    if evidence is None:
+        # The fenced index reader is not wired; preflight could never
+        # recheck the bound evidence, so nothing is planned.
+        raise Refusal(
+            "configuration_delete_dependency_evidence_unavailable",
+            kind="unavailable",
+            **target,
+        )
+    normalized_current = normalize_resource_config(resource_type, current)
+    comparison = compare_removed_effects(resource_type, normalized_current)
+    dependency_reasons = sorted(set(evidence["dependency_reasons"]))[
+        : delete_contract.MAX_DEPENDENCY_REASONS
+    ]
+    basis = expected_basis(comparison, dependency_reasons)
+    effects = _effect_rows(comparison)
+    consumers = {
+        "status": evidence["status"],
+        "evidence_complete": evidence["evidence_complete"],
+        "evidence_gaps": evidence["evidence_gaps"],
+        "items": evidence["consumers"][:MAX_DISCLOSED_CONSUMERS],
+        "count": evidence["consumer_count"],
+        "truncated": evidence["consumer_count"] > MAX_DISCLOSED_CONSUMERS,
+        "coverage": evidence["coverage"],
+        "coverage_unavailable": list(UNAVAILABLE_COVERAGE),
+    }
+    statements = _statements(
+        resource_type,
+        target_id,
+        entity_id,
+        effects,
+        comparison.unlock_or_disarm,
+        consumers,
+    )
+    recreate_errors = _recreate_errors(
+        resource_type, target_id, current, known_secrets
+    )
+    recreate_eligible = not recreate_errors
+    warnings = [CONSUMER_COVERAGE_WARNING, RUNTIME_NOTE]
+    if any(
+        code.startswith("called_script_")
+        for row in effects
+        for code in row["reason_codes"]
+    ):
+        warnings.append(SCRIPT_CALL_WARNING)
+    recreate_disclosure = (
+        ROLLBACK_DISCLOSURE
+        if recreate_eligible
+        else NO_ROLLBACK_DISCLOSURE.format(
+            reason="; ".join(recreate_errors)[:200]
+        )
+    )
+    # Shown to the approver with every child, not only in the dry run.
+    warnings.append(recreate_disclosure)
+    intent = delete_contract.build_intent(
+        resource_type=resource_type,
+        target_id=target_id,
+        entity_id=entity_id,
+        registry_entry_id=registry_entry_id,
+        pre_image_fingerprint=resource_fingerprint(resource_type, current),
+        consumer_evidence_fingerprint=delete_contract.consumer_fingerprint(
+            evidence
+        ),
+        dependency_reasons=dependency_reasons,
+        recreate_eligible=recreate_eligible,
+    )
+    disclosure: dict[str, Any] = {
+        "model": DISCLOSURE_MODEL,
+        "resource_type": resource_type,
+        "target_id": target_id,
+        "entity_id": entity_id,
+        "registry_entry_id": registry_entry_id,
+        "protection": {
+            "protected": bool(basis),
+            "basis": list(basis),
+            "removed_effect_verdict": comparison.verdict,
+            "unlock_or_disarm": comparison.unlock_or_disarm,
+            "dependency_reasons": dependency_reasons,
+        },
+        "removed_effects": effects,
+        "consumers": consumers,
+        "consequence_statements": statements,
+        "warnings": [item[:500] for item in warnings],
+        "readback_proves": list(READBACK_PROVES),
+        "recreate": {
+            "eligible": recreate_eligible,
+            "window_days": RECREATE_WINDOW_DAYS,
+            "disclosure": recreate_disclosure,
+        },
+        "provider": delete_contract.PROVIDER,
+        "fallback": "none",
+    }
+    return Item(
+        operation_id=f"delete_{index + 1}",
+        resource_type=resource_type,
+        target_id=target_id,
+        entity_id=entity_id,
+        registry_entry_id=registry_entry_id,
+        current=current,
+        intent=intent,
+        disclosure=disclosure,
+        classification=classify(basis, statements, disclosure["warnings"]),
+        global_references=global_reference_disclosure.child(
+            global_context, (entity_id,), limit=global_limit,
+        ),
+    )
+
+
 async def prepare(
     gateway: Any,
     request: Request,
@@ -383,157 +548,19 @@ async def prepare(
     its references are disclosed only and bind nothing.
     """
 
-    from .resources import normalize_resource_config, resource_fingerprint
-    from .resources import resource_identity_matches
-
     items: list[Item] = []
     global_limit = global_reference_disclosure.per_child_limit(len(request.deletions))
     global_context = global_reference_disclosure.read(global_reader)
     for index, (resource_type, target_id) in enumerate(request.deletions):
-        target = {"resource_type": resource_type, "target_id": target_id}
-        current = await _read(
-            gateway.read_config(resource_type, target_id),
-            "configuration_delete_target_unreadable",
-            **target,
-        )
-        if current is None:
-            # A YAML-package or !include item has no config GET either.
-            raise Refusal(
-                "configuration_delete_target_not_found", kind="not_found", **target
-            )
-        if not isinstance(current, dict) or not resource_identity_matches(
-            resource_type, target_id, current
-        ):
-            raise Refusal(
-                "configuration_delete_target_unreviewable",
-                kind="unreviewable",
-                **target,
-            )
-        entry = await _read(
-            gateway.registry_entry(resource_type, target_id),
-            "configuration_delete_registry_unreadable",
-            **target,
-        )
-        if entry is None:
-            # Without the entry Core would not unload the entity, and the
-            # runtime half of the absence proof could not be read.
-            raise Refusal(
-                "configuration_delete_registry_entry_missing",
-                kind="not_found",
-                **target,
-            )
-        entity_id = entry["entity_id"]
-        registry_entry_id = entry["id"]
-        evidence = await _read(
-            gateway.consumer_evidence(entity_id),
-            "configuration_delete_dependency_evidence_unavailable",
-            **target,
-        )
-        if evidence is None:
-            # The fenced index reader is not wired; preflight could never
-            # recheck the bound evidence, so nothing is planned.
-            raise Refusal(
-                "configuration_delete_dependency_evidence_unavailable",
-                kind="unavailable",
-                **target,
-            )
-        normalized_current = normalize_resource_config(resource_type, current)
-        comparison = compare_removed_effects(resource_type, normalized_current)
-        dependency_reasons = sorted(set(evidence["dependency_reasons"]))[
-            : delete_contract.MAX_DEPENDENCY_REASONS
-        ]
-        basis = expected_basis(comparison, dependency_reasons)
-        effects = _effect_rows(comparison)
-        consumers = {
-            "status": evidence["status"],
-            "evidence_complete": evidence["evidence_complete"],
-            "evidence_gaps": evidence["evidence_gaps"],
-            "items": evidence["consumers"][:MAX_DISCLOSED_CONSUMERS],
-            "count": evidence["consumer_count"],
-            "truncated": evidence["consumer_count"] > MAX_DISCLOSED_CONSUMERS,
-            "coverage": evidence["coverage"],
-            "coverage_unavailable": list(UNAVAILABLE_COVERAGE),
-        }
-        statements = _statements(
-            resource_type,
-            target_id,
-            entity_id,
-            effects,
-            comparison.unlock_or_disarm,
-            consumers,
-        )
-        recreate_errors = _recreate_errors(
-            resource_type, target_id, current, known_secrets
-        )
-        recreate_eligible = not recreate_errors
-        warnings = [CONSUMER_COVERAGE_WARNING, RUNTIME_NOTE]
-        if any(
-            code.startswith("called_script_")
-            for row in effects
-            for code in row["reason_codes"]
-        ):
-            warnings.append(SCRIPT_CALL_WARNING)
-        recreate_disclosure = (
-            ROLLBACK_DISCLOSURE
-            if recreate_eligible
-            else NO_ROLLBACK_DISCLOSURE.format(
-                reason="; ".join(recreate_errors)[:200]
-            )
-        )
-        # Shown to the approver with every child, not only in the dry run.
-        warnings.append(recreate_disclosure)
-        intent = delete_contract.build_intent(
-            resource_type=resource_type,
-            target_id=target_id,
-            entity_id=entity_id,
-            registry_entry_id=registry_entry_id,
-            pre_image_fingerprint=resource_fingerprint(resource_type, current),
-            consumer_evidence_fingerprint=delete_contract.consumer_fingerprint(
-                evidence
-            ),
-            dependency_reasons=dependency_reasons,
-            recreate_eligible=recreate_eligible,
-        )
-        disclosure: dict[str, Any] = {
-            "model": DISCLOSURE_MODEL,
-            "resource_type": resource_type,
-            "target_id": target_id,
-            "entity_id": entity_id,
-            "registry_entry_id": registry_entry_id,
-            "protection": {
-                "protected": bool(basis),
-                "basis": list(basis),
-                "removed_effect_verdict": comparison.verdict,
-                "unlock_or_disarm": comparison.unlock_or_disarm,
-                "dependency_reasons": dependency_reasons,
-            },
-            "removed_effects": effects,
-            "consumers": consumers,
-            "consequence_statements": statements,
-            "warnings": [item[:500] for item in warnings],
-            "readback_proves": list(READBACK_PROVES),
-            "recreate": {
-                "eligible": recreate_eligible,
-                "window_days": RECREATE_WINDOW_DAYS,
-                "disclosure": recreate_disclosure,
-            },
-            "provider": delete_contract.PROVIDER,
-            "fallback": "none",
-        }
         items.append(
-            Item(
-                operation_id=f"delete_{index + 1}",
-                resource_type=resource_type,
-                target_id=target_id,
-                entity_id=entity_id,
-                registry_entry_id=registry_entry_id,
-                current=current,
-                intent=intent,
-                disclosure=disclosure,
-                classification=classify(basis, statements, disclosure["warnings"]),
-                global_references=global_reference_disclosure.child(
-                    global_context, (entity_id,), limit=global_limit,
-                ),
+            await prepare_item(
+                gateway,
+                index,
+                resource_type,
+                target_id,
+                known_secrets=known_secrets,
+                global_context=global_context,
+                global_limit=global_limit,
             )
         )
     return Preparation(
@@ -585,6 +612,7 @@ __all__ = [
     "compare_removed_effects",
     "expected_basis",
     "prepare",
+    "prepare_item",
     "projection",
     "risk_assessment",
     "validate_request",

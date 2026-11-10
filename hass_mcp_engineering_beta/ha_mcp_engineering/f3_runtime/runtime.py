@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from functools import partial
 import hashlib
 import json
 import threading
@@ -92,6 +93,10 @@ from ..f3_configuration.adapter import (
     PredispatchAuthorityRefused,
 )
 from ..f3_configuration.delete import ConfigurationDeleteAdapter
+from ..f3_configuration.created_objects import (
+    CreatedObjectDeleteAdapter,
+    SceneCreateAdapter,
+)
 from ..f3_configuration.helper_options import HelperOptionsAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
@@ -144,6 +149,7 @@ from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
 from ..governance import created_object_identity
+from ..governance import created_object_delete as created_object_delete_contract
 from ..governance import created_object_rollback
 from ..governance import helper_options_planning
 from ..governance.helper_options_flows import HelperOptionsFlowLedger
@@ -374,6 +380,15 @@ def _operator_cancelled(record: Any) -> bool:
 def _configuration_capability(operation: Any) -> str:
     """The contract-v2 F3 capability identity of one plan operation."""
 
+    if operation.action == created_object_delete_contract.ACTION and (
+        created_object_delete_contract.is_intent(operation.proposed_config)
+    ):
+        # HAMCP-298: a created scene/helper delete has its own identity; an
+        # unreviewed type maps to no adapter, so the plan cannot prepare.
+        return created_object_delete_contract.CAPABILITY_IDENTITIES.get(
+            created_object_identity.created_type(operation) or "",
+            "delete_created_unreviewed_configuration",
+        )
     resource = operation.helper_type or operation.resource_type
     return f"{operation.action}_{resource}_configuration"
 
@@ -967,7 +982,27 @@ def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
         UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
         for operation in plan.operations
         if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+        # HAMCP-329/298: the scene update profile admits only updates.
+        and not (
+            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            and operation.action != scene_configuration_contract.ACTION
+        )
     }
+    for operation in getattr(plan, "operations", ()) or ():
+        # HAMCP-329/298: a scene create and a created scene/helper delete are
+        # admitted only by their own runtime-only profile, at entry, every
+        # dispatch and every readback.
+        if (
+            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            and operation.action == scene_configuration_contract.CREATE_ACTION
+        ):
+            profiles.add(scene_configuration_contract.CREATE_PROFILE)
+        elif operation.action == created_object_delete_contract.ACTION and (
+            created_object_delete_contract.is_intent(operation.proposed_config)
+        ):
+            created = created_object_identity.created_type(operation)
+            if created in created_object_delete_contract.PROFILES:
+                profiles.add(created_object_delete_contract.PROFILES[created])
     operational = UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS.get(
         getattr(plan, "operation", None)
     )
@@ -1438,7 +1473,7 @@ def _created_object_rollback_plan(plan: Any) -> bool:
         and all(
             (
                 operation.action == "create"
-                and operation.resource_type in created_object_identity.CAPTURED_TYPES
+                and created_object_identity.created_type(operation) is not None
             )
             or (
                 operation.action == "update"
@@ -1647,6 +1682,42 @@ class _AuditedConfigurationGateway:
         # HAMCP-155: audited exactly like a write.
         return await self._audited(
             self.delegate.delete_configuration(resource_type, target_id)
+        )
+
+    # HAMCP-298: created-object reads pass through; the delete is audited.
+    async def created_delete_read_config(self, resource_type, target_id):
+        return await self.delegate.created_delete_read_config(
+            resource_type, target_id
+        )
+
+    async def created_delete_registry_entry(self, resource_type, target_id):
+        return await self.delegate.created_delete_registry_entry(
+            resource_type, target_id
+        )
+
+    async def created_delete_state_exists(self, resource_type, entity_id):
+        return await self.delegate.created_delete_state_exists(
+            resource_type, entity_id
+        )
+
+    async def created_delete_consumer_fingerprint(self, entity_id):
+        return await self.delegate.created_delete_consumer_fingerprint(entity_id)
+
+    async def created_delete(self, resource_type, target_id):
+        return await self._audited(
+            self.delegate.created_delete(resource_type, target_id)
+        )
+
+    # HAMCP-329: absent-scene reads pass through; the create POST is audited.
+    async def scene_create_target_absent_reason(self, config_id):
+        return await self.delegate.scene_create_target_absent_reason(config_id)
+
+    async def scene_create_observation(self, config_id):
+        return await self.delegate.scene_create_observation(config_id)
+
+    async def scene_create_write(self, config_id, command):
+        return await self._audited(
+            self.delegate.scene_create_write(config_id, command)
         )
 
     async def _audited(self, call):
@@ -2042,6 +2113,28 @@ class F3RuntimeIntegration:
                 now=service.now,
                 created_object_binding=self._created_object_binding,
             )
+        # HAMCP-298: a created scene/helper delete is its own adapter class,
+        # admitted only by its type's runtime-only profile and only with the
+        # plan-bound created-object ownership marker.
+        for resource in created_object_delete_contract.RESOURCE_TYPES:
+            configuration_adapters[
+                created_object_delete_contract.CAPABILITY_IDENTITIES[resource]
+            ] = CreatedObjectDeleteAdapter(
+                resource,
+                config_gateway,
+                admission=partial(self._created_delete_admitted, resource),
+                now=service.now,
+                created_object_binding=self._created_object_binding,
+            )
+        # HAMCP-329: scene create is its own adapter class under its own
+        # runtime-only profile; the update adapter never creates.
+        configuration_adapters[
+            scene_configuration_contract.CREATE_CAPABILITY_IDENTITY
+        ] = SceneCreateAdapter(
+            config_gateway,
+            admission=self._scene_create_admitted,
+            now=service.now,
+        )
         # HAMCP-232 H2-R1: every options flow is recorded under this storage
         # root before it is opened, so an unconfirmed abort survives a
         # restart and is retried by the recovery sweep.  The gateway opens
@@ -2519,6 +2612,17 @@ class F3RuntimeIntegration:
         ):
             raise ValueError("created object binding invalid")
         return dict(found[0])
+
+    def _created_delete_admitted(self, resource_type: str) -> bool:
+        """Whether a signed registry admits this created type's delete profile."""
+
+        profile = created_object_delete_contract.PROFILES.get(resource_type)
+        return profile is not None and self._core_admits_profile(profile)
+
+    def _scene_create_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-329 scene create profile."""
+
+        return self._core_admits_profile(scene_configuration_contract.CREATE_PROFILE)
 
     def _helper_options_admitted(self) -> bool:
         """Whether a signed registry admits the HAMCP-232 options profile."""
@@ -3771,11 +3875,13 @@ class F3RuntimeIntegration:
             ),
             None,
         )
+        created = (
+            None if operation is None else created_object_identity.created_type(operation)
+        )
         if (
             operation is None
             or operation.action != "create"
-            or operation.resource_type
-            not in created_object_identity.CAPTURED_TYPES
+            or created is None
             or not result.terminal
             or result.outcome != "succeeded_verified"
         ):
@@ -3794,24 +3900,23 @@ class F3RuntimeIntegration:
             or self.created_identities.get(declaration["child_id"]) is not None
         ):
             return
-        gateway = self.service.configuration_delete_gateway
-        try:
-            admitted = (
-                self.core_runtime is not None
-                and self.core_runtime.route_status(
-                    (CONFIGURATION_DELETE_PROFILE,)
-                ).get("available")
-                is True
-            )
-        except Exception:
-            admitted = False
+        # Each created type is captured only through its own delete profile
+        # and gateway: automation/script by HAMCP-155, scene and helpers by
+        # their HAMCP-298 runtime-only profiles.
+        if created in created_object_delete_contract.PROFILES:
+            profile = created_object_delete_contract.PROFILES[created]
+            gateway = getattr(self.service, "created_object_delete_gateway", None)
+        else:
+            profile = CONFIGURATION_DELETE_PROFILE
+            gateway = self.service.configuration_delete_gateway
+        admitted = self._core_admits_profile(profile)
         if not admitted:
             outcome, identity = created_object_identity.CAPABILITY_UNADMITTED, None
         elif gateway is None:
             outcome, identity = created_object_identity.READ_FAILED, None
         else:
             outcome, identity = await created_object_identity.capture(
-                gateway, operation.resource_type, operation.target_id, resulting
+                gateway, created, operation.target_id, resulting
             )
         try:
             self.created_identities.put(
