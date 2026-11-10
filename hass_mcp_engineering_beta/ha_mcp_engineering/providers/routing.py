@@ -44,6 +44,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.RECORDER_SETTINGS,
     ProviderCapability.SCRIPT_TRACE,
     ProviderCapability.MARKETPLACE_INVENTORY,
+    ProviderCapability.THREAD_MATTER_TOPOLOGY,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,

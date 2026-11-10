@@ -889,6 +889,104 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-231 (Release 2.6.0): Thread dataset and Matter topology read, A1 + A2
+# only (docs/HAMCP_231_THREAD_MATTER_TOPOLOGY_INVESTIGATION.md, sections 5.1
+# and 7).  Core 2026.11.0 (74cf5a49) registers ``thread/list_datasets`` in
+# ``components/thread/websocket_api.py:152-182`` from ``async_setup`` and
+# ``matter/network_topology`` in ``components/matter/api.py:384-404`` from
+# ``async_setup_entry``; both are ``require_admin``.  ``refresh`` is the
+# literal ``false`` and never a caller value.  Runtime-only and dormant until
+# the owner-signed registry admits it; nothing here is signed.
+CORE_THREAD_MATTER_TOPOLOGY_PROFILES = (
+    _contract(
+        "core.thread_matter_topology_read",
+        CoreCapabilityClass.THREAD_MATTER_TOPOLOGY_READ,
+        "compiled-core-thread-matter-topology-read-v1",
+        (
+            "thread_list_datasets_command_contract",
+            "matter_network_topology_command_contract",
+            "matter_network_topology_refresh_false_contract",
+            "matter_network_topology_schema_13_not_supported_contract",
+            "unknown_command_error_code_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": ["thread/list_datasets", "matter/network_topology"],
+            "payloads": {
+                "thread/list_datasets": {"type": "thread/list_datasets"},
+                "matter/network_topology": {"type": "matter/network_topology", "refresh": False},
+            },
+            "refresh": "literal_false_never_caller_supplied",
+            "max_commands": 2,
+            "connection": "one_authenticated_websocket_no_retry_no_redirect_no_subscription",
+            "principal_origin": "existing_configured_authenticated_origin_only",
+            "projection": {
+                "datasets": ["dataset_id", "network_name", "extended_pan_id", "pan_id", "channel",
+                             "preferred", "source", "created",
+                             "preferred_border_agent_ref", "preferred_extended_address_ref"],
+                "nodes": ["id", "kind", "network_type", "role", "available", "is_bridge", "rloc16",
+                          "ext_pan_id", "network_name_thread_only", "vendor_name", "model_name",
+                          "node_id", "ha_device_id_nullable", "identity",
+                          "border_router_mdns_last_seen"],
+                "connections": ["source", "target", "network", "strength", "source_to_target",
+                                "target_to_source", "via_route_table", "path_cost"],
+                "topology": ["graph_assembled_at", "observation_age_unknown", "coverage"],
+                "unknown_fields": "dropped_positive_allowlist",
+            },
+            "identifier_policy": {
+                "id": "opaque_per_response_v1",
+                "graph_ids": "counter_g_k_upstream_order_before_truncation",
+                "unresolved_connection": "dropped_and_counted",
+                "extended_address": "shared_alias_g_k_or_x_k_never_raw",
+                "border_agent_id": "alias_b_k_never_raw",
+                "bssid_ssid_host_name_ext_address": "dropped",
+                "network_name": "thread_nodes_only_else_withheld",
+                "aliases": "counters_not_hashes_not_stable_across_calls",
+                "scope": "output_audit_logs_errors",
+                "kept_network_level": ["ext_pan_id", "extended_pan_id", "pan_id", "channel",
+                                       "thread_network_name", "rloc16", "node_id", "ha_device_id"],
+            },
+            "secret_keys": {"match": ["tlv", "networkkey", "pskc", "pskd"],
+                            "normalization": "lowercase_alphanumeric_any_depth",
+                            "action": "whole_section_refused"},
+            "upstream_activity": {"datasets": ["cached_graph"],
+                                  "topology": ["cached_graph", "may_start_br_discovery"]},
+            "caps": {"datasets": 16, "nodes": 200, "connections": 800},
+            "bounds": {"frame_bytes": 8388608, "auth_bytes": 65536, "max_frames": 4,
+                       "max_upstream_datasets": 256, "max_upstream_nodes": 4096,
+                       "max_upstream_connections": 16384, "max_seconds": 30},
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "reasons": ["thread_not_loaded", "matter_not_loaded", "matter_server_schema_below_13",
+                        "core_authority_refused", "malformed_upstream_response",
+                        "upstream_response_too_large", "upstream_command_failed",
+                        "transport_unavailable", "timeout"],
+            "partial": "per_section_status_no_fallback_upstream_text_never_echoed",
+            "never_sent": [
+                "matter/commission",
+                "matter/commission_on_network",
+                "matter/interview_node",
+                "matter/node_diagnostics",
+                "matter/open_commissioning_window",
+                "matter/ping_node",
+                "matter/remove_matter_fabric",
+                "matter/set_thread",
+                "matter/set_wifi_credentials",
+                "matter/subscribe_network_topology",
+                "otbr/create_network",
+                "otbr/info",
+                "otbr/set_channel",
+                "otbr/set_network",
+                "thread/add_dataset_tlv",
+                "thread/delete_dataset",
+                "thread/discover_routers",
+                "thread/get_dataset_tlv",
+                "thread/set_preferred_border_agent",
+                "thread/set_preferred_dataset",
+            ],
+            "write": "none",
+        },
+    ),
+)
 # HAMCP-290 (Release 2.5.0): installed-only Marketplace inventory read.
 # Core 2026.11.0 (74cf5a49) registers ``marketplace/repositories/list`` in
 # ``components/marketplace/websocket/repositories.py:62-89`` (admin, optional
@@ -954,6 +1052,7 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
+    + CORE_THREAD_MATTER_TOPOLOGY_PROFILES
 )
 
 
@@ -1019,6 +1118,7 @@ __all__ = [
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
+    "CORE_THREAD_MATTER_TOPOLOGY_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

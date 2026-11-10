@@ -186,6 +186,11 @@ SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
 MARKETPLACE_PROFILE = "core.marketplace_read"
 MARKETPLACE_TOOL = "get_marketplace_inventory"
 MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
+# HAMCP-231: Engineering-native Thread dataset and Matter topology read.
+# Runtime-only and dormant until the owner-signed registry admits it.
+THREAD_MATTER_TOPOLOGY_PROFILE = "core.thread_matter_topology_read"
+THREAD_MATTER_TOPOLOGY_TOOL = "get_thread_matter_topology"
+THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE = "thread_matter_topology"
 # HAMCP-290: reviewed ha-mcp reads Engineering retired (Josh, 2026-11-08).  The
 # read gateway never exposes or dispatches these on any reviewed ha-mcp release,
 # whether or not a native route is registered, and nothing aliases or falls
@@ -1092,6 +1097,8 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         SCRIPT_TRACE_PROFILE,
         # HAMCP-290: read-only, never an F3 identity; same reason as above.
         MARKETPLACE_PROFILE,
+        # HAMCP-231: read-only, never an F3 identity; same reason as above.
+        THREAD_MATTER_TOPOLOGY_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
@@ -1192,6 +1199,9 @@ __all__ = [
     "MARKETPLACE_PROFILE",
     "MARKETPLACE_RESOURCE_TYPE",
     "MARKETPLACE_TOOL",
+    "THREAD_MATTER_TOPOLOGY_PROFILE",
+    "THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE",
+    "THREAD_MATTER_TOPOLOGY_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
     "StaticCoreRoute",

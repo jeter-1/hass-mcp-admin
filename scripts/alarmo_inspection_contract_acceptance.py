@@ -815,7 +815,9 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                                        "core.scene_configuration_operation",
                                        "core.typed_helper_value_operation",
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
-                                       "core.marketplace_read"}]
+                                       "core.marketplace_read",
+                                       # HAMCP-231 dormant Thread/Matter topology read.
+                                       "core.thread_matter_topology_read"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
