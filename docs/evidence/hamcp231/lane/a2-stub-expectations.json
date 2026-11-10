@@ -1,21 +1,57 @@
 {
-  "model": "hamcp231-a2-stub-expectations-v1",
-  "status": "pending_hamcp297",
-  "note": "Filled from the HAMCP-297 committed Matter Server stub report: path and SHA-256 of the stub and its node fixtures, and the canary literals the stub emits. Field names come from matter-python-client 1.5.5 exact-version source (HAMCP-297). While status is not ready the A2 success lane refuses a2_stub_pending before any container starts.",
+  "model": "hamcp231-a2-stub-expectations-v2",
+  "status": "ready",
+  "note": "The HAMCP-297 test-only Matter Server stub, consumed by path and SHA-256 and never copied into this branch. It is committed at stub.source_commit on HAMCP-297's branch (draft PR #428); stub.committed_dir resolves in this checkout only after #428 merges. Until then the lane takes --stub-dir, an extracted copy of that exact commit under .artifacts/, and verifies every file below before any container starts. Field names follow matter-python-client 1.5.5 models.py:307-380; id conventions follow matterjs-server a7922e85. The topology is static and synthetic, and the stub applies writes to its own cache (HAMCP-297 disclosed residuals).",
   "matter_python_client": "1.5.5",
+  "matterjs_server_commit": "a7922e85f4b94a5db94a1dbee1a02c685c2ec71d",
   "stub": {
-    "path": null,
-    "sha256": null,
-    "nodes_path": null,
-    "nodes_sha256": null,
+    "owner": "HAMCP-297",
+    "source_pr": 428,
+    "source_commit": "aa25c56498194c493b468db1faa842018e04acd2",
+    "committed_dir": "tests/fixtures/hamcp297_matter_server_stub",
+    "files": {
+      "driver.py": "363ecca6c4b4c35fcd6ec01ef757a790da79f927d4472ac1e8e6ab86de63f98f",
+      "nodes/aqara_door_window_p2.json": "5fdde93c56c824795be29ccbb2dd9b919f4ff5a4b17df0f9220d82c675e0836f",
+      "nodes/eve_energy_20ecn4101.json": "48a7a21131eee56e47a0db856d21134fd6bc983295f633ea9e3aef6d122de58d",
+      "nodes/eve_energy_plug.json": "1ed129e955c909f119e40303b234bdc2b83dfadd8347f26570e59e0ef71fa14d",
+      "provenance.json": "dbc1781b3af8f589991af45f96dc6595531e4bf85b0022725d6bad9f1971a5c7",
+      "run_lane.sh": "8d6fc4a4397449fc89e706ca6a99cdb753093e92ad5d614f8a7647ca5db51e40",
+      "stub.py": "4fd9d2576dea0f32217426463a012ef7921394bc5be5b2f849778b96fe48b514"
+    },
     "port": 5580,
     "record_name": "stub.jsonl"
   },
-  "canaries": [],
+  "canaries": [
+    "7f3a9c21d4e85b60a1f2c3d4e5f60718",
+    "thread_FFFF00000000DEAD",
+    "FFFF00000000DEAD",
+    "br_D0C4A5E1F00D7C01",
+    "D0C4A5E1F00D7C01",
+    "thread_A1B2C3D4E5F60231",
+    "A1B2C3D4E5F60231",
+    "6E61A1B2C3D4E561",
+    "6E199A1B2C3D4E19",
+    "HAMCP231-Canary-SSID",
+    "02:A0:C9:31:23:10",
+    "02a0c9312310",
+    "hamcp231-canary-br",
+    "test-stub injected topology failure"
+  ],
+  "kept_raw": {
+    "border_router": {"network_name": "HAMCP231-Canary-Mesh", "ext_pan_id": "DEADBEEFCAFE2970", "rloc16": 17408}
+  },
   "expected": {
     "matter_node_ids": [61, 91, 199],
+    "wifi_station_node_ids": [91],
     "required_kinds": ["border_router", "matter", "thread_unknown", "wifi_ap"],
-    "startup_commands": ["get_nodes", "server_info", "start_listening"],
-    "min_dropped_edges": 1
+    "nodes": 6,
+    "connections": 5,
+    "dropped_unresolved": 1,
+    "withheld_border_router_text": ["vendor_name"],
+    "background_commands": ["check_node_update", "get_node", "get_nodes", "server_info",
+                            "set_default_fabric_label", "start_listening"],
+    "topology_error_status": "upstream_command_failed",
+    "schema_fault_version": 12,
+    "schema_fault_status": "matter_server_schema_below_13"
   }
 }

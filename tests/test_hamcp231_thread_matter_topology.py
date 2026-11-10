@@ -648,6 +648,38 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(result["withheld_identifier_field_count"], 6)  # five above + the AP vendor
         self.assertIn("sanitized_text", result["partial_reasons"])
 
+    def test_diagnostic_mesh_ids_are_screened_on_nodes_and_endpoints(self):
+        # Regression: matterjs-server a7922e85 also builds ``thread_<EXTMAC>`` and
+        # ``meshrloc_<EXTPANID>_<RLOC16>`` ids (topology-utils.ts:428-429). The
+        # embedded identifier must be screened even with no ext_address field,
+        # including on a ghost connection endpoint that is never a node.
+        mesh_mac, ghost_mac = "C168F90A1B2C3D4E", "D279A1B2C3D4E5F6"
+        topology = topology_result()
+        base_nodes = len(topology["nodes"])
+        topology["nodes"].append(node(f"thread_{mesh_mac}", "thread_unknown", "thread"))
+        topology["nodes"].append(node(f"meshrloc_{EXT_PAN_ID}_17408", "thread_unknown", "thread"))
+        topology["connections"].append(link("1", f"thread_{mesh_mac}"))
+        topology["connections"].append(link("1", f"thread_{ghost_mac}"))
+        topology["nodes"][1]["vendor_name"] = f"Apple {mesh_mac.lower()}"
+        topology["nodes"][1]["model_name"] = f"HomePod {ghost_mac}"
+        data = deepcopy(datasets_result())
+        data["datasets"][1]["preferred_extended_address"] = mesh_mac
+        result = tm.build_result(outcomes(data, topology))
+        section = result["topology"]
+        nodes = {n["id"]: n for n in section["nodes"]}
+        self.assertIsNone(nodes["g2"]["vendor_name"])
+        self.assertIsNone(nodes["g2"]["model_name"])
+        mesh_ref = f"g{base_nodes + 1}"
+        self.assertEqual(nodes[mesh_ref]["kind"], "thread_unknown")
+        self.assertIn(("g3", mesh_ref), [(e["source"], e["target"]) for e in section["connections"]])
+        self.assertEqual(section["connections_dropped_unresolved"], 2)  # br_ ghost and thread_ ghost
+        self.assertEqual(result["datasets"]["items"][1]["preferred_extended_address_ref"], mesh_ref)
+        encoded = json.dumps(result)
+        for canary in (mesh_mac, ghost_mac, f"thread_{mesh_mac}", "meshrloc"):
+            for variant in variants(canary):
+                with self.subTest(variant=variant):
+                    self.assertNotIn(variant, encoded)
+
     def test_secret_keys_refuse_the_whole_section(self):
         # Section 8 item 3 / 5.1.2 rule 6: any depth, any case, any separator.
         material = secret_material()

@@ -122,9 +122,12 @@ SECRET_KEY_MARKERS = ("tlv", "networkkey", "pskc", "pskd")
 NON_HA_KINDS = frozenset({"border_router", "thread_unknown", "wifi_ap"})
 IDENTITY_VALUES = ("ha_device", "not_an_ha_device", "ha_registry_match_missing", "unknown")
 # Upstream graph ids embed the identifier after these prefixes
-# (matterjs-server network topology: ``br_<XA>``, ``unknown_<EXTADDR>``,
-# ``ap_<BSSID>``).
-GRAPH_ID_PREFIXES = ("br_", "unknown_", "ap_", "matter_", "node_")
+# (matterjs-server a7922e85 network topology: ``br_<XA>``, ``unknown_<EXTADDR>``,
+# ``ap_<BSSID>``; diagnostic mesh ids ``thread_<EXTMAC>`` and
+# ``meshrloc_<EXTPANID>_<RLOC16>``, ws-client topology-utils.ts:428-429).
+GRAPH_ID_PREFIXES = ("br_", "unknown_", "thread_", "meshrloc_", "ap_", "matter_", "node_")
+# Prefixes whose suffix is a Thread extended address that A1 may also report.
+EXTENDED_ADDRESS_ID_PREFIXES = ("br_", "unknown_", "thread_")
 MIN_IDENTIFIER_SCREEN = 4
 
 SECTION_REASONS = frozenset({
@@ -608,13 +611,18 @@ def _epoch_ms_iso(value: Any) -> str:
     return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _observe_graph_identifiers(node: dict, aliases: AliasTable) -> None:
-    upstream_id = node.get("id")
+def _observe_graph_id(upstream_id: Any, aliases: AliasTable) -> None:
+    """A node id or a connection endpoint: the whole id and its embedded identifier."""
+
     aliases.observe(upstream_id)
     if type(upstream_id) is str:
         for prefix in GRAPH_ID_PREFIXES:
             if upstream_id.startswith(prefix):
                 aliases.observe(upstream_id[len(prefix):])
+
+
+def _observe_graph_identifiers(node: dict, aliases: AliasTable) -> None:
+    _observe_graph_id(node.get("id"), aliases)
     for key in ("ext_address", "bssid", "ssid", "host_name"):
         aliases.observe(node.get(key))
 
@@ -642,14 +650,14 @@ def project_topology(result: Any, aliases: AliasTable, screen: _Screen) -> dict[
         graph[upstream_id] = reference
         _observe_graph_identifiers(node, aliases)
         aliases.bind_graph(node.get("ext_address"), reference)
-        for prefix in ("br_", "unknown_"):
+        for prefix in EXTENDED_ADDRESS_ID_PREFIXES:
             if upstream_id.startswith(prefix):
                 aliases.bind_graph(upstream_id[len(prefix):], reference)
     for connection in connections:
         if type(connection) is not dict:
             raise SectionRefused("malformed_upstream_response")
-        aliases.observe(connection.get("source"))
-        aliases.observe(connection.get("target"))
+        _observe_graph_id(connection.get("source"), aliases)
+        _observe_graph_id(connection.get("target"), aliases)
 
     emitted_nodes = []
     emitted_refs: set[str] = set()
