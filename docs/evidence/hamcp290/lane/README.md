@@ -101,8 +101,33 @@ inheritance in CI is outside this prerequisite.
 `scripts/core_marketplace_read_local.py` runs the cached exact Core image on a
 dedicated non-internal bridge, with an explicit `--memory` and the host port
 bound to loopback 18123. It needs egress because Core's Marketplace fetches its
-public store. There is no ha-mcp container, since the capability is
+public store and, for the install fixture below, downloads one public theme
+anonymously. There is no ha-mcp container, since the capability is
 Engineering-native.
+
+### Install fixture
+
+The service projects installed repositories only, so a fresh disposable Core
+lists none. Before the routed read, the harness installs exactly one public
+theme into the disposable Core, through its own raw WebSocket and never through
+Engineering:
+
+- It refuses unless the disposable Marketplace has no GitHub account connected
+  (`github_connected` is `false`). No token is used or supplied, and no secret
+  is read.
+- It refuses unless the Core is fresh, with no installed record.
+- It picks the first pinned candidate present in the store
+  (`JuanMTech/google_light_theme`, then `catppuccin/home-assistant`), or else
+  the first installable default-catalog theme by name. It makes one install
+  attempt, with `marketplace/warning/accept` then `marketplace/repository/install`.
+- A theme is YAML only, so Core imports no downloaded code.
+- Core downloads it anonymously from public GitHub hosts over the lane's existing
+  bridge. The lane's network configuration is unchanged.
+- The record must read back `installed` with a version, and it must be the only
+  installed record. Otherwise the lane fails with `installed_record_missing` or
+  `more_than_one_installed`.
+- The files land in the disposable `/config`, which cleanup removes and reads
+  back as absent.
 
 `scripts/marketplace_read_contract_acceptance.py` drives the real
 `MarketplaceInventoryService` through route admission. It checks:
@@ -114,6 +139,14 @@ Engineering-native.
 - anonymous callers are refused before any read;
 - a version identity mismatch is refused before any command;
 - four invalid argument sets are refused;
+- the installed record is on the routed page exactly once. It has exactly the
+  10 projected fields and no raw Core fields such as `local_path`. Its identity,
+  flags and version match the raw record. Each text field is equal to the raw
+  value, or it is bounded and the page discloses `sanitized_text`. No known
+  secret appears on the page;
+- a redaction canary: the same real record, read through a second service that
+  treats one of the record's own strings as a secret. The page must omit that
+  string and report `partial` with `sanitized_text` and a redaction summary;
 - after the disposable Marketplace entry is disabled, the result is
   `marketplace_not_loaded`, with one list command, no HACS fallback and
   `fallback_count` 0.
@@ -160,9 +193,7 @@ authority.
 - No HACS command was sent, and `fallback_count` was 0. Cleanup read back as
   clean.
 
-Limitation: the service projects installed repositories only, and a fresh
-disposable Core has none. This run therefore does not project a real installed
-record. The 10-field projection of installed records is proven offline in
-`tests/test_hamcp290_marketplace_inventory.py`. Installing a repository into
-the disposable Core would add a write and a download to the lane, and that is
-not done here.
+Run 1 limitation, superseded by run 2: a fresh disposable Core has no
+installed repositories, so run 1 projected no real installed record. Run 2
+adds the install fixture above, which installs one theme into the disposable
+Core only.

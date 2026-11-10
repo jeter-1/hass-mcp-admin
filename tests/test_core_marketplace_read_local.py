@@ -386,19 +386,41 @@ class RunningIdentity(unittest.IsolatedAsyncioTestCase):
             accept.assert_not_called()
 
 
-def store(installed=1, total=3):
-    return [{"id": str(100 + i), "full_name": f"owner/repo{i}", "name": f"Repo {i}", "category": "integration",
-             "domain": f"repo{i}", "installed": i < installed, "installed_version": "1.0" if i < installed else "",
-             "available_version": "1.0", "pending_upgrade": False, "custom": False, "description": "synthetic"}
-            for i in range(total)]
+def store(installed=(), total=3):
+    """Synthetic raw Core list: two integrations and the pinned theme candidate."""
+    rows = [{"id": str(100 + i), "full_name": f"owner/repo{i}", "name": f"Repo {i}", "category": "integration",
+             "domain": f"repo{i}", "available_version": "1.0", "description": "synthetic integration"}
+            for i in range(total - 1)]
+    rows.append({"id": "200", "full_name": acceptance.INSTALL_CANDIDATES[0], "name": "Google Light Theme",
+                 "category": "theme", "domain": None, "available_version": "v2.0",
+                 "description": "A light theme for the disposable lane"})
+    for row in rows:
+        on = row["id"] in installed
+        row.update(installed=on, installed_version=row["available_version"] if on else "",
+                   pending_upgrade=False, custom=False, can_install=True, local_path="/config/x",
+                   authors=["someone"], stars=3)
+    return rows
+
+
+def page_for(records, partial=()):
+    return {"results": records, "partial_reasons": list(partial)}
+
+
+def projected(row, **changes):
+    value = {key: row[key] for key in acceptance.PROJECTED}
+    value["domain"] = value["domain"] or None
+    value.update(changes)
+    return value
 
 
 class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     """Exercise the script with synthetic Core/transport; never Core evidence."""
 
-    async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False):
-        created, sent_frames = [], []
-        state = {"disabled": False}
+    async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
+                             github_connected=False, install_success=True, installs=True, project=None):
+        created, sent_frames, raw_sent = [], [], []
+        state = {"disabled": False, "installed": ()}
+        self.raw_sent = raw_sent
 
         class Runtime:
             def __init__(self):
@@ -447,16 +469,27 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             if state["disabled"]:
                 raise MarketplaceError("marketplace_not_loaded")
             authorize()
-            return ("hacs" if fallback else "core_marketplace"), store()
+            value = store(state["installed"])
+            return ("hacs" if fallback else "core_marketplace"), (project(value) if project else value)
 
-        async def raw(_self, payload):
+        async def raw(_self, payload, seconds=60):
             kind = payload["type"]
+            raw_sent.append(kind)
             if kind == "marketplace/info":
-                return {"success": True, "result": {"stage": "running"}}
+                return {"success": True, "result": {"stage": "running", "github_connected": github_connected}}
+            if kind == "marketplace/warning/accept":
+                return {"success": True, "result": None}
+            if kind == "marketplace/repository/install":
+                self.assertEqual((payload["repository"], seconds), ("200", acceptance.INSTALL_SECONDS))
+                if not install_success:
+                    return {"success": False, "error": {"code": "error", "message": "upstream text"}}
+                if installs:
+                    state["installed"] = ("200",)
+                return {"success": True, "result": None}
             if kind == MARKETPLACE_LIST_COMMAND:
                 if state["disabled"]:
                     return {"success": False, "error": {"code": "not_loaded"}}
-                return {"success": True, "result": store()}
+                return {"success": True, "result": store(state["installed"])}
             if kind == "config_entries/get":
                 return {"success": True, "result": [{"entry_id": "synthetic-entry"}]}
             if kind == "config_entries/disable":
@@ -477,6 +510,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance, "canonical_json", return_value=b"{}"), \
                 patch.object(acceptance.MarketplaceReader, "read", new=read), \
                 patch.object(acceptance.RawCore, "command", new=raw), \
+                patch.object(acceptance.asyncio, "sleep", new=AsyncMock()), \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
                                           Path(directory))
@@ -490,9 +524,53 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["inventory"]["installed_total"], result["raw_installed"])
         self.assertEqual(result["inventory"]["backend"], "core_marketplace")
         self.assertEqual(result["commands_sent"], [MARKETPLACE_LIST_COMMAND, MARKETPLACE_LIST_COMMAND])
-        self.assertEqual(sent, result["commands_sent"])
+        # Main reader twice plus the redaction-canary reader once; never HACS.
+        self.assertEqual(sent, [MARKETPLACE_LIST_COMMAND] * 3)
         self.assertEqual(result["profile"], acceptance.reference())
         self.assertFalse(result["production_authority"])
+        # Exactly one disposable install through the harness, then a real installed record.
+        self.assertEqual(self.raw_sent.count("marketplace/repository/install"), 1)
+        self.assertEqual(self.raw_sent.count("marketplace/warning/accept"), 1)
+        self.assertEqual(result["raw_installed"], 1)
+        self.assertEqual(result["inventory"]["installed_total"], 1)
+        fixture = result["install_fixture"]
+        self.assertEqual((fixture["repository"], fixture["id"], fixture["selection"]),
+                         (acceptance.INSTALL_CANDIDATES[0], "200", "pinned"))
+        self.assertFalse(fixture["github_connected"])
+        self.assertFalse(fixture["network_change"])
+        record = result["installed_record"]
+        self.assertEqual(record["fields"], sorted(acceptance.PROJECTED))
+        self.assertEqual((record["category"], record["installed_version"]), ("theme", "v2.0"))
+        self.assertEqual(set(record["text"].values()), {"equal"})
+        canary = result["redaction_canary"]
+        self.assertEqual((canary["field"], canary["completeness"], canary["leaked"]),
+                         ("description", "partial", False))
+        self.assertIn("sanitized_text", canary["partial_reasons"])
+
+    async def test_connected_github_account_refuses_before_install(self):
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await self.run_acceptance(github_connected=True)
+        self.assertEqual(caught.exception.reason, "github_account_connected")
+        self.assertNotIn("marketplace/repository/install", self.raw_sent)
+
+    async def test_failed_install_fails_without_upstream_text(self):
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await self.run_acceptance(install_success=False)
+        self.assertEqual(str(caught.exception), "install_failed")
+
+    async def test_install_record_missing_fails_the_lane(self):
+        # Core says the install succeeded but the record never reads back installed.
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await self.run_acceptance(installs=False)
+        self.assertEqual(caught.exception.reason, "installed_record_missing")
+        self.assertEqual(self.raw_sent.count("marketplace/repository/install"), 1)
+
+    async def test_record_missing_from_routed_page_fails_the_lane(self):
+        # The service read omits the installed record: the lane must not pass.
+        def drop(rows):
+            return [{**row, "installed": False} if row["id"] == "200" else row for row in rows]
+        with self.assertRaises(AssertionError):
+            await self.run_acceptance(project=drop)
 
     async def test_predecessor_admission_fails_the_lane(self):
         with self.assertRaises(AssertionError):
@@ -501,6 +579,110 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def test_hacs_fallback_fails_the_lane(self):
         with self.assertRaises(AssertionError):
             await self.run_acceptance(fallback=True)
+
+
+class InstallFixture(unittest.IsolatedAsyncioTestCase):
+    """Offline checks of the install fixture and installed-record projection."""
+
+    def setUp(self):
+        self.raw_row = next(row for row in store(("200",)) if row["id"] == "200")
+        self.secrets = ("synthetic-secret", "synthetic-token")
+
+    def test_projected_record_passes(self):
+        summary = acceptance.check_installed_record(page_for([projected(self.raw_row)]), self.raw_row, self.secrets)
+        self.assertEqual(summary["id"], "200")
+        self.assertEqual(summary["fields"], sorted(acceptance.PROJECTED))
+
+    def check_fails(self, records, reason, partial=()):
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            acceptance.check_installed_record(page_for(records, partial), self.raw_row, self.secrets)
+        self.assertEqual(caught.exception.reason, reason)
+
+    def test_missing_record_fails(self):
+        self.check_fails([], "installed_record_missing")
+
+    def test_duplicated_record_fails(self):
+        self.check_fails([projected(self.raw_row)] * 2, "installed_record_duplicated")
+
+    def test_unprojected_raw_record_fails(self):
+        # A raw Core summary (local_path, authors, stars...) is not the projection.
+        self.check_fails([dict(self.raw_row)], "installed_record_unprojected")
+        partial = projected(self.raw_row)
+        del partial["description"]
+        self.check_fails([partial], "installed_record_unprojected")
+
+    def test_changed_identity_flags_or_version_fail(self):
+        self.check_fails([projected(self.raw_row, full_name="other/repo")], "installed_record_identity_changed")
+        self.check_fails([projected(self.raw_row, custom=True)], "installed_record_flags_changed")
+        self.check_fails([projected(self.raw_row, installed_version="")], "installed_version_missing")
+
+    def test_text_must_be_bounded_and_disclosed(self):
+        long_row = {**self.raw_row, "description": "d" * 400}
+        truncated = projected(long_row, description="d" * 300 + acceptance.TRUNCATED)
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            acceptance.check_installed_record(page_for([truncated]), long_row, self.secrets)
+        self.assertEqual(caught.exception.reason, "installed_record_text_changed")
+        summary = acceptance.check_installed_record(page_for([truncated], ["sanitized_text"]), long_row, self.secrets)
+        self.assertEqual(summary["text"]["description"], "screened")
+        unbounded = projected(long_row)
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            acceptance.check_installed_record(page_for([unbounded], ["sanitized_text"]), long_row, self.secrets)
+        self.assertEqual(caught.exception.reason, "installed_record_unbounded")
+        self.check_fails([projected(self.raw_row, description="silently changed")], "installed_record_text_changed")
+
+    def test_secret_in_page_fails(self):
+        leaked = projected(self.raw_row)
+        row = {**self.raw_row, "description": "has synthetic-token inside"}
+        leaked["description"] = row["description"]
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            acceptance.check_installed_record(page_for([leaked]), row, self.secrets)
+        self.assertEqual(caught.exception.reason, "secret_in_page")
+
+    def test_candidate_selection_is_pinned_then_deterministic(self):
+        rows = store()
+        self.assertEqual(acceptance.choose_candidate(rows)[1], "pinned")
+        others = [dict(rows[-1], full_name=name, id=str(i))
+                  for i, name in enumerate(("zeta/theme", "Alpha/theme"))] + rows[:-1]
+        chosen, selection = acceptance.choose_candidate(others)
+        self.assertEqual((chosen["full_name"], selection), ("Alpha/theme", "fallback"))
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            acceptance.choose_candidate(rows[:-1])
+        self.assertEqual(caught.exception.reason, "install_candidate_missing")
+        custom = [dict(rows[-1], custom=True)]
+        with self.assertRaises(acceptance.FixtureError):
+            acceptance.choose_candidate(custom)
+
+    async def test_non_fresh_core_and_second_installed_record_refuse(self):
+        class Raw:
+            def __init__(self, listed):
+                self.listed, self.sent = listed, []
+
+            async def command(self, payload, seconds=60):
+                self.sent.append(payload["type"])
+                if payload["type"] == "marketplace/info":
+                    return {"success": True, "result": {"github_connected": False}}
+                if payload["type"] == MARKETPLACE_LIST_COMMAND:
+                    return {"success": True, "result": self.listed}
+                return {"success": True, "result": None}
+        raw = Raw(store(("200",)))
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await acceptance.install_fixture(raw, store(("100",)), sleep=AsyncMock())
+        self.assertEqual(caught.exception.reason, "disposable_core_not_fresh")
+        self.assertEqual(raw.sent, ["marketplace/info"])
+        raw = Raw(store(("200", "100")))
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await acceptance.install_fixture(raw, store(), sleep=AsyncMock())
+        self.assertEqual(caught.exception.reason, "more_than_one_installed")
+
+    def test_canary_and_reason_vocabulary(self):
+        self.assertEqual(acceptance.redaction_canary(self.raw_row)[0], "description")
+        self.assertEqual(acceptance.redaction_canary({**self.raw_row, "description": ""})[0], "name")
+        with self.assertRaises(acceptance.FixtureError):
+            acceptance.redaction_canary({"description": "", "name": None})
+        with self.assertRaises(ValueError):
+            acceptance.FixtureError("free text from upstream")
+        self.assertTrue(set(acceptance.FIXTURE_REASONS) <= lane.diagnostics.SAFE_MESSAGES)
+        self.assertTrue({"install_fixture", "redaction_canary"} <= lane.diagnostics.CHECKS)
 
 
 if __name__ == "__main__":
