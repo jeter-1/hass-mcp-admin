@@ -12,10 +12,15 @@ hash-bound to the child's verified evidence; the closed
 build loads in an older runtime and an older record simply has no identity
 (``created_object_identity_not_captured``).
 
-This build captures automation and script creates through the reviewed
-HAMCP-155 delete reads (``core.configuration_delete_operation``); helper and
-scene captures belong to their own dormant profiles and are not captured
-yet, so those creates stay ineligible.
+Automation and script creates are captured through the reviewed HAMCP-155
+delete reads (``core.configuration_delete_operation``); ``input_boolean`` and
+``input_number`` creates through ``core.created_helper_delete_operation``;
+scene creates through ``core.scene_create_delete_operation``.  Each capture
+is admitted by its own profile before its first read.
+
+For a helper the resource target is the full entity id and the storage
+object id (registry ``unique_id`` and delete argument) is its object id; the
+two are never interchanged (§3.2.2).
 """
 
 from __future__ import annotations
@@ -45,10 +50,21 @@ OUTCOMES = frozenset(
 # The HAMCP-155 absence bound: 6 attempts at 0.5 s.
 POLL_ATTEMPTS = 6
 POLL_INTERVAL_SECONDS = 0.5
-CAPTURED_TYPES = ("automation", "script")
+CAPTURED_TYPES = (
+    "automation",
+    "script",
+    "input_boolean",
+    "input_number",
+    "scene_configuration",
+)
+HELPER_TYPES = ("input_boolean", "input_number")
+# (registry domain, registry platform) per created type.
 REGISTRY = {
     "automation": ("automation", "automation"),
     "script": ("script", "script"),
+    "input_boolean": ("input_boolean", "input_boolean"),
+    "input_number": ("input_number", "input_number"),
+    "scene_configuration": ("scene", "homeassistant"),
 }
 IDENTITY_FIELDS = frozenset(
     {
@@ -98,10 +114,56 @@ def _timestamp(value: Any) -> str:
     return text
 
 
-def delete_argument(resource_type: str, target_id: str) -> dict[str, str]:
+def created_type(operation: Any) -> str | None:
+    """The captured type of a plan operation, or ``None``.
+
+    A helper operation is stored as ``resource_type == "helper"`` with its
+    ``helper_type``; every other captured type is its own resource type.
+    """
+
+    resource_type = getattr(operation, "resource_type", None)
+    if resource_type == "helper":
+        helper_type = getattr(operation, "helper_type", None)
+        return helper_type if helper_type in HELPER_TYPES else None
+    if getattr(operation, "helper_type", None) is not None:
+        return None
+    return resource_type if resource_type in CAPTURED_TYPES else None
+
+
+def storage_object_id_for(resource_type: str, target_id: str) -> str:
+    """The storage object id a create of ``target_id`` produces.
+
+    A helper target is ``<domain>.<object_id>`` with the domain equal to the
+    type (a cross-domain target is a mismatch); every other target is its
+    own storage id.
+    """
+
     if resource_type not in CAPTURED_TYPES:
         raise IdentityMismatch("resource_type_not_captured")
-    return {"method": "DELETE", "path": f"/api/config/{resource_type}/config/{target_id}"}
+    if not isinstance(target_id, str) or not target_id:
+        raise IdentityMismatch("resource_target_malformed")
+    if resource_type in HELPER_TYPES:
+        domain, separator, object_id = target_id.partition(".")
+        if separator != "." or domain != resource_type or not object_id:
+            raise IdentityMismatch("helper_target_domain")
+        if "." in object_id:
+            raise IdentityMismatch("helper_target_domain")
+        return object_id
+    return target_id
+
+
+def delete_argument(resource_type: str, target_id: str) -> dict[str, str]:
+    """The exact delete argument rebuilt from the created object's identity."""
+
+    storage_id = storage_object_id_for(resource_type, target_id)
+    if resource_type in HELPER_TYPES:
+        # The object id, never the full entity id.
+        return {
+            "type": f"{resource_type}/delete",
+            f"{resource_type}_id": storage_id,
+        }
+    path_type = "scene" if resource_type == "scene_configuration" else resource_type
+    return {"method": "DELETE", "path": f"/api/config/{path_type}/config/{storage_id}"}
 
 
 def identity_from(
@@ -114,10 +176,11 @@ def identity_from(
 
     if resource_type not in CAPTURED_TYPES:
         raise IdentityMismatch("resource_type_not_captured")
+    storage_id = storage_object_id_for(resource_type, target_id)
     domain, platform = REGISTRY[resource_type]
     entity_id = entry.get("entity_id")
     entry_id = entry.get("id")
-    if entry.get("platform") != platform or entry.get("unique_id") != target_id:
+    if entry.get("platform") != platform or entry.get("unique_id") != storage_id:
         raise IdentityMismatch("registry_entry_not_corresponding")
     if not isinstance(entity_id, str) or not entity_id.startswith(f"{domain}."):
         raise IdentityMismatch("registry_entity_id_domain")
@@ -127,10 +190,10 @@ def identity_from(
         "model": MODEL,
         "resource_type": resource_type,
         "resource_target": target_id,
-        "storage_object_id": target_id,
+        "storage_object_id": storage_id,
         "registry_domain": domain,
         "registry_platform": platform,
-        "registry_unique_id": target_id,
+        "registry_unique_id": storage_id,
         "registry_entry_id": entry_id,
         "entity_id": entity_id,
         "registry_created_at": _timestamp(entry.get("created_at")),
@@ -172,7 +235,11 @@ def validate_identity(identity: Any) -> dict[str, Any]:
         },
         identity["created_fingerprint"],
     )
-    if rebuilt != identity or identity["storage_object_id"] != target:
+    if (
+        rebuilt != identity
+        or identity["storage_object_id"] != storage_object_id_for(resource_type, target)
+        or identity["registry_unique_id"] != identity["storage_object_id"]
+    ):
         raise IdentityMismatch("identity_correspondence")
     return identity
 
@@ -191,7 +258,9 @@ async def capture(
     create's own verified outcome is unchanged.
     """
 
-    if resource_type not in CAPTURED_TYPES:
+    try:
+        storage_object_id_for(resource_type, target_id)
+    except IdentityMismatch:
         return IDENTITY_MISMATCH, None
     entry = None
     try:
