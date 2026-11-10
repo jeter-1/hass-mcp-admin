@@ -1424,18 +1424,27 @@ def _recreate_eligible(operation: Any) -> bool:
 
 
 def _created_object_rollback_plan(plan: Any) -> bool:
-    """HAMCP-298: a contract-2 plan made only of automation/script creates.
+    """HAMCP-298: a contract-2 plan with a create and only creates/updates.
 
-    Mixed create-and-update plans keep the existing restore route, which
-    excludes their creates (disclosed limitation of this build).
+    Every create is of a captured type and every update is a generic
+    configuration update; the reverse plan restores the updates and deletes
+    the creates in strict reverse forward order (§3.4.4).
     """
 
     return bool(
         plan.contract_version == 2
         and plan.operations
+        and any(operation.action == "create" for operation in plan.operations)
         and all(
-            operation.action == "create"
-            and operation.resource_type in created_object_identity.CAPTURED_TYPES
+            (
+                operation.action == "create"
+                and operation.resource_type in created_object_identity.CAPTURED_TYPES
+            )
+            or (
+                operation.action == "update"
+                and operation.resource_type
+                in created_object_rollback.RESTORE_RESOURCE_TYPES
+            )
             for operation in plan.operations
         )
     )
@@ -5681,13 +5690,16 @@ class F3RuntimeIntegration:
 
     def _created_object_candidates(
         self, source_plan: Any, task: Any
-    ) -> tuple[list[tuple[Any, str, dict[str, Any]]], list[dict[str, str]]]:
+    ) -> tuple[list[tuple[Any, str, dict[str, Any] | None, str]], list[dict[str, str]]]:
         """HAMCP-298 §3.4.1 step 2: local eligibility, no Home Assistant I/O.
 
-        Returns, in strict reverse forward order, each verified child with a
-        bound creation identity, and every exclusion with its reason.  The
-        prerequisite rule (§3.4.4) excludes every later child once one is
-        excluded.  No rollback-time identity is ever captured or adopted.
+        Returns, in strict reverse forward order, each verified child as
+        ``(operation, child_id, identity, resulting_fingerprint)`` (``identity``
+        is ``None`` for an update's restore) and every exclusion with its
+        reason.  The prerequisite rule (§3.4.4) excludes every later delete
+        once any child is excluded; a restore is never a delete's dependant,
+        so it is never excluded by it.  No rollback-time identity is ever
+        captured or adopted.
         """
 
         declarations = (
@@ -5696,10 +5708,36 @@ class F3RuntimeIntegration:
             else []
         )
         children = {item["operation_id"]: item["child_id"] for item in declarations}
-        candidates: list[tuple[Any, str, dict[str, Any]]] = []
+        candidates: list[tuple[Any, str, dict[str, Any] | None, str]] = []
         excluded: list[dict[str, str]] = []
         blocked: str | None = None
         for operation in reversed(source_plan.operations):
+            child_id = children.get(operation.operation_id)
+            record = self.children.get(child_id) if child_id is not None else None
+            resulting = (
+                record.evidence.get("resulting_state_fingerprint")
+                if record is not None
+                else None
+            )
+            if operation.action == "update":
+                # The existing restore child's local eligibility
+                # (``_plan_fresh_rollback``).
+                if (
+                    record is None
+                    or record.normalized_outcome != "succeeded_verified"
+                    or operation.current_config is None
+                    or not isinstance(resulting, str)
+                ):
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.RESTORE_NOT_VERIFIED,
+                        }
+                    )
+                    blocked = blocked or operation.operation_id
+                    continue
+                candidates.append((operation, child_id, None, resulting))
+                continue
             if blocked is not None:
                 excluded.append(
                     {
@@ -5709,13 +5747,6 @@ class F3RuntimeIntegration:
                     }
                 )
                 continue
-            child_id = children.get(operation.operation_id)
-            record = self.children.get(child_id) if child_id is not None else None
-            resulting = (
-                record.evidence.get("resulting_state_fingerprint")
-                if record is not None
-                else None
-            )
             reason: str | None = None
             identity = None
             if (
@@ -5745,18 +5776,21 @@ class F3RuntimeIntegration:
                 )
                 blocked = operation.operation_id
                 continue
-            candidates.append((operation, child_id, identity))
+            candidates.append((operation, child_id, identity, resulting))
         return candidates, excluded
 
     async def _create_created_object_rollback(
         self, source_plan: Any, task: Any
     ) -> dict[str, Any]:
-        """HAMCP-298 §3.4: plan a governed delete of verified creates.
+        """HAMCP-298 §3.4: plan the governed reverse of verified creates.
 
-        Order: local eligibility (no I/O); HAMCP-155 delete admission before
-        any read; ownership reads inside the delete planning lease; then one
-        separately approved HAMCP-155 delete plan whose children each carry
-        the closed ownership marker.  Nothing is dispatched here.
+        Order: local eligibility (no I/O); delete admission before any read
+        (an unadmitted delete is excluded, and with nothing left the refusal
+        reads nothing); current-state and ownership reads inside one planning
+        lease; then one separately approved plan in strict reverse forward
+        order: restore children for updates (the existing restore child) and
+        HAMCP-155 delete children for creates, each delete carrying the
+        closed ownership marker.  Nothing is dispatched here.
         """
 
         def refuse(reason: str, excluded: list[dict[str, str]]) -> GovernanceError:
@@ -5780,34 +5814,88 @@ class F3RuntimeIntegration:
         candidates, excluded = self._created_object_candidates(source_plan, task)
         if not candidates:
             raise refuse(created_object_rollback.NO_ELIGIBLE_CHILD, excluded)
-        # Admission before any Home Assistant read (raises
-        # pending_signed_registry_admission with nothing read or stored).
-        self.service._configuration_delete_core()
-        gateway = self.service.configuration_delete_gateway
-        if gateway is None:
-            raise refuse(created_object_rollback.READ_UNAVAILABLE, excluded)
-        try:
-            lease_request = configuration_delete_planning.validate_request(
-                {
-                    "deletions": [
+        deletes = [item for item in candidates if item[2] is not None]
+        if deletes:
+            # Admission before any Home Assistant read (raises
+            # pending_signed_registry_admission with nothing read or stored
+            # when no restore remains).
+            try:
+                self.service._configuration_delete_core()
+            except GovernanceError:
+                if len(deletes) == len(candidates):
+                    raise
+                for operation, _child, _identity, _resulting in deletes:
+                    excluded.append(
                         {
-                            "resource_type": operation.resource_type,
-                            "target_id": operation.target_id,
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.PENDING_ADMISSION,
                         }
-                        for operation, _child, _identity in candidates
-                    ],
-                    "reason": created_object_rollback.REASON,
-                }
+                    )
+                candidates = [item for item in candidates if item[2] is None]
+                deletes = []
+        gateway = self.service.configuration_delete_gateway
+        if deletes and gateway is None:
+            raise refuse(created_object_rollback.READ_UNAVAILABLE, excluded)
+        if deletes:
+            try:
+                lease_request = configuration_delete_planning.validate_request(
+                    {
+                        "deletions": [
+                            {
+                                "resource_type": operation.resource_type,
+                                "target_id": operation.target_id,
+                            }
+                            for operation, _child, _identity, _resulting in deletes
+                        ],
+                        "reason": created_object_rollback.REASON,
+                    }
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self.service._entity_metadata_refusal_error(exc, {}) from None
+            planning_lease: Any = self.service._configuration_delete_planning_lease(
+                lease_request
             )
-        except entity_metadata_planning.EntityMetadataRefusal as exc:
-            raise self.service._entity_metadata_refusal_error(exc, {}) from None
+        else:
+            planning_lease = _rollback_planning_lease(
+                self.core_runtime, ROLLBACK_PLANNING_REQUIREMENTS
+            )
         source_hash = self.service.plan_hash(source_plan)
-        async with self.service._configuration_delete_planning_lease(
-            lease_request
-        ) as lease:
-            included: list[tuple[Any, dict[str, str]]] = []
+        async with planning_lease as lease:
+            # ("restore", operation, expected fingerprint) or
+            # ("delete", operation, binding), in rollback order.
+            included: list[tuple[str, Any, Any]] = []
             blocked: str | None = None
-            for operation, child_id, identity in candidates:
+            for operation, child_id, identity, resulting in candidates:
+                if identity is None:
+                    resolved_type = self.service._resolved_resource_type(
+                        operation.resource_type, operation.helper_type
+                    )
+                    try:
+                        current = await self.service._read_configuration_resource(
+                            resolved_type, operation.target_id
+                        )
+                    except Exception:
+                        excluded.append(
+                            {
+                                "operation_id": operation.operation_id,
+                                "reason": created_object_rollback.READ_UNAVAILABLE,
+                            }
+                        )
+                        blocked = blocked or operation.operation_id
+                        continue
+                    if resource_fingerprint(resolved_type, current) != resulting:
+                        excluded.append(
+                            {
+                                "operation_id": operation.operation_id,
+                                "reason": (
+                                    created_object_rollback.RESTORE_TARGET_CHANGED
+                                ),
+                            }
+                        )
+                        blocked = blocked or operation.operation_id
+                        continue
+                    included.append(("restore", operation, resulting))
+                    continue
                 if blocked is not None:
                     excluded.append(
                         {
@@ -5860,6 +5948,7 @@ class F3RuntimeIntegration:
                     continue
                 included.append(
                     (
+                        "delete",
                         operation,
                         {
                             "child_id": child_id,
@@ -5870,85 +5959,141 @@ class F3RuntimeIntegration:
                 )
             if not included:
                 raise refuse(created_object_rollback.NO_ELIGIBLE_CHILD, excluded)
-            try:
-                request = configuration_delete_planning.validate_request(
-                    {
-                        "deletions": [
-                            {
-                                "resource_type": operation.resource_type,
-                                "target_id": operation.target_id,
-                            }
-                            for operation, _binding in included
-                        ],
-                        "reason": created_object_rollback.REASON,
-                    }
+            restores: dict[str, str] = {}
+            order: list[dict[str, Any] | str] = []
+            for kind, operation, value in included:
+                if kind != "restore":
+                    order.append(operation.operation_id)
+                    continue
+                suffix = stable_hash(
+                    {"source_operation_id": operation.operation_id}
+                )[:12]
+                restore = {
+                    "operation_id": (
+                        f"rollback_{operation.operation_id[:42]}_{suffix}"
+                    ),
+                    "resource_type": operation.resource_type,
+                    "action": "update",
+                    "target_id": operation.target_id,
+                    "proposed_config": deepcopy(operation.current_config),
+                    "depends_on": [],
+                }
+                if operation.resource_type == "helper":
+                    restore["helper_type"] = operation.helper_type
+                restores[restore["operation_id"]] = value
+                order.append(restore)
+            excluded_ids = [item["operation_id"] for item in excluded][:8]
+            delete_included = [
+                (operation, value)
+                for kind, operation, value in included
+                if kind == "delete"
+            ]
+            if not delete_included:
+                # Only restores remain: the existing restore route's plan.
+                lease.require_current()
+                operations = [item for item in order if isinstance(item, dict)]
+                for index, item in enumerate(operations[1:], start=1):
+                    item["depends_on"] = [operations[index - 1]["operation_id"]]
+                created = await self.service._create_configuration_plan(
+                    title=f"Rollback governed change {source_plan.plan_id}"[:160],
+                    description=(
+                        "Separately governed reverse update using exact prior "
+                        "configuration evidence from a verified F3 execution."
+                    ),
+                    operations=operations,
+                    caller_context={
+                        "rollback_source_plan_id": source_plan.plan_id,
+                        "rollback_model": "f3-governed-rollback-plan-v1",
+                        "excluded_operation_ids": excluded_ids,
+                    },
+                    _before_persist=lease.require_current,
                 )
-                prepared = await configuration_delete_planning.prepare(
-                    gateway,
-                    request,
-                    known_secrets=self.service.sensitive_values,
-                    global_reader=self.service.global_reference_snapshot_reader,
-                )
-            except entity_metadata_planning.EntityMetadataRefusal as exc:
-                raise self.service._entity_metadata_refusal_error(exc, {}) from None
-            for item, (operation, binding) in zip(
-                prepared.items, included, strict=True
-            ):
-                identity = binding["identity"]
-                ownership = binding["ownership"]
-                if (
-                    item.target_id != operation.target_id
-                    or item.registry_entry_id != identity["registry_entry_id"]
-                    or item.entity_id != ownership["observed_entity_id"]
-                    or configuration_delete_intent(item.intent).get(
-                        "pre_image_fingerprint"
+            else:
+                try:
+                    request = configuration_delete_planning.validate_request(
+                        {
+                            "deletions": [
+                                {
+                                    "resource_type": operation.resource_type,
+                                    "target_id": operation.target_id,
+                                }
+                                for operation, _binding in delete_included
+                            ],
+                            "reason": created_object_rollback.REASON,
+                        }
                     )
-                    != identity["created_fingerprint"]
+                    prepared = await configuration_delete_planning.prepare(
+                        gateway,
+                        request,
+                        known_secrets=self.service.sensitive_values,
+                        global_reader=self.service.global_reference_snapshot_reader,
+                    )
+                except entity_metadata_planning.EntityMetadataRefusal as exc:
+                    raise self.service._entity_metadata_refusal_error(exc, {}) from None
+                delete_ids: dict[str, str] = {}
+                for item, (operation, binding) in zip(
+                    prepared.items, delete_included, strict=True
                 ):
-                    # Changed between the ownership read and the delete read.
-                    raise refuse(
-                        created_object_rollback.IDENTITY_CHANGED,
-                        [
-                            *excluded,
-                            {
-                                "operation_id": operation.operation_id,
-                                "reason": created_object_rollback.IDENTITY_CHANGED,
-                            },
-                        ],
+                    identity = binding["identity"]
+                    ownership = binding["ownership"]
+                    if (
+                        item.target_id != operation.target_id
+                        or item.registry_entry_id != identity["registry_entry_id"]
+                        or item.entity_id != ownership["observed_entity_id"]
+                        or configuration_delete_intent(item.intent).get(
+                            "pre_image_fingerprint"
+                        )
+                        != identity["created_fingerprint"]
+                    ):
+                        # Changed between the ownership read and the delete read.
+                        raise refuse(
+                            created_object_rollback.IDENTITY_CHANGED,
+                            [
+                                *excluded,
+                                {
+                                    "operation_id": operation.operation_id,
+                                    "reason": created_object_rollback.IDENTITY_CHANGED,
+                                },
+                            ],
+                        )
+                    value = created_object_rollback.marker(
+                        operation_id=item.operation_id,
+                        identity=identity,
+                        ownership=ownership,
+                        source_plan_id=source_plan.plan_id,
+                        source_plan_hash=source_hash,
+                        source_operation_id=operation.operation_id,
+                        source_child_id=binding["child_id"],
                     )
-                value = created_object_rollback.marker(
-                    operation_id=item.operation_id,
-                    identity=identity,
-                    ownership=ownership,
-                    source_plan_id=source_plan.plan_id,
-                    source_plan_hash=source_hash,
-                    source_operation_id=operation.operation_id,
-                    source_child_id=binding["child_id"],
-                )
-                item.classification["created_object_rollback"] = value
-                item.disclosure["created_object_rollback"] = (
-                    created_object_rollback.disclosure(value)
-                )
-            prepared.plan_disclosure["created_object_rollback"] = {
-                "model": created_object_rollback.MODEL,
-                "source": created_object_rollback.SOURCE,
-                "source_plan_id": source_plan.plan_id,
-                "operations_excluded": excluded[:8],
-                "residual_limitation": created_object_rollback.RESIDUAL_DISCLOSURE,
-            }
-            lease.require_current()
-            created = await self.service._create_configuration_delete_plan(
-                prepared,
-                caller_context={
-                    "rollback_source_plan_id": source_plan.plan_id,
-                    "rollback_model": created_object_rollback.MODEL,
+                    item.classification["created_object_rollback"] = value
+                    item.disclosure["created_object_rollback"] = (
+                        created_object_rollback.disclosure(value)
+                    )
+                    delete_ids[operation.operation_id] = item.operation_id
+                prepared.plan_disclosure["created_object_rollback"] = {
+                    "model": created_object_rollback.MODEL,
                     "source": created_object_rollback.SOURCE,
-                    "excluded_operation_ids": [
-                        item["operation_id"] for item in excluded
-                    ][:8],
-                },
-                _before_persist=lease.require_current,
-            )
+                    "source_plan_id": source_plan.plan_id,
+                    "operations_excluded": excluded[:8],
+                    "operations_restored": list(restores),
+                    "residual_limitation": created_object_rollback.RESIDUAL_DISCLOSURE,
+                }
+                lease.require_current()
+                created = await self.service._create_created_object_rollback_plan(
+                    prepared,
+                    order=[
+                        item if isinstance(item, dict) else delete_ids[item]
+                        for item in order
+                    ],
+                    restores=restores,
+                    caller_context={
+                        "rollback_source_plan_id": source_plan.plan_id,
+                        "rollback_model": created_object_rollback.MODEL,
+                        "source": created_object_rollback.SOURCE,
+                        "excluded_operation_ids": excluded_ids,
+                    },
+                    _before_persist=lease.require_current,
+                )
         rollback_plan = self.service._load(created["plan_id"])
         partial = bool(excluded)
         source_plan.rollback.available = True
@@ -5958,7 +6103,7 @@ class F3RuntimeIntegration:
         source_plan.rollback.requested_at = self.service._timestamp()
         source_plan.rollback.request_id = rollback_plan.plan_id
         self.service._record(source_plan, "rollback_plan_created", "success")
-        return {
+        result = {
             "status": (
                 "rollback_partial_plan_created" if partial else "rollback_plan_created"
             ),
@@ -5967,11 +6112,14 @@ class F3RuntimeIntegration:
             "approval_required": True,
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_delete": [
-                operation.operation_id for operation, _binding in included
+                operation.operation_id for operation, _binding in delete_included
             ],
             "operations_excluded": excluded,
             "provider_dispatch_occurred": False,
         }
+        if restores:
+            result["operations_to_restore"] = list(restores)
+        return result
 
     async def _create_helper_options_rollback(
         self, source_plan: Any, task: Any

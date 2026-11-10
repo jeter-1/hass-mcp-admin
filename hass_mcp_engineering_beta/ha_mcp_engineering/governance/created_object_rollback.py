@@ -38,6 +38,12 @@ ALREADY_ABSENT = "created_object_already_absent"
 PREREQUISITE_EXCLUDED = "created_object_rollback_prerequisite_excluded"
 READ_UNAVAILABLE = "created_object_read_unavailable"
 NO_ELIGIBLE_CHILD = "no_eligible_created_object"
+# Mixed forward plans (§3.4.4): an update child's restore.
+RESTORE_NOT_VERIFIED = "rollback_restore_not_verified"
+RESTORE_TARGET_CHANGED = "rollback_restore_target_changed"
+PENDING_ADMISSION = "pending_signed_registry_admission"
+# Update resource types a mixed rollback may restore (the generic route).
+RESTORE_RESOURCE_TYPES = frozenset({"automation", "script", "helper"})
 
 E_DISCLOSURE = (
     "The registry entry changed after Engineering created it; it may have "

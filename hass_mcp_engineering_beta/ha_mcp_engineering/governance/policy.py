@@ -1425,17 +1425,42 @@ def _helper_options_plan_complete(operations) -> bool:
 
 
 def _configuration_delete_plan_complete(operations) -> bool:
-    """A delete plan holds only governed deletes: 1-8 unique, unordered."""
+    """A delete plan holds only governed deletes: 1-8 unique, unordered.
+
+    HAMCP-298 §3.4.4: a created-object rollback may also hold restore
+    children (generic, unordered updates) when every delete child carries
+    exactly one valid created-object marker, all from one source plan.
+    """
 
     if not 1 <= len(operations) <= CONFIGURATION_DELETE_MAX_TARGETS:
         return False
-    if any(
-        op.action != CONFIGURATION_DELETE_ACTION
-        or op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
-        or op.depends_on
-        for op in operations
+    deletes = [op for op in operations if op.action == CONFIGURATION_DELETE_ACTION]
+    restores = [op for op in operations if op.action != CONFIGURATION_DELETE_ACTION]
+    if not deletes or any(
+        op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES or op.depends_on
+        for op in deletes
     ):
         return False
+    if restores:
+        from . import created_object_rollback
+
+        if any(
+            op.action != "update"
+            or op.resource_type not in created_object_rollback.RESTORE_RESOURCE_TYPES
+            or op.depends_on
+            or created_object_rollback.markers(op)
+            for op in restores
+        ):
+            return False
+        found = [created_object_rollback.markers(op) for op in deletes]
+        if any(
+            len(values) != 1
+            or not created_object_rollback.valid_marker(values[0], op)
+            for values, op in zip(found, deletes)
+        ) or len(
+            {(values[0]["source_plan_id"], values[0]["source_plan_hash"]) for values in found}
+        ) != 1:
+            return False
     return len({(op.resource_type, op.target_id) for op in operations}) == len(
         operations
     )
@@ -1960,7 +1985,8 @@ def _single_plan_policy(
         if any(
             op.action == CONFIGURATION_DELETE_ACTION for op in plan.operations
         ) and not _configuration_delete_plan_complete(plan.operations):
-            # HAMCP-155: deletes are never mixed with other operations.
+            # HAMCP-155: deletes are never mixed with other operations,
+            # except HAMCP-298 restores beside marked created deletes.
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.PROHIBITED,

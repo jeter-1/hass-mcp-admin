@@ -224,6 +224,7 @@ from . import label_registry
 from . import label_registry_planning
 from . import configuration_delete
 from . import configuration_delete_planning
+from . import created_object_rollback
 from . import helper_options as helper_options_contract
 from . import helper_options_planning
 from . import dashboard_metadata as dashboard_metadata_contract
@@ -6818,6 +6819,56 @@ class ChangeGovernanceService:
             _before_persist=_before_persist,
         )
 
+    async def _create_created_object_rollback_plan(
+        self,
+        prepared: Any,
+        *,
+        order: list[Any],
+        restores: dict[str, str],
+        caller_context: dict[str, Any],
+        _before_persist: Callable[[], None],
+    ) -> dict[str, Any]:
+        """HAMCP-298 §3.4.4: one reverse plan of restores and created deletes.
+
+        ``order`` lists, in strict reverse forward order, each restore
+        operation (the existing restore child, a generic update) and each
+        prepared delete child's operation id.  ``restores`` binds each
+        restore to the fingerprint observed inside the caller's lease.
+        Supplied only by the F3 created-object rollback route.
+        """
+
+        self._configuration_delete_core()
+        operations: list[dict[str, Any]] = []
+        for entry in order:
+            if isinstance(entry, dict):
+                operations.append(deepcopy(entry))
+                continue
+            item = prepared.item(entry)
+            operations.append(
+                {
+                    "operation_id": item.operation_id,
+                    "resource_type": item.resource_type,
+                    "action": configuration_delete.ACTION,
+                    "target_id": item.target_id,
+                    "proposed_config": deepcopy(item.intent),
+                }
+            )
+        return await self._create_configuration_plan(
+            title=f"Rollback governed change {caller_context.get('rollback_source_plan_id')}"[:160],
+            description=(
+                "Separately governed reverse of a verified F3 execution: "
+                "restore updated configuration from exact prior evidence and "
+                "delete created objects, in strict reverse order. Reason: "
+                f"{prepared.request.reason}"
+            ),
+            operations=operations,
+            expiration_minutes=prepared.request.expiration_minutes,
+            caller_context=caller_context,
+            _configuration_delete_context=prepared,
+            _created_object_restores=restores or None,
+            _before_persist=_before_persist,
+        )
+
     @staticmethod
     def _entity_metadata_refusal_error(
         exc: Exception, arguments: Any
@@ -6855,6 +6906,7 @@ class ChangeGovernanceService:
         _helper_options_context: Any | None = None,
         _dashboard_metadata_context: Any | None = None,
         _scene_configuration_context: Any | None = None,
+        _created_object_restores: dict[str, str] | None = None,
         _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
@@ -6887,6 +6939,10 @@ class ChangeGovernanceService:
         ``create_scene_configuration_plan`` and its F3 restore route
         (HAMCP-071): exactly the one prepared update.  Without it the scene
         configuration resource type is refused.
+        ``_created_object_restores`` is supplied only by the HAMCP-298
+        created-object rollback (with ``_configuration_delete_context``): the
+        named generic update children restore prior configuration, each
+        bound to its lease-observed fingerprint, beside the prepared deletes.
         """
 
         dormant_profiles = self._require_dormant_profile_admission(
@@ -6948,15 +7004,30 @@ class ChangeGovernanceService:
                     ]
                 },
             )
+        if _created_object_restores is not None and (
+            _configuration_delete_context is None
+            or not isinstance(_created_object_restores, dict)
+            or not _created_object_restores
+            or not isinstance(caller_context, dict)
+            or caller_context.get("source") != created_object_rollback.SOURCE
+        ):
+            # HAMCP-298: restores join a delete plan only on that route.
+            raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        restore_ids = set(_created_object_restores or ())
         if _configuration_delete_context is not None:
             # Admission was checked above; a delete also needs the caller's
             # current lease and is never a rollback.
             if _before_persist is None or _rollback_context is not None:
                 raise GovernanceError(ErrorCode.CONFIGURATION_VALIDATION_FAILED)
-            if [
+            raw_ids = [
                 item.get("operation_id") if isinstance(item, dict) else None
                 for item in (operations if isinstance(operations, list) else [])
-            ] != [item.operation_id for item in _configuration_delete_context.items]:
+            ]
+            if [
+                value for value in raw_ids if value not in restore_ids
+            ] != [item.operation_id for item in _configuration_delete_context.items] or (
+                not restore_ids <= set(raw_ids)
+            ):
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
@@ -7170,13 +7241,18 @@ class ChangeGovernanceService:
                 if isinstance(resource_type_value, str)
                 else ""
             )
+            # HAMCP-298: a restore beside created deletes is a generic update.
+            restoring = operation_id in restore_ids
+            deleting = _configuration_delete_context is not None and not restoring
             if resource_type not in (
                 {_label_context.item(operation_id).resource_type}
                 if _label_context is not None
                 else {_availability_exposure_context.request.resource_type}
                 if _availability_exposure_context is not None
                 else set(configuration_delete.RESOURCE_TYPES)
-                if _configuration_delete_context is not None
+                if deleting
+                else created_object_rollback.RESTORE_RESOURCE_TYPES
+                if restoring
                 else {helper_options_contract.RESOURCE_TYPE}
                 if _helper_options_context is not None
                 else {dashboard_metadata_contract.RESOURCE_TYPE}
@@ -7252,7 +7328,9 @@ class ChangeGovernanceService:
             )
             if (
                 action != configuration_delete.ACTION
-                if _configuration_delete_context is not None
+                if deleting
+                else action != "update"
+                if restoring
                 else action not in SUPPORTED_CONFIGURATION_ACTIONS
             ):
                 raise GovernanceError(
@@ -7260,7 +7338,9 @@ class ChangeGovernanceService:
                     details={
                         "validation_errors": [
                             f"{operation_id}: action must be delete"
-                            if _configuration_delete_context is not None
+                            if deleting
+                            else f"{operation_id}: a restore is an update"
+                            if restoring
                             else f"{operation_id}: action must be create or update"
                         ]
                     },
@@ -7347,7 +7427,7 @@ class ChangeGovernanceService:
                         "preparation"
                     )
                 valid, warnings = not errors, []
-            elif _configuration_delete_context is not None:
+            elif deleting:
                 delete_item = _configuration_delete_context.item(operation_id)
                 errors = configuration_delete.intent_errors(
                     resolved_type, target_id, proposed_config
@@ -7425,7 +7505,7 @@ class ChangeGovernanceService:
                 current = deepcopy(
                     _helper_options_context.item(operation_id).current
                 )
-            elif _configuration_delete_context is not None:
+            elif deleting:
                 # The prepared pre-image is the exact state the removed
                 # effects, intent fingerprint and recreate were bound to.
                 current = deepcopy(
@@ -7458,6 +7538,19 @@ class ChangeGovernanceService:
                         "operation_id": operation_id,
                     },
                 )
+            if restoring and (
+                current is None
+                or resource_fingerprint(resolved_type, current)
+                != _created_object_restores[operation_id]
+            ):
+                # HAMCP-298: the restore target changed since the lease read.
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_CONFLICT,
+                    details={
+                        "resource_id": target_id,
+                        "operation_id": operation_id,
+                    },
+                )
             if action in {"update", configuration_delete.ACTION} and current is None:
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
@@ -7471,7 +7564,7 @@ class ChangeGovernanceService:
                 )
 
             try:
-                if _configuration_delete_context is not None:
+                if deleting:
                     normalized_proposed = configuration_delete.normalize_intent(
                         proposed_config
                     )
@@ -7519,7 +7612,7 @@ class ChangeGovernanceService:
                     risk = scene_configuration_planning.risk_assessment(
                         operation_id, item.classification
                     )
-                elif _configuration_delete_context is not None:
+                elif deleting:
                     item = _configuration_delete_context.item(operation_id)
                     diff = {
                         "has_changes": True,

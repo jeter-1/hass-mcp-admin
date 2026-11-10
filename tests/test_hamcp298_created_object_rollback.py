@@ -350,35 +350,294 @@ class RollbackPlanningTests(CreatedObjectRollbackTestCase):
             [{"operation_id": "create_2", "reason": rollback_model.ALREADY_ABSENT}],
         )
 
-    async def test_mixed_create_and_update_keeps_the_existing_route(self):
+
+class MixedPlanTests(CreatedObjectRollbackTestCase):
+    """§3.4.4: one reverse plan; restores and deletes in strict reverse order."""
+
+    ORIGINAL = None
+
+    async def mixed(self, *, update_first: bool = False) -> dict:
         self.add("automation", "existing")
-        changed = automation_config("existing", target="light.hall")
+        self.ORIGINAL = deepcopy(self.config_rest.configs["automation"]["existing"])
+        create = {
+            "operation_id": "create_1",
+            "resource_type": "automation",
+            "action": "create",
+            "target_id": "new_one",
+            "proposed_config": automation_config("new_one"),
+        }
+        update = {
+            "operation_id": "update_1",
+            "resource_type": "automation",
+            "action": "update",
+            "target_id": "existing",
+            "proposed_config": automation_config("existing", target="light.hall"),
+        }
+        first, second = (update, create) if update_first else (create, update)
+        second["depends_on"] = [first["operation_id"]]
         created = await self.service.create_configuration_plan(
-            title="Mixed",
-            description="Mixed",
-            operations=[
-                {
-                    "operation_id": "create_1",
-                    "resource_type": "automation",
-                    "action": "create",
-                    "target_id": "new_one",
-                    "proposed_config": automation_config("new_one"),
-                },
-                {
-                    "operation_id": "update_1",
-                    "resource_type": "automation",
-                    "action": "update",
-                    "target_id": "existing",
-                    "proposed_config": changed,
-                    "depends_on": ["create_1"],
-                },
-            ],
+            title="Mixed", description="Mixed", operations=[first, second]
         )
         await self.approve(created)
-        await self.apply(created)
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        return created
+
+    def rollback_operations(self, rollback: dict) -> list:
+        plan = self.service._load(rollback["rollback_plan_id"])
+        return sorted(plan.operations, key=lambda item: item.order)
+
+    async def test_restore_then_delete_in_strict_reverse_order(self):
+        created = await self.mixed()
+        writes = len(self.config_rest.writes())
         rollback = await self.service.rollback_change(created["plan_id"])
-        self.assertNotIn("operations_to_delete", rollback)
-        self.assertIn("create_1", rollback.get("operations_excluded", []))
+        self.assertEqual(rollback["status"], "rollback_plan_created", rollback)
+        self.assertEqual(rollback["operations_to_delete"], ["create_1"])
+        self.assertEqual(len(rollback["operations_to_restore"]), 1)
+        self.assertEqual(rollback["operations_excluded"], [])
+        self.assertEqual(len(self.config_rest.writes()), writes, "planning never writes")
+        restore, delete = self.rollback_operations(rollback)
+        self.assertEqual((restore.action, restore.target_id), ("update", "existing"))
+        self.assertEqual(restore.proposed_config, self.ORIGINAL)
+        self.assertEqual((delete.action, delete.target_id), ("delete", "new_one"))
+        self.assertEqual(restore.depends_on, [])
+        self.assertEqual(delete.depends_on, [])
+        self.assertEqual(rollback_model.markers(restore), [])
+        (value,) = rollback_model.markers(delete)
+        self.assertEqual(value["source_plan_id"], created["plan_id"])
+        plan = self.service._load(rollback["rollback_plan_id"])
+        self.assertNotEqual(plan.policy_decision.policy_class.value, "prohibited")
+        rollback_plan = self.service.get_plan(rollback["rollback_plan_id"])
+        await self.approve(rollback_plan)
+        result = await self.apply(rollback_plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(
+            self.config_rest.writes()[writes:],
+            [
+                ("POST", "/config/automation/config/existing"),
+                ("DELETE", "/config/automation/config/new_one"),
+            ],
+        )
+        self.assertEqual(self.config_rest.configs["automation"]["existing"], self.ORIGINAL)
+        self.assertNotIn("new_one", self.config_rest.configs["automation"])
+
+    async def test_stale_prerequisite_restore_excludes_the_delete(self):
+        created = await self.mixed()
+        self.config_rest.configs["automation"]["existing"]["alias"] = "Edited"
+        writes = len(self.config_rest.writes())
+        gets = self.config_rest.config_gets.get(("automation", "new_one"), 0)
+        error = await self.refused(created["plan_id"])
+        self.assertEqual(error.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        self.assertEqual(error.details["reason"], rollback_model.NO_ELIGIBLE_CHILD)
+        excluded = {
+            item["operation_id"]: item for item in error.details["operations_excluded"]
+        }
+        self.assertEqual(
+            excluded["update_1"]["reason"], rollback_model.RESTORE_TARGET_CHANGED
+        )
+        self.assertEqual(
+            excluded["create_1"]["reason"], rollback_model.PREREQUISITE_EXCLUDED
+        )
+        self.assertEqual(excluded["create_1"]["prerequisite"], "update_1")
+        self.assertFalse(error.details["provider_dispatch_occurred"])
+        self.assertEqual(len(self.config_rest.writes()), writes)
+        self.assertEqual(
+            self.config_rest.config_gets.get(("automation", "new_one"), 0),
+            gets,
+            "the excluded delete target is never read at rollback time",
+        )
+
+    async def test_unverified_prerequisite_restore_excludes_the_delete(self):
+        created = await self.mixed()
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        declarations = self.runtime.children.declarations_for_task(task.task_id)
+        update_child = next(
+            item["child_id"]
+            for item in declarations
+            if item["operation_id"] == "update_1"
+        )
+        original_get = self.runtime.children.get
+
+        def unverified(child_id):
+            record = original_get(child_id)
+            if child_id == update_child and record is not None:
+                record = deepcopy(record)
+                record.evidence = {}
+            return record
+
+        before = self.reads()
+        with mock.patch.object(self.runtime.children, "get", unverified):
+            error = await self.refused(created["plan_id"])
+        excluded = {
+            item["operation_id"]: item for item in error.details["operations_excluded"]
+        }
+        self.assertEqual(
+            excluded["update_1"]["reason"], rollback_model.RESTORE_NOT_VERIFIED
+        )
+        self.assertEqual(
+            excluded["create_1"]["reason"], rollback_model.PREREQUISITE_EXCLUDED
+        )
+        self.assertEqual(self.reads(), before, "local exclusion reads nothing")
+
+    async def test_excluded_delete_does_not_block_a_later_restore(self):
+        created = await self.mixed(update_first=True)
+        values = self.identity_values(created["plan_id"])
+        (capture,) = [item for item in values if item is not None]
+        self.runtime.created_identities._path(capture["child_id"]).unlink()
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_partial_plan_created", rollback)
+        self.assertEqual(rollback.get("operations_to_delete", []), [])
+        self.assertEqual(len(rollback["operations_to_restore"]), 1)
+        self.assertEqual(
+            rollback["operations_excluded"],
+            [
+                {
+                    "operation_id": "create_1",
+                    "reason": rollback_model.IDENTITY_NOT_CAPTURED,
+                }
+            ],
+        )
+        (restore,) = self.rollback_operations(rollback)
+        self.assertEqual(restore.proposed_config, self.ORIGINAL)
+
+    async def test_unadmitted_delete_is_excluded_and_reads_nothing_for_it(self):
+        created = await self.mixed()
+        self.core.withdraw()
+        gets = dict(self.config_rest.config_gets)
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_partial_plan_created", rollback)
+        self.assertEqual(len(rollback["operations_to_restore"]), 1)
+        self.assertEqual(
+            rollback["operations_excluded"],
+            [
+                {
+                    "operation_id": "create_1",
+                    "reason": "pending_signed_registry_admission",
+                }
+            ],
+        )
+        self.assertEqual(
+            self.config_rest.config_gets.get(("automation", "new_one")),
+            gets.get(("automation", "new_one")),
+        )
+
+    async def test_failed_restore_leaves_the_delete_unattempted(self):
+        created = await self.mixed()
+        rollback = await self.service.rollback_change(created["plan_id"])
+        rollback_plan = self.service.get_plan(rollback["rollback_plan_id"])
+        await self.approve(rollback_plan)
+        original = self.config_rest.request
+
+        async def failing(method, path, **kwargs):
+            if method == "POST" and str(path) == "/config/automation/config/existing":
+                self.config_rest.requests.append((method, str(path)))
+                raise fixtures.HomeAssistantApiError(
+                    details={"status": 500, "provider_response_received": True}
+                )
+            return await original(method, path, **kwargs)
+
+        with mock.patch.object(self.config_rest, "request", failing):
+            result = await self.apply(rollback_plan)
+        self.assertNotEqual(result["task_state"], "succeeded_verified", result)
+        restore, delete = self.child_records(result["task_id"])
+        self.assertIsNotNone(restore)
+        self.assertNotEqual(restore.normalized_outcome, "succeeded_verified")
+        self.assertIsNone(delete, "the delete after a failed restore never starts")
+        self.assertEqual(self.config_rest.deletes(), [])
+        self.assertIn("new_one", self.config_rest.configs["automation"])
+        task = self.service._load_task(result["task_id"])
+        children = {
+            item["operation_id"]: item
+            for item in task.verification_summary["children"]
+        }
+        self.assertEqual(
+            children[delete_id(rollback_plan)]["state"], "not_started", children
+        )
+
+    async def test_option_e_child_in_a_mixed_plan_is_the_only_elevated_child(self):
+        created = await self.mixed()
+        self.ws.entries["automation.new_one"]["modified_at"] = 9.0
+        rollback = await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(rollback["status"], "rollback_plan_created", rollback)
+        plan = self.service._load(rollback["rollback_plan_id"])
+        self.assertEqual(plan.policy_decision.policy_class.value, "elevated_admin")
+        restore, delete = self.rollback_operations(rollback)
+        (value,) = rollback_model.markers(delete)
+        self.assertEqual(value["basis"], rollback_model.BASIS_MODIFIED_SINCE_CREATE)
+        self.assertEqual(rollback_model.markers(restore), [])
+        pending = self.service.approve(rollback["rollback_plan_id"], rollback["plan_hash"])
+        self.assertIn("challenge_id", pending, pending)
+        rollback_plan = self.service.get_plan(rollback["rollback_plan_id"])
+        await self.approve(rollback_plan)
+        result = await self.apply(rollback_plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertNotIn("new_one", self.config_rest.configs["automation"])
+
+    async def test_mixed_plan_without_markers_or_with_order_is_prohibited(self):
+        created = await self.mixed()
+        rollback = await self.service.rollback_change(created["plan_id"])
+        plan = self.service._load(rollback["rollback_plan_id"])
+        self.assertNotEqual(evaluate_change_policy(plan).policy_class.value, "prohibited")
+        index = next(
+            position
+            for position, item in enumerate(plan.operations)
+            if item.action == "delete"
+        )
+        unmarked = deepcopy(plan)
+        unmarked.operations[index].risk.evidence = [
+            item
+            for item in unmarked.operations[index].risk.evidence
+            if item.get("trigger") != rollback_model.POLICY_TRIGGER
+        ]
+        ordered = deepcopy(plan)
+        restore = next(item for item in ordered.operations if item.action == "update")
+        restore.depends_on = ["x"]
+        created_child = deepcopy(plan)
+        other = next(
+            item for item in created_child.operations if item.action == "update"
+        )
+        other.action = "create"
+        for name, forged in (
+            ("unmarked", unmarked),
+            ("ordered", ordered),
+            ("create", created_child),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    evaluate_change_policy(forged).policy_class.value, "prohibited"
+                )
+
+    async def test_restores_are_refused_outside_the_created_object_route(self):
+        self.add("automation", "existing")
+        operations = [
+            {
+                "operation_id": "restore_1",
+                "resource_type": "automation",
+                "action": "update",
+                "target_id": "existing",
+                "proposed_config": automation_config("existing"),
+            }
+        ]
+        for caller_context in (None, {"source": "other"}):
+            with self.subTest(caller_context=caller_context):
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service._create_configuration_plan(
+                        title="x",
+                        description="x",
+                        operations=operations,
+                        caller_context=caller_context,
+                        _created_object_restores={"restore_1": "0" * 64},
+                        _before_persist=lambda: None,
+                    )
+                self.assertEqual(
+                    raised.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+                )
+
+
+def delete_id(plan: dict) -> str:
+    return next(
+        item["operation_id"] for item in plan["operations"] if item["action"] == "delete"
+    )
 
 
 class PolicyAndPreflightTests(CreatedObjectRollbackTestCase):
