@@ -151,7 +151,7 @@ class DormantProfileTests(unittest.TestCase):
         (profile,) = CORE_LABEL_REGISTRY_PROFILES
         self.assertEqual(profile.capability_id, LABEL_PROFILE)
         self.assertEqual(len(CORE_CAPABILITY_PROFILES), 17)
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 34)  # + HAMCP-155 delete + HAMCP-232/145 November batch + HAMCP-106 + HAMCP-071 + HAMCP-311; HAMCP-290: + core.marketplace_read; HAMCP-231: + core.thread_matter_topology_read
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 36)  # + HAMCP-155 delete + HAMCP-232/145 November batch + HAMCP-106 + HAMCP-071 + HAMCP-311; HAMCP-290: + core.marketplace_read; HAMCP-134: + core.security_metadata_read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertIn(LABEL_PROFILE, {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES})
         self.assertNotIn(LABEL_PROFILE, {p.capability_id for p in CORE_CAPABILITY_PROFILES})
         for version, _commit, _digest in SUPPORTED_CORE_RELEASES:

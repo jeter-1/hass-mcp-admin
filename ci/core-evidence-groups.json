@@ -62,5 +62,8 @@
   ],
   "thread_matter_topology": [
     "core.thread_matter_topology_read"
+  ],
+  "security_metadata": [
+    "core.security_metadata_read"
   ]
 }

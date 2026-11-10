@@ -1,10 +1,11 @@
 """HAMCP-319 section 5.1 case ``91_typed_controls_verified_readback`` (91_only).
 
-Proves, against the exact digest-pinned ha-mcp 9.1.0 image named by the lane's
+Proves, against the exact digest-pinned ha-mcp 9.1.2 image (HAMCP-351; 9.1.0
+before it) named by the lane's
 reviewed registry row and an exact digest-pinned disposable Home Assistant Core
 from the reviewed support window, that Engineering's typed power, fan and helper
 controls each go plan/dispatch -> apply -> verified independent readback through
-the ha-mcp 9.1.0 provider on the strict full-catalog endpoint
+the ha-mcp 9.1.2 provider on the strict full-catalog endpoint
 ``/synthetic-upstream-secret/mcp/catalog/full``.
 
 Everything is disposable and loopback-only: the Core container is published on
@@ -49,7 +50,7 @@ from exact_image_admission_lanes import (  # noqa: E402
 CASE = "91_typed_controls_verified_readback"
 FORM = "strict_full"
 JOB = "exact-image-admission-lanes"
-UPSTREAM_VERSION = "9.1.0"
+UPSTREAM_VERSION = "9.1.2"
 SECRET_PATH = "/synthetic-upstream-secret/mcp"
 STRICT_PATH = SECRET_PATH + "/catalog/full"
 # 9.1 answers 404 on this short form; it is never a usable endpoint here.
@@ -122,7 +123,7 @@ def select_peer_image(peers: Any, architecture: str,
                       release_for: Callable[[str], Any] = reviewed_release) -> dict[str, str]:
     """Derive the peer image only from the lane's ``candidate`` registry row.
 
-    The row must name ha-mcp 9.1.0 by immutable index digest and agree exactly
+    The row must name ha-mcp 9.1.2 by immutable index digest and agree exactly
     with the compiled reviewed registry entry (index, per-platform manifests,
     image revision and source commit). Nothing else can supply an image.
     """
@@ -132,7 +133,7 @@ def select_peer_image(peers: Any, architecture: str,
     row = peers["candidate"]
     image, index = row.get("upstream_image"), row.get("image_index_digest")
     platforms = row.get("architecture_image_digests")
-    require(row.get("upstream_version") == UPSTREAM_VERSION, "peer_version_not_9_1_0")
+    require(row.get("upstream_version") == UPSTREAM_VERSION, "peer_version_not_9_1_2")
     require(isinstance(image, str) and PEER_IMAGE.fullmatch(image) is not None, "peer_image_not_digest_pinned")
     require(isinstance(index, str) and DIGEST.fullmatch(index) is not None
             and image == PEER_REPOSITORY + "@" + index, "peer_image_index_mismatch")
@@ -172,7 +173,7 @@ def core_image(window_loader: Callable[[], dict] | None = None) -> dict[str, str
     require(binding is not None and binding.image_index_digest == digest, "core_binding_unreviewed")
     require(binding.typed_operations is True, "core_typed_operations_unbound")
     admission = window.get("admission") or {}
-    require(admission.get("candidate_version") == UPSTREAM_VERSION, "admission_candidate_not_9_1_0")
+    require(admission.get("candidate_version") == UPSTREAM_VERSION, "admission_candidate_not_9_1_2")
     return {"image": f"{CORE_REPOSITORY}:{version}@{digest}", "version": version, "image_index_digest": digest}
 
 
@@ -220,7 +221,7 @@ def evaluate(controls: dict[str, Any], protocols: list[Any]) -> tuple[str, str]:
         if control.get("verified") is not True:
             return "failed", f"typed {name} control was not verified by independent readback"
     if not protocols:
-        return "failed", "no negotiated protocol was observed from the 9.1.0 peer"
+        return "failed", "no negotiated protocol was observed from the 9.1.2 peer"
     if negotiated(protocols) != EXPECTED_PROTOCOL:
         return "failed", "negotiated protocol was not exactly 2025-03-26 on every exchange"
     return "passed", ""
@@ -672,7 +673,7 @@ async def run_lane(plan: Plan) -> None:
         plan.evidence["core_compatible_count"] = core.health_snapshot()["compatible_count"]
         require(plan.evidence["core_compatible_count"] == 20, "core_typed_authority_incomplete")
 
-        # Exact ha-mcp 9.1.0 peer, image only from the reviewed registry row.
+        # Exact ha-mcp 9.1.2 peer, image only from the reviewed registry row.
         image = plan.peer["image"]
         docker("pull", "--platform", plan.peer["platform"], image, timeout=600)
         require(docker("image", "inspect", "--format", "{{.Architecture}}", image).stdout.strip() == arch,

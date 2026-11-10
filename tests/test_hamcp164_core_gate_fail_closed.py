@@ -55,6 +55,9 @@ from ha_mcp_engineering.tools.registry import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_NAMES,
 )
 
+from tests.test_beta_observability import (  # noqa: E402
+    preserve_create_application_state,
+)
 import tests.test_ha_core_2026_9_integration as core9  # noqa: E402
 from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
@@ -89,6 +92,7 @@ STATIC_CORE_TABLE = {
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
     "control_helper": DOWNSTREAM,
+    "control_device_configuration": DOWNSTREAM,
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
@@ -132,6 +136,7 @@ STATIC_CORE_TABLE = {
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
     "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
+    "get_security_metadata": MAPPED,  # HAMCP-134: dormant core.security_metadata_read
     "get_thread_matter_topology": MAPPED,  # HAMCP-231: dormant core.thread_matter_topology_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
@@ -201,6 +206,9 @@ ALLOWLIST_ARGUMENTS = {
     "control_helper": {
         "entity_id": "input_boolean.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "control_device_configuration": {
+        "entity_id": "switch.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
+    },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},
     "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
@@ -256,7 +264,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -281,7 +289,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 23)  # + HAMCP-311 control_helper (downstream authority)
+        self.assertEqual(len(ALLOWLISTED), 24)  # + HAMCP-311 control_helper, HAMCP-297 control_device_configuration (downstream authority)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[
@@ -520,6 +528,8 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the dormant Marketplace read is likewise refused
                 # pending signed admission (its own tests cover it).
                 "get_marketplace_inventory",
+                # HAMCP-134: the dormant security metadata read, likewise.
+                "get_security_metadata",
                 "get_thread_matter_topology",  # HAMCP-231: likewise
             }:
                 continue
@@ -672,6 +682,14 @@ class F3UnmappedIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProductionCompositionTests(unittest.TestCase):
+    def setUp(self):
+        # HAMCP-361: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
+
     def test_production_gateway_is_built_with_the_core_runtime(self):
         from dataclasses import replace
 

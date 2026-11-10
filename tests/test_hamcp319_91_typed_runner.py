@@ -2,7 +2,7 @@
 
 Exercises ``scripts/exact_image_admission_91_typed.py`` with injected runners
 only: no Docker, no network, no live system. The peer row is the compiled
-reviewed 9.1.0 registry entry (no synthetic image is ever accepted as a pass),
+reviewed 9.1.2 registry entry (no synthetic image is ever accepted as a pass),
 and the Core image comes from the committed support window. Required
 negatives: a control not executed, not verified or raising, a peer or Core
 start failure, a non-strict endpoint, an image not taken from the registry row
@@ -40,8 +40,8 @@ CASE_FILE = "91_typed_controls_verified_readback.json"
 
 
 def reviewed_row() -> dict:
-    release = typed.reviewed_release("9.1.0")
-    return {"upstream_version": "9.1.0",
+    release = typed.reviewed_release("9.1.2")
+    return {"upstream_version": "9.1.2",
             "upstream_image": "ghcr.io/homeassistant-ai/ha-mcp@" + release.image_index_digest,
             "image_index_digest": release.image_index_digest,
             "architecture_image_digests": dict(release.architecture_image_digests_by_platform),
@@ -291,8 +291,8 @@ class PeerImageTests(RunnerHarness):
             return {"candidate": row}
         other = "sha256:" + "9" * 64
         cases = {
-            "tag": (mutate(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.1.0"), "peer_image_not_digest_pinned"),
-            "tag_and_digest": (mutate(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.1.0@" + self.row["image_index_digest"]),
+            "tag": (mutate(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.1.2"), "peer_image_not_digest_pinned"),
+            "tag_and_digest": (mutate(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.1.2@" + self.row["image_index_digest"]),
                                "peer_image_not_digest_pinned"),
             "other_repo": (mutate(upstream_image="ghcr.io/example/ha-mcp@" + self.row["image_index_digest"]),
                            "peer_image_not_digest_pinned"),
@@ -303,7 +303,7 @@ class PeerImageTests(RunnerHarness):
             "platform": (mutate(architecture_image_digests={**self.row["architecture_image_digests"],
                                                             "linux/arm64": other}),
                          "peer_row_differs_from_reviewed_registry"),
-            "version": (mutate(upstream_version="8.5.0"), "peer_version_not_9_1_0"),
+            "version": (mutate(upstream_version="8.5.0"), "peer_version_not_9_1_2"),
             "baseline_role_only": ({"baseline": self.row}, "peer_row_absent"),
             "not_object": ([self.row], "peer_row_absent"),
         }
@@ -361,12 +361,12 @@ class CoreImageAndGateTests(RunnerHarness):
                 self.assert_failed(code, result, category)
                 self.assertEqual(called, [])
 
-    def test_admission_candidate_must_be_9_1_0(self):
+    def test_admission_candidate_must_be_9_1_2(self):
         import support_window
         changed = copy.deepcopy(support_window.load())
         changed["admission"] = {**changed.get("admission", {}), "candidate_version": "8.5.0"}
         code, result = self.run_main(runner_with({}, []), window_loader=lambda: changed)
-        self.assert_failed(code, result, "admission_candidate_not_9_1_0")
+        self.assert_failed(code, result, "admission_candidate_not_9_1_2")
 
     def test_ci_job_gate(self):
         controls = {name: verified(name) for name in typed.CONTROLS}
@@ -385,7 +385,7 @@ class CoreImageAndGateTests(RunnerHarness):
 class ObserverAndControlTests(unittest.TestCase):
     def test_observer_counts_only_completed_dispatch_and_records_protocol(self):
         class Result:
-            protocol_version, server_name, server_version = PROTOCOL, "ha-mcp", "9.1.0"
+            protocol_version, server_name, server_version = PROTOCOL, "ha-mcp", "9.1.2"
 
         class Transport:
             async def execute_read(self, tool, args, *, timeout_seconds, catalog_validator, before_dispatch):
@@ -418,13 +418,13 @@ class ObserverAndControlTests(unittest.TestCase):
         self.assertEqual(observer.writes("fan"), 1)
         self.assertEqual(observer.writes("power"), 0)
         self.assertEqual(evidence["protocols"], [PROTOCOL, PROTOCOL])
-        self.assertEqual(evidence["upstream_server"], {"name": "ha-mcp", "version": "9.1.0"})
+        self.assertEqual(evidence["upstream_server"], {"name": "ha-mcp", "version": "9.1.2"})
         self.assertFalse(observer.exchanges[-1]["complete"])
 
     def fan_scenario(self, *, writes_per_call=1, duplicate_writes=0, readback_state="on", state="succeeded_verified",
                      contract=None):
         from ha_mcp_engineering.fan.contracts import FAN_SEMANTIC_CONTRACTS
-        contract = contract or FAN_SEMANTIC_CONTRACTS["9.1.0"]
+        contract = contract or FAN_SEMANTIC_CONTRACTS["9.1.2"]
         evidence = {"controls": {}, "protocols": []}
         observer = typed.Observer(evidence)
         plan = typed.Plan("amd64", {}, {"version": "2026.10.1"}, "", 18423, 18486, Path("."), "typed91-x",

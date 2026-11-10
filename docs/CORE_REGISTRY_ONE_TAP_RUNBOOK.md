@@ -279,6 +279,11 @@ A failed group or cleanup without `clean: true` withholds
 proves the Thread dataset read (A1) and the Matter-absent refusal only, so A2
 signing evidence stays incomplete until the A2 success lane runs.
 
+For the security metadata extension, see
+[HAMCP-134 security_metadata local lane](evidence/hamcp134/lane/README.md).
+A failed group or cleanup without `clean: true` withholds
+`core.security_metadata_read` from seq 18; neither permits a substitute lane.
+
 ### O3 refusal notification and recovery
 
 A differing or missing contract-read file produces no candidate. The preparation

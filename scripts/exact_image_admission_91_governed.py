@@ -13,7 +13,7 @@ endpoint, the same one a client uses:
   this commit) runs with host networking against
 * a digest-pinned disposable Home Assistant Core from the reviewed support
   window (published on 127.0.0.1 only) and
-* the digest-pinned ha-mcp 9.1.0 peer from the lane's reviewed registry row on
+* the digest-pinned ha-mcp 9.1.2 peer from the lane's reviewed registry row on
   the strict ``/synthetic-upstream-secret/mcp/catalog/full`` endpoint (or the
   8.5.0 baseline peer on the legacy endpoint for side_by_side), reached
   through a loopback recording proxy that is this runner's peer request log.
@@ -71,7 +71,7 @@ CASE_DASHBOARD = "91_governed_dashboard_verified_readback"
 CASE_TYPED = "91_typed_public_verified_readback"
 FORM = "strict_full"
 JOB = "exact-image-admission-lanes"
-UPSTREAM_VERSION = "9.1.0"
+UPSTREAM_VERSION = "9.1.2"
 BASELINE_VERSION = "8.5.0"
 SECRET_PATH = "/synthetic-upstream-secret/mcp"
 STRICT_PATH = SECRET_PATH + "/catalog/full"
@@ -138,7 +138,8 @@ DASHBOARD_URL_PATH = "hamcp-governed"
 NEW_TITLE = "After governed apply"
 GUIDE_TOOL, SETTER_TOOL, SERVICE_TOOL = "ha_get_skill_guide", "ha_config_set_dashboard", "ha_call_service"
 # The exact internal guide read per upstream release: 8.5.0 is the reviewed
-# pass-through (skill + file); 9.1.0 is the compiled file-only rewrite
+# pass-through (skill + file); 9.1.0 and 9.1.2 (HAMCP-351, the candidate) take
+# the compiled file-only rewrite
 # (clients/mcp.py BEST_PRACTICES_GUIDE_ARGUMENTS / _BEST_PRACTICES_ARGUMENT_REWRITES,
 # unchanged for 8.5.0 since 2.4.2-beta.6).
 GUIDE_ARGUMENTS_BY_VERSION = {
@@ -327,7 +328,7 @@ def bps_problem(log: Any, expected_arguments: Any = None) -> str | None:
     """The internal guide read precedes the single setter, whose key is that receipt.
 
     ``expected_arguments`` is the stage's compiled guide read for its exact
-    upstream release (default: the 9.1.0 file-only read).
+    upstream release (default: the 9.1.2 file-only read).
     """
 
     expected_arguments = GUIDE_ARGUMENTS if expected_arguments is None else expected_arguments
@@ -623,7 +624,7 @@ def build_observed(plan: Plan | None, evidence: dict[str, Any], case: str) -> di
 
 def select_peer(peers: Any, configuration: str, architecture: str,
                 release_for: Callable[[str], Any]) -> dict[str, str]:
-    """The configuration's peer from its reviewed registry row only (91_only: 9.1.0 candidate;
+    """The configuration's peer from its reviewed registry row only (91_only: 9.1.2 candidate;
     side_by_side: the 8.5.0 baseline the stages run against)."""
 
     import exact_image_admission_91_typed as typed
@@ -1548,7 +1549,7 @@ async def run_lane(plan: Plan) -> None:
                     "core_registry_seed_failed")
             (data / "options.json").write_text(json.dumps(engineering_options(public_key)) + "\n", encoding="utf-8")
 
-            # Exact peer from the reviewed registry row (9.1.0 candidate or 8.5.0 baseline).
+            # Exact peer from the reviewed registry row (9.1.2 candidate or 8.5.0 baseline).
             image = plan.peer["image"]
             role = plan.peer.get("role", PEER_ROLE[plan.configuration])
             require(role == PEER_ROLE[plan.configuration]

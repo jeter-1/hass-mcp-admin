@@ -1,4 +1,4 @@
-"""Compiled 9.1.0 projections for ledger rows 1-11 (HAMCP-319 section 7).
+"""Compiled 9.1.0 and 9.1.2 projections for ledger rows 1-11 (HAMCP-319 section 7).
 
 Each entry in ``PROJECTIONS`` maps an upstream tool name to
 ``(project(payload, arguments) -> payload, completeness(payload) -> (partial, warnings))``.
@@ -116,9 +116,17 @@ def _complete(_payload: Any) -> tuple[bool, list[str]]:
 _WARNINGS = {"warnings": _string_list}
 
 
+# HAMCP-351: exact 9.1.2 (bab615df tools_config_automations.py:421-424) adds
+# Core's search/related set as ``related`` when the ha_mcp_tools bridge is
+# absent, plus a "related unavailable: ..." warning when that read fails.
+# Neither is part of the reviewed 8.5/9.1.0 public result, so both are removed
+# here; 9.1.0 never emits them, so this only narrows.
+_RELATED_WARNING_PREFIX = "related unavailable: "
+
+
 # Row 1 (PJ): tools_config_automations.py:465-476.
 def _automation(payload: Any, arguments: dict) -> dict:
-    return _envelope(
+    result = _envelope(
         payload,
         {
             "action": _equals("get"),
@@ -129,8 +137,17 @@ def _automation(payload: Any, arguments: dict) -> dict:
             "validation": _optional_dict,
             "references": _optional_dict,
         },
-        _WARNINGS,
+        {**_WARNINGS, "related": _optional_dict},
     )
+    result.pop("related", None)
+    if "warnings" in result:
+        kept = [item for item in result["warnings"]
+                if not item.startswith(_RELATED_WARNING_PREFIX)]
+        if kept:
+            result["warnings"] = kept
+        else:
+            del result["warnings"]
+    return result
 
 
 # Row 2 (P): tools_calendar.py:239-250.

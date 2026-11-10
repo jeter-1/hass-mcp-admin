@@ -1537,6 +1537,34 @@ disposable lane. No household access is needed for this.
     handling, write path and state update for the admitted kinds, not a real
     Matter Server's or a real device's timing. Real devices are proven only at
     deployed acceptance (§9.3).
+  - Build result (HAMCP-297 build PR, spike only, not G4). On the pinned Core
+    2026.11.0 image, the stub ran with the three pinned dumps. The `matter`
+    entry loaded, all three admitted kinds appeared, and each kind made
+    exactly one recorded write and showed the reflected state. An injected
+    write error surfaced as a service failure with the state unchanged. The
+    result was PASS, with 32 checks and no failures. The stop condition above
+    did not trigger. The protocol subset is pinned to
+    matter-js/matterjs-server v1.5.5 (commit `a7922e85`) and
+    matter-python-client 1.5.5. The asset is committed as a reusable,
+    test-only fixture at `tests/fixtures/hamcp297_matter_server_stub/`
+    (`stub.py`, `driver.py`, `run_lane.sh`, `nodes/*.json`,
+    `provenance.json`). `provenance.json` records each file's sha256, and
+    `stub.py` refuses to start if a dump's hash does not match. The asset is
+    not wired into any workflow in this PR. HAMCP-231's A2 lane references it
+    read-only.
+  - Residual, write path. The stub applies `write_attribute` to its own
+    attribute cache and reports the attribute update back. Upstream
+    matterjs-server's `TestNodeCommandHandler`
+    (`TestNodeCommandHandler.ts:187-190`) only logs the write and returns
+    success, and writes nothing. The stub therefore goes beyond the upstream
+    test handler. A lane on it proves the Core-side command, Core's update
+    path and the Engineering readback. It does not prove a real device write.
+  - Residual, topology (HAMCP-231 extension). `get_network_topology` returns
+    static, synthetic content: `stub.py` `TOPOLOGY`, with canary values. Its
+    field names follow matter-python-client 1.5.5 (`models.py:307-380`,
+    `client.py:417-435`, `client.py:1522-1525`). Core forwards whatever the
+    Matter Server builds, so a lane on it proves pass-through and projection.
+    It does not prove topology construction.
 - **Refusal fixture (not counted as dispatch evidence).** The repo-owned,
   test-only custom component in the style of
   `tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture`

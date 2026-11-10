@@ -107,7 +107,7 @@ class Beta32ReleaseBoundaryTests(unittest.TestCase):
         self.assert_beta32_documents_resolve_exactly()
 
     def test_scope_adds_no_tool_or_provider_fallback(self):
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 59)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 61)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         source = (
             BETA_DIR
             / "ha_mcp_engineering"

@@ -9,6 +9,8 @@ import json
 
 from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
 from .helper_value.contracts import HELPER_CONTRACTS
+from .device_configuration.contracts import PROVIDER as DEVICE_CONFIGURATION_PROVIDER
+from .device_configuration.contracts import PROVIDER_CONTRACT as DEVICE_CONFIGURATION_PROVIDER_CONTRACT
 
 from typing import Any
 
@@ -236,6 +238,17 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "authenticated_exact_helper_value_operation",
         "external_approval_required": False, "direct_write_allowed": False,
         "verification": "exact_helper_value_or_documented_transition",
+    },
+    {
+        "tool": "control_device_configuration", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_device_configuration", "routing": "engineering_native",
+        "provider": "direct_home_assistant_device_configuration",
+        "provider_contract": "direct-ha-exact-device-configuration-v1", "fallback": "none",
+        "policy": "authenticated_exact_device_configuration_operation",
+        "core_capabilities": ["core.device_configuration_entity_operation"],
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_ha_state_readback_with_composite_fingerprint",
     },
     {
         "tool": "control_fan", "category": "ordinary_runtime_action",
@@ -638,6 +651,23 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "sanitized": "shared_untrusted_data_sanitizer",
     },
     {
+        # HAMCP-134: security posture metadata; dormant until the owner-signed
+        # registry admits core.security_metadata_read.
+        "tool": "get_security_metadata",
+        "category": "evidence",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "direct_home_assistant_security_metadata",
+        "policy": "bounded_security_metadata_read",
+        "core_capabilities": ["core.security_metadata_read"],
+        "core_admission_requirement": "signed_core_registry_admission",
+        "core_admission": "not_evaluated",
+        "fallback": "none",
+        "sanitized": "shared_untrusted_data_sanitizer",
+    },
+    {
         # HAMCP-231: Thread datasets and the cached Matter topology
         # (refresh=false); dormant until the owner-signed registry admits
         # core.thread_matter_topology_read.
@@ -858,7 +888,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 def _platform_read_profile(kind: str) -> str:
     # Mirrors providers.upstream_platform_reads.ADAPTER_BINDINGS (test-bound);
     # importing it here would be circular through providers/__init__.
-    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0", "9.1.0"))
+    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"))
 
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
@@ -1032,6 +1062,17 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "core_applicability": "explicit_signed_core.typed_helper_value_operation_only",
     },
     {
+        "tool": "control_device_configuration", "capability": "typed_device_configuration_execution",
+        "required_semantics": "One exact Matter device-configuration entity change (select option, switch on/off, or number value) on a config-category entity matched to a signed (domain, platform, translation_key) triple, under connector authority, durable ownership and exact readback.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "complete_with_bound",
+        "selected_provider": DEVICE_CONFIGURATION_PROVIDER, "fallback_policy": "none",
+        "completeness": "reported_state_only_physical_feedback_not_verified",
+        "security_justification": "Three signed (domain, platform, translation_key) triples and a closed per-domain service map fix target, service and data keys. No generic services, no return_response, no arbitrary data, no ha-mcp route and no uncertain-action replay.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": DEVICE_CONFIGURATION_PROVIDER_CONTRACT,
+        "core_applicability": "explicit_signed_core.device_configuration_entity_operation_only",
+    },
+    {
         "tool": "control_fan",
         "capability": "typed_fan_execution",
         "required_semantics": "One exact fan action under authenticated connector authority, durable ownership and independent state/percentage verification.",
@@ -1101,9 +1142,9 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "ha_mcp_delegated",
         "completeness": "best_effort_redaction_partial_disclosed",
         "fallback_policy": "none",
-        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true; include_content is false on 8.4.3 and 8.5.0, and true on 9.1.0 only as transient input to a bounded, constructor-free YAML tag scan whose text is deleted from both response channels before projection and is never returned, logged or audited (tag loss or an unverifiable scan is disclosed as partial). Every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0, 9.1.0) is never default-admitted and is excluded from signed selections; the file siblings stay prohibited. Engineering makes no write or service call; the one accepted dependency (K1) is that the first call may make the component call POST ha_mcp_tools/get_caller_token and persist the admin caller token.",
+        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true; include_content is false on 8.4.3 and 8.5.0, and true on 9.1.0 and 9.1.2 only as transient input to a bounded, constructor-free YAML tag scan whose text is deleted from both response channels before projection and is never returned, logged or audited (tag loss or an unverifiable scan is disclosed as partial). Every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0, 9.1.0, 9.1.2) is never default-admitted and is excluded from signed selections; the file siblings stay prohibited. Engineering makes no write or service call; the one accepted dependency (K1) is that the first call may make the component call POST ha_mcp_tools/get_caller_token and persist the admin caller token.",
         "trust_mode": "reviewed_argument_constrained",
-        "trust_profile": "ha-mcp-8.4.3-yaml-fragment-read-v1, ha-mcp-8.5.0-yaml-fragment-read-v1, ha-mcp-9.1.0-yaml-fragment-read-v1",
+        "trust_profile": "ha-mcp-8.4.3-yaml-fragment-read-v1, ha-mcp-8.5.0-yaml-fragment-read-v1, ha-mcp-9.1.0-yaml-fragment-read-v1, ha-mcp-9.1.2-yaml-fragment-read-v1",
         "dependencies": "ha_mcp_tools custom component; ha_mcp_filesystem_tools_flag",
         "core_applicability": "core.basic_rest_read + core.basic_websocket_read, component routes unattested",
         "writes": "none",

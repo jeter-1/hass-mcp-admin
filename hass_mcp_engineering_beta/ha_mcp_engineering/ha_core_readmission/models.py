@@ -75,6 +75,7 @@ class CoreCapabilityClass(str, Enum):
     DASHBOARD_METADATA_OPERATION = "dashboard_metadata_operation"
     SCENE_CONFIGURATION_OPERATION = "scene_configuration_operation"
     MARKETPLACE_INVENTORY_READ = "marketplace_inventory_read"
+    SECURITY_METADATA_READ = "security_metadata_read"
     THREAD_MATTER_TOPOLOGY_READ = "thread_matter_topology_read"
     UNCLASSIFIED = "unclassified"
 
@@ -123,6 +124,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.DASHBOARD_METADATA_OPERATION,
             CoreCapabilityClass.SCENE_CONFIGURATION_OPERATION,
             CoreCapabilityClass.MARKETPLACE_INVENTORY_READ,
+            CoreCapabilityClass.SECURITY_METADATA_READ,
             CoreCapabilityClass.THREAD_MATTER_TOPOLOGY_READ,
         }
 

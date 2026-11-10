@@ -130,7 +130,7 @@ class Beta36ReleaseBoundaryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 59)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 61)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(APPROVAL_AUTHORITY_VERSION, 3)
         self.assertEqual(MAX_SELF_INFO_BYTES, 512 * 1024)

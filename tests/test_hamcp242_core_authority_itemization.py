@@ -82,6 +82,8 @@ DASHBOARD_METADATA = "core.dashboard_metadata_operation"  # HAMCP-106
 SCENE_CONFIGURATION = "core.scene_configuration_operation"  # HAMCP-071 seq 16
 HELPER_VALUE = "core.typed_helper_value_operation"  # HAMCP-311 (signed-only)
 MARKETPLACE = "core.marketplace_read"  # HAMCP-290 (dormant, no sequence names it)
+SECURITY_METADATA = "core.security_metadata_read"  # HAMCP-134 (dormant, no sequence names it)
+DEVICE_CONFIGURATION = "core.device_configuration_entity_operation"  # HAMCP-297 (dormant)
 TOPOLOGY = "core.thread_matter_topology_read"  # HAMCP-231 (dormant, no sequence names it)
 MISSING = "positive_authority_missing"
 
@@ -143,12 +145,15 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.]*$")
 
 # The eight profiles the signed sequence-14 2026.10.3 entry does not name
 # (three HAMCP-232/145, HAMCP-106 dashboard metadata, the HAMCP-071 seq 16
-# scene configuration, the HAMCP-311 signed-only helper value profile,
-# the HAMCP-290 dormant Marketplace read and the HAMCP-231 dormant
-# Thread/Matter topology read),
+# scene configuration, the HAMCP-311 signed-only helper value profile, the
+# HAMCP-290 dormant Marketplace read, the HAMCP-297 dormant device
+# configuration profile and the HAMCP-231 dormant Thread/Matter topology
+# read),
 # with the tools routes.py maps to each (pinned by hand, not derived).
 # control_helper is Core-independent in routes.py (it acquires its own
 # signed exact-target authority), so the helper value profile maps no tool.
+# control_device_configuration is Core-independent for the same reason
+# (HAMCP-297), so the device configuration profile maps no tool either.
 EXPECTED_LIVE_WITHHELD = [
     {
         "capability_id": HELPER_OPTIONS,
@@ -161,6 +166,13 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["create_dashboard_metadata_plan"],
+    },
+    # HAMCP-297: the dormant device configuration profile (projection order).
+    {
+        "capability_id": DEVICE_CONFIGURATION,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": [],
     },
     # HAMCP-290: the dormant Marketplace read (projection order).
     {
@@ -180,6 +192,13 @@ EXPECTED_LIVE_WITHHELD = [
         "disposition": "unavailable",
         "reason_code": MISSING,
         "affected_tools": ["get_script_trace", "list_script_traces"],
+    },
+    # HAMCP-134: the dormant security metadata read (wired after #418).
+    {
+        "capability_id": SECURITY_METADATA,
+        "disposition": "unavailable",
+        "reason_code": MISSING,
+        "affected_tools": ["get_security_metadata"],
     },
     # HAMCP-231: the dormant Thread/Matter topology read (projection order).
     {
@@ -305,6 +324,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "list_entity_registry",
     ],
     "core.script_trace_read": ["get_script_trace", "list_script_traces"],
+    "core.security_metadata_read": ["get_security_metadata"],  # HAMCP-134
     "core.state_service_discovery": [
         "create_reload_plan",
         "list_services",
@@ -460,9 +480,11 @@ class LiveCaseTests(_LiveCase):
                 # +1 HAMCP-071 seq 16 scene configuration,
                 # +1 HAMCP-311 signed-only helper value (no sequence names it)
                 # +1 HAMCP-290 dormant Marketplace read (no sequence names it)
+                # +1 HAMCP-134 dormant security metadata read (no sequence names it)
+                # +1 HAMCP-297 dormant device configuration (no sequence names it)
                 # +1 HAMCP-231 dormant Thread/Matter topology read (likewise)
-                "unavailable_count": 8,
-                "withheld_count": 8,
+                "unavailable_count": 10,
+                "withheld_count": 10,
             },
         )
         self.assertEqual(projection["withheld_capabilities"], EXPECTED_LIVE_WITHHELD)
@@ -477,11 +499,11 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # The eight withheld profiles are still refused (HAMCP-290: + Marketplace;
-        # HAMCP-231: + Thread/Matter topology).
+        # These nine withheld profiles are still refused (HAMCP-290: + Marketplace;
+        # HAMCP-297: + device configuration; HAMCP-231: + Thread/Matter topology).
         for capability in (
             INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
-            HELPER_VALUE, MARKETPLACE, TOPOLOGY,
+            HELPER_VALUE, MARKETPLACE, DEVICE_CONFIGURATION, TOPOLOGY,
         ):
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -491,15 +513,19 @@ class LiveCaseTests(_LiveCase):
         # seq 16: sequence 15 does not name the scene configuration profile,
         # so it stays withheld until sequence 16.  HAMCP-311: no sequence
         # names the signed-only helper value profile, so it stays withheld too.
-        # HAMCP-290: no sequence names the dormant Marketplace read either,
-        # nor (HAMCP-231) the dormant Thread/Matter topology read.
+        # HAMCP-290: no sequence names the dormant Marketplace read either.
+        # HAMCP-134: nor the dormant security metadata read.
+        # HAMCP-297: nor the dormant device configuration profile.
+        # HAMCP-231: nor the dormant Thread/Matter topology read.
         self.assertEqual(projection["compatible_count"], 30)
-        self.assertEqual(projection["withheld_count"], 4)
-        self.assertEqual(projection["unavailable_count"], 4)
+        self.assertEqual(projection["withheld_count"], 6)  # HAMCP-231: + thread/matter topology
+        self.assertEqual(projection["unavailable_count"], 6)  # HAMCP-231: + thread/matter topology
         self.assertEqual(
             projection["withheld_capabilities"],
             [item for item in EXPECTED_LIVE_WITHHELD
-             if item["capability_id"] in (SCENE_CONFIGURATION, HELPER_VALUE, MARKETPLACE, TOPOLOGY)],
+             if item["capability_id"] in (
+                 SCENE_CONFIGURATION, HELPER_VALUE, MARKETPLACE, SECURITY_METADATA,
+                 DEVICE_CONFIGURATION, TOPOLOGY)],
         )
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual(
@@ -509,6 +535,8 @@ class LiveCaseTests(_LiveCase):
         self.assertIsNone(self.core.acquire((SCENE_CONFIGURATION,)))
         self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
         self.assertIsNone(self.core.acquire((MARKETPLACE,)))  # HAMCP-290
+        self.assertIsNone(self.core.acquire((SECURITY_METADATA,)))  # HAMCP-134
+        self.assertIsNone(self.core.acquire((DEVICE_CONFIGURATION,)))  # HAMCP-297
         self.assertIsNone(self.core.acquire((TOPOLOGY,)))  # HAMCP-231
 
     async def test_after_sequence_16_the_list_is_empty_and_compatible_is_31(self):
@@ -517,19 +545,24 @@ class LiveCaseTests(_LiveCase):
         # the signed-only helper value profile, so it alone stays withheld
         # (31 of 32 runtime profiles compatible).
         projection = await self.admit(sequence_15_entry(sequence_16=True))
-        # HAMCP-290: the dormant Marketplace read stays withheld as well, and
-        # HAMCP-231: so does the dormant Thread/Matter topology read.
+        # HAMCP-290: the dormant Marketplace read stays withheld as well.
+        # HAMCP-134: and the dormant security metadata read.
+        # HAMCP-297: and the dormant device configuration profile.
+        # HAMCP-231: and the dormant Thread/Matter topology read.
         self.assertEqual(projection["compatible_count"], 31)
-        self.assertEqual(projection["compatible_count"] + 3, len(CORE_RUNTIME_CAPABILITY_PROFILES))
-        self.assertEqual(projection["withheld_count"], 3)
-        self.assertEqual(projection["unavailable_count"], 3)
+        self.assertEqual(projection["compatible_count"] + 5, len(CORE_RUNTIME_CAPABILITY_PROFILES))  # HAMCP-231: + thread/matter topology
+        self.assertEqual(projection["withheld_count"], 5)  # HAMCP-231: + thread/matter topology
+        self.assertEqual(projection["unavailable_count"], 5)  # HAMCP-231: + thread/matter topology
         expected = [item for item in EXPECTED_LIVE_WITHHELD
-                    if item["capability_id"] in (HELPER_VALUE, MARKETPLACE, TOPOLOGY)]
+                    if item["capability_id"] in (HELPER_VALUE, MARKETPLACE, SECURITY_METADATA,
+                                                 DEVICE_CONFIGURATION, TOPOLOGY)]
         self.assertEqual(projection["withheld_capabilities"], expected)
         self.assertIs(projection["withheld_capabilities_truncated"], False)
         self.assertEqual((await self.public_block())["withheld_capabilities"], expected)
         self.assertIsNone(self.core.acquire((HELPER_VALUE,)))
         self.assertIsNone(self.core.acquire((MARKETPLACE,)))  # HAMCP-290
+        self.assertIsNone(self.core.acquire((SECURITY_METADATA,)))  # HAMCP-134
+        self.assertIsNone(self.core.acquire((DEVICE_CONFIGURATION,)))  # HAMCP-297
         self.assertIsNone(self.core.acquire((TOPOLOGY,)))  # HAMCP-231
 
     async def test_projection_adds_no_core_call_and_persists_nothing(self):

@@ -60,8 +60,12 @@ verify, and only then update the app to 9.1 (release notes, Deploy order).
 - HAMCP-278 done; HAMCP-279 is CI-only and pending live proof.
 - Tool counts: 82 Engineering tools (81 before); 109 with 9.1.0 as the
   newest reviewed release, 110 on the 8.5.0 capture with the YAML reader on.
-- No storage format, approval, write or fallback change. Rollback to
-  2.4.2-beta.6 is safe after returning the app to 8.5.0 without
+- No storage format, approval or write change, and no unreviewed provider
+  fallback. The one reviewed fallback is HAMCP-290's dormant
+  Marketplace-to-HACS protocol fallback: only on an exact `unknown_command`,
+  `hacs/repositories/list` on the same connection, reported as
+  `fallback_occurred`, unused until `core.marketplace_read` is signed.
+  Rollback to 2.4.2-beta.6 is safe after returning the app to 8.5.0 without
   `/catalog/full`; it loses HAMCP-288 containment and restores
   `ha_get_hacs_info`.
 

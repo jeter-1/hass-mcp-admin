@@ -68,14 +68,19 @@ runners = _load_script("exact_image_admission_91_runners")
 ROLLBACK_VERSION = "2.4.2-beta.6"
 MARKETPLACE = "get_marketplace_inventory"
 RELIABILITY_BATCH = "automation_reliability_batch_analysis"
+SECURITY_METADATA = "get_security_metadata"  # HAMCP-134, after beta.6
+DEVICE_CONFIGURATION = "control_device_configuration"  # HAMCP-297
 THREAD_MATTER = "get_thread_matter_topology"  # HAMCP-231
 CURRENT_STATIC = frozenset(
     tool.name for tool in registered_tools(get_registered_server()).values()
 )
 # Independently restated here (not read from the script): beta.6 is the current
 # static set without the HAMCP-290 marketplace tool, the HAMCP-229
-# reliability batch tool and the HAMCP-231 thread/matter topology tool.
-BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH, THREAD_MATTER}
+# reliability batch tool and the HAMCP-134 security metadata tool,
+# (HAMCP-297) the device-configuration tool and (HAMCP-231) the
+# thread/matter topology tool.
+BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH, SECURITY_METADATA,
+                                DEVICE_CONFIGURATION, THREAD_MATTER}
 RELEASE_850 = load_reviewed_upstream_release_registry().by_version["8.5.0"]
 POLICY_850 = RELEASE_850.policy
 READS_850 = frozenset(e.exposed_name for e in POLICY_850.tools if e.is_read_route)
@@ -196,8 +201,10 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
         self.assertEqual(RETIRED_850, {"ha_get_hacs_info"})
         self.assertIn(MARKETPLACE, CURRENT_STATIC)
         self.assertIn(RELIABILITY_BATCH, CURRENT_STATIC)
+        self.assertIn(SECURITY_METADATA, CURRENT_STATIC)
+        self.assertIn(DEVICE_CONFIGURATION, CURRENT_STATIC)  # HAMCP-297
         self.assertIn(THREAD_MATTER, CURRENT_STATIC)
-        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 3)
+        self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 5)
         self.assertNotEqual(SERVER_VERSION, ROLLBACK_VERSION)
 
     def test_beta6_rollback_image_catalog_is_accepted(self):
@@ -267,6 +274,7 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertEqual(acceptance.BETA6_RETIRED_DELEGATED_READS, frozenset())
         self.assertNotIn(MARKETPLACE, acceptance.BETA6_STATIC_TOOL_NAMES)
         self.assertNotIn(RELIABILITY_BATCH, acceptance.BETA6_STATIC_TOOL_NAMES)
+        self.assertNotIn(DEVICE_CONFIGURATION, acceptance.BETA6_STATIC_TOOL_NAMES)  # HAMCP-297
 
     def test_pinned_version_is_the_rollback_identity(self):
         self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, ROLLBACK_VERSION)

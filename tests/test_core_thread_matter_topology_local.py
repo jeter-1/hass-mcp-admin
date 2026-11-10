@@ -48,9 +48,11 @@ class Contracts(unittest.TestCase):
         self.assertEqual(passing_subset([ref], {"thread_matter_topology": True}), [ref])
         self.assertEqual(passing_subset([ref], {"thread_matter_topology": False}), [])
 
-    def test_groups_file_is_append_only_with_thread_matter_last(self):
-        value = json.loads((ROOT / "ci/core-evidence-groups.json").read_text())
-        self.assertEqual(list(value)[-3:], ["helper_value", "marketplace_read", "thread_matter_topology"])
+    def test_groups_file_places_thread_matter_after_marketplace_before_security_metadata(self):
+        # New groups go before security_metadata, which the HAMCP-134 test pins last.
+        names = list(json.loads((ROOT / "ci/core-evidence-groups.json").read_text()))
+        self.assertEqual(names[names.index("marketplace_read") + 1], "thread_matter_topology")
+        self.assertLess(names.index("thread_matter_topology"), names.index("security_metadata"))
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())

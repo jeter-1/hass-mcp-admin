@@ -47,7 +47,12 @@ from test_hamcp319_dashboard import (
 from test_hamcp319_typed_writes import FAMILIES, catalog_tools
 from test_hamcp319_yaml import wire_catalog
 
-VERSIONS = ('8.5.0', '9.1.0')
+# HAMCP-351: exact 9.1.2 is admitted on the same terms as 9.1.0 (Josh,
+# 2026-11-09); every 9.1.0 case below also runs on 9.1.2.
+NINE_ONE = ('9.1.0', '9.1.2')
+VERSIONS = ('8.5.0',) + NINE_ONE
+# The exact 9.1.2 wire catalog (HAMCP-351 standalone capture, filesystem on).
+WIRE_912 = ROOT / 'docs/evidence/hamcp351/catalogs/standalone-fs-on-tools-response.json'
 REGISTRY = load_reviewed_upstream_release_registry()
 EXTRA = 'ha_synthetic_unreviewed_extra'
 # The blueprint adapter exposes its upstream tool under a reviewed name.
@@ -192,6 +197,8 @@ class Scope(unittest.TestCase):
 # Read gateway: automatic reads and adapter reads.
 # ---------------------------------------------------------------------------
 def gateway_catalog(version):
+    if version == '9.1.2':
+        return deepcopy(json.loads(WIRE_912.read_text(encoding='utf-8'))['result']['tools'])
     return deepcopy(adm.captured(version)) if version != '9.1.0' else deepcopy(wire_catalog())
 
 
@@ -242,7 +249,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                         version, without(gateway_catalog(version), name))
                     self.assertNotIn(EXPOSED_AS.get(name, name), self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
-                    if version == '9.1.0':
+                    if version in NINE_ONE:
                         # Codex F1: on 9.1.0 only the missing used read is
                         # withheld; the rest is not quarantined by its absence.
                         base = await self.baseline(version)
@@ -302,7 +309,7 @@ class ReadGatewayExactAdmission(adm.Harness):
         self.assertEqual(transport.sent, [])
 
     async def test_reordered_catalog_is_admitted(self):
-        for version in ('9.1.0',):
+        for version in NINE_ONE:
             base = await self.baseline(version)
             self.assertEqual(len(base), 28)
             self.assertIn(YAML_TOOL, base)
@@ -321,7 +328,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_unused_tool_removal_is_admitted(self):
-        for version in ('9.1.0',):
+        for version in NINE_ONE:
             base = await self.baseline(version)
             names = {tool['name'] for tool in gateway_catalog(version)}
             for name in ('ha_restart', 'ha_get_hacs_info'):
@@ -350,7 +357,7 @@ class ReadGatewayExactAdmission(adm.Harness):
 
     async def test_reordered_catalog_still_refuses_changed_missing_duplicate(self):
         """Lifting order does not lift the per-used-tool checks."""
-        for version in ('9.1.0',):
+        for version in NINE_ONE:
             base = await self.baseline(version)
             cases = {
                 'changed': changed(gateway_catalog(version), 'ha_get_state', _set_description),

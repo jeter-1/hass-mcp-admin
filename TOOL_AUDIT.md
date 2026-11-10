@@ -2,6 +2,49 @@
 
 Date: 2026-07-10
 
+## Security posture metadata (2.6.0, HAMCP-134)
+
+`get_security_metadata` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider
+  `direct_home_assistant_security_metadata`, policy
+  `bounded_security_metadata_read` (route `security_metadata_read_v1`);
+- risk `read`, writes `none`, fallback `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- requires signed Core admission of `core.security_metadata_read` for Core
+  2026.11.0. That profile is not signed yet, so the tool is listed but refuses
+  on every Core until the owner signs it.
+
+It sends only constant WebSocket payloads, each at most once:
+`auth/current_user`, `config/auth/list`, `http/config`, `get_config`,
+`homeassistant/expose_new_entities/get` (one per known assistant),
+`assist_pipeline/pipeline/list`, `conversation/agent/list` and `get_panels`.
+No Supervisor request is made, and no token, session, MFA or user mutation
+command is ever built. The projection is privacy-conservative and passes the
+shared sanitizer under a fixed byte cap. A field the source does not provide
+is reported as `not_provided` and never inferred. The tool adds one static tool
+(84 static on this branch).
+
+## YAML template and script dependency coverage (HAMCP-264)
+
+No tool, descriptor or input schema changes. The reviewed YAML reader gains a
+`dependency_index` purpose (`YAML_READER_PURPOSES`): fixed `configuration.yaml`
+paths `template`, `script`, `homeassistant.packages` and `homeassistant`, its
+own audit event `dependency_index_yaml_read`, the same single admitted
+`ha_config_get_yaml` route, and no new upstream tool, route, write, fallback
+or forwarding. Each purpose refuses any path outside its own set before
+dispatch (`configuration_definitions` cannot read `script`; `dependency_index`
+cannot read `sql`, `group`, `sensor` and the other definition paths).
+`entity_dependency_analysis`, `change_impact_analysis` and plan disclosures
+(`global_source_consumers`, informational and outside every plan hash) gain
+template and YAML script rows, at most `partial`; `!secret`/`!env_var` are
+never resolved or emitted; UI template helpers stay unread.
+`configuration_integrity_analysis` keeps template `not_supported`.
+`application.py` wires the dependency provider's reader to
+`yaml_config_reader(purpose="dependency_index")` with the shared audit; without
+an admitted catalog both rows are `unavailable`.
+
 ## Installed-only Marketplace inventory (2.5.0, HAMCP-290)
 
 `get_marketplace_inventory` is a native, read-only, Engineering-owned evidence

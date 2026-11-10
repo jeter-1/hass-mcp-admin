@@ -92,7 +92,7 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
         # HAMCP-232/145: +4 inactive (create_helper_options_plan,
         # create_input_select_option_plan, list_script_traces, get_script_trace).
-        self.assertEqual(len(registered_tools(get_registered_server())), 84)  # HAMCP-229 + HAMCP-290 + HAMCP-231: + reliability batch, marketplace inventory, thread/matter topology
+        self.assertEqual(len(registered_tools(get_registered_server())), 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         service_tree = ast.parse(
             (BETA / "ha_mcp_engineering/governance/service.py").read_text(
