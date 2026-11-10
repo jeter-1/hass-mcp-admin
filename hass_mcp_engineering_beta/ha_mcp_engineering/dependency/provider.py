@@ -643,10 +643,13 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         }
     )
 
-    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0, script_reader_factory=None, dashboard_reader_factory=None):
+    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0, script_reader_factory=None, dashboard_reader_factory=None, yaml_reader_factory=None):
         self.script_reader_factory = script_reader_factory
         # HAMCP-227: the reviewed dashboard reader; None reports dashboards unavailable.
         self.dashboard_reader_factory = dashboard_reader_factory
+        # HAMCP-264: the reviewed YAML reader captured for the dependency_index
+        # purpose; None reports YAML templates and scripts unavailable.
+        self.yaml_reader_factory = yaml_reader_factory
         self.rest_client = rest_client
         self.websocket_client = websocket_client
         self.secret = secret
@@ -1869,6 +1872,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         # HAMCP-277: the dashboard phase starts here, after the other sources,
         # so their requests cannot spend its DASHBOARD_SCAN_SECONDS budget.
         from .global_sources import collect_dashboard_sources, collect_global_sources
+        from .script_sources import create_script_reader
+        from .yaml_sources import collect_yaml_sources
+        # HAMCP-264: at most four fixed YAML reads, inside their own phase deadline.
+        yaml_sources = await collect_yaml_sources(
+            create_script_reader(self.yaml_reader_factory), registry,
+            registry_complete=entity_registry_complete, secret=self.secret,
+        )
+        if yaml_sources.profile["read_attempts"]:
+            request_counts["yaml_configuration"] += yaml_sources.profile["read_attempts"]
+            request_time_ms["yaml_configuration"] += yaml_sources.profile["read_time_ms"]
         dashboards = None
         if dashboard_reader is not None:
             try:
@@ -1879,7 +1892,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 dashboards = None
         global_sources = await collect_global_sources(
             states, registry, registry_complete=entity_registry_complete,
-            secret=self.secret, dashboards=dashboards,
+            secret=self.secret, dashboards=dashboards, yaml_sources=yaml_sources,
         )
         dashboard_profile = global_sources.profile["dashboard"]
         if dashboard_profile["list_requests"]:

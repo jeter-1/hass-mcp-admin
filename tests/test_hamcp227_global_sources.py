@@ -51,6 +51,7 @@ from ha_mcp_engineering.dashboard_analysis.dependency_reader import (  # noqa: E
     summarize_scan,
 )
 from ha_mcp_engineering.dependency import global_sources as g  # noqa: E402
+from ha_mcp_engineering.dependency import yaml_sources  # noqa: E402
 from ha_mcp_engineering.dependency.bounded_sources import bound_table  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import DirectHaDependencyProvider  # noqa: E402
@@ -312,14 +313,16 @@ class MembershipSourceTests(unittest.TestCase):
         _, count = self.collect([], [registry_row("sensor.synthetic_t1", "template"),
                                      registry_row("sensor.synthetic_t2", "template")])
         self.assertEqual(count, 2)
-        row = g.template_row(count)
+        # HAMCP-264: with no dependency_index YAML reader the row is unavailable.
+        row, _ = yaml_sources.unavailable_rows("yaml_reader_not_admitted", registry_templates=count)
         self.assertEqual((row.source_type, row.provider, row.completeness, row.evidence_count),
                          ("template", "none", "unavailable", 0))
-        self.assertEqual(row.warnings[0], g.TEMPLATE_DEFERRED_WARNING)
-        self.assertIn("HAMCP-264", row.warnings[0])
+        self.assertEqual(row.warnings[0], yaml_sources.UNAVAILABLE_WARNINGS["yaml_reader_not_admitted"])
         self.assertIn("2 template-platform entity registry entries", row.warnings[1])
-        self.assertIn("1 template-platform entity registry entry ", g.template_row(1).warnings[1])
-        self.assertEqual(g.template_row(None).warnings, [g.TEMPLATE_DEFERRED_WARNING])
+        one, _ = yaml_sources.unavailable_rows("yaml_reader_not_admitted", registry_templates=1)
+        self.assertIn("1 template-platform entity registry entry ", one.warnings[1])
+        none, _ = yaml_sources.unavailable_rows("yaml_reader_not_admitted")
+        self.assertEqual(none.warnings, [yaml_sources.UNAVAILABLE_WARNINGS["yaml_reader_not_admitted"]])
 
     def test_script_enumeration_is_reported_as_deferred(self):
         self.assertTrue(any("HAMCP-264" in gap and "script enumeration" in gap.lower() for gap in SCRIPT_GAPS))
@@ -932,6 +935,7 @@ class DependencyBuildTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({key: (row.provider, row.completeness) for key, row in rows.items()}, {
             "scene": ("direct_ha_api", "complete"), "group": ("direct_ha_api", "complete"),
             "template": ("none", "unavailable"), "dashboard": ("upstream_dashboard", "complete"),
+            "script": ("none", "unavailable"),  # HAMCP-264: no dependency_index reader wired
         })
         self.assertIn("1 template-platform", rows["template"].warnings[1])
 
@@ -1075,7 +1079,8 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(coverage_row(rows, source_type)["completeness"], "complete")
                 template = coverage_row(rows, "template")
                 self.assertEqual(template["completeness"], "unavailable")
-                self.assertTrue(any("HAMCP-264" in warning for warning in template["warnings"]))
+                self.assertIn(yaml_sources.UNAVAILABLE_WARNINGS["yaml_reader_not_admitted"],
+                              template["warnings"])
 
     async def test_dependency_source_types_filter_excludes_the_partition(self):
         data = await self.dependency("light.synthetic_shared", source_types=["automation", "script"])
@@ -1126,9 +1131,9 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("template", incomplete[0]["source_coverage"])
         self.assertNotIn("dashboard", incomplete[0]["source_coverage"])
         template = next(item for item in data["source_coverage_matrix"] if item["source_type"] == "template")
-        # Nothing reads templates, so no provider is claimed for them.
+        # No dependency_index YAML reader here, so no provider is claimed for them.
         self.assertEqual((template["provider"], template["completeness"]), ("none", "not_supported"))
-        self.assertTrue(any("HAMCP-264" in warning for warning in template["warnings"]))
+        self.assertIn(yaml_sources.UNAVAILABLE_WARNINGS["yaml_reader_not_admitted"], template["warnings"])
 
 
 class ImpactPaginationBindingTests(unittest.IsolatedAsyncioTestCase):

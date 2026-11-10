@@ -65,7 +65,12 @@ value. A refused path makes no record and no dispatch.
   16, string truncation).
 - Collector: `MAX_YAML_PACKAGES` 200, `MAX_YAML_TEMPLATE_SOURCES` 1000,
   `MAX_YAML_SCRIPT_SOURCES` 1000, `MAX_YAML_FINDINGS` 10000. A bound hit makes
-  the row partial and adds a `GlobalBoundedTerminal` with a reason code.
+  the row partial and adds a `GlobalBoundedTerminal` with reason code
+  `yaml_template_source_limit_exceeded`, `yaml_script_source_limit_exceeded`
+  or `yaml_finding_limit_exceeded` (each classified in
+  `bounded_sources.bound_table`; the `yaml_` prefix keeps them distinct from the
+  obligation ledger's existing `template_source_limit_exceeded`). A per-source
+  obligation `coverage_failure` forwards its own reason code as a terminal.
 
 ## 5. `!secret` and `!env_var`
 
@@ -101,8 +106,11 @@ L1 widening and is out of scope.
   section's `triggers`/`trigger`, `conditions`/`condition`,
   `actions`/`action` and `variables` are analysed with the entity through the
   shared obligation extractor. `source_type` is `template`; `source_id` is
-  positional, for example `configuration.yaml:template[0].sensor[2]` or
-  `packages.<name>:template[0].light[0]`. A `use_blueprint` section is partial.
+  positional, for example `template[0].sensor[2]` (configuration.yaml) or
+  `packages.<name>.template[0].light[0]` (`packages[<i>]` when the package name
+  is not a safe label). A package's `template` and labeled `template <x>`
+  sections are numbered as one list, as Core merges them. A `use_blueprint`
+  section is partial.
 - `source_entity_id` comes from the registry only when the registry is complete
   and exactly one registry row with platform `template` and no config entry
   has the unique id Core builds (`"<section unique_id>-<unique_id>"` or
@@ -120,13 +128,14 @@ L1 widening and is out of scope.
   flag off, where `ha_config_get_yaml` is not in the catalog), not current, or
   purpose mismatch: template and the YAML script row are `unavailable` with the
   reason, provider `none`. Never `complete`.
-- Template is `complete` only if every read succeeded with a complete envelope,
-  there is no include, truncation or blueprint section, packages are absent or
-  inline and complete, no bound was hit, the registry is complete, no
-  extracted dynamic reference is unresolved, and there are zero UI template
-  helpers. Otherwise it is `partial` with reasons.
-- The YAML script row is at most `partial` in `entity_dependency_analysis`
-  (merged with the loaded-script diagnostic, which is partial by design).
+- Template and the YAML script row are at most `partial`, even when every read
+  succeeded: labeled top-level keys (`template x:`, `script x:`) cannot be named
+  by the reader's path pattern, so their absence cannot be proven. Each row
+  warns about that limit and lists counted gaps (includes, truncation,
+  blueprint sections, non-inline packages, bounds, incomplete registry, UI
+  template helpers, withheld references). No path or value is emitted.
+- In `entity_dependency_analysis` the YAML script row merges with the
+  loaded-script diagnostic (also partial by design).
 - Read failure, timeout or authority change mid-phase: `unavailable` for the
   failed row; the findings already gathered in a phase that lost authority are
   dropped.
@@ -146,8 +155,15 @@ flow that can write." No config-entry or options-flow call is added.
   outside the governance-bound snapshot findings and fingerprint, so no
   approval binding changes. Its fingerprint gains the YAML evidence ids and row
   states, which changes only query/cursor identity.
-- `visible()` also withholds YAML template and script evidence when the YAML
-  reader is no longer current, as it does for dashboards.
+- The partition gains a fifth row, `script` (YAML scripts). `visible()` also
+  withholds YAML template and script evidence when the YAML reader is no longer
+  current, as it does for dashboards (withheld reason
+  `yaml_provider_authority_changed`).
+- `configuration_integrity_analysis` does not consume template or YAML script
+  findings (its partition filter stays scene, group, dashboard). Its template
+  row stays `not_supported` with a HAMCP-264 warning that names the consuming
+  analyses, so the partition's template row cannot overstate integrity
+  coverage (`integrity/provider.py`, one analysis-tool module edit).
 - `entity_dependency_analysis`: merged as today plus the YAML script row.
 - `change_impact_analysis`: `PARTITION_SOURCE_TYPES = (*GLOBAL_SOURCE_TYPES,
   "script")` replaces `GLOBAL_SOURCE_TYPES` in its three partition checks, so
