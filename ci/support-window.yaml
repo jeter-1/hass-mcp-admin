@@ -101,6 +101,8 @@ ha_mcp:
 # carries candidate_version. That registry entry is the build's admission
 # signal; the lanes then turn active with no workflow edit, and every pin comes
 # from that reviewed registry row, never from this file.
+# HAMCP-351 (Josh 2026-11-09): the candidate is ha-mcp 9.1.2; 9.1.0 stays
+# admitted in the registry but no longer runs these admission lanes.
 admission:
   baseline_version: "8.5.0"
-  candidate_version: "9.1.0"
+  candidate_version: "9.1.2"

@@ -1,0 +1,24 @@
+{
+ "error_shapes": {
+  "invalid_search": {
+   "is_error": true,
+   "shape_fingerprint": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+   "structured_code": "VALIDATION_FAILED"
+  },
+  "missing_automation": {
+   "is_error": true,
+   "shape_fingerprint": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
+   "structured_code": "RESOURCE_NOT_FOUND"
+  },
+  "missing_registry_entity": {
+   "is_error": true,
+   "shape_fingerprint": "3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8",
+   "structured_code": "SERVICE_CALL_FAILED"
+  },
+  "missing_state": {
+   "is_error": true,
+   "shape_fingerprint": "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c",
+   "structured_code": "ENTITY_NOT_FOUND"
+  }
+ }
+}

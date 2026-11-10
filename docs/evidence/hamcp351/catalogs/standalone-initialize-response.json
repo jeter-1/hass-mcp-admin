@@ -1,0 +1,25 @@
+{
+ "id": 0,
+ "jsonrpc": "2.0",
+ "result": {
+  "capabilities": {
+   "logging": {},
+   "prompts": {
+    "listChanged": true
+   },
+   "resources": {
+    "listChanged": true,
+    "subscribe": false
+   },
+   "tools": {
+    "listChanged": true
+   }
+  },
+  "instructions": "IMPORTANT: This server provides best-practice skills that MUST be consulted before performing matching actions. Read the SKILL.md for the matching skill \u2014 it contains a Reference Files table that maps tasks to specific reference files. You MUST read the referenced files that match your current task before proceeding. Do NOT load all reference files upfront \u2014 only the ones the table directs you to.\n\nHow to access: Call ha_get_skill_guide() with no arguments: it returns SKILL.md. Then pass file='<path>' for each reference file the table points to. Use this tool even if your client can read the skill:// resources.\n\n### Skill: home-assistant-best-practices (skill://home-assistant-best-practices/SKILL.md)\nHome Assistant (HA) best practices. Load first, before answering or exploring, on any HA request.\nTRIGGER THIS SKILL WHEN: - Creating or editing automations, scripts, scenes, dashboards, blueprints - Choosing template sensors, helpers, or Jinja macros - Restructuring triggers, conditions, or modes; button, remote, or event-entity automations - Renaming entities or migrating device_id to entity_id - Looking up card types or domain docs; writing AppDaemon apps - Deleting or restoring a backup, or upgrading Core or the OS\nSYMPTOMS: - Jinja2 templates where native options exist - device_id used instead of entity_id - Entity IDs changed without checking consumers - Wrong automation mode chosen - Raw sensor or hard-coded value used where a helper belongs - Direct .storage edits or automation lookups there; generated YAML - User told to edit configuration.yaml for UI integrations - Hardcoded Blueprint entities or skipped selectors - Existing state changed with no recovery path - Jinja copy-pasted between templates\n\n## Filing ha-mcp issues\nBefore filing any GitHub issue about ha-mcp, feature requests included, run ha_report_issue and put the issue_body it returns in the issue unchanged. A bug report filed without it is closed automatically after 24 hours.",
+  "protocolVersion": "2025-03-26",
+  "serverInfo": {
+   "name": "ha-mcp",
+   "version": "9.1.2"
+  }
+ }
+}

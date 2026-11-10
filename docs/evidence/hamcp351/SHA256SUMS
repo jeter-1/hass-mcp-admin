@@ -1,0 +1,5 @@
+d0a5dd8057d9344b555b45f6be18e94afff7af53d46c046f70daeae22073939f  ./catalogs/fake-ha-319-error-shapes.json
+de911ec2d43b62b448636d5c898904f52e1f22c0d17956aa4f337ccdcdea25c2  ./catalogs/standalone-fs-off-tools-response.json
+340f3baa402ef3646b0289d26a72ec6f5662f6f0414e2366617490145f9e6ae9  ./catalogs/standalone-fs-on-tools-response.json
+b5c8a4ae3b182620cc62978469553b1fcaec911d3eb81ba141f4d5ef430ffa7a  ./catalogs/standalone-initialize-response.json
+55c23015545673c97e0a6c1cc6661ae4682cdb7d203364f9283a07299ea41c15  ./README.md

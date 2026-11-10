@@ -207,6 +207,7 @@ def expected_contract_family(upstream_version: str) -> str:
             "8.5.0",
             "8.6.0",
             "9.1.0",
+            "9.1.2",
         }
         else CONTRACT_FAMILY
     )
@@ -455,6 +456,10 @@ EXACT_9_1_DASHBOARD_DESCRIPTOR_FINGERPRINT = (
     "4b3ee50fa2fe7655309e5044ca264adccdc2af9f9a883338205b4d4602ec2d94"
 )
 EXACT_9_1_PROHIBITED_ARGUMENTS = frozenset({"describe"})
+# HAMCP-351: exact 9.1.2 (bab615df) advertises the byte-identical getter
+# descriptor, so the same fingerprint, prohibited argument and allowed
+# properties bind it. Any other release keeps the base sets.
+EXACT_9_1_DASHBOARD_RELEASES = frozenset({"9.1.0", "9.1.2"})
 _EXACT_9_1_ANNOTATIONS = {
     "readOnlyHint": True,
     "destructiveHint": False,
@@ -474,7 +479,7 @@ def _exact_policyless_descriptor(tool: Mapping[str, Any]) -> bool:
 def prohibited_arguments_for_version(upstream_version: str) -> frozenset[str]:
     """Return the compiled prohibited-argument set for one exact release."""
 
-    if upstream_version == "9.1.0":
+    if upstream_version in EXACT_9_1_DASHBOARD_RELEASES:
         return PROHIBITED_ARGUMENTS | EXACT_9_1_PROHIBITED_ARGUMENTS
     return PROHIBITED_ARGUMENTS
 
@@ -484,7 +489,7 @@ def allowed_schema_properties_for_version(
 ) -> frozenset[str]:
     """Return the compiled allowed schema-property set for one exact release."""
 
-    if upstream_version == "9.1.0":
+    if upstream_version in EXACT_9_1_DASHBOARD_RELEASES:
         return ALLOWED_SCHEMA_PROPERTIES | EXACT_9_1_PROHIBITED_ARGUMENTS
     return ALLOWED_SCHEMA_PROPERTIES
 

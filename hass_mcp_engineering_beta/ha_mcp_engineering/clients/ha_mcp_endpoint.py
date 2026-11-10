@@ -32,7 +32,8 @@ from .mcp import DashboardTransportError
 
 STRICT_FULL = "strict_full"
 LEGACY = "legacy"
-STRICT_FULL_SELECTOR_RELEASES = frozenset({"9.1.0"})
+# HAMCP-351: exact 9.1.2 keeps the 9.1.0 strict /catalog/full admission.
+STRICT_FULL_SELECTOR_RELEASES = frozenset({"9.1.0", "9.1.2"})
 SELECTOR_KEYWORDS = frozenset({"catalog", "full", "search", "readonly", "default"})
 EXPECTED_SELECTOR_SUFFIX = "/catalog/full"
 
@@ -57,7 +58,7 @@ UPSTREAM_REDIRECT_OPERATOR_MESSAGE = (
     "then restart Engineering."
 )
 UPSTREAM_CATALOG_MODE_OPERATOR_MESSAGE = (
-    "ha-mcp 9.1.0 is admitted only through its full catalog endpoint. Set the "
+    "ha-mcp 9.1.0 and 9.1.2 are admitted only through the full catalog endpoint. Set the "
     "upstream_dashboard_mcp_url option to the ha-mcp endpoint path ending in "
     "/catalog/full, then restart Engineering."
 )
@@ -137,7 +138,7 @@ def classify_endpoint_form(value: str) -> str:
 
 
 def selector_refusal_code(value: str) -> str:
-    """Return the closed refusal code for a non-strict value under 9.1.0."""
+    """Return the closed refusal code for a non-strict value under 9.1.0/9.1.2."""
 
     try:
         path = urlsplit(value).path
@@ -431,7 +432,8 @@ def require_selector_agreement(
     """Shared admission check after initialize and before any tools/list.
 
     Every version: the session's client must carry the no-redirect binding of
-    this snapshot generation. 9.1.0 only: the form must be ``strict_full``.
+    this snapshot generation. 9.1.0 and 9.1.2 only: the form must be
+    ``strict_full``.
     Other registered versions are unchanged on either form. Generation
     currency of a retained worker is enforced before each reuse by its owner.
     """

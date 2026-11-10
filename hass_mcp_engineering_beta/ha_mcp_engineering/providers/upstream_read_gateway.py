@@ -6241,7 +6241,7 @@ def _compare_tool_contract(
         entry.argument_restrictions[0]
         if is_blueprint_adapter(entry) or is_platform_adapter(entry)
         else READ_ADAPTER_8_6
-        if is_8_6_read_adapter(entry) else reads_9_1.ADAPTER
+        if is_8_6_read_adapter(entry) else reads_9_1.adapter_token(entry)
         if reads_9_1.is_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
