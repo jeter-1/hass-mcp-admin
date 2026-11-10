@@ -276,8 +276,8 @@ For the Thread/Matter topology extension, see
 [HAMCP-231 thread_matter_topology local lane](evidence/hamcp231/lane/README.md).
 A failed group or cleanup without `clean: true` withholds
 `core.thread_matter_topology_read`; neither permits a substitute lane. That lane
-proves the Thread dataset read (A1) and the Matter-absent refusal only, so A2
-signing evidence stays incomplete until the A2 success lane runs.
+proves the Thread dataset read (A1) and the Matter-absent refusal only. The A2
+success lane in the same README proves the Matter topology read (A2).
 
 For the security metadata extension, see
 [HAMCP-134 security_metadata local lane](evidence/hamcp134/lane/README.md).

@@ -10,9 +10,10 @@ separate owner action.
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
-faults. **A2 signing evidence is complete** (run 2 below, PASS). The A2 lane
-depends on HAMCP-297 draft PR #428: its committed stub path resolves only after
-#428 merges.
+faults. **A2 signing evidence is complete** (run 3 below, PASS, on the catch-up
+merge with `release/2.6.0`). The A2 lane uses the HAMCP-297 Matter Server stub.
+PR #428 merged that stub into `release/2.6.0`, and run 3 uses the committed
+copy.
 
 ## Exact authority and scope
 
@@ -47,8 +48,11 @@ reference. A changed profile must be re-proven.
 
 ## Source manifest
 
-`ci/core-contract-read-files.json` grows from 509 to **523** paths. It only
-expands; every prior profile mapping is retained.
+`ci/core-contract-read-files.json` grew from 509 to 523 paths on this branch.
+After the catch-up merge with `release/2.6.0` at `fcd6973f` it holds **527**
+paths: the release added 4 for HAMCP-134 (456 to 460), and this branch carries
+67 more (53 from the HAMCP-290 stack and 14 from this profile). It only expands;
+every prior profile mapping is retained.
 
 The new `core.thread_matter_topology_read` profile maps **38** files:
 
@@ -69,8 +73,8 @@ lane reports one of `thread_matter_manifest_missing`,
 or `thread_matter_source_hash_mismatch`.
 
 The O3 union records were regenerated from the same exact archives:
-`docs/evidence/hamcp315/core-sources/2026.10.3.json` now holds 451 hashes and
-`2026.11.0.json` holds 522. October still lacks 72 manifest paths and November
+`docs/evidence/hamcp315/core-sources/2026.10.3.json` now holds 455 hashes and
+`2026.11.0.json` holds 526 (451 and 522 before the catch-up merge). October still lacks 72 manifest paths and November
 still lacks only `homeassistant/helpers/condition.py`. Historical hashes are
 unchanged.
 
@@ -86,8 +90,10 @@ bytes:
 
 ## Group mapping and CI
 
-`ci/core-evidence-groups.json` appends
-`"thread_matter_topology": ["core.thread_matter_topology_read"]`. The mapping
+`ci/core-evidence-groups.json` adds
+`"thread_matter_topology": ["core.thread_matter_topology_read"]` directly after
+`marketplace_read` and before `security_metadata`, which the HAMCP-134 test
+pins as the last group. The mapping
 never adds a profile to inherited authority, because `passing_subset` still
 intersects with the authenticated predecessor. Scheduled CI does not run this
 local lane, so a missing group receipt stays withheld. No workflow is changed.
@@ -219,7 +225,7 @@ is explicit: Core 2g, stub 256m, fixture 128m. Cleanup must read back as
 clean: no containers, no network, no configuration.
 
 **Stub pinning.** HAMCP-297 owns the stub, so this lane never copies or edits
-it. `a2-stub-expectations.json` pins its owner (HAMCP-297, draft PR #428), its
+it. `a2-stub-expectations.json` pins its owner (HAMCP-297, PR #428), its
 commit `aa25c56498194c493b468db1faa842018e04acd2`, its committed directory
 `tests/fixtures/hamcp297_matter_server_stub/` and the SHA-256 of all seven
 files. `--stub-dir` accepts only two locations: that committed directory, or a
@@ -259,7 +265,8 @@ The lane checks:
 
 ### Run 2: PASS (2026-11-10 02:14 CST)
 
-`thread_matter_topology_a2.json` records this run:
+`thread_matter_topology_a2.json` recorded this run until run 3 replaced it
+(the run 2 receipt is in commit `bc07881e`):
 
 - source commit `f1f824c91b1a93a556ebbffe57d821e0ae457a5b`;
 - profile `core_thread_matter_topology_read_v1`, fingerprint
@@ -284,6 +291,37 @@ lowercased by design. The fix compares in normalized form. Run 1 also led to a
 module fix: the stub's diagnostic mesh ids (`thread_…`, `meshrloc_…`) are now
 screened as graph ids on nodes and edge endpoints.
 
+### Run 3: PASS (2026-11-10 17:16 CST)
+
+Run 3 repeats the lane on the catch-up merge with `release/2.6.0`
+(`fcd6973f`), under the host heavy-job gate as unit `hamcp231-a2-lane3b`.
+`thread_matter_topology_a2.json` now records this run and replaces the run 2
+receipt:
+
+- source commit `6339dbe7aebe7fcb4f2b11cbdd262ed348abda52`;
+- the same profile and fingerprint as run 2;
+- manifest SHA-256
+  `913f8a3229fec3e85516183fd5fbfc2539ec90e3921b1d56419d545ab0f5bb7e` (527
+  paths);
+- stub at `committed`, with 7 files verified: the release copy in
+  `tests/fixtures/hamcp297_matter_server_stub/`, which matches the pinned
+  hashes of commit `aa25c56498194c493b468db1faa842018e04acd2`;
+- egress probe `blocked`;
+- receipt SHA-256
+  `dd23cca6e9d357e4660846a2910ee35a30fa6909d4d7f7c7d5d0fac59fedd8e0`.
+
+The results equal run 2: 6 nodes, 4 kept connections, 1 dropped, 3 Matter
+nodes resolved, 4 recorded topology commands all with `refresh: false`, both
+faults as above, 0 of 16 canaries leaked, `fallback_count` 0 and cleanup clean.
+
+The first launch, one minute earlier as unit `hamcp231-a2-lane3`, was refused
+before any container started (`a2_stub_file_set_mismatch`). A local test run
+had left an ignored `__pycache__` directory in the stub directory, and the lane
+refuses any extra file there. Removing it was the only change.
+
+The receipt's `stub_dependency` label still reads "draft PR #428". That text
+comes from the lane script, which this run left unchanged; the PR has merged.
+
 **Residuals.**
 
 - The topology is static and synthetic: the stub serves one fixed graph, not
@@ -291,7 +329,8 @@ screened as graph ids on nodes and edge endpoints.
 - The stub applies writes to its own cache. The only writes it saw were Core's
   own `set_default_fabric_label` and `start_listening` during Matter setup and
   reload. Engineering sent none.
-- The committed stub path depends on HAMCP-297 PR #428 merging.
+- The stub is the committed release copy, merged by PR #428. A later change
+  to any of its seven files makes the lane refuse until the pins are reviewed.
 
 Offline tests are in `tests/test_core_thread_matter_topology_a2_local.py`.
 They use canary values generated at test time, never the stub's literals, and
