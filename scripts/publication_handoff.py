@@ -355,12 +355,37 @@ def git(*args):
     return result.stdout.decode().strip()
 
 
+# HAMCP-348: the pre-merge Ready check reads this timeline with
+# ``github_retry.py api-get --pages 50`` (MAX_PAGES x PAGE_SIZE); the receipt
+# reads it under the same bound and rule so a PR that passed Ready is not
+# refused here for having more than one page of events.
+TIMELINE_PAGE_SIZE = 100
+TIMELINE_PAGES = 50
+
+
 def timeline(pr, api):
-    # Fail closed rather than silently ignoring older lifecycle events.
-    events = api(f"{PREFIX}/issues/{pr}/timeline?per_page=100")
-    require(isinstance(events, list) and len(events) < 100
-            and all(isinstance(item, dict) for item in events), "timeline_incomplete")
-    return events
+    """Return the complete timeline, or refuse ``timeline_incomplete``.
+
+    Numbered pages only, never a URL taken from a response. The timeline ends
+    at the first page shorter than a full page. A failed or malformed page, a
+    page larger than requested, or ``TIMELINE_PAGES`` full pages (the end was
+    not observed) fails closed rather than ignoring older lifecycle events.
+    """
+    route = f"{PREFIX}/issues/{pr}/timeline?per_page={TIMELINE_PAGE_SIZE}"
+    events = []
+    for page in range(1, TIMELINE_PAGES + 1):
+        try:
+            value = api(f"{route}&page={page}")
+        except ValueError as exc:
+            category = str(exc) if isinstance(exc, Refusal) else "malformed_json"
+            print(f"Timeline page {page} unreadable: {category}", file=sys.stderr)
+            raise Refusal("timeline_incomplete") from None
+        require(isinstance(value, list) and len(value) <= TIMELINE_PAGE_SIZE
+                and all(isinstance(item, dict) for item in value), "timeline_incomplete")
+        events.extend(value)
+        if len(value) < TIMELINE_PAGE_SIZE:
+            return events
+    raise Refusal("timeline_incomplete")
 
 
 def merged_pr(pr, base, head, merge, api, run_git):

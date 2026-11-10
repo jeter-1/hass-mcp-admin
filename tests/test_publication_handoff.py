@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,11 +25,13 @@ try:
     import publication_handoff as handoff
     import publication_handoff_verify as handoff_verify
     import publication_claim as claim
+    import github_retry as retry
 finally:
     sys.path.pop(0)
 
 BASE, HEAD, MERGE, TREE = (character * 40 for character in "bacd")
 PREFIX = handoff.PREFIX
+TIMELINE = f"{PREFIX}/issues/5/timeline?per_page=100"
 
 
 def archive(value, name="publication-handoff.json"):
@@ -72,8 +75,11 @@ class HandoffTests(unittest.TestCase):
             f"{PREFIX}/actions/runs/7/attempts/1/jobs?per_page=100":
                 {"total_count": 1, "jobs": [self.job]},
             f"{PREFIX}/pulls/5": self.pr,
-            f"{PREFIX}/issues/5/timeline?per_page=100": self.events,
         }
+        # HAMCP-348: the timeline is served the way GitHub pages it: 100
+        # events per numbered page (page 1 when no page is named), then empty
+        # pages. ``timeline_pages`` overrides one page; an exception is raised.
+        self.timeline_pages = {}
         self.git_data = {
             ("rev-parse", "HEAD"): BASE,
             ("show", "-s", "--format=%P", MERGE): f"{BASE} {HEAD}",
@@ -106,7 +112,17 @@ class HandoffTests(unittest.TestCase):
 
     def api(self, route, binary=False):
         self.calls.append(route)
+        if route.startswith(TIMELINE):
+            return self.timeline_page(route[len(TIMELINE):])
         return deepcopy(self.data[route])
+
+    def timeline_page(self, suffix):
+        match = re.fullmatch(r"(?:&page=([1-9][0-9]{0,2}))?", suffix)
+        page = int(match.group(1) or 1)
+        value = self.timeline_pages.get(page, self.events[(page - 1) * 100:page * 100])
+        if isinstance(value, Exception):
+            raise value
+        return deepcopy(value)
 
     def git(self, *args):
         return self.git_data[args]
@@ -455,14 +471,203 @@ class HandoffTests(unittest.TestCase):
                 handoff.merged_pr(5, head, base, merge, self.api, git)
 
 
+class TimelinePaginationTests(unittest.TestCase):
+    """HAMCP-348: the receipt reads the complete timeline, like the Ready check.
+
+    #383 had 130 timeline events (112 commits). The merge succeeded, then the
+    receipt refused ``timeline_incomplete`` because it read one page of 100.
+    """
+
+    setUp = HandoffTests.setUp
+    bind_artifact = HandoffTests.bind_artifact
+    api = HandoffTests.api
+    timeline_page = HandoffTests.timeline_page
+    git = HandoffTests.git
+    verify = HandoffTests.verify
+    ENV = {"GITHUB_REPOSITORY": handoff.REPOSITORY, "GITHUB_ACTOR": "jeter-1",
+           "GITHUB_TRIGGERING_ACTOR": "jeter-1", "AUTHORIZED_BASE_SHA": BASE,
+           "AUTHORIZED_HEAD_SHA": HEAD, "PR_NUMBER": "5", "GITHUB_RUN_ID": "7",
+           "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "pull_request_target",
+           "GITHUB_WORKFLOW_SHA": BASE}
+
+    def produce(self):
+        return handoff.produce(self.ENV, {"event_id": 10}, self.api, self.git)
+
+    def timeline_calls(self):
+        return [route for route in self.calls if route.startswith(TIMELINE)]
+
+    def pages(self, *numbers):
+        return [f"{TIMELINE}&page={number}" for number in numbers]
+
+    def commits(self, count):
+        return [{"event": "committed", "sha": f"{index:040x}"} for index in range(count)]
+
+    def with_history(self, before_ready, after_merge=1):
+        ready, merged, closed = self.events[1:4]
+        self.events[:] = (self.commits(before_ready) + [ready, merged, closed]
+                          + [{"event": "commented", "id": 100 + index}
+                             for index in range(after_merge - 1)])
+
+    def assert_incomplete(self, call):
+        with self.assertRaises(handoff.Refusal) as refused:
+            call()
+        self.assertEqual(str(refused.exception), "timeline_incomplete")
+
+    def test_383_shaped_130_event_timeline_produces_and_verifies(self):
+        self.with_history(127)
+        self.assertEqual(len(self.events), 130)
+        self.assertEqual(self.produce(), self.receipt)
+        self.assertEqual(self.timeline_calls(), self.pages(1, 2))
+        self.calls.clear()
+        self.assertEqual(self.verify()["release_action"], "inspect")
+        self.assertEqual(self.timeline_calls(), self.pages(1, 2))
+
+    def test_ready_on_page_one_and_merge_on_page_two(self):
+        ready, merged, closed = self.events[1:4]
+        self.events[:] = self.commits(60) + [ready] + [
+            {"event": "commented", "id": 200 + index} for index in range(60)] + [merged, closed]
+        self.assertLess(self.events.index(ready), 100)
+        self.assertGreaterEqual(self.events.index(merged), 100)
+        self.assertEqual(self.produce(), self.receipt)
+        self.assertEqual(self.verify()["release_action"], "inspect")
+
+    def test_lifecycle_change_on_a_later_page_still_withdraws_ready(self):
+        # Page 2 is consulted: a commit after the page-1 Ready, before the
+        # merge, is still a head change that withdraws the Ready authority.
+        ready, merged, closed = self.events[1:4]
+        self.events[:] = self.commits(50) + [ready] + [
+            {"event": "commented", "id": 300 + index} for index in range(60)] + [
+            {"event": "committed", "sha": "e" * 40}, merged, closed]
+        for call in (self.produce, self.verify):
+            with self.subTest(call=call.__name__):
+                with self.assertRaises(ValueError) as refused:
+                    call()
+                self.assertNotEqual(str(refused.exception), "timeline_incomplete")
+
+    def test_post_merge_lifecycle_on_a_later_page_still_refuses(self):
+        self.with_history(97)
+        self.events.extend({"event": "commented", "id": 400 + i} for i in range(10))
+        self.events.append({"event": "reopened"})
+        self.assertGreater(len(self.events), 100)
+        with self.assertRaisesRegex(handoff.Refusal, "post_merge_lifecycle_changed"):
+            self.produce()
+
+    def test_exactly_100_events_reads_the_empty_second_page(self):
+        self.with_history(97)
+        self.assertEqual(len(self.events), 100)
+        self.assertEqual(self.produce(), self.receipt)
+        self.assertEqual(self.timeline_calls(), self.pages(1, 2))
+
+    def test_short_first_page_reads_once(self):
+        self.assertEqual(self.produce(), self.receipt)
+        self.assertEqual(self.timeline_calls(), self.pages(1))
+
+    def test_49_full_pages_and_a_short_page_pass_at_the_bound(self):
+        self.with_history(4996)
+        self.assertEqual(len(self.events), 4999)
+        self.assertEqual(self.produce(), self.receipt)
+        self.assertEqual(self.timeline_calls(), self.pages(*range(1, 51)))
+
+    def test_50_full_pages_refuse_without_reading_page_51(self):
+        # 5,000 events: a full last page cannot prove the timeline ended.
+        self.with_history(4997)
+        self.assertEqual(len(self.events), 5000)
+        self.assert_incomplete(self.produce)
+        self.assertEqual(self.timeline_calls(), self.pages(*range(1, 51)))
+        self.calls.clear()
+        self.with_history(6000)
+        self.assert_incomplete(self.verify)
+        self.assertEqual(self.timeline_calls(), self.pages(*range(1, 51)))
+
+    def test_unreadable_or_failed_page_refuses(self):
+        for page in (1, 2):
+            for failure in (handoff.Refusal("github_read_failed"),
+                            handoff.Refusal("github_read_unavailable"),
+                            handoff.Refusal("github_response_bound"),
+                            handoff.Refusal("duplicate_json_key"),
+                            json.JSONDecodeError("synthetic", "", 0)):
+                for call in ("produce", "verify"):
+                    with self.subTest(page=page, failure=failure, call=call):
+                        self.setUp()
+                        self.with_history(127)
+                        self.timeline_pages[page] = failure
+                        with redirect_stderr(io.StringIO()):
+                            self.assert_incomplete(getattr(self, call))
+                        self.assertEqual(self.timeline_calls(), self.pages(*range(1, page + 1)))
+
+    def test_truncated_or_malformed_page_refuses(self):
+        full = [{"event": "commented", "id": 500 + index} for index in range(100)]
+        for page, value in (
+            (2, None), (2, {}), (2, {"items": []}), (2, "[]"),
+            (2, [{"event": "merged", "commit_id": MERGE}, "commented"]),
+            (2, [None]),
+            # More than a full page: the server ignored per_page, so the
+            # page boundary, and with it completeness, is unknown.
+            (2, full + [{"event": "commented", "id": 999}]),
+            (1, full + [{"event": "commented", "id": 999}]),
+        ):
+            with self.subTest(page=page, value=str(value)[:40]):
+                self.setUp()
+                self.with_history(127)
+                self.timeline_pages[page] = value
+                self.assert_incomplete(self.produce)
+                self.assertEqual(self.timeline_calls(), self.pages(*range(1, page + 1)))
+
+    def test_failed_page_diagnostic_names_only_page_and_category(self):
+        self.with_history(127)
+        self.timeline_pages[2] = handoff.Refusal("github_read_failed")
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.assert_incomplete(self.produce)
+        self.assertEqual(output.getvalue(),
+                         "Timeline page 2 unreadable: github_read_failed\n")
+        self.setUp()
+        self.with_history(127)
+        self.timeline_pages[1] = json.JSONDecodeError("secret-looking text", "token=x", 0)
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.assert_incomplete(self.produce)
+        self.assertEqual(output.getvalue(), "Timeline page 1 unreadable: malformed_json\n")
+
+    def test_routes_are_numbered_repository_routes_never_response_urls(self):
+        self.with_history(127)
+        self.events[0]["url"] = "https://example.invalid/next"
+        self.produce()
+        for route in self.timeline_calls():
+            self.assertRegex(route, r"\Arepos/jeter-1/hass-mcp-admin/issues/5/timeline"
+                                    r"\?per_page=100&page=[1-9][0-9]?\Z")
+
+    def test_bounds_match_the_pre_merge_ready_read(self):
+        # enable-auto-merge.yml reads the Ready timeline with github_retry
+        # api-get --pages 50 over per_page=100; both readers share one bound.
+        workflow = (ROOT / ".github/workflows/enable-auto-merge.yml").read_text()
+        self.assertIn('github_retry.py api-get --pages 50 \\\n'
+                      '            --route "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100"',
+                      workflow)
+        self.assertEqual((handoff.TIMELINE_PAGES, handoff.TIMELINE_PAGE_SIZE),
+                         (retry.MAX_PAGES, retry.PAGE_SIZE))
+        self.assertEqual((handoff.TIMELINE_PAGES, handoff.TIMELINE_PAGE_SIZE), (50, 100))
+
+    def test_cli_names_timeline_incomplete(self):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["publication_handoff.py", "produce", "--ready", "r", "--output", "o"]), \
+                patch.object(Path, "read_text", return_value='{"event_id": 10}'), \
+                patch.object(handoff, "produce", side_effect=handoff.Refusal("timeline_incomplete")), \
+                redirect_stderr(output):
+            with self.assertRaises(SystemExit) as stopped:
+                handoff.main()
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(output.getvalue(), "Publication handoff refused: timeline_incomplete\n")
+
+
 class SourceMergeJobRereadTests(unittest.TestCase):
     """HAMCP-258: GitHub reported merge runs complete before their job records
     settled (2026-10-30, runs 41122145397 and 41122307269), so one jobs
     snapshot refused a lifecycle no-op and a successful merge."""
 
-    setUp, bind_artifact, api, git, verify = (
-        HandoffTests.setUp, HandoffTests.bind_artifact, HandoffTests.api, HandoffTests.git,
-        HandoffTests.verify)
+    setUp, bind_artifact, api, timeline_page, git, verify = (
+        HandoffTests.setUp, HandoffTests.bind_artifact, HandoffTests.api,
+        HandoffTests.timeline_page, HandoffTests.git, HandoffTests.verify)
     JOBS = f"{PREFIX}/actions/runs/7/attempts/1/jobs?per_page=100"
     RETIRE = {"head_sha": HEAD, "name": "retire-stale-ready-run", "run_id": 7, "run_attempt": 1,
               "status": "completed", "conclusion": "skipped"}
