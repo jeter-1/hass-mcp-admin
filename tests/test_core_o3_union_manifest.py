@@ -27,7 +27,7 @@ class UnionComparison(unittest.TestCase):
     def test_october_self_accepts_21_shared_absences(self):
         old = source("2026.10.3")
         proof = self.verify(old, old)
-        self.assertEqual(len(proof["files"]), 456)
+        self.assertEqual(len(proof["files"]), 460)
         absent = [r for r in proof["files"] if r["predecessor_sha256"] is None]
         self.assertEqual(len(absent), 21)
         self.assertTrue(all(r["release_sha256"] is None for r in absent))
@@ -91,7 +91,7 @@ class UnionComparison(unittest.TestCase):
                 self.assertEqual(evidence.verify_context(fixture, run), fixture)
             self.assertTrue(fixture["fixture"])
             self.assertEqual(fixture["mode"], "derived")
-            self.assertEqual(len(fixture["proof"]["files"]), 456)
+            self.assertEqual(len(fixture["proof"]["files"]), 460)
 
 
 class ExistenceGuard(unittest.TestCase):
@@ -99,7 +99,7 @@ class ExistenceGuard(unittest.TestCase):
         # Runs in existing complete CI discovery; manifest() also calls this
         # guard in the actual evidence prepare/verify paths, not just this test.
         value = evidence.manifest()
-        self.assertEqual(len(value["paths"]), 456)
+        self.assertEqual(len(value["paths"]), 460)
         self.assertTrue(set(value["paths"]) <= source("2026.10.3")["hashes"].keys() | source("2026.11.0")["hashes"].keys())
 
     def test_typo_absent_from_every_bound_release_fails_naming_path(self):

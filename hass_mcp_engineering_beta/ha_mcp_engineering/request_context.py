@@ -54,6 +54,7 @@ class RequestTelemetry:
     ordinary_fan_binding: str | None = field(default=None, repr=False)
     ordinary_power_binding: str | None = field(default=None, repr=False)
     ordinary_helper_value_binding: str | None = field(default=None, repr=False)
+    ordinary_device_configuration_binding: str | None = field(default=None, repr=False)
     audit_context: dict[str, object] = field(default_factory=dict)
     # HAMCP-191 D4: this request's identity record of Engineering's own
     # marker-bearing output strings. Never shared between requests.

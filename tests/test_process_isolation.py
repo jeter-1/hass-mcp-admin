@@ -652,6 +652,14 @@ class RecordedOrderRegressionTests(unittest.TestCase):
     object by reference, so the next lifespan raised "StreamableHTTPSessionManager
     .run() can only be called once" in setUpClass. Installing the guard on
     import resets the attribute after the leaking test.
+
+    Health registry (HAMCP-361): ``ProductionCompositionTests`` built the
+    production application with governance storage in a temporary directory
+    and left the process-wide ``HEALTH`` registry configured with that
+    governance runtime after the directory was removed. Module 350 then called
+    ``get_server_health`` and failed twice with ``change_plan_storage_error``
+    ("Governance storage is unavailable."). The order is named explicitly, so
+    this does not depend on shard assignment or discovery order.
     """
 
     PAIR = ("tests.test_beta_v2.BetaApplicationTests", "tests.test_hamcp200_path_safety.ToolRefusalTests")
@@ -660,6 +668,10 @@ class RecordedOrderRegressionTests(unittest.TestCase):
         "tests.test_hamcp200_path_safety.ToolRefusalTests",
         "tests.test_hamcp200_path_safety.SourceScanTests",
         "tests.test_hamcp200_path_safety.ToolRefusalTests",
+    )
+    HEALTH_REGISTRY_ORDER = (
+        "tests.test_hamcp164_core_gate_fail_closed",
+        "tests.test_hamcp350_startup_readiness",
     )
 
     def run_order(self, names):
@@ -679,6 +691,10 @@ class RecordedOrderRegressionTests(unittest.TestCase):
     def test_core_latch_pair_passes_in_one_process(self):
         result = self.run_order(self.PAIR)
         self.assertNotIn("CoreCapabilityUnavailable", result.stderr)
+
+    def test_health_registry_order_passes_in_one_process(self):
+        result = self.run_order(self.HEALTH_REGISTRY_ORDER)
+        self.assertNotIn("change_plan_storage_error", result.stderr)
 
 
 if __name__ == "__main__":

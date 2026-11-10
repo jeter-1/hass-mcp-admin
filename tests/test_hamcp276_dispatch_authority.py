@@ -87,6 +87,7 @@ NOT_F3 = {
     "core.automation_baseline_metadata_read": "read",
     "core.script_trace_read": "read",
     "core.marketplace_read": "read",  # HAMCP-290: direct typed read, never an F3 plan
+    "core.security_metadata_read": "read",  # HAMCP-134: direct read, never an F3 plan
     "core.template_semantics": "planning",
     "core.configuration_validation": "planning",
     "core.dependency_helper_planning": "planning",
@@ -96,6 +97,8 @@ NOT_F3 = {
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
     "core.typed_helper_value_operation": "direct_typed_tool",
+    # HAMCP-297: control_device_configuration is a direct typed tool.
+    "core.device_configuration_entity_operation": "direct_typed_tool",
 }
 
 
@@ -641,9 +644,12 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         # Every runtime-only write profile that gates an F3 entry is activated.
         # The script trace read and the direct typed helper value tool
         # (HAMCP-311) are listed there only to keep it "compiled minus shipped".
-        # HAMCP-290: and the dormant Marketplace read.
+        # HAMCP-290: and the dormant Marketplace read.  HAMCP-134: and the
+        # dormant security metadata read.
         never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
-                    "core.marketplace_read"}
+                    "core.marketplace_read", "core.security_metadata_read",
+                    # HAMCP-297: the direct typed device-configuration tool.
+                    "core.device_configuration_entity_operation"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
         self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
         self.assertFalse(never_f3 & required)

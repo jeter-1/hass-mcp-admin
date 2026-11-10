@@ -85,7 +85,9 @@ raises a finding's severity: an `on` group is not an enabled consumer.
   `partial` stays partial with its counted warnings, and `unavailable`
   becomes `failed` with its reason (for example
   `dashboard_scan_budget_exhausted: 1`, a list failure, or a missing
-  reader). Template stays `not_supported` (HAMCP-264).
+  reader). Template stays `not_supported`: the YAML template and script
+  references read for HAMCP-264 feed the dependency and impact analyses
+  only, and this analysis does not consume them.
 - When dashboard provider authority changes, cached dashboard evidence is
   withheld and the dashboard row is `failed`; the cached reader is not
   re-read.

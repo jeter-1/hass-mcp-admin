@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import time
 from typing import Any
 
@@ -32,6 +32,12 @@ MAX_DYNAMIC_REFERENCES = 1_000
 # partition (``snapshot.global_sources``), bounded apart from the snapshot cap.
 MAX_PARTITION_REFERENCES = 10_000
 PARTITION_SOURCE_TYPES = ("scene", "group", "dashboard")
+# HAMCP-264: YAML template references are read for the dependency and impact
+# analyses only; this analysis does not consume them.
+TEMPLATE_NOT_CONSUMED_WARNING = (
+    "Template references (HAMCP-264) are read for entity_dependency_analysis and "
+    "change_impact_analysis only; configuration integrity analysis does not consume them."
+)
 
 
 # HAMCP-226: the screened fields of each index reference (``untrusted_text``).
@@ -496,10 +502,18 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             by_source.update(
                 {
                     source_type: row
-                    for source_type in (*PARTITION_SOURCE_TYPES, "template")
+                    for source_type in PARTITION_SOURCE_TYPES
                     if (row := partition.coverage_for(source_type)) is not None
                 }
             )
+            if (template := partition.coverage_for("template")) is not None:
+                # Never the partition's own row: it describes evidence this
+                # analysis does not use, so template stays not_supported.
+                by_source["template"] = replace(
+                    template, provider="none", completeness="unavailable",
+                    evidence_count=0, failed_item_count=0,
+                    warnings=[TEMPLATE_NOT_CONSUMED_WARNING],
+                )
         partition_dropped = partition_dropped or {}
         output = []
         for source_type in SOURCE_TYPES:
