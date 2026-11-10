@@ -56,5 +56,11 @@
   ],
   "helper_value": [
     "core.typed_helper_value_operation"
+  ],
+  "scene_create_delete": [
+    "core.scene_create_delete_operation"
+  ],
+  "created_helper_delete": [
+    "core.created_helper_delete_operation"
   ]
 }
