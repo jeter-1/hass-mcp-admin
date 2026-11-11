@@ -952,16 +952,19 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         self.assertEqual([key for key in self.ws.entries if key.startswith("scene.")], [])
         self.assertEqual([key for key in self.rest.states if key.startswith("scene.")], [])
 
-    async def undo_waits_out_one_state_error(self, earlier, undo):
+    async def undo_waits_out_one_state_error(self, earlier, undo, write=acceptance.SCENE_DELETE, gone=None):
         """``undo`` over a Core whose state route answers 500 once after the verified delete, then 404.
 
         Only a 404 ends the wait for the entity to go. A 500 is not that answer, so the lane reads again
         and the undo passes on the 404 that follows; a wait any non-200 could end would stop on the 500.
+        ``write`` is the delete the undo sends and ``gone`` the read-back of what it removed, scene by default.
         """
         c, reads = self.lane_context, []
         for step in earlier:
             await step(c)
-        entity_id = self.rest.scene_entity(c.state["config_id"])
+        # What the read-back must be, from what Core holds before the undo.
+        gone = gone(c) if gone else {"config_status": 404, "registry_entity_id": None,
+                                     "entity_id": self.rest.scene_entity(c.state["config_id"])}
         real, verified = acceptance.applied, []
 
         async def applied(c, plan, writes):
@@ -986,12 +989,11 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
             c.reader.status = self.raw.status
             self.raw.client.errors.clear()
         self.assertEqual(verified, ["succeeded_verified"])
-        self.assertEqual(self.log.writes_since(0)[-1], acceptance.SCENE_DELETE)
+        self.assertEqual(self.log.writes_since(0)[-1], write)
         # The lane read the 500, waited, and read again: the 404 is the read-back it reports.
         self.assertEqual(reads, [500, 404])
-        self.assertEqual((value["result"], value["readback"]), ("PASS", {
-            "config_status": 404, "registry_entity_id": None, "entity_id": entity_id, "state_status": 404}))
-        self.assertEqual(self.rest.scenes, {})
+        self.assertEqual((value["result"], value["readback"]), ("PASS", {**gone, "state_status": 404}))
+        self.assertEqual((self.rest.scenes, self.ws.helpers), ({}, {"input_boolean": {}, "input_number": {}}))
 
     async def test_an_undo_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
         await self.undo_waits_out_one_state_error([acceptance.scene_create], acceptance.scene_undo)
@@ -1000,6 +1002,12 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         await self.undo_waits_out_one_state_error(
             [acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
             acceptance.scene_recreate_undo)
+
+    async def test_a_helper_undo_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        """The helper delete has one wait of its own, shared by every helper undo; this is its 500-then-404."""
+        create, undo = (acceptance.SCENARIOS[step + "_input_boolean"] for step in ("helper_create", "helper_undo"))
+        await self.undo_waits_out_one_state_error([create], undo, "input_boolean/delete", lambda c: {
+            "stored": False, "registry_entity_id": None, "entity_id": c.state["input_boolean"][1]["entity_id"]})
 
     async def test_a_create_reads_what_its_members_hold_before_it_plans_and_compares_with_that(self):
         """What the members held before the create is read, never assumed: one starts off, which no default says."""
