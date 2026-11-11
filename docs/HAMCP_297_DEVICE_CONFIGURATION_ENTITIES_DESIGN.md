@@ -1242,8 +1242,11 @@ it, no seventh disclosure kind is added (§5.6), and
 **Reload and restart end undo eligibility.** An integration reload (observed)
 and a Home Assistant restart (expected, not observed) end undo eligibility:
 the state gets a new context id, `last_changed` and `last_updated`, so the
-undo refuses `device_configuration_undo_post_state_unproven`. Recovery is the
-compensating change of §5.11.3. An available undo says so in its `rule` text
+undo refuses `device_configuration_undo_post_state_unproven`. The lane
+observed exactly that for the config switch after a `matter` entry reload
+alone: the undo was refused with that code before any task, with zero sends
+(receipt `observations.reregistration_fingerprint.reload_only.undo_after_reload`).
+Recovery is the compensating change of §5.11.3. An available undo says so in its `rule` text
 (`E/device_configuration/service.py:419-423`): "only while the post-change
 observation is still exact; a later change or an integration reload ends
 eligibility, and a Home Assistant restart is expected to as well; after that,
