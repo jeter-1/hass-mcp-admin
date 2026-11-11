@@ -162,15 +162,18 @@ class RawWebSocket:
     The Engineering client deliberately discards Home Assistant error codes; raw
     controls must observe them (``invalid_info``, ``not_found``) exactly.
 
-    Only RAW_CORE_URL is dialled and only one of the lane's listed commands is
-    sent. Anything else is refused with a fixed code before a session exists.
+    Only the class's ``core_url`` is dialled and only one of the lane's listed
+    commands is sent. Anything else is refused with a fixed code before a
+    session exists. ``core_url`` is RAW_CORE_URL unless a lane with a disposable
+    Core of its own names that Core's one socket on its subclass.
     """
 
+    core_url = RAW_CORE_URL
     commands = RAW_COMMANDS
 
     def __init__(self, configured):
         url = configured.websocket_url
-        if type(url) is not str or url != RAW_CORE_URL:
+        if type(url) is not str or url != type(self).core_url:
             raise ValueError(RAW_URL_REFUSED)
         self.token = configured.ha_token
 
@@ -184,7 +187,7 @@ class RawWebSocket:
         import aiohttp
         from lane_session import lane_session
         async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.ws_connect(RAW_CORE_URL) as websocket:
+            async with session.ws_connect(type(self).core_url) as websocket:
                 assert (await websocket.receive_json()).get("type") == "auth_required"
                 await websocket.send_json({"type": "auth", "access_token": self.token})
                 assert (await websocket.receive_json()).get("type") == "auth_ok"
