@@ -50,6 +50,7 @@ from ha_mcp_engineering.governance import global_reference_disclosure as grd  # 
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
 from ha_mcp_engineering.impact.service import ChangeImpactAnalysisService  # noqa: E402
 from ha_mcp_engineering.integrity import provider as integrity_provider  # noqa: E402
+from ha_mcp_engineering.integrity.service import ConfigurationIntegrityAnalysisService  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     DEFINITION_YAML_PATHS,
     DEPENDENCY_YAML_PATHS,
@@ -533,11 +534,29 @@ class ConsumerTests(YamlGatewayCase):
         self.assertEqual(unwired.fingerprint, self.snapshot.fingerprint)
         self.assertNotEqual(unwired.global_sources.fingerprint, self.snapshot.global_sources.fingerprint)
 
-    def test_integrity_template_row_stays_not_supported(self):
+    async def test_integrity_template_row_stays_not_supported(self):
         self.assertNotIn("template", integrity_provider.PARTITION_SOURCE_TYPES)
         self.assertNotIn("script", integrity_provider.PARTITION_SOURCE_TYPES)
         self.assertIn("HAMCP-264", integrity_provider.TEMPLATE_NOT_CONSUMED_WARNING)
         self.assertEqual(PARTITION_SOURCE_TYPES[-1], "script")
+        # HAMCP-358 (10): the analysis itself, with the reader wired. The
+        # partition holds a partial template row with evidence; integrity
+        # analysis must report its own not_supported row, never that one.
+        own = self.snapshot.global_sources.visible().coverage_for("template")
+        self.assertEqual((own.completeness, own.provider), ("partial", "upstream_read_gateway"))
+        self.assertGreater(own.evidence_count, 0)
+        self.assertTrue(own.warnings)
+        service = ConfigurationIntegrityAnalysisService(integrity_provider.DirectHaIntegrityProvider(
+            self.index, self.rest, self.websocket, secret=SECRET, ha_token=SECRET))
+        output = await service.analyze(source_types=ALL_SOURCES, detail_level="evidence", limit=100)
+        row = coverage_row(output.data["source_coverage_matrix"], "template")
+        self.assertTrue(row["requested"])
+        self.assertEqual(row["completeness"], "not_supported")
+        self.assertEqual(row["provider"], "none")
+        self.assertEqual(row["warnings"], [integrity_provider.TEMPLATE_NOT_CONSUMED_WARNING])
+        self.assertEqual((row["items_examined"], row["failed_items"]), (0, 0))
+        self.assertFalse(row["assessment_complete"])
+        self.assertFalse([item for item in output.data["findings"] if item.get("source_type") == "template"])
 
 
 class BoundTests(unittest.IsolatedAsyncioTestCase):
@@ -592,6 +611,37 @@ class BoundTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(result.findings), 2)
         self.assertIn("yaml_finding_limit_exceeded", {item[3] for item in result.terminals})
         self.assertIn("yaml_finding_limit_exceeded: 1", result.script_coverage.warnings)
+
+    async def test_package_bound_reads_200_inline_packages_and_reports_the_201st(self):
+        """HAMCP-358 (8): the 201st inline package is not read and both rows say so."""
+
+        def packages(count):
+            return {f"synthetic_pkg_{i:03d}": {"script": {f"synthetic_pkg_script_{i:03d}": {
+                "sequence": [{"action": "light.turn_on",
+                              "target": {"entity_id": f"light.synthetic_pkg_{i:03d}"}}]}}}
+                    for i in range(count)}
+
+        self.assertEqual(ys.MAX_YAML_PACKAGES, 200)
+        warning = "package_limit_exceeded: 1"
+        # At the bound every package is read and nothing is reported.
+        _, result = await self.collect({"homeassistant.packages": packages(200)})
+        self.assertEqual(result.profile["inline_packages"], 200)
+        self.assertEqual(len(result.script_ids), 200)
+        for row in (result.template_coverage, result.script_coverage):
+            self.assertNotIn(warning, row.warnings)
+        # One past the bound: packages are taken in name order, so the last is left out.
+        _, result = await self.collect({"homeassistant.packages": packages(201)})
+        self.assertEqual(result.profile["inline_packages"], 200)
+        self.assertEqual(len(result.script_ids), 200)
+        self.assertIn("synthetic_pkg_script_199", result.script_ids)
+        self.assertNotIn("synthetic_pkg_script_200", result.script_ids)
+        targets = {item.target_entity_id for item in result.findings}
+        self.assertEqual(len(targets), 200)
+        self.assertIn("light.synthetic_pkg_199", targets)
+        self.assertNotIn("light.synthetic_pkg_200", targets)
+        for row in (result.template_coverage, result.script_coverage):
+            self.assertEqual(row.completeness, "partial")
+            self.assertIn(warning, row.warnings)
 
     async def test_includes_and_non_inline_packages_are_partial_never_absent(self):
         _, result = await self.collect({"template": "!include templates.yaml",
