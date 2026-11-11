@@ -212,7 +212,8 @@ run 1 receipt is in commit `df447a65`).
 
 Run 2 repeats the lane after the merge with `release/2.6.0` at `29339009`,
 under the host heavy-job gate as unit `hamcp231-a1-lane2`.
-`thread_matter_topology.json` now records this run:
+`thread_matter_topology.json` recorded this run until run 3 replaced it (the
+run 2 receipt is in commit `47ccef4c`):
 
 - source commit `4087df22f2430ba82a06701a60366922fe06cf8c`;
 - manifest SHA-256
@@ -227,6 +228,27 @@ Apart from the source commit, the manifest hash, the times and the host
 admission snapshot, every receipt field equals run 1: the authority
 transition, the seeded datasets, the commands sent, the refusals, the eight
 canaries with no leak, `fallback_count` 0 and clean cleanup.
+
+### Run 3: PASS (2026-11-11 12:11 CST)
+
+Run 3 repeats the lane after the merge with `release/2.6.0` at `ccaed9ef`
+(HAMCP-329/298), under the host heavy-job gate as unit `hamcp231-a1-lane3`.
+That merge changed `scripts/alarmo_inspection_contract_acceptance.py`, which
+the acceptance script imports, the Engineering runtime package and the
+manifest. `thread_matter_topology.json` now records this run:
+
+- source commit `69e1dfff48bcca26e3adeece90a6efddd60cefc0`;
+- manifest SHA-256
+  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed`. The
+  manifest keeps its 527 paths and gains the two created-object profile
+  entries (38 profile entries, up from 36);
+- the same image, memory limits and profile fingerprint as run 2;
+- receipt SHA-256
+  `71ef49469217c6fd775c49b762715868eefbc09061b51aa495f4eb75dd1bda09`.
+
+Apart from the source commit, the manifest hash, the times and the host
+admission snapshot, every receipt field equals run 2, including the authority
+transition from 32 to 33 references.
 
 These runs cover A2 only for its fail-closed case. The A2 success lane below
 covers success.
@@ -351,7 +373,8 @@ text came from the lane script, which run 3 left unchanged; the PR had merged.
 Run 4 repeats the lane after the merge with `release/2.6.0` at `29339009`,
 under the host heavy-job gate as unit `hamcp231-a2-lane4`. That merge changed
 `scripts/lane_failure_diagnostics.py`, which the lane imports.
-`thread_matter_topology_a2.json` now records this run:
+`thread_matter_topology_a2.json` recorded this run until run 5 replaced it
+(the run 4 receipt is in commit `47ccef4c`):
 
 - source commit `4087df22f2430ba82a06701a60366922fe06cf8c`;
 - the same profile, fingerprint and manifest SHA-256 as run 3 (the manifest's
@@ -370,6 +393,27 @@ Apart from the source commit, `expectations_sha256`, the label, the times and
 the host admission snapshot, every receipt field equals run 3: the topology,
 the recorded stub commands, both faults, 0 of 16 canaries leaked,
 `fallback_count` 0 and clean cleanup.
+
+### Run 5: PASS (2026-11-11 12:10 CST)
+
+Run 5 repeats the lane after the merge with `release/2.6.0` at `ccaed9ef`
+(HAMCP-329/298), under the host heavy-job gate as unit `hamcp231-a2-lane5`.
+That merge changed `scripts/alarmo_inspection_contract_acceptance.py`, which
+the acceptance script imports, the Engineering runtime package and the
+manifest. `thread_matter_topology_a2.json` now records this run:
+
+- source commit `69e1dfff48bcca26e3adeece90a6efddd60cefc0`;
+- manifest SHA-256
+  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` (527
+  paths, 38 profile entries);
+- the same profile and fingerprint as run 4;
+- stub at `committed`, with the same 7 files verified;
+- egress probe `blocked`;
+- receipt SHA-256
+  `45023964921e876b9edbfd578da17c4b70593eca45adfeacf9ac5e80fa50605b`.
+
+Apart from the source commit, the manifest hash, the times and the host
+admission snapshot, every receipt field equals run 4.
 
 **Residuals.**
 
