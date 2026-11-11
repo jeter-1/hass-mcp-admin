@@ -223,7 +223,7 @@ def stub_address(run_id, network):
         address, subnet = ipaddress.IPv4Address(value), ipaddress.IPv4Network(ranges[0]["Subnet"])
     except (ValueError, AttributeError):
         raise Refusal("stub_address_not_on_lane_network") from None
-    if (str(address) != value or not subnet.is_private or address not in subnet
+    if (not subnet.is_private or address not in subnet
             or address in (subnet.network_address, subnet.broadcast_address)
             or value == ranges[0].get("Gateway")):
         raise Refusal("stub_address_not_on_lane_network")

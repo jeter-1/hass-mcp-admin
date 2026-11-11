@@ -363,6 +363,48 @@ class FingerprintPrecheck(unittest.TestCase):
                 self.assertEqual(caught.exception.args, ("profile_fingerprint_mismatch",))
 
 
+class LaneInputs(unittest.TestCase):
+    def test_journal_or_archive_with_other_bytes_refuses_before_the_journal_is_parsed(self):
+        import core_registry_one_tap
+        archive_hash = json.loads(lane.CORE_PROVENANCE.read_text())["source_archive_sha256"]
+        with tempfile.TemporaryDirectory() as directory:
+            journal, archive = Path(directory) / "journal.json", Path(directory) / "archive.tar.gz"
+            journal.write_bytes(b"synthetic journal")
+            archive.write_bytes(b"synthetic archive")
+            real = lane.sha256
+            for hashes in ({journal: "0" * 64, archive: archive_hash}, {journal: lane.JOURNAL_SHA256, archive: "0" * 64},
+                           {journal: real(journal), archive: real(archive)}):
+                with self.subTest(hashes=sorted(hashes.values())), diagnostics.lane(lane.GROUP), \
+                        patch.object(lane, "sha256", side_effect=lambda path: hashes[Path(path)]), \
+                        patch.object(core_registry_one_tap, "load_public_key",
+                                     side_effect=AssertionError("journal_parsed")):
+                    with self.assertRaises(lane.Refusal) as caught:
+                        lane.inputs(journal, archive)
+                    self.assertEqual(caught.exception.args, ("input_hash_mismatch",))
+
+    def test_optimised_interpreter_is_refused_before_any_host_command(self):
+        # Under -O every acceptance assertion would vanish; the lane refuses to run at all.
+        program = (
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "import core_device_configuration_local as lane\n"
+            "calls = []\n"
+            "def command(*args, **kwargs):\n"
+            "    calls.append(args)\n"
+            "    raise SystemExit('host_command_reached')\n"
+            "lane.command = command\n"
+            "try:\n"
+            "    lane.main(['--mode', 'local', '--pull', 'never', '--journal', 'j', '--source-archive', 'a',\n"
+            "               '--run-dir', 'unused'])\n"
+            "except lane.Refusal as exc:\n"
+            "    print('refused', exc.args, len(calls))\n")
+        result = subprocess.run([sys.executable, "-O", "-B", "-c", program, str(ROOT / "scripts")],
+                                capture_output=True, text=True, timeout=60, cwd=tempfile.gettempdir(),
+                                env={"PATH": os.environ.get("PATH", "")})
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "refused ('assertions_required',) 0"),
+                         result.stderr[-500:])
+
+
 class StubAssets(unittest.TestCase):
     """The stub, its entry and the three dumps are hash-bound before any container."""
 
@@ -651,6 +693,10 @@ class Orchestration(unittest.TestCase):
             [{"Subnet": "192.0.2.0/24"}], [{"Subnet": "fd00::/64"}], ["172.30.5.0/24"],
             [dict(LANE_SUBNET), {"Subnet": "172.31.0.0/24"}],
             [{"Subnet": "172.30.5.0/24", "Gateway": STUB_ADDRESS}])]
+        # An address inside the reported subnet is still refused when that subnet is not private.
+        cases += [{"stub_networks": {lane.NETWORK: {"IPAddress": prefix + "3"}},
+                   "ipam": [{"Subnet": prefix + "0/24", "Gateway": prefix + "1"}]}
+                  for prefix in ("100.64.0.", "11.0.0.")]
         for case in cases:
             with self.subTest(case=case):
                 code, result, calls = self.run_lane(**case)
@@ -671,7 +717,9 @@ class Orchestration(unittest.TestCase):
         with patch.object(lane, "inspect_owned", return_value=good) as inspect:
             self.assertEqual(lane.stub_address("run", network), STUB_ADDRESS)
             inspect.assert_called_once_with("container", lane.STUB, "run")
-        for data, facts in ((None, network), (good, None), (good, {}), (good, {"IPAM": None}),
+        both = {"NetworkSettings": {"Networks": {lane.NETWORK: {"IPAddress": STUB_ADDRESS},
+                                                 "bridge": {"IPAddress": "172.17.0.2"}}}}
+        for data, facts in ((None, network), (good, None), (good, {}), (good, {"IPAM": None}), (both, network),
                             ({"NetworkSettings": {"Networks": {lane.NETWORK: {"IPAddress": "192.0.2.7"}}}}, network)):
             with self.subTest(data=data, facts=facts), patch.object(lane, "inspect_owned", return_value=data):
                 with self.assertRaises(lane.Refusal) as caught:
