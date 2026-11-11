@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
 import lane_failure_diagnostics as diagnostics  # noqa: E402
+from lane_session import refuse_redirect  # noqa: E402
 
 MODEL = "hamcp329-298-created-object-lane-v1"
 CORE_VERSION = "2026.11.0"
@@ -249,6 +250,9 @@ class LaneRaw(RawWebSocket):
             status = (exc.details if isinstance(exc.details, dict) else {}).get("status")
             if type(status) is not int:
                 raise
+            # A redirect is no answer about a fixture. The guarded client does not
+            # follow one, and the lane refuses it at once, as every lane session does.
+            refuse_redirect(status)
             return status, None
         if isinstance(payload, ExpectedHttpStatus):
             return payload.status, None

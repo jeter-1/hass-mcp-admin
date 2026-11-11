@@ -472,11 +472,16 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
                                                   "provider_response_received": True})
         for answer, expected in (({"alias": "x"}, (200, {"alias": "x"})), (None, (200, None)),
                                  (fixtures.ExpectedHttpStatus(404), (404, None)),
-                                 (failure(400), (400, None)), (failure(500), (500, None)),
-                                 # A redirect is a status; the guarded client never follows one.
-                                 (failure(302), (302, None))):
+                                 (failure(400), (400, None)), (failure(500), (500, None))):
             with self.subTest(answer=answer):
                 self.assertEqual(await lane_client(answer).status("DELETE", route), expected)
+        # A redirect is no answer about a fixture: the guarded client never follows one,
+        # and the lane refuses the status it is handed, as every lane session does (HAMCP-364).
+        for status in (301, 302, 307):
+            with self.subTest(status=status), self.assertRaises(Exception) as redirected:
+                await lane_client(failure(status)).status("DELETE", route)
+            self.assertEqual((type(redirected.exception).__name__, redirected.exception.args),
+                             ("LaneRedirectRefused", ("lane_redirect_refused",)))
         # No received status is no answer: the failure is not turned into one.
         for answer in (HomeAssistantApiError(), HomeAssistantApiError(details={"status": "404"}),
                        HomeAssistantApiError(details={"status": True}), HomeAssistantUnavailableError(),

@@ -263,10 +263,11 @@ class LaneWebSocket(Wired):
 
 
 class CreatedObjectRest(Wired):
-    """The created-object client's REST requests: a 3xx answer is never followed.
+    """The created-object client's REST requests: a 3xx answer is a refusal, never an answer and never followed.
 
     They go through a guarded Engineering REST client of the lane's own, the real
-    one here, which opens its own session and declines redirects itself.
+    one here, which opens its own session and declines redirects itself. The
+    lane's part is to refuse the 3xx it is handed instead of reporting it.
     """
 
     NAME = "hamcp_g4_lamp_0a1b2c3d"
@@ -282,17 +283,29 @@ class CreatedObjectRest(Wired):
         self.assertEqual({(method, route.template) for method, route, _, _ in sent}, created.LANE_REQUESTS)
         return sent
 
-    async def test_each_rest_request_answered_with_a_redirect_stays_on_the_one_connection(self):
+    async def test_each_rest_request_answered_with_a_redirect_is_refused(self):
         for method, route, body, path in self.requests():
             for status in (302, *FOLLOWED, *HANDED_BACK):
                 for location in (AWAY[0], AWAY[2], SAME_HOST):
                     with self.subTest(method=method, path=path, status=status, location=location):
                         self.redirect(status, location)
-                        answer = await created.LaneRaw(configured_local()).status(method, route, body)
-                        # Not a good answer and not an absent fixture: no caller takes it for either.
-                        self.assertEqual(answer, (status, None))
-                        self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
+                        with self.assertRaises(Exception) as raised:
+                            await created.LaneRaw(configured_local()).status(method, route, body)
+                        self.assert_refused(raised, LOCAL_PORT)
                         self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_the_guarded_client_does_not_follow_a_redirect_by_itself(self):
+        # The control for the lane's own check: with it taken away the 3xx comes back as a
+        # status, on the one connection. So nothing above depends on it for staying on-host,
+        # and the refusal above is the lane's and not the client's.
+        for method, route, body, path in self.requests():
+            with self.subTest(method=method, path=path):
+                self.redirect(302, AWAY[0])
+                with patch.object(created, "refuse_redirect", lambda status: None):
+                    answer = await created.LaneRaw(configured_local()).status(method, route, body)
+                self.assertEqual(answer, (302, None))
+                self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
+                self.assertEqual(self.stub.requests, [(method, path)])
 
     async def test_other_answers_are_still_reported_as_they_were(self):
         for method, route, body, path in self.requests():
@@ -307,6 +320,22 @@ class CreatedObjectRest(Wired):
                                      (status, None))
                     self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
                     self.assertEqual(self.stub.requests, [(method, path)])
+
+    def test_the_status_handed_back_is_checked_before_it_is_reported(self):
+        tree = ast.parse((SCRIPTS / "created_object_contract_acceptance.py").read_text(encoding="utf-8"))
+        lane = next(node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == "LaneRaw")
+        status = next(node for node in lane.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "status")
+        handlers = [node for node in ast.walk(status) if isinstance(node, ast.ExceptHandler)]
+        self.assertEqual(len(handlers), 1)
+        self.assertEqual([ast.unparse(node) for node in handlers[0].body[-2:]],
+                         ["refuse_redirect(status)", "return (status, None)"])
+        # That is the one place the client reports a failed request's status, and the one request it makes.
+        reported = sorted(ast.unparse(node) for node in ast.walk(status) if isinstance(node, ast.Return))
+        self.assertEqual(reported, ["return (200, payload)", "return (payload.status, None)", "return (status, None)"])
+        sent = [ast.unparse(node.func) for node in ast.walk(lane) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute) and node.func.attr == "request"]
+        self.assertEqual(sent, ["self.client.request"])
+        self.assertIs(created.refuse_redirect, subject.refuse_redirect)
 
 
 class HarnessRest(Wired):
