@@ -229,6 +229,22 @@ def lane_helpers(*names, **free):
     return SimpleNamespace(**{name: scope[name] for name in names})
 
 
+def lane_stale(**free):
+    """``unchanged`` and the ``stale`` nested in the scenario's ``try``, compiled from the lane's own source.
+
+    ``stale`` is not a direct statement of ``run``, so ``lane_helpers`` does
+    not pick it. As there, only the closed-over names are synthetic.
+    """
+    (scenario,) = ast.parse(inspect.getsource(acceptance.run)).body
+    (guarded,) = [node for node in scenario.body if isinstance(node, ast.Try)]
+    picked = [node for node in scenario.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "unchanged"]
+    picked += [node for node in guarded.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "stale"]
+    assert [node.name for node in picked] == ["unchanged", "stale"], [node.name for node in picked]
+    scope = dict(free)
+    exec(compile(ast.Module(body=picked, type_ignores=[]), acceptance.__file__, "exec"), scope)
+    return scope["stale"]
+
+
 def load_entry():
     spec = importlib.util.spec_from_file_location("hamcp366_stub_entry", ENTRY_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -2599,6 +2615,80 @@ class ZeroDispatchRefusal(unittest.IsolatedAsyncioTestCase):
         await self.failed(lambda sends, written: written.append("synthetic-stub-write"))
 
 
+class StaleRefusal(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-366: the lane's stale-identity check fails when the refused request sent a frame or wrote to the stub.
+
+    ``stale`` and ``unchanged`` are run from the lane's own source
+    (``lane_stale``) over a synthetic frame list, stub write list and hook.
+    """
+
+    ENTITY, REASON, OUTCOME = "select.synthetic_entity", "synthetic_stale_reason", "synthetic_outcome"
+    RECEIPT = {"terminal": True, "terminal_outcome": OUTCOME, "dispatch_intent_recorded": False, "reason": REASON}
+
+    def lane(self, during, receipt=None, consume=True):
+        """One refused request; ``during(sends, written)`` runs inside it, before it answers."""
+        ws = SimpleNamespace(sends=["synthetic-earlier-frame"], hooks={}, armed=[])
+        written, record, seen = ["synthetic-earlier-write"], {"refusals": {}}, []
+
+        def arm(entity_id, nth, hook):
+            ws.armed.append((entity_id, nth, hook))
+            ws.hooks[entity_id] = (nth, hook)
+        ws.arm = arm
+
+        async def writes():
+            return list(written)
+
+        async def control(service, req):
+            seen.append((service, req))
+            if consume:
+                del ws.hooks[self.ENTITY]  # the armed read happened
+            during(ws.sends, written)
+            return dict(self.RECEIPT if receipt is None else receipt)
+        stale = lane_stale(ws=ws, writes=writes, control=control, record=record, service="synthetic-service")
+        attempt = stale("synthetic-request", self.ENTITY, 3, "synthetic-hook", self.OUTCOME, self.REASON,
+                        "synthetic_label")
+        return attempt, record, seen, ws
+
+    async def failed(self, last, during=lambda sends, written: None, **lane):
+        """The request fails the lane in ``last`` and nothing is recorded as a zero-dispatch refusal."""
+        attempt, record, seen, _ws = self.lane(during, **lane)
+        frames = []
+        with self.assertRaises(AssertionError):
+            try:
+                await attempt
+            except AssertionError as exc:  # assertRaises drops the traceback: read it here
+                frames = [frame.name for frame in traceback.extract_tb(exc.__traceback__)]
+                raise
+        self.assertEqual(seen, [("synthetic-service", "synthetic-request")])
+        self.assertEqual(frames[-len(last):], last)
+        self.assertEqual(record["refusals"], {})
+
+    async def test_a_stale_refusal_with_no_send_and_no_stub_write_is_recorded(self):
+        attempt, record, seen, ws = self.lane(lambda sends, written: None)
+        self.assertEqual(await attempt, self.RECEIPT)
+        self.assertEqual(seen, [("synthetic-service", "synthetic-request")])
+        self.assertEqual(ws.armed, [(self.ENTITY, 3, "synthetic-hook")])
+        self.assertEqual(record["refusals"], {"synthetic_label": {
+            "code": self.REASON, "form": self.OUTCOME, "sends": 0, "stub_writes": 0}})
+
+    async def test_a_send_during_the_stale_request_fails_the_lane(self):
+        await self.failed(["stale", "unchanged"], lambda sends, written: sends.append("synthetic-service-frame"))
+
+    async def test_a_stub_write_during_the_stale_request_fails_the_lane(self):
+        await self.failed(["stale", "unchanged"], lambda sends, written: written.append("synthetic-stub-write"))
+
+    async def test_a_receipt_that_is_not_the_expected_refusal_or_an_unused_hook_fails_the_lane(self):
+        for name, value in (("terminal", False), ("terminal_outcome", "synthetic_other_outcome"),
+                            ("dispatch_intent_recorded", True), ("reason", "synthetic_other_reason")):
+            with self.subTest(changed=name):
+                await self.failed(["stale"], receipt={**self.RECEIPT, name: value})
+        with self.subTest(changed="reason absent"):
+            await self.failed(["stale"], receipt={key: value for key, value in self.RECEIPT.items()
+                                                  if key != "reason"})
+        with self.subTest(changed="hook never ran"):
+            await self.failed(["stale"], consume=False)
+
+
 class FieldChanges(unittest.TestCase):
     def test_every_leaf_is_listed_and_change_is_type_exact(self):
         found = acceptance.field_changes(
@@ -2880,6 +2970,29 @@ class LaneSourceShape(unittest.TestCase):
         "'undo_of_unverified_task'",
     )
 
+    # The statements around each ``await zero_dispatch_refusal(...)`` and each ``await stale(...)``, innermost first,
+    # up to ``run``. SCENARIO is the one ``try`` of ``run``, which has a ``finally`` and no handler.
+    SCENARIO = "Try.body"
+    CONTROLS = "With.body diagnostics.check('operation', 'negative_controls')"
+    FIXTURE_LOOP = "For.body (case, domain, code) in FIXTURE_CASES"
+    MATTER_LOOP = "For.body (entity_id, item) in sorted(entries.items())"
+    DRIFT_LOOP = ("For.body (nth, outcome, label) in ((2, 'preflight_rejected', 'state_drift_before_locked_preflight'),"
+                  " (3, 'failed_pre_dispatch', 'state_drift_before_once'))")
+    HELPER_ENCLOSING = (
+        [SCENARIO], [SCENARIO], [SCENARIO], [SCENARIO], [SCENARIO], [FIXTURE_LOOP, SCENARIO],
+        [MATTER_LOOP, SCENARIO], [CONTROLS, SCENARIO], [SCENARIO],
+    )
+    # The seventh argument of every ``await stale(...)``, in source order, and what encloses each.
+    STALE_LABELS = ("label", "'undo_after_post_state_drift'", "'reregistration_before_once'")
+    STALE_ENCLOSING = ([DRIFT_LOOP, CONTROLS, SCENARIO], [CONTROLS, SCENARIO], [CONTROLS, SCENARIO])
+    # Every ``continue`` under those loops: the two reviewed skips of the matter loop, each before a refusal code
+    # exists for the entity.
+    LOOP_SKIPS = (
+        "if item['platform'] != 'matter' or entity_id in (SELECT, SWITCH, NUMBER)"
+        " or entity_id.split('.', 1)[0] not in ('select', 'switch', 'number'):\n    continue",
+        "if code is None:\n    not_exercised.append(entity_id)\n    continue",
+    )
+
     @classmethod
     def setUpClass(cls):
         cls.module = lane_tree()
@@ -2914,6 +3027,142 @@ class LaneSourceShape(unittest.TestCase):
         forms = self.named("refusal_form")
         self.assertEqual([(node.where, isinstance(node.parent, ast.Call) and node.parent.func is node)
                           for node in forms], [("run.zero_dispatch_refusal", True)])
+
+    @staticmethod
+    def enclosing(statement):
+        """The statements around ``statement`` up to its function, innermost first, and that function.
+
+        Each is its type, the field that holds the inner statement, and its
+        header: the items of a ``with``, the target and iterable of a ``for``,
+        the test of an ``if`` or ``while``.
+        """
+        chain, inner = [], statement
+        while not isinstance(inner.parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+            outer = inner.parent
+            (field,) = [name for name, value in ast.iter_fields(outer)
+                        if isinstance(value, list) and any(item is inner for item in value)]
+            header = ""
+            if isinstance(outer, (ast.With, ast.AsyncWith)):
+                header = " " + ", ".join(ast.unparse(item) for item in outer.items)
+            elif isinstance(outer, (ast.For, ast.AsyncFor)):
+                header = " " + ast.unparse(outer.target) + " in " + ast.unparse(outer.iter)
+            elif isinstance(outer, (ast.If, ast.While)):
+                header = " " + ast.unparse(outer.test)
+            chain.append(type(outer).__name__ + "." + field + header)
+            inner = outer
+        return chain, inner.parent
+
+    def test_every_zero_dispatch_check_runs_unconditionally_under_the_reviewed_statements(self):
+        """No ``try`` with a handler, ``if``, other ``with`` or other loop encloses a zero-dispatch check.
+
+        An assertion the check raises therefore leaves ``run``, and no condition
+        decides whether the check runs. The reviewed shape is HELPER_ENCLOSING
+        and STALE_ENCLOSING.
+        """
+        (scenario,) = [node for node in self.nodes if isinstance(node, ast.AsyncFunctionDef) and node.name == "run"]
+        guarded = scenario.body[-1]
+        self.assertIsInstance(guarded, ast.Try)
+        # The one ``try`` directly in ``run`` has a ``finally`` and nothing that could catch.
+        self.assertEqual([type(node).__name__ for node in scenario.body].count("Try"), 1)
+        self.assertEqual((guarded.handlers, guarded.orelse, len(guarded.finalbody)), ([], [], 1))
+        self.assertEqual([type(node).__name__ for node in self.nodes if isinstance(node, ast.TryStar)], [])
+
+        # ``stale`` is, like the helper, defined once and only ever called, awaited, as a whole statement of ``run``.
+        for name in ("zero_dispatch_refusal", "stale", "unchanged"):
+            defined = [(type(node).__name__, node.where) for node in self.nodes
+                       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                       and node.name == name]
+            self.assertEqual(defined, [("AsyncFunctionDef", "run")], name)
+            self.assertEqual([node.where for node in self.named(name) if not isinstance(node.ctx, ast.Load)], [], name)
+            self.assertEqual([node.arg for node in self.nodes if isinstance(node, ast.arg) and node.arg == name], [])
+        stale = [node.parent for node in self.named("stale")]
+        for use, call in zip(self.named("stale"), stale):
+            self.assertTrue(isinstance(call, ast.Call) and call.func is use, ast.unparse(call))
+            self.assertIsInstance(call.parent, ast.Await)
+            self.assertIsInstance(call.parent.parent, ast.Expr)
+            self.assertEqual((call.where, len(call.args), call.keywords), ("run", 7, []))
+        self.assertEqual([ast.unparse(call.args[6]) for call in stale], list(self.STALE_LABELS))
+        helper = [node.parent for node in self.named("zero_dispatch_refusal")]
+
+        loops = []
+        for calls, reviewed in ((helper, self.HELPER_ENCLOSING), (stale, self.STALE_ENCLOSING)):
+            found = [self.enclosing(call.parent.parent) for call in calls]
+            self.assertEqual([chain for chain, _function in found], list(reviewed))
+            for call, (_chain, function) in zip(calls, found):
+                self.assertIs(function, scenario)
+                outer = call.parent.parent
+                while outer is not scenario:
+                    if isinstance(outer, ast.Try):
+                        self.assertIs(outer, guarded)
+                    if isinstance(outer, ast.For) and outer not in loops:
+                        loops.append(outer)
+                    outer = outer.parent
+        # The three loops run every iteration to the check: no ``else``, no way out, and only the reviewed skips.
+        self.assertEqual(len(loops), 3)
+        inside = [node for loop in loops for node in ast.walk(loop)]
+        self.assertEqual([loop.orelse for loop in loops], [[], [], []])
+        self.assertEqual([type(node).__name__ for node in inside
+                          if isinstance(node, (ast.Break, ast.Return, ast.Raise, ast.Try, ast.While))], [])
+        skips = [node for node in inside if isinstance(node, ast.Continue)]
+        self.assertEqual([ast.unparse(node.parent) for node in skips], list(self.LOOP_SKIPS))
+        for node in skips:
+            self.assertIs(node.parent.parent, loops[1])  # a statement of the matter loop, not nested deeper
+            self.assertEqual(node.parent.orelse, [])
+
+        # Inside both, the frame-and-write comparison is a plain statement of the function itself.
+        compared = [node.parent for node in self.named("unchanged")
+                    if node.where in ("run.zero_dispatch_refusal", "run.stale")]
+        self.assertEqual([(call.where, ast.unparse(call.parent.parent)) for call in compared], [
+            ("run.zero_dispatch_refusal", "await unchanged(sends, written)"),
+            ("run.stale", "await unchanged(sends, written)")])
+        for call in compared:
+            self.assertIsInstance(call.parent.parent, ast.Expr)
+            self.assertEqual(self.enclosing(call.parent.parent)[0], [])
+
+    def test_a_product_client_is_held_and_called_only_inside_the_three_guarded_wrappers(self):
+        """``.client`` is read in ``LaneWebSocket``, ``LaneRest`` and ``LaneState`` and nowhere else.
+
+        A frame or request sent through ``<wrapper>.client`` from the scenario
+        would pass no closed list and reach no journal.
+        """
+        held = [node for node in self.nodes if isinstance(node, ast.Attribute) and node.attr == "client"]
+        statements = []
+        for node in held:
+            statement = node
+            while not isinstance(statement, ast.stmt):
+                statement = statement.parent
+            statements.append((node.where, type(node.ctx).__name__, ast.unparse(node),
+                               ast.unparse(statement).split("\n")[0]))
+        self.assertEqual(statements, [
+            ("LaneWebSocket.__init__", "Store", "self.client",
+             "self.client = HomeAssistantWebSocketClient(pinned(configured))"),
+            ("LaneWebSocket.command", "Load", "self.client", "return await self.client.command(payload)"),
+            ("LaneRest.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),
+            ("LaneRest.request", "Load", "self.client", "return await self.client.request(method, path)"),
+            ("LaneState.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),
+            ("LaneState.read", "Load", "self.client",
+             "call = self.client.request('GET', rest_path('/states/{}', entity_id, kinds=('entity_id',)),"
+             " expected_statuses=self.NOT_FOUND)"),
+        ])
+        # Each read is the receiver of the one call in its method, and nothing else is named ``client``.
+        for node in held:
+            if isinstance(node.ctx, ast.Load):
+                self.assertTrue(isinstance(node.parent, ast.Attribute) and node.parent.value is node)
+                self.assertTrue(isinstance(node.parent.parent, ast.Call) and node.parent.parent.func is node.parent)
+        self.assertEqual([node.where for node in self.named("client")], [])
+        self.assertEqual([node.arg for node in self.nodes
+                          if isinstance(node, (ast.arg, ast.keyword)) and node.arg == "client"], [])
+        self.assertEqual([node.value for node in self.nodes
+                          if isinstance(node, ast.Constant) and node.value == "client"], [])
+        # A product client is built in those three constructors and is otherwise named only by the import.
+        for name, built in (("HomeAssistantWebSocketClient", ["LaneWebSocket.__init__"]),
+                            ("HomeAssistantRestClient", ["LaneRest.__init__", "LaneState.__init__"])):
+            uses = self.named(name)
+            self.assertEqual([node.where for node in uses], built)
+            for node in uses:
+                self.assertTrue(isinstance(node.parent, ast.Call) and node.parent.func is node)
+                self.assertEqual(ast.unparse(node.parent), name + "(pinned(configured))")
+                self.assertIsInstance(node.parent.parent, ast.Assign)
 
     def test_the_refusal_records_written_outside_the_helper_are_the_reviewed_set(self):
         """Every ``record["refusals"][...]`` store, by enclosing function and key."""
