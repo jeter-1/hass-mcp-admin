@@ -764,6 +764,106 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
                            "device_configuration_undo_identity_changed")
         self.assertEqual(len(self.ha.writes), 1)
 
+    async def restored_reregistration(self, entity_id, action, value):
+        """R1 for one kind. Under its kept config entry Core gives a removed entry
+        back as itself (same registry id, created_at and unique_id); what moves is
+        what Core rewrites: registry ``modified_at`` and the state's timestamps
+        and context. The undo refuses as unproven, never as an identity change,
+        and sends nothing."""
+        forward = await self.call(self.request(entity_id, action, value))
+        self.assertEqual(forward["status"], "succeeded_verified", forward)
+        entity, recorded = self.ha.entities[entity_id], deepcopy(self.ha.entities[entity_id])
+        devices = deepcopy(self.ha.devices)
+        kept = self.service._load_verified(forward["task_id"])["identity"]["registry"]
+
+        def undo():
+            return self.request(entity_id, "undo", None, undo_task_id=forward["task_id"])
+
+        def rewritten():
+            entity["registry"]["modified_at"] = recorded["registry"]["modified_at"] + 60.0
+
+        def restated():
+            self.ha.touch(entity_id)  # new last_changed, last_updated and context id
+
+        shapes = {"registry_modified_at_only": (rewritten,), "reload_alone": (restated,),
+                  "removed_then_reloaded": (rewritten, restated)}
+        for shape, steps in shapes.items():
+            with self.subTest(entity_id=entity_id, shape=shape):
+                entity.clear()
+                entity.update(deepcopy(recorded))
+                for step in steps:
+                    step()
+                self.assertNotEqual(entity, recorded)
+                # Every recorded identity field is as it was, and so are the
+                # entity_id, the device entry, the value and the attributes.
+                self.assertEqual({key: entity["registry"][key] for key in kept}, kept)
+                self.assertEqual((kept["id"], kept["created_at"], kept["unique_id"]),
+                                 tuple(recorded["registry"][key]
+                                       for key in ("id", "created_at", "unique_id")))
+                self.assertEqual(entity["registry"]["entity_id"], entity_id)
+                self.assertEqual(self.ha.devices, devices)
+                self.assertEqual((entity["state"], entity["attributes"]),
+                                 (recorded["state"], recorded["attributes"]))
+                await self.refused(undo(), "device_configuration_undo_post_state_unproven")
+                self.assertEqual(len(self.ha.writes), 1)
+        # Control: with exactly the recorded observation back, the same undo is
+        # admitted, so each refusal above came from the fields that shape moved.
+        entity.clear()
+        entity.update(deepcopy(recorded))
+        result = await self.call(undo())
+        self.assertEqual(result["status"], "succeeded_verified", result)
+        self.assertIs(result["undone"], True)
+        self.assertEqual(len(self.ha.writes), 2)
+
+    async def test_r1_restored_config_switch_refuses_post_state_unproven_with_zero_sends(self):
+        await self.restored_reregistration(SWITCH, "turn_on", None)
+
+    async def test_r1_restored_sensitivity_number_refuses_post_state_unproven_with_zero_sends(self):
+        await self.restored_reregistration(NUMBER, "set_value", "3")
+
+    async def test_r2_replaced_device_is_caught_by_registry_id_and_unique_id_alone(self):
+        """R2: a re-commissioned or replaced Matter device has a new node id, so
+        a new unique_id and a new registry id. Its serial restores the old
+        device id and the old entity_id is reused; neither is what refuses."""
+        forward = await self.call(self.request())
+        entity, recorded = self.ha.entities[SELECT], deepcopy(self.ha.entities[SELECT])
+        devices = deepcopy(self.ha.devices)
+        new = {"id": "reg-replacement-node", "unique_id": "matter-unique-replacement-node"}
+        for changed in (new, {"id": new["id"]}, {"unique_id": new["unique_id"]}):
+            with self.subTest(changed=sorted(changed)):
+                entity["registry"] = {**recorded["registry"], **changed}
+                await self.refused(await self.undo(forward["task_id"]),
+                                   "device_configuration_undo_identity_changed")
+                # Only the named fields differ from what the change recorded:
+                # same entity_id, same device id, same device entry, same state.
+                self.assertEqual(
+                    {key for key, value in entity["registry"].items()
+                     if value != recorded["registry"][key]}, set(changed))
+                self.assertEqual(entity["registry"]["entity_id"], SELECT)
+                self.assertEqual(entity["registry"]["device_id"], "dev-plug")
+                self.assertEqual(self.ha.devices, devices)
+                self.assertEqual({key: entity[key] for key in entity if key != "registry"},
+                                 {key: recorded[key] for key in recorded if key != "registry"})
+        self.assertEqual(len(self.ha.writes), 1)
+        # The realistic shape also carries a new node identifier on the restored
+        # device (same device id, same serial identifier): still the same refusal.
+        entity["registry"] = {**recorded["registry"], **new}
+        self.ha.devices[0]["identifiers"] = [["matter", "deviceid_synthetic-new-node"],
+                                             ["matter", "serial_synthetic-0001"]]
+        self.assertEqual(self.ha.devices[0]["id"], devices[0]["id"])
+        await self.refused(await self.undo(forward["task_id"]),
+                           "device_configuration_undo_identity_changed")
+        self.assertEqual(len(self.ha.writes), 1)
+        # Control: with the recorded registry id and unique_id back and nothing
+        # else touched, the same undo is admitted. The device id, the entity_id
+        # and the state never moved, so the refusals above turned on those two
+        # registry fields alone.
+        entity["registry"], self.ha.devices = deepcopy(recorded["registry"]), deepcopy(devices)
+        result = await self.call(await self.undo(forward["task_id"]))
+        self.assertEqual(result["status"], "succeeded_verified", result)
+        self.assertIs(result["undone"], True)
+        self.assertEqual(len(self.ha.writes), 2)
+
     async def test_corrupt_or_missing_sidecar_fails_closed(self):
         forward = await self.call(self.request())
         path = self.service._verified_path(forward["task_id"])

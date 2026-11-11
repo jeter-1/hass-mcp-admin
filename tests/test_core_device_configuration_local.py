@@ -2053,6 +2053,86 @@ class CompositeObservation(ProductThroughGuards):
         self.assertEqual(replaced["changed_fields"], ["registry.id"])
 
 
+class ReregistrationUndo(unittest.IsolatedAsyncioTestCase):
+    """R1 on the pinned Core: the lane accepts one exact undo refusal, never either."""
+
+    OTHER, OUTSIDE = ProductThroughGuards.OTHER, ProductThroughGuards.OUTSIDE
+    asyncSetUp = ProductThroughGuards.asyncSetUp
+    control = ProductThroughGuards.control
+    EXACT = "device_configuration_undo_post_state_unproven"
+    OTHER_CODE = "device_configuration_undo_" + "identity_changed"
+
+    async def changed(self):
+        forward = await self.control(acceptance.device_request(acceptance.SELECT, "on"))
+        self.assertEqual(forward["status"], "succeeded_verified", forward)
+        return forward, dict(self.ha.entities[acceptance.SELECT]["registry"])
+
+    def undo(self, forward):
+        return lambda: self.control(acceptance.device_request(acceptance.SELECT, undo=forward["task_id"]))
+
+    def rewritten(self, registered, **changes):
+        """The registry entry after a remove and re-registration, as the fake Core answers it."""
+        entity = self.ha.entities[acceptance.SELECT]
+        entity["registry"] = {**registered, "modified_at": registered["modified_at"] + 60, **changes}
+        self.ha.touch(acceptance.SELECT)
+        return entity["registry"]
+
+    async def test_restored_entry_is_refused_with_exactly_post_state_unproven(self):
+        self.assertEqual(acceptance.REREGISTRATION_UNDO_REFUSAL, self.EXACT)
+        forward, registered = await self.changed()
+        acceptance.restored_reregistration(registered, self.rewritten(registered))
+        self.assertEqual(await acceptance.refusal_form(self.undo(forward), acceptance.REREGISTRATION_UNDO_REFUSAL),
+                         "raised_before_task")
+        # The same runtime answer does not pass as the other undo refusal.
+        with self.assertRaises(AssertionError):
+            await acceptance.refusal_form(self.undo(forward), self.OTHER_CODE)
+        self.assertEqual((len(self.ws.sends), len(self.ha.writes)), (1, 1))
+
+    async def test_identity_changed_refusal_fails_the_lane(self):
+        """A new registry id, creation time or unique_id is not R1: both lane checks fail."""
+        forward, registered = await self.changed()
+        for change in ({"id": "reg-replacement"}, {"created_at": registered["created_at"] + 1},
+                       {"unique_id": "matter-unique-replacement"}):
+            with self.subTest(change=sorted(change)):
+                again = self.rewritten(registered, **change)
+                with self.assertRaises(AssertionError):
+                    acceptance.restored_reregistration(registered, again)
+                # The runtime answers with the identity refusal here ...
+                self.assertEqual(await acceptance.refusal_form(self.undo(forward), self.OTHER_CODE),
+                                 "raised_before_task")
+                # ... and the lane's one expected code does not accept it.
+                with self.assertRaises(AssertionError):
+                    await acceptance.refusal_form(self.undo(forward), acceptance.REREGISTRATION_UNDO_REFUSAL)
+        self.assertEqual((len(self.ws.sends), len(self.ha.writes)), (1, 1))
+
+    async def test_an_entry_that_was_not_rewritten_is_not_a_reregistration(self):
+        _forward, registered = await self.changed()
+        with self.assertRaises(AssertionError):
+            acceptance.restored_reregistration(registered, dict(registered))
+
+    async def test_refusal_form_is_exact_for_a_terminal_receipt(self):
+        receipt = {"terminal": True, "dispatch_intent_recorded": False, "reason": self.EXACT,
+                   "status": "refused", "terminal_outcome": "preflight_rejected"}
+
+        def attempt(**changes):
+            async def answer():
+                return {**receipt, **changes}
+            return answer
+        self.assertEqual(await acceptance.refusal_form(attempt(), self.EXACT), "preflight_rejected")
+        for changes in ({"reason": self.OTHER_CODE}, {"reason": None}, {"dispatch_intent_recorded": True},
+                        {"terminal": False}, {"status": "confirmation_required"}):
+            with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                await acceptance.refusal_form(attempt(**changes), self.EXACT)
+
+    def test_the_lane_names_no_other_undo_refusal_for_reregistration(self):
+        """The acceptance source has no branch that could accept the identity refusal."""
+        self.assertNotIn(self.OTHER_CODE, inspect.getsource(acceptance))
+        run = inspect.getsource(acceptance.run)
+        self.assertEqual(run.count("restored_reregistration(registered, again)"), 1)
+        self.assertEqual(run.count("code = REREGISTRATION_UNDO_REFUSAL"), 1)
+        self.assertEqual(run.count('"undo_after_reregistration"'), 1)
+
+
 class FieldChanges(unittest.TestCase):
     def test_every_leaf_is_listed_and_change_is_type_exact(self):
         found = acceptance.field_changes(

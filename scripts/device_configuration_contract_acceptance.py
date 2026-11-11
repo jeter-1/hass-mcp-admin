@@ -121,6 +121,9 @@ REGISTRY_LEVEL = ("entity_id", "id", "created_at", "modified_at", "device_id", "
 REREGISTRATION_PATH = ("websocket config/entity_registry/remove",
                        "POST /api/config/config_entries/entry/{entry_id}/reload")
 RELOAD_ONLY_PATH = REREGISTRATION_PATH[1:]
+# R1 on the pinned Core: a same-unique_id re-registration under a kept config
+# entry restores the registry id, so the undo is refused with exactly this code.
+REREGISTRATION_UNDO_REFUSAL = "device_configuration_undo_post_state_unproven"
 EVIDENCE_WAIT_SECONDS = 260
 
 
@@ -552,6 +555,30 @@ def registry_level(before, after):
                          {key: after.get(key) for key in REGISTRY_LEVEL})
 
 
+def restored_reregistration(registered, again):
+    """R1: Core gave the removed registry entry back as itself, rewritten.
+
+    A new registry id, creation time or unique_id is another case (a replaced
+    device, or an entry purged after its config entry was removed). It is not
+    accepted here under any undo refusal: it fails the lane.
+    """
+    assert again["unique_id"] == registered["unique_id"]
+    assert (again["id"], again["created_at"]) == (registered["id"], registered["created_at"])
+    assert again["modified_at"] != registered["modified_at"]
+
+
+async def refusal_form(attempt, code):
+    """How one refused request ended. Any refusal other than ``code`` fails the lane."""
+    try:
+        receipt = await attempt()
+    except DeviceConfigurationRefusal as exc:
+        assert exc.details["category"] == code
+        return "raised_before_task"
+    assert receipt["terminal"] is True and receipt["dispatch_intent_recorded"] is False
+    assert receipt.get("reason") == code and receipt["status"] != "confirmation_required"
+    return receipt["terminal_outcome"]
+
+
 @diagnostics.checked("helper_setup", "helper_contract")
 async def run(configured, entry, directory, *, stub_url, stub_hashes):
     """Run only device_configuration_entity; caller owns startup, identity and teardown proof."""
@@ -671,18 +698,30 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
     async def zero_dispatch_refusal(service, req, code, label):
         """A refusal with no service frame and no stub write, in either form the source allows."""
         sends, written = len(ws.sends), len(await writes())
-        try:
-            receipt = await control(service, req)
-        except DeviceConfigurationRefusal as exc:
-            assert exc.details["category"] == code
-            form = "raised_before_task"
-        else:
-            assert receipt["terminal"] is True and receipt["dispatch_intent_recorded"] is False
-            assert receipt.get("reason") == code and receipt["status"] != "confirmation_required"
-            form = receipt["terminal_outcome"]
+        form = await refusal_form(lambda: control(service, req), code)
         await unchanged(sends, written)
         record["refusals"][label] = {"code": code, "form": form, "sends": 0, "stub_writes": 0}
         return form
+
+    @diagnostics.checked("operation", "negative_controls")
+    async def observed_undo(service, entity_id, task_id):
+        """Observation only: how one undo ends, whichever way. Every frame stays counted."""
+        sends, written = len(ws.sends), len(await writes())
+        try:
+            receipt = await control(service, device_request(entity_id, undo=task_id))
+        except DeviceConfigurationRefusal as exc:
+            ended = {"code": exc.details["category"], "form": "raised_before_task"}
+        else:
+            assert receipt["terminal"] is True
+            ended = {"code": receipt.get("reason"), "form": receipt["terminal_outcome"]}
+            if receipt["dispatch_intent_recorded"]:
+                assert receipt["status"] == "succeeded_verified" and receipt["undone"] is True
+                counted["sends"] += 1
+                counted["writes"] += 1
+                await unchanged(sends + 1, written + 1)
+                return {**ended, "sends": 1, "stub_writes": 1}
+        await unchanged(sends, written)
+        return {**ended, "sends": 0, "stub_writes": 0}
 
     @diagnostics.checked("operation", "operation_dispatch")
     async def verified(service, entity_id, value, node, path, label, *, undo=None, delayed=False):
@@ -954,6 +993,12 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
                         "preflight_rejected", "device_configuration_undo_post_state_unproven",
                         "undo_after_post_state_drift")
 
+            # The switch is changed first: the reload below passes over it
+            # without removing it, and its undo is observed afterwards.
+            current = (await state(SWITCH))["state"]
+            reloaded = await verified(service, SWITCH, "on" if current == "off" else "off", SWITCH_NODE,
+                                      switch_path, "switch_before_reload")
+
             # N12 registry variant and R1: the registry entry is deleted and
             # re-registered at the same entity_id between the preflight and once().
             current = (await state(SELECT))["state"]
@@ -979,16 +1024,15 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
             again = await registry_entry(SELECT)
             second = await snapshot(service)
             kept = await matter_entry()
-            assert again["unique_id"] == registered["unique_id"]
-            identity_changed = (again["id"], again["created_at"]) != (registered["id"], registered["created_at"])
-            assert again["modified_at"] != registered["modified_at"] or identity_changed
-            # Which undo refusal follows is decided by what Core did with the
-            # registry id: a new id or creation time is an identity change;
-            # a restored id leaves only the unproven post-state.
-            code = ("device_configuration_undo_identity_changed" if identity_changed
-                    else "device_configuration_undo_post_state_unproven")
+            # R1: the entry is restored, so the undo is refused with the one
+            # exact code. No other refusal is accepted in its place.
+            restored_reregistration(registered, again)
+            code = REREGISTRATION_UNDO_REFUSAL
             await zero_dispatch_refusal(service, device_request(SELECT, undo=forward["task_id"]), code,
                                         "undo_after_reregistration")
+            # Observation only: the undo of the change made before a reload
+            # that never removed the entity. The code returned is recorded.
+            reload_undo = await observed_undo(service, SWITCH, reloaded["task_id"])
             record["observations"]["reregistration"] = {
                 "registry_id_changed": again["id"] != registered["id"],
                 "created_at_changed": again["created_at"] != registered["created_at"],
@@ -1014,7 +1058,12 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
                             digest(first[SELECT][1]) == recorded["resulting_state_fingerprint"]}}},
                 "reload_only": {
                     "path": list(RELOAD_ONLY_PATH),
-                    "targets": {entity_id: table(entity_id) for entity_id in (SWITCH, NUMBER)}}}
+                    "targets": {entity_id: table(entity_id) for entity_id in (SWITCH, NUMBER)},
+                    "undo_after_reload": {
+                        "entity_id": SWITCH, "operation": "switch_before_reload", **reload_undo,
+                        "before_is_recorded_post_fingerprint": digest(first[SWITCH][1]) == record[
+                            "operations"]["switch_before_reload"]["verification"][
+                                "resulting_state_fingerprint"]}}}
 
         # C1: control_power holds the switch; the device-configuration change
         # does not send while it does.
