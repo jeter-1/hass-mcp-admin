@@ -2854,6 +2854,53 @@ class StubEntry(unittest.IsolatedAsyncioTestCase):
             self.assertIn(path, self.stub.nodes[node]["attributes"])
         self.assertTrue(any(path.endswith(acceptance.SWITCH_PATH_SUFFIX) for path in self.stub.nodes[199]["attributes"]))
 
+    def test_the_published_stub_port_serves_the_matter_socket_and_the_lane_route_as_the_readme_states(self):
+        """The runner's one stub publish and the entry's routes, read together with the evidence README."""
+        calls = []
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                lane, "command", side_effect=lambda *args, **kwargs: calls.append(args)):
+            lane.start_stub("core:tag@sha256:a", "run-id", "256m", Path(directory), {"a.json": "x"})
+        (argv,) = calls
+        (publish,) = [argv[index + 1] for index, item in enumerate(argv) if item == "--publish"]
+        bind, host_port, container_port = publish.split(":")
+        self.assertEqual((bind, host_port, container_port), ("127.0.0.1", "18299", "5580"))
+        # The entry gets that container port and opens its one listener on it.
+        arguments = list(argv[argv.index("/wrapper/stub_entry.py") + 1:])
+        self.assertEqual(arguments[arguments.index("--port") + 1], container_port)
+        tree = ast.parse(ENTRY_PATH.read_text(encoding="utf-8"))
+        named = [node.attr if isinstance(node, ast.Attribute) else node.id for node in ast.walk(tree)
+                 if isinstance(node, (ast.Attribute, ast.Name))]
+        self.assertEqual(named.count("run_app"), 1)
+        for listener in ("TCPSite", "SockSite", "UnixSite", "AppRunner", "start_server", "create_server"):
+            self.assertNotIn(listener, named)
+        served = []
+        with patch.object(sys, "argv", ["stub_entry.py", *arguments]), patch.object(sys, "stdout", io.StringIO()), \
+                patch.object(self.entry, "load", return_value=SimpleNamespace(Stub=lambda nodes, out: self.stub)), \
+                patch.object(self.entry.web, "run_app", side_effect=lambda app, **options: served.append((app, options))):
+            self.entry.main()
+        ((app, options),) = served
+        self.assertEqual(options, {"host": "0.0.0.0", "port": int(container_port), "print": None})
+        # Both routes are on that listener, so both are behind the one publish; the frozen stub's
+        # open control route is not mounted.
+        routes = {(route.method, route.resource.canonical): route.handler for route in app.router.routes()}
+        self.assertEqual(sorted(routes), [("*", "/_lane/control"), ("GET", "/ws"), ("HEAD", "/ws")])
+        self.assertEqual(routes[("GET", "/ws")], self.stub.handle_ws)
+        self.assertIs(routes[("*", "/_lane/control")], self.entry.control)
+        self.assertNotIn("/_stub/control", {path for _, path in routes})
+        self.assertEqual(acceptance.STUB_CONTROL_URL, f"http://{bind}:{host_port}/_lane/control")
+        self.assertEqual(acceptance.MATTER_URL, f"ws://{lane.STUB_ALIAS}:{container_port}/ws")
+        # The evidence README says exactly that, and no longer calls the socket unpublished.
+        readme = " ".join((ROOT / "docs/evidence/hamcp366/README.md").read_text(encoding="utf-8").split())
+        stated = {
+            "not published": 0,
+            f"The stub has one listener, container port {container_port}, and host port {host_port} publishes it, "
+            "so both of its routes are reachable on host loopback: `/ws`, the frozen stub's Matter WebSocket "
+            "handler (`write_attribute` included), and `/_lane/control`, the lane's closed control route.": 1,
+            "The frozen stub's own `/_stub/control` route is not mounted.": 1,
+            f"`ws://{bind}:{host_port}/ws`": 1,
+        }
+        self.assertEqual({text: readme.count(text) for text in stated}, stated)
+
 
 class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
     """run() fails closed before any key, authority, client or request."""

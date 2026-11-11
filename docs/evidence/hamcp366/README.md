@@ -138,13 +138,24 @@ The three containers join one dedicated, lane-owned Docker bridge. The bridge
 is not internal: this is the posture already recorded for local lanes in
 [`../hamcp315/README.md`](../hamcp315/README.md) (HAMCP-326), so container
 egress is allowed and `--pull never` still requires cached images. Host ports
-18297 (Core), 18298 (ha-mcp child) and 18299 (stub control) bind `127.0.0.1`
-only. The stub's Matter WebSocket port is not published to the host; Core
-reaches it on the lane network. The runner checks network ownership, driver and
-mode, then each container's actual port bindings and sole network membership
-immediately after it starts and before its first readiness request. Before the
-stub is used or any product call is made it also checks each running
-container's image identity and memory limit against the pinned values.
+18297 (Core), 18298 (ha-mcp child) and 18299 (the stub) bind `127.0.0.1`
+only. The stub has one listener, container port 5580, and host port 18299
+publishes it, so both of its routes are reachable on host loopback: `/ws`, the
+frozen stub's Matter WebSocket handler (`write_attribute` included), and
+`/_lane/control`, the lane's closed control route. The frozen stub's own
+`/_stub/control` route is not mounted. Core reaches `/ws` on the lane network,
+and the lane's own stub client is pinned to `/_lane/control`. A local process
+on this host could open `ws://127.0.0.1:18299/ws` and write the disposable
+stub's attributes without passing the lane's closed list; the stub records
+such a write in the same write list the lane reads. The publish and the
+entry's routes are pinned together by
+`test_the_published_stub_port_serves_the_matter_socket_and_the_lane_route_as_the_readme_states`
+(`tests/test_core_device_configuration_local.py`). The runner checks network
+ownership, driver and mode, then each container's actual port bindings and
+sole network membership immediately after it starts and before its first
+readiness request. Before the stub is used or any product call is made it also
+checks each running container's image identity and memory limit against the
+pinned values.
 
 Observed on this host: on the non-internal bridge the running Core did not
 resolve Docker's embedded-DNS names (resolver timeout; the cause was not
@@ -336,7 +347,7 @@ The lane changes the config switch (`operations.switch_before_reload`,
 `succeeded_verified`) before the reload, and after it asks for the undo of
 that change. The request is one the lane's closed lists already carry; nothing
 was added to them. The lane records the result and asserts no particular code
-(`observed_undo`, `scripts/device_configuration_contract_acceptance.py:711`).
+(`observed_undo` in `scripts/device_configuration_contract_acceptance.py`).
 Observed (`observations.reregistration_fingerprint.reload_only.undo_after_reload`):
 `device_configuration_undo_post_state_unproven`, raised before any task, zero
 service sends and zero stub writes. The fingerprint before the reload equals
@@ -359,8 +370,8 @@ undo decision with an offline fake Core:
 
 | Test | Shape | Expected |
 |---|---|---|
-| `test_r1_restored_config_switch_refuses_post_state_unproven_with_zero_sends` | the config switch comes back with the same registry `id`, `created_at` and every other recorded identity field, and a changed fingerprint. Three shapes: registry `modified_at` only; state timestamps and context id only (a reload alone); both (removed, then reloaded) | `device_configuration_undo_post_state_unproven`; one write in total (the forward change); restoring the recorded observation lets the same undo verify |
-| `test_r1_restored_sensitivity_number_refuses_post_state_unproven_with_zero_sends` | the same three shapes for the sensitivity number | the same |
+| `test_r1_restored_config_switch_refuses_post_state_unproven_with_zero_sends` | the config switch comes back with the same registry `id`, `created_at` and every other recorded identity field, and a changed fingerprint. Seven shapes: registry `modified_at` only; state timestamps and context id only (a reload alone); both (removed, then reloaded); and four that move one recorded state field and nothing else: the context id only, both timestamps only, `last_changed` only, `last_updated` only | `device_configuration_undo_post_state_unproven`; one write in total (the forward change); restoring the recorded observation lets the same undo verify |
+| `test_r1_restored_sensitivity_number_refuses_post_state_unproven_with_zero_sends` | the same seven shapes for the sensitivity number | the same |
 | `test_r2_replaced_device_is_caught_by_registry_id_and_unique_id_alone` | a replaced device: new registry `id` and `unique_id` (together, and each alone), with the device `id`, the entity_id and the value unchanged; and the realistic shape, where the device keeps its `id` and gets new identifiers | `device_configuration_undo_identity_changed`; one write in total; restoring the recorded entity lets the same undo verify |
 
 ## Runtime text change

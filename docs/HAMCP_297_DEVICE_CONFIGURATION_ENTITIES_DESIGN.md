@@ -1230,13 +1230,21 @@ replacement with the same serial under a new node id; the lane's closed lists
 have no such action and none was added.
 
 **Residual limitation (this document only).** A physical device replacement is
-always detected. The undetectable residual is limited to a same-`unique_id`
+detected when it changes at least one identity field that `identity()`
+compares (`E/device_configuration/contracts.py:460-469`): the registry `id`,
+`created_at`, `unique_id`, `platform`, `translation_key`, `config_entry_id`,
+`device_id` or `entity_category`, or the device `id`, `created_at`,
+`identifiers` or `primary_config_entry`. That a replacement gets a new Matter
+node id, and so a new `unique_id`, is an assumption about Matter Server
+behaviour; it is not verified from the Core archive (see the list above), and
+a replacement that kept every one of those fields would not be refused as an
+identity change. The other undetectable residual is a same-`unique_id`
 re-registration (the entity deleted and rediscovered, or a required attribute
 or feature lost and regained) that leaves the observation fingerprint
 unchanged. Step a shows that a re-registration changes registry `modified_at`
-and the state timestamps, so the residual is theoretical. By the same ruling
-it is recorded in this design document only: the runtime result does not carry
-it, no seventh disclosure kind is added (§5.6), and
+and the state timestamps, so that second residual is theoretical. By the same
+ruling it is recorded in this design document only: the runtime result does
+not carry it, no seventh disclosure kind is added (§5.6), and
 `E/device_configuration/contracts.py` is unchanged.
 
 **Reload and restart end undo eligibility.** An integration reload (observed)
@@ -1738,9 +1746,14 @@ disposable lane. No household access is needed for this.
   undo, each with exactly one recorded stub write; delayed state reporting
   verified on a later poll; rejected and stalled writes each followed by
   readback, exactly one write each, and the `entity:` hold present; a
-  stored-value mismatch held as `verification_failed`; numeric bounds and
-  step per N22–N26 on the sensitivity number (1..N from
-  `SupportedSensitivityLevels`); the composite-identity checks at `once()`
+  stored-value mismatch held as `verification_failed`; numeric range, step
+  and readback per N24–N26 on the sensitivity number (1..N from
+  `SupportedSensitivityLevels`), while N22 and N23 are proven at unit level
+  (`tests/test_hamcp297_device_configuration.py`:
+  `test_number_unit_conversion_and_bounds_refuse`), because N22 is not
+  constructible in the lane and the kind check refuses the fixture's converter
+  number before the N23 check is reached; the composite-identity checks at
+  `once()`
   (N12 including the re-registration variant, R1 as the restored case of
   §5.11.4 with its one exact refusal code, R4; R2 and a changed registry id
   are proven at unit level, because the lane has no action that replaces a
