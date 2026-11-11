@@ -8,6 +8,7 @@ import copy
 import importlib.util
 import os
 from pathlib import Path
+import re
 import sys
 from types import SimpleNamespace
 import unittest
@@ -363,6 +364,84 @@ SECURITY_NEAR = (
 )
 
 
+HUB = {"type": E.UPDATE, "entity_id": E.HUB_SWITCH}
+CATEGORY = {"type": "config/category_registry/create", "scope": E.CATEGORY_SCOPE, "name": "HAMCP179 Lighting"}
+OWNED_BOARD = {"type": Q.DASHBOARD_UPDATE, "dashboard_id": "seq15_" + HEX}
+# Each field of a listed command that names its value or values outright (not
+# any string, and not a pattern): the lane, a command it sends, those fields.
+NAMED = (
+    ("entity_metadata", {**HUB, "area_id": "hamcp179_study"}, ("entity_id",)),
+    ("entity_metadata", {**HUB, "name": None}, ("entity_id", "name")),
+    ("entity_metadata", {**HUB, "area_id": None, "name": None}, ("entity_id",)),
+    ("entity_metadata", {**HUB, "area_id": "synthetic_area", "name": "HAMCP179 Hub"}, ("entity_id",)),
+    ("entity_metadata", {"type": "config/area_registry/create", "name": "HAMCP179 Study"}, ("name",)),
+    ("entity_metadata", {"type": "config/label_registry/create", "name": "HAMCP179 Night"}, ("name",)),
+    ("entity_metadata", {"type": "config/label_registry/create", "name": "HAMCP179 Outdoor"}, ("name",)),
+    ("entity_metadata", CATEGORY, ("scope", "name")),
+    ("entity_metadata", {"type": "config/category_registry/list", "scope": E.CATEGORY_SCOPE}, ("scope",)),
+    ("entity_metadata", {"type": "config/category_registry/delete", "scope": E.CATEGORY_SCOPE,
+                         "category_id": "01SYNTHETICCATEGORY"}, ("scope",)),
+    ("seq13", {"type": S.LABEL_UPDATE, "label_id": S.CANARY_ID, "description": "Seq-13 raw drift"},
+     ("label_id", "description")),
+    ("seq13", {"type": S.ENTITY_UPDATE, "entity_id": "sensor.synthetic", "name": "Seq13 Raw Drift"}, ("name",)),
+    ("seq13", {"type": S.ENTITY_UPDATE, "entity_id": "sensor.synthetic", "disabled_by": "user"}, ("disabled_by",)),
+    ("seq15", SELECT, ("options",)),
+    ("seq15", {**SELECT, "name": "Seq15 Scene Member " + HEX}, ("options",)),
+    ("seq15", {"type": "input_select/update", "input_select_id": "seq15_select_" + HEX,
+               "name": "Seq15 Select " + HEX, "options": ["Away", "Home", "Night"]}, ("options",)),
+    ("seq15", SCRIPT_RUN, ("domain", "service_data")),
+    ("seq15", {"type": Q.TRACE_LIST, "domain": "script", "item_id": "seq15_" + HEX}, ("domain",)),
+    ("seq15", BOARD, ("title", "icon", "show_in_sidebar", "require_admin")),
+    ("seq15", {"type": "lovelace/config/save", "url_path": "seq15-" + HEX, "config": Q.DASHBOARD_CONFIG},
+     ("config",)),
+    ("seq15", {"type": "lovelace/config/save", "url_path": "seq15-" + HEX,
+               "config": {**Q.DASHBOARD_CONFIG, "title": "Seq15 Drift"}}, ("config",)),
+    ("seq15", {"type": Q.LOVELACE_CONFIG, "url_path": "seq15-" + HEX, "force": True}, ("force",)),
+    ("seq15", {"type": Q.DASHBOARD_UPDATE, "dashboard_id": "seq15_absent_" + HEX, "title": "No implicit create"},
+     ("title",)),
+    ("seq15", {**OWNED_BOARD, "url_path": "seq15-other"}, ("url_path",)),
+    ("seq15", {**OWNED_BOARD, "mode": "yaml"}, ("mode",)),
+    ("seq15", {**OWNED_BOARD, "title": "Seq15 Drift"}, ("title",)),
+    *(("security_metadata", {"type": X.EXPOSE_NEW_GET, "assistant": assistant}, ("assistant",))
+      for assistant in X.KNOWN_ASSISTANTS),
+)
+
+
+def names_its_value(want):
+    """Whether a listed field names its value or values outright: no free string and no pattern within."""
+    if want is str or type(want) is re.Pattern:
+        return False
+    if type(want) is entity.Each:
+        return names_its_value(want.item)
+    if type(want) in (tuple, list, dict):
+        return all(map(names_its_value, want.values() if type(want) is dict else want))
+    return True
+
+
+def others(value):
+    """Other values of the same built-in type as the one a command names."""
+    if type(value) is str:
+        yield from (value + "x", "x" + value, value[:-1], value + " ", "", "synthetic-other-364")
+        if value.upper() != value:
+            yield value.upper()
+    elif type(value) is bool:
+        yield not value
+    elif value is None:
+        # None is the one value of its type, so here it is any other value at all.
+        yield from ("", "synthetic-other-364", False, 0, [], {})
+    elif type(value) is list:
+        yield from ([], value + value[:1], *([value[:-1], value[::-1]] if len(value) > 1 else []))
+        for index, item in enumerate(value):
+            yield from (value[:index] + [other] + value[index + 1:] for other in others(item))
+    elif type(value) is dict:
+        yield {**value, "synthetic": True}
+        for key, item in value.items():
+            yield {name: kept for name, kept in value.items() if name != key}
+            yield from ({**value, key: other} for other in others(item))
+    else:
+        raise AssertionError(type(value))
+
+
 def lane(name, module, client, send, pin, examples, near, sources, methods, seconds, signatures):
     return SimpleNamespace(name=name, module=module, client=client, send=send, pin=pin, examples=examples,
                            near=near, sources=sources, methods=methods, seconds=seconds, signatures=signatures)
@@ -619,6 +698,52 @@ class ClosedList(ClientCase):
         await self.refused_command(by_name["seq13"], SELECT)
         await self.refused_command(by_name["seq15"], SEQ13_EXAMPLES[6])
         await self.refused_command(by_name["security_metadata"], SEQ13_EXAMPLES[5])
+
+
+class NamedValue(ClientCase):
+    """A field that names its value takes that value and no other of its type."""
+
+    def test_the_table_holds_every_such_field_of_every_list(self):
+        listed = {(item.name, shape["type"], frozenset(shape), field)
+                  for item in SHAPED for shape in item.module.RAW_COMMANDS
+                  for field, want in shape.items() if field != "type" and names_its_value(want)}
+        listed |= {("security_metadata", kind, frozenset({"type", *fields}), field)
+                   for kind, fields in security.RAW_COMMANDS.items() for field in fields}
+        tabled = {(name, example["type"], frozenset(example), field)
+                  for name, example, fields in NAMED for field in fields}
+        self.assertEqual(tabled, listed)
+        self.assertEqual(len(tabled), 29)
+        # The type of every shape is named too; no list holds a pattern or a free string for it.
+        for item in SHAPED:
+            for shape in item.module.RAW_COMMANDS:
+                self.assertIs(type(shape["type"]), str)
+        for kind in security.RAW_COMMANDS:
+            self.assertIs(type(kind), str)
+
+    async def test_another_value_of_a_named_field_is_refused_before_a_session(self):
+        by_name, count = {item.name: item for item in LANES}, 0
+        for name, example, fields in NAMED:
+            item = by_name[name]
+            # The command as its lane sends it passes, so each refusal below is the one field's.
+            reply, _events = await self.sent(item, copy.deepcopy(example))
+            self.assertIs(reply["success"], True)
+            for field in fields:
+                named = example[field]
+                for value in others(named):
+                    self.assertNotEqual(value, named)
+                    if named is not None:
+                        self.assertIs(type(value), type(named))
+                    count += 1
+                    with self.subTest(lane=name, type=example["type"], field=field, value=value):
+                        await self.refused_command(item, {**copy.deepcopy(example), field: value})
+        self.assertGreater(count, 6 * len(NAMED))
+
+    async def test_another_type_is_refused_for_every_command_a_lane_sends(self):
+        for item in LANES:
+            for example in item.examples:
+                for value in others(example["type"]):
+                    with self.subTest(lane=item.name, payload=example, type=value):
+                        await self.refused_command(item, {**example, "type": value})
 
 
 class DialTarget(ClientCase):
