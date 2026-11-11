@@ -205,7 +205,30 @@ It is disposable evidence, not production authority.
   - seven invalid argument sets were refused.
 - `fallback_count` was 0, and cleanup read back as clean.
 
-This run covers A2 only for its fail-closed case. The A2 success lane below
+`thread_matter_topology.json` recorded this run until run 2 replaced it (the
+run 1 receipt is in commit `df447a65`).
+
+### Run 2: PASS (2026-11-11 08:49 CST)
+
+Run 2 repeats the lane after the merge with `release/2.6.0` at `29339009`,
+under the host heavy-job gate as unit `hamcp231-a1-lane2`.
+`thread_matter_topology.json` now records this run:
+
+- source commit `4087df22f2430ba82a06701a60366922fe06cf8c`;
+- manifest SHA-256
+  `913f8a3229fec3e85516183fd5fbfc2539ec90e3921b1d56419d545ab0f5bb7e` (527
+  paths). Run 1 bound the manifest as it was before the catch-up merges;
+- the same image, memory limits, profile fingerprint and 38 profile paths as
+  run 1;
+- receipt SHA-256
+  `1d42b9a867aa79e420aa0ba7c77bc3b6d546d3834e3e14216a6d0ef523a13b9c`.
+
+Apart from the source commit, the manifest hash, the times and the host
+admission snapshot, every receipt field equals run 1: the authority
+transition, the seeded datasets, the commands sent, the refusals, the eight
+canaries with no leak, `fallback_count` 0 and clean cleanup.
+
+These runs cover A2 only for its fail-closed case. The A2 success lane below
 covers success.
 
 ## A2 success lane
@@ -296,8 +319,8 @@ screened as graph ids on nodes and edge endpoints.
 
 Run 3 repeats the lane on the catch-up merge with `release/2.6.0`
 (`fcd6973f`), under the host heavy-job gate as unit `hamcp231-a2-lane3b`.
-`thread_matter_topology_a2.json` now records this run and replaces the run 2
-receipt:
+`thread_matter_topology_a2.json` recorded this run until run 4 replaced it
+(the run 3 receipt is in commit `df447a65`):
 
 - source commit `6339dbe7aebe7fcb4f2b11cbdd262ed348abda52`;
 - the same profile and fingerprint as run 2;
@@ -320,8 +343,33 @@ before any container started (`a2_stub_file_set_mismatch`). A local test run
 had left an ignored `__pycache__` directory in the stub directory, and the lane
 refuses any extra file there. Removing it was the only change.
 
-The receipt's `stub_dependency` label still reads "draft PR #428". That text
-comes from the lane script, which this run left unchanged; the PR has merged.
+The run 3 receipt's `stub_dependency` label still read "draft PR #428". That
+text came from the lane script, which run 3 left unchanged; the PR had merged.
+
+### Run 4: PASS (2026-11-11 08:48 CST)
+
+Run 4 repeats the lane after the merge with `release/2.6.0` at `29339009`,
+under the host heavy-job gate as unit `hamcp231-a2-lane4`. That merge changed
+`scripts/lane_failure_diagnostics.py`, which the lane imports.
+`thread_matter_topology_a2.json` now records this run:
+
+- source commit `4087df22f2430ba82a06701a60366922fe06cf8c`;
+- the same profile, fingerprint and manifest SHA-256 as run 3 (the manifest's
+  bytes did not change);
+- stub at `committed`, with the same 7 files verified;
+- `stub_dependency` now reads "HAMCP-297 PR #428 at
+  `aa25c56498194c493b468db1faa842018e04acd2`". The label, two docstrings, the
+  `--stub-dir` help text and the note in `a2-stub-expectations.json` were
+  corrected in the source commit, so `expectations_sha256` changed with the
+  note. No pin, check or refusal changed;
+- egress probe `blocked`;
+- receipt SHA-256
+  `a84433b9382d4f06d183e4fee8c8d1274f4768f0b6e599cb6d54e8273283febf`.
+
+Apart from the source commit, `expectations_sha256`, the label, the times and
+the host admission snapshot, every receipt field equals run 3: the topology,
+the recorded stub commands, both faults, 0 of 16 canaries leaked,
+`fallback_count` 0 and clean cleanup.
 
 **Residuals.**
 
