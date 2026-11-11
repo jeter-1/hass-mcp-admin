@@ -20,6 +20,8 @@ CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
 SHARD_SCRIPT = ROOT / "scripts" / "unit_test_shards.py"
 LOCAL_SHARD_SCRIPT = ROOT / "scripts" / "local_unit_test_shards.py"
 REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
+# A field a fake answer leaves out, as distinct from one it reports as null.
+ABSENT = object()
 
 
 def run(
@@ -1975,10 +1977,16 @@ class CheckScriptDefaultsTests(unittest.TestCase):
 
     Every run uses a PATH that holds only git and the fakes a test writes, so
     the real gh and any real python on PATH are never consulted.
+
+    HAMCP-358: the pull-request lookup names the repository of the fixture's
+    ``origin``, which is a github.com URL nothing ever contacts.
     """
 
     BRANCH = "agent/HAMCP-1-fixture"
-    GH_FIELDS = "--json number,state,baseRefName,headRefName,isCrossRepository"
+    REPOSITORY = "fixture-owner/fixture-repo"
+    GH_FIELDS = "--json number,state,baseRefName,headRefName,isCrossRepository,url"
+    GH_CALL = f"pr view {BRANCH} --repo github.com/{REPOSITORY} {GH_FIELDS}"
+    NOT_GITHUB = "origin is not a github.com repository URL this script can name"
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -1995,6 +2003,8 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.bin, True)
         (self.bin / "git").symlink_to(self.git)
         self.gh_log = self.bin / "gh.log"
+        self.gh_environment_log = self.bin / "gh-environment.log"
+        self.set_origin(f"https://github.com/{self.REPOSITORY}.git")
         # A release base that already carries a protected change. Compared
         # with origin/main the branch changes a protected path; compared with
         # its release base it does not.
@@ -2021,6 +2031,7 @@ class CheckScriptDefaultsTests(unittest.TestCase):
 
     def write_gh(self, *, stdout: str = "", exit_code: int = 0, stderr: str = "", sleep: bool = False) -> None:
         script = "#!/bin/sh\n" + f"printf '%s\\n' \"$*\" >> '{self.gh_log}'\n"
+        script += f"printf '%s\\n' \"${{GH_REPO:-unset}}\" >> '{self.gh_environment_log}'\n"
         if sleep:
             script += f"exec '{self.sleep}' 30\n"
         script += f"printf '%s' '{stdout}'\n"
@@ -2031,9 +2042,17 @@ class CheckScriptDefaultsTests(unittest.TestCase):
 
     def write_pull_request(self, **overrides) -> None:
         answer = {"number": 42, "state": "OPEN", "baseRefName": "release/9.9.0",
-                  "headRefName": self.BRANCH, "isCrossRepository": False}
+                  "headRefName": self.BRANCH, "isCrossRepository": False,
+                  "url": f"https://github.com/{self.REPOSITORY}/pull/42"}
         answer.update(overrides)
-        self.write_gh(stdout=json.dumps(answer))
+        self.write_gh(stdout=json.dumps({name: value for name, value in answer.items() if value is not ABSENT}))
+
+    def set_origin(self, url: str | None) -> None:
+        # Only the configured URL is read; no test contacts it.
+        if url is None:
+            run(["git", "config", "--unset-all", "remote.origin.url"], cwd=self.fixture.root, check=False)
+        else:
+            git(self.fixture.root, "config", "remote.origin.url", url)
 
     def gh_calls(self) -> list[str]:
         if not self.gh_log.exists():
@@ -2077,10 +2096,84 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         self.write_pull_request()
         code, output = self.check()
         self.assertEqual(code, 0, output)
-        self.assertIn("Base reference origin/release/9.9.0 (detected: base of pull request #42; "
+        self.assertIn(f"Base reference origin/release/9.9.0 (detected: base of pull request #42 in {self.REPOSITORY}; "
                       "pass -BaseRef to override).", output)
         self.assertIn("Fast validation passed", output)
-        self.assertEqual(self.gh_calls(), [f"pr view {self.BRANCH} {self.GH_FIELDS}"])
+        self.assertEqual(self.gh_calls(), [self.GH_CALL])
+
+    def test_pull_request_lookup_ignores_an_inherited_gh_repo(self):
+        # HAMCP-358: GH_REPO would point gh at another repository, whose pull
+        # request for a branch of this name would supply the base.
+        self.write_pull_request()
+        env = self.environment()
+        env["GH_REPO"] = "other-owner/other-repo"
+        result = self.fixture.run_check(self.powershell, "Fast", env=env, base_ref=None)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(f"detected: base of pull request #42 in {self.REPOSITORY};", output)
+        self.assertEqual(self.gh_calls(), [self.GH_CALL])
+        self.assertEqual(self.gh_environment_log.read_text(encoding="utf-8").splitlines(), ["unset"])
+        self.assertNotIn("other-owner", output)
+
+    def test_answer_for_another_repository_fails_closed(self):
+        ours = f"https://github.com/{self.REPOSITORY}/pull/42"
+        cases = (
+            ("https://github.com/other-owner/other-repo/pull/42", "which is not a pull request of"),
+            (f"https://github.com/{self.REPOSITORY}-fork/pull/42", "which is not a pull request of"),
+            (f"https://github.com/{self.REPOSITORY}/pull/43", "which is not a pull request of"),
+            (ours + "/files", "which is not a pull request of"),
+            (ours.replace("github.com", "github.com.example.invalid"), "which is not a pull request of"),
+            (ours.replace("https://", "http://"), "which is not a pull request of"),
+            ("", "which is not a pull request of"),
+            (7, "which is not a pull request of"),
+            (None, "which is not a pull request of"),
+            ([ours], "which is not a pull request of"),
+            (ABSENT, "did not report url"),
+        )
+        for url, message in cases:
+            with self.subTest(url=url):
+                self.write_pull_request(url=url)
+                code, output = self.check()
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(message, output)
+                self.assertIn("refusing to choose a base. Pass -BaseRef.", output)
+                self.assertIn("Validation stopped during safe preflight", output)
+                self.assertNotIn("Base reference origin/release/9.9.0", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_github_origin_forms_name_the_same_repository(self):
+        for url in (f"https://github.com/{self.REPOSITORY}",
+                    f"https://github.com/{self.REPOSITORY}/",
+                    f"git@github.com:{self.REPOSITORY}.git",
+                    f"ssh://git@github.com/{self.REPOSITORY}.git"):
+            with self.subTest(url=url):
+                self.gh_log.unlink(missing_ok=True)
+                self.set_origin(url)
+                self.write_pull_request()
+                code, output = self.check()
+                self.assertEqual(code, 0, output)
+                self.assertIn(f"detected: base of pull request #42 in {self.REPOSITORY};", output)
+                self.assertEqual(self.gh_calls(), [self.GH_CALL])
+
+    def test_origin_that_is_not_a_github_repository_skips_gh(self):
+        marker = "fixture-origin-userinfo"
+        for url in (None,
+                    str(self.bin / "no-such-remote"),
+                    f"https://gitlab.com/{self.REPOSITORY}.git",
+                    f"https://github.com.example.invalid/{self.REPOSITORY}.git",
+                    f"https://{marker}@github.com/{self.REPOSITORY}.git",
+                    f"https://github.com/{self.REPOSITORY}/extra",
+                    "https://github.com/fixture-owner/..",
+                    "https://github.com/fixture-owner/fixture repo",
+                    f"https://github.com/{self.REPOSITORY}.git --repo other-owner/other-repo"):
+            with self.subTest(url=url):
+                self.set_origin(url)
+                self.write_pull_request()
+                code, output = self.check()
+                self.assert_default_message(output, f"{self.NOT_GITHUB}; the branch has no upstream")
+                self.assert_compared_with_main(code, output)
+                self.assertEqual(self.gh_calls(), [])
+                self.assertNotIn(marker, output)
 
     def test_detected_base_is_the_recorded_evidence_base(self):
         self.write_pull_request()
@@ -2125,7 +2218,8 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         self.write_pull_request(baseRefName="release/8.0.0")
         code, output = self.check()
         self.assertNotEqual(code, 0, output)
-        self.assertIn("The base of pull request #42 is origin/release/8.0.0, which is not available locally. "
+        self.assertIn(f"The base of pull request #42 in {self.REPOSITORY} is origin/release/8.0.0, "
+                      "which is not available locally. "
                       "Fetch it (git fetch origin) or pass -BaseRef.", output)
         self.assertIn("Validation stopped during safe preflight", output)
         self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
@@ -2163,7 +2257,7 @@ class CheckScriptDefaultsTests(unittest.TestCase):
 
     def set_upstream(self, upstream: str) -> None:
         # A local remote definition so git can record tracking; nothing is fetched.
-        git(self.fixture.root, "config", "remote.origin.url", str(self.bin / "no-such-remote"))
+        self.set_origin(str(self.bin / "no-such-remote"))
         git(self.fixture.root, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
         git(self.fixture.root, "branch", "--set-upstream-to", upstream)
 
