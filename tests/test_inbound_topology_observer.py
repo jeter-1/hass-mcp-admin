@@ -622,10 +622,17 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_production_factory_and_http_parser_preserve_authentication(self):
         from ha_mcp_engineering.application import create_application
+        from tests.test_beta_observability import preserve_create_application_state
         from tests.test_beta_v2 import beta_settings
         from uvicorn.protocols.http.h11_impl import H11Protocol
         from uvicorn.server import ServerState
 
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
         session = self.active()
         gateway = create_application(beta_settings(str(Path(self.temp.name) / "audit.jsonl")))
         config = observer.ObservedConfig(gateway, observation=session, host="0.0.0.0", port=8100,
