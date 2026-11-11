@@ -1,6 +1,7 @@
 """Offline HAMCP-366 device_configuration_entity lane boundaries.
 
-No Docker, no network, no production key. Synthetic values only: the token,
+No Docker, no production key, and no network beyond one disposable loopback
+peer in the redirect tests. Synthetic values only: the token,
 the secrets and every refused host below are unmistakably fake. The real lane
 run against Core 2026.11.0 is the evidence for the scenario sequence; these
 tests pin the lane's guards, its refusal and failure-preservation paths, and
@@ -1357,11 +1358,151 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[1][3]["json"], {"mode": "error"})
 
     async def test_stub_redirect_or_error_status_is_a_failure_not_a_follow(self):
-        for status in (301, 302, 400, 500):
+        for status, failure in ((301, acceptance.RedirectRefused), (302, acceptance.RedirectRefused),
+                                (400, AssertionError), (500, AssertionError)):
             with self.subTest(status=status), patch.object(
                     acceptance.aiohttp, "ClientSession", new=fake_session([], status=status, value={})):
-                with self.assertRaises(AssertionError):
+                with self.assertRaises(failure) as caught:
                     await acceptance.StubControl(acceptance.STUB_CONTROL_URL).read()
+                self.assertIs(type(caught.exception), failure)
+
+    async def test_any_3xx_answer_to_a_rest_client_is_the_redirect_refusal(self):
+        flow, body = "/api/config/config_entries/flow", {"handler": "matter"}
+        calls = (lambda: acceptance.RawRest(settings()).rest("POST", flow, body),
+                 lambda: acceptance.StubControl(acceptance.STUB_CONTROL_URL).read(),
+                 lambda: acceptance.StubControl(acceptance.STUB_CONTROL_URL).post({"mode": "none"}))
+        for status in (300, 301, 302, 303, 304, 307, 308, 399):
+            for number, call in enumerate(calls):
+                with self.subTest(status=status, call=number), patch.object(
+                        acceptance.aiohttp, "ClientSession", new=fake_session([], status=status, value={})):
+                    with self.assertRaises(acceptance.RedirectRefused) as caught:
+                        await call()
+                    self.assertEqual((caught.exception.code, caught.exception.args),
+                                     ("redirect_refused", ("redirect_refused",)))
+        # The statuses on either side of the range keep their earlier meaning.
+        for status in (299, 400):
+            with self.subTest(status=status), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=fake_session([], status=status, value={})):
+                self.assertEqual(await calls[0](), (status, None))
+                with self.assertRaises(AssertionError):
+                    await calls[1]()
+
+    async def test_a_redirected_stub_wait_fails_at_once_instead_of_retrying(self):
+        events = []
+        with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events, status=302, value={})):
+            with self.assertRaises(acceptance.RedirectRefused):
+                await acceptance.stub_ready(acceptance.STUB_CONTROL_URL, seconds=30)
+        self.assertEqual([event[0] for event in events], ["session", "request"])
+
+    async def test_every_lane_session_is_built_with_the_redirect_refusal(self):
+        built = []
+        with patch.object(acceptance.aiohttp, "ClientSession", new=lambda **kwargs: built.append(kwargs)):
+            self.assertIsNone(acceptance.lane_session(45))
+        (kwargs,) = built
+        self.assertEqual(sorted(kwargs), ["timeout", "trace_configs", "trust_env"])
+        self.assertEqual(kwargs["timeout"], acceptance.aiohttp.ClientTimeout(total=45))
+        self.assertIs(kwargs["trust_env"], False)
+        (trace,) = kwargs["trace_configs"]
+        self.assertIs(type(trace), acceptance.aiohttp.TraceConfig)
+        self.assertEqual(list(trace.on_request_redirect), [acceptance._refuse_redirect])
+        with self.assertRaises(acceptance.RedirectRefused) as caught:
+            await acceptance._refuse_redirect(None, None, None)
+        self.assertEqual((caught.exception.code, caught.exception.args, acceptance.REDIRECT_REFUSED),
+                         ("redirect_refused", ("redirect_refused",), "redirect_refused"))
+        self.assertEqual(acceptance.RedirectRefused.__mro__[1:], (Exception, BaseException, object))
+
+
+# TEST-NET-1 (RFC 5737): reserved for documentation and never routed.
+OFF_HOST = "192.0.2.10"
+
+
+class LoopbackRedirect:
+    """A disposable loopback peer that answers every request ``302`` to an off-host address.
+
+    While it is open, every ``socket.connect`` in this process is counted. A
+    dial of the lane's pinned loopback port is carried to this peer; any other
+    dial is refused here, before the operating system sees it. Nothing leaves
+    the host even when the code under test would follow the redirect.
+    """
+
+    def __init__(self, port, path):
+        self.port, self.location = port, "http://%s:%d%s" % (OFF_HOST, port, path)
+        self.dialled, self.requests = [], []
+
+    async def __aenter__(self):
+        self.server = await asyncio.start_server(self.answer, "127.0.0.1", 0)
+        own, real, peer = self.server.sockets[0].getsockname(), socket.socket.connect, self
+
+        def connect(sock, address):
+            peer.dialled.append(tuple(address[:2]))
+            if tuple(address[:2]) != ("127.0.0.1", peer.port):
+                raise ConnectionRefusedError(errno.ECONNREFUSED, "refused inside the test")
+            return real(sock, own)
+
+        self.patch = patch.object(socket.socket, "connect", connect)
+        self.patch.start()
+        return self
+
+    async def __aexit__(self, *_exc):
+        self.patch.stop()
+        self.server.close()
+        await self.server.wait_closed()
+        return False
+
+    async def answer(self, reader, writer):
+        head = await reader.readuntil(b"\r\n\r\n")
+        sized = re.search(rb"(?i)\r\ncontent-length: *([0-9]+)\r\n", head)
+        body = await reader.readexactly(int(sized.group(1))) if sized else b""
+        self.requests.append(head + body)
+        writer.write(("HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n"
+                      "Connection: close\r\n\r\n" % self.location).encode("ascii"))
+        await writer.drain()
+        writer.close()
+
+
+class LaneRedirectRefusal(unittest.IsolatedAsyncioTestCase):
+    """A ``302`` to another host ends each lane client's request: no second connection is attempted."""
+
+    async def refused(self, port, path, call):
+        async with LoopbackRedirect(port, path) as peer:
+            try:
+                outcome = await call()
+            except Exception as exc:
+                outcome = exc
+        # One dial, to the pinned loopback port: nothing was dialled off-host.
+        self.assertEqual(peer.dialled, [("127.0.0.1", port)])
+        self.assertEqual(len(peer.requests), 1)
+        self.assertIs(type(outcome), acceptance.RedirectRefused, repr(outcome))
+        self.assertEqual((outcome.code, outcome.args), ("redirect_refused", ("redirect_refused",)))
+        shown = str(outcome) + repr(outcome) + repr(outcome.__dict__)
+        for private in (TOKEN, OFF_HOST, "127.0.0.1", "http", str(port)):
+            self.assertNotIn(private, shown)
+        return peer.requests[0]
+
+    async def test_a_redirected_websocket_handshake_is_refused_before_the_token_is_sent(self):
+        payload = {"type": "config_entries/get", "domain": "matter"}
+        seen = await self.refused(acceptance.CORE_PORT, "/api/websocket",
+                                  lambda: acceptance.RawCore(settings()).command(payload))
+        self.assertTrue(seen.startswith(b"GET /api/websocket HTTP/1.1\r\n"), seen[:40])
+        self.assertIn(b"\r\nUpgrade: websocket\r\n", seen)
+        # Core's auth is a message after the handshake: the token never left this process.
+        self.assertNotIn(TOKEN.encode("ascii"), seen)
+
+    async def test_a_redirected_core_rest_request_is_refused_and_not_followed(self):
+        flow, body = "/api/config/config_entries/flow", {"handler": "matter"}
+        seen = await self.refused(acceptance.CORE_PORT, flow,
+                                  lambda: acceptance.RawRest(settings()).rest("POST", flow, body))
+        self.assertTrue(seen.startswith(b"POST /api/config/config_entries/flow HTTP/1.1\r\n"), seen[:60])
+        self.assertEqual(json.loads(seen.split(b"\r\n\r\n", 1)[1]), body)
+
+    async def test_a_redirected_stub_control_request_is_refused_and_not_followed(self):
+        control = acceptance.StubControl(acceptance.STUB_CONTROL_URL)
+        calls = (("GET", control.read), ("POST", lambda: control.post({"mode": "none"})),
+                 ("GET", lambda: acceptance.stub_ready(acceptance.STUB_CONTROL_URL, seconds=30)))
+        for number, (method, call) in enumerate(calls):
+            with self.subTest(call=number):
+                seen = await self.refused(acceptance.STUB_PORT, "/_lane/control", call)
+                self.assertTrue(seen.startswith(method.encode("ascii") + b" /_lane/control HTTP/1.1\r\n"), seen[:40])
 
 
 class CommandGuards(unittest.IsolatedAsyncioTestCase):
@@ -1788,15 +1929,23 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
         # The module is only ever used as ``aiohttp.<name>``: it has no other name.
         self.assertTrue(all(isinstance(node.parent, ast.Attribute) and isinstance(node.ctx, ast.Load)
                             for node in used))
-        self.assertEqual({node.parent.attr for node in used}, {"ClientError", "ClientSession", "ClientTimeout"})
+        self.assertEqual({node.parent.attr for node in used},
+                         {"ClientError", "ClientSession", "ClientTimeout", "TraceConfig"})
+        # One function builds every session: the class is named once, in its ``return``.
         built = [node.parent.parent for node in used if node.parent.attr == "ClientSession"]
-        for call in built:
-            # Each session is ``async with aiohttp.ClientSession(...) as session`` and nothing else.
+        self.assertEqual([(call.where, ast.unparse(call.parent)) for call in built], [
+            ("lane_session", "return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), "
+                             "trust_env=False, trace_configs=[trace])")])
+        opened = [node.parent for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "lane_session"]
+        for call in opened:
+            # Each session is ``async with lane_session(...) as session`` and nothing else.
             self.assertIsInstance(call, ast.Call)
             self.assertIsInstance(call.parent, ast.withitem)
             self.assertIsInstance(call.parent.parent, ast.AsyncWith)
-            self.assertEqual(ast.unparse(call.parent), "aiohttp.ClientSession(timeout=timeout, trust_env=False) as session")
-        self.assertEqual(sorted(call.where for call in built), ["RawCore.command", "RawRest.rest", "StubControl._request"])
+        self.assertEqual(sorted((call.where, ast.unparse(call.parent)) for call in opened), [
+            ("RawCore.command", "lane_session(seconds) as session"),
+            ("RawRest.rest", "lane_session(seconds) as session"),
+            ("StubControl._request", "lane_session(30) as session")])
         held = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "session"]
         self.assertEqual(len([node for node in held if isinstance(node.ctx, ast.Store)]), 3)
         calls = []
@@ -1819,6 +1968,51 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted({ast.unparse(node.func) for node in ast.walk(module) if isinstance(node, ast.Call)
                                  and isinstance(node.func, ast.Attribute) and node.func.attr in offered}),
                          ["self.client.request", "session.request", "session.ws_connect", "stub.post"])
+
+    def test_the_one_session_builder_refuses_redirects_and_each_rest_answer_is_checked_first(self):
+        """Source shape: the builder's whole body, the refusal's only uses, and the 3xx check in both REST clients."""
+        module = lane_tree()
+        (builder,) = [node for node in module.body if getattr(node, "name", None) == "lane_session"]
+        (callback,) = [node for node in module.body if getattr(node, "name", None) == "_refuse_redirect"]
+        (refusal,) = [node for node in module.body if getattr(node, "name", None) == "RedirectRefused"]
+        self.assertEqual([type(node) for node in (builder, callback, refusal)],
+                         [ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef])
+        self.assertEqual(builder.decorator_list + callback.decorator_list + refusal.decorator_list, [])
+        self.assertEqual((ast.unparse(builder.args), [ast.unparse(line) for line in builder.body[1:]]), ("seconds", [
+            "trace = aiohttp.TraceConfig()",
+            "trace.on_request_redirect.append(_refuse_redirect)",
+            "return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), trust_env=False, "
+            "trace_configs=[trace])"]))
+        self.assertIsInstance(builder.body[0].value.value, str)
+        self.assertEqual((ast.unparse(callback.args), [ast.unparse(line) for line in callback.body]),
+                         ("_session, _context, _params", ["raise RedirectRefused(REDIRECT_REFUSED)"]))
+        self.assertEqual(([ast.unparse(base) for base in refusal.bases], refusal.keywords,
+                          [ast.unparse(line) for line in refusal.body[1:]]),
+                         (["Exception"], [], ["code = REDIRECT_REFUSED"]))
+
+        def uses(name):
+            return sorted((node.where, ast.unparse(node.parent)) for node in ast.walk(module)
+                          if isinstance(node, ast.Name) and node.id == name)
+        self.assertEqual(uses("_refuse_redirect"),
+                         [("lane_session", "trace.on_request_redirect.append(_refuse_redirect)")])
+        self.assertEqual(uses("trace"), [("lane_session", "[trace]"), ("lane_session", "trace = aiohttp.TraceConfig()"),
+                                         ("lane_session", "trace.on_request_redirect")])
+        self.assertEqual(uses("RedirectRefused"), [
+            ("RawRest.rest", "RedirectRefused(REDIRECT_REFUSED)"),
+            ("StubControl._request", "RedirectRefused(REDIRECT_REFUSED)"),
+            ("_refuse_redirect", "RedirectRefused(REDIRECT_REFUSED)")])
+        self.assertEqual([node.value.value for node in module.body if isinstance(node, ast.Assign)
+                          and ast.unparse(node.targets[0]) == "REDIRECT_REFUSED"], ["redirect_refused"])
+        # In both REST clients the check is the first statement under the request, before the body is read.
+        checks = [node for node in ast.walk(module) if isinstance(node, ast.If)
+                  and "status" in ast.unparse(node.test) and node.where in ("RawRest.rest", "StubControl._request")]
+        self.assertEqual(sorted((node.where, ast.unparse(node.test), [ast.unparse(line) for line in node.body],
+                                 node.orelse, node.parent.body[0] is node,
+                                 ast.unparse(node.parent.items[0].context_expr.func)) for node in checks), [
+            ("RawRest.rest", "300 <= response.status < 400", ["raise RedirectRefused(REDIRECT_REFUSED)"], [], True,
+             "session.request"),
+            ("StubControl._request", "300 <= response.status < 400", ["raise RedirectRefused(REDIRECT_REFUSED)"], [],
+             True, "session.request")])
 
     def test_no_name_is_bound_from_a_core_url_constant(self):
         """Source shape: the two Core constants are read in five places and bound to no other name."""
@@ -2845,12 +3039,11 @@ class LaneSourceShape(unittest.TestCase):
         self.assertEqual([node.level for node in top if isinstance(node, ast.ImportFrom) and node.level], [])
 
     def test_no_attribute_reaches_a_url_constant_or_a_session_class_through_another_name(self):
-        """``<name>.CORE_URL``, ``<name>.aiohttp`` and ``<name>.ClientSession`` exist only as ``aiohttp.ClientSession``."""
+        """``<name>.CORE_URL``, ``<name>.aiohttp`` and ``<name>.ClientSession`` exist only as the builder's ``aiohttp.ClientSession``."""
         watched = set(self.URLS) | {"ClientSession", "aiohttp"}
         self.assertEqual(sorted((node.where, ast.unparse(node)) for node in self.nodes
                                 if isinstance(node, ast.Attribute) and node.attr in watched),
-                         [("RawCore.command", "aiohttp.ClientSession"), ("RawRest.rest", "aiohttp.ClientSession"),
-                          ("StubControl._request", "aiohttp.ClientSession")])
+                         [("lane_session", "aiohttp.ClientSession")])
 
     def test_the_diagnostics_module_is_used_by_two_names_only(self):
         """The acceptance module reaches ``lane_failure_diagnostics`` as ``check`` and ``checked`` and nothing else."""
