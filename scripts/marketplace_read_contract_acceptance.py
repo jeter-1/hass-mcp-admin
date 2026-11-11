@@ -58,6 +58,21 @@ INSTALL_CATEGORY = "theme"
 INSTALL_COMMANDS = ("marketplace/warning/accept", "marketplace/repository/install")
 INSTALL_SECONDS = 300
 INSTALLED_POLL_SECONDS = 120
+# The lane's own raw client goes to one place: the disposable Core that
+# core_marketplace_read_local publishes on loopback. The exact string, so no
+# other host, port, scheme, path, userinfo or query, and no name that only
+# resolves to loopback.
+RAW_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
+# Every command that client sends, with each field it carries: an exact value,
+# or ``str`` for any non-empty string. Nothing else is sent.
+RAW_COMMANDS = {
+    "marketplace/info": {}, INSTALL_COMMANDS[0]: {}, MARKETPLACE_LIST_COMMAND: {},
+    INSTALL_COMMANDS[1]: {"repository": str},
+    "config_entries/get": {"domain": "marketplace"},
+    "config_entries/disable": {"entry_id": str, "disabled_by": "user"},
+}
+# Code-owned refusals of that client: never the URL, the token or a payload.
+RAW_URL_REFUSED, RAW_COMMAND_REFUSED = "raw_core_url_not_pinned", "raw_core_command_not_listed"
 # The reviewed projection, restated independently of the runtime constants.
 PROJECTED = ("id", "full_name", "name", "category", "domain", "installed_version",
              "available_version", "pending_upgrade", "custom", "description")
@@ -113,16 +128,34 @@ class ObservedReader(MarketplaceReader):
                                   on_dispatch=dispatch, on_sent=sent)
 
 
+def raw_command_listed(payload):
+    """Whether the payload is exactly one of the RAW_COMMANDS shapes."""
+    if type(payload) is not dict or type(payload.get("type")) is not str:
+        return False
+    fields = RAW_COMMANDS.get(payload["type"])
+    return (fields is not None and payload.keys() == {"type", *fields}
+            and all(type(payload[key]) is str and (payload[key] != "" if want is str else payload[key] == want)
+                    for key, want in fields.items()))
+
+
 class RawCore:
-    """Harness-side authenticated WebSocket; one command per connection."""
+    """Harness-side authenticated WebSocket; one command per connection.
+
+    Only RAW_CORE_URL is dialled and only a RAW_COMMANDS shape is sent. Anything
+    else is refused with a fixed code before a session exists.
+    """
 
     def __init__(self, configured):
-        self.url, self.token = configured.websocket_url, configured.ha_token
+        if configured.websocket_url != RAW_CORE_URL:
+            raise ValueError(RAW_URL_REFUSED)
+        self.token = configured.ha_token
 
     async def command(self, payload, *, seconds=60):
+        if not raw_command_listed(payload):
+            raise ValueError(RAW_COMMAND_REFUSED)
         timeout = aiohttp.ClientTimeout(total=seconds)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
-            async with session.ws_connect(self.url, max_msg_size=HARNESS_FRAME_BYTES) as ws:
+            async with session.ws_connect(RAW_CORE_URL, max_msg_size=HARNESS_FRAME_BYTES) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 assert (await ws.receive_json())["type"] == "auth_ok"

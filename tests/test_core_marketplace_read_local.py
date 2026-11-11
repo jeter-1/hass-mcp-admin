@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import core_marketplace_read_local as lane
 import marketplace_read_contract_acceptance as acceptance
 from core_release_evidence import groups, manifest, passing_subset
+from ha_mcp_engineering.configuration import Settings
 from ha_mcp_engineering.marketplace_inventory import (
     HACS_LIST_COMMAND, MARKETPLACE_LIST_COMMAND, MarketplaceError)
 
@@ -441,6 +442,59 @@ def store(installed=(), total=3, theme=acceptance.INSTALL_CANDIDATES[0], theme_i
     return rows
 
 
+# The one URL the lane's own raw client may use, and a marketplace/info answer
+# that does not carry github_connected at all.
+PINNED_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
+ABSENT = object()
+
+
+def fake_session(events, answer=None):
+    """Stand-in for aiohttp.ClientSession: records its construction, connection and frames.
+
+    ``answer`` maps a command payload (without its id) and the session's total
+    timeout to Core's reply; without it every command succeeds with no result.
+    """
+    class Socket:
+        def __init__(self, seconds):
+            self.seconds, self.replies = seconds, [{"type": "auth_required"}]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def receive_json(self):
+            return self.replies.pop(0)
+
+        async def send_json(self, payload):
+            events.append(("send", payload))
+            if payload.get("type") == "auth":
+                self.replies.append({"type": "auth_ok"})
+                return
+            command = {key: value for key, value in payload.items() if key != "id"}
+            reply = ({"success": True, "result": None} if answer is None
+                     else await answer(None, command, seconds=self.seconds))
+            self.replies.append({"type": "result", "id": payload["id"], **reply})
+
+    class Session:
+        def __init__(self, **kwargs):
+            events.append(("session", kwargs))
+            self.seconds = kwargs["timeout"].total
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        def ws_connect(self, url, **kwargs):
+            events.append(("ws_connect", url, kwargs))
+            return Socket(self.seconds)
+
+    return Session
+
+
 def page_for(records, partial=()):
     return {"results": records, "partial_reasons": list(partial)}
 
@@ -458,13 +512,15 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
                              github_connected=False, install_success=True, installs=True, project=None,
                              inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0],
-                             theme_id="200"):
+                             theme_id="200", configured=None, socket=False):
+        # socket=True: RawCore.command is the real one, over a fake aiohttp session
+        # (self.raw_events); otherwise RawCore.command itself is replaced.
         # inject=(n, written): the n-th reader call also admits (and, if written,
         # writes) the HACS list command while the backend stays core_marketplace.
         # Calls: 1 routed read, 2 redaction canary, 3 wrong identity, 4 disabled entry.
         created, sent_frames, raw_sent, read_calls = [], [], [], []
         state = {"disabled": False, "installed": ()}
-        self.raw_sent = raw_sent
+        self.raw_sent, self.raw_events = raw_sent, []
 
         class Runtime:
             def __init__(self):
@@ -527,7 +583,10 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             kind = payload["type"]
             raw_sent.append(kind)
             if kind == "marketplace/info":
-                return {"success": True, "result": {"stage": "running", "github_connected": github_connected}}
+                answer = {"stage": "running"}
+                if github_connected is not ABSENT:
+                    answer["github_connected"] = github_connected
+                return {"success": True, "result": answer}
             if kind == "marketplace/warning/accept":
                 return {"success": True, "result": None}
             if kind == "marketplace/repository/install":
@@ -550,8 +609,10 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(kind)
 
         registry = SimpleNamespace(refresh=AsyncMock(return_value=True))
-        configured = SimpleNamespace(websocket_url="ws://synthetic", ha_token="synthetic-token",
-                                     access_secret="synthetic-secret")
+        configured = configured or SimpleNamespace(websocket_url=PINNED_CORE_URL, ha_token="synthetic-token",
+                                                   access_secret="synthetic-secret")
+        transport = (patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(self.raw_events, raw))
+                     if socket else patch.object(acceptance.RawCore, "command", new=raw))
         refs = [{"capability_id": f"core.synthetic_{i}"} for i in range(32)]
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(acceptance, "CoreRuntime", side_effect=Runtime), \
@@ -560,7 +621,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance, "sign_candidate", return_value=b"{}"), \
                 patch.object(acceptance, "canonical_json", return_value=b"{}"), \
                 patch.object(acceptance.MarketplaceReader, "read", new=read), \
-                patch.object(acceptance.RawCore, "command", new=raw), \
+                transport, \
                 patch.object(acceptance.asyncio, "sleep", new=AsyncMock()), \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
@@ -607,6 +668,19 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             await self.run_acceptance(github_connected=True)
         self.assertEqual(caught.exception.reason, "github_account_connected")
         self.assertNotIn("marketplace/repository/install", self.raw_sent)
+
+    async def test_only_an_explicit_false_github_connected_reaches_the_install(self):
+        # Mutation survivor x4 (#421): "not connected" is the boolean False and
+        # nothing else. A missing, null or merely falsy answer refuses like a
+        # connected account, before the warning accept and the install.
+        for label, answer in (("absent", ABSENT), ("null", None), ("zero", 0), ("empty string", ""),
+                              ("the word false", "false")):
+            with self.subTest(github_connected=label):
+                with self.assertRaises(acceptance.FixtureError) as caught:
+                    await self.run_acceptance(github_connected=answer)
+                self.assertEqual(caught.exception.reason, "github_account_connected")
+                self.assertIn("marketplace/info", self.raw_sent)
+                self.assertFalse(set(acceptance.INSTALL_COMMANDS) & set(self.raw_sent))
 
     async def test_failed_install_fails_without_upstream_text(self):
         with self.assertRaises(acceptance.FixtureError) as caught:
@@ -704,8 +778,130 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.reason, "install_candidate_missing")
         self.assertFalse(set(acceptance.INSTALL_COMMANDS) & set(self.raw_sent))
 
+    async def test_real_lane_url_and_every_lane_command_pass_the_pin(self):
+        # The lane is not re-run for the RawCore pin, so the pin is held here against
+        # the URL the lane exports, through the real configuration class, and
+        # against every command of a whole pass run.
+        ha_url = f"http://127.0.0.1:{lane.PORTS[0]}"
+        self.assertIn(f'REAL_HA_URL="{ha_url}"', Path(lane.__file__).read_text())
+        configured = Settings(ha_url=ha_url, ha_token="synthetic-token", access_secret="synthetic-secret",
+                              port=8100, audit_path="unused", rate_limit_per_minute=120, rate_limit_burst=25,
+                              destructive_services=frozenset())
+        self.assertEqual(configured.websocket_url, PINNED_CORE_URL)
+        # The real RawCore.command over a fake session.
+        result, _ = await self.run_acceptance(configured=configured, socket=True)
+        self.assertEqual(result["result"], "PASS")
+        sessions = [event[1] for event in self.raw_events if event[0] == "session"]
+        connections = [event[1:] for event in self.raw_events if event[0] == "ws_connect"]
+        frames = [event[1] for event in self.raw_events if event[0] == "send"]
+        self.assertTrue(sessions and all(kwargs.get("trust_env") is False for kwargs in sessions))
+        self.assertEqual(connections,
+                         [(PINNED_CORE_URL, {"max_msg_size": acceptance.HARNESS_FRAME_BYTES})] * len(sessions))
+        # One authentication and one command per connection, and between them
+        # exactly the six commands the lane sends, in these exact shapes.
+        self.assertEqual(frames[0::2], [{"type": "auth", "access_token": "synthetic-token"}] * len(sessions))
+        sent = {json.dumps(frame, sort_keys=True) for frame in frames[1::2]}
+        self.assertEqual(sent, {json.dumps({"id": 1, **command}, sort_keys=True) for command in (
+            {"type": "marketplace/info"}, {"type": "marketplace/warning/accept"},
+            {"type": "marketplace/repository/install", "repository": "200"},
+            {"type": MARKETPLACE_LIST_COMMAND},
+            {"type": "config_entries/get", "domain": "marketplace"},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry", "disabled_by": "user"})})
+
 
 class RawSocket(unittest.IsolatedAsyncioTestCase):
+    """The lane's own raw client: one pinned loopback Core, a closed list of commands."""
+
+    async def refused(self, url, payload, reason):
+        events = []
+        configured = SimpleNamespace(websocket_url=url, ha_token="synthetic-token")
+        with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events)):
+            with self.assertRaises(ValueError) as caught:
+                await acceptance.RawCore(configured).command(payload)
+        # A fixed code and nothing else: no URL, token or payload text.
+        self.assertIs(type(caught.exception), ValueError)
+        self.assertEqual(caught.exception.args, (reason,))
+        # Refused before any session exists, so nothing was connected or sent.
+        self.assertEqual(events, [])
+
+    async def test_refusal_message_carries_neither_the_url_nor_the_token(self):
+        # What a refused lane can put in front of its diagnostics: the code only.
+        token, url = "synthetic-token-7f3a", "ws://127.0.0.1:18123@evil.example/api/websocket?k=synthetic-query"
+        for configured_url, payload in ((url, {"type": "marketplace/info"}),
+                                        (PINNED_CORE_URL, {"type": "auth", "access_token": token}),
+                                        (PINNED_CORE_URL, {"type": token, "repository": url})):
+            with self.subTest(url=configured_url, payload=payload):
+                configured = SimpleNamespace(websocket_url=configured_url, ha_token=token)
+                with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session([])):
+                    with self.assertRaises(ValueError) as caught:
+                        await acceptance.RawCore(configured).command(payload)
+                chain, current = [], caught.exception
+                while current is not None:
+                    chain.append(current)
+                    current = current.__cause__ or current.__context__
+                self.assertEqual(len(chain), 1)
+                self.assertIn(str(caught.exception), ("raw_core_url_not_pinned", "raw_core_command_not_listed"))
+                shown = str(caught.exception) + repr(caught.exception) + repr(caught.exception.__dict__)
+                for private in (token, url, "evil.example", "synthetic-query", "127.0.0.1", "ws://"):
+                    self.assertNotIn(private, shown)
+
+    async def test_any_url_but_the_pinned_loopback_core_is_refused_before_a_session(self):
+        cases = (
+            "ws://127.0.0.1:18124/api/websocket", "ws://127.0.0.1/api/websocket",
+            "ws://127.0.0.1:8123/api/websocket", "ws://127.0.0.1:018123/api/websocket",
+            "wss://127.0.0.1:18123/api/websocket", "http://127.0.0.1:18123/api/websocket",
+            "WS://127.0.0.1:18123/api/websocket",
+            "ws://127.0.0.1:18123/api/websocket/", "ws://127.0.0.1:18123/api/websocket/..",
+            "ws://127.0.0.1:18123/core/websocket", "ws://127.0.0.1:18123//api/websocket",
+            "ws://127.0.0.1:18123/api/websocket?next=1", "ws://127.0.0.1:18123/api/websocket#x",
+            "ws://127.0.0.1:18123@evil.example/api/websocket",
+            "ws://127.0.0.1:18123/api/websocket@evil.example",
+            "ws://user:secret@127.0.0.1:18123/api/websocket", "ws://@127.0.0.1:18123/api/websocket",
+            "ws://localhost:18123/api/websocket", "ws://[::1]:18123/api/websocket",
+            "ws://127.0.0.2:18123/api/websocket", "ws://127.1:18123/api/websocket",
+            "ws://2130706433:18123/api/websocket", "ws://0.0.0.0:18123/api/websocket",
+            "ws://127.0.0.1.evil.example:18123/api/websocket", "ws://evil.example:18123/api/websocket",
+            "ws://supervisor/core/websocket",
+            " ws://127.0.0.1:18123/api/websocket", "ws://127.0.0.1:18123/api/websocket\n",
+            "ws://127.0.0.1:18123/api/websocket\x00", "", None,
+            b"ws://127.0.0.1:18123/api/websocket", ("ws://127.0.0.1:18123/api/websocket",))
+        for url in cases:
+            with self.subTest(url=url):
+                await self.refused(url, {"type": "marketplace/info"}, "raw_core_url_not_pinned")
+
+    async def test_a_command_outside_the_closed_list_is_refused_before_a_session(self):
+        install, listing = acceptance.INSTALL_COMMANDS[1], MARKETPLACE_LIST_COMMAND
+        cases = (
+            # Other command types, however close.
+            {"type": HACS_LIST_COMMAND}, {"type": "marketplace/repository/remove", "repository": "200"},
+            {"type": "marketplace/repositories/add", "repository": "owner/name", "category": "theme"},
+            {"type": "config_entries/remove", "entry_id": "synthetic-entry"},
+            {"type": "config_entries/update", "entry_id": "synthetic-entry"},
+            {"type": "call_service", "domain": "homeassistant", "service": "restart"},
+            {"type": "auth", "access_token": "synthetic-token"}, {"type": "get_states"},
+            {"type": "Marketplace/Info"}, {"type": "marketplace/info "}, {"type": listing + "/"},
+            # A listed type with a field the lane never sends, or without one it always sends.
+            {"type": "marketplace/info", "id": 7}, {"type": "marketplace/info", "extra": 1},
+            {"type": listing, "categories": ["integration"]},
+            {"type": acceptance.INSTALL_COMMANDS[0], "repository": "200"},
+            {"type": install}, {"type": install, "repository": "200", "version": "v1"},
+            {"type": install, "repository": 200}, {"type": install, "repository": ""},
+            {"type": install, "repository": ["200"]},
+            {"type": "config_entries/get"}, {"type": "config_entries/get", "domain": "hacs"},
+            {"type": "config_entries/get", "domain": "marketplace", "type_filter": "hub"},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry"},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry", "disabled_by": None},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry", "disabled_by": "system"},
+            {"type": "config_entries/disable", "entry_id": "", "disabled_by": "user"},
+            {"type": "config_entries/disable", "entry_id": 7, "disabled_by": "user"},
+            {"type": "config_entries/disable", "disabled_by": "user"},
+            # Not a command at all.
+            {}, {"type": None}, {"type": ["marketplace/info"]}, {"id": 1}, None, "marketplace/info",
+            [("type", "marketplace/info")])
+        for payload in cases:
+            with self.subTest(payload=payload):
+                await self.refused(PINNED_CORE_URL, payload, "raw_core_command_not_listed")
+
     async def test_disposable_core_socket_never_trusts_the_proxy_environment(self):
         # Cursor M3 (#421): the session that carries the disposable token is built
         # with trust_env=False before ws_connect, whatever the environment says.
