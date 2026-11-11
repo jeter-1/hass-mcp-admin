@@ -860,6 +860,40 @@ class LaneInventory(ClientCase):
                         self.assertEqual([ast.unparse(target) for target in node.targets], ["raw"])
                         self.assertEqual(ast.unparse(node.value.args[0]), "configured")
 
+    def test_each_lane_builds_its_own_client_and_no_other(self):
+        # A lane that built the shared client would be held to entity_metadata's
+        # list and not its own, so the one client a lane builds is its own class.
+        builders = {"RawWebSocket", "LaneRaw", "RawCore"}
+        own = {"entity_metadata": "RawWebSocket", "configuration_delete": "LaneRaw", "seq13": "LaneRaw",
+               "seq15": "LaneRaw", "security_metadata": "RawCore"}
+        self.assertEqual(set(own), {item.name for item in LANES})
+        for item in LANES:
+            with self.subTest(lane=item.name):
+                self.assertEqual(item.client.__name__, own[item.name])
+                self.assertIs(getattr(item.module, own[item.name]), item.client)
+                self.assertEqual(item.client.__module__, item.module.__name__)
+                built, bases, uses = [], [], 0
+                for filename, _names in item.sources:
+                    tree = ast.parse((SCRIPTS / filename).read_text(encoding="utf-8"))
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in builders:
+                            built.append(node.func.id)
+                        elif isinstance(node, ast.ClassDef):
+                            bases += [(node.name, base.id) for base in node.bases
+                                      if isinstance(base, ast.Name) and base.id in builders]
+                        uses += ((isinstance(node, ast.Name) and node.id in builders)
+                                 or (isinstance(node, ast.Attribute) and node.attr in builders))
+                self.assertEqual(built, [own[item.name]])
+                # The only other use of any of these names is the lane subclass naming its base.
+                subclass = [("LaneRaw", "RawWebSocket")] if own[item.name] == "LaneRaw" else []
+                self.assertEqual(bases, subclass)
+                self.assertEqual(uses, 1 + len(subclass))
+                if item.module is not security:
+                    # The list that class enforces is its own module's, set on the class itself.
+                    self.assertIs(vars(item.client)["commands"], item.module.RAW_COMMANDS)
+                    self.assertTrue(all(vars(other.client)["commands"] is not item.module.RAW_COMMANDS
+                                        for other in SHAPED if other is not item))
+
 
 class LaneSettings(ClientCase):
     """The URL each runner really configures is the one its lane's client pins."""
