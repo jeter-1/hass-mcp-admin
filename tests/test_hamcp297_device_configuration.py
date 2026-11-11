@@ -342,6 +342,25 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(read["data"]["status"], "succeeded_verified")
         self.assertEqual(len(self.ha.writes), 1)
 
+    async def test_undo_rule_text_is_exact_in_the_receipt_and_through_the_real_tool(self):
+        rule = ("only while the post-change observation is still exact; a later change or an "
+                "integration reload ends eligibility, and a Home Assistant restart is expected "
+                "to as well; after that, make a compensating change")
+        request = self.request(SWITCH, "turn_on", None)
+        self.telemetry.ordinary_device_configuration_binding = digest(request.model_dump())
+        with patch.object(DEVICE_CONFIGURATION_OPERATIONS, "service", self.service):
+            value = json.loads(await control_device_configuration(
+                entity_id=SWITCH, action="turn_on", operation_id=request.operation_id))
+        expected = {"available": True, "undo_task_id": request.task_id, "restores": "off",
+                    "rule": rule}
+        self.assertEqual(value["data"]["undo"], expected)
+        self.assertEqual(self.service.receipt(request.task_id)["undo"], expected)
+        # The text is advice only: an undo that is not available carries no rule.
+        self.ha.touch(SWITCH)
+        undo = self.request(SWITCH, "undo", None, undo_task_id=request.task_id)
+        await self.refused(undo, "device_configuration_undo_post_state_unproven")
+        self.assertEqual(len(self.ha.writes), 1)
+
     async def test_restart_reads_receipt_without_redispatch(self):
         request = self.request()
         await self.call(request)

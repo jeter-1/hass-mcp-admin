@@ -418,7 +418,9 @@ class DeviceConfigurationService(FanService):
             return {"available": False, "reason": "device_configuration_undo_already_claimed"}
         return {"available": True, "undo_task_id": request.task_id,
                 "restores": sidecar["restore"],
-                "rule": "only while the post-change observation is still exact"}
+                "rule": "only while the post-change observation is still exact; a later change or an "
+                        "integration reload ends eligibility, and a Home Assistant restart is expected "
+                        "to as well; after that, make a compensating change"}
 
     def receipt(self, task_id):
         value = super().receipt(task_id)
