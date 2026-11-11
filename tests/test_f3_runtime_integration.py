@@ -94,7 +94,9 @@ from tests.test_2_1a_operational_backup import (  # noqa: E402
 
 
 from ha_mcp_engineering import application
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from tests import test_beta24_pre_rc_hardening as gateway_fixtures
+from tests.test_beta_observability import preserve_create_application_state
 from tests.test_catalog_readiness import application_gateway
 
 
@@ -1460,6 +1462,12 @@ class F3BackupActivationTests(_OperationalActivationBase):
 
 class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # HAMCP-362: application_gateway() runs create_application() with
+        # most singletons replaced, but the real TRACE_SNAPSHOTS, the
+        # read-only inventory and analysis services and the root logger's SDK
+        # filter are configured in place and outlived this module. No later
+        # test is known to fail on that residue; the restore keeps it so.
+        preserve_create_application_state(self)
         from tests import test_f3_orphan_child_recovery as history_fixtures
         self.fixture = history_fixtures.OrphanChildRecoveryTests()
         await self.fixture.asyncSetUp()
@@ -1469,8 +1477,9 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.fixture.asyncTearDown()
 
-    async def _request(self, path='/ready', *, reconciled=True):
-        gateway, app = application_gateway(self.runtime, reconciled=reconciled)
+    async def _request(self, path='/ready', *, reconciled=True, deadline_elapsed=False):
+        gateway, app = application_gateway(
+            self.runtime, reconciled=reconciled, deadline_elapsed=deadline_elapsed)
         with patch.object(application, 'GOVERNANCE', gateway._test_governance):
             status, body = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, path)
         return status, json.loads(body), app.calls
@@ -1738,6 +1747,18 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         status, state, calls = await self._request(reconciled=False)
         self.assertEqual((status, calls), (503, 0))
         self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertFalse(state['accepting_mcp_requests'])
+        # HAMCP-350 (inverted): once the bounded startup wait has elapsed the
+        # authenticated endpoint serves the native catalog while /ready stays
+        # pending until the first ha-mcp reconcile returns.
+        status, state, calls = await self._request(reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (503, 0))
+        self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertTrue(state['initial_reconciliation_deadline_elapsed'])
+        self.assertTrue(state['accepting_mcp_requests'])
+        status, _, calls = await self._request(
+            f'/{gateway_fixtures.SECRET}/mcp', reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (200, 1))
 
 
     async def test_projection_failure_requires_that_projection_to_succeed(self):
@@ -2075,6 +2096,14 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.runtime.children.get(declaration['child_id']).normalized_outcome, 'cancelled_pre_dispatch')
         self.assertFalse(self.runtime.reconciliation_items())
         self.assertEqual(self._writes(), 0)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,6 +59,8 @@ class _Snapshot:
     metadata: dict[str, Any]
     source_partial: bool
     rendered_pages: dict[int, str]
+    # HAMCP-267: the visible diagnostic partition the page was built from.
+    diagnostic_fingerprint: str = ""
 
 
 class _SnapshotStore:
@@ -237,7 +239,11 @@ class HandoffGenerationService:
             index_requested = bool(bundle.index.get("requested"))
             index_generation = int(bundle.index.get("generation") or 0)
             index_fingerprint = str(bundle.index.get("fingerprint") or "")
-            if index_requested and not _active_index_matches(self.provider, index_generation, index_fingerprint):
+            diagnostic_fingerprint = str(getattr(bundle, "diagnostic_fingerprint", "") or "")
+            if index_requested and (
+                not _active_index_matches(self.provider, index_generation, index_fingerprint)
+                or _active_diagnostic_identity(self.provider) != diagnostic_fingerprint
+            ):
                 METRICS.record_handoff_failure("index_changed_before_snapshot_commit")
                 raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
             data_base = copy.deepcopy(data)
@@ -269,6 +275,7 @@ class HandoffGenerationService:
                 public_items, {key: value.public() for key, value in bundle.evidence.items()},
                 tuple(warnings[:-1] if has_more and warnings else warnings), copy.deepcopy(metadata),
                 bundle.source_partial or bundle.item_truncated, rendered_pages,
+                diagnostic_fingerprint,
             ))
             data["pagination"]["next_cursor"] = self._encode(snapshot_id, fingerprint, evidence_fingerprint, generated_at, handoff_id, query["output_format"], index_requested, index_generation, index_fingerprint, len(page))
 
@@ -309,6 +316,11 @@ class HandoffGenerationService:
         if snapshot.index_requested and not _active_index_matches(self.provider, snapshot.index_generation, snapshot.index_fingerprint):
             METRICS.record_handoff_cursor_event("stale_cursor")
             raise GovernanceError(ErrorCode.STALE_CURSOR, details=_details("cursor", "active_index_replaced_or_invalidated"))
+        # HAMCP-267: dashboard authority and scene/group membership can change
+        # without an index rebuild.
+        if snapshot.index_requested and _active_diagnostic_identity(self.provider) != snapshot.diagnostic_fingerprint:
+            METRICS.record_handoff_cursor_event("stale_cursor")
+            raise GovernanceError(ErrorCode.STALE_CURSOR, details=_details("cursor", "diagnostic_evidence_changed"))
         offset = int(payload.get("offset", -1))
         if offset < 0 or offset > len(snapshot.items):
             METRICS.record_handoff_cursor_event("invalid_cursor")
@@ -450,6 +462,19 @@ def _active_index_matches(provider, generation, fingerprint):
         return bool(identity.get("valid") and int(identity.get("generation") or 0) == generation and str(identity.get("fingerprint") or "") == fingerprint)
     except Exception:
         return False
+
+
+def _active_diagnostic_identity(provider) -> str | None:
+    """``""`` for a provider without a diagnostic partition; ``None`` on failure."""
+
+    reader = getattr(provider, "active_diagnostic_identity", None)
+    if not callable(reader):
+        return ""
+    try:
+        value = reader()
+    except Exception:
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _counts(items):

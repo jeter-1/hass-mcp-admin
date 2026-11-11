@@ -458,7 +458,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         entries = json.loads(result.stdout)["include"]
         self.assertEqual({entry["upstream_version"] for entry in entries},
-                         {"7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0"})
+                         {"7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0",
+                          # HAMCP-319: the reviewed 9.1.0 registry row; its exact-image
+                          # lane selection belongs to the support window (PR #404).
+                          "9.1.0",
+                          # HAMCP-351: the reviewed 9.1.2 registry row.
+                          "9.1.2"})
         candidate = next(entry for entry in entries if entry["upstream_version"] == "8.5.0")
         self.assertEqual(candidate["source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
 

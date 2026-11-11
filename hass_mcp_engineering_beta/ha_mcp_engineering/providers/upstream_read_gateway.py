@@ -21,6 +21,11 @@ from pydantic import PrivateAttr
 from ..capabilities import replace_dynamic_upstream_capabilities
 from ..clients.mcp import DashboardTransportError
 from ..clients.rest import HomeAssistantRestClient
+from ..clients.ha_mcp_endpoint import (
+    OPERATOR_MESSAGES as HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
+    STRICT_FULL_SELECTOR_RELEASES,
+    publish_endpoint_snapshot,
+)
 from ..clients.upstream_read import (
     BeforeDispatchFailure,
     CatalogValidationFailure,
@@ -58,7 +63,10 @@ from ..ha_mcp_readmission.registry import (
     MISSING_RELEASE_REFRESH_INTERVAL_SECONDS,
     SignedReleaseRegistry,
 )
-from ..ha_core_readmission.routes import delegated_requirements
+from ..ha_core_readmission.routes import (
+    RETIRED_DELEGATED_READS,
+    delegated_requirements,
+)
 from ..observability import METRICS
 from ..request_context import (
     begin_request,
@@ -74,6 +82,7 @@ from ..sanitization import (
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
+    USED_TOOL_ADMISSION_RELEASES,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     REVIEWED_UPSTREAM_SERVER,
     ReviewedUpstreamRelease,
@@ -97,6 +106,8 @@ from .upstream_reads_8_6 import (
     ADAPTER as READ_ADAPTER_8_6,
 )
 from .upstream_search_8_6 import search_catalog_view
+from . import upstream_reads_9_1 as reads_9_1
+from .upstream_device_projection import project_device_result
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
     read_arguments as blueprint_read_arguments,
@@ -158,38 +169,6 @@ MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
 OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
-HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
-    "ha-mcp-hacs-info-top-level-success-v1"
-)
-_REVIEWED_SUCCESS_ENVELOPE_MODELS = {
-    ("8.5.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    ("8.6.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.1.0",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.1.1",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.2.0",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.4.1",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-    (
-        "8.4.3",
-        REVIEWED_PROTOCOL_VERSION,
-        "ha_get_hacs_info",
-    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
-}
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
 STARTUP_ORDERING_GRACE_SECONDS = 600.0
@@ -247,6 +226,10 @@ _FAILURE_CATEGORIES = frozenset(
         "connection_failed",
         "authentication_failed",
         "endpoint_rejected",
+        "upstream_redirect_refused",
+        "upstream_endpoint_rejected",
+        "upstream_catalog_mode_unadmitted",
+        "upstream_catalog_selector_invalid",
         "timeout",
         "protocol_error",
         "invalid_response",
@@ -324,7 +307,6 @@ _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_get_device", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
-    ("ha_get_hacs_info", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_operation_status", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_skill_guide", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_state", "ENTITY_NOT_FOUND"): "entity_not_found",
@@ -364,9 +346,6 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ("ha_get_entity", "entity_not_found"): (
         "The requested entity registry entry was not found."
     ),
-    ("ha_get_hacs_info", "resource_not_found"): (
-        "The requested HACS repository was not found."
-    ),
     ("ha_get_integration", "resource_not_found"): (
         "The requested config entry was not found in the reviewed listing."
     ),
@@ -375,6 +354,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_skill_guide", "resource_not_found"): (
         "The requested skill guide resource was not found."
+    ),
+    ("ha_get_skill_guide", "capability_unavailable"): (
+        "This skill guide request is unavailable on this upstream version."
     ),
     ("ha_get_state", "entity_not_found"): (
         "The requested entity state was not found."
@@ -400,10 +382,10 @@ _YAML_RETRYABLE_CODES = frozenset(
 def _public_read_schema(entry, observed):
     if is_yaml_adapter(entry):
         return deepcopy(yaml_reader.PUBLIC_SCHEMA)
-    schema = public_schema_8_6(
+    schema = reads_9_1.public_schema(entry, public_schema_8_6(
         entry,
         platform_public_schema(entry, blueprint_public_schema(entry, observed)),
-    )
+    ))
     # Preserve the shipped public descriptor. This exact upstream schema differs
     # only in one example; raw descriptor validation still binds all its bytes.
     if (entry.upstream_name == "ha_get_overview" and
@@ -627,7 +609,7 @@ def _optional_state_recognized(name: str, state: Any, advertised: bool) -> bool:
         return not advertised
     if not advertised:
         return False
-    if name in yaml_reader.SIBLING_TOOLS:
+    if name in yaml_reader.ALL_SIBLING_TOOLS:
         return state == "prohibited_withheld"
     if name != yaml_reader.TOOL_NAME:
         return False
@@ -670,9 +652,9 @@ def _reviewed_tool_accounting_valid(
     nothing_unreviewed = not evaluation.unreviewed and set(names) <= reviewed
     no_sibling_drift = not sibling_drift
     states_recognized = len(optional_states) == len(
-        yaml_reader.OPTIONAL_NAMES
+        yaml_reader.optional_names(optional.version)
     ) and {name for name, _ in optional_states} == set(
-        yaml_reader.OPTIONAL_NAMES
+        yaml_reader.optional_names(optional.version)
     ) and all(
         _optional_state_recognized(name, state, name in names)
         for name, state in optional_states
@@ -798,11 +780,19 @@ DEFINITION_YAML_PATHS = frozenset({
     "homeassistant.packages", "homeassistant",
 })
 
+# HAMCP-264: the only configuration.yaml paths the dependency index reader
+# may request: the ``template:`` and ``script:`` definitions; the two
+# ``homeassistant`` paths only classify and read inline packages.
+DEPENDENCY_YAML_PATHS = frozenset({
+    "template", "script", "homeassistant.packages", "homeassistant",
+})
+
 # Each reader purpose fixes its own path set and audit event, so one purpose
 # can never read another's paths.
 YAML_READER_PURPOSES = MappingProxyType({
     "recorder_settings": (YAML_CONFIG_PATHS, "recorder_settings_yaml_read"),
     "configuration_definitions": (DEFINITION_YAML_PATHS, "configuration_definitions_yaml_read"),
+    "dependency_index": (DEPENDENCY_YAML_PATHS, "dependency_index_yaml_read"),
 })
 
 
@@ -813,6 +803,9 @@ class YamlConfigReader:
     read: Callable[[str], Awaitable[dict[str, Any]]]
     current: Callable[[], bool]
     provenance: str
+    # HAMCP-264: the purpose this reader was captured for, so a consumer can
+    # refuse a reader captured for another purpose before any read.
+    purpose: str | None = None
 
 
 # HAMCP-131: the only argument shape the history-slice reader sends. One
@@ -1191,11 +1184,14 @@ class UpstreamReadGateway:
             self._missing_release_retry_handle.cancel()
             self._missing_release_retry_handle = None
         self._reprobe_event.clear()
+        previous_transport = getattr(self, "_transport", None)
         self._transport = (
             transport
             if endpoint and transport is not None
             else McpReadGatewayTransport(
-                endpoint.url,
+                # HAMCP-319 section 3.3: the transport receives the published
+                # endpoint snapshot of this configuration generation.
+                publish_endpoint_snapshot(endpoint.url),
                 timeout_seconds=settings.ha_timeout_seconds,
                 client_version=_server_version(),
                 retain_session=(
@@ -1205,6 +1201,15 @@ class UpstreamReadGateway:
             if endpoint
             else None
         )
+        if (
+            previous_transport is not None
+            and previous_transport is not self._transport
+        ):
+            # A retained worker of the replaced configuration is closed, never
+            # reused with the earlier endpoint.
+            abandon = getattr(previous_transport, "abandon", None)
+            if callable(abandon):
+                abandon()
         counts = self._policy.classification_counts
         supported_versions = (
             list(self._release_registry.supported_versions)
@@ -1544,6 +1549,18 @@ class UpstreamReadGateway:
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
+                if entry.upstream_name in RETIRED_DELEGATED_READS:
+                    # HAMCP-290: a retired delegated read is never exposed,
+                    # aliased or dispatched, on any reviewed release and
+                    # whether or not a native route is registered.
+                    core_withheld.append(
+                        {
+                            "tool": entry.upstream_name,
+                            "disposition": "retired_delegated_read",
+                            "reason_codes": ["delegated_read_retired"],
+                        }
+                    )
+                    continue
                 requirements = delegated_requirements(entry.upstream_name)
                 if self._core_runtime is not None and requirements:
                     core_status = self._core_runtime.route_status(
@@ -2044,14 +2061,17 @@ class UpstreamReadGateway:
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
+        # HAMCP-290: a retired delegated read is recorded beside the Core
+        # withholdings, but it is not a Core catalog withdrawal or
+        # restoration, so it never reaches the Core runtime counters.
         previous_core_withheld = {
             str(item.get("tool", ""))
             for item in self._state.get("core_withheld_tools", ())
             if isinstance(item, dict)
-        }
+        } - RETIRED_DELEGATED_READS
         next_core_withheld = {
             str(item.get("tool", "")) for item in core_withheld
-        }
+        } - RETIRED_DELEGATED_READS
         automatic_count = policy.classification_counts[
             "automatic_read"
         ]
@@ -2920,6 +2940,14 @@ class UpstreamReadGateway:
             if name in policy_by_name:
                 if name not in observed_reviewed:
                     observed_reviewed_order.append(name)
+                elif (
+                    selected_policy.reviewed_upstream_version
+                    in STRICT_FULL_SELECTOR_RELEASES
+                ):
+                    # HAMCP-319 sections 4 and 8.2: a strict-full catalog has
+                    # no duplicate names, read route or not. The deduplicated
+                    # order fingerprint cannot see a repeat, so refuse it here.
+                    catalog_has_invalid_structure = True
                 observed_reviewed.setdefault(name, []).append(item)
                 continue
             unreviewed_occurrences[name] += 1
@@ -2944,8 +2972,13 @@ class UpstreamReadGateway:
             catalog.catalog_complete is not True
             or (exact_catalog_order_required and catalog_has_invalid_structure)
         )
+        # HAMCP-319 (Codex F1): 9.1.0 binds each used tool, not the catalog
+        # order; a reorder or an absent unused tool changes nothing there.
+        # Every other release keeps its pre-existing order gate unchanged.
         catalog_order_invalid = (
             exact_catalog_order_required
+            and selected_policy.reviewed_upstream_version
+            not in USED_TOOL_ADMISSION_RELEASES
             and schema_fingerprint(observed_reviewed_order)
             != expected_order_fingerprint
         )
@@ -3249,6 +3282,7 @@ class UpstreamReadGateway:
                 not mapping
                 or not mapping.entry.is_read_route
                 or mapping.entry.upstream_name != policy_entry.upstream_name
+                or policy_entry.upstream_name in RETIRED_DELEGATED_READS
                 or mapping.generation != admission_generation
                 or mapping.contract_fingerprint != contract_fingerprint
             ):
@@ -3273,7 +3307,9 @@ class UpstreamReadGateway:
         if errors:
             raise _GatewayFailure("argument_validation", dispatched=False)
         try:
-            dispatch_arguments = read_arguments_8_6(policy_entry, arguments)
+            dispatch_arguments = reads_9_1.read_arguments(
+                policy_entry, read_arguments_8_6(policy_entry, arguments)
+            )
             if is_blueprint_adapter(policy_entry):
                 dispatch_arguments = blueprint_read_arguments(arguments)
             if is_platform_adapter(policy_entry):
@@ -3288,8 +3324,13 @@ class UpstreamReadGateway:
                 # The closed Engineering-built shape; caller keys are never
                 # forwarded (HAMCP-162 design section 3).
                 dispatch_arguments = yaml_reader.upstream_arguments(
-                    yaml_reader.validate_arguments(arguments)
+                    yaml_reader.validate_arguments(arguments), entry=policy_entry
                 )
+        except reads_9_1.ReadTierUnavailable:
+            # HAMCP-319 R4: a shipped 8.5 tier 9.1 cannot serve; never synthesized.
+            raise _GatewayFailure(
+                "capability_unavailable", dispatched=False
+            ) from None
         except (ValueError, YamlReadRefusal):
             raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
@@ -3929,6 +3970,7 @@ class UpstreamReadGateway:
             read=read, current=current,
             provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
                         "configuration.yaml only; includes not followed; no fallback"),
+            purpose=purpose,
         ) if current() else None
 
     def history_reader(self, *, audit=None) -> HistoryReader | None:
@@ -4091,10 +4133,7 @@ class UpstreamReadGateway:
                 try:
                     check_platform_stats_precheck(
                         _normalize_upstream_payload(
-                            precheck.call_result,
-                            server_version=mapping.adapter_version,
-                            protocol_version=mapping.protocol_version,
-                            upstream_tool=policy_entry.upstream_name,
+                            precheck.call_result
                         )
                     )
                 except StatsCapExceeded:
@@ -4148,6 +4187,7 @@ class UpstreamReadGateway:
                         yaml_path,
                         known_secrets=self._known_secrets,
                         max_string=max(2_000, min(response_limit // 2, 20_000)),
+                        entry=policy_entry,
                     )
                 except YamlReadRefusal as refusal:
                     raise _GatewayFailure(
@@ -4178,10 +4218,7 @@ class UpstreamReadGateway:
                 completeness_warnings = [yaml_reader.K7_WARNING]
             else:
                 payload = _normalize_upstream_payload(
-                    exchange.call_result,
-                    server_version=mapping.adapter_version,
-                    protocol_version=mapping.protocol_version,
-                    upstream_tool=policy_entry.upstream_name,
+                    exchange.call_result
                 )
                 if is_blueprint_adapter(policy_entry):
                     try:
@@ -4205,6 +4242,17 @@ class UpstreamReadGateway:
                             dispatched=True,
                             details=exc.details,
                         ) from None
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
+                if reads_9_1.is_adapter(policy_entry):
+                    # HAMCP-319 section 7: compiled 9.1 projections back to the
+                    # shipped 8.5 public result before the generic sanitizer.
+                    try:
+                        payload = reads_9_1.project_result(
+                            policy_entry, payload, arguments
+                        )
                     except ValueError:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True
@@ -4273,6 +4321,16 @@ class UpstreamReadGateway:
                         telemetry.core_dispatch_authorizer = (
                             prior_core_authorizer
                         )
+                    # HAMCP-319 section 6.5 (DCL2): allowlist projection on
+                    # every reviewed version; no credential material passes.
+                    try:
+                        payload = project_device_result(
+                            payload, upstream_version=mapping.adapter_version
+                        )
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
                 sanitation = sanitize_untrusted_data(
                     payload,
                     known_secrets=self._known_secrets,
@@ -5032,10 +5090,7 @@ class UpstreamReadGateway:
                     error_contract=error_contract,
                 )
             payload = _normalize_upstream_payload(
-                exchange.call_result,
-                server_version=route.server_version,
-                protocol_version=route.protocol_version,
-                upstream_tool=upstream_tool_name,
+                exchange.call_result
             )
             output_schema = route.observed_tool.get("outputSchema")
             output_match = True
@@ -5730,6 +5785,7 @@ class UpstreamReadGateway:
                         "Restore the reviewed MCP protocol or roll back "
                         "upstream."
                     ),
+                    **HA_MCP_ENDPOINT_OPERATOR_MESSAGES,
                 }.get(
                     category,
                     "Restore upstream connectivity or authentication.",
@@ -5921,6 +5977,11 @@ class UpstreamReadGateway:
         value["catalog_name_projection_bounded"] = True
         for field in tool_fields:
             value[field] = []
+        # HAMCP-319 section 3.3: fixed operator remediation for the closed
+        # ha-mcp endpoint refusal codes; no URL, host, path or status text.
+        value["operator_remediation"] = HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(
+            value.get("last_failure_category")
+        )
         return value
 
     @staticmethod
@@ -6192,7 +6253,8 @@ def _compare_tool_contract(
         entry.argument_restrictions[0]
         if is_blueprint_adapter(entry) or is_platform_adapter(entry)
         else READ_ADAPTER_8_6
-        if is_8_6_read_adapter(entry) else "ha_search_partial_v1"
+        if is_8_6_read_adapter(entry) else reads_9_1.adapter_token(entry)
+        if reads_9_1.is_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
     )
@@ -6639,6 +6701,10 @@ def _public_failure(category: str) -> tuple[str, bool]:
         "not_initialized",
         "connection_failed",
         "endpoint_rejected",
+        "upstream_redirect_refused",
+        "upstream_endpoint_rejected",
+        "upstream_catalog_mode_unadmitted",
+        "upstream_catalog_selector_invalid",
         "upstream_version_mismatch",
         "server_identity_mismatch",
         "unsupported_protocol_version",
@@ -6657,6 +6723,10 @@ def _safe_failure_message(
     )
     if domain_message is not None:
         return domain_message
+    # HAMCP-319 §3.3: fixed operator remediation, never interpolated.
+    operator_message = HA_MCP_ENDPOINT_OPERATOR_MESSAGES.get(category)
+    if operator_message is not None:
+        return operator_message
     return {
         "argument_validation": "The request does not match the reviewed upstream schema.",
         "invalid_request": "The reviewed upstream provider rejected the request arguments.",
@@ -6997,20 +7067,7 @@ def _reviewed_single_entity_registry_lookup(
     )
 
 
-def _normalize_upstream_payload(
-    call_result: dict[str, Any],
-    *,
-    server_version: str,
-    protocol_version: str,
-    upstream_tool: str,
-) -> Any:
-    response_model = _REVIEWED_SUCCESS_ENVELOPE_MODELS.get(
-        (server_version, protocol_version, upstream_tool)
-    )
-    if response_model == HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1:
-        payload = _reviewed_hacs_info_payload(call_result)
-        return _normalize_hacs_info_top_level_success(payload)
-
+def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:
     structured = call_result.get("structuredContent")
     if structured is not None:
         payload = structured
@@ -7032,77 +7089,6 @@ def _normalize_upstream_payload(
     return payload
 
 
-def _reviewed_hacs_info_payload(call_result: dict[str, Any]) -> Any:
-    """Decode the exact 8.1 MCP success envelope without ambiguity."""
-
-    content = call_result.get("content")
-    if (
-        not isinstance(content, list)
-        or len(content) != 1
-        or not isinstance(content[0], dict)
-        or content[0].get("type") != "text"
-        or not isinstance(content[0].get("text"), str)
-    ):
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    try:
-        text_payload = json.loads(
-            content[0]["text"],
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
-        raise _GatewayFailure("invalid_response", dispatched=True) from None
-
-    structured = call_result.get("structuredContent")
-    if structured is not None:
-        try:
-            structured_canonical = json.dumps(
-                structured,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-            text_canonical = json.dumps(
-                text_payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-        except (RecursionError, TypeError, UnicodeError, ValueError):
-            raise _GatewayFailure(
-                "invalid_response", dispatched=True
-            ) from None
-        if structured_canonical != text_canonical:
-            raise _GatewayFailure("invalid_response", dispatched=True)
-    return structured if structured is not None else text_payload
-
-
-def _normalize_hacs_info_top_level_success(payload: Any) -> dict[str, Any]:
-    """Restore the exact 8.0 HACS read shape for reviewed 8.1 success data."""
-
-    if not isinstance(payload, dict) or set(payload) != {
-        "success",
-        "data",
-        "metadata",
-    }:
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    data = payload.get("data")
-    metadata = payload.get("metadata")
-    if (
-        payload.get("success") is not True
-        or not isinstance(data, dict)
-        or not isinstance(metadata, dict)
-        or "success" in data
-    ):
-        raise _GatewayFailure("invalid_response", dispatched=True)
-    return {
-        "data": {"success": True, **data},
-        "metadata": metadata,
-    }
-
-
 def _upstream_completeness(
     policy_entry: UpstreamToolPolicyEntry, payload: Any
 ) -> tuple[bool, list[str]]:
@@ -7112,6 +7098,10 @@ def _upstream_completeness(
         return blueprint_completeness(payload)
     if is_platform_adapter(policy_entry):
         return platform_completeness(payload)
+    if reads_9_1.is_adapter(policy_entry):
+        partial, warnings = reads_9_1.completeness(policy_entry, payload)
+        if policy_entry.upstream_name != "ha_search" or partial:
+            return partial, warnings
     if policy_entry.upstream_name != "ha_search":
         return False, []
     if not isinstance(payload, dict) or not isinstance(payload.get("partial"), bool):

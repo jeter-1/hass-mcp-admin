@@ -197,7 +197,18 @@ def expected_contract_family(upstream_version: str) -> str:
     return (
         CONTRACT_FAMILY_V3
         if upstream_version
-        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0"}
+        in {
+            "8.0.0",
+            "8.1.0",
+            "8.1.1",
+            "8.2.0",
+            "8.4.1",
+            "8.4.3",
+            "8.5.0",
+            "8.6.0",
+            "9.1.0",
+            "9.1.2",
+        }
         else CONTRACT_FAMILY
     )
 
@@ -433,6 +444,56 @@ def _exact_8_6_descriptor(tool: Mapping[str, Any]) -> bool:
     return stable_hash(tool) == "3c37bd1eb5b0c6076dd268dfd2cc4bf512a61b5ea94dbabf1e312c747cf242c5"
 
 
+# HAMCP-319: the exact ha-mcp 9.1.0 getter descriptor (d2e3f4b0, captured from
+# the exact OCI images). It carries no private policy metadata, adds an
+# explicit ``destructiveHint: false``, declares ``openWorldHint: true`` and adds
+# a ``describe`` card-editor argument while dropping ``mode``. These are
+# admitted only for this complete descriptor under its own captured
+# fingerprint (design rule 5); nothing is inherited by 8.5 or 8.6 and no rule
+# is relaxed family-wide. ``describe`` is never constructed by Engineering and
+# is recorded as prohibited in this descriptor's security contract.
+EXACT_9_1_DASHBOARD_DESCRIPTOR_FINGERPRINT = (
+    "4b3ee50fa2fe7655309e5044ca264adccdc2af9f9a883338205b4d4602ec2d94"
+)
+EXACT_9_1_PROHIBITED_ARGUMENTS = frozenset({"describe"})
+# HAMCP-351: exact 9.1.2 (bab615df) advertises the byte-identical getter
+# descriptor, so the same fingerprint, prohibited argument and allowed
+# properties bind it. Any other release keeps the base sets.
+EXACT_9_1_DASHBOARD_RELEASES = frozenset({"9.1.0", "9.1.2"})
+_EXACT_9_1_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+
+
+def _exact_9_1_descriptor(tool: Mapping[str, Any]) -> bool:
+    return stable_hash(tool) == EXACT_9_1_DASHBOARD_DESCRIPTOR_FINGERPRINT
+
+
+def _exact_policyless_descriptor(tool: Mapping[str, Any]) -> bool:
+    return _exact_8_6_descriptor(tool) or _exact_9_1_descriptor(tool)
+
+
+def prohibited_arguments_for_version(upstream_version: str) -> frozenset[str]:
+    """Return the compiled prohibited-argument set for one exact release."""
+
+    if upstream_version in EXACT_9_1_DASHBOARD_RELEASES:
+        return PROHIBITED_ARGUMENTS | EXACT_9_1_PROHIBITED_ARGUMENTS
+    return PROHIBITED_ARGUMENTS
+
+
+def allowed_schema_properties_for_version(
+    upstream_version: str,
+) -> frozenset[str]:
+    """Return the compiled allowed schema-property set for one exact release."""
+
+    if upstream_version in EXACT_9_1_DASHBOARD_RELEASES:
+        return ALLOWED_SCHEMA_PROPERTIES | EXACT_9_1_PROHIBITED_ARGUMENTS
+    return ALLOWED_SCHEMA_PROPERTIES
+
+
 def _validate_compiled_family(
     tool: Mapping[str, Any],
     protocol_version: str,
@@ -469,7 +530,9 @@ def _validate_compiled_family(
         for namespace, value in meta.items():
             if not isinstance(value, dict) or set(value) - allowed_meta[namespace]:
                 raise ContractValidationError("upstream_runtime_contract_mismatch")
-        if contract_family == CONTRACT_FAMILY_V3 and not _exact_8_6_descriptor(tool):
+        if contract_family == CONTRACT_FAMILY_V3 and not _exact_policyless_descriptor(
+            tool
+        ):
             ha_meta = meta.get("ha_mcp")
             policy = ha_meta.get("policy") if isinstance(ha_meta, dict) else None
             if not runtime_policy_state_fingerprint_projection(policy)[
@@ -500,7 +563,16 @@ def _validate_compiled_family(
         if contract_family == CONTRACT_FAMILY_V3
         else "readOnlyHint"
     )
-    if forbidden_annotation in annotations or any(
+    exact_9_1 = contract_family == CONTRACT_FAMILY_V3 and _exact_9_1_descriptor(
+        tool
+    )
+    if exact_9_1:
+        if any(
+            annotations.get(key) is not expected_value
+            for key, expected_value in _EXACT_9_1_ANNOTATIONS.items()
+        ):
+            raise ContractValidationError("upstream_security_contract_mismatch")
+    elif forbidden_annotation in annotations or any(
         annotations.get(key) is not expected_value
         for key, expected_value in expected.items()
     ):
@@ -518,8 +590,20 @@ def _validate_compiled_family(
         properties
     ):
         raise ContractValidationError("upstream_input_contract_mismatch")
-    if set(properties) - ALLOWED_SCHEMA_PROPERTIES:
+    if set(properties) - (
+        ALLOWED_SCHEMA_PROPERTIES | EXACT_9_1_PROHIBITED_ARGUMENTS
+        if exact_9_1
+        else ALLOWED_SCHEMA_PROPERTIES
+    ):
         raise ContractValidationError("upstream_input_contract_mismatch")
+    if exact_9_1:
+        describe = properties.get("describe")
+        if (
+            not isinstance(describe, dict)
+            or _schema_types(describe) != {"boolean"}
+            or describe.get("default") is not False
+        ):
+            raise ContractValidationError("upstream_input_contract_mismatch")
     required = schema.get("required", [])
     if not isinstance(required, list) or required:
         raise ContractValidationError("upstream_input_contract_mismatch")
@@ -581,7 +665,12 @@ def normalize_runtime_contract(
         },
         "input_schema": input_contract,
         "compiled_argument_shapes": COMPILED_ARGUMENT_SHAPES,
-        "prohibited_arguments": sorted(PROHIBITED_ARGUMENTS),
+        "prohibited_arguments": sorted(
+            PROHIBITED_ARGUMENTS | EXACT_9_1_PROHIBITED_ARGUMENTS
+            if contract_family == CONTRACT_FAMILY_V3
+            and _exact_9_1_descriptor(tool)
+            else PROHIBITED_ARGUMENTS
+        ),
     }
     runtime_metadata = tool.get("_meta")
     if contract_family == CONTRACT_FAMILY_V3:
@@ -595,12 +684,12 @@ def normalize_runtime_contract(
         )
         policy_projection = (
             {"present": False}
-            if _exact_8_6_descriptor(tool)
+            if _exact_policyless_descriptor(tool)
             else runtime_policy_state_fingerprint_projection(policy)
         )
         security_contract["runtime_policy_state"] = policy_projection
         runtime_metadata = json.loads(canonical_json(runtime_metadata))
-        if not _exact_8_6_descriptor(tool):
+        if not _exact_policyless_descriptor(tool):
             runtime_metadata["ha_mcp"]["policy"] = policy_projection
     output_contract = {
         "declared_output_schema": {

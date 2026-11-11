@@ -89,3 +89,20 @@ ha_mcp:
         addon_amd64_manifest_digest: sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32
         addon_arm64_index_digest: sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3
         addon_arm64_manifest_digest: sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e
+
+# HAMCP-319 exact-image admission lanes (design section 5.1; Josh 2026-11-07:
+# a separate workflow-only PR into release/2.5.0). The candidate is NOT a slot:
+# it derives no gateway, add-on or real-HA row, so the legacy-URL lanes above
+# never meet a strict-selector 9.1 peer. scripts/support_window.py
+# admission_matrix derives six lanes, 85_only / 91_only / side_by_side on amd64
+# and arm64 native runners. 85_only runs now against ha_mcp.current
+# (baseline_version must equal it). 91_only and side_by_side stay dormant, and
+# their manifests say "not executed", until the reviewed upstream registry
+# carries candidate_version. That registry entry is the build's admission
+# signal; the lanes then turn active with no workflow edit, and every pin comes
+# from that reviewed registry row, never from this file.
+# HAMCP-351 (Josh 2026-11-09): the candidate is ha-mcp 9.1.2; 9.1.0 stays
+# admitted in the registry but no longer runs these admission lanes.
+admission:
+  baseline_version: "8.5.0"
+  candidate_version: "9.1.2"

@@ -1,6 +1,6 @@
 {
   "model": "helper-manifest-compatibility-v1",
-  "manifest_paths": 456,
+  "manifest_paths": 460,
   "sources": [
     {
       "version": "2026.10.3",

@@ -606,9 +606,9 @@ existing HAMCP-222 provenance method. The disposable execution remains amd64;
 arm64 provenance verification does not claim arm64 execution.
 
 The exact list lives in `ci/core-contract-read-files.json`; profiles map to lane
-groups in `ci/core-evidence-groups.json`. Its 456 paths expand the historical
+groups in `ci/core-evidence-groups.json`. Its 460 paths expand the historical
 HAMCP-222 relied-on scopes and the later helper/options, input-select, trace,
-dashboard and scene source reviews. Maintain this list whenever a contract,
+dashboard, scene and security metadata (HAMCP-134) source reviews. Maintain this list whenever a contract,
 source read, or binding judgment changes. The literal-path AST guard detects
 constant `homeassistant/.../*.py` paths in contract scripts and the device-fixture
 generator. It cannot establish computed paths, transitive semantic dependencies,
@@ -708,12 +708,19 @@ discovery lists Core releases newest first, 100 per page, and stops after the pa
 that holds the signed predecessor's own release record: the official stable release
 whose tag equals the newest signed version. A version comparison never ends the
 scan, because a lower backport can be listed before a higher release. Every record
-read must have a `created_at` timestamp, and those timestamps must not increase
-across everything read. `published_at` is used only when `created_at` is absent
+read must have a `created_at` timestamp. Across every page read, the timestamps of
+official stable releases (not a draft, not a prerelease, an exact stable tag), taken
+in listing order, must not increase. Drafts, prereleases and other tags are
+excluded from that comparison only: selection never chooses them and none of them
+can be the predecessor's record that ends the scan, so their positions change
+neither the pages read nor the version selected. GitHub's listing does not keep
+prereleases in `created_at` order (2026.4.0b10 is listed after 2026.4.0b9 though
+created later), and comparing them refused every scheduled run after HAMCP-309
+Part 1 (HAMCP-309 Part 3). `published_at` is used only when `created_at` is absent
 (missing or null); a present `created_at` that is not a valid timestamp refuses and
 never falls back. One parser reads both fields and accepts only an ISO 8601 string
-with a UTC offset, so a missing, unparseable, timezone-less or increasing timestamp
-refuses. The bound is 10 pages, so it limits
+with a UTC offset, so a missing, unparseable or timezone-less timestamp on any record
+read, or an increasing official stable timestamp, refuses. The bound is 10 pages, so it limits
 releases created after the signed predecessor rather than Core's whole history;
 reaching it without the predecessor's record refuses. A listing that ends before
 the bound without that record is complete and is used as before. Selection is

@@ -65,6 +65,7 @@ import test_hamcp225_trace_snapshots as traces  # noqa: E402
 import test_hamcp234_journal_usability as step1  # noqa: E402
 
 from ha_mcp_engineering.configuration_definitions import credentials  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.trace_normalization import IDENTITY_KEYS, screen_trace_value  # noqa: E402
 
 hj = author.hj
@@ -428,8 +429,20 @@ class ServedSchemaTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from support.process_isolation import restore_after_class
+
+        # HAMCP-362: taken before the import below. Importing test_beta_v2
+        # here puts hass_mcp_admin on sys.path, and a snapshot taken after it
+        # kept it there past this class.
+        restore_after_class(cls)
         import test_beta_v2 as beta
-        beta.restore_after_class(cls)
+
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        beta.preserve_create_application_state(cls)
 
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
@@ -807,6 +820,13 @@ class UnicodeWhitespaceMatrixTests(unittest.TestCase):
         rendered, _record, _wire = journal_call(self, entries)
         self.assertEqual([row["message"] for row in rendered["data"]["entries"]],
                          [whitespace_proxy(point, NEEDLE) for point in ASCII_WHITESPACE])
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

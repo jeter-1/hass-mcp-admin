@@ -154,8 +154,11 @@ class TraceSnapshotService:
         # The watch polled first; advanced every authorized tick (review M2).
         self.rotation = 0
         # Withheld automation ID digest -> the ID Core is read with, for this
-        # process's watches only (review H2); never written anywhere.
+        # process's watches and lapsed records only (review H2); never written.
         self.watch_sources = {}
+        # HAMCP-296: the trace-watch health summary, refreshed by every store
+        # transaction; health reads it without disk I/O or the store lock.
+        self.summary = None
 
     # ------------------------------------------------------------------
     # Authority, Core reads and record construction
@@ -326,7 +329,143 @@ class TraceSnapshotService:
         if expired:
             ended = {w["watch_id"] for w in expired}
             index["watches"] = [w for w in index["watches"] if w["watch_id"] not in ended]
+        lifecycle = index["lifecycle"]
+        for watch in expired:
+            # A lapse while the server was down keeps its original expiry.
+            self._record_lapse(index, watch, "expired", watch["expires_at_ms"])
+        for watch in lifecycle.pop("recovered", []):
+            self._record_lapse(index, watch, "store_recovery", now_ms)
+        lapsed_cutoff = now_ms - c.LAPSED_RETENTION_SECONDS * 1000
+        kept = [r for r in lifecycle["lapsed"] if r["expired_at_ms"] > lapsed_cutoff]
+        if len(kept) != len(lifecycle["lapsed"]):
+            lifecycle["lapsed"] = kept
+            lifecycle["dirty"] = True
+        self._refresh_summary(index, now_ms)
         return removed + aged, expired
+
+    # ------------------------------------------------------------------
+    # HAMCP-296 lifecycle: priority, renewal metadata and lapsed records
+
+    @staticmethod
+    def _meta(index, watch_id):
+        return next((m for m in index["lifecycle"]["watch_meta"] if m["watch_id"] == watch_id),
+                    {"watch_id": watch_id, "priority": "normal", "renewed_at_ms": None})
+
+    @staticmethod
+    def _set_meta(index, watch_id, *, priority=None, renewed_at_ms=None):
+        """Keep a metadata row only when it says more than the defaults."""
+
+        lifecycle = index["lifecycle"]
+        current = TraceSnapshotService._meta(index, watch_id)
+        row = {"watch_id": watch_id, "priority": priority or current["priority"],
+               "renewed_at_ms": current["renewed_at_ms"] if renewed_at_ms is None else renewed_at_ms}
+        rows = [m for m in lifecycle["watch_meta"] if m["watch_id"] != watch_id]
+        if row["priority"] != "normal" or row["renewed_at_ms"] is not None:
+            rows.append(row)
+        if rows != lifecycle["watch_meta"]:
+            lifecycle["watch_meta"] = rows
+            lifecycle["dirty"] = True
+
+    @classmethod
+    def _record_lapse(cls, index, watch, reason, at_ms):
+        """Record an ended watch once (idempotent by ``watch_id``); one per automation."""
+
+        lifecycle = index["lifecycle"]
+        priority = cls._meta(index, watch["watch_id"])["priority"]
+        lifecycle["watch_meta"] = [m for m in lifecycle["watch_meta"]
+                                   if m["watch_id"] != watch["watch_id"]]
+        lifecycle["dirty"] = True
+        if any(r["watch_id"] == watch["watch_id"] for r in lifecycle["lapsed"]):
+            return
+        records = [r for r in lifecycle["lapsed"] if r["automation_id"] != watch["automation_id"]]
+        records.append({
+            "watch_id": watch["watch_id"], "automation_id": watch["automation_id"],
+            "mode": watch["mode"], "priority": priority, "created_at_ms": watch["created_at_ms"],
+            "expired_at_ms": at_ms, "reason": reason, "captured_count": watch["captured_count"],
+        })
+        records.sort(key=lambda r: (r["expired_at_ms"], r["watch_id"]))
+        overflow = len(records) - c.LAPSED_MAX
+        if overflow > 0:
+            records = records[overflow:]
+            lifecycle["lapsed_dropped"] += overflow
+        lifecycle["lapsed"] = records
+
+    @staticmethod
+    def _clear_lapse(index, automation_id):
+        lifecycle = index["lifecycle"]
+        kept = [r for r in lifecycle["lapsed"] if r["automation_id"] != automation_id]
+        if len(kept) != len(lifecycle["lapsed"]):
+            lifecycle["lapsed"] = kept
+            lifecycle["dirty"] = True
+
+    def _expiring_soon(self, watch, index, now_ms):
+        renewed = self._meta(index, watch["watch_id"])["renewed_at_ms"]
+        term = watch["expires_at_ms"] - max(watch["created_at_ms"], renewed or 0)
+        window = min(c.EXPIRY_WARNING_HOURS * 3_600_000, term / 2)
+        return watch["expires_at_ms"] - now_ms <= window
+
+    def _lifecycle(self, index, now_ms):
+        lifecycle = index["lifecycle"]
+        expiries = [w["expires_at_ms"] for w in index["watches"]]
+        return {
+            "expiring_soon_count": sum(1 for w in index["watches"]
+                                       if self._expiring_soon(w, index, now_ms)),
+            "next_expiry_at": c.utc_text(min(expiries) / 1000) if expiries else None,
+            "lapsed_count": len(lifecycle["lapsed"]),
+            "lapsed_dropped": lifecycle["lapsed_dropped"],
+            "warning_window_hours": c.EXPIRY_WARNING_HOURS,
+            "lifecycle_store": "reset" if self.store.lifecycle_reset else "ok",
+        }
+
+    @staticmethod
+    def _public_lapsed(index):
+        held = {}
+        for entry in index["snapshots"]:
+            held[entry["watch_id"]] = held.get(entry["watch_id"], 0) + 1
+        return [{
+            "watch_id": r["watch_id"], "automation_id": r["automation_id"], "mode": r["mode"],
+            "priority": r["priority"], "created_at": c.utc_text(r["created_at_ms"] / 1000),
+            "expired_at": c.utc_text(r["expired_at_ms"] / 1000), "reason": r["reason"],
+            "captured_count": r["captured_count"], "snapshots_held": held.get(r["watch_id"], 0),
+        } for r in sorted(index["lifecycle"]["lapsed"],
+                          key=lambda r: (r["expired_at_ms"], r["watch_id"]), reverse=True)]
+
+    def _refresh_summary(self, index, now_ms):
+        """The in-memory health summary (design note 3.4); bounded lists only."""
+
+        soon = sorted((w for w in index["watches"] if self._expiring_soon(w, index, now_ms)),
+                      key=lambda w: (w["expires_at_ms"], w["watch_id"]))
+        lapsed = sorted(index["lifecycle"]["lapsed"],
+                        key=lambda r: (r["expired_at_ms"], r["watch_id"]), reverse=True)
+        self.summary = {
+            "status": "observed", "active": len(index["watches"]), "limit": c.MAX_WATCHES,
+            **{key: value for key, value in self._lifecycle(index, now_ms).items()
+               if key != "warning_window_hours"},
+            "expiring_soon": [{"automation_id": w["automation_id"],
+                               "at": c.utc_text(w["expires_at_ms"] / 1000)}
+                              for w in soon[:c.HEALTH_LIST]],
+            "lapsed": [{"automation_id": r["automation_id"], "reason": r["reason"],
+                        "at": c.utc_text(r["expired_at_ms"] / 1000)}
+                       for r in lapsed[:c.HEALTH_LIST]],
+            "as_of": c.utc_text(now_ms / 1000),
+        }
+
+    def watch_health(self):
+        """The screened summary; no disk I/O, no store lock, no Core call."""
+
+        summary = self.summary
+        if summary is None:
+            return {"status": "not_yet_observed"}
+        return sanitize_trace_detail(summary, known_secrets=self.known_secrets).value
+
+    @staticmethod
+    def _dirty(index):
+        return index["lifecycle"].get("dirty") is True
+
+    def _save(self, index):
+        self.store.write_index(index)
+        index["lifecycle"]["dirty"] = False
+        self._refresh_summary(index, _ms(self.clock()))
 
     @staticmethod
     def _quarantine(index, entry, damage, now_ms):
@@ -384,8 +523,8 @@ class TraceSnapshotService:
         with self.store.transaction():
             index = self.store.load_index()
             removed, expired = self._sweep(index, now_ms)
-            if removed or expired:
-                self.store.write_index(index)
+            if removed or expired or self._dirty(index):
+                self._save(index)
             self._tidy(index, removed)
         self._audit_watch_expiry(expired)
         return index
@@ -395,8 +534,13 @@ class TraceSnapshotService:
         """Store ``prepared`` records in one transaction; return outcomes.
 
         A manual capture is refused at capacity (E1). A watch capture evicts
-        only its own oldest snapshot past the watch quota (E2); the global
-        bounds still refuse. ``update_watch(watch)`` applies poll state to
+        only its own oldest snapshot past the watch quota (E2, 20 per watch);
+        the global bounds (500 snapshots, 128 MiB) and the watch-origin
+        reservation (400 snapshots, 100 MiB) still refuse, never evict. Where
+        the entries live on disk (``index.json`` or the watch sidecar) is
+        the store's concern (``store.write_index``); a failed write leaves
+        the prior index and sidecar pair, so the watch's poll state is not
+        advanced for records this commit then removes. ``update_watch(watch)`` applies poll state to
         the current watch row, which may have been replaced or removed since
         the poll began.
 
@@ -438,6 +582,15 @@ class TraceSnapshotService:
                 if count > c.MAX_SNAPSHOTS or size > c.STORE_BYTES:
                     outcomes[item.run_id] = "store_full"
                     continue
+                if watch is not None:
+                    # HAMCP-296: watch captures stay inside their reservation,
+                    # so they can never take the room kept for manual captures.
+                    origin = [e for e in index["snapshots"] if e["origin"] == "trace_watch"]
+                    if (len(origin) - len(victims) + 1 > c.WATCH_STORE_SNAPSHOTS
+                            or sum(e["bytes"] for e in origin) - sum(e["bytes"] for e in victims)
+                            + entry["bytes"] > c.WATCH_STORE_BYTES):
+                        outcomes[item.run_id] = "store_full"
+                        continue
                 gone = {e["snapshot_id"] for e in victims}
                 index["snapshots"] = [e for e in index["snapshots"] if e["snapshot_id"] not in gone]
                 index["snapshots"].append(entry)
@@ -454,8 +607,8 @@ class TraceSnapshotService:
                 # Retired while this commit waited for the lock: write nothing.
                 return None
             if not stored and watch is None:
-                if removed or expired:
-                    self.store.write_index(index)
+                if removed or expired or self._dirty(index):
+                    self._save(index)
                 self._tidy(index, removed)
                 self._audit_watch_expiry(expired)
                 return outcomes, [], []
@@ -467,7 +620,7 @@ class TraceSnapshotService:
                 for item in stored:
                     self.store.write_record(item.entry["snapshot_id"], item.raw)
                     written.append(item.entry["snapshot_id"])
-                self.store.write_index(index)
+                self._save(index)
             except StoreError:
                 if not self.store.commit_unknown:
                     for snapshot_id in written:
@@ -482,8 +635,8 @@ class TraceSnapshotService:
         return outcomes, [item.entry for item in stored], evicted
 
     def _tidy_after(self, index, removed, expired):
-        if removed or expired:
-            self.store.write_index(index)
+        if removed or expired or self._dirty(index):
+            self._save(index)
         self._tidy(index, removed)
 
     @staticmethod
@@ -637,6 +790,8 @@ class TraceSnapshotService:
             "limits": {"snapshots": c.MAX_SNAPSHOTS, "bytes": c.STORE_BYTES,
                        "snapshot_bytes": c.SNAPSHOT_BYTES, "retention_days": c.RETENTION_SECONDS // 86400,
                        "watches": c.MAX_WATCHES, "watch_quota": c.WATCH_QUOTA,
+                       "watch_snapshots": c.WATCH_STORE_SNAPSHOTS,
+                       "watch_bytes": c.WATCH_STORE_BYTES,
                        "quarantine": c.QUARANTINE_MAX},
         }
 
@@ -743,8 +898,8 @@ class TraceSnapshotService:
             damaged = damage is not None
             if damaged:
                 self._quarantine(index, entry, damage, now_ms)
-            if removed or expired or damaged:
-                self.store.write_index(index)
+            if removed or expired or damaged or self._dirty(index):
+                self._save(index)
             # A damaged file is unlinked only after the index no longer names it.
             self._tidy(index, removed)
         self._audit_watch_expiry(expired)
@@ -791,15 +946,20 @@ class TraceSnapshotService:
     # ------------------------------------------------------------------
     # Watch list (no plan or approval; audited and bounded)
 
-    def _public_watch(self, watch, index):
+    def _public_watch(self, watch, index, now_ms):
         held = sum(1 for e in index["snapshots"] if e["watch_id"] == watch["watch_id"])
         status = ("paused_core_unavailable" if self.paused and watch["baseline_done"] else
                   "watching" if watch["baseline_done"] else "awaiting_first_poll")
+        meta = self._meta(index, watch["watch_id"])
         return {
             "watch_id": watch["watch_id"], "automation_id": watch["automation_id"],
-            "mode": watch["mode"], "created_by": watch["caller_id"],
+            "mode": watch["mode"], "priority": meta["priority"], "created_by": watch["caller_id"],
             "created_at": c.utc_text(watch["created_at_ms"] / 1000),
             "expires_at": c.utc_text(watch["expires_at_ms"] / 1000),
+            "expires_in_seconds": max(0, (watch["expires_at_ms"] - now_ms) // 1000),
+            "expiring_soon": self._expiring_soon(watch, index, now_ms),
+            "renewed_at": (None if meta["renewed_at_ms"] is None
+                           else c.utc_text(meta["renewed_at_ms"] / 1000)),
             "status": status, "snapshots_held": held, "snapshot_quota": c.WATCH_QUOTA,
             "captured_count": watch["captured_count"], "evicted_count": watch["evicted_count"],
             "skipped_polls": watch["skipped_polls"], "uncaptured_runs": watch["uncaptured_runs"],
@@ -807,17 +967,52 @@ class TraceSnapshotService:
                              else c.utc_text(watch["last_poll_at_ms"] / 1000)),
         }
 
-    def _watch_list(self, index):
-        return [self._public_watch(w, index)
+    def _watch_list(self, index, now_ms):
+        return [self._public_watch(w, index, now_ms)
                 for w in sorted(index["watches"], key=lambda w: (w["created_at_ms"], w["watch_id"]))]
 
-    def _change_watch(self, action, automation_id, mode, hours, caller, request_id, now):
+    def _refusal(self, reason, index, now_ms):
+        return c.TraceSnapshotError(reason, watches=self._watch_list(index, now_ms),
+                                    lifecycle={**self._lifecycle(index, now_ms),
+                                               "lapsed": self._public_lapsed(index)})
+
+    def _audit_failed(self, now_ms):
+        """``audit_unavailable`` with the list as stored (nothing was committed)."""
+
+        try:
+            index = self.store.load_index()
+        except StoreError:
+            return c.TraceSnapshotError("audit_unavailable")
+        return self._refusal("audit_unavailable", index, now_ms)
+
+    @staticmethod
+    def _new_watch(watch_id, automation_id, mode, now_ms, hours, caller, request_id):
+        return {
+            "watch_id": watch_id, "automation_id": automation_id,
+            "mode": mode, "created_at_ms": now_ms,
+            "expires_at_ms": now_ms + hours * 3_600_000, "caller_id": caller,
+            "request_id": request_id, "seen_run_ids": [], "baseline_done": False,
+            "skipped_polls": 0, "uncaptured_runs": 0, "captured_count": 0,
+            "evicted_count": 0, "last_poll_at_ms": None,
+        }
+
+    def _change_audit(self, status, watch, caller, request_id, **extra):
+        return {
+            "event": "trace_watch_change", "tool_name": "set_automation_trace_watch",
+            "request_id": request_id, "result_status": status, "caller_id": caller,
+            "watch_id": watch["watch_id"], "automation_id": watch["automation_id"],
+            "mode": watch["mode"], "expires_at": c.utc_text(watch["expires_at_ms"] / 1000),
+            **extra,
+        }
+
+    def _change_watch(self, action, automation_id, mode, hours, caller, request_id, now,
+                      priority=None, displace=False):
         now_ms = _ms(now)
         with self.store.transaction():
             index = self.store.load_index()
             removed, expired = self._sweep(index, now_ms)
             existing = next((w for w in index["watches"] if w["automation_id"] == automation_id), None)
-            changed = None
+            changed, displaced, rows = None, None, []
             if action == "add":
                 if existing is not None:
                     existing["mode"] = mode
@@ -825,67 +1020,194 @@ class TraceSnapshotService:
                     changed = existing
                 else:
                     if len(index["watches"]) >= c.MAX_WATCHES:
-                        self._tidy_after(index, removed, expired)
-                        raise c.TraceSnapshotError("watch_limit", watches=self._watch_list(index))
-                    changed = {
-                        "watch_id": secrets.token_hex(16), "automation_id": automation_id,
-                        "mode": mode, "created_at_ms": now_ms,
-                        "expires_at_ms": now_ms + hours * 3_600_000, "caller_id": caller,
-                        "request_id": request_id, "seen_run_ids": [], "baseline_done": False,
-                        "skipped_polls": 0, "uncaptured_runs": 0, "captured_count": 0,
-                        "evicted_count": 0, "last_poll_at_ms": None,
-                    }
+                        normal = [w for w in index["watches"]
+                                  if self._meta(index, w["watch_id"])["priority"] == "normal"]
+                        if not displace or not normal:
+                            # A high watch is never displaced; nothing moves without
+                            # an explicit displace (Josh, 2026-11-07, Q1).
+                            self._tidy_after(index, removed, expired)
+                            raise self._refusal("watch_limit", index, now_ms)
+                        displaced = min(normal, key=lambda w: (w["expires_at_ms"], w["created_at_ms"],
+                                                               w["watch_id"]))
+                        index["watches"] = [w for w in index["watches"] if w is not displaced]
+                        self._record_lapse(index, displaced, "displaced", now_ms)
+                    changed = self._new_watch(secrets.token_hex(16), automation_id, mode, now_ms,
+                                              hours, caller, request_id)
                     index["watches"].append(changed)
+                # A replacing add starts a new term, as a renewal does.
+                self._set_meta(index, changed["watch_id"], priority=priority,
+                               renewed_at_ms=now_ms if existing is not None else None)
+                self._clear_lapse(index, automation_id)
+                if displaced is not None:
+                    rows.append(self._change_audit(
+                        "displace", displaced, caller, request_id,
+                        displaced_by_watch_id=changed["watch_id"]))
+                rows.append(self._change_audit(
+                    "add", changed, caller, request_id, replaced=existing is not None,
+                    priority=self._meta(index, changed["watch_id"])["priority"]))
             elif action == "remove":
                 if existing is None:
                     self._tidy_after(index, removed, expired)
-                    raise c.TraceSnapshotError("watch_not_found", watches=self._watch_list(index))
+                    raise self._refusal("watch_not_found", index, now_ms)
                 index["watches"] = [w for w in index["watches"] if w is not existing]
                 changed = existing
-            if changed is not None:
-                try:
-                    # The owner-visible audit row precedes the commit (W1 addition).
-                    self._write_audit({
-                        "event": "trace_watch_change", "tool_name": "set_automation_trace_watch",
-                        "request_id": request_id, "result_status": action, "caller_id": caller,
-                        "watch_id": changed["watch_id"], "automation_id": automation_id,
-                        "mode": changed["mode"],
-                        "expires_at": c.utc_text(changed["expires_at_ms"] / 1000),
-                        "replaced": action == "add" and existing is not None,
-                    })
-                except c.TraceSnapshotError:
-                    raise c.TraceSnapshotError(
-                        "audit_unavailable", watches=self._watch_list(self.store.load_index())) from None
-            if changed is not None or removed or expired:
-                self.store.write_index(index)
+                rows.append(self._change_audit("remove", changed, caller, request_id,
+                                               replaced=False))
+            try:
+                # The owner-visible audit rows precede the commit (W1 addition).
+                for row in rows:
+                    self._write_audit(row)
+            except c.TraceSnapshotError:
+                raise self._audit_failed(now_ms) from None
+            if changed is not None or removed or expired or self._dirty(index):
+                self._save(index)
             self._tidy(index, removed)
         self._audit_watch_expiry(expired)
-        return index, changed
+        return index, changed, displaced
 
-    async def watch(self, *, action, automation_id="", mode="failures", duration_hours=24):
+    def _renew(self, automation_id, hours, include_lapsed, caller, request_id, now):
+        """Extend active watches and reinstate lapsed ones in one transaction.
+
+        A renewal never shortens a watch and never passes now + 168 h. A
+        reinstated watch keeps its ``watch_id``, mode and priority and starts
+        a fresh baseline (no backfill, HAMCP-225 M1).
+        """
+
+        now_ms = _ms(now)
+        cap_ms = now_ms + c.WATCH_MAX_HOURS * 3_600_000
+        wanted_ms = min(now_ms + hours * 3_600_000, cap_ms)
+        with self.store.transaction():
+            index = self.store.load_index()
+            removed, expired = self._sweep(index, now_ms)
+            lifecycle = index["lifecycle"]
+            results, rows = [], []
+
+            def renew(watch):
+                target = min(max(watch["expires_at_ms"], wanted_ms), cap_ms)
+                if target == watch["expires_at_ms"]:
+                    results.append({"automation_id": watch["automation_id"],
+                                    "watch_id": watch["watch_id"], "outcome": "unchanged",
+                                    "expires_at": c.utc_text(target / 1000),
+                                    "lapse_gap_seconds": None})
+                    return
+                watch["expires_at_ms"] = target
+                self._set_meta(index, watch["watch_id"], renewed_at_ms=now_ms)
+                rows.append(self._change_audit("renew", watch, caller, request_id))
+                results.append({"automation_id": watch["automation_id"],
+                                "watch_id": watch["watch_id"], "outcome": "renewed",
+                                "expires_at": c.utc_text(target / 1000), "lapse_gap_seconds": None})
+
+            def reinstate(record, named=False):
+                outcome = None
+                if len(index["watches"]) >= c.MAX_WATCHES:
+                    outcome = "watch_limit"
+                elif not named and self._source(record["automation_id"]) is None:
+                    outcome = "identifier_unavailable"
+                if outcome is not None:
+                    results.append({"automation_id": record["automation_id"],
+                                    "watch_id": record["watch_id"], "outcome": outcome,
+                                    "expires_at": None, "lapse_gap_seconds": None})
+                    return
+                watch = self._new_watch(record["watch_id"], record["automation_id"], record["mode"],
+                                        now_ms, hours, caller, request_id)
+                watch["captured_count"] = record["captured_count"]
+                index["watches"].append(watch)
+                self._clear_lapse(index, record["automation_id"])
+                self._set_meta(index, watch["watch_id"], priority=record["priority"])
+                gap = max(0, (now_ms - record["expired_at_ms"]) // 1000)
+                rows.append(self._change_audit("reinstate", watch, caller, request_id,
+                                               lapse_gap_seconds=gap))
+                results.append({"automation_id": watch["automation_id"],
+                                "watch_id": watch["watch_id"], "outcome": "reinstated",
+                                "expires_at": c.utc_text(watch["expires_at_ms"] / 1000),
+                                "lapse_gap_seconds": gap})
+
+            if automation_id:
+                existing = next((w for w in index["watches"]
+                                 if w["automation_id"] == automation_id), None)
+                record = next((r for r in lifecycle["lapsed"]
+                               if r["automation_id"] == automation_id), None)
+                if existing is not None:
+                    renew(existing)
+                elif record is None:
+                    self._tidy_after(index, removed, expired)
+                    raise self._refusal("watch_not_found", index, now_ms)
+                elif len(index["watches"]) >= c.MAX_WATCHES:
+                    self._tidy_after(index, removed, expired)
+                    raise self._refusal("watch_limit", index, now_ms)
+                else:
+                    # The caller named the automation, so its ID is known here.
+                    reinstate(record, named=True)
+            else:
+                for watch in sorted(index["watches"], key=lambda w: (w["created_at_ms"], w["watch_id"])):
+                    renew(watch)
+                if include_lapsed:
+                    for record in sorted(lifecycle["lapsed"], reverse=True,
+                                         key=lambda r: (r["expired_at_ms"], r["watch_id"])):
+                        reinstate(record)
+            try:
+                for row in rows:
+                    self._write_audit(row)
+            except c.TraceSnapshotError:
+                raise self._audit_failed(now_ms) from None
+            if rows or removed or expired or self._dirty(index):
+                self._save(index)
+            self._tidy(index, removed)
+        self._audit_watch_expiry(expired)
+        return index, results
+
+    async def watch(self, *, action, automation_id="", mode="failures", duration_hours=24,
+                    priority=None, displace=False, include_lapsed=False):
         arguments = {"action": action}
         if action != "list" or automation_id:
             arguments["automation_id"] = automation_id
         if action == "add":
-            arguments.update(mode=mode, duration_hours=duration_hours)
+            arguments.update(mode=mode, duration_hours=duration_hours, displace=displace)
+            if priority is not None:
+                arguments["priority"] = priority
+        elif action == "renew":
+            arguments.update(duration_hours=duration_hours, include_lapsed=include_lapsed)
         c.validate_watch(arguments)
         caller, request_id = _caller(), current_request_id()
         stored_id = self._persisted(automation_id) if automation_id else ""
-        index, changed = await self._run(self._change_watch, action, stored_id, mode,
-                                         duration_hours, caller, request_id, self.clock())
-        if stored_id != automation_id and action == "add":
+        now = self.clock()
+        renewed, displaced = None, None
+        if action == "renew":
+            index, renewed = await self._run(self._renew, stored_id, duration_hours,
+                                             include_lapsed, caller, request_id, now)
+            changed = None
+        else:
+            index, changed, displaced = await self._run(
+                self._change_watch, action, stored_id, mode, duration_hours, caller,
+                request_id, now, priority, displace)
+        if stored_id != automation_id and action in {"add", "renew"}:
+            # Known only after success; pruned below to held and lapsed IDs.
             self.watch_sources[stored_id] = automation_id
-        held = {w["automation_id"] for w in index["watches"]}
+        held = ({w["automation_id"] for w in index["watches"]}
+                | {r["automation_id"] for r in index["lifecycle"]["lapsed"]})
         self.watch_sources = {key: raw for key, raw in self.watch_sources.items() if key in held}
+        now_ms = _ms(now)
         result = {
             "action": action,
-            "changed": changed is not None,
-            "watch": None if changed is None else self._public_watch(changed, index),
-            "watches": self._watch_list(index),
+            "changed": changed is not None or any(item["outcome"] in {"renewed", "reinstated"}
+                                                  for item in renewed or ()),
+            "watch": None if changed is None else self._public_watch(changed, index, now_ms),
+            "watches": self._watch_list(index, now_ms),
+            "lifecycle": self._lifecycle(index, now_ms),
+            "lapsed": self._public_lapsed(index),
             "poll_seconds": c.POLL_SECONDS,
             "limits": {"watches": c.MAX_WATCHES, "duration_hours": c.WATCH_MAX_HOURS,
-                       "snapshot_quota": c.WATCH_QUOTA},
+                       "snapshot_quota": c.WATCH_QUOTA,
+                       "lapsed_records": c.LAPSED_MAX,
+                       "lapsed_retention_days": c.LAPSED_RETENTION_SECONDS // 86400},
         }
+        if action == "renew":
+            result["renewed"] = renewed
+        if action == "add":
+            result["displaced"] = (None if displaced is None else
+                                   {"watch_id": displaced["watch_id"],
+                                    "automation_id": displaced["automation_id"],
+                                    "reason": "displaced"})
         return self._exit(result, False, audit={"watch_action": action,
                                                 "watch_count": len(index["watches"])})
 
@@ -919,10 +1241,17 @@ class TraceSnapshotService:
         self.paused = False
         if deadline is None:
             deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
-        watches = sorted(index["watches"], key=lambda w: (w["created_at_ms"], w["watch_id"]))
-        first = self.rotation % len(watches)
+        # HAMCP-296: high-priority watches are polled first when time runs
+        # short; each group keeps its own rotation (review M2).
+        order = []
+        for high in (True, False):
+            group = sorted((w for w in index["watches"]
+                            if (self._meta(index, w["watch_id"])["priority"] == "high") is high),
+                           key=lambda w: (w["created_at_ms"], w["watch_id"]))
+            if group:
+                first = self.rotation % len(group)
+                order += group[first:] + group[:first]
         self.rotation += 1
-        order = watches[first:] + watches[:first]
         for position, watch in enumerate(order):
             share = (deadline - time.monotonic()) / (len(order) - position)
             if share <= 0 or not await self._poll_watch(watch, authority, time.monotonic() + share):
@@ -945,8 +1274,10 @@ class TraceSnapshotService:
             index = self.store.load_index()
             ended = [w for w in index["watches"] if w["watch_id"] in watch_ids]
             index["watches"] = [w for w in index["watches"] if w["watch_id"] not in watch_ids]
+            for watch in ended:
+                self._record_lapse(index, watch, "identifier_unavailable", now_ms)
             if ended:
-                self.store.write_index(index)
+                self._save(index)
         for watch in ended:
             self._write_audit({
                 "event": "trace_watch_expired", "tool_name": "set_automation_trace_watch",
@@ -964,7 +1295,7 @@ class TraceSnapshotService:
                 if watch["watch_id"] in watch_ids:
                     watch["skipped_polls"] += 1
                     watch["last_poll_at_ms"] = now_ms
-            self.store.write_index(index)
+            self._save(index)
 
     def _still_authorized(self, authority):
         """The tick's lease and its exact generation still hold (review M3)."""

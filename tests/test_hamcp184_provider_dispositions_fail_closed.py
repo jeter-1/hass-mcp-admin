@@ -79,9 +79,17 @@ EFFECTIVE_BEFORE = {
     "8.5.0": OPERATIONAL_HELD,
     "8.6.0": OPERATIONAL_HELD,
 }
+# Entries reviewed after HAMCP-184, each pinned by its own task. HAMCP-319
+# admits 9.1.0 at 8.5.0 parity: backup and lifecycle stay held, exactly as on
+# 8.5.0 and 8.6.0. HAMCP-351 admits 9.1.2 at 9.1.0 parity.
+REVIEWED_AFTER_HAMCP184 = {"9.1.0": OPERATIONAL_HELD, "9.1.2": OPERATIONAL_HELD}
 # HAMCP-184 effective dispositions: identical to EFFECTIVE_BEFORE except that
-# 8.2.0 backup and lifecycle become held.
-EFFECTIVE_AFTER = {**EFFECTIVE_BEFORE, LEGACY_OPERATIONAL_HELD: OPERATIONAL_HELD}
+# 8.2.0 backup and lifecycle become held, plus the later reviewed entries.
+EFFECTIVE_AFTER = {
+    **EFFECTIVE_BEFORE,
+    LEGACY_OPERATIONAL_HELD: OPERATIONAL_HELD,
+    **REVIEWED_AFTER_HAMCP184,
+}
 
 
 def effective(release) -> dict[str, str]:
@@ -92,7 +100,7 @@ class CompiledRegistryDispositionTests(unittest.TestCase):
     def test_every_compiled_entry_declares_every_surface(self):
         raw = json.loads(RELEASE_REGISTRY_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
-            [entry["version"] for entry in raw["releases"]], list(EFFECTIVE_BEFORE)
+            [entry["version"] for entry in raw["releases"]], list(EFFECTIVE_AFTER)
         )
         for entry in raw["releases"]:
             with self.subTest(version=entry["version"]):
@@ -208,7 +216,7 @@ class LoaderRefusalTests(unittest.TestCase):
         load_reviewed_upstream_release_registry(fixture.path)
 
     def test_absent_dispositions_refused_for_every_entry(self):
-        for index, version in enumerate(EFFECTIVE_BEFORE):
+        for index, version in enumerate(EFFECTIVE_AFTER):
             with self.subTest(version=version):
                 self._refuses(
                     lambda value, index=index: value["releases"][index].pop("provider_dispositions"),

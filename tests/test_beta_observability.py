@@ -20,6 +20,7 @@ sys.path.insert(0, str(BETA_DIR))
 sys.path.insert(0, str(PRODUCTION_DIR))
 
 from ha_mcp_engineering.application import create_application, validate_settings  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger, AuditRecord  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
@@ -73,6 +74,10 @@ def preserve_create_application_state(test):
     of each singleton it configures (container contents included), the
     capability catalog's published gateway snapshot, the FastMCP server's
     session manager, and the root logger's SDK diagnostic filter.
+
+    HAMCP-362: pass the test from ``setUp`` when a test builds the
+    application, or the class from ``setUpClass`` when the class builds it
+    once; the restore then runs as a class cleanup, after ``tearDownClass``.
     """
 
     import logging
@@ -114,6 +119,7 @@ def preserve_create_application_state(test):
         application.FAN_OPERATIONS,
         application.POWER_OPERATIONS,
         application.HELPER_VALUE_OPERATIONS,  # + HAMCP-311
+        application.DEVICE_CONFIGURATION_OPERATIONS,  # + HAMCP-297
         application.TRACE_SNAPSHOTS,
         AUTOMATION_BASELINE_CAPTURE,
         BACKUP_INVENTORY,
@@ -162,7 +168,10 @@ def preserve_create_application_state(test):
         refill(published[1], published[2])
         root.filters[:] = root_filters
 
-    test.addCleanup(restore)
+    if isinstance(test, type):
+        test.addClassCleanup(restore)
+    else:
+        test.addCleanup(restore)
 
 
 class _RestResponse:
@@ -862,7 +871,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 81)
+        self.assertEqual(health["registered_tool_count"], 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]
@@ -928,6 +937,8 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "last_successful_call_at": None,
                 "last_failed_call_at": None,
                 "last_failure_category": None,
+                # HAMCP-319 section 3.3: fixed operator text, None when healthy.
+                "operator_remediation": None,
                 "capability_status": "unconfigured",
                 "upstream_server_name": None,
                 "upstream_server_version": None,
@@ -1030,6 +1041,11 @@ class GatewayAndHealthTests(unittest.TestCase):
                     "not_configured": 0,
                     "authentication_failed": 0,
                     "endpoint_rejected": 0,
+                    # HAMCP-319 design §3: endpoint and redirect refusals.
+                    "upstream_redirect_refused": 0,
+                    "upstream_endpoint_rejected": 0,
+                    "upstream_catalog_mode_unadmitted": 0,
+                    "upstream_catalog_selector_invalid": 0,
                     "connection_failed": 0,
                     "timeout": 0,
                     "protocol_error": 0,
@@ -1242,6 +1258,13 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertIn("issues", details)
         self.assertNotIn("test-ha-token", details)
         self.assertNotIn(SECRET, details)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

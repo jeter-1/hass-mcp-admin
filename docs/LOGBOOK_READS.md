@@ -5,7 +5,9 @@ REST provider and signed Core read authority. It requests an explicit interval
 from one captured UTC end time back by `hours`. Older code omitted `end_time`,
 which selected Core's default one-day interval even for a 72-hour request.
 
-The public arguments and tool count are unchanged. Hours must be finite,
+HAMCP-294 adds optional window and filter arguments (see **Bounded window and
+entity filter** below); the tool count is unchanged. A call without them keeps
+the original arguments and result shapes. Hours must be finite,
 positive and no greater than 168. An optional entity ID selects one entity and
 must be at most 255 characters. Sparse 72-hour and 168-hour requests, filtered
 or unfiltered, remain supported. Invalid input makes no Home Assistant request.
@@ -42,8 +44,65 @@ This permits useful whole-record partial results even at small response limits;
 optional timing/envelope detail may be omitted with explicit truncation. If even one useful record cannot fit, it returns the
 non-retryable `logbook_response_limit_exceeded` error instead of an empty success.
 The same error covers byte, record and structural budgets with safe fixed
-reasons. Narrow the request by reducing `hours` or selecting one entity. The
-interface has no offset/start-time cursor; there is no automatic continuation.
+reasons. Narrow the request by reducing `hours` or selecting one entity. A
+legacy call has no continuation; a windowed call names one (below). There is no
+automatic continuation request.
+
+## Bounded window and entity filter (HAMCP-294)
+
+`get_logbook(hours=12, entity_id="", start_time=null, end_time=null,
+entity_ids=null, name=null)`. When `start_time`, `end_time`, `entity_ids` or
+`name` is set, the call is windowed. With none of them set, the original
+behavior and shapes apply unchanged. The `hours` schema (default 12) is
+unchanged from v1.1.2.
+
+- `start_time` and `end_time` are ISO-8601 times with seconds and an explicit
+  offset (`Z` or `+HH:MM`), at most microsecond precision; naive or
+  date-only values are refused rather than guessed. Both are normalized to UTC.
+- `end_time` defaults to now; `start_time` defaults to `end_time` minus
+  `hours` (default 12). With `start_time`, `hours` must stay at its default
+  12, which is then ignored; any other `hours` value is refused as conflicting.
+- The window must have `start < end`, be no longer than 168 hours, and start
+  before now. An `end_time` in the future is clamped to now and reported as
+  `effective_interval.end_clamped=true`; the clamped end is what Core receives.
+- At most one entity filter: `entity_id` (one ID), `entity_ids` (1-10 unique
+  valid IDs whose comma-joined length is at most 512 characters), or `name`
+  (1-100 characters, not blank).
+- `name` is resolved inside the logbook slot with one current-state read: a
+  case-insensitive substring of the entity ID or `friendly_name`, the same
+  basis as `search_entities`. Matches are sorted. Zero matches, more than 10,
+  or a joined list over 512 characters refuse with `invalid_request` and a
+  safe `details.reason` (`name_matched_no_entity`, `name_matched_too_many`,
+  `name_matches_exceed_filter_bound`) plus `match_count`, and at most the first
+  10 matched IDs, without a logbook request. A malformed state inventory fails
+  closed. Names reflect current state, not historical names.
+
+Every windowed result is one object: `entries`, `truncated`, `returned`,
+`omitted`, `requested_interval`, `effective_interval` (`start`, `end`,
+`end_clamped`), `interval_bounds` (`exclusive`), `ordering` (`source_order`),
+`filter` (`kind`, `entity_ids`, sanitized `name`, `match_basis`,
+`matched_count`), `continuation`, `completeness_notes` and `required_action`.
+The object is sized exactly against the same receipt allowance, so at the
+smallest response limits only an empty result may fit and a record fails closed
+with `logbook_response_limit_exceeded`.
+
+When a windowed result is truncated, `continuation` names the next request:
+`start_time` is one microsecond before the earliest `when` among the omitted
+records (computed over all of them, so Core ordering is not assumed) and
+`end_time` is the effective end. `overlap_possible=true`: repeated rows are
+possible and absence is still not proof. If any omitted record has no usable
+`when`, or the computed start falls outside the window, `continuation` holds
+nulls with a `reason` (`omitted_when_unavailable` or
+`omitted_when_outside_interval`); narrow the window or filter instead.
+
+`completeness_notes` always include `recorder_retention_not_checked` and
+`core_exclusions_not_observed`, plus `name_resolved_from_current_states` in
+name mode and `continuous_entities_produce_no_rows` when a selected entity is a
+counter, image or proximity entity or a sensor with a unit or state class.
+
+The window and filter use the same single guarded `GET /api/logbook/{start}`
+route and `end_time`/`entity` parameters as before; the name lookup uses the
+existing `GET /api/states` read. No new Core route, write or fallback exists.
 
 Sanitization occurs before retained records are returned. No log bodies or raw
 provider exceptions are added to audit. Complete API-response delivery, public

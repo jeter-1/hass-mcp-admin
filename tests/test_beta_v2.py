@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient
 from tests.support.process_isolation import restore_after_class
+from tests.test_beta_observability import preserve_create_application_state
 import yaml
 
 
@@ -33,6 +34,7 @@ assert production_spec.loader is not None
 production_spec.loader.exec_module(production_server)
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.logging_config import JsonFormatter  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
@@ -585,7 +587,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 81)
+        self.assertEqual(len(self.beta_tools), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -638,14 +640,18 @@ class ToolParityTests(unittest.TestCase):
                 "rollback_change",
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
+                "automation_reliability_batch_analysis",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
                 "handoff_generation",
                 "control_power",
                 "control_helper",
+                "control_device_configuration",  # + HAMCP-297
                 "control_fan",
                 "run_held_read_canary",
+                "get_marketplace_inventory",  # HAMCP-290: Engineering-native read
+                "get_security_metadata",  # HAMCP-134: Engineering-native read
             },
         )
 
@@ -669,6 +675,10 @@ class ToolParityTests(unittest.TestCase):
             )
             self.assertNotIn(name, listing.get("required", []))
         beta_schemas["list_capabilities"] = listing
+        # HAMCP-294 adds exactly four optional get_logbook inputs; hours keeps
+        # its v1.1.2 default and type (asserted by the helper).
+        from tests.hamcp294_descriptor_changes import without_hamcp294_inputs
+        beta_schemas["get_logbook"] = without_hamcp294_inputs(self, beta_schemas["get_logbook"])
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_preserves_phase3c_provider_truth(self):
@@ -716,7 +726,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 81)
+        self.assertEqual(result["data"]["tool_count"], 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -726,7 +736,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 81)
+        self.assertEqual(catalog["registered_count"], 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -749,6 +759,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_history_slices",
                 "control_power",
                 "control_helper",
+                "control_device_configuration",  # + HAMCP-297
                 "control_fan",
                 "run_held_read_canary",
                 "create_backup_plan",
@@ -765,6 +776,8 @@ class ToolParityTests(unittest.TestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                "get_marketplace_inventory",  # HAMCP-290
+                "get_security_metadata",  # HAMCP-134
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -783,6 +796,7 @@ class ToolParityTests(unittest.TestCase):
                 "rollback_change",
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
+                "automation_reliability_batch_analysis",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
@@ -802,11 +816,12 @@ class ToolParityTests(unittest.TestCase):
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
         provider_matrix = section("provider_matrix")
-        self.assertEqual(len(provider_matrix), 34)  # + HAMCP-311 control_helper
+        self.assertEqual(len(provider_matrix), 35)  # + HAMCP-311 control_helper, HAMCP-297 control_device_configuration
         self.assertEqual(
             {item["selected_provider"] for item in provider_matrix},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power",
              "upstream_typed_helper_value",  # + HAMCP-311
+             "direct_home_assistant_device_configuration",  # + HAMCP-297
              "upstream_platform_reads", "ha_mcp_delegated"},
         )
 
@@ -815,6 +830,12 @@ class BetaApplicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return core_snapshot(
@@ -921,7 +942,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 81)
+        self.assertEqual(len(names), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
@@ -1020,6 +1041,7 @@ class BetaApplicationTests(unittest.TestCase):
             "rollback_change",
             "entity_dependency_analysis",
             "automation_reliability_analysis",
+            "automation_reliability_batch_analysis",
             "change_impact_analysis",
             "configuration_integrity_analysis",
             "incident_correlation",
@@ -2359,6 +2381,13 @@ class BetaApplicationTests(unittest.TestCase):
             main()
         self.assertNotIn(SECRET, output.getvalue())
         self.assertIn('"event": "server_starting"', output.getvalue())
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

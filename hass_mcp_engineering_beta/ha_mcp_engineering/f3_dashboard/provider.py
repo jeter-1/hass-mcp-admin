@@ -34,6 +34,34 @@ COMMON_OUTPUT_CONTRACT_FINGERPRINT = (
 )
 
 EXACT_CONTRACTS: Final = {
+    # HAMCP-351: the exact 9.1.2 setter descriptor is byte-identical to 9.1.0
+    # (both /catalog/full captures); only the release identity differs.
+    "9.1.2": ProviderRuntimeEvidence(
+        upstream_version="9.1.2",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v9.1.2-381b1e01",
+        source_commit="bab615dfc90cc510f5e19a9118707d0fae03a37c",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint="5af7316dd1107d11b80f1ac193971a459b03ac5eef9eb9c8da0a4be77ce4cdc1",
+        annotation_fingerprint="2b578f51b9fc46568405d1dd5569e173449ab9e070ee10fb158b215e690f2d2c",
+        description_fingerprint="77fcd6b40eb45f30bba912e737d2bf3f2458684930429247ca9dd5e1a4b5bdc3",
+        output_contract_fingerprint="f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+        runtime_contract_fingerprint="049c7956b00eb3584d5db4fecb9318cf5220dda810c926bcf317b362d5e23dd2",
+        policy_classification="persistent_write",
+    ),
+    "9.1.0": ProviderRuntimeEvidence(
+        upstream_version="9.1.0",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v9.1.0-4259f247",
+        source_commit="d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint="5af7316dd1107d11b80f1ac193971a459b03ac5eef9eb9c8da0a4be77ce4cdc1",
+        annotation_fingerprint="2b578f51b9fc46568405d1dd5569e173449ab9e070ee10fb158b215e690f2d2c",
+        description_fingerprint="77fcd6b40eb45f30bba912e737d2bf3f2458684930429247ca9dd5e1a4b5bdc3",
+        output_contract_fingerprint="f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+        runtime_contract_fingerprint="049c7956b00eb3584d5db4fecb9318cf5220dda810c926bcf317b362d5e23dd2",
+        policy_classification="persistent_write",
+    ),
     "8.6.0": ProviderRuntimeEvidence(
         upstream_version="8.6.0",
         protocol_version=PROTOCOL_VERSION,

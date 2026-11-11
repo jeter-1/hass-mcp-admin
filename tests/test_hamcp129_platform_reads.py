@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from ha_mcp_engineering.capabilities import build_capability_catalog  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
 from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission  # noqa: E402
@@ -43,6 +44,12 @@ from test_upstream_8_5_compatibility import capture  # noqa: E402
 HEALTH, APP, INTEGRATION = platform.HEALTH, platform.APP, platform.INTEGRATION
 TOOLS = (HEALTH, APP, INTEGRATION)
 VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
+# 9.1.0 bindings are checked here; 9.1.0 gateway behavior is covered by
+# test_hamcp319_parity_entities.ParityPlatformRowsTests (ledger rows 26-28,
+# class S: 8.6.0 replays, since the 9.1.0 input schemas equal 8.6.0).
+# HAMCP-351: exact 9.1.2 binds its own tokens; ha_get_integration re-binds to
+# the 9.1.2 wire fingerprint (82aec3a9), health and apps equal 9.1.0.
+BINDING_VERSIONS = VERSIONS + ("9.1.0", "9.1.2")
 CANARY = "CANARY"
 REFUSED = {"argument_validation", "invalid_arguments"}
 POLICY = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering"
@@ -50,6 +57,8 @@ SOURCES = {
     "8.4.3": ("v8.4.3", "eac7a3aa7063432e9af17e7d7726040e909c7b8f"),
     "8.5.0": ("v8.5.0", "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"),
     "8.6.0": ("v8.6.0", "fc54437a804858732e4bc927add98e202d879a09"),
+    "9.1.0": ("v9.1.0", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"),
+    "9.1.2": ("v9.1.2", "bab615dfc90cc510f5e19a9118707d0fae03a37c"),
 }
 TOKEN_KIND = {HEALTH: "health", APP: "apps", INTEGRATION: "integrations"}
 
@@ -420,8 +429,8 @@ ARGUMENT_TABLE = {
 class ModuleTests(unittest.TestCase):
     """Adapter module behaviour, independent of the published JSON schema."""
 
-    def test_bindings_cover_exactly_three_tools_at_three_versions(self):
-        self.assertEqual(len(platform.ADAPTER_BINDINGS), 9)
+    def test_bindings_cover_exactly_three_tools_at_each_version(self):
+        self.assertEqual(len(platform.ADAPTER_BINDINGS), 3 * len(BINDING_VERSIONS))
         for token, (tool, version, source, fingerprint) in platform.ADAPTER_BINDINGS.items():
             with self.subTest(token=token):
                 self.assertEqual(token, f"ha-mcp-{version}-platform-{TOKEN_KIND[tool].replace('health', 'health')}-v1")
@@ -547,8 +556,10 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version):
                 g, t = await make_gateway(version)
                 tools = g._registered_tool_registry.snapshot()
-                self.assertEqual(set(tools), EXACT_READS, g.health_snapshot())
-                self.assertEqual(len(tools), 28)
+                # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
+                # on every reviewed release (Josh decision 2026-11-08).
+                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS, g.health_snapshot())
+                self.assertEqual(len(tools), 28 - len(RETIRED_DELEGATED_READS))
                 upstream = {item["name"]: item for item in capture(version)["tools"]}
                 for name in TOOLS:
                     self.assertEqual(tools[name].parameters, platform.PUBLIC_SCHEMAS[name])
@@ -1183,7 +1194,8 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                         mutate(next(item for item in tools if item["name"] == tool))
                         g, t = await make_gateway(version, tools)
                         exposed = set(g._registered_tool_registry.snapshot())
-                        self.assertEqual(exposed, EXACT_READS - {tool}, g.health_snapshot())
+                        # HAMCP-290: the retired read is never exposed.
+                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS - {tool}, g.health_snapshot())
                         self.assertIn(tool, {item["upstream_name"] for item in g.health_snapshot()["quarantined_tools"]})
                         self.assertEqual(t.sent, [])
 
@@ -1344,7 +1356,10 @@ class CatalogMetadataTests(unittest.TestCase):
         for version in VERSIONS:
             reads = {e.upstream_name for e in registry.by_version[version].policy.tools if e.is_read_route}
             with self.subTest(version=version):
-                self.assertTrue(reads <= set(DELEGATED_CORE_REQUIREMENTS), reads - set(DELEGATED_CORE_REQUIREMENTS))
+                # HAMCP-290: the retired delegated read has no Core requirement row.
+                self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
+                live = reads - RETIRED_DELEGATED_READS
+                self.assertTrue(live <= set(DELEGATED_CORE_REQUIREMENTS), live - set(DELEGATED_CORE_REQUIREMENTS))
 
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())

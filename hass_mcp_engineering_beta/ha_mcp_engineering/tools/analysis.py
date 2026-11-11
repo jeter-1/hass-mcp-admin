@@ -4,6 +4,7 @@ import json
 import time
 from typing import Annotated, Literal
 
+from mcp.server.fastmcp.tools.base import Tool
 from pydantic import Field
 
 from ..dependency import DEPENDENCY_ANALYSIS
@@ -12,8 +13,19 @@ from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from ..incident import INCIDENT_CORRELATION
 from ..handoff import HANDOFF_GENERATION
 from ..reliability import RELIABILITY_ANALYSIS
-from ..errors import ErrorCode, GovernanceError, map_exception
+from ..reliability.batch import (
+    DEFAULT_BATCH_LOOKBACK_HOURS,
+    DEFAULT_BATCH_TRACE_LIMIT,
+    MAX_BATCH_ITEMS,
+    MAX_BATCH_RESPONSE_CHARS,
+    MAX_BATCH_TRACE_LIMIT,
+    POLICY_ID as BATCH_POLICY_ID,
+    RELIABILITY_BATCH,
+    validate_raw_batch_arguments,
+)
+from ..errors import ErrorCode, GovernanceError, InvalidRequestError, map_exception
 from ..models import FailureResponse, SuccessResponse
+from ..models.responses import dump_json_with_truncation
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
 from ..tool_framework import timing_since
@@ -184,6 +196,128 @@ async def automation_reliability_analysis(
             timing=timing_since(started),
             request_id=current_request_id(),
         ).to_json(SETTINGS.response_size_limit)
+
+
+async def automation_reliability_batch_analysis(
+    automation_ids: Annotated[list[str], Field(min_length=1, max_length=MAX_BATCH_ITEMS)],
+    lookback_hours: Annotated[int, Field(ge=1, le=720)] = DEFAULT_BATCH_LOOKBACK_HOURS,
+    trace_limit: Annotated[int, Field(ge=1, le=MAX_BATCH_TRACE_LIMIT)] = DEFAULT_BATCH_TRACE_LIMIT,
+) -> str:
+    """Analyze up to 20 automations in one bounded read-only call.
+
+    automation_ids are internal Home Assistant automation IDs returned by
+    list_automations, not automation entity_ids. Each item runs the same
+    bounded single-automation analysis as automation_reliability_analysis and
+    returns a summary digest; use that tool for findings and evidence. The
+    batch has a 45 second budget: items it could not start or finish are
+    reported with remaining_automation_ids to resubmit. Per-item failures are
+    isolated. The operation cannot trigger an automation, call a service, or
+    modify configuration.
+    """
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    limit = min(MAX_BATCH_RESPONSE_CHARS, SETTINGS.response_size_limit)
+    routing = _batch_routing()
+    try:
+        service = RELIABILITY_ANALYSIS.require()
+        output = await RELIABILITY_BATCH.analyze(
+            service,
+            automation_ids=automation_ids,
+            lookback_hours=lookback_hours,
+            trace_limit=trace_limit,
+            response_limit=limit,
+        )
+        data, warnings, metadata, screened = _final_screen(
+            output, getattr(service, "provider", None)
+        )
+        status = data["batch_result_status"]
+        if screened and status == "success":
+            status = data["batch_result_status"] = "partial"
+        if telemetry:
+            telemetry.result_status = (
+                "failure" if status == "failed" else "partial" if status == "partial" else "success"
+            )
+            telemetry.completeness = (
+                "failed" if status == "failed" else "partial" if status == "partial" else "complete"
+            )
+        coverage = data["coverage"]
+        response = SuccessResponse(
+            operation="automation_reliability_batch_analysis",
+            summary=(
+                f"Bounded reliability batch: {coverage['analyzed_complete'] + coverage['analyzed_partial']} "
+                f"of {coverage['deduplicated']} automations analyzed ({status})."
+            ),
+            data=data,
+            warnings=warnings,
+            metadata=metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        )
+        rendered, truncated = dump_json_with_truncation(response.as_dict(), limit)
+        if truncated:
+            # The digest budget is charged before the envelope is built, so a
+            # cut envelope is a defect: refuse rather than return a cut list.
+            raise GovernanceError(
+                ErrorCode.INTERNAL_SERVER_ERROR,
+                details={"operation": "automation_reliability_batch_analysis", "reason": "response_bound_exceeded"},
+            )
+        return rendered
+    except Exception as exc:
+        return _batch_failure(exc, started, routing)
+
+
+def _batch_routing() -> dict:
+    return {
+        "lifecycle_status": "beta_native", "classification": "engineering_native",
+        "provider": "engineering", "policy": BATCH_POLICY_ID,
+        "access": "read", "fallback_occurred": False,
+    }
+
+
+def _batch_failure(exc: Exception, started: float, routing: dict) -> str:
+    code, message, retryable, details = map_exception(exc)
+    telemetry = current_telemetry()
+    if telemetry:
+        telemetry.error_code = code.value
+        telemetry.result_status = "failure"
+        telemetry.completeness = "failed"
+    return FailureResponse(
+        operation="automation_reliability_batch_analysis",
+        error=type(exc).__name__,
+        error_code=code.value,
+        message=message,
+        details=details,
+        retryable=retryable,
+        metadata={"routing": routing},
+        timing=timing_since(started),
+        request_id=current_request_id(),
+    ).to_json(SETTINGS.response_size_limit)
+
+
+class ReliabilityBatchTool(Tool):
+    """Codex M1 (PR #402): validate raw arguments before SDK coercion.
+
+    The closed raw contract runs on the uncoerced mapping, so the SDK can
+    neither coerce a boolean or numeric string into a bound nor render a
+    supplied value into its validation error. A refusal is the tool's own
+    bounded ``invalid_request`` response, before any service or provider
+    call. Valid arguments then take the unchanged SDK path.
+    """
+
+    async def run(self, arguments, context=None, convert_result=False):
+        started = time.perf_counter()
+        try:
+            validate_raw_batch_arguments(arguments)
+        except InvalidRequestError as exc:
+            rendered = _batch_failure(exc, started, _batch_routing())
+            return self.fn_metadata.convert_result(rendered) if convert_result else rendered
+        return await super().run(arguments, context, convert_result)
+
+
+def registered_reliability_batch_tool() -> Tool:
+    # Same name, description, schema and (absent) annotations as the plain
+    # SDK registration it replaces; only the raw-argument boundary is added.
+    return ReliabilityBatchTool.from_function(automation_reliability_batch_analysis)
 
 
 async def change_impact_analysis(
@@ -605,6 +739,7 @@ async def handoff_generation(
 ANALYSIS_TOOLS = (
     entity_dependency_analysis,
     automation_reliability_analysis,
+    automation_reliability_batch_analysis,
     change_impact_analysis,
     configuration_integrity_analysis,
     incident_correlation,

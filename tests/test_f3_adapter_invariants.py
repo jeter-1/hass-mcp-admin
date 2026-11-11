@@ -90,8 +90,12 @@ class F3AdapterIsolationTests(unittest.TestCase):
         # HAMCP-106: +1 inactive create_dashboard_metadata_plan.
         # HAMCP-071: +1 inactive create_scene_configuration_plan.
         # HAMCP-253: +1 read-only inspect_governance_record.
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 56)
-        self.assertEqual(len(local_tools), 81)
+        # HAMCP-229: +1 read-only automation_reliability_batch_analysis.
+        # HAMCP-290: +1 read-only get_marketplace_inventory.
+        # HAMCP-134: +1 read-only get_security_metadata.
+        # HAMCP-297: +1 control_device_configuration.
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 60)
+        self.assertEqual(len(local_tools), 85)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

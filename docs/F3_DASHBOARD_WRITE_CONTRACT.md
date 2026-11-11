@@ -131,10 +131,54 @@ When compilation exceeds the leaf ceiling, the public error remains
 
 `observed` is the actual total, not a clipped count. These details contain only
 fixed categories and integer counts; no configuration values, pointers or raw
-exception text are exposed. Other compilation failures retain their prior
-error details. A refused proposal creates no plan, task or provider write.
-The existing broad-subtree rejection metric uses the typed constraint rather
-than matching error-message text.
+exception text are exposed. A refused proposal creates no plan, task or
+provider write. The existing broad-subtree rejection metric uses the typed
+constraint rather than matching error-message text.
+
+### Compiler limit diagnostics (HAMCP-143)
+
+Every other patch compiler limit names itself in the same bounded form. The
+public error stays `CONFIGURATION_VALIDATION_FAILED` and `details.reason` keeps
+its existing code: `invalid_dashboard_patch` for validation-stage limits and
+for the JSON node/depth bounds of the resulting configuration, and
+`dashboard_patch_compilation_failed` for the other compilation-stage limits.
+No new public error code is introduced. The additive keys are
+`dashboard_error_code`, `constraint`, `stage`, `limit` and, where the compiler
+has measured the exact total, `observed`.
+
+| `constraint` | `stage` | `limit` | `observed` |
+| --- | --- | --- | --- |
+| `operation_count` | `validation` | 16 | operation count |
+| `pointer_length` | `validation` | 1,024 | pointer characters |
+| `pointer_depth` | `validation` | 32 | pointer tokens |
+| `value_json_nodes` | `validation` | 10,000 | omitted |
+| `value_json_depth` | `validation` | 48 | omitted |
+| `operation_value_bytes` | `validation` | 8,192 | value bytes |
+| `patch_json_nodes` | `validation` | 10,000 | omitted |
+| `patch_json_depth` | `validation` | 48 | omitted |
+| `patch_bytes` | `validation` | 16,384 | canonical patch bytes |
+| `traversal_nodes` | `compilation` | 10,000 | omitted |
+| `traversal_depth` | `compilation` | 48 | omitted |
+| `result_json_nodes` | `compilation` | 10,000 | omitted |
+| `result_json_depth` | `compilation` | 48 | omitted |
+| `result_config_bytes` | `compilation` | 40,000 | resulting bytes |
+| `config_growth_bytes` | `compilation` | 16,384 | growth bytes |
+
+`observed` is omitted where the bounded walk stops at the limit and the true
+total is not known. Omitting a count is safer than reporting one that is not
+true. The canonical patch nests each value two levels deeper and sums nodes
+across operations, so `patch_json_*` can refuse a patch whose values each pass
+`value_json_*`. At the MCP boundary, the tool input schema already refuses more
+than 16 operations or a path longer than 1,024 characters. The compiler
+diagnostics are defense in depth for direct service callers. `traversal_depth`
+cannot be reached through validated input.
+
+Only this closed set of constraint and stage pairs is projected. All other
+failures keep their prior details, `{"reason": <code>}`. That includes
+malformed patches, an empty patch, missing paths, JSON bounds of the
+pre-read configuration (refused earlier as raw evidence), and the later
+planning bounds: semantic diff, risk analysis, approval projection, artifact
+and plan persistence. Capacity is unchanged.
 
 Every other bound remains: 16 operations; 8,192 bytes per value; 16,384 bytes
 for each of the patch, growth and semantic diff; 40,000 bytes for raw/result

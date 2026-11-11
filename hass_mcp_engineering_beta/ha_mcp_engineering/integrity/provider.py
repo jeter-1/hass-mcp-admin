@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import time
 from typing import Any
 
@@ -28,6 +28,16 @@ from .models import IntegrityEvidenceBundle, IntegritySourceCoverage
 
 MAX_INDEX_REFERENCES = 10_000
 MAX_DYNAMIC_REFERENCES = 1_000
+# HAMCP-267: scene, group and dashboard references from the diagnostic
+# partition (``snapshot.global_sources``), bounded apart from the snapshot cap.
+MAX_PARTITION_REFERENCES = 10_000
+PARTITION_SOURCE_TYPES = ("scene", "group", "dashboard")
+# HAMCP-264: YAML template references are read for the dependency and impact
+# analyses only; this analysis does not consume them.
+TEMPLATE_NOT_CONSUMED_WARNING = (
+    "Template references (HAMCP-264) are read for entity_dependency_analysis and "
+    "change_impact_analysis only; configuration integrity analysis does not consume them."
+)
 
 
 # HAMCP-226: the screened fields of each index reference (``untrusted_text``).
@@ -80,6 +90,11 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
         """Return only the committed identity; never build during continuation."""
 
         return self.index.active_identity()
+
+    def active_diagnostic_identity(self) -> str:
+        """The committed diagnostic partition as visible now (authority rechecked)."""
+
+        return _diagnostic_identity(self.index)
 
     async def fetch(self, request: EvidenceRequest) -> ProviderResult:
         started = time.perf_counter()
@@ -231,6 +246,53 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 continue
             dynamic_references.append(safe.value)
 
+        # HAMCP-267: read the partition once; its findings, rows, terminals and
+        # identity all come from this one visible view (authority rechecked).
+        global_sources = getattr(snapshot, "global_sources", None)
+        visible_globals = (
+            global_sources.visible() if global_sources is not None else None
+        )
+        partition_dropped: Counter = Counter()
+        if visible_globals is not None:
+            candidates = sorted(
+                (
+                    item
+                    for item in visible_globals.findings
+                    if item.source_type in requested
+                    and item.source_type in PARTITION_SOURCE_TYPES
+                ),
+                key=lambda item: item.evidence_id,
+            )
+            partition_dropped.update(
+                item.source_type
+                for item in candidates[MAX_PARTITION_REFERENCES:]
+            )
+            for finding in candidates[:MAX_PARTITION_REFERENCES]:
+                record = asdict(finding)
+                # A group's "on" or a scene's timestamp is not consumer
+                # enablement, so it must not raise a finding's severity.
+                record["source_state"] = None
+                screened, withheld_ids, withheld_text = screen_fields(
+                    record,
+                    identifier_keys=REFERENCE_IDENTIFIER_KEYS,
+                    text_keys=REFERENCE_TEXT_KEYS,
+                    known_secrets=(self.secret, self.ha_token),
+                )
+                if withheld_ids:
+                    sanitation_failures[finding.source_type] += 1
+                    continue
+                screened_text_count += len(withheld_text)
+                safe = sanitize_untrusted_data(
+                    screened,
+                    known_secrets=(self.secret, self.ha_token),
+                    max_string=500,
+                    registry=markers,
+                )
+                if safe.failed_closed or not isinstance(safe.value, dict):
+                    sanitation_failures[finding.source_type] += 1
+                    continue
+                exact_references.append(safe.value)
+
         coverage = [
             _inventory_coverage(
                 "current_states",
@@ -259,6 +321,8 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 dynamic_references,
                 sanitation_failures=sanitation_failures,
                 rebuilt=rebuilt,
+                partition=visible_globals,
+                partition_dropped=partition_dropped,
             )
         )
 
@@ -270,6 +334,11 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 *(
                     getattr(scripts.visible(), "bounded_obligations", ())
                     if scripts is not None
+                    else ()
+                ),
+                *(
+                    visible_globals.bounded_obligations
+                    if visible_globals is not None
                     else ()
                 ),
             ),
@@ -309,6 +378,17 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
             screened_text_count=screened_text_count,
             bounded_sources=bounded,
             orphan_scope_complete=set(requested) == set(SOURCE_TYPES),
+            diagnostic_fingerprint=(
+                visible_globals.fingerprint if visible_globals is not None else ""
+            ),
+            incomplete_inbound_sources=tuple(
+                item.source_type
+                for item in coverage
+                if item.source_type in PARTITION_SOURCE_TYPES
+                and item.requested
+                and visible_globals is not None
+                and item.completeness != "complete"
+            ),
         )
 
     async def _current_states(self) -> tuple[dict[str, dict[str, Any]], int, int]:
@@ -412,17 +492,55 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
         *,
         sanitation_failures,
         rebuilt,
+        partition=None,
+        partition_dropped=None,
     ):
         by_source = {item.source_type: item for item in source_items}
+        if partition is not None:
+            # HAMCP-267: the partition rows replace the snapshot's always
+            # unavailable scene, group, template and dashboard rows.
+            by_source.update(
+                {
+                    source_type: row
+                    for source_type in PARTITION_SOURCE_TYPES
+                    if (row := partition.coverage_for(source_type)) is not None
+                }
+            )
+            if (template := partition.coverage_for("template")) is not None:
+                # Never the partition's own row: it describes evidence this
+                # analysis does not use, so template stays not_supported.
+                by_source["template"] = replace(
+                    template, provider="none", completeness="unavailable",
+                    evidence_count=0, failed_item_count=0,
+                    warnings=[TEMPLATE_NOT_CONSUMED_WARNING],
+                )
+        partition_dropped = partition_dropped or {}
         output = []
         for source_type in SOURCE_TYPES:
             selected = source_type in requested
             item = by_source.get(source_type)
             warnings = []
             failed = 0
+            from_partition = (
+                partition is not None
+                and source_type in PARTITION_SOURCE_TYPES
+                and item is not None
+            )
             if not selected:
                 completeness = "not_requested"
                 provider = "none"
+            elif from_partition:
+                completeness = {
+                    "complete": "complete",
+                    "partial": "partial",
+                }.get(item.completeness, "failed")
+                provider = partition.provider_for(source_type)
+                failed = (
+                    max(1, item.failed_item_count)
+                    if completeness == "failed"
+                    else item.failed_item_count
+                )
+                warnings.extend(item.warnings)
             elif item is None:
                 completeness = "not_supported"
                 provider = "none"
@@ -447,6 +565,11 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 completeness = "not_supported"
                 provider = "none"
                 warnings.extend(item.warnings)
+            dropped = partition_dropped.get(source_type, 0) if selected else 0
+            if dropped:
+                if completeness == "complete":
+                    completeness = "partial"
+                warnings.insert(0, f"integrity_partition_reference_limit: {dropped}")
             sanitation_failed = sanitation_failures.get(source_type, 0)
             if sanitation_failed:
                 completeness = "partial"
@@ -470,6 +593,8 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                         if source_type == "automation"
                         else ProviderCapability.BLUEPRINT_SOURCE.value
                         if source_type == "blueprint"
+                        else str(item.provider_capability)
+                        if from_partition
                         else f"{source_type}_configuration"
                     ),
                     completeness,
@@ -510,6 +635,15 @@ def _inventory_coverage(
         warnings=warnings,
         duration_ms=duration_ms,
     )
+
+
+def _diagnostic_identity(index) -> str:
+    """HAMCP-267: the visible partition fingerprint of the committed index."""
+
+    global_sources = getattr(
+        getattr(index, "snapshot", None), "global_sources", None
+    )
+    return global_sources.visible().fingerprint if global_sources is not None else ""
 
 
 def _effective_source_type(item: dict[str, Any]) -> str:

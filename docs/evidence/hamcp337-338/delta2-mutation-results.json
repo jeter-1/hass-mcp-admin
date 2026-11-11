@@ -1,0 +1,281 @@
+{
+  "head": "c67cce5d3a8947307b242344194aec711ee7a440",
+  "reviewed_head": "0397095a2dab591811b44dcfc650695451fd711d",
+  "python": "3.13.5",
+  "regressions": [
+    {
+      "id": 1,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_header_footer_hold_or_double_tap_keeps_default_tap_toggle",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_service_row_uses_the_falsy_action_fallback",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_service_row_explicit_tap_override_is_preserved",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_service_element_uses_the_nullish_action_fallback",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_area_control_strings_that_are_not_domains_are_entities",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_falsy_area_controls_use_the_default_domains",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_falsy_row_type_uses_the_domain_default_row",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F1 residual",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "EffectiveDefaultActionTests.test_entity_filter_inner_card_type_follows_the_spread_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "D1",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "AreaControlContextIdentityTests.test_area_retarget_is_a_changed_high_consequence_control",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "D1",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "AreaControlContextIdentityTests.test_exclusion_changes_are_changed_high_consequence_controls",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "D2",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "NestedTypeDataPlanningTests.test_existing_nested_type_data_still_plans_unrelated_edits",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "D2",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "NestedTypeDataPlanningTests.test_new_nested_type_data_plans_with_its_own_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "D2",
+      "revision": "0397095a2dab591811b44dcfc650695451fd711d",
+      "test": "NestedTypeDataPlanningTests.test_malformed_types_are_unclassified_and_valid_types_still_classify",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "finding": "F1 residual",
+      "name": "any chip gesture suppresses the default tap (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_header_footer_hold_or_double_tap_keeps_default_tap_toggle",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1 residual",
+      "name": "chips ignore their own tap_action",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_header_footer_explicit_tap_override_is_preserved",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1 residual",
+      "name": "service rows select by key presence (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_service_row_uses_the_falsy_action_fallback",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1 residual",
+      "name": "a service row's own tap_action no longer replaces its service",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_service_row_explicit_tap_override_is_preserved",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F1 residual",
+      "name": "service elements select by key presence",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_service_element_uses_the_nullish_action_fallback",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F1 residual",
+      "name": "service elements use the row's falsy fallback",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_service_element_uses_the_nullish_action_fallback",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F1 residual",
+      "name": "every area-control string is a domain (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_area_control_strings_that_are_not_domains_are_entities",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F1 residual",
+      "name": "only absent area controls use the defaults",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_falsy_area_controls_use_the_default_domains",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "F1 residual",
+      "name": "only null or empty row types use the domain default",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_falsy_row_type_uses_the_domain_default_row",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "F1 residual",
+      "name": "a non-object entity-filter card renders nothing",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_entity_filter_inner_card_type_follows_the_spread_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "F1 residual",
+      "name": "a null entity-filter card type defaults to entities",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "EffectiveDefaultActionTests.test_entity_filter_inner_card_type_follows_the_spread_default",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "D1",
+      "name": "the area is not bound to the area-controls finding (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "AreaControlContextIdentityTests.test_area_retarget_is_a_changed_high_consequence_control",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "D1",
+      "name": "exclusions are not bound to the area-controls finding",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "AreaControlContextIdentityTests.test_exclusion_changes_are_changed_high_consequence_controls",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "D1",
+      "name": "the whole card is bound to the area-controls finding",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "AreaControlContextIdentityTests.test_unrelated_edits_leave_the_control_unchanged",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 15,
+      "finding": "D2",
+      "name": "service shapes compare an unhashable type (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NestedTypeDataPlanningTests.test_existing_nested_type_data_still_plans_unrelated_edits",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "finding": "D2",
+      "name": "rows compare an unhashable type",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NestedTypeDataPlanningTests.test_existing_nested_type_data_still_plans_unrelated_edits",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 17,
+      "finding": "D2",
+      "name": "actions compare an unhashable action type",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NestedTypeDataPlanningTests.test_new_nested_type_data_plans_with_its_own_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 18,
+      "finding": "D2",
+      "name": "a malformed row type renders the domain default",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NestedTypeDataPlanningTests.test_malformed_types_are_unclassified_and_valid_types_still_classify",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated corrected copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 60 tests in 53.860s"
+  }
+}

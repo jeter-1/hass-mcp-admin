@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.audit import AuditLogger
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.configuration import Settings
 from ha_mcp_engineering.mcp_server import create_mcp_server
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway
@@ -478,6 +479,14 @@ class HttpParserTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_actual_factory_http_parser_health_auth_and_header_refusals(self):
         from ha_mcp_engineering.application import create_application
+        from tests.test_beta_observability import preserve_create_application_state
+
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
         with tempfile.TemporaryDirectory() as directory:
             gateway = create_application(settings_for(directory))
             config = self.config(gateway)
@@ -512,3 +521,10 @@ class HttpParserTests(unittest.IsolatedAsyncioTestCase):
                                        b"Connection: close\r\n\r\n")
         self.assertIn(b"204", response.split(b"\r\n", 1)[0])
         self.assertEqual(seen, [(("192.0.2.3", 1234), "http")])
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()

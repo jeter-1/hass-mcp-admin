@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
+from . import secret_paths
 from .errors import ConfigurationError
 from .inbound_security import option_list
 
@@ -65,6 +66,12 @@ class Settings:
     dependency_index_hard_ttl_seconds: float = 3600.0
     mcp_allowed_hosts: tuple[str, ...] | None = field(default=None, repr=False)
     mcp_allowed_origins: tuple[str, ...] = field(default=(), repr=False)
+    # HAMCP-134: which variable supplied the Core URL and token.  Only the
+    # source name is recorded, never a value.  ``unknown`` is the default for
+    # settings not built by ``load_settings`` (tests, embedders), so the
+    # security metadata identity rule cannot claim the Supervisor topology.
+    ha_url_source: str = "unknown"
+    ha_token_source: str = "unknown"
 
     @property
     def api_url(self) -> str:
@@ -80,6 +87,34 @@ class Settings:
         else:
             path = f"{base_path}/api/websocket"
         return urlunsplit((scheme, parsed.netloc, path, "", ""))
+
+
+# HAMCP-288 round 4 (architect ruling 2026-11-07). The reason names the
+# option to fix and carries no part of the configured value.
+SEPARATOR_ONLY_SECRET_PATH_REASON = (
+    "upstream_dashboard_mcp_url: the secret path decodes to nothing but path "
+    "separators; configure a secret path that still contains at least one other "
+    "character after percent-decoding"
+)
+
+
+class SeparatorOnlySecretPathError(ValueError):
+    """The configured secret path span percent-decodes to nothing but ``/``."""
+
+
+# HAMCP-288 round 4 (Josh decisions 2026-11-07, the second limiting the
+# refusal to percent-encoded spans). Same rules: the reason names the option
+# and carries no part of the configured value.
+ROUTE_ONLY_SECRET_PATH_REASON = (
+    "upstream_dashboard_mcp_url: the percent-encoded secret path decodes to "
+    "nothing but endpoint route words; configure a secret path that still "
+    "contains other text after percent-decoding"
+)
+
+
+class RouteOnlySecretPathError(ValueError):
+    """The configured secret path span is percent-encoded and decodes to
+    nothing but endpoint route words."""
 
 
 @dataclass(frozen=True)
@@ -116,6 +151,15 @@ def parse_upstream_dashboard_endpoint(
         raise ValueError("The upstream dashboard MCP URL must not include a fragment.")
     if port is not None and not 1 <= port <= 65535:
         raise ValueError("The upstream dashboard MCP URL contains an invalid port.")
+    if secret_paths.separator_only_secret_path(candidate):
+        # Refused, not redacted: after decoding only the endpoint suffix
+        # would remain to anchor the redaction on.
+        raise SeparatorOnlySecretPathError(SEPARATOR_ONLY_SECRET_PATH_REASON)
+    if secret_paths.route_only_secret_path(candidate):
+        # Refused, not redacted: after decoding only endpoint route words
+        # would remain to anchor the redaction on. Only an encoded span; an
+        # unencoded one (``/readonly/mcp``) is accepted as before.
+        raise RouteOnlySecretPathError(ROUTE_ONLY_SECRET_PATH_REASON)
 
     generic_segments = {"mcp", "sse"}
     path_segments = tuple(
@@ -185,7 +229,14 @@ def load_settings() -> Settings:
             details={"issues": ["invalid_inbound_policy_list"]},
         ) from None
     ha_url = os.environ.get("HA_URL", "http://supervisor/core").rstrip("/")
+    ha_url_source = "ha_url_env" if "HA_URL" in os.environ else "default"
     token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN", "")
+    if os.environ.get("SUPERVISOR_TOKEN"):
+        ha_token_source = "supervisor_token"
+    elif os.environ.get("HA_TOKEN"):
+        ha_token_source = "ha_token"
+    else:
+        ha_token_source = "none"
     secret = (options.get("access_secret") or os.environ.get("ACCESS_SECRET", "")).strip()
     destructive = options.get("destructive_services") or DEFAULT_DESTRUCTIVE_SERVICES
     configured_proxies = options.get("trusted_proxy_cidrs", [])
@@ -194,6 +245,8 @@ def load_settings() -> Settings:
     return Settings(
         ha_url=ha_url,
         ha_token=token,
+        ha_url_source=ha_url_source,
+        ha_token_source=ha_token_source,
         access_secret=secret,
         port=int(os.environ.get("MCP_PORT", "8100")),
         mcp_allowed_hosts=allowed_hosts,

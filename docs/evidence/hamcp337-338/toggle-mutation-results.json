@@ -1,0 +1,55 @@
+{
+  "head": "005e06c089c36fea8b5b7ec8ce20809c7dbab93a",
+  "reviewed_head": "144d56391ea1d69dad9054c337ee0183fc9d7c02",
+  "python": "3.13.5",
+  "regressions": [
+    {
+      "id": 1,
+      "revision": "144d56391ea1d69dad9054c337ee0183fc9d7c02",
+      "test": "ToggleTargetEntityTests.test_toggle_naming_another_entity_classifies_the_card_entity",
+      "classification": "assertion",
+      "exit_code": 1,
+      "failed_subtests": 36
+    },
+    {
+      "id": 2,
+      "revision": "144d56391ea1d69dad9054c337ee0183fc9d7c02",
+      "test": "ToggleTargetEntityTests.test_toggle_never_follows_the_action_entity",
+      "classification": "assertion",
+      "exit_code": 1,
+      "failed_subtests": 4
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "name": "the action entity selects the toggle target (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ToggleTargetEntityTests.test_toggle_naming_another_entity_classifies_the_card_entity",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "name": "the action entity is used when the card has no entity",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ToggleTargetEntityTests.test_toggle_never_follows_the_action_entity",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "name": "either entity in a high domain makes the toggle high (union, not the exact rule)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "ToggleTargetEntityTests.test_toggle_never_follows_the_action_entity",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated corrected copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 62 tests in 68.426s"
+  }
+}

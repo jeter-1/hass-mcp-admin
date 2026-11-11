@@ -48,7 +48,10 @@ def registry_matrix():
 
 
 def matrices(tier):
-    """Return {'real_ha', 'addon', 'gateway'} matrices for ``tier``."""
+    """Return {'real_ha', 'addon', 'gateway', 'admission'} matrices for ``tier``.
+
+    ``admission`` (HAMCP-319 section 5.1 lanes) does not depend on the tier.
+    """
 
     module = support_window()
     window = module.load(ROOT)
@@ -56,6 +59,7 @@ def matrices(tier):
         "real_ha": module.real_ha_matrix(window, tier),
         "addon": module.addon_matrix(window, tier),
         "gateway": module.gateway_matrix(window, tier, registry_matrix()),
+        "admission": module.admission_matrix(window, registry_matrix()),
     }
 
 

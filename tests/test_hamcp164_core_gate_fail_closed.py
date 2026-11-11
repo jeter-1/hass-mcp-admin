@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     replace_dynamic_upstream_capabilities,
 )
@@ -54,6 +55,9 @@ from ha_mcp_engineering.tools.registry import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_NAMES,
 )
 
+from tests.test_beta_observability import (  # noqa: E402
+    preserve_create_application_state,
+)
 import tests.test_ha_core_2026_9_integration as core9  # noqa: E402
 from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
@@ -76,6 +80,7 @@ STATIC_CORE_TABLE = {
     "apply_change_plan": DOWNSTREAM,
     "approve_change_plan": LOCAL,
     "automation_reliability_analysis": MAPPED,
+    "automation_reliability_batch_analysis": MAPPED,
     "call_service": REFUSED,
     "cancel_execution_task": LOCAL,
     "capture_automation_baseline": MAPPED,
@@ -87,6 +92,7 @@ STATIC_CORE_TABLE = {
     "control_fan": DOWNSTREAM,
     "control_power": DOWNSTREAM,
     "control_helper": DOWNSTREAM,
+    "control_device_configuration": DOWNSTREAM,
     "create_addon_restart_plan": MAPPED,
     "create_backup_plan": MAPPED,
     "create_change_plan": MAPPED,
@@ -129,6 +135,8 @@ STATIC_CORE_TABLE = {
     "get_history": MAPPED,
     "get_integration_inspection": MAPPED,
     "get_logbook": MAPPED,
+    "get_marketplace_inventory": MAPPED,  # HAMCP-290: dormant core.marketplace_read
+    "get_security_metadata": MAPPED,  # HAMCP-134: dormant core.security_metadata_read
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
@@ -197,6 +205,9 @@ ALLOWLIST_ARGUMENTS = {
     "control_helper": {
         "entity_id": "input_boolean.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
     },
+    "control_device_configuration": {
+        "entity_id": "switch.synthetic", "action": "turn_on", "operation_id": OPERATION_ID,
+    },
     "get_trace_snapshot": {"snapshot_id": "a" * 32},
     "set_automation_trace_watch": {"action": "list"},
     "compare_automation_baselines": {"earlier_capture_id": "a" * 32, "later_capture_id": "b" * 32},
@@ -252,7 +263,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 81)
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})
@@ -277,7 +288,7 @@ class StaticCoreTableTests(unittest.TestCase):
 
     def test_allowlist_is_the_reviewed_closed_set(self):
         self.assertEqual(set(CORE_INDEPENDENT_STATIC_TOOLS), ALLOWLISTED)
-        self.assertEqual(len(ALLOWLISTED), 23)  # + HAMCP-311 control_helper (downstream authority)
+        self.assertEqual(len(ALLOWLISTED), 24)  # + HAMCP-311 control_helper, HAMCP-297 control_device_configuration (downstream authority)
         self.assertIsInstance(CORE_INDEPENDENT_STATIC_TOOLS, MappingProxyType)
         with self.assertRaises(TypeError):
             CORE_INDEPENDENT_STATIC_TOOLS["synthetic"] = CORE_INDEPENDENT_STATIC_TOOLS[
@@ -356,8 +367,10 @@ class StaticCoreTableTests(unittest.TestCase):
         routes._validate_static_core_routes()
 
     def test_every_delegated_route_maps_a_non_empty_requirement_set(self):
-        # HAMCP-162 maps ha_config_get_yaml (30 -> 31).
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
+        # HAMCP-162 maps ha_config_get_yaml (30 -> 31); HAMCP-290 retired
+        # the delegated ha_get_hacs_info from the mapping (31 -> 30).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        self.assertNotIn("ha_get_hacs_info", DELEGATED_CORE_REQUIREMENTS)
         self.assertFalse(set(DELEGATED_CORE_REQUIREMENTS) & set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, values in DELEGATED_CORE_REQUIREMENTS.items():
             with self.subTest(tool=name):
@@ -511,6 +524,11 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
                 "create_input_select_option_plan",
                 "list_script_traces",
                 "get_script_trace",
+                # HAMCP-290: the dormant Marketplace read is likewise refused
+                # pending signed admission (its own tests cover it).
+                "get_marketplace_inventory",
+                # HAMCP-134: the dormant security metadata read, likewise.
+                "get_security_metadata",
             }:
                 continue
             with self.subTest(tool=name):
@@ -662,6 +680,14 @@ class F3UnmappedIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProductionCompositionTests(unittest.TestCase):
+    def setUp(self):
+        # HAMCP-361: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
+
     def test_production_gateway_is_built_with_the_core_runtime(self):
         from dataclasses import replace
 
@@ -685,6 +711,14 @@ class ProductionCompositionTests(unittest.TestCase):
         # mapped acquisition and unmapped refusal both apply in deployment.
         self.assertIsInstance(gateway, AuthenticatedMcpGateway)
         self.assertIs(gateway._core_runtime, CORE_READMISSION)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
+
 
 if __name__ == "__main__":
     unittest.main()

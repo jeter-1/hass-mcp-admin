@@ -12,6 +12,7 @@ from .sanitization import marker_collision_health
 from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
     CAPABILITIES,
+    delegated_tool_status,
     dynamic_upstream_capabilities,
 )
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
@@ -36,6 +37,7 @@ class HealthRegistry:
     fan_operations: Any = None
     power_operations: Any = None
     helper_value_operations: Any = None
+    device_configuration_operations: Any = None
 
     def configure(
         self,
@@ -55,6 +57,7 @@ class HealthRegistry:
         fan_operations=None,
         power_operations=None,
         helper_value_operations=None,
+        device_configuration_operations=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -73,6 +76,7 @@ class HealthRegistry:
         self.fan_operations = fan_operations
         self.power_operations = power_operations
         self.helper_value_operations = helper_value_operations
+        self.device_configuration_operations = device_configuration_operations
 
     async def async_snapshot(
         self, ha_connection: dict[str, Any], *, deep_storage_audit: bool = False
@@ -95,6 +99,18 @@ class HealthRegistry:
         *, governance_summary: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         metrics = METRICS.snapshot()
+        upstream_read_gateway = (
+            self.upstream_read_gateway.health_projection()
+            if self.upstream_read_gateway
+            else {
+                "configured": False,
+                "initialized": False,
+                "generic_delegation_available": False,
+                "dynamically_exposed_count": 0,
+                "writes_allowed": False,
+                "direct_ha_fallback_allowed": False,
+            }
+        )
         return {
             "server": {"id": SERVER_ID, "name": SERVER_NAME, "version": SERVER_VERSION},
             "runtime": "home_assistant_addon" if self.settings and self.settings.ha_url == "http://supervisor/core" else "standalone",
@@ -103,6 +119,7 @@ class HealthRegistry:
             "ordinary_fan": (self.fan_operations.health() if self.fan_operations else {"configured": False}),
             "ordinary_power": (self.power_operations.health() if self.power_operations else {"configured": False}),
             "ordinary_helper_value": (self.helper_value_operations.health() if self.helper_value_operations else {"configured": False}),
+            "ordinary_device_configuration": (self.device_configuration_operations.health() if self.device_configuration_operations else {"configured": False}),
             "latency": {
                 "mcp_operations": metrics["mcp_operation_latency"],
                 "tools": metrics["tool_latency"],
@@ -185,18 +202,8 @@ class HealthRegistry:
                     "writes_allowed": False,
                 }
             ),
-            "upstream_read_gateway": (
-                self.upstream_read_gateway.health_projection()
-                if self.upstream_read_gateway
-                else {
-                    "configured": False,
-                    "initialized": False,
-                    "generic_delegation_available": False,
-                    "dynamically_exposed_count": 0,
-                    "writes_allowed": False,
-                    "direct_ha_fallback_allowed": False,
-                }
-            ),
+            "upstream_read_gateway": upstream_read_gateway,
+            "delegated_tools": delegated_tool_status(upstream_read_gateway),
             "home_assistant_core_authority": (
                 self.core_readmission.health_projection()
                 if self.core_readmission

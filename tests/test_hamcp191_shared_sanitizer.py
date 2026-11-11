@@ -356,8 +356,9 @@ class RuleDerivationTests(unittest.TestCase):
         self.assertEqual(len(rules), len(set(rules)))
         self.assertEqual(len(S._SEGMENT_RULES), 12)
         self.assertEqual(len(S._SERIALIZED_PATTERNS), 8)
-        self.assertEqual(len(key_categories_from_code()), 8)
-        self.assertEqual(len(rules), 12 + 8 + 8 + 2)
+        # Nine key categories since HAMCP-319 section 6.5 (thread_credential).
+        self.assertEqual(len(key_categories_from_code()), 9)
+        self.assertEqual(len(rules), 12 + 8 + 9 + 2)
         self.assertEqual(
             {rule.split(":")[1] for rule in rules if rule.startswith("segment:")},
             set(SEGMENT_BUILDERS),
@@ -387,10 +388,11 @@ class RuleDerivationTests(unittest.TestCase):
         expected = (
             text_rules * len(WRAPPERS) * len(TEXT_POSITIONS)
             + len(WRAPPERS) * len(TEXT_POSITIONS) + 1  # look-alike, plus S9
-            + 8 * len(WRAPPERS) * len(KEY_RULE_POSITIONS)
+            + 9 * len(WRAPPERS) * len(KEY_RULE_POSITIONS)
         )
         self.assertEqual(len(cells), expected)
-        self.assertEqual(len(cells), 937)
+        # 937 before HAMCP-319 section 6.5 added the thread_credential key rule.
+        self.assertEqual(len(cells), 955)
         self.assertEqual({position for _r, _w, position in cells}, set(POSITIONS))
         self.assertEqual({wrapper for _r, wrapper, _p in cells}, set(WRAPPERS))
         self.assertEqual({rule for rule, _w, _p in cells}, set(rule_ids_from_code()))
@@ -568,7 +570,10 @@ SANITIZER_SITES = {
     ("audit_baseline/capture_provider.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("backup_inventory/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("backup_inventory/projection.py", "Projector.text", "sanitize_untrusted_data"): (1, "analysis"),
-    ("clients/logbook.py", "project", "sanitize_untrusted_data"): (1, "logbook"),
+    # HAMCP-294: record sanitization moved from project into the shared
+    # _fit used by project and project_window; read echoes a sanitized name.
+    ("clients/logbook.py", "LogbookReader.read", "sanitize_untrusted_data"): (1, "logbook"),
+    ("clients/logbook.py", "_fit", "sanitize_untrusted_data"): (1, "logbook"),
     ("dashboard_analysis/models.py", "_scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/models.py", "validate_projection", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/provider.py", "safe_entity", "sanitize_untrusted_data"): (1, "identifier"),
@@ -621,11 +626,15 @@ SANITIZER_SITES = {
     ("integration_inspection/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._current_states", "sanitize_untrusted_data"): (1, "analysis"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._entity_registry", "sanitize_untrusted_data"): (1, "analysis"),
-    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
+    # HAMCP-267: the third collect site sanitizes partition (scene, group,
+    # dashboard) references with the same keys, secrets, bound and registry.
+    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (3, "analysis"),
     ("logging_config.py", "JsonFormatter.format", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_untrusted_text", "sanitize_untrusted_data"): (1, "audit"),
+    # HAMCP-290: the native get_marketplace_inventory Marketplace inventory read.
+    ("marketplace_inventory.py", "sanitize_records", "sanitize_untrusted_data"): (1, "delegated"),
     ("providers/core_logs.py", "CoreLogReader.evidence", "sanitize_log_lines"): (1, "logs"),
     ("providers/operational_lifecycle.py", "_safe_text", "sanitize_untrusted_data"): (1, "governance"),
     ("providers/upstream_dashboard.py", "UpstreamDashboardProvider._dashboard_metadata", "sanitize_untrusted_data"): (1, "dashboard"),
@@ -645,6 +654,8 @@ SANITIZER_SITES = {
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
     ("request_context.py", "request_id_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
+    # HAMCP-134: the native get_security_metadata read (direct Core metadata).
+    ("security_metadata.py", "sanitize_sections", "sanitize_untrusted_data"): (1, "analysis"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
     ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),

@@ -13,12 +13,20 @@ from unittest.mock import patch
 from tests import test_f3_orphan_child_recovery as history_fixtures
 from tests import test_beta24_pre_rc_hardening as gateway_fixtures
 from ha_mcp_engineering import application
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
+from tests.test_beta_observability import preserve_create_application_state
 from tests.test_catalog_readiness import application_gateway
 from support.real_time import real_time_measurement
 
 
 class ReadinessHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # HAMCP-362: application_gateway() runs create_application() with
+        # most singletons replaced, but the real TRACE_SNAPSHOTS, the
+        # read-only inventory and analysis services and the root logger's SDK
+        # filter are configured in place and outlived this module. No later
+        # test is known to fail on that residue; the restore keeps it so.
+        preserve_create_application_state(self)
         self.fixture = history_fixtures.OrphanChildRecoveryTests()
         await self.fixture.asyncSetUp()
         self.runtime = self.fixture.runtime
@@ -135,6 +143,13 @@ class ReadinessHistoryTests(unittest.IsolatedAsyncioTestCase):
                 'maximum_loop_gap_seconds': max(gaps),
                 'maximum_thread_cpu_gap_seconds': max(cpu_gaps),
                 'gc_state': gc_state, 'gc_events': gc_events}
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == '__main__':

@@ -32,7 +32,8 @@ entity is analyzed normally because stale references may remain.
 | Scripts (introduced in 2.4.0-beta.1; loaded source HAMCP-212) | partial or unavailable | Loaded configuration via fixed read-only `script/config`/`search/related` on the shared HAMCP-209 batch; admitted internal `ha_config_get_script` for counted stored fallbacks; exact registry identity |
 | Scenes and groups (HAMCP-227) | complete or partial | Loaded membership from the `entity_id` attribute of the states already read; no extra request; `direct_ha_api` |
 | Dashboards (HAMCP-227) | complete, partial or unavailable | Reviewed `list_dashboards` and analysis read path plus the dashboard walker; `upstream_dashboard`; no fallback |
-| Template source | unavailable | Deferred (HAMCP-264); the template-platform registry count is reported |
+| Template source (HAMCP-264) | partial or unavailable | `template:` in `configuration.yaml` and its inline packages, through the `dependency_index` YAML reader purpose (`upstream_read_gateway`); at most partial; UI template helpers counted, never read |
+| YAML scripts (HAMCP-264) | partial or unavailable | `script:` in `configuration.yaml` and its inline packages, same reader; merged into the script row, where a loaded-script analysis of the same script wins |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
 Direct inventory and automation evidence is labeled `direct_ha_api`. Script
@@ -125,9 +126,12 @@ ledger, the snapshot findings and the snapshot fingerprint: governance
 cannot be downgraded by it, and a dashboard edit changes no approval-bound
 fingerprint. The snapshot rows for scene, group, template and dashboard keep
 their fingerprinted `unavailable` state; `entity_dependency_analysis` and
-`change_impact_analysis` overlay the partition rows. The integrity, incident
-and handoff analyses do not merge it yet (HAMCP-267). Governed plan
-disclosure does not include it (see the beta.55 acceptance, section 1.3).
+`change_impact_analysis` overlay the partition rows. Since HAMCP-267,
+`configuration_integrity_analysis`, `incident_correlation` and
+`handoff_generation` also read the visible partition (see their documents);
+they make no request of their own for it, and their cursors are bound to its
+visible fingerprint. Governed plan disclosure is described by HAMCP-270 (see
+the beta.55 acceptance, section 1.3).
 
 - **Scenes and groups.** Each `scene.*` and `group.*` state's `entity_id`
   attribute is read at `$.attributes.entity_id[n]`. This is loaded
@@ -185,12 +189,23 @@ disclosure does not include it (see the beta.55 acceptance, section 1.3).
   dispatch is leased (`core.dashboard_configuration_read`),
   revalidated, and audited as a child of the build request. Cached evidence
   is withheld when that authority retires.
-- **Templates and scripts.** Template configuration enumeration is deferred
-  (HAMCP-264): there is no audited read purpose for YAML templates, and the
-  only path to UI template helper configuration is an options flow that can
-  write. The template row is unavailable and reports the template-platform
-  registry count as a lower bound. The script row states that complete
-  script enumeration is deferred.
+- **Templates and YAML scripts (HAMCP-264).** The dependency index reads the
+  fixed `configuration.yaml` paths `template`, `script` and
+  `homeassistant.packages` (and `homeassistant` only to classify packages)
+  through the reviewed YAML reader under its own `dependency_index` purpose,
+  audited as `dependency_index_yaml_read`. It makes at most four reads, each
+  bounded by 5 s inside a 15 s phase, and caps packages (200), template
+  sources (1,000), script sources (1,000) and findings (10,000).
+  `!secret` and `!env_var` are never resolved; their markers are replaced by
+  a constant before extraction and only a count is reported. Both rows are at
+  most `partial`: labeled top-level keys (`template x:`), includes, package
+  directories and `scripts.yaml` are not read. UI template helpers are
+  counted from the registry and never read, because their only configuration
+  path is an options flow that can write. Without an admitted reader, or with
+  a reader captured for another purpose, both rows are `unavailable`
+  (provider `none`), never complete. When the reader's authority changes,
+  cached YAML evidence is withheld. Template source ids are positional
+  (`template[0].sensor[2]`, `packages.<name>.template[0].light[0]`).
 - **Truncation.** When the bounded index drops evidence, every source type
   with dropped evidence is partial, not only automations.
 - **Policy.** These rows only add evidence: a partial or unavailable source

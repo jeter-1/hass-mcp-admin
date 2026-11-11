@@ -41,8 +41,12 @@ sys.path.insert(0, str(BETA_DIR))
 from tests import test_beta_v2 as beta  # noqa: E402
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 from tests.support.process_isolation import restore_after_class  # noqa: E402
+from tests.test_beta_observability import (  # noqa: E402
+    preserve_create_application_state,
+)
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.clients import paths  # noqa: E402
 from ha_mcp_engineering.clients.paths import (  # noqa: E402
     INVALID_IDENTIFIER_MESSAGE,
@@ -764,6 +768,12 @@ class ToolRefusalTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return beta.core_snapshot(
@@ -1712,6 +1722,13 @@ class CompatibilityEntryPointTests(unittest.TestCase):
 
     def test_canonical_application_remains_the_entry_point(self):
         self.assertTrue((PACKAGE_DIR / "__main__.py").is_file())
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 from ha_mcp_engineering.clients.upstream_read import McpReadResult  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
 from ha_mcp_engineering.ha_mcp_readmission.models import (  # noqa: E402
@@ -77,7 +78,7 @@ TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
 STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
-STOCK_PUBLIC = 109  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311
+STOCK_PUBLIC = 112  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration
 
 
 def captured(version, label="A"):
@@ -505,7 +506,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 81)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):
@@ -518,6 +519,8 @@ class AdmissionTests(Harness):
                     self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version])
                     self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
                     self.assertTrue(health["reviewed_tool_accounting_valid"])
+                    # HAMCP-290: the delegated ha_get_hacs_info is retired.
+                    self.assertNotIn("ha_get_hacs_info", self.exposed(gateway))
                     self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(self.exposed(gateway)), STOCK_PUBLIC)
                     self.assertNotIn(TOOL, self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
@@ -692,7 +695,9 @@ class AdmissionTests(Harness):
             self.assertEqual(y.withheld_reason(release, signed_selection=True), "optional_signed_selection")
         self.assertEqual(y.withheld_reason(None, signed_selection=False), "optional_binding_absent")
         for release in self.compiled.releases:
-            if release.version in VERSIONS:
+            # HAMCP-319: 9.1.0 is admitted; tests/test_hamcp319_yaml.py covers it.
+            # HAMCP-351: 9.1.2 is admitted at 9.1.0 parity.
+            if release.version in VERSIONS or release.version in {"9.1.0", "9.1.2"}:
                 continue
             with self.subTest(version=release.version):
                 self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS[release.version], "held")
@@ -782,7 +787,7 @@ class AdmissionTests(Harness):
     def test_every_registry_version_has_an_explicit_disposition(self):
         self.assertEqual(set(y.OPTIONAL_TOOL_DISPOSITIONS), {r.version for r in self.compiled.releases})
         self.assertEqual({v for v, d in y.OPTIONAL_TOOL_DISPOSITIONS.items() if d == "admitted"},
-                         set(VERSIONS))
+                         set(VERSIONS) | {"9.1.0", "9.1.2"})
         self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS["8.6.0"], "held")
 
     def test_captures_are_pinned_with_provenance(self):
@@ -1177,7 +1182,9 @@ class CoreTests(Harness):
     def test_the_reader_has_an_explicit_core_mapping(self):
         self.assertEqual(delegated_requirements(TOOL), y.CORE_REQUIREMENTS)
         self.assertEqual(DELEGATED_CORE_REQUIREMENTS[TOOL], ("core.basic_rest_read", "core.basic_websocket_read"))
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
+        # HAMCP-290: the retired delegated ha_get_hacs_info row is removed.
+        self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31 - len(RETIRED_DELEGATED_READS))
         for sibling in y.SIBLING_TOOLS:
             self.assertNotIn(sibling, DELEGATED_CORE_REQUIREMENTS)
 

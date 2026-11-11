@@ -20,6 +20,9 @@ sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    RETIRED_DELEGATED_READ_TOOLS,
+)
 
 
 MAX_ATTEMPTS = 30
@@ -37,51 +40,55 @@ EXPECTED_ENTRY_BY_VERSION = {
 EXPECTED_UPSTREAM_TOOL_COUNTS = {version: 77 if version in {"8.5.0", "8.6.0"} else 78
                                  for version in EXPECTED_ENTRY_BY_VERSION}
 EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = ENGINEERING_STATIC_TOOL_COUNT
+# HAMCP-290: each delegated read Engineering retired (Josh, 2026-11-08;
+# ha_get_hacs_info, an automatic read in every reviewed release) is matched
+# but withheld, never exposed or dispatched.
+RETIRED_DELEGATED_READ_COUNT = len(RETIRED_DELEGATED_READ_TOOLS)
 EXPECTED_ACCOUNTING_BY_VERSION = {
     "8.1.0": {
         "delegated_read_count": 24,
         "held_tools": {"ha_search", "ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 24
+            ENGINEERING_STATIC_TOOL_COUNT + 24 - RETIRED_DELEGATED_READ_COUNT
         ),
     },
     "8.1.1": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 25
+            ENGINEERING_STATIC_TOOL_COUNT + 25 - RETIRED_DELEGATED_READ_COUNT
         ),
     },
     "8.2.0": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 25
+            ENGINEERING_STATIC_TOOL_COUNT + 25 - RETIRED_DELEGATED_READ_COUNT
         ),
     },
     "8.4.1": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 25
+            ENGINEERING_STATIC_TOOL_COUNT + 25 - RETIRED_DELEGATED_READ_COUNT
         ),
     },
     "8.4.3": {
         "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 28
+            ENGINEERING_STATIC_TOOL_COUNT + 28 - RETIRED_DELEGATED_READ_COUNT
         ),
     },
     "8.5.0": {
         "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28,
+        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28 - RETIRED_DELEGATED_READ_COUNT,
     },
     "8.6.0": {
         "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28,
+        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28 - RETIRED_DELEGATED_READ_COUNT,
     },
 }
 ZERO_ADMISSION_COUNTERS = (
@@ -194,7 +201,7 @@ def exact_readmission_observed(
         and health.get("exact_matched_automatic_read_count")
         == expected_delegated
         and health.get("dynamically_exposed_count")
-        == expected_delegated
+        == expected_delegated - RETIRED_DELEGATED_READ_COUNT
         and health.get("held_read_count") == len(expected_held_tools)
         and observed.get("held_tools_absent") is True
         and all(health.get(name) == 0 for name in ZERO_ADMISSION_COUNTERS)

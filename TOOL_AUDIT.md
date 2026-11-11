@@ -2,6 +2,77 @@
 
 Date: 2026-07-10
 
+## Security posture metadata (2.6.0, HAMCP-134)
+
+`get_security_metadata` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider
+  `direct_home_assistant_security_metadata`, policy
+  `bounded_security_metadata_read` (route `security_metadata_read_v1`);
+- risk `read`, writes `none`, fallback `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- requires signed Core admission of `core.security_metadata_read` for Core
+  2026.11.0. That profile is not signed yet, so the tool is listed but refuses
+  on every Core until the owner signs it.
+
+It sends only constant WebSocket payloads, each at most once:
+`auth/current_user`, `config/auth/list`, `http/config`, `get_config`,
+`homeassistant/expose_new_entities/get` (one per known assistant),
+`assist_pipeline/pipeline/list`, `conversation/agent/list` and `get_panels`.
+No Supervisor request is made, and no token, session, MFA or user mutation
+command is ever built. The projection is privacy-conservative and passes the
+shared sanitizer under a fixed byte cap. A field the source does not provide
+is reported as `not_provided` and never inferred. The tool adds one static tool
+(84 static on this branch).
+
+## YAML template and script dependency coverage (HAMCP-264)
+
+No tool, descriptor or input schema changes. The reviewed YAML reader gains a
+`dependency_index` purpose (`YAML_READER_PURPOSES`): fixed `configuration.yaml`
+paths `template`, `script`, `homeassistant.packages` and `homeassistant`, its
+own audit event `dependency_index_yaml_read`, the same single admitted
+`ha_config_get_yaml` route, and no new upstream tool, route, write, fallback
+or forwarding. Each purpose refuses any path outside its own set before
+dispatch (`configuration_definitions` cannot read `script`; `dependency_index`
+cannot read `sql`, `group`, `sensor` and the other definition paths).
+`entity_dependency_analysis`, `change_impact_analysis` and plan disclosures
+(`global_source_consumers`, informational and outside every plan hash) gain
+template and YAML script rows, at most `partial`; `!secret`/`!env_var` are
+never resolved or emitted; UI template helpers stay unread.
+`configuration_integrity_analysis` keeps template `not_supported`.
+`application.py` wires the dependency provider's reader to
+`yaml_config_reader(purpose="dependency_index")` with the shared audit; without
+an admitted catalog both rows are `unavailable`.
+
+## Installed-only Marketplace inventory (2.5.0, HAMCP-290)
+
+`get_marketplace_inventory` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider
+  `direct_home_assistant_marketplace`, policy
+  `bounded_marketplace_inventory_read` (route `marketplace_inventory_read_v1`);
+- risk `read`, writes `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- requires signed Core admission of `core.marketplace_read`. That profile is
+  not signed in 2.5.0, so the tool is listed but refuses on every Core until
+  the owner signs it after 2.5.0 merges.
+
+It lists and searches installed repositories only, through the constant
+WebSocket command `marketplace/repositories/list`. The single fallback is
+`hacs/repositories/list` on the same connection, used only when Core answers
+that command with error code exactly `unknown_command`. Results are paged and
+sanitized, and they name the backend that answered. The tool never lists
+uninstalled catalog repositories and reaches no management command.
+
+The delegated ha-mcp `ha_get_hacs_info` read is retired (Josh decision,
+2026-11-08). It is never exposed or dispatched on any reviewed ha-mcp release,
+with no alias and no fallback. The gateway withholds it with the disposition
+`retired_delegated_read`. The catalog is 82 static + 28 delegated = 110 on the
+exact ha-mcp 8.5.0 component capture, and 82 + 27 = 109 on stock 8.6.0. See
+[HAMCP_290_MARKETPLACE_READ_DESIGN.md](docs/HAMCP_290_MARKETPLACE_READ_DESIGN.md).
+
 ## Stuck governance record inspection (2.4.1-beta.63, HAMCP-253)
 
 `inspect_governance_record` is a native, read-only governance tool:
@@ -222,8 +293,15 @@ Assistant write. `capture_automation_trace` (risk
 sanitized snapshots to the Engineering-local `trace-snapshots-v1` store.
 `list_trace_snapshots` and `get_trace_snapshot` are core-independent local
 reads with caller-bound cursors. `set_automation_trace_watch` (`add`,
-`remove`, `list`) is core-independent local state: no plan or approval, an
-audited add or remove, at most 10 watches; the separately gated poller
+`remove`, `list`, and since HAMCP-296 `renew`) is core-independent local
+state: no plan or approval, an audited add, remove, renew, reinstate or
+displacement, at most 20 watches (HAMCP-296; `index.json` keeps the v1
+bound of 10; each watch keeps at most 20 snapshots inside a 400-snapshot,
+100 MiB watch reservation of the 500-snapshot, 128 MiB store; watches
+11-20, lifecycle rows and snapshot entries past the v1 `index.json` bound
+of 200 and 32 MiB live in one sidecar state kept in two slot files bound
+to the exact `index.json` bytes, so both commit as one transaction); the
+separately gated poller
 issues the same two read commands every 30 seconds. `get_automation_trace`
 keeps its input schema and now passes the shared trace sanitizer, which
 applies the shared `credentials.screen` to every string and key first. The
@@ -630,7 +708,7 @@ The server's strongest current capabilities are automation traces, blueprint ins
 | `get_entity` | Delegate | Read one entity's state and attributes. | Standard `ha-mcp` already provides richer structured state retrieval and projections. | Use standard `ha_get_state`; retain only as an internal primitive if an analysis tool needs direct HA access. |
 | `search_entities` | Redesign | Search state machine by ID/friendly name/domain. | Reads one state inventory and returns deterministic bounded slim results with explicit truncation; it still lacks pagination, registry metadata, and fuzzy matching. | Replace publicly with analysis-oriented entity discovery or an internal indexed evidence provider. |
 | `get_history` | Redesign | Fetch recent recorder history for one entity. | String refusal, no explicit pagination, no end time, no statistics source, and full HA payload shape. | Keep internally for incident analysis; expose through `analyze_incident` or structured evidence retrieval. |
-| `get_logbook` | Redesign | Fetch recent logbook events. | No result limit/pagination or compact schema; output may be noisy. | Internal evidence source for incident timelines and behavioral verification. |
+| `get_logbook` | Redesign | Fetch recent logbook events. | Bounded whole-record output with explicit truncation; HAMCP-294 adds a bounded window, an entity/name filter and a disclosed continuation window, but there is no compact schema and output may be noisy. | Internal evidence source for incident timelines and behavioral verification. |
 | `get_error_log` | Transitional | Return bounded structured HA System Log warning/error entries. | The System Log buffer is deduplicated and is not the complete raw Core journal. | Recursively sanitize the complete upstream result before reduction; keep fail-closed redaction, truncation, source attribution, untrusted marking, and correlation mandatory. |
 | `render_template` | Keep | Evaluate Jinja against live HA state. | Useful and materially supports safe analysis, though output/error schema needs improvement. | Retain as a focused evidence/validation tool; add typed result and timeout/error classification. |
 | `list_automation_traces` | Keep | List recent automation traces. | Requires internal ID and returns no pagination metadata. | Retain; normalize identifiers, add limits/pagination, and make it a building block for reliability analysis. |
@@ -784,6 +862,16 @@ errors, repeated condition stops, explicit concurrency rejections, correlated sa
 System Log errors, dynamic-reference gaps, missing blueprint evidence, and absent trace
 evidence. It does not speculate about trigger events, delays, retries, thresholds,
 manual overrides, or physical safety without direct evidence.
+
+### `automation_reliability_batch_analysis`
+
+HAMCP-229 adds a bounded, read-only batch over the unchanged single-item analysis:
+1-20 explicit internal automation IDs, one 45-second budget, per-item digests and
+failures, and truthful partial coverage (`skipped_budget`, `remaining_automation_ids`).
+It uses the same reliability provider and Core profiles as
+`automation_reliability_analysis` under the `bounded_automation_set_reliability_read`
+policy, with no fallback and no write. See
+[the batch contract](docs/AUTOMATION_RELIABILITY_ANALYSIS.md#bounded-batch-analysis-hamcp-229).
 
 ### `analyze_change_impact`
 

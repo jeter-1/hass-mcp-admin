@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering import inbound_topology_observer as observer
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
+from ha_mcp_engineering.logging_config import uvicorn_log_config  # noqa: E402
 from ha_mcp_engineering.inbound_topology_observer import (
     BoundaryObserver, MAX_EXPORT_BYTES, MAX_HEADERS, MAX_RECORDS, MARKER_HEADER, REQUEST_HEADER,
     ObservedConfig, Recorder, WINDOW_SECONDS, encoded, project_value,
@@ -481,7 +483,8 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(observer.uvicorn, "Config") as config, \
                 patch.object(observer.uvicorn, "Server") as server:
             app = object();result = observer.create_mcp_listener(app, port=8100, log_level="info")
-        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False, proxy_headers=False)
+        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False, proxy_headers=False,
+                                       log_config=uvicorn_log_config())
         server.assert_called_once_with(config.return_value)
         self.assertIs(result, server.return_value)
 
@@ -619,10 +622,17 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_production_factory_and_http_parser_preserve_authentication(self):
         from ha_mcp_engineering.application import create_application
+        from tests.test_beta_observability import preserve_create_application_state
         from tests.test_beta_v2 import beta_settings
         from uvicorn.protocols.http.h11_impl import H11Protocol
         from uvicorn.server import ServerState
 
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(self)
         session = self.active()
         gateway = create_application(beta_settings(str(Path(self.temp.name) / "audit.jsonl")))
         config = observer.ObservedConfig(gateway, observation=session, host="0.0.0.0", port=8100,
@@ -668,6 +678,13 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
             acquire.assert_not_called()
         self.assertEqual([r["request_index"] for r in session.recorder.records], [1, 2])
         self.assertEqual(session.recorder.records[0]["immediate_peer"], "127.0.0.1")
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ from tests.test_f3_runtime_integration import (
     _provider_identity,
 )
 from ha_mcp_engineering.audit import AuditLogger
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
 from ha_mcp_engineering.governance import service as service_module
@@ -1520,7 +1521,7 @@ class ServeLaunchTests(unittest.IsolatedAsyncioTestCase):
         async def recovery(trigger, *, strict=False):
             events.append(f"recovery:{trigger}:{strict}")
 
-        async def upstream(_gateway):
+        async def upstream(_gateway, *, listener_started=None):
             await asyncio.Event().wait()
 
         class FakeConfig:
@@ -1593,6 +1594,13 @@ class RestartBackoffAssemblyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(service.lifecycle_gateway.dispatch_count, 0)
         finally:
             await fixture.asyncTearDown()
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

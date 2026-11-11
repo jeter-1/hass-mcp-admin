@@ -160,7 +160,8 @@ class HistorySliceService:
         if current_caller_id() == "anonymous":
             raise c.HistorySlicesError("history_route_unavailable")
         reader = self.reader_factory() if self.reader_factory else None
-        if reader is None or reader.version not in c.REVIEWED_VERSIONS or not reader.current():
+        if (reader is None or reader.version not in c.REVIEWED_VERSIONS or reader.version not in _PARSERS
+                or not reader.current()):
             raise c.HistorySlicesError("history_route_unavailable")
         if self._reading:
             raise c.HistorySlicesError("read_in_progress")
@@ -309,7 +310,10 @@ class HistorySliceService:
         lower, upper = c.slice_bounds(args["start_us"], args["end_us"], index)
         raw = await reader.read(args["entity_id"], c.format_us(lower - c.OVERLAP_US), c.format_us(upper),
                                 offset, limit)
-        return _parse(raw, args["entity_id"], offset)
+        parser = _PARSERS.get(reader.version)
+        if parser is None:
+            return "representation_invalid"
+        return parser(raw, args["entity_id"], offset)
 
     async def _call(self, scan: Scan, args: dict, reader, position: Position) -> str | None:
         """One upstream request; returns a failure reason or None."""
@@ -581,6 +585,52 @@ def _parse(raw: Any, entity_id: str, offset: int):
             return "representation_invalid"
         parsed.append((ts_us, item["state"]))
     return parsed, total, gateway_partial
+
+
+_ROW_9_1 = frozenset({"state", "last_changed", "last_updated", "attributes"})
+
+
+def _parse_9_1(raw: Any, entity_id: str, offset: int, *, version: str = "9.1.0"):
+    """The pinned ha-mcp 9.1.0 history shape (HAMCP-319 rule 3) inside the gateway envelope.
+
+    9.1 ``format_history_response`` (``history_response.py:49-74``) expands
+    ``s/a/lu/lc`` and localizes event times to the Home Assistant time zone
+    (offset-aware, accepted by ``parse_upstream_us``); the gateway's compiled
+    row 16 projection (``providers/upstream_history_9_1.py``) has already
+    re-emitted each row as ``{state, last_changed, last_updated[, attributes]}``.
+    ``attributes`` is optional (absent means unavailable, never ``{}``). The
+    envelope must attribute the result to the row's exact release (9.1.0 or,
+    for HAMCP-351, 9.1.2), so an 8.5/8.6 session, or the other 9.1 release,
+    never maps through this row.
+    """
+
+    if type(raw) is dict and raw.get("success") is True:
+        metadata = raw.get("metadata")
+        if type(metadata) is not dict or metadata.get("upstream_version") != version:
+            return "representation_invalid"
+        outer = raw.get("data")
+        inner = outer.get("data") if type(outer) is dict else None
+        entities = inner.get("entities") if type(inner) is dict else None
+        if type(entities) is not list or len(entities) != 1 or type(entities[0]) is not dict:
+            return "representation_invalid"
+        states = entities[0].get("states")
+        if type(states) is not list:
+            return "representation_invalid"
+        for item in states:
+            if (type(item) is not dict or not set(item) <= _ROW_9_1
+                    or c.parse_upstream_us(item.get("last_changed")) is None
+                    or ("attributes" in item and type(item["attributes"]) is not dict)):
+                return "representation_invalid"
+    return _parse(raw, entity_id, offset)
+
+
+# One parser row per reviewed upstream version (REVIEWED_VERSIONS gains a
+# version only together with its row; a version without a row is refused).
+def _parse_9_1_2(raw: Any, entity_id: str, offset: int):
+    return _parse_9_1(raw, entity_id, offset, version="9.1.2")
+
+
+_PARSERS = {"8.5.0": _parse, "8.6.0": _parse, "9.1.0": _parse_9_1, "9.1.2": _parse_9_1_2}
 
 
 def _truncate_state(state: str) -> str:

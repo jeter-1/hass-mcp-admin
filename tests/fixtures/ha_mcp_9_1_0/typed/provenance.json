@@ -1,0 +1,70 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "typed",
+  "consumer": "tests/test_hamcp319_typed_writes.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.1.0",
+    "registry_entry": "ha-mcp-v9.1.0-4259f247",
+    "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+  },
+  "generation": "Hand-written structured-content templates transcribed from the pinned 9.1.0 source (read only, never executed). These are not captured records and carry no hashes; placeholders are filled per synthetic call by the test peer. The listed sha256 values identify the pinned source files the line citations refer to.",
+  "source_files": {
+    "src/ha_mcp/tools/tools_service.py": "43e20387dd8807a8d9e373c2cf065c0b84fb8781676660665a084bb1f475bf73",
+    "src/ha_mcp/client/rest_client.py": "ade2155ac5155d34f88987be2ba77e97435a3b251d277f9a41214f5175b4d30e",
+    "src/ha_mcp/tools/response_helpers.py": "f7a2e6e3ec8602f58baade074c701e8c1712eb0cd0edd03adae95b34463b824a",
+    "src/ha_mcp/tools/search/state.py": "4e431b58a1ea7b9a3f4f3af01d3cefa61ad13d7c30011090d08e2e1badd8b8e6",
+    "src/ha_mcp/tools/tools_services.py": "7dc427625b00e34b7560c2460047674b99b55399bbbf96c2ab8e28c5c97324ae"
+  },
+  "fixtures": {
+    "templates/call_service_success_changed_states": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_service.py:1978-1983 (wait=false gives should_wait=false)",
+        "src/ha_mcp/tools/tools_service.py:1744-1745 (no wait: _maybe_component_call_service returns None, legacy REST path)",
+        "src/ha_mcp/tools/tools_service.py:2036-2050 (service-mode success envelope; service_response only with has_response_envelope)",
+        "src/ha_mcp/tools/tools_service.py:1070-1071 (return_response=false: result passes through, no envelope)",
+        "src/ha_mcp/tools/response_helpers.py:119-121,148-179 (compact result drops context and last_* keys)"
+      ]
+    },
+    "templates/call_service_nonadmin_empty_list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/client/rest_client.py:807 (non-admin websocket path, return_response=false returns [])",
+        "src/ha_mcp/tools/response_helpers.py:148-149 (empty list returned unchanged)",
+        "src/ha_mcp/tools/tools_service.py:2036-2050 (success envelope)"
+      ]
+    },
+    "templates/call_service_nonadmin_envelope": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/client/rest_client.py:804-806 (non-admin websocket path, return_response=true returns {changed_states: [], service_response})",
+        "src/ha_mcp/tools/tools_service.py:2036-2050 (success envelope)"
+      ],
+      "caveat": "The typed wrappers always send return_response=false, and with return_response=false 9.1.0 never builds this envelope (tools_service.py:1070-1071). Placing it under result is conservative coverage that design rule 7 requires; it is not a shape 9.1.0 produces on the typed path."
+    },
+    "templates/call_service_timeout_partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_service.py:855-897 (_build_timeout_response; return_response=false omits service_response)",
+        "src/ha_mcp/tools/tools_service.py:1165-1168 (REST timeout becomes the partial envelope)"
+      ]
+    },
+    "templates/get_state": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/state.py:116-136 (single-entity projection, always wrapped)",
+        "src/ha_mcp/tools/response_helpers.py:392-433,470-478 (data/metadata wrapper; last_updated converted to local time with offset)"
+      ]
+    },
+    "templates/list_services_summary": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_services.py:459-472 (summary envelope)",
+        "src/ha_mcp/tools/tools_services.py:498-503 (summary entry name, description, domain, service)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)"
+      ]
+    }
+  }
+}

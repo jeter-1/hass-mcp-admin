@@ -17,6 +17,7 @@ sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.application import (  # noqa: E402
     _supervise_upstream_reconciliation,
 )
+from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
@@ -52,7 +53,7 @@ assert acceptance_spec.loader is not None
 acceptance_spec.loader.exec_module(acceptance)
 
 
-def application_gateway(runtime, *, reconciled=True):
+def application_gateway(runtime, *, reconciled=True, deadline_elapsed=False):
     """Exercise the real composition callback without configuring live clients."""
     app = gateway_fixtures.RecordingApp()
     with ExitStack() as stack:
@@ -63,6 +64,7 @@ def application_gateway(runtime, *, reconciled=True):
             'CONFIGURATION_INTEGRITY_ANALYSIS', 'INCIDENT_CORRELATION',
             'HANDOFF_GENERATION', 'UPSTREAM_READ_GATEWAY', 'FAN_OPERATIONS',
             'POWER_OPERATIONS', 'HELPER_VALUE_OPERATIONS', 'HEALTH',  # + HAMCP-311
+            'DEVICE_CONFIGURATION_OPERATIONS',  # + HAMCP-297
         ):
             stack.enter_context(patch.object(application, name))
         stack.enter_context(patch('ha_mcp_engineering.audit_baseline.capture_runtime.AUTOMATION_BASELINE_CAPTURE'))
@@ -77,6 +79,8 @@ def application_gateway(runtime, *, reconciled=True):
         ))
     # The composition's late-bound facade remains replaced only for each call.
     gateway._test_governance = governance
+    if deadline_elapsed:
+        gateway.mark_initial_catalog_deadline_elapsed()
     if reconciled:
         gateway.mark_initial_catalog_reconciled()
     return gateway, app
@@ -450,6 +454,13 @@ class ExactImageAuthorityFixtureTests(unittest.IsolatedAsyncioTestCase):
             ErrorCode.APPROVAL_SEQUENCE_FAILURE,
         )
         self.assertEqual(self.lifecycle.dispatch_count, 0)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so this module's synthetic upstream URL does not
+    # redact another module's data in the same test process.
+    _hamcp288_secret_paths.reset()
 
 
 if __name__ == "__main__":

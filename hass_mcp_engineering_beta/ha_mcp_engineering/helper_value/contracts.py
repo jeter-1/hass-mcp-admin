@@ -25,6 +25,10 @@ _SOURCES = {
     "8.6.0": ("ha-mcp-v8.6.0-7426fb16", "fc54437a804858732e4bc927add98e202d879a09"),
     "8.4.3": ("ha-mcp-v8.4.3-d5cea47a", "eac7a3aa7063432e9af17e7d7726040e909c7b8f"),
     "8.5.0": ("ha-mcp-v8.5.0-e1538bcd", "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"),
+    # HAMCP-319: exact reviewed registry entry ha-mcp-v9.1.0-4259f247.
+    "9.1.0": ("ha-mcp-v9.1.0-4259f247", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"),
+    # HAMCP-351: exact reviewed registry entry ha-mcp-v9.1.2-381b1e01.
+    "9.1.2": ("ha-mcp-v9.1.2-381b1e01", "bab615dfc90cc510f5e19a9118707d0fae03a37c"),
 }
 HELPER_SEMANTIC_CONTRACTS = {version: "ha-mcp-" + version + "-single-helper-value-v1"
                              for version in _SOURCES}

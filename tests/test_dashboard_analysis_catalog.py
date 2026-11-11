@@ -121,7 +121,11 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "set_automation_trace_watch",
                           "compare_automation_baselines",
                           "control_helper",  # + HAMCP-311
-                          "inspect_governance_record"})
+                          "control_device_configuration",  # + HAMCP-297
+                          "automation_reliability_batch_analysis",  # + HAMCP-229
+                          "inspect_governance_record",
+                          "get_marketplace_inventory",  # + HAMCP-290
+                          "get_security_metadata"})  # + HAMCP-134
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
@@ -136,6 +140,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current["list_capabilities"] = without_hamcp247_descriptor_change(self, current["list_capabilities"])
         from hamcp311_descriptor_changes import without_hamcp311_descriptor_changes  # + HAMCP-311
         current = without_hamcp311_descriptor_changes(self, current)
+        from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
+        current = without_hamcp294_descriptor_changes(self, current)
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):
@@ -158,8 +164,14 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         baseline = json.loads((ROOT / "tests/fixtures/dashboard_analysis/delegated-c82-descriptors.json").read_text())
         # The c82 fixture predates HAMCP-129; every one of its descriptors is
         # unchanged and the only additions are the three platform reads.
-        self.assertEqual(len(descriptors), 28)
-        self.assertEqual({name: descriptors[name] for name in baseline["descriptors"]}, baseline["descriptors"])
+        # HAMCP-290: except the retired delegated ha_get_hacs_info, which is
+        # never exposed (Josh decision 2026-11-08).
+        from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
+        self.assertTrue(RETIRED_DELEGATED_READS <= set(baseline["descriptors"]))
+        self.assertFalse(RETIRED_DELEGATED_READS & set(descriptors))
+        self.assertEqual(len(descriptors), 28 - len(RETIRED_DELEGATED_READS))
+        kept = {name: value for name, value in baseline["descriptors"].items() if name not in RETIRED_DELEGATED_READS}
+        self.assertEqual({name: descriptors[name] for name in kept}, kept)
         self.assertEqual(set(descriptors) - set(baseline["descriptors"]),
                          {"ha_get_app", "ha_get_integration", "ha_get_system_health"})
 
@@ -232,7 +244,7 @@ class InnerPayloadTests(unittest.TestCase):
 
     def test_original_hashes_are_verified_before_projection(self):
         payload = self.payload()
-        result = _analysis_configuration(call_result(payload), "synthetic")
+        result = _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
         self.assertEqual(result["engineering_config_hash"], _engineering_config_hash(payload["config"]))
         self.assertEqual(result["config_hash"], payload["config_hash"])
         self.assertEqual(result["configuration"], payload["config"])
@@ -243,20 +255,20 @@ class InnerPayloadTests(unittest.TestCase):
                 payload = self.payload()
                 payload.update(config=config, config_hash=_upstream_config_hash(config))
                 with self.assertRaises(c.AnalysisError) as error:
-                    _analysis_configuration(call_result(payload), "synthetic")
+                    _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
                 self.assertEqual(error.exception.reason, "malformed_response")
                 self.assertFalse(error.exception.retryable)
                 self.assertNotIn("synthetic-private-value", str(error.exception))
         payload = self.payload()
         payload.update(config={"views": []}, config_hash=_upstream_config_hash({"views": []}))
-        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic")["configuration"], {"views": []})
+        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")["configuration"], {"views": []})
 
     def test_unpaired_unicode_is_permanent_malformed_source(self):
         payload = self.payload()
         payload["config"]["name"] = chr(0xD800)
         payload["config_hash"] = _upstream_config_hash(payload["config"])
         with self.assertRaises(c.AnalysisError) as error:
-            _analysis_configuration(call_result(payload), "synthetic")
+            _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
         self.assertEqual(error.exception.reason, "malformed_response")
         self.assertFalse(error.exception.retryable)
 
@@ -275,7 +287,7 @@ class InnerPayloadTests(unittest.TestCase):
                       {"content": [{"type": "text", "text": '{"success":NaN}'}]}])
         for result in cases:
             with self.subTest(result=result), self.assertRaises(c.AnalysisError) as error:
-                _analysis_configuration(result, "synthetic")
+                _analysis_configuration(result, "synthetic", upstream_version="8.5.0")
             self.assertFalse(error.exception.retryable)
             self.assertNotIn("synthetic-private-value", str(error.exception))
 

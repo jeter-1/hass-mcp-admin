@@ -1,0 +1,2091 @@
+{
+ "baseline": {
+  "modules": [
+   "test_hamcp290_marketplace_inventory.py",
+   "test_readonly_upstream_gateway.py",
+   "test_hamcp164_core_gate_fail_closed.py"
+  ],
+  "returncode": 0,
+  "tests": 237,
+  "seconds": 26.5
+ },
+ "mutation_count": 81,
+ "killed": 78,
+ "not_killed": [
+  "B5-frame-count-unbounded",
+  "A9-static-requirement-removed",
+  "W1-registry-name-reverted"
+ ],
+ "equivalent": {
+  "B5-frame-count-unbounded": "MarketplaceReader.read calls receive() at most four times by construction (auth_required, auth_ok, at most two command results: one per send, and send runs at most twice), so the frames > MAX_FRAMES guard can never fire. It stays as defense in depth against a future edit; no input can reach it."
+ },
+ "fail_closed_at_import": {
+  "A9-static-requirement-removed": "ha_core_readmission/routes.py refuses to import with RuntimeError 'Static Core requirements must be non-empty: [get_marketplace_inventory]', so the Engineering runtime cannot start; every suite errors at import.",
+  "W1-registry-name-reverted": "the reviewed FastMCP registry adapter refuses a tool whose registry key differs from its Tool.name (mcp_sdk_compatibility._validate_mapping), so tools/registry.py raises McpSdkCompatibilityError at import and the Engineering runtime cannot start; every suite errors at import."
+ },
+ "unexpected_survivors": [],
+ "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "F1-any-failure-code-falls-back",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if code == FALLBACK_ERROR_CODE:\n        return None",
+     "    if True:\n        return None"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 16,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F1-any-failure-code-falls-back.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "F2-not-loaded-falls-back",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if code == \"not_loaded\":\n        raise MarketplaceError(\"marketplace_not_loaded\")",
+     "    if code == \"not_loaded\":\n        return None"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)",
+    "FAIL test_no_fallback_for_any_other_marketplace_failure (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_no_fallback_for_any_other_marketplace_failure)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F2-not-loaded-falls-back.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "F3-message-text-selects-fallback",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if code == FALLBACK_ERROR_CODE:\n",
+     "    if code == FALLBACK_ERROR_CODE or \"unknown command\" in str(error.get(\"message\", \"\")).lower():\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)",
+    "FAIL test_only_the_exact_unknown_command_code_selects_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_only_the_exact_unknown_command_code_selects_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F3-message-text-selects-fallback.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "F4-missing-error-mapping-falls-back",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "code = error.get(\"code\") if type(error) is dict else None",
+     "code = error.get(\"code\") if type(error) is dict else FALLBACK_ERROR_CODE"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_malformed_envelopes_never_select_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_malformed_envelopes_never_select_fallback)",
+    "FAIL test_malformed_envelopes_never_select_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_malformed_envelopes_never_select_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F4-missing-error-mapping-falls-back.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "F5-hacs-unknown-command-read-as-empty",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            if store is None:\n                                raise MarketplaceError(\"marketplace_unavailable\", fallback_occurred=True)",
+     "                            if store is None:\n                                store = []"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_hacs_unknown_command_is_unavailable_not_a_third_command (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_hacs_unknown_command_is_unavailable_not_a_third_command)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F5-hacs-unknown-command-read-as-empty.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "F6-success-with-non-list-result",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "if \"error\" in message or \"result\" not in message or type(message[\"result\"]) is not list:",
+     "if \"error\" in message or \"result\" not in message:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_malformed_envelopes_never_select_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_malformed_envelopes_never_select_fallback)",
+    "FAIL test_hacs_failures_after_fallback_are_attributed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_hacs_failures_after_fallback_are_attributed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F6-success-with-non-list-result.log",
+   "seconds": 26.0
+  },
+  {
+   "id": "F7-reply-id-not-matched",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "or type(message.get(\"id\")) is not int or message[\"id\"] != expected_id",
+     "or type(message.get(\"id\")) is not int"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_malformed_envelopes_never_select_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_malformed_envelopes_never_select_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F7-reply-id-not-matched.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "F8-failure-with-result-accepted",
+   "class": "fallback predicate widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if \"result\" in message:\n        raise MarketplaceError(\"malformed_response\")\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_malformed_envelopes_never_select_fallback (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_malformed_envelopes_never_select_fallback)",
+    "FAIL test_no_fallback_for_any_other_marketplace_failure (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_no_fallback_for_any_other_marketplace_failure)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/F8-failure-with-result-accepted.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "B1-reply-record-count-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        if len(message[\"result\"]) > MAX_RECORDS:\n            raise MarketplaceError(\"response_too_large\")",
+     "        if False:\n            raise MarketplaceError(\"response_too_large\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_record_count_bound (test_hamcp290_marketplace_inventory.ClassifyReplyTests.test_record_count_bound)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B1-reply-record-count-unbounded.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "B2-projection-record-count-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if len(store) > MAX_RECORDS:\n        raise MarketplaceError(\"response_too_large\")",
+     "    if False:\n        raise MarketplaceError(\"response_too_large\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B2-projection-record-count-unbounded.log",
+   "seconds": 25.7
+  },
+  {
+   "id": "B3-frame-bytes-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "max_msg_size=FRAME_BYTES + 1,",
+     "max_msg_size=0,"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "if len(frame.data.encode(\"utf-8\")) > (AUTH_BYTES if auth else FRAME_BYTES):",
+     "if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_auth_frames_have_their_own_smaller_bound (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_auth_frames_have_their_own_smaller_bound)",
+    "FAIL test_oversized_frame_fails_closed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_oversized_frame_fails_closed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B3-frame-bytes-unbounded.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "B4-auth-frame-bound-widened",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "(AUTH_BYTES if auth else FRAME_BYTES)",
+     "FRAME_BYTES"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_auth_frames_have_their_own_smaller_bound (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_auth_frames_have_their_own_smaller_bound)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B4-auth-frame-bound-widened.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "B5-frame-count-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            if frames > MAX_FRAMES:",
+     "                            if False:"
+    ]
+   ],
+   "verdict": "survived",
+   "killed": false,
+   "returncode": 0,
+   "assertion_failures": 0,
+   "errors": 0,
+   "first_assertion_failures": [],
+   "first_errors": [],
+   "expected_equivalent": true,
+   "equivalence_reason": "MarketplaceReader.read calls receive() at most four times by construction (auth_required, auth_ok, at most two command results: one per send, and send runs at most twice), so the frames > MAX_FRAMES guard can never fire. It stays as defense in depth against a future edit; no input can reach it.",
+   "log_path": "mutation-logs/B5-frame-count-unbounded.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "B6-duplicate-json-keys-accepted",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                if key in result:\n                    raise MarketplaceError(\"malformed_response\")",
+     "                if False:\n                    raise MarketplaceError(\"malformed_response\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_no_fallback_for_any_other_marketplace_failure (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_no_fallback_for_any_other_marketplace_failure)",
+    "FAIL test_unsolicited_frames_and_non_json_fail_closed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_unsolicited_frames_and_non_json_fail_closed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B6-duplicate-json-keys-accepted.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "B7-non-finite-constants-accepted",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "parse_constant=constant, parse_float=float_value)",
+     "parse_float=float_value)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unsolicited_frames_and_non_json_fail_closed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_unsolicited_frames_and_non_json_fail_closed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B7-non-finite-constants-accepted.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "B8-deadline-not-capped",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "deadline = min(MAX_SECONDS, float(getattr(self.settings, \"ha_timeout_seconds\", MAX_SECONDS)))",
+     "deadline = float(getattr(self.settings, \"ha_timeout_seconds\", MAX_SECONDS))"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_configured_timeout_never_exceeds_the_cap (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_configured_timeout_never_exceeds_the_cap)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B8-deadline-not-capped.log",
+   "seconds": 30.5
+  },
+  {
+   "id": "B9-limit-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "limit=_bounded_int(arguments.get(\"limit\", DEFAULT_LIMIT), 1, MAX_LIMIT)",
+     "limit=_bounded_int(arguments.get(\"limit\", DEFAULT_LIMIT), 1, 10**6)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 2,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
+   ],
+   "first_errors": [
+    "ERROR test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "ERROR test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B9-limit-unbounded.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "B10-negative-offset-accepted",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "offset=_bounded_int(arguments.get(\"offset\", 0), 0, MAX_OFFSET)",
+     "offset=_bounded_int(arguments.get(\"offset\", 0), -(10**6), MAX_OFFSET)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
+   ],
+   "first_errors": [
+    "ERROR test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B10-negative-offset-accepted.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "B11-bool-accepted-as-int",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if type(value) is not int or not low <= value <= high:",
+     "    if not isinstance(value, int) or not low <= value <= high:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)",
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B11-bool-accepted-as-int.log",
+   "seconds": 25.8
+  },
+  {
+   "id": "B12-query-length-unbounded",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if type(value) is not str or len(value) > MAX_QUERY:",
+     "    if type(value) is not str:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B12-query-length-unbounded.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "B13-control-characters-accepted",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if any(unicodedata.category(char) in (\"Cc\", \"Cf\", \"Cs\", \"Co\", \"Cn\") for char in value):",
+     "    if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)",
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)",
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B13-control-characters-accepted.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "B14-unknown-argument-keys-accepted",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if type(arguments) is not dict or not set(arguments) <= ARGUMENT_KEYS:",
+     "    if type(arguments) is not dict:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_values_are_closed_and_never_reflected (test_hamcp290_marketplace_inventory.ArgumentTests.test_refused_values_are_closed_and_never_reflected)",
+    "FAIL test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B14-unknown-argument-keys-accepted.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "B15-schema-admits-unknown-keys",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "    tool.parameters[\"additionalProperties\"] = False\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B15-schema-admits-unknown-keys.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "B16-page-not-limited",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    page = matches[request.offset:request.offset + request.limit]",
+     "    page = matches[request.offset:]"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 8,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B16-page-not-limited.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "B17-next-offset-on-last-page",
+   "class": "acquisition or input bound weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\"next_offset\": end if has_more else None,",
+     "\"next_offset\": end,"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sorted_bounded_pages_with_exact_continuation (test_hamcp290_marketplace_inventory.PageTests.test_sorted_bounded_pages_with_exact_continuation)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/B17-next-offset-on-last-page.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P1-uninstalled-records-listed",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        if not _strict_bool(record, \"installed\"):\n            continue\n",
+     "        _strict_bool(record, \"installed\")\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 6,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
+    "FAIL test_fingerprint_tracks_installed_inventory_only (test_hamcp290_marketplace_inventory.PageTests.test_fingerprint_tracks_installed_inventory_only)",
+    "FAIL test_installed_only_fixed_projection (test_hamcp290_marketplace_inventory.ProjectionTests.test_installed_only_fixed_projection)"
+   ],
+   "first_errors": [
+    "ERROR test_uninstalled_records_need_only_a_strict_installed_flag (test_hamcp290_marketplace_inventory.ProjectionTests.test_uninstalled_records_need_only_a_strict_installed_flag)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P1-uninstalled-records-listed.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "P2-truthy-installed-accepted",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        if not _strict_bool(record, \"installed\"):\n",
+     "        if not record.get(\"installed\"):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)",
+    "FAIL test_refusal_after_fallback_renders_fallback_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_refusal_after_fallback_renders_fallback_attribution)",
+    "FAIL test_failure_attribution_follows_the_dispatch_ledger (test_hamcp290_marketplace_inventory.ServiceReadTests.test_failure_attribution_follows_the_dispatch_ledger)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P2-truthy-installed-accepted.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P3-dot-segment-full-name-accepted",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\n            or any(part in {\".\", \"..\"} for part in full_name.split(\"/\"))):",
+     "):"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)",
+    "FAIL test_failures_are_closed_and_never_partial (test_hamcp290_marketplace_inventory.ServiceReadTests.test_failures_are_closed_and_never_partial)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P3-dot-segment-full-name-accepted.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P4-duplicate-installed-ids-accepted",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        if repository_id in seen:\n            raise MarketplaceError(\"malformed_response\")",
+     "        if False:\n            raise MarketplaceError(\"malformed_response\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)",
+    "FAIL test_any_malformed_installed_record_fails_the_whole_store (test_hamcp290_marketplace_inventory.ProjectionTests.test_any_malformed_installed_record_fails_the_whole_store)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P4-duplicate-installed-ids-accepted.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "P5-dropped-field-projected",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    \"available_version\", \"pending_upgrade\", \"custom\", \"description\",\n)",
+     "    \"available_version\", \"pending_upgrade\", \"custom\", \"description\", \"local_path\",\n)"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            \"description\": _optional_text(record, \"description\"),\n        })",
+     "            \"description\": _optional_text(record, \"description\"),\n            \"local_path\": _optional_text(record, \"local_path\"),\n        })"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_installed_only_fixed_projection (test_hamcp290_marketplace_inventory.ProjectionTests.test_installed_only_fixed_projection)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P5-dropped-field-projected.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "P6-description-unsanitized",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "(\"available_version\", VERSION_CHARS), (\"description\", DESCRIPTION_CHARS))",
+     "(\"available_version\", VERSION_CHARS))"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P6-description-unsanitized.log",
+   "seconds": 24.4
+  },
+  {
+   "id": "P7-name-not-truncated",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "(\"name\", NAME_CHARS)",
+     "(\"name\", None)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P7-name-not-truncated.log",
+   "seconds": 25.6
+  },
+  {
+   "id": "P8-search-over-unsanitized-text",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    matches = [record for record in records if _matches(record, request)]",
+     "    raw = {item[\"id\"]: item for item in project_installed(store)}\n    matches = [record for record in records if _matches(raw[record[\"id\"]], request)]"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)",
+    "FAIL test_search_never_matches_discarded_text (test_hamcp290_marketplace_inventory.PageTests.test_search_never_matches_discarded_text)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P8-search-over-unsanitized-text.log",
+   "seconds": 25.8
+  },
+  {
+   "id": "P9-known-secrets-dropped",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "known_secrets=known_secrets, max_string=bound",
+     "known_secrets=(), max_string=bound"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sanitized_text_is_withheld_partial_and_unsearchable (test_hamcp290_marketplace_inventory.PageTests.test_sanitized_text_is_withheld_partial_and_unsearchable)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P9-known-secrets-dropped.log",
+   "seconds": 24.7
+  },
+  {
+   "id": "P10-partial-never-flagged",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    partial_reasons = [reason for reason, present in ((\"sanitized_text\", text_partial),\n                                                      (\"more_pages\", has_more)) if present]",
+     "    partial_reasons = []"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 11,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P10-partial-never-flagged.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P14-truncation-alone-complete",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     " or screen.truncated > 0 or screen.failed_closed",
+     " or screen.failed_closed"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 7,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_truncation_only_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_truncation_only_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_truncation_alone_is_partial (test_hamcp290_marketplace_inventory.PageTests.test_truncation_alone_is_partial)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P14-truncation-alone-complete.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "P15-more-pages-complete",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "(\"more_pages\", has_more)) if present]",
+     "(\"more_pages\", False)) if present]"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P15-more-pages-complete.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "P16-completeness-ignores-paging",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\"completeness\": \"partial\" if partial_reasons else \"complete\",",
+     "\"completeness\": \"partial\" if text_partial else \"complete\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_page_is_partial_until_the_last_page (test_hamcp290_marketplace_inventory.PageTests.test_paged_page_is_partial_until_the_last_page)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P16-completeness-ignores-paging.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "P17-more-pages-warning-dropped",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "        if \"more_pages\" in value[\"partial_reasons\"]:\n            warnings.append(_MORE_PAGES)\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_paged_result_over_the_real_reader_is_partial (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_paged_result_over_the_real_reader_is_partial)",
+    "FAIL test_paged_result_renders_partial_with_continuation_warning (test_hamcp290_marketplace_inventory.PublicToolTests.test_paged_result_renders_partial_with_continuation_warning)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P17-more-pages-warning-dropped.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "P11-fingerprint-over-page-only",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\"inventory_fingerprint\": inventory_fingerprint(backend, records),",
+     "\"inventory_fingerprint\": inventory_fingerprint(backend, page),"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_fingerprint_tracks_installed_inventory_only (test_hamcp290_marketplace_inventory.PageTests.test_fingerprint_tracks_installed_inventory_only)",
+    "FAIL test_sorted_bounded_pages_with_exact_continuation (test_hamcp290_marketplace_inventory.PageTests.test_sorted_bounded_pages_with_exact_continuation)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P11-fingerprint-over-page-only.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "P12-unsorted-results",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    records.sort(key=_sort_key)\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_fingerprint_tracks_installed_inventory_only (test_hamcp290_marketplace_inventory.PageTests.test_fingerprint_tracks_installed_inventory_only)",
+    "FAIL test_sorted_bounded_pages_with_exact_continuation (test_hamcp290_marketplace_inventory.PageTests.test_sorted_bounded_pages_with_exact_continuation)",
+    "FAIL test_ties_sort_by_id_and_casefold (test_hamcp290_marketplace_inventory.PageTests.test_ties_sort_by_id_and_casefold)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P12-unsorted-results.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "P13-category-filter-ignored",
+   "class": "projection, sanitizer or paging weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "    if request.category is not None and record[\"category\"] != request.category:\n        return False\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_query_and_category_filters (test_hamcp290_marketplace_inventory.PageTests.test_query_and_category_filters)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P13-category-filter-ignored.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "A1-anonymous-caller-admitted",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        if current_caller_id() == \"anonymous\":\n            raise MarketplaceError(\"authority_unavailable\")",
+     "        if False:\n            raise MarketplaceError(\"authority_unavailable\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_anonymous_caller_refuses (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_anonymous_caller_refuses)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A1-anonymous-caller-admitted.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "A2-profile-availability-ignored",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "if (status.get(\"available\") is not True or type(version) is not str or not version",
+     "if (type(version) is not str or not version"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_unadmitted_service_opens_no_connection (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_unadmitted_service_opens_no_connection)",
+    "FAIL test_unadmitted_profile_refuses_even_with_dispatch_authority (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_unadmitted_profile_refuses_even_with_dispatch_authority)"
+   ],
+   "first_errors": [
+    "ERROR test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A2-profile-availability-ignored.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "A3-dispatch-authority-ignored",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "\n                or telemetry is None or telemetry.core_dispatch_authorizer is None\n                or not telemetry.authorize_core_dispatch()):",
+     "):"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A3-dispatch-authority-ignored.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "A4-no-recheck-before-each-command",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            authorize()\n                            on_dispatch(payload[\"type\"])",
+     "                            on_dispatch(payload[\"type\"])"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_authority_loss_after_result_does_not_publish (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_authority_loss_after_result_does_not_publish)",
+    "FAIL test_authority_loss_before_dispatch_sends_no_command (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_authority_loss_before_dispatch_sends_no_command)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A4-no-recheck-before-each-command.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "A5-no-recheck-before-publishing",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                if self.authority() != authority:\n                    failure = MarketplaceError(\"authority_unavailable\")",
+     "                if False:\n                    failure = MarketplaceError(\"authority_unavailable\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 11,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)",
+    "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)",
+    "FAIL test_authority_loss_after_the_page_keeps_dispatch_attribution (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_authority_loss_after_the_page_keeps_dispatch_attribution)"
+   ],
+   "first_errors": [
+    "ERROR test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A5-no-recheck-before-publishing.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "A6-read-recheck-noop",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            if self.authority() != authority:\n                raise MarketplaceError(\"authority_unavailable\")",
+     "            if False:\n                raise MarketplaceError(\"authority_unavailable\")"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A6-read-recheck-noop.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "A7-core-identity-unchecked",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                        if auth.get(\"ha_version\") != core_version:",
+     "                        if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_auth_failure_and_identity_drift_send_no_command (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_auth_failure_and_identity_drift_send_no_command)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A7-core-identity-unchecked.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "A8-service-requirement-empty",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "CORE_REQUIREMENTS = (PROFILE,)",
+     "CORE_REQUIREMENTS = ()"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_admission_asks_for_exactly_the_marketplace_profile (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_asks_for_exactly_the_marketplace_profile)"
+   ],
+   "first_errors": [
+    "ERROR test_signed_reference_admits_and_the_read_succeeds (test_hamcp290_marketplace_inventory.SignedTestRegistryAdmissionTests.test_signed_reference_admits_and_the_read_succeeds)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A8-service-requirement-empty.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "A9-static-requirement-removed",
+   "class": "admission removed",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "    MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),",
+     "    MARKETPLACE_TOOL: (),"
+    ]
+   ],
+   "verdict": "error_only",
+   "killed": false,
+   "returncode": 1,
+   "assertion_failures": 0,
+   "errors": 3,
+   "first_assertion_failures": [],
+   "first_errors": [
+    "ERROR test_hamcp290_marketplace_inventory (unittest.loader._FailedTest.test_hamcp290_marketplace_inventory)",
+    "ERROR test_readonly_upstream_gateway (unittest.loader._FailedTest.test_readonly_upstream_gateway)",
+    "ERROR test_hamcp164_core_gate_fail_closed (unittest.loader._FailedTest.test_hamcp164_core_gate_fail_closed)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/A9-static-requirement-removed.log",
+   "seconds": 2.4
+  },
+  {
+   "id": "R1-retired-read-exposed",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if False:\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1-retired-read-exposed.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "R2-retired-read-withheld-only-beside-native-route",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS and entry.upstream_name in base_names:\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R2-retired-read-withheld-only-beside-native-route.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "R3-retired-read-withheld-only-before-9-1",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS:\n                    # HAMCP-290: a retired delegated read",
+     "                if entry.upstream_name in RETIRED_DELEGATED_READS and not catalog.server_version.startswith(\"9.\"):\n                    # HAMCP-290: a retired delegated read"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_withheld_on_the_9_1_0_capture (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_withheld_on_the_9_1_0_capture)",
+    "FAIL test_retired_read_is_withheld_on_the_9_1_0_capture (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_withheld_on_the_9_1_0_capture)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R3-retired-read-withheld-only-before-9-1.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "R4-retirement-disposition-not-distinct",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                            \"disposition\": \"retired_delegated_read\",",
+     "                            \"disposition\": \"core_withheld\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)",
+    "FAIL test_retired_read_is_never_exposed_without_a_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_without_a_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R4-retirement-disposition-not-distinct.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "R5-retired-read-not-recorded-withheld",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                            \"tool\": entry.upstream_name,\n                            \"disposition\": \"retired_delegated_read\",",
+     "                            \"tool\": \"retired\",\n                            \"disposition\": \"retired_delegated_read\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 13,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)",
+    "FAIL test_retired_read_is_never_exposed_or_aliased_beside_the_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_or_aliased_beside_the_native_route)",
+    "FAIL test_retired_read_is_never_exposed_without_a_native_route (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_exposed_without_a_native_route)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R5-retired-read-not-recorded-withheld.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "R6-dispatch-guard-removed",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "                or policy_entry.upstream_name in RETIRED_DELEGATED_READS\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_a_previously_admitted_route_is_refused_at_dispatch (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_a_previously_admitted_route_is_refused_at_dispatch)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R6-dispatch-guard-removed.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "R7-retired-names-emptied",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = (\"ha_get_hacs_info\",)",
+     "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ()"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 16,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)",
+    "FAIL test_a_previously_admitted_route_is_refused_at_dispatch (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_a_previously_admitted_route_is_refused_at_dispatch)",
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R7-retired-names-emptied.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "R8-retired-read-counted-as-core-withdrawal",
+   "class": "delegated read retirement weakened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+     "            str(item.get(\"tool\", \"\")) for item in core_withheld\n        } - RETIRED_DELEGATED_READS\n",
+     "            str(item.get(\"tool\", \"\")) for item in core_withheld\n        }\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_retired_read_is_never_counted_as_a_core_catalog_change (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_retired_read_is_never_counted_as_a_core_catalog_change)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R8-retired-read-counted-as-core-withdrawal.log",
+   "seconds": 25.3
+  },
+  {
+   "id": "C1-marketplace-command-swapped",
+   "class": "command vocabulary widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "MARKETPLACE_LIST_COMMAND = \"marketplace/repositories/list\"",
+     "MARKETPLACE_LIST_COMMAND = \"marketplace/info\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 24,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp290_marketplace_inventory.ContractTests.test_payloads_are_the_closed_vocabulary)",
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/C1-marketplace-command-swapped.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "C2-hacs-command-swapped",
+   "class": "command vocabulary widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "HACS_LIST_COMMAND = \"hacs/repositories/list\"",
+     "HACS_LIST_COMMAND = \"hacs/info\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 9,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_payloads_are_the_closed_vocabulary (test_hamcp290_marketplace_inventory.ContractTests.test_payloads_are_the_closed_vocabulary)",
+    "FAIL test_hacs_failure_after_write_stays_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_hacs_failure_after_write_stays_attributed_to_fallback)",
+    "FAIL test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/C2-hacs-command-swapped.log",
+   "seconds": 24.9
+  },
+  {
+   "id": "C3-argument-forwarded",
+   "class": "command vocabulary widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "await websocket.send_json({\"id\": command_id, **payload})",
+     "await websocket.send_json({\"id\": command_id, **payload, \"category\": \"integration\"})"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 23,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_admitted_service_reads_core_marketplace (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admitted_service_reads_core_marketplace)",
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/C3-argument-forwarded.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "C4-dispatch-allowlist-skipped",
+   "class": "command vocabulary widened",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            if command not in COMMANDS or len(commands) >= MAX_COMMANDS:",
+     "            if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_dispatch_outside_the_closed_vocabulary_is_refused (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_dispatch_outside_the_closed_vocabulary_is_refused)",
+    "FAIL test_dispatch_outside_the_closed_vocabulary_is_refused (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_dispatch_outside_the_closed_vocabulary_is_refused)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/C4-dispatch-allowlist-skipped.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T1-hacs-answer-labelled-core",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            backend = BACKEND_HACS\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_exact_unknown_command_falls_back_once_on_the_same_connection (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_exact_unknown_command_falls_back_once_on_the_same_connection)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T1-hacs-answer-labelled-core.log",
+   "seconds": 24.9
+  },
+  {
+   "id": "T2-fallback-flag-dropped",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "        page[\"fallback_occurred\"] = backend == BACKEND_HACS",
+     "        page[\"fallback_occurred\"] = False"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admitted_tool_renders_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_admitted_tool_renders_attribution)",
+    "FAIL test_backend_is_decided_by_the_command_that_answered (test_hamcp290_marketplace_inventory.ServiceReadTests.test_backend_is_decided_by_the_command_that_answered)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T2-fallback-flag-dropped.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T3-tool-metadata-fallback-dropped",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "        metadata[\"fallback_occurred\"] = value[\"fallback_occurred\"]",
+     "        metadata[\"fallback_occurred\"] = False"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admitted_tool_renders_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_admitted_tool_renders_attribution)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T3-tool-metadata-fallback-dropped.log",
+   "seconds": 24.9
+  },
+  {
+   "id": "T4-refusal-after-fallback-unattributed",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            if fallback and not exc.fallback_occurred:",
+     "            if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_hacs_failures_after_fallback_are_attributed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_hacs_failures_after_fallback_are_attributed)",
+    "FAIL test_hacs_failures_after_fallback_are_attributed (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_hacs_failures_after_fallback_are_attributed)",
+    "FAIL test_reader_attributes_fallback_only_after_the_hacs_frame_is_written (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_reader_attributes_fallback_only_after_the_hacs_frame_is_written)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T4-refusal-after-fallback-unattributed.log",
+   "seconds": 24.9
+  },
+  {
+   "id": "T6-ledger-attribution-dropped",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            raise MarketplaceError(failure.reason,\n                                   fallback_occurred=HACS_LIST_COMMAND in sent) from None",
+     "            raise failure"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_post_fallback_failures_over_the_real_reader_are_attributed (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_post_fallback_failures_over_the_real_reader_are_attributed)",
+    "FAIL test_refusal_after_fallback_renders_fallback_attribution (test_hamcp290_marketplace_inventory.PublicToolTests.test_refusal_after_fallback_renders_fallback_attribution)",
+    "FAIL test_admission_change_while_building_the_page_does_not_publish (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_admission_change_while_building_the_page_does_not_publish)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T6-ledger-attribution-dropped.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T7-ledger-only-adds-fallback",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "fallback_occurred=HACS_LIST_COMMAND in sent)",
+     "fallback_occurred=failure.fallback_occurred or HACS_LIST_COMMAND in sent)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admitted_but_unwritten_fallback_is_not_attributed (test_hamcp290_marketplace_inventory.ServiceReadTests.test_admitted_but_unwritten_fallback_is_not_attributed)",
+    "FAIL test_failure_attribution_follows_the_dispatch_ledger (test_hamcp290_marketplace_inventory.ServiceReadTests.test_failure_attribution_follows_the_dispatch_ledger)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T7-ledger-only-adds-fallback.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "T8-ledger-counts-first-command",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "fallback_occurred=HACS_LIST_COMMAND in sent)",
+     "fallback_occurred=bool(sent))"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 16,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_admission_withdrawn_between_commands_stops_the_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_admission_withdrawn_between_commands_stops_the_fallback)",
+    "FAIL test_first_command_failure_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_first_command_failure_is_not_attributed_to_fallback)",
+    "FAIL test_hacs_rejected_before_write_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_hacs_rejected_before_write_is_not_attributed_to_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T8-ledger-counts-first-command.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "T9-final-authority-exception-unclosed",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            except Exception:\n                failure = MarketplaceError(\"provider_error\")\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unexpected_failure_in_the_final_authority_check_is_closed (test_hamcp290_marketplace_inventory.ServiceAdmissionTests.test_unexpected_failure_in_the_final_authority_check_is_closed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T9-final-authority-exception-unclosed.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T10-attribution-from-admitted-not-sent",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "fallback_occurred=HACS_LIST_COMMAND in sent)",
+     "fallback_occurred=HACS_LIST_COMMAND in commands)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_hacs_rejected_before_write_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_hacs_rejected_before_write_is_not_attributed_to_fallback)",
+    "FAIL test_admitted_but_unwritten_fallback_is_not_attributed (test_hamcp290_marketplace_inventory.ServiceReadTests.test_admitted_but_unwritten_fallback_is_not_attributed)",
+    "FAIL test_admitted_but_unwritten_fallback_is_not_attributed (test_hamcp290_marketplace_inventory.ServiceReadTests.test_admitted_but_unwritten_fallback_is_not_attributed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T10-attribution-from-admitted-not-sent.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "T11-sent-recorded-before-write",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            await websocket.send_json({\"id\": command_id, **payload})\n                            on_sent(payload[\"type\"])\n",
+     "                            on_sent(payload[\"type\"])\n                            await websocket.send_json({\"id\": command_id, **payload})\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_hacs_rejected_before_write_is_not_attributed_to_fallback (test_hamcp290_marketplace_inventory.EndToEndLoopbackTests.test_hacs_rejected_before_write_is_not_attributed_to_fallback)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T11-sent-recorded-before-write.log",
+   "seconds": 25.0
+  },
+  {
+   "id": "T12-reader-fallback-on-selection",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            fallback = fallback or payload is HACS_PAYLOAD\n",
+     ""
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "                            backend = BACKEND_HACS\n",
+     "                            fallback = True\n                            backend = BACKEND_HACS\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_reader_attributes_fallback_only_after_the_hacs_frame_is_written (test_hamcp290_marketplace_inventory.ReaderLoopbackTests.test_reader_attributes_fallback_only_after_the_hacs_frame_is_written)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T12-reader-fallback-on-selection.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "T13-sent-ledger-unordered",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
+     "            if len(sent) >= len(commands) or commands[len(sent)] != command:",
+     "            if False:"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sent_ledger_accepts_only_admitted_commands_in_order (test_hamcp290_marketplace_inventory.ServiceReadTests.test_sent_ledger_accepts_only_admitted_commands_in_order)",
+    "FAIL test_sent_ledger_accepts_only_admitted_commands_in_order (test_hamcp290_marketplace_inventory.ServiceReadTests.test_sent_ledger_accepts_only_admitted_commands_in_order)",
+    "FAIL test_sent_ledger_accepts_only_admitted_commands_in_order (test_hamcp290_marketplace_inventory.ServiceReadTests.test_sent_ledger_accepts_only_admitted_commands_in_order)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T13-sent-ledger-unordered.log",
+   "seconds": 25.2
+  },
+  {
+   "id": "T5-refused-value-reflected",
+   "class": "attribution wrong or refused value reflected",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "            async def invalid():\n                raise MarketplaceError(\"invalid_arguments\")",
+     "            async def invalid():\n                raise ValueError(repr(arguments))"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)",
+    "FAIL test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)",
+    "FAIL test_invalid_arguments_are_never_reflected (test_hamcp290_marketplace_inventory.PublicToolTests.test_invalid_arguments_are_never_reflected)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/T5-refused-value-reflected.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "W1-registry-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/registry.py",
+     "\"get_marketplace_inventory\": marketplace_inventory_tool(),",
+     "\"ha_get_hacs_info\": marketplace_inventory_tool(),"
+    ]
+   ],
+   "verdict": "error_only",
+   "killed": false,
+   "returncode": 1,
+   "assertion_failures": 0,
+   "errors": 3,
+   "first_assertion_failures": [],
+   "first_errors": [
+    "ERROR test_hamcp290_marketplace_inventory (unittest.loader._FailedTest.test_hamcp290_marketplace_inventory)",
+    "ERROR test_readonly_upstream_gateway (unittest.loader._FailedTest.test_readonly_upstream_gateway)",
+    "ERROR test_hamcp164_core_gate_fail_closed (unittest.loader._FailedTest.test_hamcp164_core_gate_fail_closed)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W1-registry-name-reverted.log",
+   "seconds": 3.8
+  },
+  {
+   "id": "W2-route-constant-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+     "MARKETPLACE_TOOL = \"get_marketplace_inventory\"",
+     "MARKETPLACE_TOOL = \"ha_get_hacs_info\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 9,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)",
+    "FAIL test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)",
+    "FAIL test_shipped_reference_set_withholds (test_hamcp290_marketplace_inventory.SignedTestRegistryAdmissionTests.test_shipped_reference_set_withholds)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W2-route-constant-reverted.log",
+   "seconds": 25.5
+  },
+  {
+   "id": "W3-capability-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+     "        \"tool\": \"get_marketplace_inventory\",\n        \"category\": \"evidence\",",
+     "        \"tool\": \"ha_get_hacs_info\",\n        \"category\": \"evidence\","
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)"
+   ],
+   "first_errors": [
+    "ERROR test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W3-capability-name-reverted.log",
+   "seconds": 25.4
+  },
+  {
+   "id": "W4-routing-key-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
+     "    \"get_marketplace_inventory\": {\n        \"policy_id\": \"marketplace_inventory_read_v1\"",
+     "    \"ha_get_hacs_info\": {\n        \"policy_id\": \"marketplace_inventory_read_v1\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_delegated_hacs_read_is_retired_from_every_engineering_table (test_hamcp290_marketplace_inventory.ContractTests.test_delegated_hacs_read_is_retired_from_every_engineering_table)"
+   ],
+   "first_errors": [
+    "ERROR test_tool_is_registered_read_only_and_policy_bound_under_its_own_name (test_hamcp290_marketplace_inventory.ContractTests.test_tool_is_registered_read_only_and_policy_bound_under_its_own_name)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W4-routing-key-reverted.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "W5-run-structured-name-reverted",
+   "class": "rename wiring reverted",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/tools/marketplace_inventory.py",
+     "        \"get_marketplace_inventory\", \"Returned a sanitized page",
+     "        \"ha_get_hacs_info\", \"Returned a sanitized page"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)",
+    "FAIL test_refused_native_read_never_falls_back_upstream (test_hamcp290_marketplace_inventory.GatewayRetirementTests.test_refused_native_read_never_falls_back_upstream)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/W5-run-structured-name-reverted.log",
+   "seconds": 25.2
+  }
+ ]
+}

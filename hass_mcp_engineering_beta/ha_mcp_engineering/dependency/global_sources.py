@@ -3,15 +3,20 @@
 These references are kept outside the helper obligation ledger, the snapshot
 findings and the snapshot fingerprint, like ``ScriptDiagnostics``. Governance
 therefore cannot be downgraded by them, and a dashboard edit does not change an
-approval-bound fingerprint. Only ``entity_dependency_analysis`` and
-``change_impact_analysis`` merge them.
+approval-bound fingerprint. ``entity_dependency_analysis`` and
+``change_impact_analysis`` merge them; ``configuration_integrity_analysis``,
+``incident_correlation`` and ``handoff_generation`` consume them with their
+completeness (HAMCP-267). None of these changes a governance binding.
 
 - Scenes and groups: the loaded membership in the ``entity_id`` attribute of
   the states the build already read. No extra request is made, and the evidence
   is labeled as loaded membership, not stored configuration.
 - Dashboards: the reviewed dashboard list and analysis read path plus the
   existing dashboard walker (``dashboard_analysis.dependency_reader``).
-- Templates: deferred (HAMCP-264); reported as unavailable with the reason.
+- Templates and YAML scripts (HAMCP-264): ``configuration.yaml`` and its
+  inline packages, read through the reviewed YAML reader's ``dependency_index``
+  purpose (``yaml_sources``). Their rows are at most ``partial``; UI template
+  helpers are never read.
 
 A source is ``complete`` only when every item was enumerated, read and parsed.
 """
@@ -32,6 +37,10 @@ from ..dashboard_analysis.contracts import REASONS as ANALYSIS_REASONS
 from ..untrusted_text import screen
 from .extraction import _bounded, valid_entity_id
 from .models import DependencyFinding, SourceCoverageItem, evidence_id
+from .yaml_sources import (
+    TEMPLATE_COUNT_WARNING, UNAVAILABLE_WARNINGS as YAML_UNAVAILABLE_WARNINGS, YamlSources,
+    collect_yaml_sources,
+)
 
 MAX_SCENE_SOURCES = 1_000
 MAX_GROUP_SOURCES = 1_000
@@ -54,21 +63,17 @@ DASHBOARD_OUTCOMES = (
 MAX_GLOBAL_BOUNDED_TERMINALS = 1_000
 DEFAULT_DASHBOARD_PATH = "lovelace"
 GLOBAL_SOURCE_TYPES = ("scene", "group", "template", "dashboard")
+# HAMCP-264: the partition also carries the YAML script row, which only the
+# change impact analysis reads from here (dependency analysis merges it with
+# the loaded-script diagnostic).
+YAML_SOURCE_TYPES = ("template", "script")
+PARTITION_SOURCE_TYPES = (*GLOBAL_SOURCE_TYPES, "script")
 MEMBERSHIP_PROVIDER = "direct_ha_api"
 DASHBOARD_PROVIDER = "upstream_dashboard"
 MEMBERSHIP_LABEL = "loaded membership (state attributes), not stored configuration"
 MEMBERSHIP_POLICY = (
     f"{MEMBERSHIP_LABEL}; states and registry inventory reused; no extra request; "
     "diagnostic only, outside the governance-bound index; no fallback"
-)
-TEMPLATE_DEFERRED_WARNING = (
-    "Template configuration enumeration is deferred (HAMCP-264): no audited read "
-    "purpose exists for YAML templates, and UI template helpers are not read because "
-    "their only configuration path is an options flow that can write."
-)
-TEMPLATE_COUNT_WARNING = (
-    "{count} template-platform entity registry entr{suffix} observed; this is a lower "
-    "bound, because YAML template entities without a unique_id are not in the registry."
 )
 _RULE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z", re.ASCII)
 _SEGMENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z", re.ASCII)
@@ -96,6 +101,9 @@ class GlobalSourceDiagnostics:
     profile: dict[str, Any] = field(default_factory=dict, compare=False)
     source_providers: tuple[tuple[str, str], ...] = ()
     bounded_obligations: tuple[GlobalBoundedTerminal, ...] = ()
+    # HAMCP-264: YAML template and script evidence depends on the
+    # dependency_index YAML reader's current authority.
+    yaml_authority_current: Callable[[], bool] | None = None
 
     def provider_for(self, source_type: str) -> str:
         return dict(self.source_providers).get(source_type, "none")
@@ -104,30 +112,42 @@ class GlobalSourceDiagnostics:
         return next((item for item in self.coverage if item.source_type == source_type), None)
 
     def visible(self) -> GlobalSourceDiagnostics:
-        """A retired dashboard route cannot lend cached findings current authority."""
-        if self.authority_current is None:
+        """A retired dashboard or YAML route cannot lend cached findings current authority."""
+        withheld: dict[str, str] = {}
+        if not _current(self.authority_current):
+            withheld["dashboard"] = "Dashboard provider authority changed; cached dashboard evidence is withheld."
+        if not _current(self.yaml_authority_current):
+            for source_type in YAML_SOURCE_TYPES:
+                withheld[source_type] = YAML_UNAVAILABLE_WARNINGS["provider_authority_changed"]
+        if not withheld:
             return self
-        try:
-            if self.authority_current():
-                return self
-        except Exception:
-            pass
+        reasons = [*(["dashboard_provider_authority_changed"] if "dashboard" in withheld else []),
+                   *(["yaml_provider_authority_changed"] if "template" in withheld else [])]
         return GlobalSourceDiagnostics(
-            tuple(item for item in self.findings if item.source_type != "dashboard"),
+            tuple(item for item in self.findings if item.source_type not in withheld),
             tuple(
                 replace(
                     item, completeness="unavailable", evidence_count=0,
-                    warnings=["Dashboard provider authority changed; cached dashboard evidence is withheld."],
-                ) if item.source_type == "dashboard" else item
+                    warnings=[withheld[item.source_type]],
+                ) if item.source_type in withheld else item
                 for item in self.coverage
             ),
-            _digest([self.fingerprint, "dashboard_provider_authority_changed"]),
+            _digest([self.fingerprint, *reasons]),
             profile=self.profile,
             source_providers=self.source_providers,
             bounded_obligations=tuple(
-                item for item in self.bounded_obligations if item.source_type != "dashboard"
+                item for item in self.bounded_obligations if item.source_type not in withheld
             ),
         )
+
+
+def _current(authority: Callable[[], bool] | None) -> bool:
+    if authority is None:
+        return True
+    try:
+        return bool(authority())
+    except Exception:
+        return False
 
 
 def _digest(value: Any) -> str:
@@ -143,18 +163,6 @@ def _shown_entity(value: Any, secret: str) -> str | None:
     if screen(value, (secret,) if secret else ()) is not None:
         return None
     return value
-
-
-def template_row(template_count: int | None) -> SourceCoverageItem:
-    warnings = [TEMPLATE_DEFERRED_WARNING]
-    if template_count is not None:
-        warnings.append(TEMPLATE_COUNT_WARNING.format(
-            count=template_count, suffix="y" if template_count == 1 else "ies",
-        ))
-    return SourceCoverageItem(
-        "template", "none", "template_configuration", "unavailable", 0, 0, warnings, 0.0,
-        policy="deferred (HAMCP-264); no template configuration read; no fallback",
-    )
 
 
 @dataclass
@@ -686,23 +694,31 @@ async def collect_dashboard_sources(
 
 async def collect_global_sources(
     states: list, registry: list, *, registry_complete: bool, secret: str,
-    dashboards: dict[str, Any] | None,
+    dashboards: dict[str, Any] | None, yaml_sources: YamlSources | None = None,
 ) -> GlobalSourceDiagnostics:
-    """Combine loaded membership, the dashboard result and the template row."""
+    """Combine loaded membership, the dashboard result and the YAML template and script rows."""
     memberships, template_count = collect_membership_sources(
         states, registry, registry_complete=registry_complete, secret=secret,
     )
     if dashboards is None:
         dashboards = await collect_dashboard_sources(None, secret=secret)
+    if yaml_sources is None:
+        # No reader: truthful unavailable rows, zero reads.
+        yaml_sources = await collect_yaml_sources(
+            None, registry, registry_complete=registry_complete, secret=secret,
+        )
     findings = [item for result in memberships for item in result.findings]
     findings.extend(dashboards["findings"])
+    findings.extend(yaml_sources.findings)
     terminals = [item for result in memberships for item in result.terminals]
     terminals.extend(dashboards["terminals"])
+    terminals.extend(GlobalBoundedTerminal(*item) for item in yaml_sources.terminals)
     terminals = sorted(set(terminals), key=lambda item: (
         item.source_type, item.source_id, item.source_entity_id or "", item.reason_code,
     ))[:MAX_GLOBAL_BOUNDED_TERMINALS]
     by_type = {result.coverage.source_type: result.coverage for result in memberships}
-    coverage = (by_type["scene"], by_type["group"], template_row(template_count), dashboards["coverage"])
+    coverage = (by_type["scene"], by_type["group"], yaml_sources.template_coverage,
+                dashboards["coverage"], yaml_sources.script_coverage)
     findings.sort(key=lambda item: item.evidence_id)
     return GlobalSourceDiagnostics(
         tuple(findings), coverage,
@@ -710,14 +726,81 @@ async def collect_global_sources(
             [(result.coverage.source_type, sorted(result.documents)) for result in memberships],
             [(item.source_type, item.completeness, item.failed_item_count) for item in coverage],
             dashboards["documents"], dashboards["errors"],
-            [item.evidence_id for item in findings], template_count,
+            [item.evidence_id for item in findings], template_count, yaml_sources.fingerprint,
         ]),
         dashboards["current"],
         {"scene_sources": sum(1 for _ in memberships[0].documents),
          "group_sources": sum(1 for _ in memberships[1].documents),
          "template_registry_entries": template_count,
-         "dashboard": dashboards["profile"]},
+         "dashboard": dashboards["profile"],
+         "yaml": yaml_sources.profile},
         (("scene", MEMBERSHIP_PROVIDER), ("group", MEMBERSHIP_PROVIDER),
-         ("template", "none"), ("dashboard", dashboards["coverage"].provider)),
+         ("template", yaml_sources.template_coverage.provider),
+         ("dashboard", dashboards["coverage"].provider),
+         ("script", yaml_sources.script_coverage.provider)),
         tuple(terminals),
+        yaml_sources.authority_current,
     )
+
+
+# HAMCP-267: shared reading rules for the analyses that consume the partition
+# (configuration integrity, incident correlation, handoff generation). Each
+# caller reads ``visible()`` once and passes that view here.
+CONSUMED_SOURCE_TYPES = ("scene", "group", "dashboard")
+# The consumers' bounds: at most this many scoped references are selected for
+# one request, and at most ``PARTITION_EMISSION_LIMIT`` of them are emitted as
+# relationship events or handoff items. A reference beyond either bound is
+# disclosed as an omission (a coverage limitation, never a read failure).
+PARTITION_SELECTION_LIMIT = 500
+PARTITION_EMISSION_LIMIT = 200
+PARTITION_REFERENCE_LIMIT_ID = "partition_reference_limit_exceeded"
+
+
+def scoped_partition_findings(
+    partition: GlobalSourceDiagnostics | None, entity_ids, *,
+    limit: int = PARTITION_SELECTION_LIMIT,
+) -> tuple[list[DependencyFinding], int]:
+    """The first ``limit`` visible partition findings whose target is one of
+    ``entity_ids``, and how many such findings there are in total."""
+    if partition is None:
+        return [], 0
+    scope = set(entity_ids)
+    matched = [
+        item for item in partition.findings
+        if item.source_type in CONSUMED_SOURCE_TYPES and item.target_entity_id in scope
+    ]
+    return matched[:max(0, int(limit))], len(matched)
+
+
+def partition_omission_warning(omitted: int, kept: int, consequence: str = "omitted") -> str:
+    """A bounded, count-bearing description of a consumer omission."""
+    return (f"partition_reference_limit: {int(omitted)} scoped scene, group or dashboard "
+            f"reference(s) {consequence} beyond the bounded {int(kept)}.")[:240]
+
+
+def incomplete_partition_rows(
+    partition: GlobalSourceDiagnostics | None,
+) -> list[SourceCoverageItem]:
+    """The consumed partition rows that are not complete, in source order."""
+    if partition is None:
+        return []
+    return [
+        row for source_type in CONSUMED_SOURCE_TYPES
+        if (row := partition.coverage_for(source_type)) is not None and row.completeness != "complete"
+    ]
+
+
+def partition_limitations(partition: GlobalSourceDiagnostics | None, prefix: str) -> list[str]:
+    """``<prefix>_<source>_partial`` or ``<prefix>_<source>_unavailable`` per incomplete row."""
+    return [
+        f"{prefix}_{row.source_type}_{'partial' if row.completeness == 'partial' else 'unavailable'}"
+        for row in incomplete_partition_rows(partition)
+    ]
+
+
+def partition_summary(item: DependencyFinding) -> str:
+    """A one-line description that keeps loaded membership distinct from configuration."""
+    if item.match_type == "loaded_membership":
+        return (f"{item.source_type} {item.source_id} lists {item.target_entity_id} in its loaded membership "
+                "(state attributes; stored configuration is not read).")
+    return f"{item.source_type} {item.source_id} references {item.target_entity_id} at {item.config_path}."
