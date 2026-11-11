@@ -203,9 +203,13 @@ def state_route(entity_id):
 # string, as for every other lane's raw client (HAMCP-364).
 RAW_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
 # Every WebSocket command that client sends, one entry per shape (the notation
-# is RawWebSocket's): the registry read, each helper domain's list, and the
-# delete of a lane-owned helper. Nothing else is sent.
-RAW_COMMANDS = (
+# is RawWebSocket's). One closed list per lane, each exactly what that lane
+# sends; neither lane is given a command only the other sends.
+# The scene lane reads the entity registry and sends nothing else.
+SCENE_RAW_COMMANDS = ({"type": REGISTRY_LIST},)
+# The helper lane reads the registry and each helper domain's list, and deletes
+# a lane-owned helper.
+HELPER_RAW_COMMANDS = (
     {"type": REGISTRY_LIST},
     *({"type": domain + "/list"} for domain in HELPER_DOMAINS),
     *({"type": domain + "/delete", domain + "_id": LANE_ID} for domain in HELPER_DOMAINS),
@@ -219,10 +223,13 @@ class LaneRaw(RawWebSocket):
     Engineering's gateways hold, so every path is a bound runtime route
     (HAMCP-200) and none of its requests is counted as Engineering's. Only the
     ``LANE_REQUESTS`` pairs are sent, only for a lane-owned id.
+
+    This class lists no WebSocket command: each lane runs its own subclass,
+    which names that lane's list.
     """
 
     core_url = RAW_CORE_URL
-    commands = RAW_COMMANDS
+    commands = ()
 
     def __init__(self, configured):
         from ha_mcp_engineering.clients import HomeAssistantRestClient
@@ -257,6 +264,21 @@ class LaneRaw(RawWebSocket):
         if isinstance(payload, ExpectedHttpStatus):
             return payload.status, None
         return 200, payload
+
+
+class SceneLaneRaw(LaneRaw):
+    """The scene lane's client."""
+
+    commands = SCENE_RAW_COMMANDS
+
+
+class HelperLaneRaw(LaneRaw):
+    """The helper lane's client."""
+
+    commands = HELPER_RAW_COMMANDS
+
+
+LANE_CLIENTS = {"scene_create_delete": SceneLaneRaw, "created_helper_delete": HelperLaneRaw}
 
 
 class Reader:
@@ -800,7 +822,7 @@ async def run(lane, configured, entry, directory):
     log = RequestLog()
     engineering_rest = ObservedRest(HomeAssistantRestClient(configured), log)
     engineering_ws = ObservedWebSocket(HomeAssistantWebSocketClient(configured), log)
-    raw = LaneRaw(configured)
+    raw = LANE_CLIENTS[lane](configured)
     reader = Reader(raw.status, raw.ok)
 
     @diagnostics.checked("helper_setup", "authority_setup")

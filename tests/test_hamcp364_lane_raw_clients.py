@@ -223,7 +223,9 @@ CONFIG_DELETE_NEAR = (
     {"type": "config/entity_registry/get", "entity_id": "automation.synthetic"},
     {"type": "config/entity_registry/remove", "entity_id": "automation.synthetic"},
 )
-CREATED_EXAMPLES = (
+# The scene lane sends one command; the helper lane sends that one and four more of its own.
+CREATED_SCENE_EXAMPLES = ({"type": created.REGISTRY_LIST},)
+CREATED_HELPER_EXAMPLES = (
     {"type": created.REGISTRY_LIST}, {"type": "input_boolean/list"}, {"type": "input_number/list"},
     # One per helper the lane creates: the toggle, the target, the mixed plan's and the withheld probes'.
     {"type": "input_boolean/delete", "input_boolean_id": "hamcp_g4_toggle_" + HEX},
@@ -262,6 +264,9 @@ CREATED_NEAR = (
     {"type": "call_service", "domain": "scene", "service": "delete",
      "service_data": {"entity_id": "scene.hamcp_g4_scene_" + HEX}},
 )
+# What only the helper lane sends is as far from the scene lane's list as any other command.
+CREATED_HELPER_ONLY = CREATED_HELPER_EXAMPLES[1:]
+CREATED_SCENE_NEAR = (*CREATED_NEAR, *CREATED_HELPER_ONLY)
 SEQ13_EXAMPLES = (
     {"type": S.ENTITY_GET, "entity_id": "input_boolean.seq13_lane_" + HEX},
     {"type": S.ENTITY_GET, "entity_id": S.ABSENT},
@@ -488,11 +493,15 @@ def others(value):
 
 
 def lane(name, module, client, send, pin, examples, near, sources, methods, seconds, signatures,
-         settings=configured, earlier_check=False):
-    """One lane's client. ``earlier_check`` marks a client whose own check of its settings runs before the pin."""
+         settings=configured, earlier_check=False, commands=None):
+    """One lane's client. ``earlier_check`` marks a client whose own check of its settings runs before the pin.
+
+    ``commands`` is the lane's closed list where its module holds more than one.
+    """
     return SimpleNamespace(name=name, module=module, client=client, send=send, pin=pin, examples=examples,
                            near=near, sources=sources, methods=methods, seconds=seconds, signatures=signatures,
-                           settings=settings, earlier_check=earlier_check)
+                           settings=settings, earlier_check=earlier_check,
+                           commands=module.RAW_COMMANDS if commands is None else commands)
 
 
 def call(client, payload):
@@ -508,6 +517,8 @@ def security_signatures():
 
 
 SOCKET_METHODS = frozenset({"ok", "call", "refused"})
+# Every name a lane's client class goes by in its script.
+BUILDERS = frozenset({"RawWebSocket", "LaneRaw", "RawCore", "SceneLaneRaw", "HelperLaneRaw"})
 LANES = (
     lane("entity_metadata", entity, entity.RawWebSocket, call, MAIN_SOCKET, ENTITY_EXAMPLES, ENTITY_NEAR,
          (("entity_metadata_contract_acceptance.py", entity),), SOCKET_METHODS, 30,
@@ -521,15 +532,22 @@ LANES = (
     lane("seq15", seq15, seq15.LaneRaw, call, MAIN_SOCKET, SEQ15_EXAMPLES, SEQ15_NEAR,
          (("seq15_contract_acceptance.py", seq15), ("seq15_scene_contract.py", seq15)), SOCKET_METHODS, 30,
          lambda: shape_signatures(seq15.RAW_COMMANDS)),
-    lane("created_object", created, created.LaneRaw, call, LOCAL_SOCKET, CREATED_EXAMPLES, CREATED_NEAR,
-         (("created_object_contract_acceptance.py", created),), SOCKET_METHODS, 30,
-         lambda: shape_signatures(created.RAW_COMMANDS), settings=configured_local, earlier_check=True),
+    lane("created_scene", created, created.SceneLaneRaw, call, LOCAL_SOCKET, CREATED_SCENE_EXAMPLES,
+         CREATED_SCENE_NEAR, (("created_object_contract_acceptance.py", created),), SOCKET_METHODS, 30,
+         lambda: shape_signatures(created.SCENE_RAW_COMMANDS), settings=configured_local, earlier_check=True,
+         commands=created.SCENE_RAW_COMMANDS),
+    lane("created_helper", created, created.HelperLaneRaw, call, LOCAL_SOCKET, CREATED_HELPER_EXAMPLES,
+         CREATED_NEAR, (("created_object_contract_acceptance.py", created),), SOCKET_METHODS, 30,
+         lambda: shape_signatures(created.HELPER_RAW_COMMANDS), settings=configured_local, earlier_check=True,
+         commands=created.HELPER_RAW_COMMANDS),
     lane("security_metadata", security, security.RawCore, command, LOCAL_SOCKET, SECURITY_EXAMPLES, SECURITY_NEAR,
          (("security_metadata_contract_acceptance.py", security),), frozenset({"result", "command"}), 60,
          security_signatures),
 )
 BY_NAME = {item.name: item for item in LANES}
 SHAPED = tuple(item for item in LANES if item.module is not security)
+# The two created-object lanes: one script and one Core, a client class and a closed list each.
+CREATED_LANES = tuple(item for item in LANES if item.module is created)
 # The lanes the Core harness runs, on its Core; the others each start a Core of their own.
 HARNESS_LANES = tuple(item for item in SHAPED if item.pin == MAIN_SOCKET)
 # Texts a refusal must not carry, whichever check made it.
@@ -662,7 +680,10 @@ class PinnedUrl(ClientCase):
                 # base's, and the one lane with a Core of its own names that Core on its class.
                 self.assertIs(item.client.core_url, item.module.RAW_CORE_URL if item.module is created
                               else entity.RAW_CORE_URL)
-                self.assertEqual("core_url" in vars(item.client), item.module in (entity, created))
+                self.assertEqual("core_url" in vars(item.client), item.module is entity)
+                if item.module is created:
+                    # Both created-object lanes take the target from the one class that names their Core.
+                    self.assertEqual(item.client.__bases__, (created.LaneRaw,))
                 self.assertNotIn("core_url", vars(item.client(item.settings(item.pin))))
         self.assertIs(vars(entity.RawWebSocket)["core_url"], entity.RAW_CORE_URL)
         self.assertIs(vars(created.LaneRaw)["core_url"], created.RAW_CORE_URL)
@@ -670,7 +691,11 @@ class PinnedUrl(ClientCase):
     def test_a_loopback_core_that_is_not_the_created_object_pin_is_refused_by_the_pin(self):
         # Each pair is one loopback Core for REST and WebSocket alike, which is all the lane's
         # earlier check of its own asks for. Only the published port of its own Core is the pin.
-        item = BY_NAME["created_object"]
+        for item in CREATED_LANES:
+            with self.subTest(lane=item.name):
+                self.a_loopback_core_that_is_not_the_pin_is_refused_by_the_pin(item)
+
+    def a_loopback_core_that_is_not_the_pin_is_refused_by_the_pin(self, item):
         for host in ("localhost:18123", "[::1]:18123", "127.0.0.1:8123", "localhost:8123", "[::1]:8123",
                      "127.0.0.1", "localhost", "[::1]", "127.0.0.1:18124", "127.0.0.1:1812", "127.0.0.1:181230",
                      "127.0.0.1:018123", "127.0.0.1:80", "127.0.0.1:"):
@@ -780,7 +805,7 @@ class ClosedList(ClientCase):
         unlisted = {"type": "get_states"}
         for item in SHAPED:
             with self.subTest(lane=item.name):
-                self.assertIs(item.client.commands, item.module.RAW_COMMANDS)
+                self.assertIs(item.client.commands, item.commands)
                 await self.refused_command(
                     item, unlisted, prepare=lambda client: setattr(client, "commands", (unlisted,)))
 
@@ -790,7 +815,8 @@ class ClosedList(ClientCase):
         registry_list, hub = {"type": "config/entity_registry/list"}, ENTITY_EXAMPLES[2]
         by_name = {item.name: item for item in LANES}
         await self.refused_command(by_name["entity_metadata"], registry_list)
-        for name in ("configuration_delete", "seq13", "seq15", "created_object", "security_metadata"):
+        for name in ("configuration_delete", "seq13", "seq15", "created_scene", "created_helper",
+                     "security_metadata"):
             with self.subTest(lane=name):
                 reply, _events = await self.sent(by_name[name], registry_list)
                 self.assertIs(reply["success"], True)
@@ -799,11 +825,69 @@ class ClosedList(ClientCase):
         await self.refused_command(by_name["seq15"], SEQ13_EXAMPLES[6])
         await self.refused_command(by_name["security_metadata"], SEQ13_EXAMPLES[5])
         # seq-13 deletes its own helper by any id; the created-object lane only one of its own.
-        self.assertEqual(SEQ13_EXAMPLES[10]["type"], CREATED_EXAMPLES[3]["type"])
-        await self.refused_command(by_name["created_object"], SEQ13_EXAMPLES[10])
-        await self.refused_command(by_name["created_object"], SEQ13_EXAMPLES[6])
-        await self.refused_command(by_name["configuration_delete"], CREATED_EXAMPLES[3])
-        await self.refused_command(by_name["seq15"], CREATED_EXAMPLES[6])
+        self.assertEqual(SEQ13_EXAMPLES[10]["type"], CREATED_HELPER_EXAMPLES[3]["type"])
+        for item in CREATED_LANES:
+            await self.refused_command(item, SEQ13_EXAMPLES[10])
+            await self.refused_command(item, SEQ13_EXAMPLES[6])
+        await self.refused_command(by_name["configuration_delete"], CREATED_HELPER_EXAMPLES[3])
+        await self.refused_command(by_name["seq15"], CREATED_HELPER_EXAMPLES[6])
+
+    def test_each_created_object_lane_list_is_exactly_this(self):
+        # Written out, so a command added to either list fails here.
+        registry_list = {"type": "config/entity_registry/list"}
+        self.assertEqual(created.SCENE_RAW_COMMANDS, (registry_list,))
+        self.assertEqual(created.HELPER_RAW_COMMANDS, (
+            registry_list, {"type": "input_boolean/list"}, {"type": "input_number/list"},
+            {"type": "input_boolean/delete", "input_boolean_id": created.LANE_ID},
+            {"type": "input_number/delete", "input_number_id": created.LANE_ID}))
+        self.assertEqual((type(created.LANE_ID), created.LANE_ID.pattern, created.LANE_ID.flags & ~re.UNICODE),
+                         (re.Pattern, "hamcp_g4_[0-9a-z_]{1,48}", 0))
+        for commands in (created.SCENE_RAW_COMMANDS, created.HELPER_RAW_COMMANDS):
+            self.assertIs(type(commands), tuple)
+            self.assertEqual([type(shape) for shape in commands], [dict] * len(commands))
+        # One list per lane and no list for the script: each class holds its own, and the
+        # class both extend lists nothing.
+        self.assertFalse(hasattr(created, "RAW_COMMANDS"))
+        self.assertIsNot(created.SCENE_RAW_COMMANDS, created.HELPER_RAW_COMMANDS)
+        self.assertEqual(created.LANE_CLIENTS, {"scene_create_delete": created.SceneLaneRaw,
+                                                "created_helper_delete": created.HelperLaneRaw})
+        self.assertEqual(set(created.LANE_CLIENTS), set(created.LANES))
+        self.assertIs(vars(created.SceneLaneRaw)["commands"], created.SCENE_RAW_COMMANDS)
+        self.assertIs(vars(created.HelperLaneRaw)["commands"], created.HELPER_RAW_COMMANDS)
+        self.assertEqual(vars(created.LaneRaw)["commands"], ())
+        for client in (created.SceneLaneRaw, created.HelperLaneRaw):
+            self.assertEqual(set(vars(client)) - {"__module__", "__doc__", "__firstlineno__",
+                                                  "__static_attributes__"}, {"commands"})
+
+    async def test_each_created_object_lane_refuses_what_only_the_other_lane_sends(self):
+        scene, helper = BY_NAME["created_scene"], BY_NAME["created_helper"]
+        only_helper = [shape for shape in created.HELPER_RAW_COMMANDS if shape not in created.SCENE_RAW_COMMANDS]
+        self.assertEqual(len(only_helper), 4)
+        self.assertEqual(len(CREATED_HELPER_ONLY), 7)
+        for payload in CREATED_HELPER_ONLY:
+            with self.subTest(payload=payload):
+                # Only on the helper lane's list ...
+                self.assertTrue(entity.raw_command_listed(payload, tuple(only_helper)))
+                self.assertFalse(entity.raw_command_listed(payload, created.SCENE_RAW_COMMANDS))
+                # ... so the helper lane sends it and the scene lane refuses it before a session.
+                reply, events = await self.sent(helper, copy.deepcopy(payload))
+                self.assertIs(reply["success"], True)
+                self.assertEqual(events[-1][1], {"id": 1, **payload})
+                await self.refused_command(scene, copy.deepcopy(payload))
+        # Every shape that is only the helper lane's was tried.
+        for shape in only_helper:
+            self.assertTrue(any(entity.raw_command_listed(payload, (shape,)) for payload in CREATED_HELPER_ONLY))
+        # The scene lane's one command is the helper lane's too, so no command is the scene
+        # lane's alone and the helper lane has none of the scene lane's to refuse.
+        self.assertEqual([shape for shape in created.SCENE_RAW_COMMANDS
+                          if shape not in created.HELPER_RAW_COMMANDS], [])
+
+    async def test_the_class_the_created_object_lanes_extend_sends_no_command(self):
+        base = lane("created_base", created, created.LaneRaw, call, LOCAL_SOCKET, (), (), (), SOCKET_METHODS, 30,
+                    set, settings=configured_local, earlier_check=True, commands=())
+        for payload in CREATED_HELPER_EXAMPLES:
+            with self.subTest(payload=payload):
+                await self.refused_command(base, copy.deepcopy(payload))
 
 
 class NamedValue(ClientCase):
@@ -813,7 +897,7 @@ class NamedValue(ClientCase):
         listed, tabled = {}, {}
         for name, kind, keys, field, want in (
                 *((item.name, shape["type"], frozenset(shape), field, want)
-                  for item in SHAPED for shape in item.module.RAW_COMMANDS
+                  for item in SHAPED for shape in item.commands
                   for field, want in shape.items() if field != "type" and names_its_value(want)),
                 *(("security_metadata", kind, frozenset({"type", *fields}), field, want)
                   for kind, fields in security.RAW_COMMANDS.items() for field, want in fields.items())):
@@ -830,7 +914,7 @@ class NamedValue(ClientCase):
                 self.assertEqual([value for value in tabled[key] if value not in values], [])
         # The type of every shape is named too; no list holds a pattern or a free string for it.
         for item in SHAPED:
-            for shape in item.module.RAW_COMMANDS:
+            for shape in item.commands:
                 self.assertIs(type(shape["type"]), str)
         for kind in security.RAW_COMMANDS:
             self.assertIs(type(kind), str)
@@ -1044,11 +1128,11 @@ DYNAMIC_SITES = {
     "seq13": {"{'type': command}": lambda: ids_calls("seq13_contract_acceptance.py", seq13)},
     "seq15": {"{'type': DASHBOARD_UPDATE, 'dashboard_id': owned['dashboard'], field: value}": lambda: {
         (seq15.DASHBOARD_UPDATE, frozenset({"type", "dashboard_id", field})) for field in ("url_path", "mode")}},
-    "created_object": {
+    **dict.fromkeys(("created_scene", "created_helper"), {
         "{'type': domain + '/list'}": lambda: {
             (domain + "/list", frozenset({"type"})) for domain in created.HELPER_DOMAINS},
         "{'type': domain + '/delete', domain + '_id': object_id}": lambda: {
-            (domain + "/delete", frozenset({"type", domain + "_id"})) for domain in created.HELPER_DOMAINS}},
+            (domain + "/delete", frozenset({"type", domain + "_id"})) for domain in created.HELPER_DOMAINS}}),
     "security_metadata": {"payload": lambda: {
         (payload["type"], frozenset(payload)) for payload in security.SNAPSHOTS}},
 }
@@ -1068,7 +1152,11 @@ class LaneInventory(ClientCase):
                     resolved = resolve()
                     self.assertTrue(resolved)
                     sent |= resolved
-                self.assertEqual(sent, item.signatures())
+                # Lanes that share a script share its send sites: together their lists are those
+                # sites, and the test after the next says which of them each lane reaches.
+                sharing = [other for other in LANES if other.sources == item.sources]
+                self.assertEqual(len(sharing), 2 if item in CREATED_LANES else 1)
+                self.assertEqual(sent, set().union(*(other.signatures() for other in sharing)))
 
     def test_the_loop_behind_the_seq15_dynamic_site_is_the_reviewed_one(self):
         source = (SCRIPTS / "seq15_contract_acceptance.py").read_text(encoding="utf-8")
@@ -1108,17 +1196,18 @@ class LaneInventory(ClientCase):
         # A domain is one of the two helper domains wherever a helper is created or read back.
         self.assertEqual(created.LANES["created_helper_delete"]["kinds"], created.HELPER_DOMAINS)
         self.assertEqual(created.HELPER_DOMAINS, ("input_boolean", "input_number"))
-        self.assertIs(created.LaneRaw.ok, entity.RawWebSocket.ok)
-        self.assertIs(created.LaneRaw.call, entity.RawWebSocket.call)
+        for client in (created.LaneRaw, created.SceneLaneRaw, created.HelperLaneRaw):
+            self.assertIs(client.ok, entity.RawWebSocket.ok)
+            self.assertIs(client.call, entity.RawWebSocket.call)
 
     def test_every_listed_shape_has_a_sent_example_and_every_example_is_listed(self):
         for item in SHAPED:
             with self.subTest(lane=item.name):
-                for shape in item.module.RAW_COMMANDS:
+                for shape in item.commands:
                     self.assertTrue(any(entity.raw_command_listed(example, (shape,)) for example in item.examples),
                                     shape["type"])
                 for example in item.examples:
-                    self.assertTrue(entity.raw_command_listed(example, item.module.RAW_COMMANDS), example)
+                    self.assertTrue(entity.raw_command_listed(example, item.commands), example)
         self.assertEqual({(example["type"], example.get("assistant")) for example in SECURITY_EXAMPLES},
                          {(kind, None) for kind, fields in security.RAW_COMMANDS.items() if not fields}
                          | {(security.EXPOSE_NEW_GET, assistant) for assistant in security.KNOWN_ASSISTANTS})
@@ -1126,16 +1215,18 @@ class LaneInventory(ClientCase):
 
     def test_no_lane_source_builds_the_client_under_another_name(self):
         # The inventory follows the name ``raw``; nothing else holds one of these clients.
-        builders = {"RawWebSocket", "LaneRaw", "RawCore"}
+        def builds(node):
+            # A client class called by name, or the created-object lanes' class looked up by lane.
+            return isinstance(node, ast.Call) and (
+                isinstance(node.func, ast.Name) and node.func.id in BUILDERS
+                or isinstance(node.func, ast.Subscript) and ast.unparse(node.func.value) == "LANE_CLIENTS")
         for item in LANES:
             for filename, _names in item.sources:
                 tree = ast.parse((SCRIPTS / filename).read_text(encoding="utf-8"))
-                built = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
-                         and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
-                         and node.value.func.id in builders]
-                calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
-                         and isinstance(node.func, ast.Name) and node.func.id in builders]
+                built = [node for node in ast.walk(tree) if isinstance(node, ast.Assign) and builds(node.value)]
+                calls = [node for node in ast.walk(tree) if builds(node)]
                 with self.subTest(lane=item.name, source=filename):
+                    self.assertEqual(len(calls), 0 if filename == "seq15_scene_contract.py" else 1)
                     self.assertEqual(len(built), len(calls))
                     for node in built:
                         self.assertEqual([ast.unparse(target) for target in node.targets], ["raw"])
@@ -1144,9 +1235,10 @@ class LaneInventory(ClientCase):
     def test_each_lane_builds_its_own_client_and_no_other(self):
         # A lane that built the shared client would be held to entity_metadata's
         # list and not its own, so the one client a lane builds is its own class.
-        builders = {"RawWebSocket", "LaneRaw", "RawCore"}
+        builders = BUILDERS
         own = {"entity_metadata": "RawWebSocket", "configuration_delete": "LaneRaw", "seq13": "LaneRaw",
-               "seq15": "LaneRaw", "created_object": "LaneRaw", "security_metadata": "RawCore"}
+               "seq15": "LaneRaw", "created_scene": "SceneLaneRaw", "created_helper": "HelperLaneRaw",
+               "security_metadata": "RawCore"}
         self.assertEqual(set(own), {item.name for item in LANES})
         for item in LANES:
             with self.subTest(lane=item.name):
@@ -1164,16 +1256,123 @@ class LaneInventory(ClientCase):
                                       if isinstance(base, ast.Name) and base.id in builders]
                         uses += ((isinstance(node, ast.Name) and node.id in builders)
                                  or (isinstance(node, ast.Attribute) and node.attr in builders))
-                self.assertEqual(built, [own[item.name]])
-                # The only other use of any of these names is the lane subclass naming its base.
-                subclass = [("LaneRaw", "RawWebSocket")] if own[item.name] == "LaneRaw" else []
-                self.assertEqual(bases, subclass)
-                self.assertEqual(uses, 1 + len(subclass))
+                if item in CREATED_LANES:
+                    # No class is called by name there: the script builds the one its lane is listed
+                    # under (the next test). The names are otherwise each class's base and that table.
+                    self.assertEqual(built, [])
+                    self.assertEqual(bases, [("LaneRaw", "RawWebSocket"), ("SceneLaneRaw", "LaneRaw"),
+                                             ("HelperLaneRaw", "LaneRaw")])
+                    self.assertEqual(uses, len(bases) + 2)
+                else:
+                    self.assertEqual(built, [own[item.name]])
+                    # The only other use of any of these names is the lane subclass naming its base.
+                    subclass = [("LaneRaw", "RawWebSocket")] if own[item.name] == "LaneRaw" else []
+                    self.assertEqual(bases, subclass)
+                    self.assertEqual(uses, 1 + len(subclass))
                 if item.module is not security:
                     # The list that class enforces is its own module's, set on the class itself.
-                    self.assertIs(vars(item.client)["commands"], item.module.RAW_COMMANDS)
-                    self.assertTrue(all(vars(other.client)["commands"] is not item.module.RAW_COMMANDS
+                    self.assertIs(vars(item.client)["commands"], item.commands)
+                    self.assertTrue(all(vars(other.client)["commands"] is not item.commands
                                         for other in SHAPED if other is not item))
+
+    def test_the_created_object_script_builds_the_client_of_the_lane_it_runs(self):
+        tree = ast.parse((SCRIPTS / "created_object_contract_acceptance.py").read_text(encoding="utf-8"))
+        table = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "LANE_CLIENTS"]
+        # Written once and read once.
+        self.assertEqual([type(node.ctx) for node in table], [ast.Store, ast.Load])
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        self.assertEqual(ast.unparse(parents[table[0]]), "LANE_CLIENTS = {'scene_create_delete': SceneLaneRaw, "
+                                                         "'created_helper_delete': HelperLaneRaw}")
+        self.assertIn(parents[table[0]], tree.body)
+        build = parents[parents[parents[table[1]]]]
+        self.assertEqual(ast.unparse(build), "raw = LANE_CLIENTS[lane](configured)")
+        run = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "run")
+        self.assertIn(build, run.body)
+        # ``lane`` there is the lane the caller asked to run: the function's own argument, never rebound.
+        self.assertEqual([argument.arg for argument in run.args.args], ["lane", "configured", "entry", "directory"])
+        self.assertEqual([node for node in ast.walk(run) if isinstance(node, ast.Name) and node.id == "lane"
+                          and not isinstance(node.ctx, ast.Load)], [])
+        self.assertEqual([node.name for node in ast.walk(run)
+                          if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+                          and "lane" in [argument.arg for argument in node.args.args] and node is not run], [])
+
+    def test_each_created_object_lane_reaches_exactly_the_sends_on_its_list(self):
+        # The two lanes share a script, so which of its send sites a lane reaches is read from
+        # what that lane runs: its scenarios, its predecessor probe, and clean-up of what it owns.
+        tree = ast.parse((SCRIPTS / "created_object_contract_acceptance.py").read_text(encoding="utf-8"))
+        top = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+        def named(*parts):
+            return {node.id for part in parts for node in ast.walk(part)
+                    if isinstance(node, ast.Name) and node.id in top}
+
+        def reach(roots):
+            seen, todo = set(), sorted(roots)
+            while todo:
+                name = todo.pop()
+                if name not in seen:
+                    seen.add(name)
+                    todo += sorted(named(top[name]))
+            return seen
+        # ``run`` picks the predecessor probe by lane, in one place.
+        (choice,) = [node for node in ast.walk(top["run"]) if isinstance(node, ast.If)
+                     and ast.unparse(node.test) == "lane == 'scene_create_delete'"]
+        probes = {"scene_create_delete": named(*choice.body), "created_helper_delete": named(*choice.orelse)}
+        self.assertEqual(probes, {"scene_create_delete": {"scene_probe", "withheld_scene_create"},
+                                  "created_helper_delete": {"withheld_helper_undo"}})
+        # What a Reader method sends, with the methods it calls on itself.
+        reader = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Reader")
+        methods = {node.name: node for node in reader.body if isinstance(node, ast.AsyncFunctionDef)}
+
+        def reads(name, seen=()):
+            found = set()
+            for node in ast.walk(methods[name]):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and ast.unparse(node.func.value) == "self"):
+                    if node.func.attr == "ok":
+                        found.add(ast.unparse(node.args[0]))
+                    elif node.func.attr in methods and node.func.attr not in seen:
+                        found |= reads(node.func.attr, (*seen, name))
+            return found
+        self.assertEqual({name: reads(name) for name in methods}, {
+            "registry": {"{'type': REGISTRY_LIST}"}, "state": set(), "automation": set(),
+            "scene": {"{'type': REGISTRY_LIST}"},
+            "helper": {"{'type': REGISTRY_LIST}", "{'type': domain + '/list'}"}})
+        # Clean-up reads the registry for every lane, and lists and deletes helpers only for the
+        # helpers the lane's own scenarios recorded as theirs.
+        cleanup = top["cleanup_fixtures"]
+        loops = [node for node in ast.walk(cleanup) if isinstance(node, (ast.For, ast.comprehension))
+                 and "owned['helpers']" in ast.unparse(node.iter)]
+        within = {id(inner) for loop in loops for inner in ast.walk(loop)}
+        outer = {id(inner) for node in ast.walk(cleanup) if isinstance(node, ast.DictComp)
+                 and any(generator in loops for generator in node.generators) for inner in ast.walk(node)}
+        sends = {ast.unparse(node.args[0]): id(node) in within | outer for node in ast.walk(cleanup)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                 and node.func.attr in SOCKET_METHODS and ast.unparse(node.func.value) == "raw"}
+        self.assertEqual(sends, {"{'type': REGISTRY_LIST}": False, "{'type': domain + '/list'}": True,
+                                 "{'type': domain + '/delete', domain + '_id': object_id}": True})
+        resolve = {"{'type': REGISTRY_LIST}": lambda: {(created.REGISTRY_LIST, frozenset({"type"}))},
+                   **DYNAMIC_SITES["created_helper"]}
+        owners = {}
+        for item, name in zip(CREATED_LANES, ("scene_create_delete", "created_helper_delete")):
+            with self.subTest(lane=name):
+                self.assertIs(item.client, created.LANE_CLIENTS[name])
+                scenarios = {created.SCENARIOS[scenario].__qualname__.split(".")[0]
+                             for scenario in created.LANES[name]["scenarios"]}
+                reached = reach(scenarios | probes[name])
+                used = {node.attr for function in reached for node in ast.walk(top[function])
+                        if isinstance(node, ast.Attribute) and ast.unparse(node.value) == "c.reader"}
+                self.assertLessEqual(used, {*methods, "status"})
+                # The synthetic consumer the mixed plan adds is read back through the registry.
+                adds = any(ast.unparse(node) == "c.add_automation" for function in reached
+                           for node in ast.walk(top[function]))
+                owners[name] = any(ast.unparse(node).startswith("c.owned['helpers'].append(")
+                                   for function in reached for node in ast.walk(top[function]))
+                sent = {"{'type': REGISTRY_LIST}"}.union(*(reads(method) for method in used & set(methods)))
+                sent |= {text for text, helpers_only in sends.items() if owners[name] or not helpers_only}
+                self.assertEqual(adds, name == "created_helper_delete")
+                self.assertEqual(set().union(*(resolve[text]() for text in sent)), item.signatures())
+        self.assertEqual(owners, {"scene_create_delete": False, "created_helper_delete": True})
 
 
 class LaneSettings(ClientCase):
@@ -1231,13 +1430,14 @@ class LaneSettings(ClientCase):
         self.assertEqual(created.RAW_CORE_URL, f"ws://127.0.0.1:{local.PORTS[0]}/api/websocket")
         real = self.settings(LOCAL_CORE)
         self.assertEqual((real.websocket_url, real.api_url), (created.RAW_CORE_URL, LOCAL_CORE + "/api"))
-        events = []
-        with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
-            client = created.LaneRaw(real)
-        self.assertEqual(events, [])
-        self.assertIs(client.client.settings, real)
-        # The harness Core is not this client's, nor this Core any harness lane's.
-        self.refused_url(BY_NAME["created_object"], self.settings(MAIN_CORE), pinned="settings")
+        for item in CREATED_LANES:
+            events = []
+            with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+                client = item.client(real)
+            self.assertEqual(events, [])
+            self.assertIs(client.client.settings, real)
+            # The harness Core is not this client's, nor this Core any harness lane's.
+            self.refused_url(item, self.settings(MAIN_CORE), pinned="settings")
         for item in HARNESS_LANES:
             self.refused_url(item, real.websocket_url)
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")

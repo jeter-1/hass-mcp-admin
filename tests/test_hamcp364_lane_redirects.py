@@ -191,7 +191,10 @@ class LaneWebSocket(Wired):
                                  {"type": config_delete.REGISTRY_LIST}, MAIN_PORT),
         "seq13": (lambda: seq13.LaneRaw(configured(MAIN_SOCKET)).call, {"type": seq13.REGISTRY_LIST}, MAIN_PORT),
         "seq15": (lambda: seq15.LaneRaw(configured(MAIN_SOCKET)).call, {"type": seq15.REGISTRY_LIST}, MAIN_PORT),
-        "created_object": (lambda: created.LaneRaw(configured_local()).call, {"type": created.REGISTRY_LIST},
+        # One client per created-object lane, each with a command on its own list.
+        "created_scene": (lambda: created.SceneLaneRaw(configured_local()).call, {"type": created.REGISTRY_LIST},
+                          LOCAL_PORT),
+        "created_helper": (lambda: created.HelperLaneRaw(configured_local()).call, {"type": "input_boolean/list"},
                            LOCAL_PORT),
     }
 
@@ -236,8 +239,11 @@ class LaneWebSocket(Wired):
     async def test_seq15_handshake_redirect_is_refused(self):
         await self.refused("seq15")
 
-    async def test_created_object_handshake_redirect_is_refused(self):
-        await self.refused("created_object")
+    async def test_created_scene_handshake_redirect_is_refused(self):
+        await self.refused("created_scene")
+
+    async def test_created_helper_handshake_redirect_is_refused(self):
+        await self.refused("created_helper")
 
     async def test_each_lane_command_is_still_answered_over_its_pinned_socket(self):
         for name in self.CLIENTS:
@@ -260,6 +266,9 @@ class LaneWebSocket(Wired):
         for lane in (config_delete, seq13, seq15, created):
             self.assertIs(lane.LaneRaw.call, entity.RawWebSocket.call)
             self.assertNotIn("call", vars(lane.LaneRaw))
+        for client in created.LANE_CLIENTS.values():
+            self.assertIs(client.call, entity.RawWebSocket.call)
+            self.assertEqual(sorted(name for name in vars(client) if not name.startswith("__")), ["commands"])
 
 
 class CreatedObjectRest(Wired):
@@ -271,6 +280,12 @@ class CreatedObjectRest(Wired):
     """
 
     NAME = "hamcp_g4_lamp_0a1b2c3d"
+    CLIENTS = (created.SceneLaneRaw, created.HelperLaneRaw)
+
+    def test_the_rest_requests_are_checked_through_each_lane_client(self):
+        self.assertEqual(self.CLIENTS, tuple(created.LANE_CLIENTS.values()))
+        for client in self.CLIENTS:
+            self.assertIs(client.status, created.LaneRaw.status)
 
     def requests(self):
         """Every method and route the client sends, with the path each reaches."""
@@ -284,42 +299,46 @@ class CreatedObjectRest(Wired):
         return sent
 
     async def test_each_rest_request_answered_with_a_redirect_is_refused(self):
-        for method, route, body, path in self.requests():
-            for status in (302, *FOLLOWED, *HANDED_BACK):
-                for location in (AWAY[0], AWAY[2], SAME_HOST):
-                    with self.subTest(method=method, path=path, status=status, location=location):
-                        self.redirect(status, location)
-                        with self.assertRaises(Exception) as raised:
-                            await created.LaneRaw(configured_local()).status(method, route, body)
-                        self.assert_refused(raised, LOCAL_PORT)
-                        self.assertEqual(self.stub.requests, [(method, path)])
+        for client in self.CLIENTS:
+            for method, route, body, path in self.requests():
+                for status in (302, *FOLLOWED, *HANDED_BACK):
+                    for location in (AWAY[0], AWAY[2], SAME_HOST):
+                        with self.subTest(client=client.__name__, method=method, path=path, status=status,
+                                          location=location):
+                            self.redirect(status, location)
+                            with self.assertRaises(Exception) as raised:
+                                await client(configured_local()).status(method, route, body)
+                            self.assert_refused(raised, LOCAL_PORT)
+                            self.assertEqual(self.stub.requests, [(method, path)])
 
     async def test_the_guarded_client_does_not_follow_a_redirect_by_itself(self):
         # The control for the lane's own check: with it taken away the 3xx comes back as a
         # status, on the one connection. So nothing above depends on it for staying on-host,
         # and the refusal above is the lane's and not the client's.
-        for method, route, body, path in self.requests():
-            with self.subTest(method=method, path=path):
-                self.redirect(302, AWAY[0])
-                with patch.object(created, "refuse_redirect", lambda status: None):
-                    answer = await created.LaneRaw(configured_local()).status(method, route, body)
-                self.assertEqual(answer, (302, None))
-                self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
-                self.assertEqual(self.stub.requests, [(method, path)])
-
-    async def test_other_answers_are_still_reported_as_they_were(self):
-        for method, route, body, path in self.requests():
-            with self.subTest(method=method, path=path):
-                self.stub.then()
-                self.wire.connects.clear()
-                self.assertEqual(await created.LaneRaw(configured_local()).status(method, route, body),
-                                 (200, self.stub.body))
-                for status in (404, 400, 401, 405, 500):
-                    self.redirect(status, AWAY[0])
-                    self.assertEqual(await created.LaneRaw(configured_local()).status(method, route, body),
-                                     (status, None))
+        for client in self.CLIENTS:
+            for method, route, body, path in self.requests():
+                with self.subTest(client=client.__name__, method=method, path=path):
+                    self.redirect(302, AWAY[0])
+                    with patch.object(created, "refuse_redirect", lambda status: None):
+                        answer = await client(configured_local()).status(method, route, body)
+                    self.assertEqual(answer, (302, None))
                     self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
                     self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_other_answers_are_still_reported_as_they_were(self):
+        for client in self.CLIENTS:
+            for method, route, body, path in self.requests():
+                with self.subTest(client=client.__name__, method=method, path=path):
+                    self.stub.then()
+                    self.wire.connects.clear()
+                    self.assertEqual(await client(configured_local()).status(method, route, body),
+                                     (200, self.stub.body))
+                    for status in (404, 400, 401, 405, 500):
+                        self.redirect(status, AWAY[0])
+                        self.assertEqual(await client(configured_local()).status(method, route, body),
+                                         (status, None))
+                        self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
+                        self.assertEqual(self.stub.requests, [(method, path)])
 
     def test_the_status_handed_back_is_checked_before_it_is_reported(self):
         tree = ast.parse((SCRIPTS / "created_object_contract_acceptance.py").read_text(encoding="utf-8"))

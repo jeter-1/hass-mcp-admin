@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import core_created_object_local as lane
 import created_object_contract_acceptance as acceptance
 from core_release_evidence import groups, manifest, passing_subset, read_json
+from entity_metadata_contract_acceptance import raw_command_listed
 
 import tests.hamcp329_298_fixtures as fixtures
 from ha_mcp_engineering.clients import HomeAssistantRestClient
@@ -540,8 +541,11 @@ class OfflineCore(acceptance.LaneRaw):
         self.rest, self.websocket = rest, websocket
         self.stuck = False
         self.client = GuardedStore(self)
+        # Every WebSocket payload the lane handed its client, in order.
+        self.commands_sent = []
 
     async def ok(self, payload):
+        self.commands_sent.append(deepcopy(payload))
         kind = payload["type"]
         if kind == acceptance.REGISTRY_LIST:
             return [deepcopy(entry) for entry in self.websocket.entries.values()]
@@ -550,6 +554,7 @@ class OfflineCore(acceptance.LaneRaw):
         return [deepcopy(item) for item in self.websocket.helpers[domain].values()]
 
     async def call(self, payload):
+        self.commands_sent.append(deepcopy(payload))
         domain = payload["type"].partition("/")[0]
         if payload[domain + "_id"] not in self.websocket.helpers[domain]:
             return {"success": False, "error": {"code": "not_found"}}
@@ -1041,6 +1046,40 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                 del self.ws.entries[entity_id]
         self.assertEqual(await acceptance.cleanup_fixtures(self.raw, owned, attempts=2, delay=0), ABSENT)
         self.assertNotIn(("DELETE", acceptance.SCENE_ROUTE), self.raw.client.sent)
+
+    async def sends_exactly_its_own_list(self, group):
+        """A whole lane run, probe to clean-up: what it hands its client is its list, all of it and no more."""
+        await self.receipt(group)
+        sent, commands = self.raw.commands_sent, acceptance.LANE_CLIENTS[group].commands
+        self.assertTrue(sent)
+        for payload in sent:
+            self.assertTrue(raw_command_listed(payload, commands), payload)
+        for shape in commands:
+            self.assertTrue(any(raw_command_listed(payload, (shape,)) for payload in sent), shape)
+        return sent
+
+    async def test_the_scene_lane_sends_the_registry_read_and_no_other_command(self):
+        sent = await self.sends_exactly_its_own_list("scene_create_delete")
+        self.assertEqual({json.dumps(payload, sort_keys=True) for payload in sent},
+                         {json.dumps({"type": "config/entity_registry/list"})})
+        self.assertIs(acceptance.LANE_CLIENTS["scene_create_delete"].commands, acceptance.SCENE_RAW_COMMANDS)
+
+    async def test_the_helper_lane_sends_each_command_on_its_list_and_no_other(self):
+        sent = await self.sends_exactly_its_own_list("created_helper_delete")
+        self.assertEqual({payload["type"] for payload in sent},
+                         {"config/entity_registry/list", "input_boolean/list", "input_number/list",
+                          "input_boolean/delete", "input_number/delete"})
+        # Each delete names a helper this run owns, under its own domain's key and nothing else.
+        owned = set(self.lane_context.owned["helpers"])
+        deletes = [payload for payload in sent if payload["type"].endswith("/delete")]
+        self.assertEqual({(payload["type"].partition("/")[0], payload[payload["type"].partition("/")[0] + "_id"])
+                          for payload in deletes}, owned)
+        self.assertTrue(all(len(payload) == 2 for payload in deletes))
+        self.assertIs(acceptance.LANE_CLIENTS["created_helper_delete"].commands, acceptance.HELPER_RAW_COMMANDS)
+        # What the scene lane's list would have refused of this run is every helper command in it.
+        self.assertEqual({payload["type"] for payload in sent
+                          if not raw_command_listed(payload, acceptance.SCENE_RAW_COMMANDS)},
+                         {"input_boolean/list", "input_number/list", "input_boolean/delete", "input_number/delete"})
 
 
 class Orchestration(unittest.TestCase):
