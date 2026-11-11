@@ -94,7 +94,8 @@ IDENTIFIER_INPUTS: dict[str, tuple[str, ...]] = {
     "create_input_select_option_plan": ("entity_id",),
     "create_helper_options_plan": ("changes[].entity_id",),
     "create_dashboard_metadata_plan": ("url_path",),
-    "create_scene_configuration_plan": ("config_id", "entity_id"),
+    # HAMCP-329: the optional action is screened like the other closed selectors.
+    "create_scene_configuration_plan": ("config_id", "entity_id", "action"),
     "create_addon_restart_plan": ("addon_slug",),
     "create_home_assistant_restart_plan": (),
     "create_change_plan": ("operation", "automation_id"),
@@ -554,6 +555,11 @@ async def _get_execution_task(task_id):
     service = HELPER_VALUE_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
         return await service.reconcile(task_id)
+    # HAMCP-297: read-only reconciliation of an ordinary device-configuration task.
+    from ..device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
+    service = DEVICE_CONFIGURATION_OPERATIONS.service
+    if service is not None and service.load(task_id) is not None:
+        return await service.reconcile(task_id)
     return GOVERNANCE.require().get_execution_task(task_id)
 
 
@@ -725,9 +731,14 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     """Create a separate governed reverse-update plan from exact evidence.
 
     The request performs no Home Assistant mutation. Approve and apply the
-    returned rollback plan through the ordinary governance tools. Creation and
-    operational rollback remain unavailable because deletion and generalized
-    compensation are outside this milestone.
+    returned rollback plan through the ordinary governance tools. A verified
+    governed automation or script create rolls back as a separately approved
+    configuration delete plan of the created object, using the identity
+    Engineering captured at creation; a registry entry modified since creation
+    needs elevated acknowledgement. A verified governed helper or scene create
+    rolls back the same way once a signed registry admits its delete. A plan
+    that created and updated objects rolls back as one plan in strict reverse
+    order. Operational rollback remains unavailable.
     """
     return await run_structured(
         "rollback_change",
@@ -1727,6 +1738,8 @@ _SCENE_MEMBER_SNAPSHOT_SCHEMA: dict[str, Any] = {
 
 #: The closed published input schema (HAMCP-071).  The planner re-validates
 #: every value before any Home Assistant read; values are stored exactly.
+#: HAMCP-329 adds only the optional ``action``; the planner applies the create
+#: rules (name and entities required, entity_id and null values refused).
 SCENE_CONFIGURATION_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "title": "create_scene_configuration_planArguments",
@@ -1775,6 +1788,11 @@ SCENE_CONFIGURATION_INPUT_SCHEMA: dict[str, Any] = {
             "maximum": 1440,
             "default": 120,
         },
+        "action": {
+            "type": "string",
+            "enum": ["update", "create"],
+            "default": "update",
+        },
     },
 }
 
@@ -1804,6 +1822,7 @@ async def create_scene_configuration_plan(
     icon: str | None = None,
     entities: dict[str, Any] | None = None,
     expiration_minutes: int = 120,
+    action: str = "update",
 ) -> str:
     """Propose a name, icon or member change to one existing UI scene.
 
@@ -1825,8 +1844,17 @@ async def create_scene_configuration_plan(
     Assistant has loaded. rollback_change plans a separately approved restore of the exact prior
     configuration. Until a signed registry admits this capability the tool
     refuses with pending_signed_registry_admission.
+
+    action "create" (default "update") instead proposes one new UI scene
+    under a config id no scene uses: name and entities are required,
+    entity_id and null values are refused, and every member must exist. Home
+    Assistant assigns the new scene's entity_id. Creation is admitted
+    separately from updates and refuses with
+    pending_signed_registry_admission until a signed registry admits it.
+    rollback_change of a verified create plans a separately approved delete
+    of that scene.
     """
-    del config_id, entity_id, name, icon, entities, expiration_minutes
+    del config_id, entity_id, name, icon, entities, expiration_minutes, action
     raise RuntimeError("scene configuration planning receives raw arguments")
 
 

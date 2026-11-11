@@ -74,7 +74,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
 
     def test_public_surface_has_one_proposal_tool_and_no_direct_write_tool(self):
         names = set(registered_tools(get_registered_server()))
-        self.assertEqual(len(names), 83)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory
+        self.assertEqual(len(names), 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
         self.assertIn("create_dashboard_update_plan", names)
         self.assertNotIn("update_storage_dashboard", names)
         self.assertNotIn("update_dashboard", names)

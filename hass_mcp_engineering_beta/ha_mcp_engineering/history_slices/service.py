@@ -590,7 +590,7 @@ def _parse(raw: Any, entity_id: str, offset: int):
 _ROW_9_1 = frozenset({"state", "last_changed", "last_updated", "attributes"})
 
 
-def _parse_9_1(raw: Any, entity_id: str, offset: int):
+def _parse_9_1(raw: Any, entity_id: str, offset: int, *, version: str = "9.1.0"):
     """The pinned ha-mcp 9.1.0 history shape (HAMCP-319 rule 3) inside the gateway envelope.
 
     9.1 ``format_history_response`` (``history_response.py:49-74``) expands
@@ -599,13 +599,14 @@ def _parse_9_1(raw: Any, entity_id: str, offset: int):
     row 16 projection (``providers/upstream_history_9_1.py``) has already
     re-emitted each row as ``{state, last_changed, last_updated[, attributes]}``.
     ``attributes`` is optional (absent means unavailable, never ``{}``). The
-    envelope must attribute the result to 9.1.0 exactly, so an 8.5/8.6
-    session never maps through this row.
+    envelope must attribute the result to the row's exact release (9.1.0 or,
+    for HAMCP-351, 9.1.2), so an 8.5/8.6 session, or the other 9.1 release,
+    never maps through this row.
     """
 
     if type(raw) is dict and raw.get("success") is True:
         metadata = raw.get("metadata")
-        if type(metadata) is not dict or metadata.get("upstream_version") != "9.1.0":
+        if type(metadata) is not dict or metadata.get("upstream_version") != version:
             return "representation_invalid"
         outer = raw.get("data")
         inner = outer.get("data") if type(outer) is dict else None
@@ -625,7 +626,11 @@ def _parse_9_1(raw: Any, entity_id: str, offset: int):
 
 # One parser row per reviewed upstream version (REVIEWED_VERSIONS gains a
 # version only together with its row; a version without a row is refused).
-_PARSERS = {"8.5.0": _parse, "8.6.0": _parse, "9.1.0": _parse_9_1}
+def _parse_9_1_2(raw: Any, entity_id: str, offset: int):
+    return _parse_9_1(raw, entity_id, offset, version="9.1.2")
+
+
+_PARSERS = {"8.5.0": _parse, "8.6.0": _parse, "9.1.0": _parse_9_1, "9.1.2": _parse_9_1_2}
 
 
 def _truncate_state(state: str) -> str:

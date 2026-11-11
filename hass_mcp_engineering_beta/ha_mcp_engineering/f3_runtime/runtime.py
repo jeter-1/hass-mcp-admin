@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from functools import partial
 import hashlib
 import json
 import threading
@@ -92,10 +93,15 @@ from ..f3_configuration.adapter import (
     PredispatchAuthorityRefused,
 )
 from ..f3_configuration.delete import ConfigurationDeleteAdapter
+from ..f3_configuration.created_objects import (
+    CreatedObjectDeleteAdapter,
+    SceneCreateAdapter,
+)
 from ..f3_configuration.helper_options import HelperOptionsAdapter
 from ..f3_configuration.gateway import ExistingConfigurationGatewayBridge
 from ..f3_configuration.locks import lock_set_hash, resource_lock_key
 from ..f3_configuration.migration import (
+    _risk_evidence_hash,
     proposal_from_configuration_operation,
     proposal_from_legacy_automation_plan,
 )
@@ -142,6 +148,10 @@ from ..governance.entity_metadata import (
 from ..governance import entity_metadata_planning
 from ..governance import entity_availability_exposure_planning
 from ..governance import configuration_delete_planning
+from ..governance import created_object_delete_planning
+from ..governance import created_object_identity
+from ..governance import created_object_delete as created_object_delete_contract
+from ..governance import created_object_rollback
 from ..governance import helper_options_planning
 from ..governance.helper_options_flows import HelperOptionsFlowLedger
 from ..governance.entity_availability_exposure import (
@@ -371,6 +381,15 @@ def _operator_cancelled(record: Any) -> bool:
 def _configuration_capability(operation: Any) -> str:
     """The contract-v2 F3 capability identity of one plan operation."""
 
+    if operation.action == created_object_delete_contract.ACTION and (
+        created_object_delete_contract.is_intent(operation.proposed_config)
+    ):
+        # HAMCP-298: a created scene/helper delete has its own identity; an
+        # unreviewed type maps to no adapter, so the plan cannot prepare.
+        return created_object_delete_contract.CAPABILITY_IDENTITIES.get(
+            created_object_identity.created_type(operation) or "",
+            "delete_created_unreviewed_configuration",
+        )
     resource = operation.helper_type or operation.resource_type
     return f"{operation.action}_{resource}_configuration"
 
@@ -964,7 +983,27 @@ def _unsigned_profiles(plan: Any) -> tuple[str, ...]:
         UNSIGNED_PROFILE_REQUIREMENTS[operation.resource_type]
         for operation in plan.operations
         if operation.resource_type in UNSIGNED_PROFILE_REQUIREMENTS
+        # HAMCP-329/298: the scene update profile admits only updates.
+        and not (
+            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            and operation.action != scene_configuration_contract.ACTION
+        )
     }
+    for operation in getattr(plan, "operations", ()) or ():
+        # HAMCP-329/298: a scene create and a created scene/helper delete are
+        # admitted only by their own runtime-only profile, at entry, every
+        # dispatch and every readback.
+        if (
+            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+            and operation.action == scene_configuration_contract.CREATE_ACTION
+        ):
+            profiles.add(scene_configuration_contract.CREATE_PROFILE)
+        elif operation.action == created_object_delete_contract.ACTION and (
+            created_object_delete_contract.is_intent(operation.proposed_config)
+        ):
+            created = created_object_identity.created_type(operation)
+            if created in created_object_delete_contract.PROFILES:
+                profiles.add(created_object_delete_contract.PROFILES[created])
     operational = UNSIGNED_OPERATIONAL_PROFILE_REQUIREMENTS.get(
         getattr(plan, "operation", None)
     )
@@ -1407,17 +1446,60 @@ def _desired_state_fingerprint(operation: Any) -> str:
     if operation.action == "delete":
         from ..governance.resources import resource_fingerprint
 
-        return resource_fingerprint(operation.resource_type, None)
+        # HAMCP-298: a created-helper delete child is stored as
+        # ``resource_type == "helper"`` with its concrete ``helper_type``.
+        return resource_fingerprint(
+            getattr(operation, "helper_type", None) or operation.resource_type, None
+        )
     return operation.proposed_config_hash
 
 
 def _recreate_eligible(operation: Any) -> bool:
+    proposed = getattr(operation, "proposed_config", None)
+    if created_object_delete_contract.is_intent(proposed):
+        # HAMCP-298: a created helper or scene delete child carries its own
+        # closed intent; planning recorded whether the body is recreatable.
+        intent = created_object_delete_contract.intent(proposed)
+        return isinstance(intent, dict) and intent.get("recreate_eligible") is True
     try:
         return configuration_delete_intent(
             operation.proposed_config
         ).get("recreate_eligible") is True
     except (TypeError, KeyError, AttributeError):
         return False
+
+
+def _delete_child_type(operation: Any) -> str:
+    """The concrete type of a delete child (a helper child keeps its type)."""
+
+    return getattr(operation, "helper_type", None) or operation.resource_type
+
+
+def _created_object_rollback_plan(plan: Any) -> bool:
+    """HAMCP-298: a contract-2 plan with a create and only creates/updates.
+
+    Every create is of a captured type and every update is a generic
+    configuration update; the reverse plan restores the updates and deletes
+    the creates in strict reverse forward order (§3.4.4).
+    """
+
+    return bool(
+        plan.contract_version == 2
+        and plan.operations
+        and any(operation.action == "create" for operation in plan.operations)
+        and all(
+            (
+                operation.action == "create"
+                and created_object_identity.created_type(operation) is not None
+            )
+            or (
+                operation.action == "update"
+                and operation.resource_type
+                in created_object_rollback.RESTORE_RESOURCE_TYPES
+            )
+            for operation in plan.operations
+        )
+    )
 
 
 class _AuditedDashboardGateway:
@@ -1617,6 +1699,42 @@ class _AuditedConfigurationGateway:
         # HAMCP-155: audited exactly like a write.
         return await self._audited(
             self.delegate.delete_configuration(resource_type, target_id)
+        )
+
+    # HAMCP-298: created-object reads pass through; the delete is audited.
+    async def created_delete_read_config(self, resource_type, target_id):
+        return await self.delegate.created_delete_read_config(
+            resource_type, target_id
+        )
+
+    async def created_delete_registry_entry(self, resource_type, target_id):
+        return await self.delegate.created_delete_registry_entry(
+            resource_type, target_id
+        )
+
+    async def created_delete_state_exists(self, resource_type, entity_id):
+        return await self.delegate.created_delete_state_exists(
+            resource_type, entity_id
+        )
+
+    async def created_delete_consumer_fingerprint(self, entity_id):
+        return await self.delegate.created_delete_consumer_fingerprint(entity_id)
+
+    async def created_delete(self, resource_type, target_id):
+        return await self._audited(
+            self.delegate.created_delete(resource_type, target_id)
+        )
+
+    # HAMCP-329: absent-scene reads pass through; the create POST is audited.
+    async def scene_create_target_absent_reason(self, config_id):
+        return await self.delegate.scene_create_target_absent_reason(config_id)
+
+    async def scene_create_observation(self, config_id):
+        return await self.delegate.scene_create_observation(config_id)
+
+    async def scene_create_write(self, config_id, command):
+        return await self._audited(
+            self.delegate.scene_create_write(config_id, command)
         )
 
     async def _audited(self, call):
@@ -1945,6 +2063,10 @@ class F3RuntimeIntegration:
             now=service.now,
         )
         self.locks.integration = self
+        # HAMCP-298: creation-time identity sidecar, keyed by child id.
+        self.created_identities = created_object_identity.CreatedIdentityStore(
+            storage_root
+        )
         self._reconstruct_selective_holds()
         self._finish_pending_hold_releases()
         self.provider_identity_reader = provider_identity_reader
@@ -2006,7 +2128,30 @@ class F3RuntimeIntegration:
                 config_gateway,
                 admission=self._configuration_delete_admitted,
                 now=service.now,
+                created_object_binding=self._created_object_binding,
             )
+        # HAMCP-298: a created scene/helper delete is its own adapter class,
+        # admitted only by its type's runtime-only profile and only with the
+        # plan-bound created-object ownership marker.
+        for resource in created_object_delete_contract.RESOURCE_TYPES:
+            configuration_adapters[
+                created_object_delete_contract.CAPABILITY_IDENTITIES[resource]
+            ] = CreatedObjectDeleteAdapter(
+                resource,
+                config_gateway,
+                admission=partial(self._created_delete_admitted, resource),
+                now=service.now,
+                created_object_binding=self._created_object_binding,
+            )
+        # HAMCP-329: scene create is its own adapter class under its own
+        # runtime-only profile; the update adapter never creates.
+        configuration_adapters[
+            scene_configuration_contract.CREATE_CAPABILITY_IDENTITY
+        ] = SceneCreateAdapter(
+            config_gateway,
+            admission=self._scene_create_admitted,
+            now=service.now,
+        )
         # HAMCP-232 H2-R1: every options flow is recorded under this storage
         # root before it is opened, so an unconfirmed abort survives a
         # restart and is retried by the recovery sweep.  The gateway opens
@@ -2459,6 +2604,92 @@ class F3RuntimeIntegration:
         except Exception:
             return False
         return isinstance(status, dict) and status.get("available") is True
+
+    def _created_object_binding(self, operation: Any) -> dict[str, Any] | None:
+        """HAMCP-298: the plan-bound ownership marker of a delete child.
+
+        ``None`` for an ordinary HAMCP-155 delete.  Raises when the stored
+        plan, its operation or its risk evidence no longer matches the
+        prepared operation, or when the marker's provenance does not verify
+        against the stored source plan and creation-identity record, so the
+        preflight refuses with zero writes.
+        """
+
+        plan = self.service._load(operation.plan_id)
+        source = next(
+            item
+            for item in plan.operations
+            if item.operation_id == operation.operation_id
+        )
+        if _risk_evidence_hash(source.risk) != operation.risk_evidence_hash:
+            raise ValueError("created object binding drifted")
+        found = created_object_rollback.markers(source)
+        if not found:
+            return None
+        if len(found) != 1 or not created_object_rollback.valid_marker(
+            found[0], source
+        ):
+            raise ValueError("created object binding invalid")
+        if not self._created_object_provenance_verifies(found[0], source):
+            raise ValueError("created object binding unverified")
+        return dict(found[0])
+
+    def _created_object_provenance_verifies(
+        self, marker: dict[str, Any], operation: Any
+    ) -> bool:
+        """HAMCP-298 §3.5: the marker names a verified create of this object.
+
+        Local facts only, no Home Assistant I/O: the stored source plan still
+        hashes to the marker's source hash, the named source child is a
+        rollback-eligible create of this exact type and target, and its
+        stored creation identity carries the marker's captured values.  A
+        self-consistent marker that names anything else is not an ownership
+        claim this executor accepts.
+        """
+
+        try:
+            source_plan = self.service.repository.get(marker["source_plan_id"])
+            if (
+                source_plan is None
+                or self.service.plan_hash(source_plan) != marker["source_plan_hash"]
+                or not _created_object_rollback_plan(source_plan)
+            ):
+                return False
+            task = self.service.task_repository.get_for_plan(source_plan.plan_id)
+            candidates, _excluded = self._created_object_candidates(
+                source_plan, task
+            )
+        except Exception:
+            return False
+        for created, child_id, identity, _resulting in candidates:
+            if created.operation_id != marker["source_operation_id"]:
+                continue
+            return bool(
+                identity is not None
+                and created.action == "create"
+                and child_id == marker["source_child_id"]
+                and identity["resource_type"] == _delete_child_type(operation)
+                and identity["resource_target"] == operation.target_id
+                and identity["capture_fingerprint"] == marker["capture_fingerprint"]
+                and identity["created_fingerprint"] == marker["created_fingerprint"]
+                and identity["registry_entry_id"] == marker["registry_entry_id"]
+                and identity["registry_created_at"] == marker["registry_created_at"]
+                and identity["registry_modified_at"]
+                == marker["captured_modified_at"]
+                and identity["entity_id"] == marker["captured_entity_id"]
+            )
+        return False
+
+    def _created_delete_admitted(self, resource_type: str) -> bool:
+        """Whether a signed registry admits this created type's delete profile."""
+
+        profile = created_object_delete_contract.PROFILES.get(resource_type)
+        return profile is not None and self._core_admits_profile(profile)
+
+    def _scene_create_admitted(self) -> bool:
+        """Whether a signed registry admits the HAMCP-329 scene create profile."""
+
+        return self._core_admits_profile(scene_configuration_contract.CREATE_PROFILE)
 
     def _helper_options_admitted(self) -> bool:
         """Whether a signed registry admits the HAMCP-232 options profile."""
@@ -3686,9 +3917,93 @@ class F3RuntimeIntegration:
             )
             if "lock_storage_failure" in result.diagnostic_codes:
                 self._readiness_fault("execution_storage")
+            if plan.contract_version == 2:
+                await self._capture_created_identity(plan, declaration, result)
             return result
         finally:
             _ACTIVE_F3_CHILD.reset(token)
+
+    async def _capture_created_identity(
+        self, plan: Any, declaration: dict[str, Any], result: Any
+    ) -> None:
+        """HAMCP-298 §3.2.2: record a verified create's identity, still locked.
+
+        Runs only after this child verified, inside the forward sequence.
+        Admission is checked before the first capture read.  Nothing here
+        changes the create's own outcome; every problem is a recorded
+        capture outcome, and a store failure leaves the child ineligible.
+        """
+
+        operation = next(
+            (
+                item
+                for item in plan.operations
+                if item.operation_id == declaration["operation_id"]
+            ),
+            None,
+        )
+        created = (
+            None if operation is None else created_object_identity.created_type(operation)
+        )
+        if (
+            operation is None
+            or operation.action != "create"
+            or created is None
+            or not result.terminal
+            or result.outcome != "succeeded_verified"
+        ):
+            return
+        record = self.children.get(declaration["child_id"])
+        resulting = (
+            record.evidence.get("resulting_state_fingerprint")
+            if record is not None
+            else None
+        )
+        if (
+            record is None
+            or record.normalized_outcome != "succeeded_verified"
+            or not isinstance(resulting, str)
+            or resulting != operation.proposed_config_hash
+            or self.created_identities.get(declaration["child_id"]) is not None
+        ):
+            return
+        # Each created type is captured only through its own delete profile
+        # and gateway: automation/script by HAMCP-155, scene and helpers by
+        # their HAMCP-298 runtime-only profiles.
+        if created in created_object_delete_contract.PROFILES:
+            profile = created_object_delete_contract.PROFILES[created]
+            gateway = getattr(self.service, "created_object_delete_gateway", None)
+        else:
+            profile = CONFIGURATION_DELETE_PROFILE
+            gateway = self.service.configuration_delete_gateway
+        admitted = self._core_admits_profile(profile)
+        if not admitted:
+            outcome, identity = created_object_identity.CAPABILITY_UNADMITTED, None
+        elif gateway is None:
+            outcome, identity = created_object_identity.READ_FAILED, None
+        else:
+            outcome, identity = await created_object_identity.capture(
+                gateway, created, operation.target_id, resulting
+            )
+        try:
+            self.created_identities.put(
+                child_id=declaration["child_id"],
+                plan_id=plan.plan_id,
+                operation_id=operation.operation_id,
+                resulting_state_fingerprint=resulting,
+                outcome=outcome,
+                identity=identity,
+            )
+        except (OSError, ValueError):
+            outcome = "store_failed"
+        self._emit_f3_audit_event(
+            {
+                "event_type": "created_identity_capture",
+                "task_id": declaration["child_id"],
+                "plan_id": plan.plan_id,
+                "reason_code": outcome,
+            }
+        )
 
     def _project_dispatch(self, task: Any, record: Any, declaration: dict[str, Any]) -> None:
         if record.dispatch_intent is None:
@@ -4366,6 +4681,13 @@ class F3RuntimeIntegration:
                 for operation, record in operations
             )
             status = None
+            if not available and _created_object_rollback_plan(plan):
+                # HAMCP-298 §3.4.4: display only; rollback_change re-derives
+                # admission and ownership from live state.
+                candidates, _excluded = self._created_object_candidates(
+                    plan, task
+                )
+                available = bool(candidates)
             if not available and all(
                 operation.action == "create" for operation in plan.operations
             ):
@@ -5197,10 +5519,23 @@ class F3RuntimeIntegration:
             return await self._create_dashboard_metadata_rollback(
                 source_plan, task
             )
-        if source_plan.contract_version == 2 and any(
-            operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
-            for operation in source_plan.operations
+        if (
+            source_plan.contract_version == 2
+            and any(
+                operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+                for operation in source_plan.operations
+            )
+            # HAMCP-329/298: undoing a scene create is a created-object
+            # delete (below), never a restore of a prior scene body.
+            and not _created_object_rollback_plan(source_plan)
         ):
+            if any(
+                operation.action == CONFIGURATION_DELETE_ACTION
+                for operation in source_plan.operations
+            ):
+                # HAMCP-329 §3.4.3: undoing a created-scene delete is a scene
+                # create under the scene create/delete profile.
+                return await self._create_scene_recreate(source_plan, task)
             # HAMCP-071: admission first, then its own exact lease.
             return await self._create_scene_configuration_rollback(
                 source_plan, task
@@ -5222,6 +5557,12 @@ class F3RuntimeIntegration:
             operation.action == CONFIGURATION_DELETE_ACTION
             for operation in source_plan.operations
         )
+        if _created_object_rollback_plan(source_plan):
+            # HAMCP-298: local checks, then delete admission, then its own
+            # exact lease, before any Home Assistant read.
+            return await self._create_created_object_rollback(
+                source_plan, task
+            )
         # HAMCP-189 R1: every return above is local.  Fresh planning reads
         # current state, so it runs inside its own Core lease.
         async with _rollback_planning_lease(
@@ -5445,12 +5786,10 @@ class F3RuntimeIntegration:
         for operation in reversed(source_plan.operations):
             record = records.get(operation.operation_id)
             pre_image = operation.current_config
-            try:
-                eligible = configuration_delete_intent(
-                    operation.proposed_config
-                ).get("recreate_eligible") is True
-            except (TypeError, KeyError, AttributeError):
-                eligible = False
+            # HAMCP-298: a created-helper delete child is ``helper`` with its
+            # concrete ``helper_type``; its recreate is the existing governed
+            # helper create (``generated_identity_mismatch`` applies).
+            kind = _delete_child_type(operation)
             if (
                 operation.action != CONFIGURATION_DELETE_ACTION
                 or record is None
@@ -5458,15 +5797,15 @@ class F3RuntimeIntegration:
                 or record.normalized_outcome != "succeeded_verified"
                 or record.dispatch_intent is None
                 or record.dispatch_count != 1
-                or not eligible
+                or not _recreate_eligible(operation)
                 or not isinstance(pre_image, dict)
-                or resource_fingerprint(operation.resource_type, pre_image)
+                or resource_fingerprint(kind, pre_image)
                 != operation.current_state_fingerprint
             ):
                 excluded.append(operation.operation_id)
                 continue
             current = await self.service._read_configuration_resource(
-                operation.resource_type, operation.target_id
+                kind, operation.target_id
             )
             if current is not None:
                 # Recreated or replaced since: never overwrite it.
@@ -5476,18 +5815,23 @@ class F3RuntimeIntegration:
                 {"source_operation_id": operation.operation_id}
             )[:12]
             operation_id = f"recreate_{operation.operation_id[:42]}_{suffix}"
-            operations.append(
-                {
-                    "operation_id": operation_id,
-                    "resource_type": operation.resource_type,
-                    "action": "create",
-                    "target_id": operation.target_id,
-                    "proposed_config": deepcopy(pre_image),
-                    "depends_on": (
-                        [operations[-1]["operation_id"]] if operations else []
-                    ),
-                }
-            )
+            recreate: dict[str, Any] = {
+                "operation_id": operation_id,
+                "resource_type": operation.resource_type,
+                "action": "create",
+                "target_id": operation.target_id,
+                "proposed_config": (
+                    created_object_delete_planning.recreate_body(kind, pre_image)
+                    if kind != operation.resource_type
+                    else deepcopy(pre_image)
+                ),
+                "depends_on": (
+                    [operations[-1]["operation_id"]] if operations else []
+                ),
+            }
+            if kind != operation.resource_type:
+                recreate["helper_type"] = kind
+            operations.append(recreate)
         if not operations:
             raise GovernanceError(
                 ErrorCode.ROLLBACK_NOT_AVAILABLE,
@@ -5531,6 +5875,634 @@ class F3RuntimeIntegration:
             "operations_excluded": excluded,
             "provider_dispatch_occurred": False,
         }
+
+    async def _create_scene_recreate(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """HAMCP-329 §3.4.3: plan the recreate of one verified scene delete.
+
+        Local checks come first and read nothing.  The recreate is one scene
+        ``create`` of the exact captured body under the same config id,
+        planned by the scene create planner: admission of the scene
+        create/delete profile first, then the absence check inside its own
+        exact lease, so a scene that exists again is never overwritten.
+        Nothing is dispatched here and the scene is never activated.
+        """
+
+        def refuse(reason: str, **extra: Any) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    "plan_created": False,
+                    "provider_dispatch_occurred": False,
+                    **extra,
+                },
+            )
+
+        if len(source_plan.operations) != 1 or task is None:
+            raise refuse("forward_not_verified")
+        operation = source_plan.operations[0]
+        record = next(
+            (
+                self.children.get(item["child_id"])
+                for item in self.children.declarations_for_task(task.task_id)
+                if item["operation_id"] == operation.operation_id
+            ),
+            None,
+        )
+        pre_image = operation.current_config
+        if (
+            operation.action != CONFIGURATION_DELETE_ACTION
+            or task.state != ExecutionTaskState.SUCCEEDED_VERIFIED
+            or record is None
+            or not record.terminal
+            or record.normalized_outcome != "succeeded_verified"
+            or record.dispatch_intent is None
+            or record.dispatch_count != 1
+            or not _recreate_eligible(operation)
+            or not isinstance(pre_image, dict)
+            or resource_fingerprint(operation.resource_type, pre_image)
+            != operation.current_state_fingerprint
+        ):
+            raise refuse(
+                "no_verified_absent_deletion",
+                operations_excluded=[operation.operation_id],
+            )
+        arguments: dict[str, Any] = {
+            "action": scene_configuration_contract.CREATE_ACTION,
+            "config_id": operation.target_id,
+            **{
+                key: deepcopy(value)
+                for key, value in pre_image.items()
+                if key in scene_configuration_contract.CREATE_FIELDS and key != "id"
+            },
+        }
+        try:
+            created = await self.service.create_scene_configuration_plan(
+                arguments,
+                caller_context={
+                    "rollback_source_plan_id": source_plan.plan_id,
+                    "rollback_model": created_object_rollback.SCENE_RECREATE_MODEL,
+                },
+            )
+        except GovernanceError as exc:
+            reason = (exc.details or {}).get("reason")
+            if reason in (
+                scene_configuration_contract.CREATE_TARGET_EXISTS_REASON,
+                scene_configuration_contract.CREATE_CONFIG_ID_REGISTERED_REASON,
+            ):
+                # Recreated or replaced since: never overwrite it.
+                raise refuse(
+                    "no_verified_absent_deletion",
+                    operations_excluded=[operation.operation_id],
+                    current_state=reason,
+                ) from None
+            raise
+        rollback_plan = self.service._load(created["plan_id"])
+        source_plan.rollback.available = True
+        source_plan.rollback.status = "governed_plan_created"
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": "rollback_plan_created",
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": [
+                item.operation_id for item in rollback_plan.operations
+            ],
+            "operations_excluded": [],
+            "provider_dispatch_occurred": False,
+        }
+
+    def _created_object_candidates(
+        self, source_plan: Any, task: Any
+    ) -> tuple[list[tuple[Any, str, dict[str, Any] | None, str]], list[dict[str, str]]]:
+        """HAMCP-298 §3.4.1 step 2: local eligibility, no Home Assistant I/O.
+
+        Returns, in strict reverse forward order, each verified child as
+        ``(operation, child_id, identity, resulting_fingerprint)`` (``identity``
+        is ``None`` for an update's restore) and every exclusion with its
+        reason.  The prerequisite rule (§3.4.4) excludes every later delete
+        once any child is excluded; a restore is never a delete's dependant,
+        so it is never excluded by it.  No rollback-time identity is ever
+        captured or adopted.
+        """
+
+        declarations = (
+            self.children.declarations_for_task(task.task_id)
+            if task is not None
+            else []
+        )
+        children = {item["operation_id"]: item["child_id"] for item in declarations}
+        candidates: list[tuple[Any, str, dict[str, Any] | None, str]] = []
+        excluded: list[dict[str, str]] = []
+        blocked: str | None = None
+        for operation in reversed(source_plan.operations):
+            child_id = children.get(operation.operation_id)
+            record = self.children.get(child_id) if child_id is not None else None
+            resulting = (
+                record.evidence.get("resulting_state_fingerprint")
+                if record is not None
+                else None
+            )
+            if operation.action == "update":
+                # The existing restore child's local eligibility
+                # (``_plan_fresh_rollback``).
+                if (
+                    record is None
+                    or record.normalized_outcome != "succeeded_verified"
+                    or operation.current_config is None
+                    or not isinstance(resulting, str)
+                ):
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.RESTORE_NOT_VERIFIED,
+                        }
+                    )
+                    blocked = blocked or operation.operation_id
+                    continue
+                candidates.append((operation, child_id, None, resulting))
+                continue
+            if blocked is not None:
+                excluded.append(
+                    {
+                        "operation_id": operation.operation_id,
+                        "reason": created_object_rollback.PREREQUISITE_EXCLUDED,
+                        "prerequisite": blocked,
+                    }
+                )
+                continue
+            reason: str | None = None
+            identity = None
+            if (
+                record is None
+                or not record.terminal
+                or record.normalized_outcome != "succeeded_verified"
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+                or not isinstance(resulting, str)
+                # Cursor #393 L1: the verified resulting state equals the
+                # planned create (adapter.py:966-968, :1006-1008).
+                or resulting != operation.proposed_config_hash
+            ):
+                reason = created_object_rollback.NOT_VERIFIED
+            else:
+                identity = self.created_identities.captured_for(
+                    child_id=child_id,
+                    plan_id=source_plan.plan_id,
+                    operation_id=operation.operation_id,
+                    resulting_state_fingerprint=resulting,
+                )
+                if identity is None:
+                    reason = created_object_rollback.IDENTITY_NOT_CAPTURED
+            if reason is not None:
+                excluded.append(
+                    {"operation_id": operation.operation_id, "reason": reason}
+                )
+                blocked = operation.operation_id
+                continue
+            candidates.append((operation, child_id, identity, resulting))
+        return candidates, excluded
+
+    async def _create_created_object_rollback(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """HAMCP-298 §3.4: plan the governed reverse of verified creates.
+
+        Order: local eligibility (no I/O); delete admission before any read
+        (an unadmitted delete is excluded, and with nothing left the refusal
+        reads nothing); current-state and ownership reads inside one planning
+        lease; then one separately approved plan in strict reverse forward
+        order: restore children for updates (the existing restore child) and
+        HAMCP-155 delete children for creates, each delete carrying the
+        closed ownership marker.  Nothing is dispatched here.
+        """
+
+        def refuse(reason: str, excluded: list[dict[str, str]]) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "reason_code": reason,
+                    "operations_excluded": excluded[:8],
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        if task is None or task.state not in {
+            ExecutionTaskState.SUCCEEDED_VERIFIED,
+            ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            ExecutionTaskState.FAILED_POST_DISPATCH,
+        }:
+            raise refuse("forward_not_verified", [])
+        candidates, excluded = self._created_object_candidates(source_plan, task)
+        if not candidates:
+            raise refuse(created_object_rollback.NO_ELIGIBLE_CHILD, excluded)
+        created_profiles = created_object_delete_contract.PROFILES
+        delete_gateway = self.service.configuration_delete_gateway
+        created_gateway = getattr(self.service, "created_object_delete_gateway", None)
+
+        def gateway_for(kind: str | None) -> Any:
+            return created_gateway if kind in created_profiles else delete_gateway
+
+        if any(item[2] is not None for item in candidates):
+            # Admission before any Home Assistant read, per created type
+            # (§3.4.1 step 3): automation/script by the HAMCP-155 profile,
+            # a scene or helper by its own created-object delete profile.
+            # An unadmitted delete is excluded and is a prerequisite of
+            # every later delete (§3.4.4).  With no child left, the refusal
+            # is pending_signed_registry_admission with nothing read or
+            # stored.
+            admission_error: GovernanceError | None = None
+            admitted: list[tuple[Any, str, dict[str, Any] | None, str]] = []
+            unadmitted: str | None = None
+            for item in candidates:
+                operation = item[0]
+                if item[2] is None:
+                    admitted.append(item)
+                    continue
+                kind = created_object_identity.created_type(operation)
+                try:
+                    if kind in created_profiles:
+                        self.service._created_object_delete_core(kind)
+                    else:
+                        self.service._configuration_delete_core()
+                except GovernanceError as exc:
+                    admission_error = admission_error or exc
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.PENDING_ADMISSION,
+                        }
+                    )
+                    unadmitted = unadmitted or operation.operation_id
+                    continue
+                if unadmitted is not None:
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.PREREQUISITE_EXCLUDED,
+                            "prerequisite": unadmitted,
+                        }
+                    )
+                    continue
+                admitted.append(item)
+            if not admitted and admission_error is not None:
+                raise admission_error
+            candidates = admitted
+        deletes = [item for item in candidates if item[2] is not None]
+        delete_kinds = [
+            created_object_identity.created_type(item[0]) for item in deletes
+        ]
+        if any(gateway_for(kind) is None for kind in delete_kinds):
+            raise refuse(created_object_rollback.READ_UNAVAILABLE, excluded)
+        if deletes and not any(kind in created_profiles for kind in delete_kinds):
+            # Automation and script only: the unchanged HAMCP-155 lease.
+            try:
+                lease_request = configuration_delete_planning.validate_request(
+                    {
+                        "deletions": [
+                            {
+                                "resource_type": operation.resource_type,
+                                "target_id": operation.target_id,
+                            }
+                            for operation, _child, _identity, _resulting in deletes
+                        ],
+                        "reason": created_object_rollback.REASON,
+                    }
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self.service._entity_metadata_refusal_error(exc, {}) from None
+            planning_lease: Any = self.service._configuration_delete_planning_lease(
+                lease_request
+            )
+        elif deletes:
+            # A scene or helper child: the lease holds every involved delete
+            # profile for exactly these targets.
+            try:
+                lease_request = created_object_delete_planning.lease_request(
+                    [
+                        (kind, operation.target_id)
+                        for kind, (operation, _child, _identity, _resulting) in zip(
+                            delete_kinds, deletes, strict=True
+                        )
+                    ],
+                    created_object_rollback.REASON,
+                )
+            except entity_metadata_planning.EntityMetadataRefusal as exc:
+                raise self.service._entity_metadata_refusal_error(exc, {}) from None
+            planning_lease = _rollback_planning_lease(
+                self.core_runtime,
+                (
+                    "core.dependency_helper_planning",
+                    *sorted(
+                        {
+                            created_profiles.get(kind, CONFIGURATION_DELETE_PROFILE)
+                            for kind in delete_kinds
+                        }
+                    ),
+                ),
+                target={
+                    "target_type": "configuration_deletion",
+                    "target_id": lease_request.lease_target_id,
+                },
+            )
+        else:
+            planning_lease = _rollback_planning_lease(
+                self.core_runtime, ROLLBACK_PLANNING_REQUIREMENTS
+            )
+        source_hash = self.service.plan_hash(source_plan)
+        async with planning_lease as lease:
+            # ("restore", operation, expected fingerprint) or
+            # ("delete", operation, binding), in rollback order.
+            included: list[tuple[str, Any, Any]] = []
+            blocked: str | None = None
+            for operation, child_id, identity, resulting in candidates:
+                if identity is None:
+                    resolved_type = self.service._resolved_resource_type(
+                        operation.resource_type, operation.helper_type
+                    )
+                    try:
+                        current = await self.service._read_configuration_resource(
+                            resolved_type, operation.target_id
+                        )
+                    except Exception:
+                        excluded.append(
+                            {
+                                "operation_id": operation.operation_id,
+                                "reason": created_object_rollback.READ_UNAVAILABLE,
+                            }
+                        )
+                        blocked = blocked or operation.operation_id
+                        continue
+                    if resource_fingerprint(resolved_type, current) != resulting:
+                        excluded.append(
+                            {
+                                "operation_id": operation.operation_id,
+                                "reason": (
+                                    created_object_rollback.RESTORE_TARGET_CHANGED
+                                ),
+                            }
+                        )
+                        blocked = blocked or operation.operation_id
+                        continue
+                    included.append(("restore", operation, resulting))
+                    continue
+                if blocked is not None:
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.PREREQUISITE_EXCLUDED,
+                            "prerequisite": blocked,
+                        }
+                    )
+                    continue
+                kind = created_object_identity.created_type(operation)
+                gateway = gateway_for(kind)
+                try:
+                    entry = await gateway.registry_entry(kind, operation.target_id)
+                    body = await gateway.read_config(kind, operation.target_id)
+                except Exception:
+                    excluded.append(
+                        {
+                            "operation_id": operation.operation_id,
+                            "reason": created_object_rollback.READ_UNAVAILABLE,
+                        }
+                    )
+                    blocked = operation.operation_id
+                    continue
+                ownership = created_object_identity.observed_ownership(
+                    identity,
+                    entry,
+                    resource_fingerprint(kind, body) if body is not None else None,
+                )
+                status = ownership["status"]
+                if status == created_object_rollback.ALREADY_ABSENT:
+                    # Nothing to delete; it does not block later children.
+                    excluded.append(
+                        {"operation_id": operation.operation_id, "reason": status}
+                    )
+                    continue
+                if status not in {
+                    created_object_rollback.OWNED,
+                    created_object_rollback.MODIFIED_SINCE_CREATE,
+                }:
+                    excluded.append(
+                        {"operation_id": operation.operation_id, "reason": status}
+                    )
+                    blocked = operation.operation_id
+                    continue
+                included.append(
+                    (
+                        "delete",
+                        operation,
+                        {
+                            "child_id": child_id,
+                            "identity": identity,
+                            "ownership": ownership,
+                        },
+                    )
+                )
+            if not included:
+                raise refuse(created_object_rollback.NO_ELIGIBLE_CHILD, excluded)
+            restores: dict[str, str] = {}
+            order: list[dict[str, Any] | str] = []
+            for kind, operation, value in included:
+                if kind != "restore":
+                    order.append(operation.operation_id)
+                    continue
+                suffix = stable_hash(
+                    {"source_operation_id": operation.operation_id}
+                )[:12]
+                restore = {
+                    "operation_id": (
+                        f"rollback_{operation.operation_id[:42]}_{suffix}"
+                    ),
+                    "resource_type": operation.resource_type,
+                    "action": "update",
+                    "target_id": operation.target_id,
+                    "proposed_config": deepcopy(operation.current_config),
+                    "depends_on": [],
+                }
+                if operation.resource_type == "helper":
+                    restore["helper_type"] = operation.helper_type
+                restores[restore["operation_id"]] = value
+                order.append(restore)
+            excluded_ids = [item["operation_id"] for item in excluded][:8]
+            delete_included = [
+                (operation, value)
+                for kind, operation, value in included
+                if kind == "delete"
+            ]
+            if not delete_included:
+                # Only restores remain: the existing restore route's plan.
+                lease.require_current()
+                operations = [item for item in order if isinstance(item, dict)]
+                for index, item in enumerate(operations[1:], start=1):
+                    item["depends_on"] = [operations[index - 1]["operation_id"]]
+                created = await self.service._create_configuration_plan(
+                    title=f"Rollback governed change {source_plan.plan_id}"[:160],
+                    description=(
+                        "Separately governed reverse update using exact prior "
+                        "configuration evidence from a verified F3 execution."
+                    ),
+                    operations=operations,
+                    caller_context={
+                        "rollback_source_plan_id": source_plan.plan_id,
+                        "rollback_model": "f3-governed-rollback-plan-v1",
+                        "excluded_operation_ids": excluded_ids,
+                    },
+                    _before_persist=lease.require_current,
+                )
+            else:
+                included_kinds = [
+                    created_object_identity.created_type(operation)
+                    for operation, _binding in delete_included
+                ]
+                try:
+                    if any(kind in created_profiles for kind in included_kinds):
+                        prepared = await created_object_delete_planning.prepare_mixed(
+                            delete_gateway,
+                            created_gateway,
+                            created_object_delete_planning.lease_request(
+                                [
+                                    (kind, operation.target_id)
+                                    for kind, (operation, _binding) in zip(
+                                        included_kinds, delete_included, strict=True
+                                    )
+                                ],
+                                created_object_rollback.REASON,
+                            ),
+                            known_secrets=self.service.sensitive_values,
+                            global_reader=(
+                                self.service.global_reference_snapshot_reader
+                            ),
+                        )
+                    else:
+                        # Automation and script only: the unchanged
+                        # HAMCP-155 preparation.
+                        request = configuration_delete_planning.validate_request(
+                            {
+                                "deletions": [
+                                    {
+                                        "resource_type": operation.resource_type,
+                                        "target_id": operation.target_id,
+                                    }
+                                    for operation, _binding in delete_included
+                                ],
+                                "reason": created_object_rollback.REASON,
+                            }
+                        )
+                        prepared = await configuration_delete_planning.prepare(
+                            delete_gateway,
+                            request,
+                            known_secrets=self.service.sensitive_values,
+                            global_reader=(
+                                self.service.global_reference_snapshot_reader
+                            ),
+                        )
+                except entity_metadata_planning.EntityMetadataRefusal as exc:
+                    raise self.service._entity_metadata_refusal_error(exc, {}) from None
+                delete_ids: dict[str, str] = {}
+                for item, (operation, binding) in zip(
+                    prepared.items, delete_included, strict=True
+                ):
+                    identity = binding["identity"]
+                    ownership = binding["ownership"]
+                    if (
+                        item.target_id != operation.target_id
+                        or item.registry_entry_id != identity["registry_entry_id"]
+                        or item.entity_id != ownership["observed_entity_id"]
+                        or (
+                            created_object_delete_contract.intent(item.intent)
+                            if created_object_delete_contract.is_intent(item.intent)
+                            else configuration_delete_intent(item.intent)
+                        ).get("pre_image_fingerprint")
+                        != identity["created_fingerprint"]
+                    ):
+                        # Changed between the ownership read and the delete read.
+                        raise refuse(
+                            created_object_rollback.IDENTITY_CHANGED,
+                            [
+                                *excluded,
+                                {
+                                    "operation_id": operation.operation_id,
+                                    "reason": created_object_rollback.IDENTITY_CHANGED,
+                                },
+                            ],
+                        )
+                    value = created_object_rollback.marker(
+                        operation_id=item.operation_id,
+                        identity=identity,
+                        ownership=ownership,
+                        source_plan_id=source_plan.plan_id,
+                        source_plan_hash=source_hash,
+                        source_operation_id=operation.operation_id,
+                        source_child_id=binding["child_id"],
+                    )
+                    item.classification["created_object_rollback"] = value
+                    item.disclosure["created_object_rollback"] = (
+                        created_object_rollback.disclosure(value)
+                    )
+                    delete_ids[operation.operation_id] = item.operation_id
+                prepared.plan_disclosure["created_object_rollback"] = {
+                    "model": created_object_rollback.MODEL,
+                    "source": created_object_rollback.SOURCE,
+                    "source_plan_id": source_plan.plan_id,
+                    "operations_excluded": excluded[:8],
+                    "operations_restored": list(restores),
+                    "residual_limitation": created_object_rollback.RESIDUAL_DISCLOSURE,
+                }
+                lease.require_current()
+                created = await self.service._create_created_object_rollback_plan(
+                    prepared,
+                    order=[
+                        item if isinstance(item, dict) else delete_ids[item]
+                        for item in order
+                    ],
+                    restores=restores,
+                    caller_context={
+                        "rollback_source_plan_id": source_plan.plan_id,
+                        "rollback_model": created_object_rollback.MODEL,
+                        "source": created_object_rollback.SOURCE,
+                        "excluded_operation_ids": excluded_ids,
+                    },
+                    _before_persist=lease.require_current,
+                )
+        rollback_plan = self.service._load(created["plan_id"])
+        partial = bool(excluded)
+        source_plan.rollback.available = True
+        source_plan.rollback.status = (
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        result = {
+            "status": (
+                "rollback_partial_plan_created" if partial else "rollback_plan_created"
+            ),
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_delete": [
+                operation.operation_id for operation, _binding in delete_included
+            ],
+            "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+        if restores:
+            result["operations_to_restore"] = list(restores)
+        return result
 
     async def _create_helper_options_rollback(
         self, source_plan: Any, task: Any

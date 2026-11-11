@@ -172,6 +172,43 @@ _F3_SCENE_CONFIGURATION_OPERATIONS = frozenset(
         ),
     }
 )
+# HAMCP-329/298: scene create and the created-object undo bind only their own
+# dormant 2026.11.0 runtime-only profiles.  Automation and script creation
+# identity capture uses only reads the signed delete v1 contract already
+# covers, so it maps to that unchanged profile.  Scene and helper deletion
+# identities exist only for created-object rollback children.
+SCENE_CREATE_DELETE_PROFILE = "core.scene_create_delete_operation"
+CREATED_HELPER_DELETE_PROFILE = "core.created_helper_delete_operation"
+_F3_CREATED_OBJECT_CAPTURE_DELETE_V1_OPERATIONS = frozenset(
+    {
+        ("capture_created_automation_identity", "capture_created_automation_identity"),
+        ("capture_created_script_identity", "capture_created_script_identity"),
+    }
+)
+_F3_SCENE_CREATE_DELETE_OPERATIONS = frozenset(
+    {
+        (
+            "create_scene_configuration_configuration",
+            "create_scene_configuration_configuration",
+        ),
+        ("capture_created_scene_identity", "capture_created_scene_identity"),
+        ("delete_created_scene_configuration", "delete_created_scene_configuration"),
+    }
+)
+_F3_CREATED_HELPER_DELETE_OPERATIONS = frozenset(
+    {
+        (
+            "capture_created_input_boolean_identity",
+            "capture_created_input_boolean_identity",
+        ),
+        (
+            "capture_created_input_number_identity",
+            "capture_created_input_number_identity",
+        ),
+        ("delete_created_input_boolean", "delete_created_input_boolean"),
+        ("delete_created_input_number", "delete_created_input_number"),
+    }
+)
 INPUT_SELECT_PROFILE = "core.typed_input_select_option_operation"
 INPUT_SELECT_TOOL = "create_input_select_option_plan"
 _F3_INPUT_SELECT_OPERATIONS = frozenset(
@@ -186,6 +223,13 @@ SCRIPT_TRACE_RESOURCE_TYPE = "script_trace"
 MARKETPLACE_PROFILE = "core.marketplace_read"
 MARKETPLACE_TOOL = "get_marketplace_inventory"
 MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
+# HAMCP-134: Engineering-native read-only security and effective-permission
+# metadata read.  Runtime-only, Core 2026.11.0 only, dormant until signed.
+# The tool's requirement and pending-admission rows land with its
+# registration (application.py / capabilities.py, frozen until #418).
+SECURITY_METADATA_PROFILE = "core.security_metadata_read"
+SECURITY_METADATA_TOOL = "get_security_metadata"
+SECURITY_METADATA_RESOURCE_TYPE = "security_metadata"
 # HAMCP-290: reviewed ha-mcp reads Engineering retired (Josh, 2026-11-08).  The
 # read gateway never exposes or dispatches these on any reviewed ha-mcp release,
 # whether or not a native route is registered, and nothing aliases or falls
@@ -195,6 +239,9 @@ RETIRED_DELEGATED_READS = frozenset(RETIRED_DELEGATED_READ_TOOLS)
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
+# control_device_configuration (HAMCP-297): signed-only, acquired by the
+# device-configuration service itself; never an F3 plan requirement.
+DEVICE_CONFIGURATION_PROFILE = "core.device_configuration_entity_operation"
 # HAMCP-295: the exact entity registry rename binds only its own dormant
 # runtime profile; never the signed entity metadata profile.
 ENTITY_RENAME_PROFILE = "core.entity_registry_rename_operation"
@@ -328,6 +375,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "list_script_traces": (SCRIPT_TRACE_PROFILE,),
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
+    SECURITY_METADATA_TOOL: (SECURITY_METADATA_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -514,6 +562,11 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
             "The typed helper value provider is configured with the Core runtime "
             "and acquires its own signed exact-target authority before dispatch.",
         ),
+        "control_device_configuration": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The device-configuration provider is configured with the Core runtime "
+            "and acquires its own signed exact-target authority before dispatch.",
+        ),
         "run_held_read_canary": CoreIndependence(
             CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
             "The upstream read gateway acquires the held route's delegated "
@@ -653,7 +706,8 @@ def delegated_provider_compatibility(
     # fetch, effective-area annotation, child-row config-entry selection and
     # device builder are byte-identical to 8.5.0 apart from the enrichment
     # helpers' module; signed Core profiles and fingerprints are unchanged.
-    if adapter_version == "9.1.0" and probe_profile in (
+    # HAMCP-351: exact 9.1.2 leaves those files unchanged (bab615df).
+    if adapter_version in {"9.1.0", "9.1.2"} and probe_profile in (
         CHILD_DEVICE_PROBE_PROFILE,
         CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
     ):
@@ -708,6 +762,15 @@ def static_tool_requirements(
             requirements = tuple(
                 value for value in requirements if value not in unselected
             )
+
+    elif (
+        tool_name == SCENE_CONFIGURATION_TOOL
+        and isinstance(arguments, dict)
+        and arguments.get("action") == "create"
+    ):
+        # HAMCP-329: a scene create needs only its own dormant profile; the
+        # update profile never covers a POST to an absent config id.
+        requirements = (SCENE_CREATE_DELETE_PROFILE,)
 
     elif tool_name == LABEL_TOOL and _label_plan_assigns_nothing(arguments):
         # Only entity assignment children read the dependency snapshot and
@@ -782,8 +845,32 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         "list_script_traces": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
+        SECURITY_METADATA_TOOL: (SECURITY_METADATA_RESOURCE_TYPE, SECURITY_METADATA_PROFILE),
     }
 )
+
+
+
+def pending_admission_selection(
+    tool_name: Any, arguments: Any
+) -> tuple[str, str] | None:
+    """The (resource type, profile) whose admission gates this exact request.
+
+    HAMCP-329: ``create_scene_configuration_plan`` with ``action: create`` is
+    gated by the separate scene create/delete profile, never by the scene
+    update profile; every other request keeps its tool's one profile.
+    """
+
+    if not isinstance(tool_name, str):
+        return None
+    if (
+        tool_name == SCENE_CONFIGURATION_TOOL
+        and isinstance(arguments, dict)
+        and arguments.get("action") == "create"
+    ):
+        return (SCENE_CONFIGURATION_RESOURCE_TYPE, SCENE_CREATE_DELETE_PROFILE)
+    return PENDING_ADMISSION_TOOLS.get(tool_name)
+
 
 STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
 STATIC_TARGET_INVALID_OPERATION = "entity_availability_exposure_invalid_operation"
@@ -1065,6 +1152,15 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         # Never governed_configuration_operation: that signed evidence did not
         # cover the scene configuration route.
         values.add(SCENE_CONFIGURATION_PROFILE)
+    elif identity in _F3_CREATED_OBJECT_CAPTURE_DELETE_V1_OPERATIONS:
+        # HAMCP-298: reads the signed delete v1 contract already covers.
+        values.add(CONFIGURATION_DELETE_PROFILE)
+    elif identity in _F3_SCENE_CREATE_DELETE_OPERATIONS:
+        # Never the scene update profile: its DELETE stays never-sent.
+        values.add(SCENE_CREATE_DELETE_PROFILE)
+    elif identity in _F3_CREATED_HELPER_DELETE_OPERATIONS:
+        # Never governed_configuration_operation: helper delete is new.
+        values.add(CREATED_HELPER_DELETE_PROFILE)
     elif identity in _F3_DASHBOARD_METADATA_OPERATIONS:
         # Never the signed dashboard write contract; the content fingerprint
         # readback uses the signed dashboard configuration read.
@@ -1099,14 +1195,21 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         INPUT_SELECT_PROFILE,
         DASHBOARD_METADATA_PROFILE,
         SCENE_CONFIGURATION_PROFILE,
+        # HAMCP-329/298: dormant until the combined 2.6 signing.
+        SCENE_CREATE_DELETE_PROFILE,
+        CREATED_HELPER_DELETE_PROFILE,
         # Read-only and never an F3 identity, so it never matches here; listed
         # so the entry set stays exactly "compiled minus shipped".
         SCRIPT_TRACE_PROFILE,
         # HAMCP-290: read-only, never an F3 identity; same reason as above.
         MARKETPLACE_PROFILE,
+        # HAMCP-134: read-only, never an F3 identity; same reason as above.
+        SECURITY_METADATA_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
+        # HAMCP-297: direct typed tool, never an F3 identity; same reason.
+        DEVICE_CONFIGURATION_PROFILE,
         # HAMCP-295: dormant until seq 18 signs it; a rename plan refuses at
         # F3 entry, before any persistence, while Core does not admit it.
         ENTITY_RENAME_PROFILE,
@@ -1197,8 +1300,11 @@ __all__ = [
     "DASHBOARD_METADATA_TOOL",
     "dashboard_metadata_target",
     "SCENE_CONFIGURATION_PROFILE",
+    "SCENE_CREATE_DELETE_PROFILE",
+    "CREATED_HELPER_DELETE_PROFILE",
     "SCENE_CONFIGURATION_RESOURCE_TYPE",
     "SCENE_CONFIGURATION_TOOL",
+    "pending_admission_selection",
     "ENTITY_RENAME_PROFILE",
     "ENTITY_RENAME_RESOURCE_TYPE",
     "ENTITY_RENAME_TOOL",
@@ -1210,6 +1316,9 @@ __all__ = [
     "MARKETPLACE_PROFILE",
     "MARKETPLACE_RESOURCE_TYPE",
     "MARKETPLACE_TOOL",
+    "SECURITY_METADATA_PROFILE",
+    "SECURITY_METADATA_RESOURCE_TYPE",
+    "SECURITY_METADATA_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
     "StaticCoreRoute",

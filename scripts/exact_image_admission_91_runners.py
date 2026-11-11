@@ -47,7 +47,9 @@ from exact_image_admission_lanes import (  # noqa: E402
     write_json,
 )
 
-CANDIDATE_VERSION = "9.1.0"
+# HAMCP-351: the admission candidate is the reviewed ha-mcp 9.1.2 release
+# (ci/support-window.yaml admission.candidate_version).
+CANDIDATE_VERSION = "9.1.2"
 BASELINE_VERSION = "8.5.0"
 # The peer is launched with MCP_SECRET_PATH set to this value. The 9.1
 # full-catalog selector is that whole path followed by /catalog/full; the
@@ -80,7 +82,7 @@ OPTIONAL_NAMES = (YAML_READER, *YAML_SIBLINGS)
 # extras, so the case also lists the peer's raw strict-full catalog and
 # compares it with the reviewed capture the runtime's fingerprint is bound to.
 REVIEWED_91_CAPTURE = (Path(__file__).resolve().parent.parent / "docs" / "evidence"
-                       / "upstream-read-compatibility" / "ha-mcp-9.1.0.json")
+                       / "upstream-read-compatibility" / f"ha-mcp-{CANDIDATE_VERSION}.json")
 DESCRIPTOR_FIELDS = ("name", "title", "description", "inputSchema", "outputSchema", "annotations", "_meta")
 MAX_PEER_CATALOG_PAGES = 32
 FIXTURE_READ_KEYS = ("rest_reads", "websocket_reads")

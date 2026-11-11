@@ -422,6 +422,13 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                                        "core.typed_helper_value_operation",
                                        # HAMCP-290 dormant Marketplace read (signed after 2.5).
                                        "core.marketplace_read",
+                                       # HAMCP-134 dormant security metadata read (signed after 2.5).
+                                       "core.security_metadata_read",
+                                       # HAMCP-297 signed-only device configuration.
+                                       "core.device_configuration_entity_operation",
+                                       # HAMCP-329/298 dormant created-object profiles (seq 18).
+                                       "core.scene_create_delete_operation",
+                                       "core.created_helper_delete_operation",
                                        # HAMCP-295 dormant entity rename (seq 18 signing batch).
                                        "core.entity_registry_rename_operation"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]

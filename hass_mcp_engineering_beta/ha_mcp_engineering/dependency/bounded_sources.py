@@ -80,6 +80,7 @@ def bound_table() -> dict[str, tuple[str, int]]:
     from . import index as i
     from . import obligation_ledger as o
     from . import provider as p
+    from . import yaml_sources as y
 
     def bound(module, name):
         return name, int(getattr(module, name))
@@ -134,6 +135,10 @@ def bound_table() -> dict[str, tuple[str, int]]:
         "dashboard_projection_limit_exceeded": bound(d, "ITEMS"),
         "dashboard_document_limit_exceeded": bound(d, "DASHBOARD_BYTES"),
         "dashboard_scan_budget_exhausted": bound(g, "DASHBOARD_SCAN_SECONDS"),
+        # HAMCP-264: YAML template and script sources (dependency_index purpose).
+        "yaml_template_source_limit_exceeded": bound(y, "MAX_YAML_TEMPLATE_SOURCES"),
+        "yaml_script_source_limit_exceeded": bound(y, "MAX_YAML_SCRIPT_SOURCES"),
+        "yaml_finding_limit_exceeded": bound(y, "MAX_YAML_FINDINGS"),
     }
 
 

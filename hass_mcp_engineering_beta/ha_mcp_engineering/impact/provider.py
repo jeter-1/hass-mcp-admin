@@ -14,7 +14,7 @@ from typing import Any
 from ..clients.paths import rest_path
 from ..clients.rest import ExpectedHttpStatus
 from ..dependency.models import SOURCE_TYPES
-from ..dependency.global_sources import GLOBAL_SOURCE_TYPES
+from ..dependency.global_sources import PARTITION_SOURCE_TYPES
 from ..dependency.service import merged_coverage, select_dependency_findings
 from ..errors import EntityNotFoundError, ErrorCode, GovernanceError
 from ..providers import (
@@ -754,7 +754,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 duration = 0.0
             else:
                 completeness = item.completeness
-                partition = source_type in GLOBAL_SOURCE_TYPES and item.provider != "none"
+                partition = source_type in PARTITION_SOURCE_TYPES and item.provider != "none"
                 if (
                     completeness in {"unavailable", "unsupported"}
                     and source_type not in {"automation", "blueprint"}
@@ -792,7 +792,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                         # A partition row names the provider that read it, or
                         # "none" when nothing was read (templates, no reader).
                         item.provider
-                        if selected and item is not None and source_type in GLOBAL_SOURCE_TYPES
+                        if selected and item is not None and source_type in PARTITION_SOURCE_TYPES
                         else "direct_ha_api" if selected else "none"
                     ),
                     (
@@ -801,7 +801,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                         else ProviderCapability.BLUEPRINT_SOURCE.value
                         if source_type == "blueprint"
                         else item.provider_capability
-                        if item is not None and source_type in GLOBAL_SOURCE_TYPES
+                        if item is not None and source_type in PARTITION_SOURCE_TYPES
                         else f"{source_type}_configuration"
                     ),
                     completeness,

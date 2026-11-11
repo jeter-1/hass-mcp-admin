@@ -946,6 +946,308 @@ CORE_MARKETPLACE_PROFILES = (
         fallback="hacs_repositories_list_on_exact_unknown_command",
     ),
 )
+# HAMCP-134 (design docs/HAMCP_134_SECURITY_METADATA_FEASIBILITY.md, #392):
+# one read-only security and effective-permission metadata read.  Each
+# admitted command is sent at most once with a constant payload; the
+# ``assistant`` value is fixed to Core's KNOWN_ASSISTANTS.  The section 6
+# list is ``never_sent``.  Runtime-only and Core 2026.11.0 only; dormant until
+# the owner-signed registry selects it.  Nothing here is signed.
+CORE_SECURITY_METADATA_PROFILES = (
+    _contract(
+        "core.security_metadata_read",
+        CoreCapabilityClass.SECURITY_METADATA_READ,
+        "compiled-core-security-metadata-read-v1",
+        (
+            "auth_current_user_identity_and_mfa_catalog_contract",
+            "config_auth_list_bounded_user_projection_contract",
+            "http_config_active_slot_projection_contract",
+            "get_config_url_posture_contract",
+            "expose_new_entities_get_known_assistants_contract",
+            "assist_pipeline_list_projection_contract",
+            "conversation_agent_list_projection_contract",
+            "get_panels_listing_projection_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": [
+                "auth/current_user",
+                "config/auth/list",
+                "http/config",
+                "get_config",
+                "homeassistant/expose_new_entities/get",
+                "assist_pipeline/pipeline/list",
+                "conversation/agent/list",
+                "get_panels",
+            ],
+            "payloads": "constant_no_caller_argument_ever_forwarded",
+            "expose_new_entities_assistants": [
+                "cloud.alexa", "cloud.google_assistant", "conversation",
+            ],
+            "conversation_agent_list_arguments": "none_no_language_no_country",
+            "max_commands": 10,
+            "sections": ["users", "mfa", "http_boundary", "urls", "assist", "panels"],
+            "always_sent": ["auth/current_user"],
+            "users_only": ["config/auth/list"],
+            "projection": "positive_per_section_privacy_table_unknown_fields_dropped",
+            "identity": "supervisor_topology_plus_core_corroboration_else_other_or_unknown",
+            "http_active_slot": "active_config_type_only_never_substituted",
+            "missing_field": "not_provided_never_inferred",
+            "errors": "core_error_code_to_fixed_reason_code_text_never_echoed",
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "output": "fixed_byte_cap_whole_item_removal_lowest_priority_first",
+            "bounds": {"frame_bytes": 2097152, "auth_bytes": 65536, "max_frames": 12,
+                       "max_users": 1000, "max_list_items": 500,
+                       "output_bytes": 40000, "max_seconds": 30},
+            "never_sent": [
+                "auth/long_lived_access_token",
+                "auth/sign_path",
+                "auth/refresh_tokens",
+                "auth/delete_refresh_token",
+                "auth/delete_all_refresh_tokens",
+                "auth/refresh_token_set_expiry",
+                "auth/setup_mfa",
+                "auth/depose_mfa",
+                "config/auth/create",
+                "config/auth/update",
+                "config/auth/delete",
+                "http/config/configure",
+                "http/config/promote",
+                "cloud/status",
+                "homeassistant/expose_entity",
+                "homeassistant/expose_new_entities/set",
+                "homeassistant/expose_entity/list",
+                "assist_satellite/get_configuration",
+                "assist_pipeline/pipeline/create",
+                "assist_pipeline/pipeline/update",
+                "assist_pipeline/pipeline/delete",
+                "assist_pipeline/pipeline/set_preferred",
+                "frontend/update_panel",
+                "config_entries/options/flow",
+                "person/list",
+                "supervisor/*",
+                "hassio/*",
+            ],
+            "never_called": ["async_should_expose"],
+            "supervisor_requests": "none",
+            "write": "none",
+        },
+    ),
+)
+# HAMCP-297: one exact configuration-category device entity per call through
+# the direct Home Assistant API. Signed-only: dormant until an owner-signed
+# registry sequence names this profile for Core 2026.11.0.
+from ..device_configuration import contracts as _device_configuration
+
+CORE_DEVICE_CONFIGURATION_PROFILES = (
+    _contract(
+        _device_configuration.CAPABILITY_ID,
+        CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
+        _device_configuration.ADAPTER_ID,
+        ("rest_state_entity_shape", "entity_registry_get_contract",
+         "device_registry_list_contract", "service_domain_mapping"),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "provider_contract": _device_configuration.PROVIDER_CONTRACT,
+            "core_version": _device_configuration.CORE_VERSION,
+            "domains": sorted(_device_configuration.DOMAIN_ACTIONS),
+            "actions": list(_device_configuration.ACTIONS),
+            "target": "one_exact_registered_config_category_device_entity",
+            "target_kinds": [list(item) for item in _device_configuration.ALLOWLIST],
+            "null_translation_key": "never_admitted",
+            "rest_reads": list(_device_configuration.REST_READS),
+            "websocket_reads": list(_device_configuration.READ_COMMANDS),
+            "services": {domain: {service: list(keys) for service, keys in services.items()}
+                         for domain, services in sorted(_device_configuration.SERVICES.items())},
+            "never_sent": list(_device_configuration.NEVER_SENT),
+            "numeric": list(_device_configuration.NUMERIC_RULES),
+            "unit_converters": list(_device_configuration.UNIT_CONVERTERS),
+            "undo": list(_device_configuration.UNDO_RULES),
+            "locks": list(_device_configuration.LOCK_IDENTITY),
+            "dispatch": "at_most_once_composite_recheck_before_intent_return_response_false",
+            "recovery": "read_only_same_core_version_no_redispatch",
+            "plan_identity": "none",
+            "approval": "none_chat_confirmation_only_when_safety_critical",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation")
+        + _device_configuration.PREDISPATCH_CHECKS,
+    ),
+)
+# HAMCP-329/298 (Release 2.6.0): two additive runtime-only contracts for
+# Core 2026.11.0, dormant until the one combined 2.6 owner-signed
+# ``extend-capabilities`` extension references them exactly.  Like every
+# runtime-only contract they are never part of CORE_CAPABILITY_PROFILES, so
+# no probe fingerprint moves, and no existing contract changes: scene update
+# keeps DELETE never-sent, automation/script delete keeps its v1 contract.
+# Scene and helper deletion is reachable only as the separately approved
+# undo of a verified Engineering create whose identity was captured at
+# creation (design ``HAMCP_329_298`` §3.2-§3.5).
+SCENE_CREATE_DELETE_REQUESTS: tuple[str, ...] = (
+    "DELETE /api/config/scene/config/{config_id}",
+    "GET /api/config/scene/config/{config_id}",
+    "GET /api/states/{entity_id}",
+    "POST /api/config/scene/config/{config_id}",
+    "websocket config/entity_registry/list",
+)
+CREATED_HELPER_DELETE_REQUESTS: tuple[str, ...] = (
+    "GET /api/states/{entity_id}",
+    "websocket config/entity_registry/list",
+    "websocket input_boolean/delete",
+    "websocket input_boolean/list",
+    "websocket input_number/delete",
+    "websocket input_number/list",
+)
+CORE_CREATED_OBJECT_PROFILES = (
+    _contract(
+        "core.scene_create_delete_operation",
+        CoreCapabilityClass.SCENE_CREATE_DELETE_OPERATION,
+        "compiled-core-scene-create-delete-operation-v1",
+        (
+            "rest_scene_config_get_by_config_id",
+            "rest_scene_config_post_to_absent_config_id",
+            "rest_scene_config_delete_no_body",
+            "rest_state_get_by_entity_id",
+            "websocket_entity_registry_list",
+            "scene_config_and_registry_identity_polled_readback",
+            "scene_config_registry_state_absence_polled_readback",
+            "scene_loaded_state_not_verified_disclosed",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "requests": list(SCENE_CREATE_DELETE_REQUESTS),
+            "resource_types": ["scene"],
+            "registry_platform": "homeassistant",
+            "create": {
+                "target": (
+                    "one_exact_absent_ui_scene_config_id_with_no_scene_"
+                    "registry_entry"
+                ),
+                "route": "POST /api/config/scene/config/{config_id}",
+                "arguments": {
+                    "config_id": "exact_config_id_becomes_registry_unique_id",
+                    "fields": ["entities", "icon", "name"],
+                    "name": "required_non_empty_string_max_255_exact_no_trim",
+                    "icon": "optional_prefix_colon_name_max_64_null_refused",
+                    "entities": (
+                        "required_1_to_64_entity_ids_to_bounded_snapshots_"
+                        "with_state_null_refused"
+                    ),
+                    "entity_id": "refused_assigned_by_home_assistant",
+                    "body": "full_proposed_configuration_without_id",
+                },
+                "dispatch": (
+                    "at_most_once_scene_config_post_under_one_f3_create_permit_"
+                    "bound_to_plan_target_command_and_dispatch_intent"
+                ),
+                "readback": (
+                    "config_exact_and_registry_identity_polled_loaded_state_"
+                    "not_verified"
+                ),
+                "registry_unverified": (
+                    "scene_config_stored_registry_unverified_not_success_not_"
+                    "rollback_eligible"
+                ),
+                "concurrency": (
+                    "upsert_concurrent_create_of_same_id_overwritten_"
+                    "undetected_disclosed"
+                ),
+            },
+            "delete": {
+                "target": (
+                    "one_exact_engineering_created_scene_with_creation_"
+                    "identity"
+                ),
+                "route": "DELETE /api/config/scene/config/{config_id}",
+                "dispatch": (
+                    "at_most_once_scene_config_delete_no_body_under_one_f3_"
+                    "delete_permit_bound_to_plan_target_command_and_dispatch_"
+                    "intent"
+                ),
+                "absent_target": "400_resource_not_found_no_write",
+                "readback": "config_404_registry_absent_state_absent_polled",
+            },
+            "creation_identity": (
+                "captured_under_forward_locks_registry_id_created_at_"
+                "modified_at_entity_id_bound_into_plan"
+            ),
+            "reachability": {
+                "create": "create_scene_configuration_plan_action_create",
+                "delete": "created_object_rollback_only",
+            },
+            "never_sent": [
+                "scene.apply",
+                "scene.create",
+                "scene.delete",
+                "scene.reload",
+                "scene.turn_on",
+            ],
+            "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
+            "loaded_state": "not_verified",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.created_helper_delete_operation",
+        CoreCapabilityClass.CREATED_HELPER_DELETE_OPERATION,
+        "compiled-core-created-helper-delete-operation-v1",
+        (
+            "websocket_helper_storage_list",
+            "websocket_helper_delete_by_object_id",
+            "websocket_entity_registry_list",
+            "rest_state_get_by_entity_id",
+            "helper_storage_registry_state_absence_polled_readback",
+            "helper_absence_runtime_not_disk_durable_disclosed",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "requests": list(CREATED_HELPER_DELETE_REQUESTS),
+            "target": (
+                "one_exact_engineering_created_storage_helper_with_creation_"
+                "identity"
+            ),
+            "resource_types": ["input_boolean", "input_number"],
+            "identity_correspondence": {
+                "resource_target_domain": "equals_resource_type",
+                "object_id": (
+                    "equals_storage_id_registry_unique_id_and_delete_argument"
+                ),
+                "registry_platform": "equals_resource_type",
+                "state_read": "by_actual_registry_entity_id",
+            },
+            "creation_identity": (
+                "captured_read_only_under_forward_locks_registry_id_created_at_"
+                "modified_at_entity_id_bound_into_plan"
+            ),
+            "commands": {
+                "input_boolean": {"type": "input_boolean/delete",
+                                  "argument": "input_boolean_id"},
+                "input_number": {"type": "input_number/delete",
+                                 "argument": "input_number_id"},
+            },
+            "dispatch": "at_most_once_ws_helper_delete_by_object_id",
+            "absent_target": (
+                "ws_not_found_no_write_duplicate_result_frame_ignored"
+            ),
+            "readback": (
+                "storage_list_absent_registry_absent_state_absent_polled_"
+                "runtime_not_disk_durable"
+            ),
+            "reachability": "created_object_rollback_only",
+            "never_sent": [
+                "input_boolean/create",
+                "input_boolean/update",
+                "input_number/create",
+                "input_number/update",
+                "every_other_type_delete",
+            ],
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 # HAMCP-295/109 (Release 2.6.0, design #390 section 5): the governed entity
 # ID rename.  A separate runtime-only mutation contract, never part of
 # CORE_CAPABILITY_PROFILES, so no signed probe fingerprint changes and the
@@ -998,6 +1300,9 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
+    + CORE_SECURITY_METADATA_PROFILES
+    + CORE_DEVICE_CONFIGURATION_PROFILES
+    + CORE_CREATED_OBJECT_PROFILES
     + CORE_ENTITY_RENAME_PROFILES
 )
 
@@ -1064,6 +1369,9 @@ __all__ = [
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
+    "CORE_SECURITY_METADATA_PROFILES",
+    "CORE_DEVICE_CONFIGURATION_PROFILES",
+    "CORE_CREATED_OBJECT_PROFILES",
     "CORE_ENTITY_RENAME_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",

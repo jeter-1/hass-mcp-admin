@@ -86,6 +86,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_configuration_resources.py",
     "tests/test_f3_configuration_sequence.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+    # HAMCP-329/298: the created-object (scene create, created delete) adapter.
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/created_objects.py",
     # HAMCP-155: the configuration delete strategy and adapter.
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/delete.py",
     # HAMCP-232: the config-entry helper-options strategy.
@@ -109,6 +111,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_typed_fan_review.py",
     "tests/test_typed_power.py",
     "tests/test_typed_helper_value.py",  # HAMCP-311: mirrors test_typed_power
+    "tests/test_hamcp297_device_configuration.py",  # HAMCP-297: f3 lock contracts and models
     "tests/test_trigger_condition_verification.py",
     "tests/test_configuration_reverification.py",
     "tests/test_f3_runtime_integration.py",
@@ -321,6 +324,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             importers,
             {
                 "adapter.py",
+                "created_objects.py",  # HAMCP-329/298
                 "delete.py",  # HAMCP-155
                 "helper_options.py",  # HAMCP-232
                 "locks.py",
@@ -450,6 +454,8 @@ class F3ImportBoundaryTests(unittest.TestCase):
             "fan/service.py",
             "power/adapter.py",
             "helper_value/adapter.py",  # HAMCP-311: f3.contracts only, as power
+            "device_configuration/adapter.py",  # HAMCP-297: f3.contracts, as power/helper_value
+            "device_configuration/service.py",  # HAMCP-297: f3.models validators, as fan/service
             "governance/configuration_reverification.py",
             "governance/reverification_storage.py",
             "f3_runtime/registry.py",

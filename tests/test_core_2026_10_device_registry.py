@@ -30,6 +30,9 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (
     CORE_CONFIGURATION_DELETE_PROFILES, CORE_ENTITY_AVAILABILITY_EXPOSURE_PROFILES, CORE_LABEL_REGISTRY_PROFILES,
     CORE_NOVEMBER_BATCH_PROFILES,
     CORE_MARKETPLACE_PROFILES,
+    CORE_SECURITY_METADATA_PROFILES,
+    CORE_DEVICE_CONFIGURATION_PROFILES,
+    CORE_CREATED_OBJECT_PROFILES,  # HAMCP-329/298
     CORE_ENTITY_RENAME_PROFILES,
     CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority,
 )
@@ -106,7 +109,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 31)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155, +3 HAMCP-232/145, +1 HAMCP-106, +1 HAMCP-071, +1 HAMCP-311 transport evidence (not admission), +1 HAMCP-290 marketplace, +1 HAMCP-295 rename
+        self.assertEqual(len(ids), 35)  # +2 HAMCP-069B, +1 HAMCP-165, +1 HAMCP-155, +3 HAMCP-232/145, +1 HAMCP-106, +1 HAMCP-071, +1 HAMCP-311 transport evidence (not admission), +1 HAMCP-290 marketplace, +1 HAMCP-134 security metadata; HAMCP-297: + device configuration, +2 HAMCP-329/298 created-object evidence; HAMCP-295: +1 entity rename evidence
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -237,6 +240,12 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
                               and p not in CORE_NOVEMBER_BATCH_PROFILES
                               # HAMCP-290: nor the dormant Marketplace read.
                               and p not in CORE_MARKETPLACE_PROFILES
+                              # HAMCP-134: nor the dormant security metadata read.
+                              and p not in CORE_SECURITY_METADATA_PROFILES
+                              # HAMCP-297: nor the signed-only device configuration.
+                              and p not in CORE_DEVICE_CONFIGURATION_PROFILES
+                              # HAMCP-329/298: nor the dormant created-object profiles.
+                              and p not in CORE_CREATED_OBJECT_PROFILES
                               # HAMCP-295: nor the dormant entity rename.
                               and p not in CORE_ENTITY_RENAME_PROFILES
                               # HAMCP-311: nor the signed-only helper value
