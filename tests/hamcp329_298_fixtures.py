@@ -274,6 +274,9 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
         self.scene_post_failure: Exception | None = None
         # Called with the config id just before a scene POST is answered.
         self.before_scene_post: Any = None
+        # Called with the config id once a scene POST has stored its body and
+        # the scene platform has reloaded (the entity registry is settled).
+        self.after_scene_post: Any = None
         self.scene_posts: list[tuple[str, dict[str, Any]]] = []
         # When True, a scene POST also activates the scene: each entity it
         # names takes the state it names. Core never does that for a config
@@ -380,6 +383,8 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
                     self._scene_gets_since_post = 0
                 else:
                     self.register_scene(config_id, stored)
+            if self.after_scene_post is not None:
+                self.after_scene_post(config_id)
             return {"result": "ok"}
         if method == "DELETE":
             if kwargs.get("body") is not None:

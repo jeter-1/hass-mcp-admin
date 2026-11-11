@@ -60,6 +60,49 @@ SCENE_CREATE_NOT_APPLIED = "scene_create_not_applied"
 SCENE_CREATE_STORED_DIFFERS = "scene_create_stored_configuration_differs"
 SCENE_CREATE_REGISTRY_AMBIGUOUS = "scene_create_registry_entry_ambiguous"
 
+# Design §3.2.1 and the §3.3 readback table: registering the same
+# ``(scene, homeassistant, <config id>)`` again takes back the deleted
+# entry's ``disabled_by``, ``hidden_by``, area and options.  Those are
+# reported on a verified create as closed codes and are never a failure.  A
+# value outside the reviewed registry vocabularies is reported as
+# unrecognized; an area is reported by presence only, never by its id.
+SCENE_CREATE_OBSERVED_PREFIX = "scene_create_observed_"
+OBSERVED_DISABLED_BY = frozenset(
+    {"config_entry", "device", "hass", "integration", "user"}
+)
+OBSERVED_HIDDEN_BY = frozenset({"integration", "user"})
+OBSERVED_ASSISTANTS = ("cloud.alexa", "cloud.google_assistant", "conversation")
+
+
+def observed_registry_metadata(entry: dict[str, Any]) -> tuple[str, ...]:
+    """The closed report of what one scene registry entry carries.
+
+    Read only from the entry the create readback already holds: nothing is
+    requested for it and the entry is not changed.
+    """
+
+    codes: list[str] = []
+    for field, known in (
+        ("disabled_by", OBSERVED_DISABLED_BY),
+        ("hidden_by", OBSERVED_HIDDEN_BY),
+    ):
+        value = entry.get(field)
+        if value is not None:
+            name = value if type(value) is str and value in known else "unrecognized"
+            codes.append(f"{SCENE_CREATE_OBSERVED_PREFIX}{field}_{name}")
+    if entry.get("area_id") is not None:
+        codes.append(f"{SCENE_CREATE_OBSERVED_PREFIX}area_assigned")
+    options = entry.get("options")
+    for assistant in OBSERVED_ASSISTANTS:
+        settings = options.get(assistant) if type(options) is dict else None
+        stored = settings.get("should_expose") if type(settings) is dict else None
+        if type(stored) is bool:
+            state = "exposed" if stored else "unexposed"
+            codes.append(
+                f"{SCENE_CREATE_OBSERVED_PREFIX}{state}_{assistant.replace('.', '_')}"
+            )
+    return tuple(codes)
+
 
 # ---------------------------------------------------------------------------
 # HAMCP-329: scene create
@@ -286,11 +329,12 @@ class SceneCreateAdapter(ConfigurationOperationAdapter):
         mismatches: list[str] = []
         codes: tuple[str, ...] = ("exact_readback_completed",)
         exact = config is not None and scene_contract.exactly_equal(config, proposed)
-        entry_ok = (
-            len(entries) == 1
-            and entries[0].get("platform") == "homeassistant"
-            and entries[0].get("disabled_by") is None
-        )
+        # Exactly one entry, on the scene platform.  What that entry carries
+        # (a restored ``disabled_by``, ``hidden_by``, area or exposure) does
+        # not decide the outcome; it is reported below.
+        entry_ok = len(entries) == 1 and entries[0].get("platform") == "homeassistant"
+        verified = exact and entry_ok
+        observed = observed_registry_metadata(entries[0]) if verified else ()
         if config is None:
             mismatches.append("configuration_absent")
             codes += (SCENE_CREATE_NOT_APPLIED,)
@@ -303,6 +347,7 @@ class SceneCreateAdapter(ConfigurationOperationAdapter):
         elif not entry_ok:
             mismatches.append("registry_entry")
             codes += (SCENE_CREATE_REGISTRY_AMBIGUOUS,)
+        codes += observed
         try:
             resulting = None if config is None else self.strategy.fingerprint(config)
         except (TypeError, ValueError):
@@ -313,9 +358,9 @@ class SceneCreateAdapter(ConfigurationOperationAdapter):
             "config_present": config is not None,
             "config_exact": exact,
             "registry_entries": len(entries),
+            "registry_metadata": list(observed),
             "mismatch_fields": list(bounded_mismatches(mismatches)),
         }
-        verified = exact and entry_ok
         result = ConfigurationObservationResult(
             outcome=NormalizedOperationOutcome.OBSERVING,
             attempt_count=attempt_count,

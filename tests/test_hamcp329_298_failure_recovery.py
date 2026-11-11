@@ -48,6 +48,7 @@ from tests.hamcp329_298_fixtures import (  # noqa: E402
     boolean_config,
     helper_operation,
     number_config,
+    registry_id,
     slug,
 )
 
@@ -535,6 +536,73 @@ class SceneCreateFailureTests(FailureTestCase):
         )
         # The differing scene is left for the user; nothing deletes it.
         self.assertIn(EVENING, self.config_rest.scenes)
+
+    # -- §3.3 readback: exactly one ``scene.*`` entry, platform homeassistant --
+    def settles(self, change: Any) -> None:
+        """Run ``change(entity id, entry)`` once the POST has registered it."""
+
+        def settle(config_id: str) -> None:
+            entity_id = self.config_rest.scene_entity(config_id)
+            change(entity_id, self.ws.entries[entity_id])
+
+        self.config_rest.after_scene_post = settle
+
+    def second_entry(self, entity_id: str, entry: dict, **changes: Any) -> None:
+        other = {
+            **deepcopy(entry),
+            "entity_id": f"{entity_id}_2",
+            "id": registry_id("synthetic_second_scene_entry"),
+            **changes,
+        }
+        self.ws.entries[other["entity_id"]] = other
+
+    async def assert_registry_identity_refused(self) -> None:
+        result = await self.assert_not_created(
+            "verification_mismatch", "scene_create_registry_entry_ambiguous"
+        )
+        codes = self.codes(result["plan"]["plan_id"])
+        # A wrong entry's metadata is never reported as a created scene's.
+        self.assertEqual(
+            {code for code in codes if code.startswith("scene_create_observed_")},
+            set(),
+        )
+        # The stored scene is left for the user; nothing deletes it.
+        self.assertIn(EVENING, self.config_rest.scenes)
+
+    async def test_a_second_registry_entry_for_the_config_id_is_a_mismatch(self):
+        self.settles(self.second_entry)
+        await self.assert_registry_identity_refused()
+
+    async def test_a_second_entry_beside_a_restored_disabled_one_is_a_mismatch(self):
+        def change(entity_id: str, entry: dict) -> None:
+            entry["disabled_by"] = "user"
+            self.config_rest.states.discard(entity_id)
+            self.second_entry(entity_id, entry, disabled_by=None)
+
+        self.settles(change)
+        await self.assert_registry_identity_refused()
+
+    async def test_a_second_entry_on_another_platform_is_a_mismatch(self):
+        self.settles(
+            lambda entity_id, entry: self.second_entry(
+                entity_id, entry, platform="synthetic_platform"
+            )
+        )
+        await self.assert_registry_identity_refused()
+
+    async def test_one_entry_on_another_platform_is_a_mismatch(self):
+        self.settles(
+            lambda _entity_id, entry: entry.update(platform="synthetic_platform")
+        )
+        await self.assert_registry_identity_refused()
+
+    async def test_a_disabled_entry_on_another_platform_is_still_a_mismatch(self):
+        def change(entity_id: str, entry: dict) -> None:
+            entry.update(platform="synthetic_platform", disabled_by="user")
+            self.config_rest.states.discard(entity_id)
+
+        self.settles(change)
+        await self.assert_registry_identity_refused()
 
     async def test_a_lost_post_that_applied_is_verified_by_readback(self):
         plan = await self.scene_plan()

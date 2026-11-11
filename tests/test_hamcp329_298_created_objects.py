@@ -23,9 +23,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+from ha_mcp_engineering.f3_configuration import (  # noqa: E402
+    created_objects as created_adapters,
+)
 from ha_mcp_engineering.governance import (  # noqa: E402
     created_object_identity as identity_model,
     created_object_rollback as rollback_model,
+    entity_availability_exposure as availability_exposure,
+    entity_metadata,
 )
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
     evaluate_change_policy,
@@ -43,6 +48,9 @@ from tests.hamcp329_298_fixtures import (  # noqa: E402
     script_config,
 )
 
+
+OBSERVED = "scene_create_observed_"
+AMBIGUOUS = "scene_create_registry_entry_ambiguous"
 
 HELPERS = (
     ("input_boolean", boolean_config(), "hvac_override"),
@@ -197,6 +205,245 @@ class SceneAcceptanceTests(CreatedObjectServiceTestCase):
         )
         self.assertIn(EVENING, self.config_rest.scenes)
         self.assertEqual(len(self.config_rest.scene_deletes()), 1)
+
+
+class SceneRestoredRegistryMetadataTests(CreatedObjectServiceTestCase):
+    """§3.2.1 and the §3.3 readback table: restored metadata is not a failure.
+
+    Registering ``(scene, homeassistant, <config id>)`` again takes back the
+    deleted entry's ``disabled_by``, ``hidden_by``, area and options.  The
+    create is verified on the exact stored configuration and the one registry
+    identity; what the entry carries is reported, and the governed undo can
+    still delete the scene.
+    """
+
+    def restores(self, **fields: object) -> None:
+        def settle(config_id: str) -> None:
+            entity_id = self.config_rest.scene_entity(config_id)
+            entry = self.ws.entries[entity_id]
+            entry.update(deepcopy(fields))
+            if entry["disabled_by"] is not None:
+                # A disabled entity is never added, so it has no state.
+                self.config_rest.states.discard(entity_id)
+
+        self.config_rest.after_scene_post = settle
+
+    async def assert_created_then_deleted(self, *reported: str) -> None:
+        plan = await self.scene_plan()
+        await self.approve(plan)
+        result = await self.apply(plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(
+            self.children(plan["plan_id"]),
+            [("scene_create_1", "terminal", "succeeded_verified", 1)],
+        )
+        codes = self.codes(plan["plan_id"])
+        self.assertEqual(
+            {code for code in codes if code.startswith(OBSERVED)},
+            {f"{OBSERVED}{name}" for name in reported},
+        )
+        self.assertIn("exact_readback_verified", codes)
+        self.assertNotIn(AMBIGUOUS, codes)
+        self.assertEqual(len(self.config_rest.scene_posts), 1)
+        # The identity is the registry entry's own, so the undo can find it.
+        (value,) = self.identity_values(plan["plan_id"])
+        self.assertIsNotNone(value)
+        self.assertEqual(value["outcome"], identity_model.CAPTURED, value)
+        identity = value["identity"]
+        self.assertEqual(identity["entity_id"], EVENING_ENTITY)
+        self.assertEqual(identity["registry_unique_id"], EVENING)
+        self.assertEqual(identity["registry_platform"], "homeassistant")
+        self.assertEqual(
+            identity["delete_argument"],
+            {"method": "DELETE", "path": f"{SCENE_PREFIX}{EVENING}"},
+        )
+        rollback, delete_plan = await self.rollback_plan(plan)
+        self.assertEqual(rollback["operations_to_delete"], ["scene_create_1"])
+        self.assertEqual(rollback["operations_excluded"], [])
+        self.assertEqual(self.config_rest.scene_deletes(), [])
+        result = await self.apply(delete_plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(
+            self.children(delete_plan["plan_id"]),
+            [("delete_1", "terminal", "succeeded_verified", 1)],
+        )
+        self.assertEqual(
+            self.config_rest.scene_deletes(), [("DELETE", f"{SCENE_PREFIX}{EVENING}")]
+        )
+        self.assertNotIn(EVENING, self.config_rest.scenes)
+        self.assertNotIn(EVENING_ENTITY, self.ws.entries)
+        self.assertNotIn(EVENING_ENTITY, self.config_rest.states)
+        self.assertEqual(self.service_calls(), [])
+
+    async def test_a_restored_disabled_scene_is_verified_reported_and_undoable(self):
+        self.restores(disabled_by="user")
+        await self.assert_created_then_deleted("disabled_by_user")
+
+    async def test_restored_hidden_area_and_exposure_are_reported_not_failures(self):
+        self.restores(
+            hidden_by="user",
+            area_id="synthetic_area",
+            options={
+                "conversation": {"should_expose": True},
+                "cloud.alexa": {"should_expose": False},
+                "cloud.google_assistant": {"synthetic_other": True},
+            },
+        )
+        await self.assert_created_then_deleted(
+            "hidden_by_user",
+            "area_assigned",
+            "exposed_conversation",
+            "unexposed_cloud_alexa",
+        )
+
+    async def test_every_restored_field_at_once_is_still_one_verified_create(self):
+        self.restores(
+            disabled_by="integration",
+            hidden_by="integration",
+            area_id="synthetic_area",
+            options={
+                "cloud.alexa": {"should_expose": False},
+                "cloud.google_assistant": {"should_expose": True},
+                "conversation": {"should_expose": True},
+            },
+        )
+        # The largest report there is: all six codes reach the child's
+        # durable execution record whole.
+        await self.assert_created_then_deleted(
+            "disabled_by_integration",
+            "hidden_by_integration",
+            "area_assigned",
+            "unexposed_cloud_alexa",
+            "exposed_cloud_google_assistant",
+            "exposed_conversation",
+        )
+
+    async def test_a_fresh_registry_entry_reports_no_restored_metadata(self):
+        created = await self.created_scene()
+        codes = self.codes(created["plan_id"])
+        self.assertEqual({code for code in codes if code.startswith(OBSERVED)}, set())
+        self.assertIn("exact_readback_verified", codes)
+
+
+class ObservedRegistryMetadataTests(unittest.TestCase):
+    """The closed codes a verified scene create reports for its one entry."""
+
+    def observed(self, **fields: object) -> tuple[str, ...]:
+        entry = {
+            "entity_id": EVENING_ENTITY,
+            "platform": "homeassistant",
+            "unique_id": EVENING,
+            "disabled_by": None,
+            "hidden_by": None,
+            "area_id": None,
+            **fields,
+        }
+        before = deepcopy(entry)
+        codes = created_adapters.observed_registry_metadata(entry)
+        self.assertEqual(entry, before, "the observed entry is never changed")
+        return codes
+
+    def test_nothing_set_reports_nothing(self):
+        self.assertEqual(self.observed(), ())
+        self.assertEqual(self.observed(options={}), ())
+        self.assertEqual(created_adapters.observed_registry_metadata({}), ())
+
+    def test_the_vocabularies_are_the_reviewed_registry_ones(self):
+        self.assertEqual(
+            set(created_adapters.OBSERVED_DISABLED_BY),
+            availability_exposure._DISABLED_BY_VALUES - {None},
+        )
+        self.assertEqual(
+            set(created_adapters.OBSERVED_HIDDEN_BY),
+            entity_metadata._HIDDEN_BY_VALUES - {None},
+        )
+        self.assertEqual(
+            created_adapters.OBSERVED_ASSISTANTS, availability_exposure.KNOWN_ASSISTANTS
+        )
+
+    def test_every_known_disabled_by_and_hidden_by_value_has_its_own_code(self):
+        for value in sorted(created_adapters.OBSERVED_DISABLED_BY):
+            with self.subTest(disabled_by=value):
+                self.assertEqual(
+                    self.observed(disabled_by=value), (f"{OBSERVED}disabled_by_{value}",)
+                )
+        for value in sorted(created_adapters.OBSERVED_HIDDEN_BY):
+            with self.subTest(hidden_by=value):
+                self.assertEqual(
+                    self.observed(hidden_by=value), (f"{OBSERVED}hidden_by_{value}",)
+                )
+
+    def test_an_unknown_value_is_reported_as_unrecognized_never_echoed(self):
+        for value in ("Synthetic Value", "user ", "x" * 200, 7, True, ["user"]):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    self.observed(disabled_by=value),
+                    (f"{OBSERVED}disabled_by_unrecognized",),
+                )
+                self.assertEqual(
+                    self.observed(hidden_by=value),
+                    (f"{OBSERVED}hidden_by_unrecognized",),
+                )
+
+    def test_an_area_is_reported_by_presence_only(self):
+        for value in ("synthetic_area", "Synthetic Area " * 40, 7):
+            with self.subTest(area_id=value):
+                self.assertEqual(
+                    self.observed(area_id=value), (f"{OBSERVED}area_assigned",)
+                )
+
+    def test_only_a_stored_boolean_exposure_of_a_known_assistant_is_reported(self):
+        self.assertEqual(
+            self.observed(
+                options={
+                    "cloud.alexa": {"should_expose": True},
+                    "cloud.google_assistant": {"should_expose": False},
+                    "conversation": {"should_expose": True},
+                    "synthetic.assistant": {"should_expose": True},
+                }
+            ),
+            (
+                f"{OBSERVED}exposed_cloud_alexa",
+                f"{OBSERVED}unexposed_cloud_google_assistant",
+                f"{OBSERVED}exposed_conversation",
+            ),
+        )
+        for options in (
+            None,
+            "conversation",
+            ["conversation"],
+            {"conversation": None},
+            {"conversation": True},
+            {"conversation": {}},
+            {"conversation": {"should_expose": "true"}},
+            {"conversation": {"should_expose": 1}},
+            {"conversation": {"should_expose": None}},
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(self.observed(options=options), ())
+
+    def test_the_full_report_fits_the_durable_diagnostic_bounds(self):
+        from ha_mcp_engineering.f3_configuration.models import bounded_codes
+
+        codes = self.observed(
+            disabled_by="config_entry",
+            hidden_by="integration",
+            area_id="synthetic_area",
+            options={
+                name: {"should_expose": False}
+                for name in created_adapters.OBSERVED_ASSISTANTS
+            },
+        )
+        self.assertEqual(len(codes), 6)
+        self.assertEqual(len(set(codes)), 6)
+        recorded = ("exact_readback_completed", *codes)
+        self.assertEqual(set(bounded_codes(recorded)), set(recorded))
+        # The execution-record bounds of ``f3/models.py``, restated: at most
+        # 16 items, each a closed code of at most 96 characters.  The service
+        # test of every restored field proves the same through the record.
+        self.assertLessEqual(len(recorded), 16)
+        for code in recorded:
+            self.assertRegex(code, r"\A[a-z][a-z0-9_]{0,95}\Z")
 
 
 class HelperAcceptanceTests(CreatedObjectServiceTestCase):
