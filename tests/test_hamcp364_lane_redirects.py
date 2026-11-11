@@ -749,6 +749,30 @@ class Helper(Wired):
         for waited_through in (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, ValueError):
             self.assertFalse(issubclass(subject.LaneRedirectRefused, waited_through))
 
+    def test_a_lane_receipt_shows_the_redirect_code_and_no_other_code_of_these_clients(self):
+        import lane_failure_diagnostics as diagnostics
+
+        def shown(error):
+            with patch.object(diagnostics, "_raw_log", return_value=False):
+                return diagnostics.failure(error)["exception_chain"][0]["message"]
+
+        self.assertIn(REFUSED, diagnostics.SAFE_MESSAGES)
+        self.assertEqual(shown(subject.LaneRedirectRefused(REFUSED)), REFUSED)
+        # Every other refusal these clients raise is still shown as redacted.
+        others = (entity.RAW_URL_REFUSED, entity.RAW_COMMAND_REFUSED, harness.CORE_URL_REFUSED,
+                  harness.CORE_PATH_REFUSED, harness.CORE_TARGET_REFUSED, harness.FLOW_ID_REFUSED,
+                  harness.LANE_CORE_REFUSED, harness.LANE_SUBNET_REFUSED, harness.LANE_CORE_OUTSIDE,
+                  harness.LANE_CORE_ALREADY_SET, a2_runner.ADMIN_TARGET_REFUSED,
+                  "lane_stub_outside_created_network", "lane_network_not_created_by_run",
+                  "lane_network_subnet_unreadable", "lane_container_network_not_created_by_run")
+        self.assertEqual(len(set(others)), len(others))
+        for code in others:
+            with self.subTest(code=code):
+                self.assertIs(type(code), str)
+                self.assertNotIn(code, diagnostics.SAFE_MESSAGES)
+                self.assertEqual(shown(ValueError(code)), "[redacted]")
+        self.assertEqual(sorted(code for code in diagnostics.SAFE_MESSAGES if "refused" in code), [REFUSED])
+
 
 def calls(tree):
     return [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
