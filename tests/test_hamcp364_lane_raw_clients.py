@@ -21,6 +21,7 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
+import created_object_contract_acceptance as created  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
 import security_metadata_contract_acceptance as security  # noqa: E402
@@ -129,8 +130,13 @@ def fake_session(events, reply=None, during=lambda stage: None):
     return Session
 
 
-def configured(url, **more):
-    return SimpleNamespace(websocket_url=url, api_url=MAIN_CORE + "/api", ha_token=TOKEN, **more)
+def configured(url, api_url=MAIN_CORE + "/api", **more):
+    return SimpleNamespace(websocket_url=url, api_url=api_url, ha_token=TOKEN, **more)
+
+
+def configured_local(url):
+    """Settings for the created-object client, which also reads the REST root of its Core."""
+    return configured(url, LOCAL_CORE + "/api")
 
 
 def shape_signatures(commands):
@@ -216,6 +222,45 @@ CONFIG_DELETE_NEAR = (
     {"type": "config/entity_registry/list_for_display"},
     {"type": "config/entity_registry/get", "entity_id": "automation.synthetic"},
     {"type": "config/entity_registry/remove", "entity_id": "automation.synthetic"},
+)
+CREATED_EXAMPLES = (
+    {"type": created.REGISTRY_LIST}, {"type": "input_boolean/list"}, {"type": "input_number/list"},
+    # One per helper the lane creates: the toggle, the target, the mixed plan's and the withheld probes'.
+    {"type": "input_boolean/delete", "input_boolean_id": "hamcp_g4_toggle_" + HEX},
+    {"type": "input_boolean/delete", "input_boolean_id": "hamcp_g4_mixed_" + HEX},
+    {"type": "input_boolean/delete", "input_boolean_id": "hamcp_g4_withheld_" + HEX},
+    {"type": "input_number/delete", "input_number_id": "hamcp_g4_target_" + HEX},
+    {"type": "input_number/delete", "input_number_id": "hamcp_g4_withheld_" + HEX},
+)
+CREATED_NEAR = (
+    # A helper the lane does not own, by each way an id can miss the lane's pattern.
+    *({"type": "input_boolean/delete", "input_boolean_id": other} for other in (
+        "users_own_helper", "seq13_lane_" + HEX, "hamcp_g4_", "hamcp_g4", "HAMCP_G4_TOGGLE_" + HEX,
+        "hamcp_g4_Toggle_" + HEX, "hamcp_g4_toggle_" + HEX + "\n", " hamcp_g4_toggle_" + HEX,
+        "x_hamcp_g4_toggle_" + HEX, "input_boolean.hamcp_g4_toggle_" + HEX, "hamcp_g4_toggle-" + HEX,
+        "hamcp_g4_toggle/" + HEX, "hamcp_g4_" + "a" * 49, ["hamcp_g4_toggle_" + HEX], None, 7)),
+    {"type": "input_number/delete", "input_number_id": "users_own_helper"},
+    # The id under the other domain's field, under both, or under none.
+    {"type": "input_boolean/delete", "input_number_id": "hamcp_g4_toggle_" + HEX},
+    {"type": "input_number/delete", "input_boolean_id": "hamcp_g4_target_" + HEX},
+    {"type": "input_boolean/delete", "input_boolean_id": "hamcp_g4_toggle_" + HEX,
+     "input_number_id": "hamcp_g4_toggle_" + HEX},
+    {"type": "input_boolean/delete"}, {"type": "input_number/delete"},
+    # The helper creates and the scene and automation writes are Engineering's, never this client's.
+    {"type": "input_boolean/create", "name": "HAMCP G4 toggle " + HEX},
+    {"type": "input_number/create", "name": "HAMCP G4 target " + HEX, "min": 16, "max": 30},
+    {"type": "input_boolean/update", "input_boolean_id": "hamcp_g4_toggle_" + HEX, "name": "Synthetic"},
+    # Another helper domain, and reads or writes this lane does not send.
+    {"type": "input_select/list"}, {"type": "input_text/list"}, {"type": "input_boolean/list", "domain": "x"},
+    {"type": "input_select/delete", "input_select_id": "hamcp_g4_toggle_" + HEX},
+    {"type": created.REGISTRY_LIST, "domain": "scene"},
+    {"type": "config/entity_registry/list_for_display"},
+    {"type": "config/entity_registry/get", "entity_id": "input_boolean.hamcp_g4_toggle_" + HEX},
+    {"type": "config/entity_registry/remove", "entity_id": "input_boolean.hamcp_g4_toggle_" + HEX},
+    {"type": "config/entity_registry/update", "entity_id": "input_boolean.hamcp_g4_toggle_" + HEX, "name": "x"},
+    {"type": "config/device_registry/list"}, {"type": "config/label_registry/list"},
+    {"type": "call_service", "domain": "scene", "service": "delete",
+     "service_data": {"entity_id": "scene.hamcp_g4_scene_" + HEX}},
 )
 SEQ13_EXAMPLES = (
     {"type": S.ENTITY_GET, "entity_id": "input_boolean.seq13_lane_" + HEX},
@@ -442,9 +487,12 @@ def others(value):
         raise AssertionError(type(value))
 
 
-def lane(name, module, client, send, pin, examples, near, sources, methods, seconds, signatures):
+def lane(name, module, client, send, pin, examples, near, sources, methods, seconds, signatures,
+         settings=configured, earlier_check=False):
+    """One lane's client. ``earlier_check`` marks a client whose own check of its settings runs before the pin."""
     return SimpleNamespace(name=name, module=module, client=client, send=send, pin=pin, examples=examples,
-                           near=near, sources=sources, methods=methods, seconds=seconds, signatures=signatures)
+                           near=near, sources=sources, methods=methods, seconds=seconds, signatures=signatures,
+                           settings=settings, earlier_check=earlier_check)
 
 
 def call(client, payload):
@@ -473,11 +521,19 @@ LANES = (
     lane("seq15", seq15, seq15.LaneRaw, call, MAIN_SOCKET, SEQ15_EXAMPLES, SEQ15_NEAR,
          (("seq15_contract_acceptance.py", seq15), ("seq15_scene_contract.py", seq15)), SOCKET_METHODS, 30,
          lambda: shape_signatures(seq15.RAW_COMMANDS)),
+    lane("created_object", created, created.LaneRaw, call, LOCAL_SOCKET, CREATED_EXAMPLES, CREATED_NEAR,
+         (("created_object_contract_acceptance.py", created),), SOCKET_METHODS, 30,
+         lambda: shape_signatures(created.RAW_COMMANDS), settings=configured_local, earlier_check=True),
     lane("security_metadata", security, security.RawCore, command, LOCAL_SOCKET, SECURITY_EXAMPLES, SECURITY_NEAR,
          (("security_metadata_contract_acceptance.py", security),), frozenset({"result", "command"}), 60,
          security_signatures),
 )
+BY_NAME = {item.name: item for item in LANES}
 SHAPED = tuple(item for item in LANES if item.module is not security)
+# The lanes the Core harness runs, on its Core; the others each start a Core of their own.
+HARNESS_LANES = tuple(item for item in SHAPED if item.pin == MAIN_SOCKET)
+# Texts a refusal must not carry, whichever check made it.
+PRIVATE = ("127.0.0.1", "ws://", "http://", TOKEN, ELSEWHERE, ELSEWHERE_NAME, "18123", "8123")
 
 
 class ClientCase(unittest.IsolatedAsyncioTestCase):
@@ -489,18 +545,29 @@ class ClientCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(exception.__context__)
         self.assertEqual(exception.__dict__, {})
 
-    def refused_url(self, item, url):
+    def refused_url(self, item, url, *, pinned=None):
+        """The client is not built for ``url``. ``pinned`` says whether the refusal must be the pin's own.
+
+        A client with an earlier check of its own may refuse there first, in that
+        check's words; either way it is a ValueError before anything is opened.
+        """
         events = []
         with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
             with self.assertRaises(ValueError) as caught:
-                item.client(configured(url))
-        self.assert_fixed_code(caught.exception, URL_REFUSED)
+                item.client(url if pinned == "settings" else item.settings(url))
+        if pinned or not item.earlier_check:
+            self.assert_fixed_code(caught.exception, URL_REFUSED)
+        else:
+            self.assertIs(type(caught.exception), ValueError)
+            self.assertEqual([type(part) for part in caught.exception.args], [str])
+            for text in PRIVATE:
+                self.assertNotIn(text, caught.exception.args[0])
         self.assertEqual(events, [])
 
     async def refused_command(self, item, payload, *, prepare=None):
         events = []
         with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
-            client = item.client(configured(item.pin))
+            client = item.client(item.settings(item.pin))
             if prepare is not None:
                 prepare(client)
             with self.assertRaises(ValueError) as caught:
@@ -512,7 +579,7 @@ class ClientCase(unittest.IsolatedAsyncioTestCase):
     async def sent(self, item, payload, *, client=None, after=None):
         events = []
         with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
-            client = item.client(configured(item.pin)) if client is None else client
+            client = item.client(item.settings(item.pin)) if client is None else client
             if after is not None:
                 after()
             reply = await item.send(client, payload)
@@ -563,7 +630,7 @@ class PinnedUrl(ClientCase):
             with self.subTest(lane=item.name):
                 events = []
                 with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
-                    client = item.client(configured(item.pin))
+                    client = item.client(item.settings(item.pin))
                 self.assertEqual(events, [])
                 # The checked value is not kept for a later dial.
                 self.assertNotIn(item.pin, [value for value in vars(client).values() if type(value) is str])
@@ -574,21 +641,54 @@ class PinnedUrl(ClientCase):
             with self.subTest(lane=item.name):
                 with patch.object(aiohttp, "ClientSession", new=fake_session([])):
                     with self.assertRaises(ValueError) as caught:
-                        item.client(configured(private))
+                        item.client(item.settings(private))
                 shown = str(caught.exception) + repr(caught.exception)
-                self.assertEqual(str(caught.exception), URL_REFUSED)
+                if not item.earlier_check:
+                    self.assertEqual(str(caught.exception), URL_REFUSED)
                 for text in (private, TOKEN, ELSEWHERE_NAME, "synthetic-query", "127.0.0.1", "ws://"):
                     self.assertNotIn(text, shown)
 
     def test_the_pins_are_the_two_disposable_loopback_sockets(self):
         self.assertEqual(entity.RAW_CORE_URL, MAIN_SOCKET)
         self.assertEqual(security.RAW_CORE_URL, LOCAL_SOCKET)
+        self.assertEqual(created.RAW_CORE_URL, LOCAL_SOCKET)
         for item in LANES:
             with self.subTest(lane=item.name):
-                # One constant per family: a lane subclass does not carry its own target.
                 self.assertNotIn("RAW_CORE_URL", vars(item.client))
-                if item.module is not security:
-                    self.assertTrue(issubclass(item.client, entity.RawWebSocket))
+                if item.module is security:
+                    continue
+                self.assertTrue(issubclass(item.client, entity.RawWebSocket))
+                # The target is the class's, never an instance's: the harness lanes share the
+                # base's, and the one lane with a Core of its own names that Core on its class.
+                self.assertIs(item.client.core_url, item.module.RAW_CORE_URL if item.module is created
+                              else entity.RAW_CORE_URL)
+                self.assertEqual("core_url" in vars(item.client), item.module in (entity, created))
+                self.assertNotIn("core_url", vars(item.client(item.settings(item.pin))))
+        self.assertIs(vars(entity.RawWebSocket)["core_url"], entity.RAW_CORE_URL)
+        self.assertIs(vars(created.LaneRaw)["core_url"], created.RAW_CORE_URL)
+
+    def test_a_loopback_core_that_is_not_the_created_object_pin_is_refused_by_the_pin(self):
+        # Each pair is one loopback Core for REST and WebSocket alike, which is all the lane's
+        # earlier check of its own asks for. Only the published port of its own Core is the pin.
+        item = BY_NAME["created_object"]
+        for host in ("localhost:18123", "[::1]:18123", "127.0.0.1:8123", "localhost:8123", "[::1]:8123",
+                     "127.0.0.1", "localhost", "[::1]", "127.0.0.1:18124", "127.0.0.1:1812", "127.0.0.1:181230",
+                     "127.0.0.1:018123", "127.0.0.1:80", "127.0.0.1:"):
+            with self.subTest(host=host):
+                settings = configured("ws://" + host + "/api/websocket", "http://" + host + "/api")
+                with patch("ha_mcp_engineering.clients.HomeAssistantRestClient") as rest:
+                    self.refused_url(item, settings, pinned="settings")
+                # Refused before the lane's REST client is built for that Core.
+                rest.assert_not_called()
+        # And the pin is the built-in str itself, where the earlier check takes an equal or agreeable subclass.
+        for url in (Text(item.pin), Claims(item.pin), Claims(item.pin.replace("127.0.0.1", ELSEWHERE))):
+            with self.subTest(kind=type(url).__name__), \
+                    patch("ha_mcp_engineering.clients.HomeAssistantRestClient") as rest:
+                self.refused_url(item, url, pinned=True)
+                rest.assert_not_called()
+        # The one pair that is accepted builds the lane's REST client for the same Core.
+        client = item.client(item.settings(item.pin))
+        self.assertEqual(client.client.settings.api_url, LOCAL_CORE + "/api")
 
 
 class ClosedList(ClientCase):
@@ -690,7 +790,7 @@ class ClosedList(ClientCase):
         registry_list, hub = {"type": "config/entity_registry/list"}, ENTITY_EXAMPLES[2]
         by_name = {item.name: item for item in LANES}
         await self.refused_command(by_name["entity_metadata"], registry_list)
-        for name in ("configuration_delete", "seq13", "seq15", "security_metadata"):
+        for name in ("configuration_delete", "seq13", "seq15", "created_object", "security_metadata"):
             with self.subTest(lane=name):
                 reply, _events = await self.sent(by_name[name], registry_list)
                 self.assertIs(reply["success"], True)
@@ -698,6 +798,12 @@ class ClosedList(ClientCase):
         await self.refused_command(by_name["seq13"], SELECT)
         await self.refused_command(by_name["seq15"], SEQ13_EXAMPLES[6])
         await self.refused_command(by_name["security_metadata"], SEQ13_EXAMPLES[5])
+        # seq-13 deletes its own helper by any id; the created-object lane only one of its own.
+        self.assertEqual(SEQ13_EXAMPLES[10]["type"], CREATED_EXAMPLES[3]["type"])
+        await self.refused_command(by_name["created_object"], SEQ13_EXAMPLES[10])
+        await self.refused_command(by_name["created_object"], SEQ13_EXAMPLES[6])
+        await self.refused_command(by_name["configuration_delete"], CREATED_EXAMPLES[3])
+        await self.refused_command(by_name["seq15"], CREATED_EXAMPLES[6])
 
 
 class NamedValue(ClientCase):
@@ -760,7 +866,7 @@ class DialTarget(ClientCase):
 
     async def test_every_command_a_lane_sends_goes_to_the_pin_unchanged(self):
         for item in LANES:
-            constant = item.module.RAW_CORE_URL if item.module is security else entity.RAW_CORE_URL
+            constant = vars(item.module).get("RAW_CORE_URL", entity.RAW_CORE_URL)
             for payload in item.examples:
                 with self.subTest(lane=item.name, payload=payload):
                     before = repr(payload)
@@ -778,17 +884,17 @@ class DialTarget(ClientCase):
 
     async def test_the_dial_site_uses_the_constant_not_the_configured_value(self):
         for item in LANES:
-            constant = item.module.RAW_CORE_URL if item.module is security else entity.RAW_CORE_URL
+            constant = vars(item.module).get("RAW_CORE_URL", entity.RAW_CORE_URL)
             equal, elsewhere = item.pin.encode().decode(), item.pin.replace("127.0.0.1", ELSEWHERE)
             self.assertEqual(equal, constant)
             self.assertIsNot(equal, constant)
             for label, later in (("an equal string", equal), ("changed after the client was built", elsewhere)):
                 with self.subTest(lane=item.name, configured=label):
-                    settings, events = configured(equal), []
+                    settings, events = item.settings(equal), []
                     with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
                         client = item.client(settings)
                         settings.websocket_url = later
-                        client.url = client.websocket_url = later
+                        client.url = client.websocket_url = client.core_url = later
                         reply = await item.send(client, item.examples[0])
                     self.assertIs(reply["success"], True)
                     dialled = [event[1] for event in events if event[0] == "ws_connect"]
@@ -844,7 +950,7 @@ class CheckedFrame(ClientCase):
 
         events = []
         with patch.object(aiohttp, "ClientSession", new=fake_session(events, during=during)):
-            reply = await item.send(item.client(configured(item.pin)), payload)
+            reply = await item.send(item.client(item.settings(item.pin)), payload)
         self.assertEqual(tuple(seen), STAGES)
         # The caller's payload really was changed while the client waited.
         self.assertNotEqual(payload, checked)
@@ -938,6 +1044,11 @@ DYNAMIC_SITES = {
     "seq13": {"{'type': command}": lambda: ids_calls("seq13_contract_acceptance.py", seq13)},
     "seq15": {"{'type': DASHBOARD_UPDATE, 'dashboard_id': owned['dashboard'], field: value}": lambda: {
         (seq15.DASHBOARD_UPDATE, frozenset({"type", "dashboard_id", field})) for field in ("url_path", "mode")}},
+    "created_object": {
+        "{'type': domain + '/list'}": lambda: {
+            (domain + "/list", frozenset({"type"})) for domain in created.HELPER_DOMAINS},
+        "{'type': domain + '/delete', domain + '_id': object_id}": lambda: {
+            (domain + "/delete", frozenset({"type", domain + "_id"})) for domain in created.HELPER_DOMAINS}},
     "security_metadata": {"payload": lambda: {
         (payload["type"], frozenset(payload)) for payload in security.SNAPSHOTS}},
 }
@@ -963,6 +1074,42 @@ class LaneInventory(ClientCase):
         source = (SCRIPTS / "seq15_contract_acceptance.py").read_text(encoding="utf-8")
         self.assertEqual(source.count('for field, value in (("url_path", "seq15-other"), ("mode", "yaml")):'), 1)
         self.assertEqual(source.count("field: value}"), 1)
+
+    def test_the_created_object_reader_sends_through_the_lane_client_and_only_listed_reads(self):
+        # That lane's reads go through a Reader handed the client's own ``ok``, so they are
+        # not ``raw.<send>`` sites. What it is handed, and what it sends through it, is this.
+        tree = ast.parse((SCRIPTS / "created_object_contract_acceptance.py").read_text(encoding="utf-8"))
+        nodes = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+        def is_raw(node):
+            return isinstance(node, ast.Name) and node.id == "raw"
+
+        # Every place the client, or one of its methods, is given to something else.
+        handed = [ast.unparse(node) for node in nodes
+                  for argument in (*node.args, *(keyword.value for keyword in node.keywords))
+                  if is_raw(argument) or isinstance(argument, ast.Attribute) and is_raw(argument.value)]
+        self.assertEqual(sorted(handed), ["Reader(raw.status, raw.ok)", "Reader(raw.status, raw.ok)",
+                                          "cleanup_fixtures(raw, owned)"])
+        # And it is bound once, never rebound, aliased or returned.
+        names = [node for node in ast.walk(tree) if is_raw(node)]
+        self.assertEqual([type(node.ctx) for node in names].count(ast.Store), 1)
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        loads = [node for node in names if isinstance(node.ctx, ast.Load)]
+        self.assertEqual({type(parents[node]).__name__ for node in loads}, {"Attribute", "Call"})
+        reader = next(node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == "Reader")
+        sends = [node for node in ast.walk(reader) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute) and node.func.attr == "ok"]
+        self.assertEqual(sorted(ast.unparse(node) for node in sends),
+                         ["self.ok({'type': REGISTRY_LIST})", "self.ok({'type': domain + '/list'})"])
+        # No other ``ok``, ``call`` or ``refused`` is reached in the script except on ``raw`` itself.
+        elsewhere = [ast.unparse(node.func) for node in nodes if isinstance(node.func, ast.Attribute)
+                     and node.func.attr in SOCKET_METHODS and node not in sends
+                     and ast.unparse(node.func.value) != "raw"]
+        self.assertEqual(elsewhere, [])
+        # A domain is one of the two helper domains wherever a helper is created or read back.
+        self.assertEqual(created.LANES["created_helper_delete"]["kinds"], created.HELPER_DOMAINS)
+        self.assertEqual(created.HELPER_DOMAINS, ("input_boolean", "input_number"))
+        self.assertIs(created.LaneRaw.ok, entity.RawWebSocket.ok)
+        self.assertIs(created.LaneRaw.call, entity.RawWebSocket.call)
 
     def test_every_listed_shape_has_a_sent_example_and_every_example_is_listed(self):
         for item in SHAPED:
@@ -999,7 +1146,7 @@ class LaneInventory(ClientCase):
         # list and not its own, so the one client a lane builds is its own class.
         builders = {"RawWebSocket", "LaneRaw", "RawCore"}
         own = {"entity_metadata": "RawWebSocket", "configuration_delete": "LaneRaw", "seq13": "LaneRaw",
-               "seq15": "LaneRaw", "security_metadata": "RawCore"}
+               "seq15": "LaneRaw", "created_object": "LaneRaw", "security_metadata": "RawCore"}
         self.assertEqual(set(own), {item.name for item in LANES})
         for item in LANES:
             with self.subTest(lane=item.name):
@@ -1049,7 +1196,9 @@ class LaneSettings(ClientCase):
         real = self.settings(MAIN_CORE)
         self.assertEqual(real.websocket_url, MAIN_SOCKET)
         self.assertEqual(real.websocket_url, entity.RAW_CORE_URL)
-        for item in SHAPED:
+        self.assertEqual([item.name for item in HARNESS_LANES],
+                         ["entity_metadata", "configuration_delete", "seq13", "seq15"])
+        for item in HARNESS_LANES:
             with self.subTest(lane=item.name):
                 events = []
                 with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
@@ -1069,8 +1218,30 @@ class LaneSettings(ClientCase):
             security.RawCore(real)
         self.assertEqual(events, [])
         # The other family's Core is not this client's, in either direction.
-        self.refused_url(LANES[-1], self.settings(MAIN_CORE).websocket_url)
-        self.refused_url(LANES[0], real.websocket_url)
+        self.refused_url(BY_NAME["security_metadata"], self.settings(MAIN_CORE).websocket_url)
+        self.refused_url(BY_NAME["entity_metadata"], real.websocket_url)
+
+    def test_the_created_object_runner_core_is_its_pin(self):
+        # The created-object lanes run only through their local runner, on the Core it starts.
+        import core_created_object_local as local
+        self.assertEqual(local.PORTS, (18123,))
+        source = Path(local.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count('REAL_HA_URL="' + LOCAL_CORE + '"'), 1)
+        self.assertEqual(source.count('"127.0.0.1:18123:8123"'), 1)
+        self.assertEqual(created.RAW_CORE_URL, f"ws://127.0.0.1:{local.PORTS[0]}/api/websocket")
+        real = self.settings(LOCAL_CORE)
+        self.assertEqual((real.websocket_url, real.api_url), (created.RAW_CORE_URL, LOCAL_CORE + "/api"))
+        events = []
+        with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+            client = created.LaneRaw(real)
+        self.assertEqual(events, [])
+        self.assertIs(client.client.settings, real)
+        # The harness Core is not this client's, nor this Core any harness lane's.
+        self.refused_url(BY_NAME["created_object"], self.settings(MAIN_CORE), pinned="settings")
+        for item in HARNESS_LANES:
+            self.refused_url(item, real.websocket_url)
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertNotIn("created_object", workflow)
 
 
 class Response:

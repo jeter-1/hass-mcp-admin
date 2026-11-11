@@ -27,6 +27,7 @@ from aiohttp import web
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
+import created_object_contract_acceptance as created  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
 import lane_session as subject  # noqa: E402
 import marketplace_read_contract_acceptance as marketplace  # noqa: E402
@@ -38,7 +39,7 @@ import seq15_contract_acceptance as seq15  # noqa: E402
 SCRIPTS = ROOT / "scripts"
 LOOPBACK = "127.0.0.1"
 MAIN_PORT, LOCAL_PORT, UPSTREAM_PORT = 8123, 18123, 18086
-MAIN_CORE = f"http://{LOOPBACK}:{MAIN_PORT}"
+MAIN_CORE, LOCAL_CORE = f"http://{LOOPBACK}:{MAIN_PORT}", f"http://{LOOPBACK}:{LOCAL_PORT}"
 MAIN_SOCKET, LOCAL_SOCKET = f"ws://{LOOPBACK}:{MAIN_PORT}/api/websocket", f"ws://{LOOPBACK}:{LOCAL_PORT}/api/websocket"
 # Reserved documentation addresses (TEST-NET-2); never a real peer, and never dialled here.
 ELSEWHERE, PROXY = "198.51.100.7", "198.51.100.9"
@@ -55,6 +56,12 @@ REAL_CONNECT, REAL_CONNECT_EX, REAL_LOOKUP = socket.socket.connect, socket.socke
 
 def configured(url):
     return SimpleNamespace(websocket_url=url, api_url=MAIN_CORE + "/api", ha_token=TOKEN)
+
+
+def configured_local():
+    """Settings for the created-object client: its own Core, for the WebSocket and for REST."""
+    return SimpleNamespace(websocket_url=LOCAL_SOCKET, api_url=LOCAL_CORE + "/api", ha_token=TOKEN,
+                           ha_timeout_seconds=10)
 
 
 class Stub:
@@ -184,6 +191,8 @@ class LaneWebSocket(Wired):
                                  {"type": config_delete.REGISTRY_LIST}, MAIN_PORT),
         "seq13": (lambda: seq13.LaneRaw(configured(MAIN_SOCKET)).call, {"type": seq13.REGISTRY_LIST}, MAIN_PORT),
         "seq15": (lambda: seq15.LaneRaw(configured(MAIN_SOCKET)).call, {"type": seq15.REGISTRY_LIST}, MAIN_PORT),
+        "created_object": (lambda: created.LaneRaw(configured_local()).call, {"type": created.REGISTRY_LIST},
+                           LOCAL_PORT),
     }
 
     async def refused(self, name):
@@ -227,6 +236,9 @@ class LaneWebSocket(Wired):
     async def test_seq15_handshake_redirect_is_refused(self):
         await self.refused("seq15")
 
+    async def test_created_object_handshake_redirect_is_refused(self):
+        await self.refused("created_object")
+
     async def test_each_lane_command_is_still_answered_over_its_pinned_socket(self):
         for name in self.CLIENTS:
             with self.subTest(client=name):
@@ -245,8 +257,56 @@ class LaneWebSocket(Wired):
                     self.assertEqual((self.wire.off_host, len(self.stub.requests), self.stub.frames), ([], 1, []))
 
     def test_the_lane_subclasses_send_through_the_shared_call(self):
-        for lane in (config_delete, seq13, seq15):
+        for lane in (config_delete, seq13, seq15, created):
             self.assertIs(lane.LaneRaw.call, entity.RawWebSocket.call)
+            self.assertNotIn("call", vars(lane.LaneRaw))
+
+
+class CreatedObjectRest(Wired):
+    """The created-object client's REST requests: a 3xx answer is never followed.
+
+    They go through a guarded Engineering REST client of the lane's own, the real
+    one here, which opens its own session and declines redirects itself.
+    """
+
+    NAME = "hamcp_g4_lamp_0a1b2c3d"
+
+    def requests(self):
+        """Every method and route the client sends, with the path each reaches."""
+        scene, automation = "/api/config/scene/config/", "/api/config/automation/config/"
+        sent = (("GET", created.state_route("scene." + self.NAME), None, "/api/states/scene." + self.NAME),
+                ("GET", created.scene_route(self.NAME), None, scene + self.NAME),
+                ("GET", created.automation_route(self.NAME), None, automation + self.NAME),
+                ("POST", created.automation_route(self.NAME), {"alias": "synthetic"}, automation + self.NAME),
+                ("DELETE", created.automation_route(self.NAME), None, automation + self.NAME))
+        self.assertEqual({(method, route.template) for method, route, _, _ in sent}, created.LANE_REQUESTS)
+        return sent
+
+    async def test_each_rest_request_answered_with_a_redirect_stays_on_the_one_connection(self):
+        for method, route, body, path in self.requests():
+            for status in (302, *FOLLOWED, *HANDED_BACK):
+                for location in (AWAY[0], AWAY[2], SAME_HOST):
+                    with self.subTest(method=method, path=path, status=status, location=location):
+                        self.redirect(status, location)
+                        answer = await created.LaneRaw(configured_local()).status(method, route, body)
+                        # Not a good answer and not an absent fixture: no caller takes it for either.
+                        self.assertEqual(answer, (status, None))
+                        self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
+                        self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_other_answers_are_still_reported_as_they_were(self):
+        for method, route, body, path in self.requests():
+            with self.subTest(method=method, path=path):
+                self.stub.then()
+                self.wire.connects.clear()
+                self.assertEqual(await created.LaneRaw(configured_local()).status(method, route, body),
+                                 (200, self.stub.body))
+                for status in (404, 400, 401, 405, 500):
+                    self.redirect(status, AWAY[0])
+                    self.assertEqual(await created.LaneRaw(configured_local()).status(method, route, body),
+                                     (status, None))
+                    self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, LOCAL_PORT)], []))
+                    self.assertEqual(self.stub.requests, [(method, path)])
 
 
 class HarnessRest(Wired):
@@ -443,7 +503,7 @@ def named(call):
 
 
 class Inventory(unittest.TestCase):
-    """Every session of the four lane scripts is the shared one; the list is closed here."""
+    """Every session of the lane scripts is the shared one; the list is closed here."""
 
     # script: (lane_session calls, websocket connections)
     SCRIPTS = {
@@ -451,6 +511,10 @@ class Inventory(unittest.TestCase):
         "security_metadata_contract_acceptance.py": (1, 1),
         "entity_metadata_contract_acceptance.py": (1, 1),
         "real_ha_contract_tests.py": (3, 0),
+        # No session of their own: the created-object client dials through the shared
+        # ``call`` above and its runner signs in through the harness's bootstrap.
+        "created_object_contract_acceptance.py": (0, 0),
+        "core_created_object_local.py": (0, 0),
     }
     VERBS = {"request", "get", "post", "put", "patch", "delete", "head", "options"}
 
