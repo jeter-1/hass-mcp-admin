@@ -711,8 +711,8 @@ def _refuse_unless_configured_core(path):
     if type(path) is not str or not path.startswith("/"):
         raise ValueError(CORE_PATH_REFUSED)
     try:
-        host = urlsplit(HA_URL).hostname
-        same = bool(host) and urlsplit(f"{HA_URL}{path}").hostname == host
+        target = urlsplit(f"{HA_URL}{path}").hostname
+        same = bool(target) and target == urlsplit(HA_URL).hostname
     except (TypeError, ValueError):
         same = False
     if not same:
