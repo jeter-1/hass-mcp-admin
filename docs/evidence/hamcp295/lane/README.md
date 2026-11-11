@@ -21,8 +21,12 @@ sequence signs this profile yet.
   `tests/test_core_entity_rename_local.py` asserts both equalities.
 - `entity_registry_rename.json`: the receipt of one passing run of
   `scripts/core_entity_rename_local.py --mode local --pull never` at source
-  commit `6dcd5b65`. It ran on 2026-11-09 23:32 CST, admitted through the
-  host heavy-job gate. The run used:
+  commit `172dc21e`, the merge that stacks this branch on the HAMCP-329/298
+  head `efccdb87`. It ran on 2026-11-10 21:37 CST, admitted through the host
+  heavy-job gate. It replaces the receipt of the run at `6dcd5b65`
+  (2026-11-09 23:32 CST), because the merge changed the lane's bound inputs:
+  the capability manifest (`manifest_sha256` is now `16f8af2e…af23d`) and the
+  Engineering runtime package. The run used:
   - a Core container pinned by digest, with `--memory 2g`;
   - a 127.0.0.1-only bind on port 18125;
   - file-backed automation and script stores.
