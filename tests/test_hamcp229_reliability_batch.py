@@ -701,14 +701,26 @@ class RawArgumentGatewayTests(RawArgumentAssertions, unittest.TestCase):
         import dataclasses
         import tempfile
 
+        from tests.support.process_isolation import restore_after_class
+
+        # HAMCP-362: taken before the imports below. Importing test_beta_v2
+        # and test_beta_observability here puts hass_mcp_admin on sys.path,
+        # and a snapshot taken after them kept it there past this class.
+        restore_after_class(cls)
+
         from tests import test_beta_v2 as beta
         from tests.same_thread_asgi_client import SameThreadAsgiTestClient
-        from tests.support.process_isolation import restore_after_class
+        from tests.test_beta_observability import preserve_create_application_state
         from ha_mcp_engineering.application import create_application
         from ha_mcp_engineering.governance import GOVERNANCE
         from ha_mcp_engineering.ha_core_readmission.runtime import CORE_READMISSION
 
-        restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
 
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
