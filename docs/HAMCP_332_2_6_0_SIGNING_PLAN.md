@@ -6,6 +6,45 @@ version, or any runtime file. Signing a Core registry sequence is Josh's
 owner action, done through the protected `core-release-registry-signing`
 environment.
 
+## What changed in this revision (2026-11-10)
+
+Basis: an owner ruling of 2026-11-10 20:53 CST, relayed to this author and
+recorded verbatim in the 2.6.0 build handoff (§9B): "Draft #395's seq 18
+signing plan now from merged profiles; add #421, #424, #425 and #427
+profiles as each lands. No signing dispatch." It asks for a draft. It
+authorizes no signing, dry run, candidate branch or dispatch, and none was
+done.
+
+- **Merged** `origin/release/2.6.0` at
+  `b810ba77f66632f63133cf844c1deb4f3139090c` into this branch (merge commit
+  `02627cafff4dba874a11f1c5835d4cf56d40e8f7`, no conflicts). The tree at
+  `02627caf` equals `b810ba77` plus this one file. Engineering version at
+  that tip: `2.4.2-beta.8`.
+- **New §5A:** the sequence 18 draft. It lists the three profiles that are
+  merged and not signed, each with its fingerprint computed by the
+  repository's own code, its lane evidence and the commit that evidence
+  binds; the draft candidate; inputs; preconditions; the dispatch steps as
+  Josh would authorize them (described, not run); verification; recovery;
+  and stop conditions.
+- **New §5A.12:** a separate table, "Pending profiles (not merged; inputs
+  provisional)", for #421, #424, #425 and #427.
+- **New §5A.13:** every mismatch found and every open question, each marked
+  "pending Josh" where it needs him. The main one: this plan and the
+  HAMCP-290 design say `core.marketplace_read` is signed separately, while
+  later records point it at sequence 18. It is flagged, not resolved.
+- **Updated:** the header (current tips), §2.4 (profile count), §2.7 (values
+  that are no longer unknown), §6 and §8 (pointers to §5A.13), §11 and §12.
+- **New §9B:** the 2026-11-10 rulings this revision relies on, with where
+  each is recorded. They were not answered in this author's session.
+- **Not changed:** §1, §3, the §4 rows, C1-C12, G1-G8, §5.3, §5.4, §7, §9,
+  §9A and §10. No recorded Josh decision was edited.
+
+Every source claim added in this revision carries one of five labels,
+defined in §5A.1: **[S]** read from source at a stated file, line and
+commit; **[R]** computed by running repository code offline; **[G]** read
+from GitHub or the remote on 2026-11-10; **[H]** recorded in a PR body or a
+handoff and not re-verified; **[A]** assumed or proposed by this plan.
+
 **This plan is NOT FROZEN.** Josh answered the 2.6.0 design choices
 in-session on 2026-11-08 (items 1-25; §9A). Those answers settle the
 extension's membership (§4), but freezing still waits on all of these:
@@ -63,8 +102,20 @@ and fingerprints stay unknown until the reviewed implementation is on
   `ha_core_readmission/`, `ci/core-evidence-groups.json` and
   `ci/core-contract-read-files.json`. So every C1-C12 citation and line
   number holds at `7038aaea`. HAMCP-290 is not in `7038aaea`.
+- Refreshed 2026-11-10 (21:11 CST): the integration head is now
+  `b810ba77f66632f63133cf844c1deb4f3139090c`, merged into this branch as
+  `02627cafff4dba874a11f1c5835d4cf56d40e8f7`. It carries HAMCP-290 (#409, by
+  way of `release/2.5.0`), HAMCP-134 (#423) and HAMCP-297 (#428), so three
+  compiled profiles are now unsigned (§5A.3). Over `7246f2d2..02627caf` the
+  diff is empty for the signing utility, the one-tap script, the evidence
+  selector and the publication workflow (the exact list and the check are in
+  §5A.1), so those C1-C12 line numbers still hold.
+  `E/ha_core_readmission/profiles.py` grew: the C9 id rule is now at `:120`
+  (`_contract` at `:109-142`), and `CORE_RUNTIME_CAPABILITY_PROFILES` is at
+  `:1076-1086`.
 - Canonical journal: `origin/registry` at
-  `e486028ed0b06b8a5a737824c829705b403b34d8`, sequence 17.
+  `e486028ed0b06b8a5a737824c829705b403b34d8`, sequence 17 (re-read
+  2026-11-10; unchanged).
 - Authored 2026-11-07; corrected 2026-11-08 after the Codex design review
   (§9); Josh decisions of 2026-11-08 recorded and design heads refreshed the
   same day (§9A). US Central time.
@@ -231,6 +282,11 @@ this plan does not state it.
 - 17 of them are probe-bound `CORE_CAPABILITY_PROFILES` (`profiles.py:156`).
 - Every new 2.6 profile in §4 is runtime-only. No signed probe fingerprint
   moves, and no existing entry's probe identity changes.
+- Updated 2026-11-10: at `02627caf` the tuple has **35** profiles
+  (`profiles.py:1076-1086`): the 32 above plus `CORE_MARKETPLACE_PROFILES`
+  (`:900`), `CORE_SECURITY_METADATA_PROFILES` (`:955`) and
+  `CORE_DEVICE_CONFIGURATION_PROFILES` (`:1041`). The probe-bound tuple is
+  now at `:157` and still has 17. Details in §5A.3.
 
 ### 2.5 Offline verification result (author, 2026-11-07)
 
@@ -274,6 +330,19 @@ this plan.
 | Sequence number of the 2.6 extension | unknown | It is the predecessor's sequence plus one at preparation. No placeholder number is assigned |
 | Final reference count of the extended 2026.11.0 entry | unknown | The predecessor at preparation plus the finally approved additions |
 | HAMCP-290 contract | unknown | It is separate 2.5 scope and not part of this batch (§6) |
+
+**Updated 2026-11-10.** The rows above are kept as written on 2026-11-08.
+What source now settles, and what it does not:
+
+| Item | Status at `02627caf` | Where |
+| --- | --- | --- |
+| Ids and fingerprints of N4 (HAMCP-297) and N5 (HAMCP-134) | Known at the merged tip. Still provisional for signing until the same code is on `main` and recomputed there (C4, C5, G3) | §5A.3 |
+| HAMCP-290 contract | Known: `core.marketplace_read` is compiled at the merged tip and on `main` | §5A.3 |
+| Ids and fingerprints of N1, N2, N3 and N6 | Provisional, computed at each open PR head | §5A.12 |
+| Sequence number of the 2.6 extension | **18 if no other signing is published first.** The tip is 17 and the utility writes the predecessor's sequence plus one (`prepare_core_release_registry.py:245`). An automated Core add, a renewal or a separate HAMCP-290 signing would take 18 and move this extension to 19 | §5A.2, §5A.13 Q1 |
+| The 2026.11.0 reference list at preparation | Still the 32 of §2.3 today. Unknown at preparation for the same reason | §5A.6 |
+| Final reference count | 34 to 39, depending on §5A.13 Q1 and on which pending rows are merged and proven in time | §5A.5 |
+| Deployed Core and Engineering versions | Still unknown; not observed | n/a |
 
 ## 3. Profiles that must stay byte-identical
 
@@ -472,6 +541,399 @@ cutoff signing also renews the authority. This is source behavior at
 - **Later late-row signings** each need a current predecessor too, and each
   renews the authority again.
 
+## 5A. Sequence 18 draft from merged profiles (2026-11-10)
+
+### 5A.1 Basis, scope and evidence labels
+
+This section drafts the combined 2.6 extension from what is merged into
+`release/2.6.0` today. It is a draft for review. It prepares no candidate,
+pushes no candidate branch, dispatches nothing and signs nothing. §5 still
+holds; this section fills it in with current values.
+
+Labels used in §5A:
+
+- **[S]** read from source. Unless another commit is named, the commit is
+  `02627cafff4dba874a11f1c5835d4cf56d40e8f7` (this branch after the merge;
+  its tree equals `release/2.6.0` at `b810ba77` apart from this file).
+- **[R]** computed by running repository code offline, in a scratch virtual
+  environment under the worktree's ignored `.artifacts/` (Python 3.12.14,
+  with the 39 pins of `hass_mcp_engineering_beta/requirements.lock`
+  installed; the fingerprints reproduced unchanged after the pins of
+  `tests/requirements.lock` were added for the checks). Nothing was signed,
+  dispatched or sent to a registry.
+- **[G]** read from GitHub or the remote on 2026-11-10 between 21:10 and
+  21:25 CST. These values can change.
+- **[H]** recorded in a pull-request body or a handoff file. A claim, not
+  re-verified here.
+- **[A]** assumed or proposed by this plan. Not a decision.
+
+Paths are relative to the repository root. `E/` is
+`hass_mcp_engineering_beta/ha_mcp_engineering/`.
+
+Machinery check [R]: `git diff --numstat 7246f2d2 02627caf` is empty for
+`scripts/prepare_core_release_registry.py`,
+`scripts/core_registry_one_tap.py`, `scripts/core_release_evidence.py`,
+`scripts/core_lane_bindings.py`, `scripts/core_evidence_lanes.py`,
+`scripts/check_core_registry_branch.sh`,
+`.github/workflows/core-release-registry-publish.yml` and
+`E/ha_core_readmission/registry.py`. Three cited files did change:
+`E/ha_core_readmission/models.py` (two new capability classes; the
+fingerprint function is at `:180-181`), `docs/CORE_RELEASE_REGISTRY.md`
+(only at `:609`, `:611` and `:711-723`, so citations below `:600` hold) and
+`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md` (five lines added at `:270-274`).
+
+### 5A.2 Signed state today
+
+| Fact | Value | Label |
+| --- | --- | --- |
+| Canonical journal | `origin/registry` at `e486028ed0b06b8a5a737824c829705b403b34d8`; `upstream-trust/ha-core-release-registry.json` | [G] |
+| Journal bytes | sha256 `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`; 17 envelopes | [R] |
+| Tip | sequence 17, generated `2026-11-07T06:16:34Z`, expires `2027-02-05T06:16:34Z` (00:16:34 CST) | [R] |
+| Entries at the tip | 2026.10.0: 22 references; 2026.10.1: 26; 2026.10.3: 31; 2026.11.0: 32 | [R] |
+| The entry to extend | `ha-core-2026.11.0-reviewed-v1`; Core source commit `74cf5a49c63ed8d4d87717844bf14f79c28c9cea`; image index `sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e` | [R] |
+| Signed references against compiled profiles | All 32 match the profiles compiled at `02627caf` in every signed field; none differs | [R] |
+| Next sequence | 18: the utility writes `tip.sequence + 1` (`scripts/prepare_core_release_registry.py:245`) | [S] |
+| Candidate branches on the remote | `registry-candidates/2026.11.0` and `registry-candidates/2026.11.0-seq17`. No `-seq18` branch exists | [G] |
+
+The premise "the next sequence is 18" holds today. It stops holding if any
+other signing is published first (§5A.11).
+
+### 5A.3 Profiles merged and not signed
+
+`CORE_RUNTIME_CAPABILITY_PROFILES` (`E/ha_core_readmission/profiles.py:1076-1086`)
+compiles 35 profiles at `02627caf` [R]. Three are not in the signed entry.
+All three are `auto_eligible`, version 1, and follow the C9 id rule
+(`profiles.py:120`, `:127`).
+
+| # | Capability id / profile id | Adapter id; class | Fingerprint [R] | Defined at [S] | Merged by [G] | On `main` (`c041f59d`)? |
+| --- | --- | --- | --- | --- | --- | --- |
+| M1 | `core.marketplace_read` / `core_marketplace_read_v1` | `compiled-core-marketplace-read-v1`; `marketplace_inventory_read` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` | `profiles.py:900` | #409 (HAMCP-290) into `release/2.5.0`, then #383 into `main` | Yes, with the same fingerprint [R] |
+| M2 | `core.security_metadata_read` / `core_security_metadata_read_v1` | `compiled-core-security-metadata-read-v1`; `security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `profiles.py:955-1035` | #423 (HAMCP-134), merge `6e65ba4d83e9e9f365fc853fa31c56d0be1a35aa` | No |
+| M3 | `core.device_configuration_entity_operation` / `core_device_configuration_entity_operation_v1` | `compiled-core-device-configuration-entity-operation-v1`; `typed_ordinary_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `profiles.py:1041-1075`; ids and allowlist in `E/device_configuration/contracts.py:25-28`, `:48-52`, `:80-85` | #428 (HAMCP-297), merge `fcd6973f14dce01dd3e1fc3d59738a12cd9365c3` | No |
+
+M2 is §4 row N5 and M3 is §4 row N4. M1 is HAMCP-290, which §6 keeps out of
+this batch; see §5A.13 Q1.
+
+To reproduce the fingerprints, from a checkout of the commit, with the
+locked requirements installed:
+
+```sh
+python -I -B -c "
+import sys; sys.path.insert(0, 'hass_mcp_engineering_beta')
+from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES as P
+for p in P[32:]:
+    m = p.to_mapping()
+    print(m['capability_id'], m['profile_id'], m['profile_version'], m['adapter_id'], m['contract_fingerprint'], p.auto_eligible)
+print(len(P))
+"
+```
+
+It prints the three rows above and `35`. The fingerprint is
+`"sha256:" + sha256(canonical_json(material))` (`E/ha_core_readmission/models.py:180-181`).
+
+These values are final for signing only when recomputed on the signing
+commit on `main` (C4, C5, G3). Any change to a contract field before then
+changes the fingerprint and voids its lane receipt.
+
+### 5A.4 Signing readiness of each merged profile
+
+G4 needs an exact-image lane PASS bound to the final fingerprint. G5 needs
+an evidence group and a manifest profile map. State at `02627caf`:
+
+| Profile | Lane script | Group in `ci/core-evidence-groups.json` | Profile map in `ci/core-contract-read-files.json` | Receipt | Receipt binds | Ready? |
+| --- | --- | --- | --- | --- | --- | --- |
+| M2 `core.security_metadata_read` | `scripts/core_security_metadata_local.py` [S] | `security_metadata` (`:60-61`) [S] | Present [R] | `docs/evidence/hamcp134/lane/security_metadata.json`, sha256 `799799a6844aa6769d2098a1fd09506c95f2d94ccfa5dc0f5f4d39f1c0d509a1`, `result` PASS, cleanup `clean` true [R] | Source commit `bf3c98847f2fd6b72e80c43cafbc2dec2c907b89`; manifest `07bc9034ebb66881bd91fe710174db7dfba67e43c598a53d960f4f81587b1f4d`; journal `3f79fce7…`; fingerprint `9aa788b5…` [R] | Evidence exists. See the gaps below |
+| M3 `core.device_configuration_entity_operation` | **None** [S] | **None** [S] | **None** [R] | **None** [S] | n/a | No. G4 and G5 are not started |
+| M1 `core.marketplace_read` | **None merged.** In open #421 | **None merged.** In open #421 | **None merged.** In open #421 | **None merged.** In open #421 | See §5A.12 | No, until #421 merges and its lane re-runs |
+
+**M2 checks [R].** The receipt's manifest hash equals the sha256 of
+`ci/core-contract-read-files.json` at `02627caf` (`07bc9034…`): **match**.
+Its source-hash record equals the sha256 of
+`docs/evidence/hamcp134/lane/core-security-metadata-source-hashes.json`
+(`ca821db6324e70afdc94ea6f15030274deebb989630fed4b3d2824ac9e4219b3`):
+match. Its journal hash equals today's journal: match. Its fingerprint
+equals the compiled fingerprint: match.
+
+**M2 gaps.**
+
+1. The receipt binds `bf3c9884`, which is older than the merge (`6e65ba4d`)
+   and the tip. HAMCP-297 changed `profiles.py` afterwards; the M2
+   fingerprint did not move [R].
+2. The manifest hash matches today only. Every open PR in §5A.12 changes
+   `ci/core-contract-read-files.json`, so the receipt's manifest hash stops
+   matching the tip as soon as one of them merges [R]. #421's body records
+   the same for its own merge [H].
+3. The receipt's MFA coverage is `partial`
+   (`docs/evidence/hamcp134/lane/README.md:180-182`, limitation at
+   `:192-197`). That is a disclosed limit of the lane, proven offline in
+   tests, not a failure.
+
+**M3 gap.** The HAMCP-297 design requires a new group
+`device_configuration_entity`, a new `run_disposable` module and a
+lane-owned, test-only Matter Server stub
+(`docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496`). None
+is in source at `02627caf`: no `device_configuration` name appears in
+`ci/core-evidence-groups.json`, `scripts/core_evidence_lanes.py` or
+`scripts/core_lane_bindings.py` [S]. #428's body says "G4 has not been run"
+[H]. Which pull request builds the lane is not established in source
+(§5A.13 Q4).
+
+### 5A.5 Draft candidate
+
+One `extend-capabilities` candidate for Core `2026.11.0`, entry
+`ha-core-2026.11.0-reviewed-v1` (§5.1).
+
+- `previous_capabilities`: the 32 references of §2.3, in order, byte for
+  byte as signed at sequence 17.
+- `added_capabilities`: the references below, appended after that prefix.
+  Each reference has exactly the five fields a signed reference has today
+  [R].
+
+```json
+[
+  {"adapter_id": "compiled-core-marketplace-read-v1", "capability_id": "core.marketplace_read", "contract_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb", "profile_id": "core_marketplace_read_v1", "profile_version": 1},
+  {"adapter_id": "compiled-core-security-metadata-read-v1", "capability_id": "core.security_metadata_read", "contract_fingerprint": "sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55", "profile_id": "core_security_metadata_read_v1", "profile_version": 1},
+  {"adapter_id": "compiled-core-device-configuration-entity-operation-v1", "capability_id": "core.device_configuration_entity_operation", "contract_fingerprint": "sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c", "profile_id": "core_device_configuration_entity_operation_v1", "profile_version": 1}
+]
+```
+
+Membership depends on §5A.13 Q1, which is pending Josh:
+
+| Membership | Added today | References after signing |
+| --- | --- | --- |
+| Without `core.marketplace_read` (this plan's §6 and the HAMCP-290 design) | M2, M3 | 34 |
+| With `core.marketplace_read` (#421 and the later records in §9B) | M1, M2, M3 | 35 |
+| Either, plus every pending row of §5A.12 that lands and passes in time | up to four more | up to 38 or 39 |
+
+Order of the added references [A]: the order of
+`CORE_RUNTIME_CAPABILITY_PROFILES` on the signing commit. Source requires
+only that the added list is exactly what follows the old prefix
+(`prepare_core_release_registry.py:108-125`); it sets no order among added
+references. The order is fixed once signed, because a later extension must
+keep it as its prefix (C2).
+
+This is not a signable candidate today. No membership passes §5A.7.
+
+### 5A.6 Inputs
+
+| Input | Value or source | Known today? |
+| --- | --- | --- |
+| Signing commit | The `main` commit that contains every included profile, its lane, its group and its manifest map (C4, C5) | No. Only M1's profile is on `main` |
+| Predecessor journal | The bytes of `origin/registry` re-fetched at preparation (G7) | Today's are in §5A.2 |
+| Public key | `docs/evidence/hamcp222/core-public-key.txt` | Yes [S] |
+| Entry JSON | The signed 2026.11.0 entry with only `capabilities` extended and `evidence_sha256` replaced; source, image, architecture and probe identity unchanged (C2) | Derived at preparation |
+| Evidence JSON | Canonical JSON with exactly `model` (`core-capability-extension-evidence-v1`), `version`, `previous_entry_sha256`, `previous_capabilities`, `added_capabilities`, `review_artifacts_sha256` (`docs/CORE_RELEASE_REGISTRY.md:269-277`; C10) | Derived at preparation |
+| `review_artifacts_sha256` | 1-32 distinct sha256 values: one PASS receipt per added profile, from a lane run on the signing commit, plus the reviewed candidate artifacts (§5.1) | No |
+| Core lane image | `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e` (C12; the same index as the signed entry) | Yes |
+| Candidate branch | A new permanent branch `registry-candidates/2026.11.0-seq18`, holding `core-candidate.json` and `core-review-evidence.json` at its root (`docs/CORE_RELEASE_REGISTRY.md:377-383`) | Does not exist [G] |
+| Workflow inputs | `core_version` `2026.11.0`, `candidate_ref`, `candidate_sha256`, `evidence_sha256`, `dry_run` (`.github/workflows/core-release-registry-publish.yml:9-31`) | The two hashes exist only after preparation |
+| Engineering version | `2.4.2-beta.8` (`hass_mcp_engineering_beta/config.yaml:2`). Signing does not change it | Yes [S] |
+
+### 5A.7 Preconditions
+
+All must hold before a candidate is prepared. Today none of PC1-PC5 holds.
+
+| # | Precondition | State on 2026-11-10 |
+| --- | --- | --- |
+| PC1 | Membership is settled: §5A.13 Q1 answered, and each pending row is either merged and proven or left for a late-row signing (§8) | Pending Josh |
+| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. M2, M3 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here |
+| PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | Not met; see each PR |
+| PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). Recorded for #421 ("The lane re-runs before signing") and for HAMCP-297 ("run the G4 lane once on the reviewed final head (it must load the exact signing fingerprint)") [H]. For the other receipts this plan proposes the same [A]; §5A.13 Q3 | Not met for any profile |
+| PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3) | True at `02627caf` [R]; must be repeated on `main` |
+| PC6 | The predecessor is re-fetched, verified against the public key, unexpired, and still the one the lanes ran against: sequence 17 with exactly 32 references on 2026.11.0 (G7; each lane requires it, for example `scripts/core_security_metadata_local.py:143-145`) | True today [R] |
+| PC7 | Preparation is no later than 2027-01-22 (§5.4) | 73 days away |
+| PC8 | Josh has authorized, for this exact transition, the candidate preparation, the byte-review gate, the candidate-branch push and the dispatch. The ruling behind this draft authorizes none of them | Not requested |
+| PC9 | Lanes are heavy jobs on the build host and follow its admission limits | Applies when lanes run |
+
+### 5A.8 Dispatch steps (described; not executed)
+
+This is the order the repository's own documents require. Nothing here was
+run for this plan. Step 7 onward is Josh's; the recorded ruling is that he
+dispatches once, dry run first, and the architect checks the candidate [H].
+
+1. **Fix the signing commit.** Record the `main` commit SHA. Recompute the
+   fingerprints (§5A.3 command). Stop if any differs from the reviewed table.
+2. **Run each included lane once on that commit**, under the host's
+   heavy-job limits, following the lane's own README (for M2,
+   `docs/evidence/hamcp134/lane/README.md`). Each receipt must show PASS,
+   the signing commit, the manifest hash of that commit, today's journal
+   hash and the fingerprint from step 1.
+3. **Fetch and verify the predecessor.** Fetch `origin/registry`, hash the
+   journal, verify it with the committed public key. Confirm PC6.
+4. **Prepare the candidate** with the existing utility. It fetches nothing,
+   signs nothing and changes nothing in the repository
+   (`docs/CORE_RELEASE_REGISTRY.md:217-219`, `:259-267`):
+
+   ```sh
+   python scripts/prepare_core_release_registry.py extend-capabilities \
+     --entry core-entry.json --evidence core-review-evidence.json \
+     --public-key docs/evidence/hamcp222/core-public-key.txt \
+     --previous current-core-journal.json --output core-candidate.json
+   ```
+
+   Preparation runs C1, C2, C4 and C10 and refuses on any violation.
+5. **Check the candidate bytes.** The architect reviews `core-candidate.json`
+   and `core-review-evidence.json` and records both SHA-256 values
+   (`docs/CORE_RELEASE_REGISTRY.md:224-225`, `:383`). The check covers §5.3
+   tests 1, 4 and 5: one changed entry, the 32-reference prefix intact, only
+   the approved references added, sequence 18, predecessor hash equal to the
+   sequence 17 digest.
+6. **Push the candidate branch** `registry-candidates/2026.11.0-seq18` with
+   the two files at its root, only after the byte-review gate
+   (`docs/CORE_RELEASE_REGISTRY.md:377-382`). The branch is permanent and is
+   never force-pushed or deleted (`:744-752`). This is a remote write and
+   needs PC8.
+7. **Dry run (Josh).** Dispatch *Core registry one-tap signing and
+   publication* from `main` with the five inputs of §5A.6 and
+   `dry_run: true` (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:140-162`).
+   Expected: `verify`, `dry-run-sign` and `dry-run-publish` succeed; no
+   approval request; the log ends "nothing was pushed"; `sign`, `reverify`
+   and `publish` are skipped. Then
+   `bash scripts/check_core_registry_branch.sh cutover` shows the same
+   journal hash as before. The dry run uses an ephemeral test key. It is the
+   only proof of the combined transition (§5A.13 Q8).
+8. **Real run (Josh).** Dispatch the same inputs with `dry_run: false`. The
+   `verify` job writes the approval summary: predecessor and new sequence,
+   both SHA-256 values, expiry, profiles carried and added, and a WITHHELD
+   block if the candidate drops a predecessor profile
+   (`docs/CORE_RELEASE_REGISTRY.md:387-394`). Josh compares both hashes and
+   the sequence with the reviewed values and approves the
+   `core-release-registry-signing` environment only if they match; otherwise
+   he rejects and nothing is signed
+   (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:165-174`). `sign`, `reverify` and
+   `publish` then run; `publish` makes one commit on `registry` touching
+   only the journal and the new evidence file, without force
+   (`docs/CORE_RELEASE_REGISTRY.md:398-403`).
+9. **Verify** (§5A.9).
+
+### 5A.9 Verification after signing
+
+| Check | How | Expected |
+| --- | --- | --- |
+| Publication outcome | The `publish` job summary; `bash scripts/check_core_registry_branch.sh last-publish` (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:187-192`) | PUBLISHED, and "the tip changes only the journal and adds" one evidence file |
+| Journal tip | Fetch `origin/registry`; parse the journal | Sequence 18; `previous_registry_sha256` is the sequence 17 digest; `expires_at` is `generated_at` plus 90 days (`prepare_core_release_registry.py:248`) |
+| The extended entry | Compare the 2026.11.0 entry with sequence 17 | First 32 references identical in order; then exactly the approved references; source, image and probe identity unchanged |
+| Siblings | Compare the other entries and revocations | 2026.10.0 (22), 2026.10.1 (26) and 2026.10.3 (31) identical; three revocation records unchanged |
+| Offline runtime verifier | As in §2.5, against the new bytes and the committed public key | Refresh accepted at sequence 18; 2026.11.0 selects 32 plus the added count; the 2026.10.x counts are unchanged (§5.3 test 7) |
+| Next automated run is not broken | Every reference of the new entry is in exactly one group (C7, G5) | `passing_subset` does not raise "unmapped or duplicate predecessor profile" (`scripts/core_release_evidence.py:195-207`) |
+| Runtime sees it | Core health `release_registry` after the next six-hour refresh or an add-on restart Josh authorizes (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:194-196`) | New `sequence` with `refresh_status: accepted`. This is a live observation and needs its own authorization; it is not part of this plan |
+
+Admission in the registry is not deployed acceptance. Each feature's
+deployed acceptance stays a separate, separately authorized step.
+
+### 5A.10 Rollback and recovery
+
+§7 governs. Applied to this signing:
+
+| Point of failure | State | Recovery |
+| --- | --- | --- |
+| Preparation refuses | Nothing exists outside the working directory | Fix the cause and prepare again |
+| Byte review finds a defect before the branch push | Nothing is on the remote | Prepare again; push only the reviewed bytes |
+| Dry run fails | Nothing signed, nothing published | Find the cause first. The pushed candidate branch is permanent, so a corrected candidate needs a new branch name. Source names only `registry-candidates/<version>-seq<sequence>`; the name for a second sequence 18 candidate is not defined (§5A.13 Q10) |
+| Hashes or sequence in the approval summary differ | Nothing signed | Josh rejects the environment approval |
+| `sign` or `reverify` fails | Nothing published | Investigate; do not re-dispatch until the cause is known |
+| `publish` ends UNCHANGED | `registry` not changed | Fix the cause and dispatch again |
+| `publish` ends UNCERTAIN | Unknown | Run the `last-publish` check and compare the tip with the attempted commit. Never dispatch again before knowing which commit `registry` holds (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:203-206`) |
+| A signed profile later proves wrong | The reference stays signed | No operation removes one reference (C2, C3; §7.2). Disable the tool in the runtime and keep the compiled contract on `main`, or C4 refuses every later positive signing. Never restore an old journal or delete a cache (`docs/CORE_RELEASE_REGISTRY.md:287`, `:296-297`) |
+| Whole-release withdrawal | Permanent | `revoke` of 2026.11.0 removes all its capabilities for good (C6; §7.4). Not proposed |
+| Stop all runs | n/a | Josh can disable the workflow or remove the key (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:176-185`). Neither changes the published journal |
+
+An older Engineering image ignores the new references (C8; §7.1).
+Persisted-state safety across a downgrade is G6 and is not shown by this
+draft.
+
+### 5A.11 Stop conditions
+
+Stop and report to Josh, without working around it, if any of these occurs:
+
+1. `origin/registry` is no longer at sequence 17, or its 2026.11.0 entry no
+   longer has exactly the 32 references of §2.3. The sequence is then not
+   18, every lane's predecessor check fails, and the lanes and this draft
+   must be redone against the new predecessor (G7).
+2. A fingerprint recomputed on the signing commit differs from the reviewed
+   value, or any signed reference no longer matches its compiled profile.
+3. A lane does not PASS, its cleanup is not `clean`, or its receipt binds a
+   different commit, manifest, journal or fingerprint than the candidate
+   uses. No substitute lane is allowed
+   (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:272-273`).
+4. An included profile, lane, group or manifest map is not on `main`.
+5. Preparation, the dry run, `verify`, `sign` or `reverify` refuses or
+   fails.
+6. The approval summary shows a WITHHELD block, a sequence other than the
+   expected one, or a hash that differs from the reviewed value.
+7. `publish` ends UNCERTAIN.
+8. The candidate would change any entry other than 2026.11.0, or reorder,
+   drop or alter one of the 32 signed references.
+9. The 2027-01-22 cutoff arrives with a row not ready (§8 late-row rule), or
+   the predecessor has expired (§5.4).
+10. HAMCP-297's G4 lane cannot pass before the cutoff (recorded ruling,
+    §9B).
+11. A step would need a secret, the signing seed, live Home Assistant, a
+    workflow or protected-path change, or an authorization that Josh has
+    not given.
+
+### 5A.12 Pending profiles (not merged; inputs provisional)
+
+Nothing in this table is merged into `release/2.6.0`. Every value was read
+or computed at the open head named, on 2026-11-10, and can change with the
+next push.
+
+**Rule for every row:** the fingerprint is recomputed from the merge commit
+when the pull request lands, and the lane is re-run before signing wherever
+the receipt binds an older commit. A row joins §5A.3 only after it merges.
+
+| PR, register, §4 row | Head read [G] | Adds or changes a profile? [R] | Provisional fingerprint at that head [R] | Lane, group and receipt at that head | Receipt binds [R] |
+| --- | --- | --- | --- | --- | --- |
+| #421, HAMCP-290 (no §4 row; see Q1) | `e443b824776901f36507fee5f4e3ac6d3313291e`; open, draft; based on `b810ba77` | **No.** `profiles.py` is unchanged. It adds the signing prerequisites for M1, which is already merged | M1's, unchanged: `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` | Lane `scripts/core_marketplace_read_local.py`; group `marketplace_read` (`ci/core-evidence-groups.json:60-61`); manifest map present; receipt `docs/evidence/hamcp290/lane/marketplace_read.json`, sha256 `da7a40ac435a5347c73615fea27bfe081bd6b0d26e42a019f60bb0019c302b93`, PASS | `398ca8888b7abe324027b55668a1baa60606ac68`, four first-parent commits behind the head (the receipt commit, two later commits and the merge of `b810ba77`); the lane's acceptance script changed after it. Manifest `b058369d…`, equal to the head's |
+| #424, HAMCP-329 / HAMCP-298, N2 and N3 | `efccdb87079205df9df91eaa0088207d8557487f`; open, draft; based on `fcd6973f` | **Adds two.** `core.scene_create_delete_operation` (`profiles.py:1102`), adapter `compiled-core-scene-create-delete-operation-v1`; `core.created_helper_delete_operation` (`:1192`), adapter `compiled-core-created-helper-delete-operation-v1` | Scene: `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`. Helper: `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | Lane `scripts/core_created_object_local.py`; groups `scene_create_delete` (`:60-61`) and `created_helper_delete` (`:63-64`); manifest maps present. **No receipt is committed.** | Two uncommitted receipts, read in the PR's worktree, both PASS, bind `b89ce817035a646b75c51c12b94a12c99897776a`; the head adds tests only on top of it |
+| #425, HAMCP-295 / HAMCP-109, N1 | `5f7cfc5a3ea68713faed3e1256b8970457a8e710`; open, draft; branched from `4b8db82b`, before HAMCP-134 and HAMCP-297 merged; being rebuilt on top of #424 [H] | **Adds one.** `core.entity_registry_rename_operation` (`profiles.py:960`), adapter `compiled-core-entity-registry-rename-operation-v1` | `sha256:0c0a0e68e3628bcff3517d6106f9527609643789df503788af856b42e9e11fb3` | Lane `scripts/core_entity_rename_local.py`; group `entity_registry_rename` (`:60-61`); manifest map present; receipt `docs/evidence/hamcp295/lane/entity_registry_rename.json`, sha256 `f9aacadc716c00536d6530ea427cd058d33a4cde915f1065b470821c4bb68e04`, PASS | `6dcd5b65b8e4673de404d45b88d5e02124a3f765`, older than the head; manifest `0becbc20…`, equal to the head's. The head will be replaced by the rebuilt branch |
+| #427, HAMCP-231, N6 | `df447a65e43c845a6a1d27e790b07768f957d337`; open, draft; based on `fcd6973f` | **Adds one.** `core.thread_matter_topology_read` (`profiles.py:902`), adapter `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | Lanes `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); group `thread_matter_topology` (`:63-64`); manifest map present; receipts `docs/evidence/hamcp231/lane/thread_matter_topology.json` (sha256 `6c976d24bcd44a111306c5da797d6c0b5606c4e8e426b4f72c0182765aacc15d`) and `thread_matter_topology_a2.json` (sha256 `dd23cca6e9d357e4660846a2910ee35a30fa6909d4d7f7c7d5d0fac59fedd8e0`), both PASS | A1: `d7b7f9366c33bcf1a151fb32c276225468b62640`, manifest `a07ff969…`, **not** the head's `913f8a32…`. A2: `6339dbe7aebe7fcb4f2b11cbdd262ed348abda52`, manifest equal to the head's. Both older than the head |
+
+Checked at every head above [R]: the 32 signed references still match the
+compiled profiles, and the M1, M2 and M3 fingerprints are unchanged where
+the head compiles them (#425's old base compiles M1 only).
+
+Profile ids follow C9 from each capability id: `core_scene_create_delete_operation_v1`,
+`core_created_helper_delete_operation_v1`,
+`core_entity_registry_rename_operation_v1` and
+`core_thread_matter_topology_read_v1`. They equal the derived ids in §4.
+
+Notes that affect signing:
+
+- #427 also carries its own copy of the HAMCP-290 lane files (group
+  `marketplace_read` at `:60-61`; a `marketplace_read.json` with sha256
+  `2cf03764…` that binds `83a14e00…`). It differs from #421's. Whichever
+  merges second must reconcile it; the receipt that counts is the one from
+  the re-run on the signing commit.
+- Each PR changes `ci/core-contract-read-files.json` differently (hashes at
+  the heads: #421 `b058369d…`, #424 `02a555cb…`, #425 `0becbc20…`, #427
+  `913f8a32…`; tip `07bc9034…`). After each merge, every earlier receipt's
+  manifest hash is stale against the tip.
+- N1 stays under item 6: if #390's F1-F4 are not met when the signing is
+  assembled, HAMCP-295/109 moves to 3.0 (§4 Count, §8).
+- Every lane here proves a 32-to-33 transition for its own profile only
+  (§5A.13 Q8).
+
+### 5A.13 Mismatches and open questions
+
+Nothing below is decided by this plan. "Pending Josh" marks a question only
+he can answer.
+
+| # | Finding | Evidence | Status |
+| --- | --- | --- | --- |
+| Q1 | **Is `core.marketplace_read` in the combined sequence 18 extension?** The recorded decision says no: "the profile is signed separately after 2.5 merges (Josh decision, 2026-11-08)", and this plan's §6 keeps HAMCP-290 out of the 2.6 batch. Later records say yes: #421's lane README calls the profile "proposed for signed Core sequence 18"; #421's body says "in the combined 2.6 signing (seq 18)"; the 2026-11-10 rulings say "seq 18 combined signing covering all new 2.6 profiles" and "add #421 … profiles as each lands". No record seen by this author says the 2026-11-08 decision was withdrawn. The choice sets the count (34 or 35 today) and, if HAMCP-290 is signed separately and first, moves this extension to sequence 19 | `docs/HAMCP_290_MARKETPLACE_READ_DESIGN.md:434-437`, `:454-455` [S]; §6; `docs/evidence/hamcp290/lane/README.md:3-7` at `e443b824` [S]; #421 body [H]; §9B [H] | **Pending Josh.** Question: does `core.marketplace_read` join the combined sequence 18 extension, or is it still signed on its own, and if on its own, before or after the combined one? §6 is left as written until he answers |
+| Q2 | M1 has no merged signing prerequisite. The lane, group, manifest map and receipt are only in open #421, and the receipt binds a commit older than the head | §5A.4, §5A.12 | Open. Recorded ruling: "The lane re-runs before signing as already ruled; disclose the receipt head." [H] |
+| Q3 | Does the "re-run before signing" ruling, recorded for #421, apply to every lane receipt, HAMCP-134's included? The HAMCP-134 receipt binds `bf3c9884`, and its manifest hash matches the tip only until the next §5A.12 merge | §5A.4; the build handoff lists the manifest point as open and not investigated [H] | **Pending Josh.** This plan proposes one re-run of every included lane on the signing commit, so all receipts bind one commit and one manifest [A] |
+| Q4 | M3 has no lane, group, manifest map or receipt, and source does not say which pull request builds them. The recorded ruling puts HAMCP-297 in sequence 18 after its G4 lane passes on the reviewed final head | §5A.4; `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496` [S]; #428 body [H] | Open. Not a product question unless the lane cannot be built before 2027-01-22; then the recorded stop applies |
+| Q5 | M2, M3 and all 2.6 lane plumbing are on `release/2.6.0` only. `main` (`c041f59d`) compiles 33 profiles and maps 32 capabilities in 13 groups; the tip compiles 35 and maps 33 in 14 | [R] | Precondition PC2. Needs the release merge, which is Josh's |
+| Q6 | #424's body recommends holding both of its profiles out of sequence 18. That text names an older head (`6a4f0c1a`) that lacked the lanes; the current head has the lane script and groups. Its receipts are not committed and bind `b89ce817`, not the head | #424 body [H]; §5A.12 [R] | Open. The build handoff lists the receipt point as open for Josh at #424's review gate [H]. This plan does not resolve it |
+| Q7 | #425 is being rebuilt on #424, so its head, fingerprint context and receipt will all be replaced. #427's A1 receipt binds a manifest that is not its head's, and #427 carries a second copy of the HAMCP-290 lane files | §5A.12 [R], [H] | Open; covered by the §5A.12 rule |
+| Q8 | No lane proves the combined transition. Each lane proves 32 to 33 for one profile and refuses unless the predecessor has exactly 32 references. So every lane must run before sequence 18 is published, and a profile signed later (a late row) needs its lane's predecessor check changed first | `scripts/core_security_metadata_local.py:143-145` [S]; `docs/evidence/hamcp134/lane/README.md:22-25` [S] | Open. The combined transition is proven only by preparation and the one-tap dry run (G8). Whether that is enough is for the plan's reviewer |
+| Q9 | G4 (§5.2) still describes the HAMCP-297 lane as using a build-time test seam, "Open for Codex (#389 Q9 seam)". The merged design says the G4 run "contains no test seam" and uses a Matter Server stub instead. G4's text predates that | `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1476-1484` [S] | Flagged. G4 is not edited in this revision, because G1-G8 are under review; the reviewer should confirm the seam question is closed |
+| Q10 | Who prepares the candidate and pushes the candidate branch is not recorded, and no name is defined for a second sequence 18 candidate if the first is pushed and then found wrong | `docs/CORE_RELEASE_REGISTRY.md:377-382`, `:744-752` [S] | **Pending Josh** for the authorization (PC8). The naming gap is a documentation question |
+| Q11 | The order of added references is not set by source | §5A.5 | Proposal [A]; for the reviewer |
+| Q12 | #421's README and #423's README both say "proposed for signed Core sequence 18". Both hold only while nothing else is signed first | §5A.2 | Covered by stop condition 1 |
+
 ## 6. Interaction with 2.5.0 and automated releases
 
 - **HAMCP-319 (#385)** adds no Core signing. Its only overlap is the shared
@@ -481,6 +943,12 @@ cutoff signing also renews the authority. This is source behavior at
 - **HAMCP-290** is separately reviewed 2.5 scope. It is **not** pulled into
   this 2.6 batch. If it is signed first, its references are part of the
   predecessor the 2.6 extension preserves (G7). Its contract is unknown here.
+  - *Note, 2026-11-10.* The bullet above is kept as written. Two things
+    changed around it. The contract is now known: `core.marketplace_read` is
+    compiled at the merged tip and on `main` (§5A.3). And later records point
+    the profile at sequence 18 (#421; §9B), which conflicts with "not pulled
+    into this 2.6 batch". This plan does not resolve that. It is §5A.13 Q1,
+    pending Josh.
 - **Automated new Core releases** (for example a 2026.11.x) consume sequence
   numbers and copy only predecessor references whose groups pass (C7). Once a
   2.6 profile is signed on 2026.11.0, the next automated run refuses unless
@@ -577,6 +1045,17 @@ then the Codex delta review of this plan.
 **Pending Josh, not blocking the freeze:** none. The #394 J3 sub-question
 is decided: aligning the delegated `thread_network` ids is HAMCP-341, after
 2.6 (§9A).
+
+**Pending Josh as of 2026-11-10 (sequence 18 draft):** the paragraph above
+covers the 2026-11-08 design choices and still stands for them. The draft
+in §5A raises three questions that only Josh can answer. They do not block
+the design freeze; they block preparing a candidate (§5A.7 PC1, PC4, PC8).
+
+| § | Question |
+| --- | --- |
+| §5A.13 Q1 | Does `core.marketplace_read` (HAMCP-290) join the combined sequence 18 extension, or is it still signed on its own? |
+| §5A.13 Q3 | Does "the lane re-runs before signing", recorded for #421, apply to every lane receipt, HAMCP-134's included? |
+| §5A.13 Q10 | Who prepares the candidate and pushes the permanent candidate branch, and under which authorization? |
 
 **Late-row rule: decided** (Josh decision (in-session 2026-11-08), late-row rule).
 
@@ -700,6 +1179,40 @@ Finding 2's correction now reflects the decided membership: the table is
 settled at six rows with one recognized cutoff, and §8 lists only the
 remaining HAMCP-297 items.
 
+## 9B. Owner rulings of 2026-11-10 recorded elsewhere
+
+These rulings were **not** answered in this author's session. They reached
+this revision in the task brief and are recorded in the places named. They
+are quoted as recorded, label [H]. The "Nothing else in this plan is
+attributed to Josh" sentence in §9A covers the 2026-11-08 revision; this
+section adds only quotations with their sources, and no new decision.
+
+`BH` is the 2.6.0 build handoff,
+`~/handoffs/hass-mcp-admin-agent-release-2.6.0-build.md`, read on
+2026-11-10 at 1,496 lines. It is outside the repository, so a reviewer
+without that file can check only the quotations from the #428 and #421
+bodies.
+
+| # | Text as recorded | Where recorded | Used in |
+| --- | --- | --- | --- |
+| R1 | "Draft #395's seq 18 signing plan now from merged profiles; add #421, #424, #425 and #427 profiles as each lands. No signing dispatch." | `BH:1477`, under "20:53 CST 2026-11-10: Josh's rulings to move 2.6 faster" (`BH:1473`) | The basis of §5A |
+| R2 | "Not authorized: Ready, merges, version values other than 2.4.2-beta.8, registry signing dispatch, publishing, deploying, Home Assistant access, secrets." | `BH:1480` | §5A.7 PC8; §12 |
+| R3 | "After review: finish the independent review and corrections first. Then run the G4 lane once on the reviewed final head (it must load the exact signing fingerprint). P1/P2 are not signed separately: they go into the 2.6 combined signing (seq 18) with the other new 2.6 profiles, per design PR #395. Josh dispatches that once (dry run first, architect checks the candidate). If G4 can't pass before the 2027-01-22 signing cutoff, stop and report." | #428 body, "Activation sequence (Josh decision, 2026-11-10)"; the same in short form at `BH:513` | §5A.7 PC4; §5A.8; §5A.11 item 10; §5A.13 Q4 |
+| R4 | "For the #395 update: add seq 18 combined signing covering all new 2.6 profiles, P1/P2 included." | `BH:514` | §5A.5; §5A.13 Q1 |
+| R5 | "The lane re-runs before signing as already ruled; disclose the receipt head." | `BH:1434`; quoted in the #421 body | §5A.7 PC4; §5A.12; §5A.13 Q2, Q3 |
+
+Reading notes, this plan's and not Josh's:
+
+- "P1/P2" in R3 and R4 are HAMCP-297's own signing steps as #428 names
+  them. They are not the preconditions of §5A.7, which are numbered PC1-PC9
+  to avoid the clash.
+- R1 and R4 name sequence 18. Source assigns the number at preparation
+  (§5.1; `prepare_core_release_registry.py:245`). It is 18 only while
+  nothing else is signed first (§5A.11 item 1).
+- R1 and R4 do not mention the 2026-11-08 decision that
+  `core.marketplace_read` is signed separately. Whether they replace it is
+  §5A.13 Q1 and is not assumed here.
+
 ## 10. Superseded (historical)
 
 The revision at `2248224f` was written before the Josh direction in §1 was
@@ -762,6 +1275,11 @@ workflow or fingerprint.
 | --- | --- | --- | --- | --- | --- |
 | None | n/a | n/a | Planning document only | none | n/a |
 
+The 2026-11-10 revision does not change this. §5A drafts a candidate in
+prose and signs nothing. The three references it lists were compiled by
+pull requests #409, #423 and #428, not by this document. No candidate file,
+candidate branch, dry run or signature exists for sequence 18.
+
 ## 12. Non-actions
 
 - No signing, registry or candidate-branch write, dry run, or workflow
@@ -779,3 +1297,31 @@ workflow or fingerprint.
   are this plan's, not Josh's. HAMCP-139's row and schedule were not edited. No
   registry read was performed here; the HAMCP-297 `translation_key` values
   come from integration source as cited in #389 §4.1 and §10.
+
+For the 2026-11-10 revision:
+
+- No candidate or evidence file was prepared.
+  `scripts/prepare_core_release_registry.py` was read, not run. No
+  `registry-candidates/` branch was created or pushed.
+- No workflow was dispatched, as a dry run or otherwise. Nothing was signed.
+  No tag, release, image, attestation or registry commit was created.
+- No lane was run and no container was started. Lane receipts were read from
+  committed files, and for #424 from uncommitted files in that pull
+  request's worktree, read only.
+- The signed journal was read from the public `registry` branch with
+  `git fetch` and parsed offline. Profile fingerprints were computed offline
+  by importing the repository's profile module at each commit named in §5A.
+  That is the only repository code run, apart from the checks listed in the
+  pull request.
+- No secret, signing seed, Supervisor token or production credential was
+  read. No live Home Assistant or deployed MCP endpoint was contacted.
+- Only this file was edited. No protected path, runtime file, test,
+  workflow, release declaration or version value was edited. The other
+  files in the branch's diff against its previous head come from merging
+  `release/2.6.0`.
+- The open pull requests #421, #424, #425 and #427, their branches and
+  their worktrees were read and not changed. The design documents were not
+  edited, the HAMCP-290 text in conflict included (§5A.13 Q1).
+- No decision is attributed to Josh in this revision. §9B quotes rulings
+  recorded elsewhere, with their sources. Every item marked [A] and every
+  proposal in §5A is this plan's.
