@@ -425,16 +425,16 @@ class RunningIdentity(unittest.IsolatedAsyncioTestCase):
             accept.assert_not_called()
 
 
-def store(installed=(), total=3, theme=acceptance.INSTALL_CANDIDATES[0]):
+def store(installed=(), total=3, theme=acceptance.INSTALL_CANDIDATES[0], theme_id="200"):
     """Synthetic raw Core list: two integrations and one theme (the first named candidate)."""
     rows = [{"id": str(100 + i), "full_name": f"owner/repo{i}", "name": f"Repo {i}", "category": "integration",
              "domain": f"repo{i}", "available_version": "1.0", "description": "synthetic integration"}
             for i in range(total - 1)]
-    rows.append({"id": "200", "full_name": theme, "name": "Google Light Theme",
+    rows.append({"id": theme_id, "full_name": theme, "name": "Google Light Theme",
                  "category": "theme", "domain": None, "available_version": "v2.0",
                  "description": "A light theme for the disposable lane"})
     for row in rows:
-        on = row["id"] in installed
+        on = str(row["id"]) in installed
         row.update(installed=on, installed_version=row["available_version"] if on else "",
                    pending_upgrade=False, custom=False, can_install=True, local_path="/config/x",
                    authors=["someone"], stars=3)
@@ -457,7 +457,8 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
 
     async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
                              github_connected=False, install_success=True, installs=True, project=None,
-                             inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0]):
+                             inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0],
+                             theme_id="200"):
         # inject=(n, written): the n-th reader call also admits (and, if written,
         # writes) the HACS list command while the backend stays core_marketplace.
         # Calls: 1 routed read, 2 redaction canary, 3 wrong identity, 4 disabled entry.
@@ -519,7 +520,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             if state["disabled"]:
                 raise MarketplaceError("marketplace_not_loaded")
             authorize()
-            value = store(state["installed"], theme=theme)
+            value = store(state["installed"], theme=theme, theme_id=theme_id)
             return ("hacs" if fallback else "core_marketplace"), (project(value) if project else value)
 
         async def raw(_self, payload, seconds=60):
@@ -539,7 +540,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             if kind == MARKETPLACE_LIST_COMMAND:
                 if state["disabled"]:
                     return {"success": False, "error": {"code": "not_loaded"}}
-                return {"success": True, "result": store(state["installed"], theme=theme)}
+                return {"success": True, "result": store(state["installed"], theme=theme, theme_id=theme_id)}
             if kind == "config_entries/get":
                 return {"success": True, "result": [{"entry_id": "synthetic-entry"}]}
             if kind == "config_entries/disable":
@@ -672,6 +673,29 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(readers), 4)
         self.assertEqual(len({id(reader) for reader in readers}), 4)
         self.assertTrue(all(isinstance(reader, acceptance.ObservedReader) for reader in readers))
+
+    async def test_receipt_install_fixture_values_and_types(self):
+        # The whole install_fixture dict of the receipt, by value and by type.
+        # The runtime reader accepts an integer or a string repository id from
+        # Core; the receipt carries the string form either way.
+        expected = {
+            "repository": "JuanMTech/google_light_theme", "id": "200", "category": "theme",
+            "installed_version": "v2.0",
+            "candidates": ["JuanMTech/google_light_theme", "catppuccin/home-assistant"],
+            "commands": ["marketplace/warning/accept", "marketplace/repository/install"],
+            "github_connected": False, "disposable_only": True, "network_change": False}
+        for theme_id in ("200", 200):
+            with self.subTest(store_id=repr(theme_id)):
+                result, _ = await self.run_acceptance(theme_id=theme_id)
+                fixture = result["install_fixture"]
+                self.assertEqual(fixture, expected)
+                # assertEqual alone lets 0 stand for False; pin each value's type as well.
+                self.assertEqual({key: type(value) for key, value in fixture.items()},
+                                 {key: type(value) for key, value in expected.items()})
+                for key in ("candidates", "commands"):
+                    self.assertTrue(all(type(item) is str for item in fixture[key]), key)
+                # The installed record in the same receipt names the same repository.
+                self.assertEqual(result["installed_record"]["id"], fixture["id"])
 
     async def test_store_without_a_named_candidate_fails_before_any_install(self):
         # Josh ruling 2026-11-10: another installable default-catalog theme is not a fallback.
