@@ -8,10 +8,10 @@ bridge: no container has egress and no port is published; the host-side
 harness reaches Core and the stub control endpoint by container address on
 that bridge. Core's lack of egress is probed and recorded.
 
-The stub is the HAMCP-297 test-only stub (draft PR #428), never copied or
-forked into this branch. Its committed directory is the default; until #428
-merges, ``--stub-dir`` names an extracted copy of the pinned commit under
-.artifacts/. Either way the exact file set and every SHA-256 in
+The stub is the HAMCP-297 test-only stub (merged by PR #428), never copied or
+forked into this branch. Its committed directory is the default; ``--stub-dir``
+may instead name an extracted copy of the pinned commit under .artifacts/.
+Either way the exact file set and every SHA-256 in
 docs/evidence/hamcp231/lane/a2-stub-expectations.json must match before any
 container starts, and the stub is mounted read-only. Matter is set up through
 the disposable Core's own config flow pointing at the stub.
@@ -195,7 +195,7 @@ def _main(argv=None):
     parser.add_argument("--core-memory", default=a1.CORE_MEMORY)
     parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY)
     parser.add_argument("--stub-dir", type=Path, default=None,
-                        help="extracted copy of the pinned HAMCP-297 commit under .artifacts/ until #428 merges")
+                        help="extracted copy of the pinned HAMCP-297 commit under .artifacts/ (default: the committed stub)")
     args = parser.parse_args(argv)
     for memory in (args.core_memory, args.fixture_memory, STUB_MEMORY):
         host.memory_bytes(memory)
@@ -242,7 +242,7 @@ def _main(argv=None):
               "journal_sha256": a1.JOURNAL_SHA256, "core_version": a1.VERSION,
               "profile_reference": reference, "contract_fingerprint": reference["contract_fingerprint"],
               "expectations_sha256": sha256(EXPECTATIONS), "stub_identity": stub_identity,
-              "stub_dependency": f"HAMCP-297 draft PR #{stub['source_pr']} at {stub['source_commit']}",
+              "stub_dependency": f"HAMCP-297 PR #{stub['source_pr']} at {stub['source_commit']}",
               **sources, "host_admission": admission,
               "container_memory": {"core": args.core_memory, "stub": STUB_MEMORY, "fixture": args.fixture_memory},
               "network_posture": NETWORK_POSTURE, "mode": "local", "pull": "never", "cleanup": {"clean": False}}

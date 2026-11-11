@@ -1,7 +1,7 @@
 {
   "model": "hamcp231-a2-stub-expectations-v2",
   "status": "ready",
-  "note": "The HAMCP-297 test-only Matter Server stub, consumed by path and SHA-256 and never copied into this branch. It is committed at stub.source_commit on HAMCP-297's branch (draft PR #428); stub.committed_dir resolves in this checkout only after #428 merges. Until then the lane takes --stub-dir, an extracted copy of that exact commit under .artifacts/, and verifies every file below before any container starts. Field names follow matter-python-client 1.5.5 models.py:307-380; id conventions follow matterjs-server a7922e85. The topology is static and synthetic, and the stub applies writes to its own cache (HAMCP-297 disclosed residuals).",
+  "note": "The HAMCP-297 test-only Matter Server stub, consumed by path and SHA-256 and never copied into this branch. It was committed at stub.source_commit on HAMCP-297's branch and merged by PR #428; stub.committed_dir is that merged copy and is the lane's default. --stub-dir may instead name an extracted copy of that exact commit under .artifacts/. Either way the lane verifies every file below before any container starts. Field names follow matter-python-client 1.5.5 models.py:307-380; id conventions follow matterjs-server a7922e85. The topology is static and synthetic, and the stub applies writes to its own cache (HAMCP-297 disclosed residuals).",
   "matter_python_client": "1.5.5",
   "matterjs_server_commit": "a7922e85f4b94a5db94a1dbee1a02c685c2ec71d",
   "stub": {

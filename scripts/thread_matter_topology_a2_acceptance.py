@@ -2,7 +2,7 @@
 
 Called only by core_thread_matter_topology_a2_local after it owns and verifies
 the Core and Matter Server stub containers. The stub is the HAMCP-297 committed
-test-only stub (draft PR #428), consumed by path and per-file SHA-256 (never
+test-only stub (merged by PR #428), consumed by path and per-file SHA-256 (never
 copied or forked here); it answers ``get_network_topology`` with a static,
 synthetic matter-python-client 1.5.5 ``NetworkTopology``, records every
 command it receives, and takes faults on its control endpoint.

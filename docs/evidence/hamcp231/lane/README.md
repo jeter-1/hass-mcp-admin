@@ -48,11 +48,11 @@ reference. A changed profile must be re-proven.
 
 ## Source manifest
 
-`ci/core-contract-read-files.json` grew from 509 to 523 paths on this branch.
-After the catch-up merge with `release/2.6.0` at `fcd6973f` it holds **527**
-paths: the release added 4 for HAMCP-134 (456 to 460), and this branch carries
-67 more (53 from the HAMCP-290 stack and 14 from this profile). It only expands;
-every prior profile mapping is retained.
+`ci/core-contract-read-files.json` holds **527** paths on this branch. After
+the merge with `release/2.6.0` at `29339009` that is the release's 513 paths
+(460, plus the 53 of the merged Marketplace profile, HAMCP-290) and the 14 that
+only this profile adds. The file's bytes did not change in that merge. It only
+expands; every prior profile mapping is retained.
 
 The new `core.thread_matter_topology_read` profile maps **38** files:
 
@@ -74,8 +74,9 @@ or `thread_matter_source_hash_mismatch`.
 
 The O3 union records were regenerated from the same exact archives:
 `docs/evidence/hamcp315/core-sources/2026.10.3.json` now holds 455 hashes and
-`2026.11.0.json` holds 526 (451 and 522 before the catch-up merge). October still lacks 72 manifest paths and November
-still lacks only `homeassistant/helpers/condition.py`. Historical hashes are
+`2026.11.0.json` holds 526 (441 and 512 on the release). October still lacks
+72 manifest paths and November still lacks only
+`homeassistant/helpers/condition.py`. Historical hashes are
 unchanged.
 
 `generate_source_records.py` in this directory reuses the HAMCP-290 generator
