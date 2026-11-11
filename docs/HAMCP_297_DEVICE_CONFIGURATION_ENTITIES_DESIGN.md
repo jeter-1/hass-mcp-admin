@@ -1473,6 +1473,16 @@ disposable lane. No household access is needed for this.
   `core.device_configuration_entity_operation`, run by a new
   `run_disposable` acceptance module wired into `scripts/core_evidence_lanes.py`
   like the existing groups (`run_specialized`, `:27-58`).
+- **2.6 scope of the lane (HAMCP-366).** For 2.6 the lane is a local runner
+  only (`scripts/core_device_configuration_local.py`): it has the evidence
+  group above and writes a receipt bound to its source commit, and it is not
+  wired into `run_specialized` or any workflow. That wiring is a separate 2.7
+  row (HAMCP-368). The capability extension can bind a local receipt because
+  the extension evidence binds its review artifacts by SHA-256 only
+  (`scripts/prepare_core_release_registry.py:109-126`,
+  `review_artifacts_sha256`); the local lanes of HAMCP-315
+  (`docs/evidence/hamcp315/README.md`) and HAMCP-134
+  (`docs/evidence/hamcp134/lane/README.md`) set the precedent.
 - **The signed build only (review F1).** The G4 run executes the exact
   build whose compiled profile carries the final three-triple allowlist (B15,
   §4.1) and the final fingerprint. It contains no test seam, no extra triple
