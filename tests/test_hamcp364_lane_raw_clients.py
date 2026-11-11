@@ -704,15 +704,24 @@ class NamedValue(ClientCase):
     """A field that names its value takes that value and no other of its type."""
 
     def test_the_table_holds_every_such_field_of_every_list(self):
-        listed = {(item.name, shape["type"], frozenset(shape), field)
+        listed, tabled = {}, {}
+        for name, kind, keys, field, want in (
+                *((item.name, shape["type"], frozenset(shape), field, want)
                   for item in SHAPED for shape in item.module.RAW_COMMANDS
-                  for field, want in shape.items() if field != "type" and names_its_value(want)}
-        listed |= {("security_metadata", kind, frozenset({"type", *fields}), field)
-                   for kind, fields in security.RAW_COMMANDS.items() for field in fields}
-        tabled = {(name, example["type"], frozenset(example), field)
-                  for name, example, fields in NAMED for field in fields}
-        self.assertEqual(tabled, listed)
+                  for field, want in shape.items() if field != "type" and names_its_value(want)),
+                *(("security_metadata", kind, frozenset({"type", *fields}), field, want)
+                  for kind, fields in security.RAW_COMMANDS.items() for field, want in fields.items())):
+            listed.setdefault((name, kind, keys, field), []).extend(want if type(want) is tuple else [want])
+        for name, example, fields in NAMED:
+            for field in fields:
+                tabled.setdefault((name, example["type"], frozenset(example), field), []).append(example[field])
+        self.assertEqual(set(tabled), set(listed))
         self.assertEqual(len(tabled), 29)
+        # And the values a list names for the field are the ones the table sends: no list names one more.
+        for key, values in listed.items():
+            with self.subTest(field=key):
+                self.assertEqual([value for value in values if value not in tabled[key]], [])
+                self.assertEqual([value for value in tabled[key] if value not in values], [])
         # The type of every shape is named too; no list holds a pattern or a free string for it.
         for item in SHAPED:
             for shape in item.module.RAW_COMMANDS:
