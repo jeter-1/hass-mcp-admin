@@ -1224,6 +1224,294 @@ def _configuration_delete_operation_policy(
     )
 
 
+def _created_object_rollback_policy(
+    operation: ConfigurationOperation,
+    delete_policy: OperationPolicyClassification,
+) -> OperationPolicyClassification:
+    """HAMCP-298 option E on top of the unchanged HAMCP-155 delete policy.
+
+    A delete without the created-object marker keeps its 155 policy.  A
+    marker that is not closed and bound to this exact child is prohibited.
+    An ``owned`` child keeps its 155 policy; a ``modified_since_create``
+    child is elevated with the ownership basis, which never sets a physical
+    consequence on its own.
+    """
+
+    from . import created_object_rollback
+
+    found = created_object_rollback.markers(operation)
+    if not found:
+        return delete_policy
+    if len(found) != 1 or not created_object_rollback.valid_marker(
+        found[0], operation
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.PROHIBITED,
+            RiskDelta.CRITICAL,
+            PhysicalConsequence.UNKNOWN,
+            (created_object_rollback.INCOMPLETE,),
+        )
+    if (
+        delete_policy.policy_class is ApprovalPolicyClass.PROHIBITED
+        or found[0]["ownership"] != created_object_rollback.MODIFIED_SINCE_CREATE
+    ):
+        return delete_policy
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        delete_policy.physical_consequence,
+        tuple(
+            sorted(
+                {
+                    *delete_policy.reason_codes,
+                    created_object_rollback.BASIS_MODIFIED_SINCE_CREATE,
+                }
+            )
+        ),
+        safety_critical_acknowledgement=(
+            delete_policy.safety_critical_acknowledgement
+        ),
+    )
+
+
+CREATED_OBJECT_DELETE_INCOMPLETE = "created_object_delete_contract_incomplete"
+
+
+def _created_delete_type(operation: ConfigurationOperation) -> str | None:
+    """The created scene/helper type of a delete child, else ``None``."""
+
+    from . import created_object_delete
+
+    if operation.action != CONFIGURATION_DELETE_ACTION:
+        return None
+    if operation.resource_type == "helper":
+        if operation.helper_type in created_object_delete.HELPER_TYPES:
+            return operation.helper_type
+        return None
+    if (
+        operation.resource_type == scene_configuration_contract.RESOURCE_TYPE
+        and operation.helper_type is None
+    ):
+        return operation.resource_type
+    return None
+
+
+def _exact_created_object_delete(operation: ConfigurationOperation) -> bool:
+    """Recognize an exact delete of one Engineering-created scene or helper.
+
+    HAMCP-298 §3.4.3: the bound current state is the captured pre-image,
+    the proposal is the closed ``created_object_delete_intent_v1`` naming
+    it, and the proposal hash binds the intent.  The created-object delete
+    adapter re-reads the target, refuses drift and proves absence.
+    """
+
+    from . import created_object_delete
+    from .resources import resource_fingerprint
+
+    created_type = _created_delete_type(operation)
+    proposed = operation.proposed_config
+    if (
+        created_type is None
+        or operation.depends_on
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.normalized_current_config, dict)
+        or created_object_delete.intent_errors(
+            created_type, operation.target_id, proposed
+        )
+        or operation.normalized_proposed_config != proposed
+    ):
+        return False
+    try:
+        pre_image = resource_fingerprint(created_type, operation.current_config)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    intent = created_object_delete.intent(proposed)
+    return bool(
+        operation.current_state_fingerprint == pre_image
+        and intent["pre_image_fingerprint"] == pre_image
+        and operation.proposed_config_hash == stable_hash(proposed)
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
+
+
+def _created_object_delete_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one created scene or helper delete (HAMCP-298 §3.4.3).
+
+    The HAMCP-155 rules, recomputed from the immutable plan: a scene whose
+    members include a protected entity (the entity_id-derivable floor)
+    removes a protected effect; dependents raise either type.  Both are
+    elevated with ``safety_critical`` as in HAMCP-155; with no basis the
+    delete is standard with no physical consequence.  A created delete
+    exists only inside a created-object rollback, so exactly one valid
+    created-object marker is required; option E is applied on top.
+    """
+
+    from . import created_object_rollback
+    from .created_object_delete_planning import expected_basis_created
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (CREATED_OBJECT_DELETE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == CONFIGURATION_DELETE_POLICY_TRIGGER
+    ]
+    if (
+        not _exact_created_object_delete(operation)
+        or len(markers_found) != 1
+        or markers_found[0].get("field") != operation.operation_id
+        or len(created_object_rollback.markers(operation)) != 1
+    ):
+        return incomplete
+    from . import created_object_delete
+
+    created_type = _created_delete_type(operation)
+    intent = created_object_delete.intent(operation.proposed_config)
+    expected = expected_basis_created(
+        created_type, operation.current_config, intent["dependency_reasons"]
+    )
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str):
+        return incomplete
+    if tuple(item for item in basis.split(",") if item) != expected:
+        return incomplete
+    policy = marker.get("policy")
+    consequence = marker.get("physical_consequence")
+    if not expected:
+        if (
+            policy != "standard"
+            or consequence != PhysicalConsequence.NONE.value
+            or operation.risk.level is not RiskLevel.MEDIUM
+        ):
+            return incomplete
+        delete_policy = OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.MODERATE,
+            PhysicalConsequence.NONE,
+            (
+                "configuration_delete_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    else:
+        if (
+            policy != "elevated"
+            or consequence != PhysicalConsequence.SAFETY_CRITICAL.value
+            or operation.risk.level is not RiskLevel.HIGH
+        ):
+            return incomplete
+        delete_policy = OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            tuple(
+                sorted(
+                    {
+                        *expected,
+                        "configuration_delete_elevated_policy",
+                        "supported_configuration_change",
+                    }
+                )
+            ),
+        )
+    return _created_object_rollback_policy(operation, delete_policy)
+
+
+SCENE_CREATE_INCOMPLETE = "scene_create_execution_contract_incomplete"
+
+
+def _scene_create_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one scene create (HAMCP-329 §3.3).
+
+    Saving a new scene never activates it.  A member that is a protected
+    object (the entity_id-derivable floor must be in the bound basis) is an
+    indirect consequence and elevated, as for an update; every other
+    complete create is standard.  Any gap is prohibited.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        (SCENE_CREATE_INCOMPLETE,),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == SCENE_CONFIGURATION_POLICY_TRIGGER
+    ]
+    proposed = operation.proposed_config
+    if (
+        operation.action != scene_configuration_contract.CREATE_ACTION
+        or operation.helper_type is not None
+        or operation.depends_on
+        or operation.current_config is not None
+        or scene_configuration_contract.create_proposed_errors(
+            operation.target_id, proposed
+        )
+        or operation.normalized_proposed_config != proposed
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or operation.proposed_config_hash != stable_hash(proposed)
+        or operation.validation_results.get("valid") is not True
+        or operation.risk.apply_allowed is not True
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    basis = marker.get("basis")
+    if not isinstance(basis, str) or marker.get("field") != operation.operation_id:
+        return incomplete
+    reasons = [item for item in basis.split(",") if item]
+    floor = scene_id_protection_reasons(list(proposed["entities"]))
+    if reasons != sorted(set(reasons)) or not set(floor) <= set(reasons):
+        return incomplete
+    if reasons:
+        if (
+            marker.get("policy") != "elevated"
+            or marker.get("physical_consequence")
+            != PhysicalConsequence.INDIRECT.value
+            or operation.risk.level is not RiskLevel.HIGH
+        ):
+            return incomplete
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            PhysicalConsequence.INDIRECT,
+            tuple(sorted({
+                "scene_create_protected_member",
+                *(f"scene_protected_member_{item}" for item in reasons),
+            })),
+        )
+    if (
+        marker.get("policy") != "standard"
+        or marker.get("physical_consequence") != PhysicalConsequence.NONE.value
+        or operation.risk.level is not RiskLevel.LOW
+    ):
+        return incomplete
+    return OperationPolicyClassification(
+        ApprovalPolicyClass.STANDARD_ADMIN,
+        RiskDelta.LOW,
+        PhysicalConsequence.NONE,
+        ("scene_create_standard_policy", "supported_configuration_change"),
+    )
+
+
 HELPER_OPTIONS_INCOMPLETE = "config_entry_helper_options_contract_incomplete"
 
 
@@ -1375,20 +1663,53 @@ def _helper_options_plan_complete(operations) -> bool:
 
 
 def _configuration_delete_plan_complete(operations) -> bool:
-    """A delete plan holds only governed deletes: 1-8 unique, unordered."""
+    """A delete plan holds only governed deletes: 1-8 unique, unordered.
+
+    HAMCP-298 §3.4.4: a created-object rollback may also hold restore
+    children (generic, unordered updates) when every delete child carries
+    exactly one valid created-object marker, all from one source plan.
+    """
 
     if not 1 <= len(operations) <= CONFIGURATION_DELETE_MAX_TARGETS:
         return False
-    if any(
-        op.action != CONFIGURATION_DELETE_ACTION
-        or op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+    deletes = [op for op in operations if op.action == CONFIGURATION_DELETE_ACTION]
+    restores = [op for op in operations if op.action != CONFIGURATION_DELETE_ACTION]
+    if not deletes or any(
+        (
+            op.resource_type not in CONFIGURATION_DELETE_RESOURCE_TYPES
+            and _created_delete_type(op) is None
+        )
         or op.depends_on
-        for op in operations
+        for op in deletes
     ):
         return False
-    return len({(op.resource_type, op.target_id) for op in operations}) == len(
-        operations
-    )
+    # HAMCP-298: a created scene/helper delete exists only inside a
+    # created-object rollback, so its plan's markers are checked as for a
+    # mixed plan even when it holds no restore child.
+    created = any(_created_delete_type(op) is not None for op in deletes)
+    if restores or created:
+        from . import created_object_rollback
+
+        if any(
+            op.action != "update"
+            or op.resource_type not in created_object_rollback.RESTORE_RESOURCE_TYPES
+            or op.depends_on
+            or created_object_rollback.markers(op)
+            for op in restores
+        ):
+            return False
+        found = [created_object_rollback.markers(op) for op in deletes]
+        if any(
+            len(values) != 1
+            or not created_object_rollback.valid_marker(values[0], op)
+            for values, op in zip(found, deletes)
+        ) or len(
+            {(values[0]["source_plan_id"], values[0]["source_plan_hash"]) for values in found}
+        ) != 1:
+            return False
+    return len(
+        {(op.resource_type, op.helper_type, op.target_id) for op in operations}
+    ) == len(operations)
 
 
 SAFETY_CRITICAL_REVIEW_BOUNDS_EXCEEDED = "safety_critical_review_bounds_exceeded"
@@ -1439,14 +1760,25 @@ def configuration_operation_policy(
         return _label_operation_policy(operation)
     if operation.resource_type == dashboard_metadata_contract.RESOURCE_TYPE:
         return _dashboard_metadata_operation_policy(operation)
+    if operation.action == CONFIGURATION_DELETE_ACTION and (
+        operation.resource_type
+        in {"helper", scene_configuration_contract.RESOURCE_TYPE}
+    ):
+        # HAMCP-298: a created scene or helper delete; never the update
+        # policy, never the HAMCP-155 automation/script policy.
+        return _created_object_delete_policy(operation)
     if operation.resource_type == scene_configuration_contract.RESOURCE_TYPE:
+        if operation.action == scene_configuration_contract.CREATE_ACTION:
+            return _scene_create_operation_policy(operation)
         return _scene_configuration_operation_policy(operation)
     if operation.resource_type in AVAILABILITY_EXPOSURE_RESOURCE_TYPES:
         return _availability_exposure_operation_policy(operation)
     if operation.resource_type == HELPER_OPTIONS_RESOURCE_TYPE:
         return _helper_options_operation_policy(operation)
     if operation.action == CONFIGURATION_DELETE_ACTION:
-        return _configuration_delete_operation_policy(operation)
+        return _created_object_rollback_policy(
+            operation, _configuration_delete_operation_policy(operation)
+        )
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -1908,7 +2240,8 @@ def _single_plan_policy(
         if any(
             op.action == CONFIGURATION_DELETE_ACTION for op in plan.operations
         ) and not _configuration_delete_plan_complete(plan.operations):
-            # HAMCP-155: deletes are never mixed with other operations.
+            # HAMCP-155: deletes are never mixed with other operations,
+            # except HAMCP-298 restores beside marked created deletes.
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.PROHIBITED,

@@ -426,6 +426,9 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                                        "core.security_metadata_read",
                                        # HAMCP-297 signed-only device configuration.
                                        "core.device_configuration_entity_operation",
+                                       # HAMCP-329/298 dormant created-object profiles (seq 18).
+                                       "core.scene_create_delete_operation",
+                                       "core.created_helper_delete_operation",
                                        # HAMCP-231 dormant Thread/Matter topology read.
                                        "core.thread_matter_topology_read"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]

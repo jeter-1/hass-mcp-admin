@@ -72,6 +72,8 @@ DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
                      "core.security_metadata_read",
                      # HAMCP-297 signed-only device configuration (no signing batch yet).
                      "core.device_configuration_entity_operation",
+                     # HAMCP-329/298 dormant created-object profiles (seq 18).
+                     "core.scene_create_delete_operation", "core.created_helper_delete_operation",
                      # HAMCP-231 dormant Thread/Matter topology read (no signing batch yet).
                      "core.thread_matter_topology_read"})
 SHIPPED_SIGNED_COUNT = 22

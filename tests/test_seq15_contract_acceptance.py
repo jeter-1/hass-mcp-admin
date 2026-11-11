@@ -169,7 +169,8 @@ def complete_receipt(lane_key, core_version=CORE):
         # HAMCP-134: core.security_metadata_read is a third;
         # HAMCP-297: core.device_configuration_entity_operation is a fourth;
         # HAMCP-231: core.thread_matter_topology_read is a fifth.
-        "batch_health": {"compatible_count": 31, "withheld_count": 5},
+        # HAMCP-329/298: + 2 dormant created-object profiles (signed-only set).
+        "batch_health": {"compatible_count": 31, "withheld_count": len(seq15.SIGNED_ONLY_DORMANT)},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},

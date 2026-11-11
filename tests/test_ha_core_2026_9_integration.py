@@ -2692,6 +2692,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_MARKETPLACE_PROFILES,  # HAMCP-290
             CORE_SECURITY_METADATA_PROFILES,  # HAMCP-134
             CORE_DEVICE_CONFIGURATION_PROFILES,  # HAMCP-297
+            CORE_CREATED_OBJECT_PROFILES,  # HAMCP-329/298
             CORE_THREAD_MATTER_TOPOLOGY_PROFILES,  # HAMCP-231
         )
         source = _MutableSource(_core_2026_9_snapshot())
@@ -2726,6 +2727,8 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             + CORE_SECURITY_METADATA_PROFILES
                                                             # HAMCP-297: so is the dormant device configuration profile.
                                                             + CORE_DEVICE_CONFIGURATION_PROFILES
+                                                            # HAMCP-329/298: the dormant created-object profiles.
+                                                            + CORE_CREATED_OBJECT_PROFILES
                                                             # HAMCP-231: the dormant Thread/Matter read too.
                                                             + CORE_THREAD_MATTER_TOPOLOGY_PROFILES))
         self.assertEqual(
@@ -2737,6 +2740,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
              + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES
              + CORE_MARKETPLACE_PROFILES + CORE_SECURITY_METADATA_PROFILES  # HAMCP-290, HAMCP-134
              + CORE_DEVICE_CONFIGURATION_PROFILES  # HAMCP-297
+             + CORE_CREATED_OBJECT_PROFILES  # HAMCP-329/298
              + CORE_THREAD_MATTER_TOPOLOGY_PROFILES},  # HAMCP-231
         )
         self.assertEqual(summary["fallback_count"], 0)

@@ -570,7 +570,22 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "apply_tool": "apply_change_plan",
         "fields": ["name", "icon", "entities"],
         "ui_managed_only": True,
-        "create_supported": False,
+        # HAMCP-329: creation is the optional ``action: create``, admitted by
+        # its own Core profile; the tool never deletes a scene.
+        "create_supported": True,
+        "create": {
+            "action": "create",
+            "target": "one_absent_ui_scene_config_id",
+            "required_fields": ["name", "entities"],
+            "refused_fields": ["entity_id"],
+            "entity_id": "assigned_by_home_assistant",
+            "core_capabilities": ["core.scene_create_delete_operation"],
+            "core_admission_requirement": "signed_core_registry_admission",
+            "core_admission_provider": "scene_create_delete_provider",
+            "core_admission": "not_evaluated",
+            "loaded_state": "not_verified",
+            "rollback": "separately_approved_delete_of_the_created_scene",
+        },
         "delete_supported": False,
         "max_scenes_per_plan": 1,
         "execution": "single_operation",
@@ -818,7 +833,33 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     },
     {"tool": "approve_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "external_approval_request"},
     {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "governed_apply"},
-    {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "governed_rollback"},
+    {
+        "tool": "rollback_change",
+        "category": "governance",
+        "status": "beta_native",
+        "risk": "behavioral_write",
+        "additive": True,
+        "operation_class": "governed_rollback",
+        # HAMCP-298/329: a verified governed create rolls back as a separately
+        # approved delete of the created object.  Automation and script
+        # deletes use the configuration delete capability; these two do not.
+        "created_scene_delete": {
+            "resource_types": ["scene_configuration"],
+            "reachability": "created_object_rollback_only",
+            "core_capabilities": ["core.scene_create_delete_operation"],
+            "core_admission_requirement": "signed_core_registry_admission",
+            "core_admission_provider": "scene_create_delete_provider",
+            "core_admission": "not_evaluated",
+        },
+        "created_helper_delete": {
+            "resource_types": ["input_boolean", "input_number"],
+            "reachability": "created_object_rollback_only",
+            "core_capabilities": ["core.created_helper_delete_operation"],
+            "core_admission_requirement": "signed_core_registry_admission",
+            "core_admission_provider": "created_helper_delete_provider",
+            "core_admission": "not_evaluated",
+        },
+    },
     {"tool": "entity_dependency_analysis", "category": "analysis", "status": "beta_native", "risk": "read", "additive": True},
     {
         "tool": "automation_reliability_analysis",
@@ -1382,10 +1423,20 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
 def _with_current_admission(
     item: dict[str, Any], admission: dict[str, Any] | None
 ) -> dict[str, Any]:
-    if "core_admission_requirement" in item and admission is not None:
+    if admission is None:
+        return item
+    if "core_admission_requirement" in item:
         current = admission["tools"].get(item["tool"])
         if current is not None:
             item["core_admission"] = current
+    # HAMCP-329/298: a nested block admitted by its own Core profile names its
+    # provider group; the shared static block is replaced, never mutated.
+    providers = admission.get("providers") or {}
+    for key, block in list(item.items()):
+        if isinstance(block, dict) and "core_admission_provider" in block:
+            current = providers.get(block["core_admission_provider"])
+            if current is not None:
+                item[key] = {**block, "core_admission": current}
     return item
 
 

@@ -305,6 +305,9 @@ def capability_evidence_for_probes(
                 "core.security_metadata_read",
                 # HAMCP-297 Release 2.6.0 (dormant until signed).
                 "core.device_configuration_entity_operation",
+                # HAMCP-329/298 Release 2.6.0 (dormant until signed).
+                "core.scene_create_delete_operation",
+                "core.created_helper_delete_operation",
                 # HAMCP-231 Release 2.6.0 (dormant until signed).
                 "core.thread_matter_topology_read",
             ):
