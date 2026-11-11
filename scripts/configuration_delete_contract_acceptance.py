@@ -75,6 +75,9 @@ DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
 SHIPPED_SIGNED_COUNT = 22
 AUTHORITY_TRANSITION = [SHIPPED_SIGNED_COUNT, SHIPPED_SIGNED_COUNT + 1]
 REGISTRY_LIST = "config/entity_registry/list"
+# The one command this lane's raw websocket client sends (the notation is
+# RawWebSocket's). Nothing else is sent.
+RAW_COMMANDS = ({"type": REGISTRY_LIST},)
 SCENARIOS = ("delete_automation", "recreate_automation", "delete_script", "recreate_script",
              "protected_effect", "not_found", "stale_state")
 NOT_FOUND = "configuration_delete_target_not_found"
@@ -342,6 +345,12 @@ def state_route(entity_id):
     return rest_path("/states/{}", entity_id, kinds=("entity_id",))
 
 
+class LaneRaw(RawWebSocket):
+    """The raw websocket client, closed to this lane's one registry read."""
+
+    commands = RAW_COMMANDS
+
+
 class RawRest:
     """Lane-owned REST client for setup and independent readback.
 
@@ -564,7 +573,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
         engineering_rest = ObservedRest(HomeAssistantRestClient(configured))
         engineering_ws = HomeAssistantWebSocketClient(configured)
         rest = RawRest(configured)
-        raw = RawWebSocket(configured)
+        raw = LaneRaw(configured)
 
         def compose(runtime, name):
             """The production composition (governance/runtime.py), one service per authority."""
