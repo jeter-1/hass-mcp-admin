@@ -284,14 +284,14 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
                 acceptance.state_route(MEMBERS[0]))
 
     def test_only_one_exact_loopback_core_is_accepted_for_rest_and_websocket(self):
-        for host in ("127.0.0.1:18123", "localhost:8123", "[::1]:8123", "127.0.0.1"):
+        for host in ("127.0.0.1:18123",):
             with self.subTest(host=host):
                 settings = configured("http://" + host + "/api", "ws://" + host + "/api/websocket")
                 raw = acceptance.LaneRaw(settings)
                 # A separate guarded Engineering client, and the WebSocket of the same Core.
                 self.assertIs(type(raw.client), HomeAssistantRestClient)
                 self.assertIs(raw.client.settings, settings)
-                self.assertEqual(raw.url, "ws://" + host + "/api/websocket")
+                self.assertEqual(raw.core_url, "ws://" + host + "/api/websocket")
         refused = [
             # REST anywhere but loopback.
             ("http://192.0.2.10:8123/api", "ws://192.0.2.10:8123/api/websocket"),

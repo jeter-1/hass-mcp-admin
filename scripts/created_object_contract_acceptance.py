@@ -197,6 +197,20 @@ def state_route(entity_id):
     return rest_path("/states/{}", _owned(LANE_ENTITY, entity_id), kinds=("entity_id",))
 
 
+# The one WebSocket the lane's own client dials: the disposable Core that
+# core_created_object_local.py publishes on loopback port 18123. The exact
+# string, as for every other lane's raw client (HAMCP-364).
+RAW_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
+# Every WebSocket command that client sends, one entry per shape (the notation
+# is RawWebSocket's): the registry read, each helper domain's list, and the
+# delete of a lane-owned helper. Nothing else is sent.
+RAW_COMMANDS = (
+    {"type": REGISTRY_LIST},
+    *({"type": domain + "/list"} for domain in HELPER_DOMAINS),
+    *({"type": domain + "/delete", domain + "_id": LANE_ID} for domain in HELPER_DOMAINS),
+)
+
+
 class LaneRaw(RawWebSocket):
     """The lane's own loopback client: fixture setup, independent read-back and clean-up.
 
@@ -205,6 +219,9 @@ class LaneRaw(RawWebSocket):
     (HAMCP-200) and none of its requests is counted as Engineering's. Only the
     ``LANE_REQUESTS`` pairs are sent, only for a lane-owned id.
     """
+
+    core_url = RAW_CORE_URL
+    commands = RAW_COMMANDS
 
     def __init__(self, configured):
         from ha_mcp_engineering.clients import HomeAssistantRestClient
