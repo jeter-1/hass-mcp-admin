@@ -1108,6 +1108,10 @@ class HarnessStart(HarnessCase):
         "http://supervisor/core", "http://localhost:8123", "http://127.0.0.2:8123", "http://127.1:8123",
         "http://2130706433:8123", "http://0.0.0.0:8123", "http://[::]:8123", "http://[::2]:8123",
         "http://::1:8123", "http://127.0.0.1." + ELSEWHERE_NAME + ":8123",
+        # Another character where the address has a dot, or one character where it has the bracketed
+        # address: each is a name that would be looked up.
+        "http://127a0b0c1:8123", "http://127-0-0-1:8123", "http://127.0.0x1", "http://127x0.0.1:8123",
+        "http://127.0x0.1:8123", "http://127.0.0x1:8123", "http://127001:8123", "http://1:8123", "http://::8123",
         # Userinfo, so that the loopback text is not the host.
         "http://127.0.0.1:8123@" + ELSEWHERE, "http://127.0.0.1@" + ELSEWHERE_NAME + ":8123",
         "http://user:synthetic@127.0.0.1:8123", "http://@127.0.0.1:8123",
