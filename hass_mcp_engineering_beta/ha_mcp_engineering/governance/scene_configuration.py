@@ -67,6 +67,30 @@ PROFILE = "core.scene_configuration_operation"
 PROVIDER = "direct_home_assistant_scene_configuration"
 PROVIDER_CONTRACT = "direct-ha-exact-scene-configuration-v1"
 PROVIDER_OPERATIONS = {"update": "update_scene_configuration"}
+# HAMCP-329: scene create by an absent config id, under its own dormant
+# runtime-only profile (never the update profile).  The create's binding
+# form is the exact stored configuration ``{"id", "name", "entities",
+# "icon"?}``: Core assigns the entity id and registry entry id, so neither is
+# predicted or bound.
+CREATE_ACTION = "create"
+CREATE_CAPABILITY_IDENTITY = "create_scene_configuration_configuration"
+CREATE_PROFILE = "core.scene_create_delete_operation"
+CREATE_PROVIDER_OPERATION = "create_scene_configuration"
+CREATE_TARGET_EXISTS_REASON = "scene_configuration_target_exists"
+CREATE_CONFIG_ID_REGISTERED_REASON = "scene_configuration_config_id_registered"
+# Item 15 (Josh decision 2026-11-08): stored but not registered within the
+# bound is not success and never rollback-eligible.
+CREATE_REGISTRY_UNVERIFIED = "scene_config_stored_registry_unverified"
+CREATE_LOADED_STATE_DISCLOSURE = "scene_loaded_state_not_verified_disclosed"
+CREATE_DISCLOSURES = (
+    CREATE_LOADED_STATE_DISCLOSURE,
+    "scene_entity_id_and_registry_id_assigned_by_home_assistant",
+    "scene_prior_registry_metadata_may_be_restored",
+    "scene_upsert_concurrent_create_of_same_id_overwritten_undetected",
+)
+CREATE_POLL_ATTEMPTS = 6
+CREATE_POLL_INTERVAL_SECONDS = 0.5
+CREATE_FIELDS = frozenset({"id", "name", "icon", "entities"})
 REGISTRY_LIST_COMMAND = "config/entity_registry/list"
 REGISTRY_GET_COMMAND = "config/entity_registry/get"
 ALLOWED_COMMANDS = frozenset({REGISTRY_LIST_COMMAND, REGISTRY_GET_COMMAND})
@@ -146,6 +170,9 @@ class ScenePermit:
     entity_id: str
     arguments_hash: str
     intent: str
+    # HAMCP-329: the permit names its action; an update permit never
+    # authorizes a create POST, nor the reverse.
+    action: str = ACTION
 
 
 class _PermitSlot:
@@ -370,6 +397,13 @@ def normalize_state(state: dict[str, Any] | None) -> dict[str, Any] | None:
 
     if state is None:
         return None
+    if type(state) is dict and "config_id" not in state and "id" in state:
+        # HAMCP-329/298: a stored scene configuration (``{"id", ...}``), the
+        # binding form of a scene create's proposal and of a created scene's
+        # delete pre-image.  It is compared exactly, like the state's config.
+        if config_errors(state["id"], state):
+            raise TypeError("scene configuration is outside the reviewed shape")
+        return json.loads(canonical(state))
     if type(state) is not dict or set(state) != set(STATE_KEYS):
         raise TypeError("scene configuration state must carry exactly the state keys")
     if state_errors(state["config_id"], state):
@@ -453,6 +487,106 @@ def command_errors(command: Any) -> list[str]:
     return errors
 
 
+def create_proposed_errors(config_id: str, proposed: Any) -> list[str]:
+    """Errors in a scene create's exact proposed stored configuration.
+
+    HAMCP-329 §3.3: ``id`` equals the config id, ``name`` is required and
+    exact, ``icon`` is optional and never ``null``, ``entities`` holds 1 to
+    ``MAX_ENTITIES`` requested snapshots (each a mapping with ``state``).
+    ``metadata`` and ``entity_id`` are never part of a create.
+    """
+
+    if type(proposed) is not dict:
+        return ["scene create configuration must be an object"]
+    if not set(proposed) <= CREATE_FIELDS or not {"id", "name", "entities"} <= set(proposed):
+        return ["scene create configuration has unreviewed or missing keys"]
+    errors = list(config_errors(config_id, proposed))
+    if not requested_name_valid(proposed["name"]):
+        errors.append("scene create name is outside the reviewed subset")
+    if "icon" in proposed and (
+        proposed["icon"] is None or not requested_icon_valid(proposed["icon"])
+    ):
+        errors.append("scene create icon is outside the reviewed subset")
+    entities = proposed["entities"]
+    if type(entities) is not dict or not 1 <= len(entities) <= MAX_ENTITIES:
+        errors.append("scene create needs 1 to 64 member entities")
+    elif any(not snapshot_valid(value, requested=True) for value in entities.values()):
+        errors.append("scene create member values must be snapshots with a state")
+    return _unique(errors)
+
+
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def create_command(config_id: str, proposed: dict[str, Any]) -> dict[str, Any]:
+    """Build the one closed create POST of the exact proposed configuration."""
+
+    if create_proposed_errors(config_id, proposed):
+        raise SceneConfigurationContractError("scene_configuration_state_invalid")
+    return {
+        "method": WRITE_METHOD,
+        "config_id": config_id,
+        "body": write_body(proposed),
+    }
+
+
+def create_command_errors(command: Any) -> list[str]:
+    """Re-check a create POST at the provider boundary."""
+
+    errors = command_errors(command)
+    if errors:
+        return errors
+    if create_proposed_errors(
+        command["config_id"], {"id": command["config_id"], **command["body"]}
+    ):
+        return ["command body is outside the reviewed create configuration"]
+    return []
+
+
+def create_provider_evidence() -> dict[str, Any]:
+    """The code-owned direct-provider contract of the scene create profile."""
+
+    return {
+        "provider": PROVIDER,
+        "provider_contract_model": PROVIDER_CONTRACT,
+        "provider_operations": {CREATE_ACTION: CREATE_PROVIDER_OPERATION},
+        "transport": "home_assistant_rest",
+        "readback_transport": "home_assistant_rest_scene_config_get",
+        "argument_constraints": {
+            "routes": {
+                "read": "GET /config/scene/config/{}",
+                "write": "POST /config/scene/config/{}",
+            },
+            "target": "one_exact_absent_ui_scene_config_id_with_no_scene_registry_entry",
+            "body": "full_proposed_configuration_without_id",
+            "fields": ["name", "icon", "entities"],
+            "never_sent": [item for item in NEVER_SENT if not item.startswith("DELETE")],
+            "activation": "never",
+            "arbitrary_payload_allowed": False,
+            "fallback_allowed": False,
+        },
+        "admission": PENDING_ADMISSION_REASON,
+        "fallback": "none",
+        "fallback_occurred": False,
+    }
+
+
+def scene_entries(items: list[dict[str, Any]], config_id: str) -> list[dict[str, Any]]:
+    """Every ``scene.*`` registry entry with ``unique_id == config_id``, any platform."""
+
+    found = []
+    for item in items:
+        entity_id, _platform, unique_id = _entry_identity(item)
+        if (
+            unique_id == config_id
+            and isinstance(entity_id, str)
+            and entity_id.startswith("scene.")
+        ):
+            found.append(item)
+    return found
+
+
 def _entry_identity(item: Any) -> tuple[Any, Any, Any]:
     if type(item) is not dict:
         raise EntityMetadataProviderError("scene_registry_list_malformed")
@@ -461,6 +595,9 @@ def _entry_identity(item: Any) -> tuple[Any, Any, Any]:
 
 class SceneConfigurationGateway:
     """Permit only the reviewed scene reads and the one closed POST."""
+
+    profile = PROFILE
+    action = ACTION
 
     def __init__(self, configuration_gateway: Any) -> None:
         self._configuration = configuration_gateway
@@ -479,6 +616,14 @@ class SceneConfigurationGateway:
     def websocket_client(self) -> Any:
         return self._configuration.websocket_client
 
+    @property
+    def provider_operation_name(self) -> str:
+        return PROVIDER_OPERATIONS[ACTION]
+
+    @staticmethod
+    def command_errors(command: Any) -> list[str]:
+        return command_errors(command)
+
     def read_refusal(self) -> str | None:
         """Why no scene read may be sent now (R1-H2): admission withdrawn."""
 
@@ -486,7 +631,7 @@ class SceneConfigurationGateway:
         try:
             admitted = (
                 core is not None
-                and core.route_status((PROFILE,)).get("available") is True
+                and core.route_status((self.profile,)).get("available") is True
             )
         except Exception:
             admitted = False
@@ -515,6 +660,7 @@ class SceneConfigurationGateway:
             permit is None
             or slot.consumed
             or permit.intent != DISPATCH_INTENT
+            or permit.action != self.action
             or config_id is None
             or permit.config_id != config_id
             or command is None
@@ -742,10 +888,10 @@ class SceneConfigurationGateway:
         from ..clients.paths import UnsafeRequestPathError, rest_path
         from .resources import ConfigurationMutationNotDispatchedError
 
-        operation = PROVIDER_OPERATIONS[ACTION]
+        operation = self.provider_operation_name
         if (
             not config_id_valid(config_id)
-            or command_errors(command)
+            or self.command_errors(command)
             or command.get("config_id") != config_id
         ):
             raise ConfigurationMutationNotDispatchedError(
@@ -834,8 +980,57 @@ class SceneConfigurationGateway:
         return {"core_response": {"result": value if value == "ok" else None}}
 
 
+class SceneCreateGateway(SceneConfigurationGateway):
+    """HAMCP-329: the reads and the one create POST of an absent scene.
+
+    Admitted only by ``core.scene_create_delete_operation``.  The POST needs
+    the single-use permit with ``action == "create"``; an update permit (or
+    the update gateway) never authorizes it.  Never sends a DELETE, a reload
+    or any scene service.
+    """
+
+    profile = CREATE_PROFILE
+    action = CREATE_ACTION
+
+    @property
+    def provider_operation_name(self) -> str:
+        return CREATE_PROVIDER_OPERATION
+
+    @staticmethod
+    def command_errors(command: Any) -> list[str]:
+        return create_command_errors(command)
+
+    async def target_absent_reason(self, config_id: str) -> str | None:
+        """``None`` when the id is free: config 404 and no ``scene.*`` entry."""
+
+        if await self.read_config(config_id) is not None:
+            return CREATE_TARGET_EXISTS_REASON
+        if scene_entries(await self.registry_items(), config_id):
+            return CREATE_CONFIG_ID_REGISTERED_REASON
+        return None
+
+    async def created_observation(
+        self, config_id: str
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        """One readback attempt: the stored config and the matching entries."""
+
+        config = await self.read_config(config_id)
+        entries = scene_entries(await self.registry_items(), config_id)
+        return config, entries
+
+
 __all__ = [
     "ACTION",
+    "CREATE_ACTION",
+    "CREATE_CAPABILITY_IDENTITY",
+    "CREATE_PROFILE",
+    "CREATE_PROVIDER_OPERATION",
+    "CREATE_REGISTRY_UNVERIFIED",
+    "SceneCreateGateway",
+    "create_command",
+    "create_command_errors",
+    "create_proposed_errors",
+    "scene_entries",
     "CAPABILITY_IDENTITIES",
     "CAPABILITY_IDENTITY",
     "FIELDS",

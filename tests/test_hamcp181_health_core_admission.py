@@ -27,6 +27,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import tests.test_core_2026_10_device_registry as october  # noqa: E402
 import tests.test_hamcp155_configuration_delete_admission as delete_admission  # noqa: E402
 from ha_mcp_engineering.governance import configuration_delete, label_registry  # noqa: E402
+from ha_mcp_engineering.governance import created_object_delete  # noqa: E402
 from ha_mcp_engineering.governance import dashboard_metadata as dashboard_metadata_contract  # noqa: E402
 from ha_mcp_engineering.governance import helper_options as helper_options_contract  # noqa: E402
 from ha_mcp_engineering.governance import input_select_option as input_select_contract  # noqa: E402
@@ -79,6 +80,15 @@ PROVIDERS = {
     "scene_configuration_provider": (
         (scene_configuration_contract.PROFILE,),
         scene_configuration_contract.PENDING_ADMISSION_REASON,
+    ),
+    # HAMCP-329/298: the two dormant created-object profiles join the snapshot.
+    "scene_create_delete_provider": (
+        (created_object_delete.SCENE_PROFILE,),
+        created_object_delete.PENDING_ADMISSION_REASON,
+    ),
+    "created_helper_delete_provider": (
+        (created_object_delete.HELPER_PROFILE,),
+        created_object_delete.PENDING_ADMISSION_REASON,
     ),
 }
 # The script-trace provider backs two tools (list_script_traces and

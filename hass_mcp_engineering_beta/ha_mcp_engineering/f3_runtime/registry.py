@@ -127,6 +127,49 @@ SCENE_CONFIGURATION_REGISTRATION = (
 )
 SCENE_CONFIGURATION_PROVIDER_MODEL = "direct-ha-exact-scene-configuration-v1"
 
+# HAMCP-329: the governed create of one absent UI-managed scene, and
+# HAMCP-298: the deletion of one Engineering-created scene or storage helper
+# as a created-object rollback child.  Each is admitted only by its own
+# dormant runtime-only Core profile; the provider model names that profile's
+# compiled adapter.
+SCENE_CREATE_REGISTRATION = (
+    "create_scene_configuration_configuration",
+    "scene_configuration",
+    "create",
+)
+SCENE_CREATE_DELETE_PROVIDER_MODEL = (
+    "compiled-core-scene-create-delete-operation-v1"
+)
+CREATED_HELPER_DELETE_PROVIDER_MODEL = (
+    "compiled-core-created-helper-delete-operation-v1"
+)
+CREATED_OBJECT_DELETE_REGISTRATIONS = (
+    (
+        "delete_created_input_boolean",
+        "input_boolean",
+        "delete",
+        CREATED_HELPER_DELETE_PROVIDER_MODEL,
+    ),
+    (
+        "delete_created_input_number",
+        "input_number",
+        "delete",
+        CREATED_HELPER_DELETE_PROVIDER_MODEL,
+    ),
+    (
+        "delete_created_scene_configuration",
+        "scene_configuration",
+        "delete",
+        SCENE_CREATE_DELETE_PROVIDER_MODEL,
+    ),
+)
+_CREATED_OBJECT_DELETE_BINDINGS = {
+    capability: (target, provider_model)
+    for capability, target, _action, provider_model in (
+        CREATED_OBJECT_DELETE_REGISTRATIONS
+    )
+}
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -377,6 +420,56 @@ class ClosedAdapterRegistry:
                 required_protocol="direct-home-assistant-api-v1",
             )
         )
+        capability, target, action = SCENE_CREATE_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=SCENE_CREATE_DELETE_PROVIDER_MODEL,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_configuration_and_registry_readback",
+                recovery_model="exact_configuration_readback_no_redispatch",
+                rollback_declaration="separate_governed_created_object_delete_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
+        entries.extend(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model=provider_model,
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_absence_readback",
+                recovery_model="exact_absence_readback_no_redispatch",
+                rollback_declaration="separate_governed_recreate_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+            for capability, target, action, provider_model in (
+                CREATED_OBJECT_DELETE_REGISTRATIONS
+            )
+        )
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
@@ -493,6 +586,8 @@ class ClosedAdapterRegistry:
                 HELPER_OPTIONS_REGISTRATION,
                 DASHBOARD_METADATA_REGISTRATION,
                 SCENE_CONFIGURATION_REGISTRATION,
+                SCENE_CREATE_REGISTRATION,
+                *CREATED_OBJECT_DELETE_REGISTRATIONS,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -514,6 +609,8 @@ class ClosedAdapterRegistry:
                 HELPER_OPTIONS_REGISTRATION[0],
                 DASHBOARD_METADATA_REGISTRATION[0],
                 SCENE_CONFIGURATION_REGISTRATION[0],
+                SCENE_CREATE_REGISTRATION[0],
+                *_CREATED_OBJECT_DELETE_BINDINGS,
             }
             if (
                 (
@@ -542,6 +639,8 @@ class ClosedAdapterRegistry:
                 or entry.runtime_route != "apply_change_plan"
                 or (
                     entry.action == "delete"
+                    and entry.capability_id
+                    not in _CREATED_OBJECT_DELETE_BINDINGS
                     and (
                         entry.capability_id
                         not in {
@@ -551,6 +650,16 @@ class ClosedAdapterRegistry:
                         or entry.target_type not in {"automation", "script"}
                         or entry.provider_model
                         != CONFIGURATION_DELETE_PROVIDER_MODEL
+                    )
+                )
+                or (
+                    # HAMCP-298: a created-object delete is exactly its own
+                    # (target, compiled adapter) pair and nothing else.
+                    entry.capability_id in _CREATED_OBJECT_DELETE_BINDINGS
+                    and (
+                        entry.action != "delete"
+                        or (entry.target_type, entry.provider_model)
+                        != _CREATED_OBJECT_DELETE_BINDINGS[entry.capability_id]
                     )
                 )
                 or (
@@ -573,12 +682,27 @@ class ClosedAdapterRegistry:
                 or (
                     entry.target_type == "scene_configuration"
                     and (
-                        entry.capability_id
-                        != SCENE_CONFIGURATION_REGISTRATION[0]
-                        or entry.action != "update"
-                        or entry.provider_model
-                        != SCENE_CONFIGURATION_PROVIDER_MODEL
+                        entry.capability_id,
+                        entry.action,
+                        entry.provider_model,
                     )
+                    not in {
+                        (
+                            SCENE_CONFIGURATION_REGISTRATION[0],
+                            "update",
+                            SCENE_CONFIGURATION_PROVIDER_MODEL,
+                        ),
+                        (
+                            SCENE_CREATE_REGISTRATION[0],
+                            "create",
+                            SCENE_CREATE_DELETE_PROVIDER_MODEL,
+                        ),
+                        (
+                            "delete_created_scene_configuration",
+                            "delete",
+                            SCENE_CREATE_DELETE_PROVIDER_MODEL,
+                        ),
+                    }
                 )
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
