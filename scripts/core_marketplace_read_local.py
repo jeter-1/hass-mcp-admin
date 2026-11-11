@@ -1,8 +1,9 @@
 """Committed, cached-image marketplace_read lane for the seq-17 -> seq-18 review.
 
-No Docker pulls, GitHub access, publication or production authority. Only cached
-exact images on a dedicated bridge with egress (Core's Marketplace fetches its
-public store); the Core host port binds loopback. No ha-mcp container: the
+No Docker pulls, host-side GitHub access, publication or production authority.
+Only cached exact images on a dedicated bridge with egress (Core's Marketplace
+fetches its public store and, for the one-theme install fixture, downloads that
+theme anonymously); the Core host port binds loopback. No ha-mcp container: the
 capability is Engineering-native. A new run directory and clean committed
 checkout are mandatory. Failure is WITHHELD. The production journal is verified
 read-only; synthetic test keys stay in memory.

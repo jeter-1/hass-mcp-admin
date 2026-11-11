@@ -38,8 +38,9 @@ The lane proves exactly one profile reference, with contract fingerprint
 
 ## Source manifest
 
-`ci/core-contract-read-files.json` grows from 456 to **509** paths. The 53 added
-paths include no removals, and every prior profile mapping is retained.
+This item adds 53 paths to `ci/core-contract-read-files.json`. With the 4 paths
+HAMCP-134 added, the manifest grows from 456 to **513** paths. There are no
+removals, and every prior profile mapping is retained.
 
 The new `core.marketplace_read` profile maps **75** files:
 
@@ -101,8 +102,37 @@ inheritance in CI is outside this prerequisite.
 `scripts/core_marketplace_read_local.py` runs the cached exact Core image on a
 dedicated non-internal bridge, with an explicit `--memory` and the host port
 bound to loopback 18123. It needs egress because Core's Marketplace fetches its
-public store. There is no ha-mcp container, since the capability is
+public store and, for the install fixture below, downloads one public theme
+anonymously. There is no ha-mcp container, since the capability is
 Engineering-native.
+
+### Install fixture
+
+The service projects installed repositories only, so a fresh disposable Core
+lists none. Before the routed read, the harness installs exactly one public
+theme into the disposable Core, through its own raw WebSocket and never through
+Engineering:
+
+- It refuses unless the disposable Marketplace has no GitHub account connected
+  (`github_connected` is `false`). No token is used or supplied, and no secret
+  is read.
+- It refuses unless the Core is fresh, with no installed record.
+- It installs only a named candidate: `JuanMTech/google_light_theme`, or
+  `catppuccin/home-assistant` when the first is not in the store. No other
+  repository can be installed. If neither is in the store, the fixture fails
+  with `install_candidate_missing` before any install command and the lane
+  withholds its receipt. It makes one install attempt, with
+  `marketplace/warning/accept` then `marketplace/repository/install`.
+- The receipt records the installed repository and its installed version
+  (`install_fixture.repository` and `install_fixture.installed_version`).
+- A theme is YAML only, so Core imports no downloaded code.
+- Core downloads it anonymously from public GitHub hosts over the lane's existing
+  bridge. The lane's network configuration is unchanged.
+- The record must read back `installed` with a version, and it must be the only
+  installed record. Otherwise the lane fails with `installed_record_missing` or
+  `more_than_one_installed`.
+- The files land in the disposable `/config`, which cleanup removes and reads
+  back as absent.
 
 `scripts/marketplace_read_contract_acceptance.py` drives the real
 `MarketplaceInventoryService` through route admission. It checks:
@@ -114,9 +144,25 @@ Engineering-native.
 - anonymous callers are refused before any read;
 - a version identity mismatch is refused before any command;
 - four invalid argument sets are refused;
+- the installed record is on the routed page exactly once. It has exactly the
+  10 projected fields and no raw Core fields such as `local_path`. Its identity,
+  flags and version match the raw record. Each text field is equal to the raw
+  value, or it is bounded and the page discloses `sanitized_text`. No known
+  secret appears on the page;
+- a redaction canary: the same real record, read through a second service that
+  treats one of the record's own strings as a secret. The page must omit that
+  string and report `partial` with `sanitized_text` and a redaction summary;
 - after the disposable Marketplace entry is disabled, the result is
-  `marketplace_not_loaded`, with one list command, no HACS fallback and
-  `fallback_count` 0.
+  `marketplace_not_loaded`, with one list command, no HACS fallback and a
+  health snapshot `fallback_count` of 0;
+- the receipt's `fallback_count` is counted from the commands the lane's four
+  readers admitted or wrote: every command other than
+  `marketplace/repositories/list` counts, including one that was admitted but
+  never written. The lane fails unless that count is 0.
+
+The lane refuses under GitHub Actions or with `CORE_EVIDENCE_CONTEXT` set,
+before any command. The harness's raw Core socket is opened with
+`trust_env=False`, so proxy variables in the environment are not used.
 
 The lane is local-only. It refuses unless the checkout is clean and committed,
 the run directory is new and under `.artifacts/`, and the container names and
@@ -160,9 +206,70 @@ authority.
 - No HACS command was sent, and `fallback_count` was 0. Cleanup read back as
   clean.
 
-Limitation: the service projects installed repositories only, and a fresh
-disposable Core has none. This run therefore does not project a real installed
-record. The 10-field projection of installed records is proven offline in
-`tests/test_hamcp290_marketplace_inventory.py`. Installing a repository into
-the disposable Core would add a write and a download to the lane, and that is
-not done here.
+Run 1 limitation, superseded by run 2: a fresh disposable Core has no
+installed repositories, so run 1 projected no real installed record. Run 2
+adds the install fixture above, which installs one theme into the disposable
+Core only.
+
+### Run 2: PASS with the install fixture (2026-11-10 06:07 CST)
+
+This run's receipt superseded run 1's. Run 3's receipt supersedes it.
+
+- The lane ran under the host heavy-job gate as unit `hamcp290-lane2` (kind
+  `lane`) at source commit `cf0857e7cba0f43c0681d23e723fd2375b0fc089`, with Core
+  at `--memory 2g` and the fixture writer at `128m`.
+- The receipt's SHA-256 is
+  `a7e02385e5d5d4587bccd78ecc4eba4780c2f417aee82a25db84b92bd5ecee28`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`.
+- Install fixture: the fresh Core had 0 installed records and no GitHub account
+  connected. The pinned candidate `JuanMTech/google_light_theme` (id
+  `234032927`) installed anonymously at `v1.13`. No token was used and the
+  lane's network configuration did not change.
+- The routed read returned `core_marketplace`, `complete`, one command and no
+  fallback, with `installed_total` 1 and `count` 1, matching the raw list. The
+  record carried exactly the 10 projected fields, and every text field equalled
+  the raw value.
+- Redaction canary: with the record's description treated as a secret, the page
+  omitted it and reported `partial` with `sanitized_text`.
+- Authority, refusals, HACS and cleanup results are the same as run 1: 32 to 33
+  references, zero predecessor reads, 6,417 store records, no HACS command,
+  `fallback_count` 0, and cleanup read back as clean.
+
+### Run 3: PASS on the corrected lane (2026-11-10 17:07 CST)
+
+The committed `marketplace_read.json` is now this run's receipt. It supersedes
+run 2's receipt.
+
+- The lane ran under the host heavy-job gate as unit `hamcp290-lane3` (kind
+  `lane`) at source commit `398ca8888b7abe324027b55668a1baa60606ac68`, with Core
+  at `--memory 2g` and the fixture writer at `128m`. That commit carries the
+  release/2.6.0 catch-up and the correction batch: the derived
+  `fallback_count`, the named-candidates-only install fixture and the guard
+  tests.
+- The receipt's SHA-256 is
+  `da7a40ac435a5347c73615fea27bfe081bd6b0d26e42a019f60bb0019c302b93`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` and
+  the manifest SHA-256
+  `b058369d2a9587593eefdae7a8eae3f69e480753735d37e552b5e71b603521c7` (513 paths,
+  75 in the profile).
+- Install fixture: the fresh Core had 0 installed records and no GitHub account
+  connected. The named candidate `JuanMTech/google_light_theme` (id `234032927`)
+  installed anonymously at `v1.13`. The receipt's `install_fixture` records the
+  repository, id, category and installed version. It no longer has a
+  `selection` field, because only a named candidate can be installed.
+- `fallback_count` is 0, counted from the commands the four readers admitted or
+  wrote. The health snapshot `fallback_count` was also 0, and no HACS command
+  was sent.
+- The routed read returned `core_marketplace`, `complete`, one command and no
+  fallback, with `installed_total` 1 and `count` 1, matching the raw list. The
+  record carried exactly the 10 projected fields, and every text field equalled
+  the raw value.
+- Redaction canary: with the record's description treated as a secret, the page
+  omitted it and reported `partial` with `sanitized_text`.
+- Authority, refusals and cleanup results are the same as run 2: 32 to 33
+  references, zero predecessor reads, 6,417 store records, and cleanup read
+  back as clean.
+- The receipt names source commit `398ca888`, the commit the lane ran on. The
+  commit that adds this receipt and this record changes only these two files.
