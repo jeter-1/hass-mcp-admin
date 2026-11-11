@@ -22,9 +22,9 @@ byte for byte; it is never edited by hand.
 | ha-mcp child | 8.5.0, `ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c` |
 | Predecessor journal | sequence 17, SHA-256 `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`, 32 Core references |
 
-Commits after the receipt's source commit on this branch add documentation only
-(this directory). No lane script, acceptance module, fixture or test changes
-after it.
+Commits after the receipt's source commit on this branch add documentation
+(this directory) and tests in `tests/test_core_device_configuration_local.py`
+only. No lane script, acceptance module or fixture changes after it.
 
 ## Signing inputs the run asserts
 
