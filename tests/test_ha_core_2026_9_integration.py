@@ -2692,6 +2692,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_MARKETPLACE_PROFILES,  # HAMCP-290
             CORE_SECURITY_METADATA_PROFILES,  # HAMCP-134
             CORE_DEVICE_CONFIGURATION_PROFILES,  # HAMCP-297
+            CORE_CREATED_OBJECT_PROFILES,  # HAMCP-329/298
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2724,7 +2725,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             # HAMCP-134: the dormant security metadata read too.
                                                             + CORE_SECURITY_METADATA_PROFILES
                                                             # HAMCP-297: so is the dormant device configuration profile.
-                                                            + CORE_DEVICE_CONFIGURATION_PROFILES))
+                                                            + CORE_DEVICE_CONFIGURATION_PROFILES
+                                                            # HAMCP-329/298: the dormant created-object profiles.
+                                                            + CORE_CREATED_OBJECT_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
@@ -2733,7 +2736,8 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
              + CORE_CONFIGURATION_DELETE_PROFILES
              + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES
              + CORE_MARKETPLACE_PROFILES + CORE_SECURITY_METADATA_PROFILES  # HAMCP-290, HAMCP-134
-             + CORE_DEVICE_CONFIGURATION_PROFILES},  # HAMCP-297
+             + CORE_DEVICE_CONFIGURATION_PROFILES  # HAMCP-297
+             + CORE_CREATED_OBJECT_PROFILES},  # HAMCP-329/298
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)

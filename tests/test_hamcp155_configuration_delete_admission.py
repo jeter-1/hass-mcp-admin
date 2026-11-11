@@ -152,8 +152,9 @@ class DormantProfileTests(unittest.TestCase):
         # HAMCP-071 seq 16 November batch (dormant, unsigned) follows, then
         # HAMCP-290: the dormant Marketplace read, then HAMCP-134: the dormant
         # security metadata read, then HAMCP-297: the dormant
-        # device configuration profile.
-        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-9].capability_id, DELETE)
+        # device configuration profile, then the two HAMCP-329/298
+        # created-object profiles.
+        self.assertEqual(CORE_RUNTIME_CAPABILITY_PROFILES[-11].capability_id, DELETE)
         for version, _commit, _digest in SUPPORTED_CORE_RELEASES:
             with self.subTest(version=version):
                 self.assertNotIn(

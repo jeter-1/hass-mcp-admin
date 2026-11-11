@@ -513,7 +513,10 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                                        # HAMCP-134 dormant security metadata read (signed after 2.5).
                                        "core.security_metadata_read",
                                        # HAMCP-297 signed-only device configuration.
-                                       "core.device_configuration_entity_operation"}]
+                                       "core.device_configuration_entity_operation",
+                                       # HAMCP-329/298 dormant created-object profiles (seq 18).
+                                       "core.scene_create_delete_operation",
+                                       "core.created_helper_delete_operation"}]
     old = [r for r in refs if r["capability_id"] != CAPABILITY]
     new = old + [added]
     assert len(old) == 21 and len(new) == 22 and len({r["capability_id"] for r in new}) == 22

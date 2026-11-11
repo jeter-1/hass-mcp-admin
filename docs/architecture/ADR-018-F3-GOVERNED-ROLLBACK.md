@@ -54,3 +54,38 @@ product should retain bounded recovery capability.
 - Missing or stale evidence fails closed without guessing prior intent.
 - No generalized compensation, deletion, operational rollback, or automatic
   rollback becomes reachable.
+
+## Amendment: rollback of governed creates (HAMCP-298)
+
+Status: proposed with the HAMCP-329/298 implementation; contract in
+`docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md` §3.2-§3.4.
+
+This amendment narrows the last consequence above for one case. Rollback of a
+verified governed create of an automation or script plans deletion of the
+created object, and only as a new, separately approved HAMCP-155
+configuration delete plan. The delete children keep the unchanged signed
+`core.configuration_delete_operation` contract, intent, locks and preflight.
+No other deletion rollback becomes reachable.
+
+- Eligibility requires creation-time identity that the forward task captured
+  under its own locks right after the create verified. It is kept in a
+  hash-bound sidecar store, so the `ExecutionRecord` schema does not change.
+  Rollback never substitutes an observation made at rollback time; a missing
+  capture is `created_object_identity_not_captured`.
+- Each child carries one closed ownership marker in its risk evidence. The
+  plan hash binds it through the policy subject, and the delete preflight
+  rechecks it under the locks. A changed body, registry entry id or
+  `created_at` refuses the child. When only `modified_at` changed (Option E),
+  the child is included with a disclosure and an elevated acknowledgement.
+- Exclusions are reported per operation, in reverse order. An excluded
+  prerequisite blocks every later create. An already-absent object is
+  excluded but does not block.
+- Plans that mix creates with updates keep the existing update rollback, and
+  their creates are excluded. Legacy `CREATE_AUTOMATION` stays
+  `unavailable_for_create`. Helper and scene creates stay ineligible until
+  their own dormant 2026.11.0 profiles
+  (`core.created_helper_delete_operation`, `core.scene_create_delete_operation`)
+  are implemented, admitted and signed.
+- Ownership is evidence, never proof. A replacement that kept the same
+  registry entry and an identical body cannot be distinguished, and this is
+  disclosed to the approver.

@@ -143,6 +143,58 @@ class ExistingConfigurationGatewayBridge:
             resource_type, target_id
         )
 
+    # HAMCP-298: the created-object reads and the one delete, routed only to
+    # the dedicated created-object gateway (its own profile admission).
+
+    async def created_delete_read_config(
+        self, resource_type: str, target_id: str
+    ) -> dict[str, Any] | None:
+        return await self._gateway.created_object_delete.read_config(
+            resource_type, target_id
+        )
+
+    async def created_delete_registry_entry(
+        self, resource_type: str, target_id: str
+    ) -> dict[str, Any] | None:
+        return await self._gateway.created_object_delete.registry_entry(
+            resource_type, target_id
+        )
+
+    async def created_delete_state_exists(
+        self, resource_type: str, entity_id: str
+    ) -> bool:
+        return await self._gateway.created_object_delete.state_exists(
+            resource_type, entity_id
+        )
+
+    async def created_delete_consumer_fingerprint(
+        self, entity_id: str
+    ) -> str | None:
+        return await self._gateway.created_object_delete.consumer_fingerprint(
+            entity_id
+        )
+
+    async def created_delete(self, resource_type: str, target_id: str) -> Any:
+        return await self._gateway.created_object_delete.delete(
+            resource_type, target_id
+        )
+
+    # HAMCP-329: the absent-scene reads and the one create POST, routed only
+    # to the dedicated scene create gateway (its own profile admission).
+
+    async def scene_create_target_absent_reason(self, config_id: str) -> str | None:
+        return await self._gateway.scene_create.target_absent_reason(config_id)
+
+    async def scene_create_observation(
+        self, config_id: str
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        return await self._gateway.scene_create.created_observation(config_id)
+
+    async def scene_create_write(
+        self, config_id: str, command: dict[str, Any]
+    ) -> Any:
+        return await self._gateway.scene_create.write(config_id, command)
+
     # HAMCP-232: the closed options-flow reads, the held flow, its abort and
     # the one step submit, routed only to the dedicated options gateway.
 

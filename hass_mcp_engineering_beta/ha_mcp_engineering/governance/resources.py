@@ -706,6 +706,16 @@ class ConfigurationResourceGateway:
         # or reload).  The runtime sets its ``core_runtime``; absent, every
         # write refuses before it is sent.
         self.scene_configuration = SceneConfigurationGateway(self)
+        # HAMCP-329/298: the scene create gateway (absent-id POST only) and
+        # the created-object delete gateway (scene DELETE under the
+        # single-use permit, helper ``{type}/delete`` by object id).  Each is
+        # admitted only by its own dormant profile; the runtime sets
+        # ``core_runtime``.
+        from .created_object_delete import CreatedObjectDeleteGateway
+        from .scene_configuration import SceneCreateGateway
+
+        self.scene_create = SceneCreateGateway(self)
+        self.created_object_delete = CreatedObjectDeleteGateway(self)
 
     async def get(
         self, resource_type: str, resource_id: str

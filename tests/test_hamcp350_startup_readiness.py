@@ -9,6 +9,7 @@ Home Assistant or deployed endpoint is used.
 """
 
 import asyncio
+import dataclasses
 from contextlib import AsyncExitStack, asynccontextmanager
 import json
 import logging
@@ -166,6 +167,12 @@ class StartupReadinessDeadlineTests(unittest.IsolatedAsyncioTestCase):
         async def supervise(server, *, initial_snapshot=None):
             self.supervised.append(initial_snapshot)
 
+        # Start from an unconfigured health registry: the process-global HEALTH
+        # may still hold an earlier class's governance and operation runtimes
+        # whose storage directories that class already removed, which made
+        # these tests depend on which test class ran before them.
+        for field in dataclasses.fields(HEALTH):
+            self.enterContext(patch.object(HEALTH, field.name, field.default))
         self.enterContext(
             patch.object(self.upstream, "reconcile_until_initialized", reconcile)
         )
