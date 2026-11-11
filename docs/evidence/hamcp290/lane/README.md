@@ -65,8 +65,8 @@ the lane reports one of these refusals:
 
 The O3 union records were regenerated from the same exact archives.
 
-- `docs/evidence/hamcp315/core-sources/2026.10.3.json` now holds 437 present
-  hashes, and `2026.11.0.json` holds 508.
+- `docs/evidence/hamcp315/core-sources/2026.10.3.json` now holds 441 present
+  hashes, and `2026.11.0.json` holds 512.
 - `manifest-compatibility.json` was regenerated with them.
 - October lacks 72 manifest paths: the original 21 shared absences plus the 51
   Marketplace files.

@@ -18,6 +18,13 @@ for HAMCP-264 (section 3.3). Rename plans are `elevated_admin` for actuator
 entities only and `standard_admin` otherwise (section 3.1). Section 12 lists
 each decision and the sections it changed. Nothing is pending Josh.
 
+Revision 2026-11-10 (cutoff destination): if the section 9 cutoff fires,
+HAMCP-295/109 moves to 2.7 as its first item, not to 3.0 (owner ruling of
+2026-11-10, recorded in the HAMCP-295 register row). Sections 1.3, 3.2, 5,
+9, 10 and 12 carry the change. The schedule decision of 2026-11-08 is still
+quoted as it was given, and nothing else in the decisions of 2026-11-08
+changes.
+
 - Register: HAMCP-295 (governed entity ID rename), HAMCP-109
   (dependency-bound multi-operation execution).
 - Base: `origin/release/2.6.0` =
@@ -92,7 +99,7 @@ sequenced operation must be admitted individually."
 | **Josh direction (register 2026-11-07; confirmed in-session 2026-11-08):** the HAMCP-295 rename **rewrites references with verified undo**. Disclose-only is not a deliverable. | HAMCP-295 / HAMCP-109 register rows; 2.6.0 correction brief | Reference rewriting (section 3.3) and verified undo (sections 3.2 and 3.4) are mandatory acceptance (section 7). A rename-only implementation does **not** complete HAMCP-295. This supersedes the earlier open question Q1 (section 10, Superseded). |
 | **Josh direction (register 2026-11-07; confirmed in-session 2026-11-08):** additive profiles only; new 2.6 profiles are signed for **Core 2026.11.0 only**, in **one combined 2.6 signing** (one `extend-capabilities` extension of the existing 2026.11.0 entry). No 10.x targets for new profiles. | HAMCP-329 register row; 2.6.0 correction brief | One new additive rename profile on 2026.11.0 only (Signing impact). No existing profile or fingerprint changes. |
 | **Recorded owner decision (2026-11-03):** HAMCP-295 is feature lane position 2 after HAMCP-253, 267 and 264. | HAMCP-295 register Next Action | Build order. HAMCP-264 (template reads) is ranked ahead of 295. It is **no longer a gate**: Josh decision (in-session 2026-11-08), item 7, says HAMCP-295 does not wait for HAMCP-264 and ships truthful `unavailable` template disclosure (section 3.3). |
-| **Josh decision (in-session 2026-11-08), item 6:** schedule (c), "2.6, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled." | 2.6.0 Josh choices, item 6 (former J3) | HAMCP-295 and HAMCP-109 target 2.6.0 and ship together. This supersedes the recorded HAMCP-109 "build IN 3.0" target (first row). Section 9 defines "frozen" and the cutoff. The cutoff never delays the combined 2.6 signing. |
+| **Josh decision (in-session 2026-11-08), item 6:** schedule (c), "2.6, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled." | 2.6.0 Josh choices, item 6 (former J3) | HAMCP-295 and HAMCP-109 target 2.6.0 and ship together. This supersedes the recorded HAMCP-109 "build IN 3.0" target (first row). Section 9 defines "frozen" and the cutoff. The cutoff never delays the combined 2.6 signing. Amended 2026-11-10: the cutoff destination is 2.7, not 3.0 (section 9). |
 | **Josh decision (in-session 2026-11-08), item 7:** (b), "one plan-level acknowledgement when any reference isn't rewritten; do NOT wait for HAMCP-264." | 2.6.0 Josh choices, item 7 (former J1) | Section 3.3, "Not-rewritten acknowledgement": what counts, what the acknowledgement binds to (the plan hash), and the tests. |
 | **Josh decision (in-session 2026-11-08), item 8:** (b), "elevated for actuators only (069A E1 pattern)." | 2.6.0 Josh choices, item 8 (former J2) | Section 3.1, "Policy class": the actuator definition from current source, `elevated_admin` for actuators, `standard_admin` otherwise. |
 | Design a new, distinct dependency-bound mode; do not silently change existing multi-operation behaviour; stop and report if the decision cannot be met within existing safety constraints. | Task prompt | Section 3.2. Result: the decision **can** be met without weakening an existing safety constraint (section 3.2.6). It still needs a recorded ADR amendment, because the shipped ADR-018 text forbids exactly this behaviour. |
@@ -515,7 +522,8 @@ plan hash:
   these plans.
 - **`dependency_bound_compensating_v1`.** The new mode. Only the rename
   planner produces it, in the release that ships HAMCP-295 complete (2.6.0,
-  or 3.0 if the section 9 cutoff fires; Josh decision (in-session 2026-11-08), item 6).
+  or 2.7 if the section 9 cutoff fires; Josh decision (in-session 2026-11-08), item 6,
+  cutoff destination amended 2026-11-10).
   `create_configuration_plan` never accepts
   it as caller input. A caller-supplied `execution_mode` is refused with
   `execution_mode_not_caller_selectable`.
@@ -1000,7 +1008,7 @@ Exactly one new additive profile. Naming follows `ha_core_readmission/profiles.p
 
 | Profile id | New or changed (from version X) | Core commands / contract added | Why | Fingerprint impact | Can it batch with other 2.6 profiles |
 | --- | --- | --- | --- | --- | --- |
-| `core_entity_registry_rename_operation_v1` (capability id `core.entity_registry_rename_operation`) | **New, additive** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the rename compensation and rename rollback steps | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes, and only there:** signed for **Core 2026.11.0 only**, inside the one combined 2.6 signing (one `extend-capabilities` extension of the existing 2026.11.0 entry), once the compiled contract and its evidence are final. No 10.0, 10.1 or 10.3 entry. No separate or later 2.6 ceremony. If the contract is not frozen (section 9 cutoff criteria F1-F4) when that signing is assembled, it is not signed in 2.6 and the whole of HAMCP-295/109 moves to 3.0 (Josh decision (in-session 2026-11-08), item 6). Unsigned, the profile stays dormant and the tool refuses |
+| `core_entity_registry_rename_operation_v1` (capability id `core.entity_registry_rename_operation`) | **New, additive** (runtime-only, in `CORE_RUNTIME_CAPABILITY_PROFILES`, not in `CORE_CAPABILITY_PROFILES`) | `config/entity_registry/update` with exactly `{entity_id, new_entity_id}`; `config/entity_registry/get` for old and new ids; new-id state absence read. Contract: dispatch `at_most_once_entity_registry_rename`, readback `authoritative_exact_entity_registry_entry_renamed`, recovery `read_only_no_redispatch`, predispatch `core_identity, capability_contract, target_fingerprint, session_fingerprint, generation` | Rename is outside the signed metadata closed-field contract, so it needs its own owner-signed admission (HAMCP-222). It also serves the rename compensation and rename rollback steps | New contract fingerprint, **unknown** until the build computes it from the compiled contract. Signed probe fingerprints unchanged (runtime-only). No other profile's fingerprint changes | **Yes, and only there:** signed for **Core 2026.11.0 only**, inside the one combined 2.6 signing (one `extend-capabilities` extension of the existing 2026.11.0 entry), once the compiled contract and its evidence are final. No 10.0, 10.1 or 10.3 entry. No separate or later 2.6 ceremony. If the contract is not frozen (section 9 cutoff criteria F1-F4) when that signing is assembled, it is not signed in 2.6 and the whole of HAMCP-295/109 moves to 2.7 (Josh decision (in-session 2026-11-08), item 6; cutoff destination amended 2026-11-10, section 9). Unsigned, the profile stays dormant and the tool refuses |
 | `core_entity_registry_metadata_operation_v1` (`core.entity_registry_metadata_operation`) | Unchanged | None | `new_entity_id` is deliberately **not** added to the metadata closed fields | None: stays `sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767` | n/a |
 | `core_governed_configuration_operation_v1` (`core.governed_configuration_operation`) | Unchanged | None | Automation and script rewrite, compensation and rollback steps use the existing adapter and its existing 2026.11.0 admission | None | n/a |
 | `core_scene_configuration_operation_v1` (`core.scene_configuration_operation`) | Unchanged; existing signed coverage stays as it is | None | Scene rewrite, compensation and rollback steps use the existing adapter and its existing 2026.11.0 admission. No historic-version expansion is proposed | None | n/a |
@@ -1234,7 +1242,10 @@ agent PR. It needs a disposable test entity, chosen by Josh.
 
 ## 9. Build plan
 
-**Schedule (Josh decision (in-session 2026-11-08), item 6): 2.6.0, with a hard cutoff to 3.0.** This supersedes the
+**Schedule (Josh decision (in-session 2026-11-08), item 6; cutoff destination amended 2026-11-10): 2.6.0, with a hard cutoff to 2.7.**
+The decision of 2026-11-08 named 3.0 as the cutoff destination. The
+owner ruling of 2026-11-10, recorded in the HAMCP-295 register row,
+changed it to 2.7, as the first 2.7 item. The schedule supersedes the
 recorded HAMCP-109 "build IN 3.0" target (section 1.3). HAMCP-295 and
 HAMCP-109 ship together in one release: no release ships S1 without S2 and S3,
 because a rename-only or disclose-only release is not a deliverable.
@@ -1256,12 +1267,12 @@ list fixed for Josh's owner signing), all of the following hold:
 - F4. No change after the fingerprint was computed alters it.
 
 **The cutoff.** If any of F1-F4 fails at assembly, the profile is left out of
-the combined 2.6 signing. The whole of HAMCP-295/109 then moves to 3.0, with
+the combined 2.6 signing. The whole of HAMCP-295/109 then moves to 2.7, with
 no rename-only or disclose-only release, no second 2.6 signing, and no 10.x
 target. S1-S3 do not merge into the 2.6.0 release line before F1-F4 can be
 met, so a cutoff leaves no registered or reachable HAMCP-295/109 behaviour in
 2.6.0 (R2). The cutoff never delays the combined 2.6 signing. The slice order
-below is the same in 2.6.0 and in 3.0.
+below is the same in 2.6.0 and in 2.7.
 
 | Slice | Content | Depends on | Protected paths named |
 | --- | --- | --- | --- |
@@ -1270,7 +1281,7 @@ below is the same in 2.6.0 and in 3.0.
 | S2 | Generic `dependency_bound_compensating_v1` in F3: persisted compensation candidates, section 3.2.2a ownership classes and accounting, lock-union transfer, crash-consistent decision records, compensation phase, outcomes, restart rules, frozen discriminator/hash rules and the two-direction downgrade proof | S1 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | S3 | **Mandatory** dependent rewrite steps (section 3.3): B1-B6 rewriter, re-extraction check, fixed order, per-occurrence disclosure, the not-rewritten set and plan-level acknowledgement (item 7), the actuator policy classifier (item 8), owner rollback of rewrites | S2 | `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | S4 | Full/Evidence validation and acceptance A1-A11 on the integrated head; compiled rename-contract fingerprint frozen (F1-F4) | S3 | None |
-| S5 | Owner signing: `core_entity_registry_rename_operation_v1` for Core **2026.11.0 only**, inside the one combined signing of the release that ships HAMCP-295: the combined 2.6 signing when F1-F4 hold at its assembly, otherwise the 3.0 signing (cutoff) | S4 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
+| S5 | Owner signing: `core_entity_registry_rename_operation_v1` for Core **2026.11.0 only**, inside the one combined signing of the release that ships HAMCP-295: the combined 2.6 signing when F1-F4 hold at its assembly, otherwise the 2.7 signing (cutoff) | S4 compiled contract fingerprint; Josh action | `upstream-trust/` (owner only) |
 | S6 | Version transition and release documents | Josh's release decision | `.release/`, `config.yaml` |
 
 **Overlap with in-flight 2.5.0 work.** 2.5.0 wins shared files, and S1-S3 will
@@ -1314,7 +1325,8 @@ E1 pattern)." The contract, including the actuator definition, is in section
 **Decided: J3, schedule.** Josh decision (in-session 2026-11-08), item 6: (c), "2.6, with a hard cutoff to 3.0 if the
 contract is not frozen when the combined signing is assembled." It supersedes
 HAMCP-109's recorded "build IN 3.0" target. The contract, including what
-"frozen" means, is in section 9.
+"frozen" means, is in section 9. Amended 2026-11-10: the cutoff destination
+is 2.7, not 3.0 (section 9).
 
 **Pending Josh:** none.
 
@@ -1353,7 +1365,7 @@ after corrections).
 
 | Item | Decision (Josh decision (in-session 2026-11-08)) | Sections changed |
 | --- | --- | --- |
-| 6 (J3) | (c) 2.6.0, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled. Supersedes HAMCP-109's recorded "build IN 3.0" target | Header; 1.3 (row 1 superseded, new row); 3.2.1; 5 (signing row); 6.1 (R1, R2); 9 (schedule, F1-F4 freeze criteria, cutoff, S0, S3-S5); 10; 11 (last row) |
+| 6 (J3) | (c) 2.6.0, with a hard cutoff to 3.0 if the contract is not frozen when the combined signing is assembled. Supersedes HAMCP-109's recorded "build IN 3.0" target. Amended 2026-11-10: the cutoff destination is 2.7, not 3.0 (section 9) | Header; 1.3 (row 1 superseded, new row); 3.2.1; 5 (signing row); 6.1 (R1, R2); 9 (schedule, F1-F4 freeze criteria, cutoff, S0, S3-S5); 10; 11 (last row) |
 | 7 (J1) | (b) one plan-level acknowledgement when any reference is not rewritten; no HAMCP-264 wait | Header; 1.3 (2026-11-03 row, new row); 2.3 item 4; 3.1 (disclosure); 3.2.1; 3.3 (not-rewritten acknowledgement: what counts, binding to the plan hash, apply-time recheck; template eligibility row); 4 (projection and persisted fields); 6 (N17, N32-N36); 6.1 (C1, C2, C4, C7, C9); 7 (A10, A11, completion rule); 8 (physical consequence, discriminator and hash rule); 10 |
 | 8 (J2) | (b) elevated for actuators only (069A E1 pattern); `standard_admin` otherwise | Header; 1.3 (new row); 3.1 (policy class and actuator definition); 3.2.1; 3.2.6; 6 (N35, N37); 6.1 (C1, C3-C6, C8, C10); 7 (A1, A11); 8; 9 (S3); 10 |
 

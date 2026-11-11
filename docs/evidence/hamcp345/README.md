@@ -394,8 +394,9 @@ N=64) and N locks alone (refused from N=65) are the same on both.
 - `toggle_group_base_vs_head.py` writes
   `toggle-group-base-vs-head-results.json`: the pure analyzer of the release
   base (cb9d6783) and of the second correction (8e05dd89; `risk.py` is
-  unchanged after that commit, and `7a0c5b48` is a test-only follow-up to
-  `tests/test_hamcp345_dashboard_risk_breadth.py`) over 35562 toggle-group cases,
+  unchanged after that commit, and the follow-up `7a0c5b48` changes
+  `tests/test_hamcp345_dashboard_risk_breadth.py`, this README and the test
+  name in `run_mutations.py`) over 35562 toggle-group cases,
   comparing the disposition and `high_consequence_action_count`. 7132 are a
   card added to an empty view: 2380 alone (every entity list of length 0-2
   over 24 entries, of length 3 over 12 entries, the 47 named shapes, and 4
