@@ -57,6 +57,9 @@
   "helper_value": [
     "core.typed_helper_value_operation"
   ],
+  "marketplace_read": [
+    "core.marketplace_read"
+  ],
   "scene_create_delete": [
     "core.scene_create_delete_operation"
   ],

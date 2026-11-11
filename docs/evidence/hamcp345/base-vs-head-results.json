@@ -1,0 +1,19 @@
+{
+  "base": "4b8db82bc30882b44214ba2d87867fa4e82af3cb",
+  "head": "22299f9c3ca61ef5b213b83555eea4227ec9bfe5",
+  "python": "3.12.14",
+  "cards": 14,
+  "strategies": 4,
+  "variants": 1071,
+  "plans_per_revision": 2142,
+  "transitions": {
+    "existing: planned -> planned": 1071,
+    "inserted: planned -> planned": 1071,
+    "inserted: planned with changed classification": 571
+  },
+  "non_planned_reasons": {},
+  "newly_refused": 0,
+  "newly_refused_examples": [],
+  "existing_scenario_changed": 0,
+  "existing_scenario_changed_examples": []
+}

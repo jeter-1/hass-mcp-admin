@@ -450,6 +450,14 @@ Also pending the separate signing step, and not changed here:
 - Until then, `passing_subset` refuses to inherit the profile ("unmapped
   predecessor profile"), which is fail closed.
 
+Amendment (HAMCP-290 lane, Release 2.6.0): the signing prerequisite now adds the
+profile to `ci/core-contract-read-files.json`, regenerates the hash-pinned source
+records, and appends a `marketplace_read` group. The group needs no workflow
+change: CI evidence never produces its receipt, so the group stays withheld
+there. Its evidence is the committed local exact-image lane receipt. See
+[the lane README](evidence/hamcp290/lane/README.md). The surrounding text above
+describes the 2.5 state.
+
 ## 10. Unsigned-window disclosure
 
 `core.marketplace_read` is signed separately after 2.5 merges (Josh decision,

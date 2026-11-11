@@ -42,6 +42,7 @@ from ha_mcp_engineering.ha_core_readmission.runtime import (
 from ha_mcp_engineering.ha_core_readmission.source import AiohttpCoreSnapshotSource
 from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # HAMCP-290
 from tests.support.core_gate import reconcile_through_gate
+from tests.test_beta_observability import preserve_create_application_state
 
 
 LOGGER = "ha_mcp_engineering.core_authority"
@@ -188,6 +189,16 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
     assert_authority_round_trip = rc3.PostCoreRegressions.assert_authority_round_trip
     until = rc3.PostCoreRegressions.until
     start_supervisor = rc3.PostCoreRegressions.start_supervisor
+
+    def setUp(self):
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept a test's governance
+        # runtime after its temporary storage directory was removed, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        # The application is built by the reinit test and by
+        # rebuild(through_application=True).
+        preserve_create_application_state(self)
 
     async def asyncTearDown(self):
         await self.stop_core()

@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient
 from tests.support.process_isolation import restore_after_class
+from tests.test_beta_observability import preserve_create_application_state
 import yaml
 
 
@@ -829,6 +830,12 @@ class BetaApplicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return core_snapshot(
