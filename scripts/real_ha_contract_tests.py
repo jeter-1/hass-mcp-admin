@@ -13,10 +13,12 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import sys
 import tempfile
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 from mcp import ClientSession
@@ -115,7 +117,26 @@ def _environment_path(name: str) -> Path | None:
     return Path(value) if value else None
 
 
-HA_URL = os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123").rstrip("/")
+# This harness onboards and drives one disposable Core on loopback, so the URL
+# it is started with is that bare origin: http, 127.0.0.1 or [::1], an optional
+# port, and no userinfo, path or query, nor a name that only resolves to
+# loopback. A flow id is what Core issues: the 32 hex digits of a random UUID.
+_LOOPBACK_CORE = re.compile(r"http://(?:127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?")
+_FLOW_ID = re.compile("[0-9a-f]{32}")
+# Code-owned refusals: never the URL, a path, a token or a payload.
+CORE_URL_REFUSED, CORE_PATH_REFUSED = "real_ha_url_not_loopback", "real_ha_path_not_rooted"
+CORE_TARGET_REFUSED, FLOW_ID_REFUSED = "real_ha_target_not_configured_core", "real_ha_flow_id_not_listed"
+
+
+def loopback_core_url(value):
+    """The Core URL this harness may start against; anything else is refused."""
+    url = value.rstrip("/") if type(value) is str else ""
+    if _LOOPBACK_CORE.fullmatch(url) is None:
+        raise ValueError(CORE_URL_REFUSED)
+    return url
+
+
+HA_URL = loopback_core_url(os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123"))
 CLIENT_ID = f"{HA_URL}/"
 EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
@@ -681,8 +702,26 @@ def _attach_cleanup_evidence(
     setattr(error, "contract_diagnostic", updated)
 
 
+def _refuse_unless_configured_core(path):
+    """Refuse a path that would not be a rooted path on the configured Core.
+
+    The path is appended to the configured URL as text, so it is rooted, and
+    the host the joined URL names is still the configured one.
+    """
+    if type(path) is not str or not path.startswith("/"):
+        raise ValueError(CORE_PATH_REFUSED)
+    try:
+        host = urlsplit(HA_URL).hostname
+        same = bool(host) and urlsplit(f"{HA_URL}{path}").hostname == host
+    except (TypeError, ValueError):
+        same = False
+    if not same:
+        raise ValueError(CORE_TARGET_REFUSED)
+
+
 @lane_diagnostics.checked("auth", "bootstrap_http")
 async def _json_request(session, method, path, *, json_body=None, data=None, token=""):
+    _refuse_unless_configured_core(path)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     async with session.request(
         method,
@@ -848,6 +887,8 @@ async def _advance_config_flow(
         flow_id = result.get("flow_id")
         if not isinstance(flow_id, str) or not flow_id:
             raise RuntimeError("Disposable Home Assistant config flow omitted its id")
+        if type(flow_id) is not str or _FLOW_ID.fullmatch(flow_id) is None:
+            raise ValueError(FLOW_ID_REFUSED)
         result = await _json_request(
             session,
             "POST",
