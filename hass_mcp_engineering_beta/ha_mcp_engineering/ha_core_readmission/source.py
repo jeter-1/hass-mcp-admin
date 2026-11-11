@@ -305,6 +305,11 @@ def capability_evidence_for_probes(
                 "core.security_metadata_read",
                 # HAMCP-297 Release 2.6.0 (dormant until signed).
                 "core.device_configuration_entity_operation",
+                # HAMCP-329/298 Release 2.6.0 (dormant until signed).
+                "core.scene_create_delete_operation",
+                "core.created_helper_delete_operation",
+                # HAMCP-295 Release 2.6 (dormant until signed in seq 18).
+                "core.entity_registry_rename_operation",
             ):
                 add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence

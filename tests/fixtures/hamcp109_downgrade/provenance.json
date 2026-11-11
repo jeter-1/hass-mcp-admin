@@ -1,0 +1,16 @@
+{
+  "purpose": "HAMCP-109 N20: exact shipped governance record reader for the new-writer to old-reader direction",
+  "source_tag": "v2.4.2-beta.7",
+  "source_commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "files": {
+    "shipped_v2_4_2_beta7_models.py.txt": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/models.py",
+      "git_blob_sha1": "e0ff904275061e3752296b8b27497272362bdf54"
+    }
+  },
+  "unchanged_readers": {
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_models.py": "d4df944fdd363f895a1784b797ce252a2f482564"
+  },
+  "generation": "git show v2.4.2-beta.7:hass_mcp_engineering_beta/ha_mcp_engineering/governance/models.py > shipped_v2_4_2_beta7_models.py.txt",
+  "verification": "git rev-parse v2.4.2-beta.7:<source_path> equals git_blob_sha1; the test recomputes the blob hash of the committed copy"
+}

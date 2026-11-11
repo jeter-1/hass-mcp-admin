@@ -53,6 +53,8 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     INPUT_SELECT_PROFILE,
     LABEL_PROFILE,
     MARKETPLACE_PROFILE,
+    CREATED_HELPER_DELETE_PROFILE,  # HAMCP-329/298
+    SCENE_CREATE_DELETE_PROFILE,  # HAMCP-329/298
     SCENE_CONFIGURATION_PROFILE,
     SCRIPT_TRACE_PROFILE,
     SECURITY_METADATA_PROFILE,
@@ -283,7 +285,11 @@ class Seam3AdmissionCoverageTests(unittest.TestCase):
              # HAMCP-134: direct read, never an F3 identity.
              SECURITY_METADATA_PROFILE,
              # HAMCP-297: direct typed tool, never an F3 identity.
-             DEVICE_CONFIGURATION_PROFILE},
+             DEVICE_CONFIGURATION_PROFILE,
+             # HAMCP-329/298: dormant created-object profiles.
+             SCENE_CREATE_DELETE_PROFILE, CREATED_HELPER_DELETE_PROFILE,
+             # HAMCP-295: dormant entity rename (seq 18 signing batch).
+             "core.entity_registry_rename_operation"},
         )
         expected = {
             "delete_automation_configuration": (CONFIGURATION_DELETE_PROFILE,),

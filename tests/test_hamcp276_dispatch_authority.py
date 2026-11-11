@@ -99,6 +99,9 @@ NOT_F3 = {
     "core.typed_helper_value_operation": "direct_typed_tool",
     # HAMCP-297: control_device_configuration is a direct typed tool.
     "core.device_configuration_entity_operation": "direct_typed_tool",
+    # HAMCP-295: the rename F3 identity is not registered until the Phase B
+    # wiring (.artifacts/pending-wiring.md); that wiring removes this row.
+    "core.entity_registry_rename_operation": "f3_identity_not_yet_registered",
 }
 
 
@@ -625,10 +628,11 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
     def test_activated_identities_and_counts(self):
         health = self.runtime.registry.health()
         self.assertEqual(health["activated_capability_count"], len(self.entries))
-        self.assertEqual(len(self.entries), 25)
-        # 18 configuration adapters, one shared operational adapter, one
+        self.assertEqual(len(self.entries), 29)
+        # 22 configuration adapters (HAMCP-329/298 adds scene create and the
+        # three created-object deletes), one shared operational adapter, one
         # dashboard adapter.
-        self.assertEqual(health["registered_adapter_count"], 20)
+        self.assertEqual(health["registered_adapter_count"], 24)
 
     def test_activated_set_matches_compiled_profiles_with_justified_gaps(self):
         required = set()
@@ -651,8 +655,20 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
                     # HAMCP-297: the direct typed device-configuration tool.
                     "core.device_configuration_entity_operation"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
-        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
+        # HAMCP-295: an F3 profile whose identity registers in the Phase B
+        # wiring; it already gates F3 entry (fail closed) and is not never-F3.
+        pending_f3 = {"core.entity_registry_rename_operation"}
+        self.assertLessEqual(pending_f3, F3_ENTRY_ADMISSION_PROFILES)
+        self.assertFalse(pending_f3 & (never_f3 | required))
+        # HAMCP-329/298: gate F3 entries, but no signed entry binds them yet.
+        dormant = {"core.scene_create_delete_operation",
+                   "core.created_helper_delete_operation"}
+        self.assertLessEqual(dormant, F3_ENTRY_ADMISSION_PROFILES)
+        self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3 - pending_f3, required)
         self.assertFalse(never_f3 & required)
+        # Their four F3 identities are registered and require them, so an
+        # unsigned profile refuses each one at the Core lease boundary.
+        self.assertLessEqual(dormant, required)
 
     async def test_admitted_identity_is_authorized_once(self):
         for entry in self.entries:

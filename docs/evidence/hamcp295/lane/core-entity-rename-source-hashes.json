@@ -1,0 +1,39 @@
+{
+  "core_version": "2026.11.0",
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "source_archive_sha256": "85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1",
+  "files": [
+    {
+      "path": "homeassistant/components/automation/config.py",
+      "sha256": "90cc140f6e66b02619e8d0fffc7989bb0e9e0f971f7176e23746ecaf0cbf859a"
+    },
+    {
+      "path": "homeassistant/components/config/automation.py",
+      "sha256": "b8d06e471380e6302cedb397f3cc93f9b93615d5cccb5132118c9a45c5dc7fe0"
+    },
+    {
+      "path": "homeassistant/components/config/entity_registry.py",
+      "sha256": "269e4b5123f3613f46c81a04fa2057d8e5461a14bde065fc5318434db53bee9f"
+    },
+    {
+      "path": "homeassistant/components/config/scene.py",
+      "sha256": "6f895a93d63cee2448035fba8216c2ca5224a37d3de3fdaa61decfffa83c8c5d"
+    },
+    {
+      "path": "homeassistant/components/config/script.py",
+      "sha256": "a3b5e4b21c3eb623cdff294e387d46d1c59dd61a85b4a86943feeb8b65ed89e8"
+    },
+    {
+      "path": "homeassistant/components/config/view.py",
+      "sha256": "cfb2494cb7d1f9ddc0a962304ba53ddf433ca76ca609fe4d2a648afdac3e3b2b"
+    },
+    {
+      "path": "homeassistant/helpers/entity_platform.py",
+      "sha256": "18014aa32bd7b1f0a80044166d9a88d7250a96120d9a62116de6f13a318121c8"
+    },
+    {
+      "path": "homeassistant/helpers/entity_registry.py",
+      "sha256": "a16d82bb68ceb680875c9fd8905d7c6f30d0cd39ed7ee7a12ded2c4a9d565088"
+    }
+  ]
+}

@@ -195,6 +195,13 @@ class GovernanceRuntime:
             resource_gateway.scene_configuration.consumer_snapshot_reader = (
                 read_cached_dependency_snapshot
             )
+            # HAMCP-329/298: scene create and created-object deletion refuse
+            # unless this Core runtime currently admits their own profiles.
+            resource_gateway.scene_create.core_runtime = core_runtime
+            resource_gateway.scene_create.consumer_snapshot_reader = (
+                read_cached_dependency_snapshot
+            )
+            resource_gateway.created_object_delete.core_runtime = core_runtime
             if dashboard_provider is not None:
                 # HAMCP-106: the content fingerprint is the existing admitted
                 # get_dashboard_config read; the configuration itself is
@@ -254,6 +261,11 @@ class GovernanceRuntime:
                 # HAMCP-071: refused before any read until a signed registry
                 # admits core.scene_configuration_operation.
                 scene_configuration_gateway=resource_gateway.scene_configuration,
+                # HAMCP-329/298: refused before any read until a signed
+                # registry admits the scene create/delete or created-helper
+                # delete profile.
+                scene_create_gateway=resource_gateway.scene_create,
+                created_object_delete_gateway=resource_gateway.created_object_delete,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 
