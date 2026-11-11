@@ -57,6 +57,9 @@
   "helper_value": [
     "core.typed_helper_value_operation"
   ],
+  "device_configuration_entity": [
+    "core.device_configuration_entity_operation"
+  ],
   "security_metadata": [
     "core.security_metadata_read"
   ]
