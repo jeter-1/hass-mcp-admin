@@ -6,6 +6,7 @@ run against Core 2026.11.0 is the evidence for the scenario sequence; these
 tests pin the lane's guards, its refusal and failure-preservation paths, and
 the product service's behaviour through the lane's closed clients.
 """
+import ast
 import asyncio
 import errno
 import hashlib
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 import unittest
 import warnings
 from unittest.mock import AsyncMock, Mock, patch
@@ -42,7 +44,9 @@ from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
 from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway  # noqa: E402
 from ha_mcp_engineering.device_configuration.service import (  # noqa: E402
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
-from ha_mcp_engineering.errors import HomeAssistantTimeoutError, HomeAssistantUnavailableError  # noqa: E402
+from ha_mcp_engineering.errors import (  # noqa: E402
+    HomeAssistantApiError, HomeAssistantTimeoutError, HomeAssistantUnavailableError,
+)
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import profiles as profiles_module  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
@@ -189,6 +193,39 @@ class NoTransport:
 
     def untouched(self):
         return not (self.session.called or self.websocket.called or self.rest.called)
+
+
+def lane_tree():
+    """The acceptance module's syntax tree; each node knows its parent and its enclosing ``Class.function``."""
+    module = ast.parse(Path(acceptance.__file__).read_text(encoding="utf-8"))
+
+    def mark(node, parent, where):
+        node.parent, node.where = parent, where
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            where = (where + "." if where else "") + node.name
+        for child in ast.iter_child_nodes(node):
+            mark(child, node, where)
+    mark(module, None, "")
+    return module
+
+
+def names_in(node):
+    return {leaf.id for leaf in ast.walk(node) if isinstance(leaf, ast.Name)}
+
+
+def lane_helpers(*names, **free):
+    """The named helpers nested in the lane's ``run``, compiled from its own source over ``free``.
+
+    They are closures of ``run`` and cannot be called from outside it. The
+    source text that runs here is the text the lane runs; only the closed-over
+    names are synthetic.
+    """
+    (scenario,) = ast.parse(inspect.getsource(acceptance.run)).body
+    picked = [node for node in scenario.body if isinstance(node, ast.AsyncFunctionDef) and node.name in names]
+    assert [node.name for node in picked] == list(names), [node.name for node in picked]
+    scope = {"diagnostics": diagnostics, "refusal_form": acceptance.refusal_form, **free}
+    exec(compile(ast.Module(body=picked, type_ignores=[]), acceptance.__file__, "exec"), scope)
+    return SimpleNamespace(**{name: scope[name] for name in names})
 
 
 def load_entry():
@@ -1696,12 +1733,114 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(hits), 1, request)
             matched.append(hits[0])
         self.assertEqual(matched, [0, 0, 1, 2])
+        # One field away from each allowed shape is on no entry of the set:
+        # another handler, another flow-continue URL, a flow id of another
+        # shape, an entry id of another shape, a reload with a body.
+        for method, path, body in (
+                ("POST", self.FLOW, {"handler": "hue"}),
+                ("POST", self.STEP, {"url": "ws://evil.example:5580/ws"}),
+                ("POST", self.STEP + "0", {"url": acceptance.MATTER_URL}),
+                ("POST", self.FLOW + "/../entry/01JSYNTHETICSYNTHETICSYNTH/reload", {"url": acceptance.MATTER_URL}),
+                ("POST", "/api/config/config_entries/entry/synthetic-not-an-entry-id/reload", None),
+                ("POST", self.RELOAD, {})):
+            request = {"method": method, "path": path, "body": body}
+            with self.subTest(request=request):
+                self.assertEqual([index for index, spec in enumerate(acceptance.RAW_REST)
+                                  if acceptance._match(request, spec)], [])
         source = Path(acceptance.__file__).read_text(encoding="utf-8")
         self.assertNotIn("/api/states", source)
         scenario = inspect.getsource(acceptance.run)
         self.assertEqual(scenario.count("http.rest("), 4)
         self.assertEqual(scenario.count("return await reader.read(entity_id)"), 1)
         self.assertEqual(scenario.count("LaneState(configured)"), 1)
+
+    def test_the_one_core_url_expression_is_the_guarded_request_argument(self):
+        """Source shape: ``CORE_URL + path`` exists once, inline in the one request the closed set guards."""
+        module, urls = lane_tree(), {"CORE_URL", "CORE_WS_URL"}
+        joins = [node for node in ast.walk(module) if isinstance(node, ast.BinOp) and names_in(node) & urls]
+        self.assertEqual([(node.where, ast.unparse(node)) for node in joins], [("RawRest.rest", "CORE_URL + path")])
+        joined = joins[0]
+        call = joined.parent
+        self.assertIsInstance(call, ast.Call)
+        self.assertEqual((call.where, ast.unparse(call.func)), ("RawRest.rest", "session.request"))
+        # The expression is the URL argument itself, not a name bound to it.
+        self.assertEqual([ast.unparse(argument) for argument in call.args], ["method", "CORE_URL + path"])
+        self.assertIs(call.args[1], joined)
+        self.assertEqual([keyword.arg for keyword in call.keywords], ["headers", "allow_redirects", None])
+        (rest,) = [node for node in ast.walk(module) if isinstance(node, ast.AsyncFunctionDef)
+                   and (node.where, node.name) == ("RawRest", "rest")]
+        # The refusal is the function's first statement and the request comes after it.
+        guard = ast.parse('if not listed({"method": method, "path": path, "body": body}, RAW_REST):\n'
+                          "    raise ValueError(CORE_REST_REFUSED)\n").body[0]
+        self.assertEqual(ast.unparse(rest.body[0]), ast.unparse(guard))
+        self.assertTrue(any(call is node for statement in rest.body[1:] for node in ast.walk(statement)))
+        # What the refusal judged is what is sent: no argument is bound again.
+        self.assertEqual([node.id for node in ast.walk(rest) if isinstance(node, ast.Name)
+                          and isinstance(node.ctx, ast.Store) and node.id in ("method", "path", "body")], [])
+
+    def test_the_session_calls_are_exactly_the_reviewed_set(self):
+        """Source shape: every aiohttp session and every call on one, by function, method and arguments."""
+        module = lane_tree()
+        imported = [node for node in ast.walk(module) if isinstance(node, (ast.Import, ast.ImportFrom))
+                    and "aiohttp" in ast.unparse(node)]
+        self.assertEqual([ast.unparse(node) for node in imported], ["import aiohttp"])
+        used = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "aiohttp"]
+        # The module is only ever used as ``aiohttp.<name>``: it has no other name.
+        self.assertTrue(all(isinstance(node.parent, ast.Attribute) and isinstance(node.ctx, ast.Load)
+                            for node in used))
+        self.assertEqual({node.parent.attr for node in used}, {"ClientError", "ClientSession", "ClientTimeout"})
+        built = [node.parent.parent for node in used if node.parent.attr == "ClientSession"]
+        for call in built:
+            # Each session is ``async with aiohttp.ClientSession(...) as session`` and nothing else.
+            self.assertIsInstance(call, ast.Call)
+            self.assertIsInstance(call.parent, ast.withitem)
+            self.assertIsInstance(call.parent.parent, ast.AsyncWith)
+            self.assertEqual(ast.unparse(call.parent), "aiohttp.ClientSession(timeout=timeout, trust_env=False) as session")
+        self.assertEqual(sorted(call.where for call in built), ["RawCore.command", "RawRest.rest", "StubControl._request"])
+        held = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "session"]
+        self.assertEqual(len([node for node in held if isinstance(node.ctx, ast.Store)]), 3)
+        calls = []
+        for node in held:
+            if isinstance(node.ctx, ast.Load):
+                # A session is only ever the receiver of one call.
+                method, call = node.parent, node.parent.parent
+                self.assertIsInstance(method, ast.Attribute)
+                self.assertTrue(isinstance(call, ast.Call) and call.func is method)
+                calls.append((call.where, method.attr, [ast.unparse(argument) for argument in call.args],
+                              [keyword.arg for keyword in call.keywords]))
+        self.assertEqual(sorted(calls), [
+            ("RawCore.command", "ws_connect", ["CORE_WS_URL"], ["max_msg_size"]),
+            ("RawRest.rest", "request", ["method", "CORE_URL + path"], ["headers", "allow_redirects", None]),
+            ("StubControl._request", "request", ["method", "STUB_CONTROL_URL"], ["allow_redirects", None]),
+        ])
+        # By method name on any receiver (``get`` aside: dict lookups share it), the
+        # only other callers are the bound runtime client and the guarded stub client.
+        offered = {"request", "post", "put", "delete", "patch", "head", "options", "ws_connect"}
+        self.assertEqual(sorted({ast.unparse(node.func) for node in ast.walk(module) if isinstance(node, ast.Call)
+                                 and isinstance(node.func, ast.Attribute) and node.func.attr in offered}),
+                         ["self.client.request", "session.request", "session.ws_connect", "stub.post"])
+
+    def test_no_name_is_bound_from_a_core_url_constant(self):
+        """Source shape: the two Core constants are read in five places and bound to no other name."""
+        module, urls = lane_tree(), {"CORE_URL", "CORE_WS_URL"}
+        stores = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id in urls
+                  and not isinstance(node.ctx, ast.Load)]
+        # Each constant is assigned once, at module level, from one string.
+        self.assertEqual(sorted((node.id, node.where, type(node.parent).__name__, type(node.parent.value).__name__)
+                                for node in stores),
+                         [("CORE_URL", "", "Assign", "Constant"), ("CORE_WS_URL", "", "Assign", "Constant")])
+        for node in ast.walk(module):
+            value = getattr(node, "value", None)
+            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and value is not None:
+                self.assertFalse(names_in(value) & urls, ast.unparse(node))
+        reads = sorted((node.where, ast.unparse(node.parent)) for node in ast.walk(module)
+                       if isinstance(node, ast.Name) and node.id in urls and isinstance(node.ctx, ast.Load))
+        self.assertEqual(reads, sorted([
+            ("pinned", "configured.ha_url != CORE_URL"), ("pinned", "(CORE_API_URL, CORE_WS_URL)"),
+            ("pinned", "ha_url=CORE_URL"),
+            ("RawCore.command", "session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES)"),
+            ("RawRest.rest", "CORE_URL + path"),
+        ]))
 
     async def test_the_three_allowed_routes_are_sent_to_the_pinned_core_only(self):
         for method, path, body in self.ALLOWED:
@@ -1836,6 +1975,26 @@ class LaneStateReadTests(unittest.IsolatedAsyncioTestCase):
                     acceptance.aiohttp, "ClientSession", new=recording_session(sends, error=error)):
                 with self.assertRaises((HomeAssistantUnavailableError, HomeAssistantTimeoutError)):
                     await acceptance.LaneState(settings()).read(acceptance.SELECT)
+
+    async def test_a_client_error_without_an_integer_status_is_raised_and_never_a_missing_state(self):
+        """Only an HTTP answer is "no state": an API error that names no integer status is the error itself."""
+        for details in ({}, None, {"status": "404"}, {"status": None}, {"status": True}, {"status": 404.0},
+                        ["status", 404]):
+            error = HomeAssistantApiError(details={"status": 404})
+            error.details = details  # the base class turns None into {}: set what the lane reads
+            with self.subTest(details=details), NoTransport() as transport:
+                inner = transport.rest.return_value
+                inner.request = AsyncMock(side_effect=error)
+                with self.assertRaises(HomeAssistantApiError) as caught:
+                    await acceptance.LaneState(settings()).read(acceptance.SELECT)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(inner.request.await_count, 1)
+        # Control: the same error carrying the integer status of an answer is "no state".
+        for status in (404, 500):
+            with self.subTest(status=status), NoTransport() as transport:
+                transport.rest.return_value.request = AsyncMock(
+                    side_effect=HomeAssistantApiError(details={"status": status}))
+                self.assertIsNone(await acceptance.LaneState(settings()).read(acceptance.SELECT))
 
     async def test_a_read_inside_a_product_request_is_not_that_requests(self):
         sends, authorizer = [], Mock(return_value=False)
@@ -2158,6 +2317,22 @@ class ReregistrationUndo(unittest.IsolatedAsyncioTestCase):
             with self.subTest(changes=changes), self.assertRaises(AssertionError):
                 await acceptance.refusal_form(attempt(**changes), self.EXACT)
 
+    async def test_refusal_form_is_exact_for_a_raised_refusal(self):
+        def attempt(error):
+            async def answer():
+                raise error
+            return answer
+        self.assertEqual(await acceptance.refusal_form(attempt(DeviceConfigurationRefusal(self.EXACT)), self.EXACT),
+                         "raised_before_task")
+        for other in (self.OTHER_CODE, "device_configuration_undo_unavailable", self.EXACT + "_"):
+            with self.subTest(other=other), self.assertRaises(AssertionError):
+                await acceptance.refusal_form(attempt(DeviceConfigurationRefusal(other)), self.EXACT)
+        # Anything that is not the product's refusal is not a refusal form at all.
+        error = ValueError("synthetic-not-a-refusal")
+        with self.assertRaises(ValueError) as caught:
+            await acceptance.refusal_form(attempt(error), self.EXACT)
+        self.assertIs(caught.exception, error)
+
     def test_the_lane_names_no_other_undo_refusal_for_reregistration(self):
         """The acceptance source has no branch that could accept the identity refusal."""
         self.assertNotIn(self.OTHER_CODE, inspect.getsource(acceptance))
@@ -2165,6 +2340,69 @@ class ReregistrationUndo(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.count("restored_reregistration(registered, again)"), 1)
         self.assertEqual(run.count("code = REREGISTRATION_UNDO_REFUSAL"), 1)
         self.assertEqual(run.count('"undo_after_reregistration"'), 1)
+
+
+class ZeroDispatchRefusal(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-366: the lane's zero-dispatch check fails when the refused request sent a frame or wrote to the stub.
+
+    ``zero_dispatch_refusal`` and ``unchanged`` are run from the lane's own
+    source (``lane_helpers``) over a synthetic frame list and stub write list.
+    """
+
+    CODE = acceptance.REREGISTRATION_UNDO_REFUSAL
+    RECEIPT = {"terminal": True, "dispatch_intent_recorded": False, "reason": CODE, "status": "refused",
+               "terminal_outcome": "preflight_rejected"}
+
+    def lane(self, during, receipt=None):
+        """One refused request; ``during(sends, written)`` runs inside it, before it answers."""
+        ws, written = SimpleNamespace(sends=["synthetic-earlier-frame"]), ["synthetic-earlier-write"]
+        record, seen = {"refusals": {}}, []
+
+        async def writes():
+            return list(written)
+
+        async def control(service, req):
+            seen.append((service, req))
+            during(ws.sends, written)
+            if receipt is not None:
+                return dict(receipt)
+            raise DeviceConfigurationRefusal(self.CODE)
+        helpers = lane_helpers("unchanged", "zero_dispatch_refusal", ws=ws, writes=writes, control=control,
+                               record=record)
+        attempt = helpers.zero_dispatch_refusal("synthetic-service", "synthetic-request", self.CODE, "synthetic_label")
+        return attempt, record, seen
+
+    async def test_a_refusal_with_no_send_and_no_stub_write_is_recorded(self):
+        for receipt, form in ((None, "raised_before_task"), (self.RECEIPT, "preflight_rejected")):
+            with self.subTest(form=form):
+                attempt, record, seen = self.lane(lambda sends, written: None, receipt)
+                self.assertEqual(await attempt, form)
+                self.assertEqual(seen, [("synthetic-service", "synthetic-request")])
+                self.assertEqual(record["refusals"], {"synthetic_label": {
+                    "code": self.CODE, "form": form, "sends": 0, "stub_writes": 0}})
+
+    async def failed(self, during):
+        """The same refusal fails the lane, in the frame-and-write comparison and nowhere else."""
+        for receipt in (None, self.RECEIPT):
+            with self.subTest(raised=receipt is None):
+                attempt, record, seen = self.lane(during, receipt)
+                frames = []
+                with self.assertRaises(AssertionError):
+                    try:
+                        await attempt
+                    except AssertionError as exc:  # assertRaises drops the traceback: read it here
+                        frames = [frame.name for frame in traceback.extract_tb(exc.__traceback__)]
+                        raise
+                self.assertEqual(seen, [("synthetic-service", "synthetic-request")])
+                self.assertEqual(frames[-2:], ["zero_dispatch_refusal", "unchanged"])
+                # Nothing is recorded as a zero-dispatch refusal.
+                self.assertEqual(record["refusals"], {})
+
+    async def test_a_send_during_the_refused_request_fails_the_lane(self):
+        await self.failed(lambda sends, written: sends.append("synthetic-service-frame"))
+
+    async def test_a_stub_write_during_the_refused_request_fails_the_lane(self):
+        await self.failed(lambda sends, written: written.append("synthetic-stub-write"))
 
 
 class FieldChanges(unittest.TestCase):

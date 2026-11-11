@@ -216,10 +216,12 @@ class FakeHomeAssistant:
             self.on_read("state", self.reads["state"])
         entity_id = str(path).rsplit("/", 1)[1]
         entity = self.entities[entity_id]
+        stamp = entity.get("stamp", "2026-11-10T05:00:00+00:00")
+        # "changed" and "updated" move one timestamp alone; unset, both are the stamp.
         return {"entity_id": entity_id, "state": entity["state"],
                 "attributes": deepcopy(entity["attributes"]),
-                "last_changed": entity.get("stamp", "2026-11-10T05:00:00+00:00"),
-                "last_updated": entity.get("stamp", "2026-11-10T05:00:00+00:00"),
+                "last_changed": entity.get("changed", stamp),
+                "last_updated": entity.get("updated", stamp),
                 "context": {"id": entity.get("context", "ctx-0"), "parent_id": None,
                             "user_id": None}}
 
@@ -360,6 +362,37 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         undo = self.request(SWITCH, "undo", None, undo_task_id=request.task_id)
         await self.refused(undo, "device_configuration_undo_post_state_unproven")
         self.assertEqual(len(self.ha.writes), 1)
+
+    async def test_no_unavailable_undo_status_carries_the_rule(self):
+        """Each undo status that is not available is exactly its reason: the rule is on none of them."""
+        def unavailable(task_id, reason):
+            undo = self.service.receipt(task_id)["undo"]
+            self.assertNotIn("rule", undo)
+            self.assertEqual(undo, {"available": False, "reason": reason})
+
+        noop = await self.call(self.request(SELECT, "select_option", "previous"))
+        self.assertEqual(noop["status"], "no_change", noop)
+        self.assertEqual(noop["undo"], {"available": False, "reason": "no_verified_change"})
+        unavailable(noop["task_id"], "no_verified_change")
+        forward = await self.call(self.request())
+        self.assertEqual(forward["status"], "succeeded_verified", forward)
+        self.assertIn("rule", forward["undo"])  # control: the available status is the one that carries it
+        sidecar = self.service._verified_path(forward["task_id"])
+        saved = sidecar.read_text()
+        sidecar.write_text("{}")
+        unavailable(forward["task_id"], "device_configuration_undo_unavailable")
+        sidecar.write_text(saved)
+        self.assertIn("rule", self.service.receipt(forward["task_id"])["undo"])
+        undone = await self.call(await self.undo(forward["task_id"]))
+        self.assertEqual(undone["status"], "succeeded_verified", undone)
+        self.assertEqual(undone["undo"], {"available": False, "reason": "device_configuration_undo_not_eligible"})
+        unavailable(undone["task_id"], "device_configuration_undo_not_eligible")
+        unavailable(forward["task_id"], "device_configuration_undo_already_claimed")
+        self.ha.mode = "ack_only"
+        pending = await self.call(self.request(SWITCH, "turn_on", None))
+        self.assertNotEqual(pending["status"], "succeeded_verified", pending)
+        self.assertEqual(pending["undo"], {"available": False, "reason": "device_configuration_undo_unavailable"})
+        unavailable(pending["task_id"], "device_configuration_undo_unavailable")
 
     async def test_restart_reads_receipt_without_redispatch(self):
         request = self.request()
@@ -769,7 +802,8 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         back as itself (same registry id, created_at and unique_id); what moves is
         what Core rewrites: registry ``modified_at`` and the state's timestamps
         and context. The undo refuses as unproven, never as an identity change,
-        and sends nothing."""
+        and sends nothing. The last four shapes move one recorded state field
+        (or the two timestamps) and nothing else: each is enough on its own."""
         forward = await self.call(self.request(entity_id, action, value))
         self.assertEqual(forward["status"], "succeeded_verified", forward)
         entity, recorded = self.ha.entities[entity_id], deepcopy(self.ha.entities[entity_id])
@@ -785,8 +819,16 @@ class DeviceConfigurationTests(unittest.IsolatedAsyncioTestCase):
         def restated():
             self.ha.touch(entity_id)  # new last_changed, last_updated and context id
 
+        def moved(*keys):
+            def step():
+                for key in keys:
+                    entity[key] = {"context": "ctx-synthetic-reissued"}.get(key, "2026-11-10T07:00:00+00:00")
+            return step
+
         shapes = {"registry_modified_at_only": (rewritten,), "reload_alone": (restated,),
-                  "removed_then_reloaded": (rewritten, restated)}
+                  "removed_then_reloaded": (rewritten, restated),
+                  "context_id_only": (moved("context"),), "timestamps_only": (moved("changed", "updated"),),
+                  "last_changed_only": (moved("changed"),), "last_updated_only": (moved("updated"),)}
         for shape, steps in shapes.items():
             with self.subTest(entity_id=entity_id, shape=shape):
                 entity.clear()
