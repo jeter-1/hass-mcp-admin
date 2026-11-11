@@ -41,6 +41,10 @@ API_URL, WEBSOCKET_URL = "http://127.0.0.1:18123/api", "ws://127.0.0.1:18123/api
 # The lane's own members, as ``acceptance.run`` declares them.
 MEMBERS = ("input_boolean.hamcp_g4_lamp", "input_boolean.hamcp_g4_strip")
 SCENE_ID, AUTOMATION_ID = "hamcp_g4_scene_0a1b2c3d", "hamcp_g4_consumer_0a1b2c3d"
+# An entity id a scene's registry entry could sit under that the lane never captured.
+OTHER_ENTITY = "scene.hamcp_g4_other"
+# Answers to a state GET that say neither "there" (200) nor "gone" (404).
+STATE_ANSWERS = {"state_answers_500": 500, "state_answers_401": 401}
 # Every method and route the lane's own client may send (HAMCP-200).
 LANE_REQUESTS = frozenset({
     ("GET", "/states/{}"), ("GET", "/config/scene/config/{}"), ("GET", "/config/automation/config/{}"),
@@ -670,12 +674,14 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         self.assertEqual(where[0], step.__name__)
         return error, where[1]
 
-    async def undo_read_back_refuses(self, earlier, undo):
+    async def undo_read_back_refuses(self, earlier, undo, cases=(
+            "config", "config_error", "registry_entry", "state", "body_with_a_404")):
         """One case per fact of an undo read-back: the governed undo verified, and Core still shows one thing."""
         c = self.lane_context
-        for index, left in enumerate(("config", "config_error", "registry_entry", "state", "body_with_a_404")):
-            with self.subTest(left=left):
-                c.suffix, c.state = "0a1b2c3" + str(index), {}
+        for left in cases:
+            with self.subTest(undo=undo.__name__, left=left):
+                # One scene per case, so a case never meets what an earlier one left in Core.
+                c.suffix, c.state = "0a1b2c3" + format(len(c.owned["scenes"]), "x"), {}
                 for step in earlier:
                     await step(c)
                 config_id = c.state["config_id"]
@@ -697,11 +703,17 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                         self.ws.entries[entity_id] = entry
                     elif left == "state":
                         self.rest.states.add(entity_id)
+                    elif left == "registry_entry_under_another_entity_id":
+                        self.ws.entries[OTHER_ENTITY] = {**entry, "entity_id": OTHER_ENTITY}
+                    elif left in STATE_ANSWERS:
+                        self.raw.client.errors["GET", acceptance.STATE_ROUTE] = STATE_ANSWERS[left]
                     else:
                         # The shipped lane client never returns a body with a 404; another reader could.
                         c.reader.status = body_with_a_404
                 shown.update({"config": {"config_status": 200}, "config_error": {"config_status": 500},
                               "registry_entry": {"registry_entity_id": entity_id}, "state": {"state_status": 200},
+                              "registry_entry_under_another_entity_id": {"registry_entity_id": OTHER_ENTITY},
+                              **{name: {"state_status": status} for name, status in STATE_ANSWERS.items()},
                               "body_with_a_404": {}}[left])
                 try:
                     error, _line = await self.fails_after_verified_apply(undo, leave)
@@ -875,6 +887,65 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
     async def test_an_undo_of_the_recreate_that_verified_but_left_the_scene_fails_its_read_back(self):
         await self.undo_read_back_refuses([acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
                                           acceptance.scene_recreate_undo)
+
+    async def test_an_undo_that_left_the_scene_registered_under_another_entity_id_fails_its_read_back(self):
+        """Gone means no registry entry for the scene's unique id at all, not just none under the captured id."""
+        left = ("registry_entry_under_another_entity_id",)
+        await self.undo_read_back_refuses(
+            [acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
+            acceptance.scene_recreate_undo, left)
+        await self.undo_read_back_refuses([acceptance.scene_create], acceptance.scene_undo, left)
+        # Nothing else of a lane scene is left in Core: the entry under the other id is all each read-back saw.
+        self.assertEqual([key for key, entry in self.ws.entries.items()
+                          if entry.get("unique_id") in self.lane_context.owned["scenes"]], [OTHER_ENTITY])
+        self.assertEqual(self.rest.scenes, {})
+        self.assertEqual([key for key in self.rest.states if key.startswith("scene.")], [])
+
+    async def test_an_undo_whose_state_read_is_neither_absent_nor_present_fails_its_read_back(self):
+        """Only a 404 says the scene entity is gone: an answer that is not 200 is not yet that."""
+        await self.undo_read_back_refuses([acceptance.scene_create], acceptance.scene_undo, tuple(STATE_ANSWERS))
+        await self.undo_read_back_refuses(
+            [acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
+            acceptance.scene_recreate_undo, tuple(STATE_ANSWERS))
+        # Core held nothing of any of these scenes: the state answer alone kept each undo from passing.
+        self.assertEqual(self.rest.scenes, {})
+        self.assertEqual([key for key in self.ws.entries if key.startswith("scene.")], [])
+        self.assertEqual([key for key in self.rest.states if key.startswith("scene.")], [])
+
+    async def test_a_create_reads_what_its_members_hold_before_it_plans_and_compares_with_that(self):
+        """What the members held before the create is read, never assumed: one starts off, which no default says."""
+        c = self.lane_context
+        # The synthetic Core answers a member's state from this overlay; without it every member reads "on".
+        self.rest.activated[MEMBERS[0]] = "off"
+        held = [(200, "off"), (200, "on")]
+        self.assertEqual([await c.reader.state(member) for member in MEMBERS], held)
+        read, before_plan = [], []
+        status, scene_plan = c.reader.status, c.scene_plan
+
+        async def recorded(method, route, body=None):
+            read.append((method, route.template, route.values[0]))
+            return await status(method, route, body)
+
+        def planned(request):
+            # The plan is the first thing Engineering is asked for, so this is before any write.
+            before_plan.append(([item for item in read if item[1] == acceptance.STATE_ROUTE],
+                                self.log.writes_since(0)))
+            return scene_plan(request)
+        c.reader.status, c.scene_plan = recorded, planned
+        result = refused_at = None
+        try:
+            result = await acceptance.scene_create(c)
+        except AssertionError as error:
+            refused_at = traceback.extract_tb(error.__traceback__)[-1].line
+        # Each member was read through the lane's client before the plan existed, so before the create POST.
+        self.assertEqual(len(before_plan), 1)
+        self.assertCountEqual(before_plan[0][0], [("GET", acceptance.STATE_ROUTE, member) for member in MEMBERS])
+        self.assertEqual(before_plan[0][1], [])
+        self.assertEqual(self.log.writes_since(0), [acceptance.SCENE_POST])
+        # A create that changed no member passes whatever the members held: the comparison is with what was read.
+        self.assertIsNone(refused_at)
+        self.assertEqual((result["result"], result["members_unchanged"]), ("PASS", True))
+        self.assertEqual([await c.reader.state(member) for member in MEMBERS], held)
 
     async def test_a_create_that_changes_a_member_fails_the_lane(self):
         """Engineering verifies the scene it stored, not the members it names; the lane reads those itself."""
