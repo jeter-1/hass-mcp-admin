@@ -78,7 +78,7 @@ TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
 STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
-STOCK_PUBLIC = 112  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration
+STOCK_PUBLIC = 113  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
 
 
 def captured(version, label="A"):
@@ -506,7 +506,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):

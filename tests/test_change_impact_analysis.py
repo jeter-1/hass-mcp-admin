@@ -1780,7 +1780,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1836,6 +1836,7 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "get_marketplace_inventory",  # HAMCP-290: additive native read
                 "get_security_metadata",  # HAMCP-134: additive native read
                 "control_device_configuration",  # HAMCP-297: additive typed control
+                "get_thread_matter_topology",  # HAMCP-231: additive native read
             },
         )
         from hamcp247_descriptor_changes import without_hamcp247_detail_section

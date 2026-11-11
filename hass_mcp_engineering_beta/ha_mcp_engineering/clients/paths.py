@@ -18,7 +18,9 @@ the normalized route is exactly the template's route.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, final
 from urllib.parse import quote, unquote
 import weakref
@@ -303,18 +305,61 @@ def _route_methods(route: Route) -> frozenset[str] | None:
         return frozenset({"POST"})
     if route.template == "/config/config_entries/options/flow/{}":
         return frozenset({"DELETE", "POST"})
-    # HAMCP-071: only the scene configuration gateway reaches this route; a
-    # scene configuration DELETE is never reachable.
+    # HAMCP-071: only the scene configuration gateway reaches this route.
+    # HAMCP-298 §3.5: a DELETE is reachable only under the single-use
+    # ``scene_delete_permit`` the created-object delete gateway installs for
+    # exactly one config id (``_scene_delete_permitted``).
     if route.template == "/config/scene/config/{}":
-        return frozenset({"GET", "POST"})
+        return frozenset({"GET", "POST", "DELETE"})
     return None
+
+
+class _SceneDeletePermit:
+    __slots__ = ("config_id", "claimed")
+
+    def __init__(self, config_id: str) -> None:
+        self.config_id = config_id
+        self.claimed = False
+
+
+_SCENE_DELETE_PERMIT: ContextVar[_SceneDeletePermit | None] = ContextVar(
+    "scene_configuration_delete_permit", default=None
+)
+
+
+@contextmanager
+def scene_delete_permit(config_id: str) -> Iterator[None]:
+    """HAMCP-298: authorize exactly one scene config DELETE of ``config_id``.
+
+    Installed only by the created-object delete gateway around its one send.
+    The permit is claimed when the URL is built, so a second DELETE (a retry,
+    another id, or any other caller) is refused before a session exists.
+    """
+
+    if not isinstance(config_id, str) or not config_id:
+        raise UnsafeRequestPathError("scene_delete_permit_invalid")
+    token = _SCENE_DELETE_PERMIT.set(_SceneDeletePermit(config_id))
+    try:
+        yield
+    finally:
+        _SCENE_DELETE_PERMIT.reset(token)
+
+
+def _scene_delete_permitted(route: Route, *, claim: bool) -> bool:
+    slot = _SCENE_DELETE_PERMIT.get()
+    if slot is None or slot.claimed or tuple(route.values) != (slot.config_id,):
+        return False
+    if claim:
+        slot.claimed = True
+    return True
 
 
 def require_route(path: Any, method: Any = None) -> Route:
     """Return ``path`` if ``rest_path`` issued it; refuse anything else.
 
     A method-bound route (``_route_methods``) is refused for any other
-    method, including when no method is named.
+    method, including when no method is named.  A scene config DELETE also
+    needs the unclaimed single-use permit for exactly its config id.
     """
 
     if not is_route(path):
@@ -322,6 +367,12 @@ def require_route(path: Any, method: Any = None) -> Route:
     allowed = _route_methods(path)
     if allowed is not None and method not in allowed:
         raise UnsafeRequestPathError("route_method_not_allowed")
+    if (
+        path.template == "/config/scene/config/{}"
+        and method == "DELETE"
+        and not _scene_delete_permitted(path, claim=False)
+    ):
+        raise UnsafeRequestPathError("scene_delete_permit_required")
     return path
 
 
@@ -360,6 +411,12 @@ def request_url(api_url: str, path: Any, method: Any = None) -> URL:
         or list(url.query.items()) != expected_query
     ):
         raise UnsafeRequestPathError("route_mismatch")
+    if (
+        route.template == "/config/scene/config/{}"
+        and method == "DELETE"
+        and not _scene_delete_permitted(route, claim=True)
+    ):
+        raise UnsafeRequestPathError("scene_delete_permit_required")
     return url
 
 
@@ -373,4 +430,5 @@ __all__ = [
     "request_url",
     "require_route",
     "rest_path",
+    "scene_delete_permit",
 ]

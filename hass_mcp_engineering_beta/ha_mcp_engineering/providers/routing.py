@@ -45,6 +45,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.SCRIPT_TRACE,
     ProviderCapability.MARKETPLACE_INVENTORY,
     ProviderCapability.SECURITY_METADATA,
+    ProviderCapability.THREAD_MATTER_TOPOLOGY,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
@@ -142,6 +143,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_script_trace": ProviderCapability.SCRIPT_TRACE,
     "get_marketplace_inventory": ProviderCapability.MARKETPLACE_INVENTORY,
     "get_security_metadata": ProviderCapability.SECURITY_METADATA,
+    "get_thread_matter_topology": ProviderCapability.THREAD_MATTER_TOPOLOGY,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -306,6 +308,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_security_metadata": {
         "policy_id": "security_metadata_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "constant reads of auth/current_user, config/auth/list, http/config, get_config, homeassistant/expose_new_entities/get (KNOWN_ASSISTANTS), assist_pipeline/pipeline/list, conversation/agent/list and get_panels, each at most once; positive privacy projection, shared sanitizer, fixed byte cap; no Supervisor request; admitted core.security_metadata_read only",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_thread_matter_topology": {
+        "policy_id": "thread_matter_topology_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "constant thread/list_datasets and matter/network_topology refresh=false; at most 2 commands on one connection; opaque per-response identifiers; credential-bearing sections refused whole; shared sanitizer; admitted core.thread_matter_topology_read only",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_history_slices": {

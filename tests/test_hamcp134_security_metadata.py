@@ -332,7 +332,7 @@ class ContractTests(unittest.TestCase):
     def test_existing_profile_fingerprints_are_unchanged(self):
         others = {p.capability_id: p.contract_fingerprint for p in CORE_RUNTIME_CAPABILITY_PROFILES
                   if p.capability_id != PROFILE}
-        self.assertEqual(len(others), 34)  # HAMCP-297: + device configuration
+        self.assertEqual(len(others), 37)  # HAMCP-297: + device configuration; HAMCP-329/298: + 2 dormant created-object profiles; HAMCP-231: + thread/matter topology
         import test_hamcp290_marketplace_inventory as marketplace
         self.assertEqual(others["core.marketplace_read"], marketplace.PINNED_FINGERPRINT)
 

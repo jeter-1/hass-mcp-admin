@@ -227,6 +227,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "get_marketplace_inventory",
                         # HAMCP-134: additive security posture metadata read.
                         "get_security_metadata",
+                        # HAMCP-231: additive dormant Thread/Matter topology read.
+                        "get_thread_matter_topology",
                     )
                 )
             ),
@@ -401,6 +403,10 @@ class RC1PublicContractTests(unittest.TestCase):
             item.pop("operation_class", None)
         baseline_classifications["search_entities"].pop("routing")
         baseline_classifications["search_entities"].pop("provider")
+        # HAMCP-329/298: the created-object delete capabilities are additive
+        # blocks on ``rollback_change``; every Beta 26 key is unchanged.
+        for added in ("created_scene_delete", "created_helper_delete"):
+            baseline_classifications["rollback_change"].pop(added)
         baseline_classifications.update(
             {
                 "upsert_automation": {
@@ -468,7 +474,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(len(classifications), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

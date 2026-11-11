@@ -86,6 +86,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_configuration_resources.py",
     "tests/test_f3_configuration_sequence.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+    # HAMCP-329/298: the created-object (scene create, created delete) adapter.
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/created_objects.py",
     # HAMCP-155: the configuration delete strategy and adapter.
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/delete.py",
     # HAMCP-232: the config-entry helper-options strategy.
@@ -322,6 +324,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             importers,
             {
                 "adapter.py",
+                "created_objects.py",  # HAMCP-329/298
                 "delete.py",  # HAMCP-155
                 "helper_options.py",  # HAMCP-232
                 "locks.py",
