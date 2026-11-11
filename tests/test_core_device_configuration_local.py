@@ -43,6 +43,7 @@ from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationG
 from ha_mcp_engineering.device_configuration.service import (  # noqa: E402
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
 from ha_mcp_engineering.errors import HomeAssistantTimeoutError, HomeAssistantUnavailableError  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import profiles as profiles_module  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 
@@ -2007,6 +2008,39 @@ class CompositeObservation(ProductThroughGuards):
                 # The authority window is taken and given back.
                 self.assertEqual((self.core.leases, self.core.commits), (set(), set()))
         self.assertEqual((self.ws.refused, self.rest.refused), ([], []))
+
+    async def test_composite_window_names_the_target_the_adapter_names(self):
+        """The lane's observation window and the adapter's own window lease the same target."""
+        seen = []
+        acquire = self.core.acquire
+
+        def recording(requirements, **kwargs):
+            seen.append(kwargs["target"])
+            return acquire(requirements, **kwargs)
+        self.core.acquire = recording
+        for entity_id, value in ((acceptance.SELECT, "on"), (acceptance.SWITCH, "on"), (acceptance.NUMBER, "3")):
+            with self.subTest(entity_id=entity_id):
+                del seen[:]
+                await acceptance.composite(self.service, entity_id)
+                self.assertEqual(len(seen), 1)
+                mine = seen[0]
+                self.assertIs(type(mine), dict)
+                self.assertEqual(mine, {"target_type": entity_id.split(".", 1)[0], "target_id": entity_id})
+                del seen[:]
+                receipt = await self.control(acceptance.device_request(entity_id, value))
+                self.assertEqual(receipt["status"], "succeeded_verified", receipt)
+                self.assertTrue(seen)
+                for runtime_target in seen:
+                    self.assertIsNot(type(runtime_target), dict)
+                    self.assertEqual((runtime_target.target_type, runtime_target.target_id),
+                                     (entity_id.split(".", 1)[0], entity_id))
+                    self.assertEqual(CoreRuntime.target_fingerprint(mine),
+                                     CoreRuntime.target_fingerprint(runtime_target))
+        # A different mapping is a different lease target.
+        self.assertNotEqual(
+            CoreRuntime.target_fingerprint({"target_type": "select", "target_id": acceptance.SELECT}),
+            CoreRuntime.target_fingerprint({"target_type": "switch", "target_id": acceptance.SELECT}))
+        self.assertNotRegex(Path(acceptance.__file__).read_text(encoding="utf-8"), r"ha_mcp_engineering\.f3\b")
 
     async def test_composite_keeps_the_runtime_refusals(self):
         with self.assertRaises(DeviceConfigurationRefusal) as caught:

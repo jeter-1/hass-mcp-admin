@@ -45,7 +45,6 @@ from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationG
 from ha_mcp_engineering.device_configuration.service import (
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
 from ha_mcp_engineering.errors import HomeAssistantApiError
-from ha_mcp_engineering.f3.contracts import OperationTarget
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_DEVICE_CONFIGURATION_PROFILES
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
@@ -497,10 +496,15 @@ async def composite(service, entity_id):
     the call preparation, the locked preflight, ``once()`` and the readback make.
     Its ``digest`` is the state fingerprint an undo compares with the recorded
     post-change fingerprint. Nothing here restates the projection.
+
+    The window names its target in the mapping form ``CoreRuntime.target_fingerprint``
+    accepts, which fingerprints the same as the adapter's own target for the
+    entity, so this module imports nothing from the ``f3`` package.
     """
     adapter = service.adapter.inner
-    window = SimpleNamespace(target=OperationTarget(entity_id.split(".", 1)[0], entity_id),
-                             provider_contract=None, core_binding=None)
+    window = SimpleNamespace(
+        target={"target_type": entity_id.split(".", 1)[0], "target_id": entity_id},
+        provider_contract=None, core_binding=None)
     _telemetry, token = begin_request("hamcp366-disposable-lane")
     try:
         observed, _display = await adapter.core.read(
