@@ -278,12 +278,17 @@ No new Home Assistant write, service call or Core command shape. Tests extend `t
       cap (`:387-390`);
     - drop quarantine stubs past the 90 days (`service.py:322`, `:326-328`);
     - rewrite the index and sidecar whenever anything changed or the state is dirty (`service.py:526-527`,
-      `:1062-1063`), including after load-time repair or reset (`store.py:395-399`, `:472-474`);
+      `:1062-1063`). A load-time repair marks the state dirty (`store.py:472-474`), so the next of these calls
+      rewrites it. A load-time reset does not: it sets `lifecycle_reset` and loads an empty lifecycle state
+      (`store.py:395-399`) without marking it dirty (`service.py:462-463` reads only the dirty flag), so these
+      calls rewrite nothing for the reset alone. The rewrite happens at the next save something else triggers,
+      and that save permanently replaces the damaged or unbound sidecar slots, including the lapsed-watch
+      history they held (`store.py:567-577`);
     - delete removed record files, orphaned (unindexed) record files and abandoned `.pending-*` temporaries,
       regardless of age (`service.py:484-492`);
     - write `trace_watch_expired` audit rows (`service.py:494-502`).
     The orphan, pending, repair and reset effects normally need a prior crash or damage. That is an inference from
-    source, not a measurement. Josh discloses these effects in the acceptance step he authorizes.
+    source, not a measurement. These effects are disclosed to Josh in the acceptance step he authorizes.
   - **Unknown, not inferred.** A value none of these calls reports (for example per-tick Core read time or bytes on
     disk) is recorded as `unknown`. It is never filled in by reading the add-on filesystem, a host shell or Home
     Assistant directly.
@@ -363,4 +368,4 @@ Item 21 above is quoted as decided on 2026-11-08. Its measurement procedure is r
 
 "M1 was resolved by Josh's ruling (option 1): the measurement keeps watch list and list_trace_snapshots, disclosed as reads that also run routine store maintenance (expiry sweep, orphan and temp-file cleanup, load-time repairs, audit rows), with file:line; get_server_health is the read-only part"
 
-Section 7 now uses `get_server_health` as the read-only part (`trace_snapshots/service.py:453-458`) and watch `list` and `list_trace_snapshots` for snapshot counts and stored bytes, described as reads that also run the routine store maintenance. Every effect is listed with `file:line` at `origin/release/2.6.0` `8e19b401`: retention removal (`service.py:318-319`), watch expiry and lapse records (`:320`, `:329-337`), lapsed pruning and cap drop (`:338-342`, `:387-390`), quarantine stubs (`:322`, `:326-328`), index and sidecar rewrites including load-time repair or reset (`:526-527`, `:1062-1063`; `store.py:395-399`, `:472-474`), deletion of removed, orphaned and `.pending-*` record files regardless of age (`service.py:484-492`), and `trace_watch_expired` audit rows (`:494-502`). Both calls are out of "Never"; snapshot counts and stored bytes are measured again, not `unknown`. That orphan, pending, repair and reset effects normally need a crash or damage is labelled inference. Item 21 as decided on 2026-11-08 is unchanged.
+Section 7 now uses `get_server_health` as the read-only part (`trace_snapshots/service.py:453-458`) and watch `list` and `list_trace_snapshots` for snapshot counts and stored bytes, described as reads that also run the routine store maintenance. Every effect is listed with `file:line` at `origin/release/2.6.0` `8e19b401`: retention removal (`service.py:318-319`), watch expiry and lapse records (`:320`, `:329-337`), lapsed pruning and cap drop (`:338-342`, `:387-390`), quarantine stubs (`:322`, `:326-328`), index and sidecar rewrites (`:526-527`, `:1062-1063`), which a load-time repair causes at the next of these calls because it marks the state dirty (`store.py:472-474`) and a load-time reset does not, because it sets `lifecycle_reset` without marking the state dirty (`store.py:395-399`, `service.py:462-463`): after a reset the rewrite waits for the next save something else triggers, and that save permanently replaces the damaged or unbound sidecar slots and the lapsed-watch history they held (`store.py:567-577`), deletion of removed, orphaned and `.pending-*` record files regardless of age (`service.py:484-492`), and `trace_watch_expired` audit rows (`:494-502`). Both calls are out of "Never"; snapshot counts and stored bytes are measured again, not `unknown`. That orphan, pending, repair and reset effects normally need a crash or damage is labelled inference. Item 21 as decided on 2026-11-08 is unchanged.

@@ -35,8 +35,12 @@ It authorizes none of the later stages.
 
 ## Items
 
-Each item was reviewed by Codex in its own pull request into
-`release/2.5.0` and merged at exactly the head its Ready verdict names.
+Each item was reviewed by Codex in its own pull request and merged at
+exactly the head its Ready verdict names. Every pull request targeted
+`release/2.5.0` except two stacked ones: #407 targeted #406's branch
+(`agent/HAMCP-319-build`) and #408 targeted #407's branch
+(`agent/HAMCP-319-lanes-91`). Those two reached `release/2.5.0` through
+#406's merge (`657fef21`).
 #408 was reviewed cumulatively inside #407, its base: its cited verdict was
 Ready after corrections, and the final #407 verdict closed the remaining
 finding and made the whole of #407, including #408, Ready.

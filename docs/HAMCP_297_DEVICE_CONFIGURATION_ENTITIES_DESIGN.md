@@ -1494,10 +1494,17 @@ disposable lane. No household access is needed for this.
   - The stub implements only the server side of the WebSocket protocol subset
     that `matter-python-client==1.5.5` uses for connect, `start_listening`,
     node delivery, `write_attribute` and attribute-updated events. That
-    subset is derived from the pinned client source at build time and is
-    **unknown at this head**; if the client needs a command the stub cannot
-    answer faithfully, the build stops and reports it rather than patching
-    Core or the client.
+    subset is pinned by the build (see the build result below): the stub
+    answers `start_listening`, `get_nodes`, `get_node`, `server_info`,
+    `set_default_fabric_label`, `check_node_update`, `get_network_topology`
+    and `write_attribute`, and answers any other command with
+    `INVALID_COMMAND`
+    (`tests/fixtures/hamcp297_matter_server_stub/stub.py:212-236`). The pins
+    are matter-python-client 1.5.5 and matter-js/matterjs-server v1.5.5
+    (commit `a7922e85`), recorded in that fixture's `provenance.json`
+    (`protocol_pins`). If the client needs a command the stub cannot answer
+    faithfully, the build stops and reports it rather than patching Core or
+    the client.
   - It serves node dumps taken unchanged from Core's own test fixtures at
     `74cf5a49`, identified by sha256:
     `tests/components/matter/fixtures/nodes/eve_energy_20ecn4101.json`
