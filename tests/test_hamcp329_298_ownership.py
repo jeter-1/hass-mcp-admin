@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 import sys
 import unittest
@@ -23,15 +24,19 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+from ha_mcp_engineering import approval_web  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     ErrorCode,
     GovernanceError,
     HomeAssistantApiError,
 )
 from ha_mcp_engineering.governance import (  # noqa: E402
+    configuration_delete_planning as delete_planning,
     created_object_identity,
     created_object_rollback as rollback_model,
+    policy as policy_model,
 )
+from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 
 import tests.hamcp155_fixtures as fixtures155  # noqa: E402
 from tests.hamcp329_298_fixtures import (  # noqa: E402
@@ -932,6 +937,346 @@ class PrerequisiteRuleTests(OwnershipTestCase):
             rollback_model.CHANGED,
         )
         self.assertEqual(self.helper_reads_since(mark, "input_boolean"), [])
+
+
+# What the approver must be shown for a created-object delete child (§3.4.2,
+# §3.5).  The Ingress approval page renders a child's risk reasons, each cut
+# at 300 characters, and nothing of the plan disclosure.
+PAGE_REASON_LIMIT = 300
+RESIDUAL = rollback_model.RESIDUAL_DISCLOSURE
+ACKNOWLEDGED = f"{rollback_model.E_DISCLOSURE} Elevated acknowledgement required."
+CREATED_OBJECT_REASON_TEXTS = (
+    RESIDUAL,
+    rollback_model.E_DISCLOSURE,
+    "Registry modified_at when created",
+    "Entity id when created",
+    "Entity id now",
+    "too long to show here",
+    "more statements about this delete are not shown",
+)
+
+
+def modified_at_reason(marker: dict) -> str:
+    return (
+        f"Registry modified_at when created: {marker['captured_modified_at']}; "
+        f"observed now: {marker['observed_modified_at']}."
+    )
+
+
+class ApprovalReviewDisclosureTests(OwnershipTestCase):
+    """The reasons the Ingress approval page shows for a rollback delete child."""
+
+    async def review(self, plan: dict) -> tuple[list[str], str, str]:
+        """The child's reasons, the page's line of them, and the whole page."""
+
+        pending = self.service.approve(plan["plan_id"], plan["plan_hash"])
+        review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        operations, error = approval_web._bounded_operation_summaries(review)
+        self.assertIsNone(error)
+        (operation,) = operations
+        reasons = operation["risk_reasons"]
+        _level, shown = approval_web._operation_risk(operation)
+        page = approval_web._render_review("", review, csrf)
+        # The page shows every reason whole: none is cut and none is dropped.
+        self.assertEqual(shown, "; ".join(reasons))
+        self.assertIn(escape(shown), page)
+        return reasons, shown, page
+
+    def assert_shown(self, expected: list[str], reasons: list[str], page: str) -> None:
+        self.assertEqual(reasons[: len(expected)], expected)
+        for reason in expected:
+            self.assertLessEqual(len(reason), PAGE_REASON_LIMIT)
+            self.assertIn(escape(reason), page)
+
+    async def test_an_owned_delete_child_shows_the_whole_residual_sentence(self):
+        for kind in KINDS:
+            with self.subTest(kind=kind):
+                subject = await self.subject(kind, "owned shown")
+                _rollback, plan = await self.rollback_plan(
+                    subject.created, approve=False
+                )
+                (marker,) = self.markers(plan["plan_id"])
+                self.assertEqual(marker["ownership"], rollback_model.OWNED)
+                reasons, shown, page = await self.review(plan)
+                self.assert_shown([RESIDUAL], reasons, page)
+                self.assertNotIn(rollback_model.E_DISCLOSURE, shown)
+                self.assertNotIn("Entity id", shown)
+                # The sentence is bound in the plan hash: the hash covers the
+                # policy decision, whose subject hash covers the reasons.
+                stored = self.service._load(plan["plan_id"])
+                decision = stored.policy_decision.to_dict()
+                self.assertEqual(self.service.plan_hash(stored), plan["plan_hash"])
+                stored.policy_decision = None
+                self.assertNotEqual(self.service.plan_hash(stored), plan["plan_hash"])
+                self.assertEqual(
+                    stable_hash(policy_model.policy_subject_payload(stored)),
+                    decision["policy_subject_hash"],
+                )
+                stored.operations[0].risk.reasons.remove(RESIDUAL)
+                self.assertNotEqual(
+                    stable_hash(policy_model.policy_subject_payload(stored)),
+                    decision["policy_subject_hash"],
+                )
+
+    async def test_an_option_e_rename_shows_every_statement_and_value_whole(self):
+        for kind in KINDS:
+            with self.subTest(kind=kind):
+                subject = await self.subject(kind, "renamed shown")
+                captured = subject.entity_id
+                self.rename(subject, "renamed")
+                observed = subject.entity_id
+                self.assertNotEqual(captured, observed)
+                _rollback, plan = await self.rollback_plan(
+                    subject.created, approve=False
+                )
+                (marker,) = self.markers(plan["plan_id"])
+                self.assertEqual(
+                    marker["ownership"], rollback_model.MODIFIED_SINCE_CREATE
+                )
+                self.assertNotEqual(
+                    marker["captured_modified_at"], marker["observed_modified_at"]
+                )
+                reasons, _shown, page = await self.review(plan)
+                self.assert_shown(
+                    [
+                        ACKNOWLEDGED,
+                        modified_at_reason(marker),
+                        f"Entity id when created: {captured}",
+                        f"Entity id now: {observed}",
+                        RESIDUAL,
+                    ],
+                    reasons,
+                    page,
+                )
+
+    async def test_a_rename_to_the_longest_entity_id_is_still_shown_whole(self):
+        subject = await self.subject("input_boolean", "long rename")
+        captured = subject.entity_id
+        observed = "input_boolean." + "renamed_" * 30 + "x"
+        self.assertEqual(len(observed), 255)
+        subject.entity_id = self.rename_entity(captured, observed)
+        _rollback, plan = await self.rollback_plan(subject.created, approve=False)
+        (marker,) = self.markers(plan["plan_id"])
+        self.assertEqual(marker["observed_entity_id"], observed)
+        reasons, _shown, page = await self.review(plan)
+        self.assert_shown(
+            [
+                ACKNOWLEDGED,
+                modified_at_reason(marker),
+                f"Entity id when created: {captured}",
+                f"Entity id now: {observed}",
+                RESIDUAL,
+            ],
+            reasons,
+            page,
+        )
+
+    async def test_an_ordinary_delete_child_gains_no_created_object_reason(self):
+        self.add("automation", "plain")
+        plan = await self.create_one("automation", "plain")
+        self.assertEqual(self.markers(plan["plan_id"]), [])
+        reasons, shown, page = await self.review(plan)
+        self.assertEqual(
+            reasons,
+            [
+                "Deleting automation plain removes automation.plain: it stops "
+                "triggering, and any current run is stopped.",
+                "No indexed automation or script consumer was found.",
+            ],
+        )
+        for text in CREATED_OBJECT_REASON_TEXTS:
+            self.assertNotIn(text, shown)
+            self.assertNotIn(escape(text), page)
+
+
+def binding(**changes: str) -> dict[str, str]:
+    """A closed marker of an owned, unrenamed child (synthetic values)."""
+
+    value = dict.fromkeys(rollback_model.MARKER_FIELDS, "synthetic")
+    value.update(
+        ownership=rollback_model.OWNED,
+        basis="",
+        captured_modified_at="100.0",
+        observed_modified_at="100.0",
+        captured_entity_id="scene.evening",
+        observed_entity_id="scene.evening",
+    )
+    value.update(changes)
+    return value
+
+
+def modified(**changes: str) -> dict[str, str]:
+    return binding(
+        **{
+            "ownership": rollback_model.MODIFIED_SINCE_CREATE,
+            "basis": rollback_model.BASIS_MODIFIED_SINCE_CREATE,
+            "observed_modified_at": "101.0",
+            **changes,
+        }
+    )
+
+
+RENAMED = {
+    "captured_entity_id": "scene.evening",
+    "observed_entity_id": "scene.evening_renamed",
+}
+MODIFIED_AT = "Registry modified_at when created: 100.0; observed now: 101.0."
+
+
+class CreatedObjectReasonTests(unittest.TestCase):
+    """``statements`` and the delete child's reason list, without a service."""
+
+    def test_the_model_limit_is_what_the_page_shows_whole(self):
+        self.assertEqual(rollback_model.REASON_LIMIT, PAGE_REASON_LIMIT)
+        whole = "r" * PAGE_REASON_LIMIT
+        for reason, shown in ((whole, whole), (whole + "s", whole)):
+            with self.subTest(length=len(reason)):
+                self.assertEqual(
+                    approval_web._operation_risk({"risk_reasons": [reason]})[1],
+                    shown,
+                )
+        # The page shows every reason a delete child can carry.
+        self.assertLessEqual(
+            delete_planning.MAX_STATEMENTS, approval_web.MAX_STEP_WARNINGS
+        )
+
+    def test_the_fixed_sentences_fit_the_page_whole(self):
+        for text in (RESIDUAL, ACKNOWLEDGED):
+            self.assertLessEqual(len(text), PAGE_REASON_LIMIT)
+
+    def test_an_owned_child_carries_the_residual_sentence_alone(self):
+        self.assertEqual(rollback_model.statements(binding()), [RESIDUAL])
+
+    def test_a_modified_child_states_its_basis_and_both_times_separately(self):
+        self.assertEqual(
+            rollback_model.statements(modified()),
+            [ACKNOWLEDGED, MODIFIED_AT, RESIDUAL],
+        )
+
+    def test_a_renamed_child_states_each_entity_id_in_its_own_reason(self):
+        ids = [
+            "Entity id when created: scene.evening",
+            "Entity id now: scene.evening_renamed",
+        ]
+        self.assertEqual(
+            rollback_model.statements(modified(**RENAMED)),
+            [ACKNOWLEDGED, MODIFIED_AT, *ids, RESIDUAL],
+        )
+        # The ids are disclosed whenever they differ, as ``disclosure`` does.
+        self.assertEqual(
+            rollback_model.statements(binding(**RENAMED)), [*ids, RESIDUAL]
+        )
+
+    def test_entity_ids_of_255_characters_are_shown_whole(self):
+        captured = "scene." + "c" * 249
+        observed = "scene." + "o" * 249
+        reasons = rollback_model.statements(
+            modified(captured_entity_id=captured, observed_entity_id=observed)
+        )
+        self.assertIn(f"Entity id when created: {captured}", reasons)
+        self.assertIn(f"Entity id now: {observed}", reasons)
+        for reason in reasons:
+            self.assertLessEqual(len(reason), PAGE_REASON_LIMIT)
+
+    def test_a_value_too_long_to_show_whole_is_declared_and_never_cut(self):
+        long_id = "scene." + "c" * 400
+        long_time = "9" * 300
+        cases = (
+            (
+                {"captured_entity_id": long_id},
+                "The entity id when created is too long to show here "
+                "(406 characters).",
+                long_id,
+            ),
+            (
+                {"observed_entity_id": long_id},
+                "The entity id now is too long to show here (406 characters).",
+                long_id,
+            ),
+            (
+                {"captured_modified_at": long_time},
+                "The registry modified_at values are too long to show here.",
+                long_time,
+            ),
+            (
+                {"observed_modified_at": long_time},
+                "The registry modified_at values are too long to show here.",
+                long_time,
+            ),
+        )
+        for changes, declared, value in cases:
+            with self.subTest(field=next(iter(changes))):
+                reasons = rollback_model.statements(modified(**changes))
+                self.assertIn(declared, reasons)
+                self.assertFalse([item for item in reasons if value[:40] in item])
+                for reason in reasons:
+                    self.assertLessEqual(len(reason), PAGE_REASON_LIMIT)
+                self.assertEqual(reasons[0], ACKNOWLEDGED)
+                self.assertEqual(reasons[-1], RESIDUAL)
+
+    def classification(
+        self, count: int, *, elevated: bool = False, marker: dict | None = None
+    ) -> tuple[dict, list[str]]:
+        own = [f"Synthetic statement {index}." for index in range(count)]
+        value = delete_planning.classify(
+            ("synthetic_basis",) if elevated else (), own, []
+        )
+        if marker is not None:
+            value["created_object_rollback"] = marker
+        return value, own
+
+    def test_an_ordinary_delete_child_keeps_exactly_its_own_reasons(self):
+        value, own = self.classification(10)
+        risk = delete_planning.risk_assessment("delete_1", value)
+        self.assertEqual(risk.reasons, own)
+        self.assertEqual(len(risk.evidence), 1)
+        value, own = self.classification(10, elevated=True)
+        risk = delete_planning.risk_assessment("delete_1", value)
+        self.assertEqual(
+            risk.reasons,
+            ["Protected delete: synthetic_basis (elevated approval required)", *own[:9]],
+        )
+
+    def test_created_object_reasons_lead_the_child_and_nothing_is_dropped(self):
+        marker = modified(**RENAMED)
+        created = rollback_model.statements(marker)
+        self.assertEqual(len(created), 5)
+        value, own = self.classification(5, marker=marker)
+        risk = delete_planning.risk_assessment("delete_1", value)
+        self.assertEqual(risk.reasons, [*created, *own])
+        self.assertEqual(len(risk.reasons), delete_planning.MAX_STATEMENTS)
+        self.assertEqual(risk.evidence[1], marker)
+
+    def test_an_overflow_keeps_the_created_object_reasons_and_is_stated(self):
+        marker = modified(**RENAMED)
+        created = rollback_model.statements(marker)
+        for count, elevated, kept, hidden in (
+            (6, False, 4, 2),
+            (9, True, 3, 6),
+            (10, True, 3, 7),
+        ):
+            with self.subTest(count=count, elevated=elevated):
+                value, own = self.classification(
+                    count, elevated=elevated, marker=marker
+                )
+                lead = (
+                    ["Protected delete: synthetic_basis (elevated approval required)"]
+                    if elevated
+                    else []
+                )
+                risk = delete_planning.risk_assessment("delete_1", value)
+                self.assertEqual(
+                    risk.reasons,
+                    [
+                        *created,
+                        *lead,
+                        *own[:kept],
+                        f"{hidden} more statements about this delete are not shown.",
+                    ],
+                )
+                self.assertEqual(len(risk.reasons), delete_planning.MAX_STATEMENTS)
 
 
 if __name__ == "__main__":

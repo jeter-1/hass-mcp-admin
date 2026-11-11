@@ -58,6 +58,10 @@ RESIDUAL_DISCLOSURE = (
     "identical body cannot be distinguished from the created object."
 )
 REASON = "Rollback of governed create"
+# The Ingress approval page shows a child's risk reasons, each up to this many
+# characters, and nothing of the plan disclosure.  Every statement below is one
+# reason that fits whole; none is cut to fit.
+REASON_LIMIT = 300
 
 MARKER_FIELDS = frozenset(
     {
@@ -213,26 +217,54 @@ def disclosure(binding: dict[str, str]) -> dict[str, Any]:
 
 
 def statements(binding: dict[str, str]) -> list[str]:
-    """Risk reasons shown with the child (bounded)."""
+    """Risk reasons shown with the child: every one whole, never cut.
 
-    if binding["ownership"] != MODIFIED_SINCE_CREATE:
-        return []
-    text = (
-        f"{E_DISCLOSURE} Captured modified_at {binding['captured_modified_at']}, "
-        f"observed {binding['observed_modified_at']}"
-    )
-    if binding["captured_entity_id"] != binding["observed_entity_id"]:
-        text += (
-            f"; entity id {binding['captured_entity_id']} is now "
-            f"{binding['observed_entity_id']}"
+    The approver sees these and not ``disclosure``.  Each value has its own
+    reason so that it fits ``REASON_LIMIT``; a value too long to show whole is
+    declared as such instead of being shortened.
+    """
+
+    def whole(text: str, too_long: str) -> str:
+        return text if len(text) <= REASON_LIMIT else too_long
+
+    result: list[str] = []
+    if binding["ownership"] == MODIFIED_SINCE_CREATE:
+        result.append(f"{E_DISCLOSURE} Elevated acknowledgement required.")
+        result.append(
+            whole(
+                "Registry modified_at when created: "
+                f"{binding['captured_modified_at']}; observed now: "
+                f"{binding['observed_modified_at']}.",
+                "The registry modified_at values are too long to show here.",
+            )
         )
-    return [(text + ". Elevated acknowledgement required.")[:300]]
+    captured = binding["captured_entity_id"]
+    observed = binding["observed_entity_id"]
+    if captured != observed:
+        result.append(
+            whole(
+                f"Entity id when created: {captured}",
+                "The entity id when created is too long to show here "
+                f"({len(captured)} characters).",
+            )
+        )
+        result.append(
+            whole(
+                f"Entity id now: {observed}",
+                "The entity id now is too long to show here "
+                f"({len(observed)} characters).",
+            )
+        )
+    result.append(RESIDUAL_DISCLOSURE)
+    return result
 
 
 __all__ = [
     "BASIS_MODIFIED_SINCE_CREATE",
     "E_DISCLOSURE",
     "MODEL",
+    "REASON_LIMIT",
+    "RESIDUAL_DISCLOSURE",
     "SCENE_RECREATE_MODEL",
     "POLICY_TRIGGER",
     "SOURCE",

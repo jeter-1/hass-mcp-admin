@@ -300,14 +300,15 @@ def risk_assessment(
     """Return the risk record and the one policy marker for a delete child."""
 
     elevated = classification["policy"] == "elevated"
-    reasons = list(classification["statements"])
+    own = list(classification["statements"])
     if elevated:
-        reasons = [
+        own = [
             "Protected delete: "
             + ", ".join(classification["basis"])
             + " (elevated approval required)",
-            *reasons,
-        ][:MAX_STATEMENTS]
+            *own,
+        ]
+    reasons = own[:MAX_STATEMENTS] if elevated else own
     evidence = [
         {
             "field": operation_id,
@@ -324,9 +325,16 @@ def risk_assessment(
         from . import created_object_rollback
 
         evidence.append(dict(created_object))
-        reasons = [*created_object_rollback.statements(created_object), *reasons][
-            :MAX_STATEMENTS
-        ]
+        # The ownership statements lead, so the approval page always shows
+        # them.  Statements that no longer fit are counted, never dropped
+        # silently.
+        reasons = [*created_object_rollback.statements(created_object), *own]
+        if len(reasons) > MAX_STATEMENTS:
+            hidden = len(reasons) - (MAX_STATEMENTS - 1)
+            reasons = [
+                *reasons[: MAX_STATEMENTS - 1],
+                f"{hidden} more statements about this delete are not shown.",
+            ]
     return ChangeRiskAssessment(
         # A delete is destructive even when nothing protected is removed.
         level=RiskLevel.HIGH if elevated else RiskLevel.MEDIUM,
