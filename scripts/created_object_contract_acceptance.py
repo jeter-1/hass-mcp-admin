@@ -88,6 +88,9 @@ LANE_ENTITY = re.compile(r"(?:scene|input_boolean|input_number)\.hamcp_g4_[0-9a-
 # delete is among them: those are Engineering's, through its gateways.
 LANE_REQUESTS = frozenset({("GET", STATE_ROUTE), ("GET", SCENE_ROUTE), ("GET", AUTOMATION_ROUTE),
                            ("POST", AUTOMATION_ROUTE), ("DELETE", AUTOMATION_ROUTE)})
+# Code-owned refusals of that client: never the URL, the token, an id, a route or a payload.
+LANE_URL_REFUSED, LANE_REQUEST_REFUSED, LANE_FIXTURE_REFUSED = (
+    "lane_raw_url_not_loopback", "lane_raw_request_not_listed", "lane_fixture_not_owned")
 
 
 def reference(lane):
@@ -175,7 +178,7 @@ class ObservedWebSocket:
 
 def _owned(pattern, value):
     if type(value) is not str or pattern.fullmatch(value) is None:
-        raise ValueError("Not a created-object lane fixture")
+        raise ValueError(LANE_FIXTURE_REFUSED)
     return value
 
 
@@ -214,7 +217,7 @@ class LaneRaw(RawWebSocket):
         if (api.hostname not in LOOPBACK or "@" in api.netloc
                 or configured.api_url != "http://" + api.netloc + "/api"
                 or configured.websocket_url != "ws://" + api.netloc + "/api/websocket"):
-            raise ValueError("Created-object lane requests go only to a loopback Core")
+            raise ValueError(LANE_URL_REFUSED)
         super().__init__(configured)
         self.client = HomeAssistantRestClient(configured)
 
@@ -224,7 +227,7 @@ class LaneRaw(RawWebSocket):
         from ha_mcp_engineering.errors import HomeAssistantApiError
         if (not is_route(route) or (method, route.template) not in LANE_REQUESTS or len(route.values) != 1
                 or route.query):
-            raise ValueError("Not a created-object lane request")
+            raise ValueError(LANE_REQUEST_REFUSED)
         _owned(LANE_ENTITY if route.template == STATE_ROUTE else LANE_ID, route.values[0])
         try:
             payload = await self.client.request(method, route, body, expected_statuses=frozenset({404}))

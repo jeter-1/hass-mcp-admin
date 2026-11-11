@@ -844,6 +844,13 @@ class RawSocket(unittest.IsolatedAsyncioTestCase):
                 shown = str(caught.exception) + repr(caught.exception) + repr(caught.exception.__dict__)
                 for private in (token, url, "evil.example", "synthetic-query", "127.0.0.1", "ws://"):
                     self.assertNotIn(private, shown)
+                # A withheld receipt names that code: it is on the exact redaction allowlist.
+                with patch.object(lane.diagnostics, "_raw_log", return_value=False):
+                    receipt = lane.diagnostics.failure(caught.exception)
+                self.assertEqual([(item["type"], item["message"]) for item in receipt["exception_chain"]],
+                                 [("ValueError", str(caught.exception))])
+                for private in (token, url, "evil.example", "synthetic-query", "127.0.0.1", "ws://"):
+                    self.assertNotIn(private, json.dumps(receipt))
 
     async def test_any_url_but_the_pinned_loopback_core_is_refused_before_a_session(self):
         cases = (
@@ -1163,6 +1170,11 @@ class InstallFixture(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             acceptance.FixtureError("free text from upstream")
         self.assertTrue(set(acceptance.FIXTURE_REASONS) <= lane.diagnostics.SAFE_MESSAGES)
+        # The raw client's two refusals are fixed codes of the same allowlist.
+        self.assertEqual((acceptance.RAW_URL_REFUSED, acceptance.RAW_COMMAND_REFUSED),
+                         ("raw_core_url_not_pinned", "raw_core_command_not_listed"))
+        self.assertTrue({acceptance.RAW_URL_REFUSED, acceptance.RAW_COMMAND_REFUSED}
+                        <= lane.diagnostics.SAFE_MESSAGES)
         self.assertTrue({"install_fixture", "redaction_canary"} <= lane.diagnostics.CHECKS)
 
     def info_raw(self, reply):

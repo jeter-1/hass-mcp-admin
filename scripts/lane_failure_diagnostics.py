@@ -49,6 +49,10 @@ SAFE_MESSAGES = frozenset((
     'installed_record_unbounded', 'installed_record_text_changed', 'secret_in_page',
     'redaction_canary_unavailable', 'redaction_canary_leaked', 'redaction_canary_undisclosed',
     'redaction_canary_changed_records',
+    # Fixed refusals of the lanes' own loopback clients (marketplace_read RawCore; created-object
+    # LaneRaw): code-owned, never a URL, token, id, route or payload.
+    'raw_core_url_not_pinned', 'raw_core_command_not_listed', 'lane_raw_url_not_loopback',
+    'lane_raw_request_not_listed', 'lane_fixture_not_owned',
 ))
 SAFE_TYPES = frozenset(('Exception', 'BaseException', 'RuntimeError', 'AssertionError',
     'ValueError', 'TypeError', 'KeyError', 'OSError', 'PermissionError', 'FileNotFoundError',
