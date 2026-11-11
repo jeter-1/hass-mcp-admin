@@ -232,6 +232,12 @@
     "homeassistant/components/lovelace/strings.json": "d090ab8a5cf87d8409b090373ef5966920f22118025b6f60cf009fcf24edaec9",
     "homeassistant/components/lovelace/system_health.py": "02f16279130b4f1d8b1adf6817150382aae546f0c159f01e49da3e4b47418203",
     "homeassistant/components/lovelace/websocket.py": "831214df3823dcbca2ab71b4fb69d3d9c45d69d5e27a5ee2a88f0191d184b71c",
+    "homeassistant/components/matter/__init__.py": "b87ddf6c895511326dac7e429eb398ee2bf78dc68ef250fdda5603defa0858b1",
+    "homeassistant/components/matter/adapter.py": "ec9ffc0875d6eb7d9aeb26604ea2b68824e5736bf1297f51644fc9bc751c97b8",
+    "homeassistant/components/matter/api.py": "f83c7ba3622f49933b70deecb089168069c904ce68c13cd8e260979e3ef3f6b4",
+    "homeassistant/components/matter/const.py": "b739ac16209c8496dff3422e5b0ee07bce301a4b48483d1bb8713b0382a8c668",
+    "homeassistant/components/matter/helpers.py": "6b4d07af18f727f0f5a2bd6aa7d52d85ac7b28923872d3cd77e566572c448acc",
+    "homeassistant/components/matter/manifest.json": "ecd06230a8e1cb4a8b8bba21255347b37549c0eba50635f0ef318b666079479f",
     "homeassistant/components/number/__init__.py": "7ed53df471105732bed7d64b650cf8e10cccab52ad2458882be00d67bf5aa417",
     "homeassistant/components/number/const.py": "82c9639b312da8948c81e6641027bbf0a7ac99adbb75e1d69aa0192a68c3896c",
     "homeassistant/components/number/device_action.py": "13b2f03a706bbf1f3c0dea1ca0dcc3d75bfabfb80137470848bc3acb74e7ad52",
@@ -355,6 +361,13 @@
     "homeassistant/components/text/strings.json": "35ffd65b0a5fe92c26d96a853919faff632bb48e90321ca54096d33553d47dfa",
     "homeassistant/components/text/trigger.py": "e14fef9d085f2c9a2ec827c36910ccc5ba02317903943ff897b53f5f51f41694",
     "homeassistant/components/text/triggers.yaml": "bf48ac21454d24dad2ba61c346c003ab524f2edcf9675df1ff445539431d75c9",
+    "homeassistant/components/thread/__init__.py": "e6cdef65f9bc48cad379c8b267d3d858859ef341c8eff20d2a92dbcb6dd84dcf",
+    "homeassistant/components/thread/config_flow.py": "dca295e95f5b26b8d31eb3bde32f03a3e4adb40d7928612c37fdce6f6defc8b4",
+    "homeassistant/components/thread/const.py": "9bb504bfafa57c90743b4b8abf1befe5dbfdea3f99535e19ff27b9995f95a80d",
+    "homeassistant/components/thread/dataset_store.py": "6278b43ba1952c45b48c36431866110bcbf853bae11adc5bbf2e1cb17139f66e",
+    "homeassistant/components/thread/discovery.py": "35cd81f4a302a408b1e0bfaed61bbe4b6fd7478f92c5e0b649bd24c1a5a732ff",
+    "homeassistant/components/thread/manifest.json": "0d97caf3cb0dbc2b91a22d88bb66f41ad83637a064bb6b5ca579a6184ca136af",
+    "homeassistant/components/thread/websocket_api.py": "0d954d29188ae452a562d4f908574c2d91e53b7c3f1b7dcf60789ec2aaacf5e1",
     "homeassistant/components/timer/__init__.py": "fcf6bba1b5331a0ff47ed8a75c2e4de8012d55b3d3b407f2aadd91c4ef376947",
     "homeassistant/components/timer/condition.py": "e4724726b8ee2d070bbacd654f59628672dc0dddbdc58d1e2ca6f563b9461888",
     "homeassistant/components/timer/conditions.yaml": "657ba5a7a410b6d44d3451a7c2e1472f28bf4b8a82ccb1cd10d2985d9ac18b81",
@@ -445,6 +458,7 @@
     "homeassistant/helpers/template/states.py": "482640b98dc1aa8b168e2bd5d3bd5adf7e1c151c3511d1fe6022258c28205803",
     "homeassistant/helpers/trace.py": "3735ccdf467c2e5242055948803e08b6fd9e83a8d404d81562edebd1f924a6f1",
     "homeassistant/loader.py": "89d892bdb0fe6e8448683c17a329821c4f96a5dab6a83d4985d050e6c79ebade",
-    "homeassistant/util/dt.py": "b83fb1d44e6bca83f5ce734ce2c94eb17ed01d060064db7fabbed62bd4d2323b"
+    "homeassistant/util/dt.py": "b83fb1d44e6bca83f5ce734ce2c94eb17ed01d060064db7fabbed62bd4d2323b",
+    "homeassistant/util/ulid.py": "4ec0ab0a283e19e698c5a39f09a16378c52126b88638686fe584531cbf378443"
   }
 }

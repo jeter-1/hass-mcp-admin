@@ -230,6 +230,11 @@ MARKETPLACE_RESOURCE_TYPE = "marketplace_inventory"
 SECURITY_METADATA_PROFILE = "core.security_metadata_read"
 SECURITY_METADATA_TOOL = "get_security_metadata"
 SECURITY_METADATA_RESOURCE_TYPE = "security_metadata"
+# HAMCP-231: Engineering-native Thread dataset and Matter topology read.
+# Runtime-only and dormant until the owner-signed registry admits it.
+THREAD_MATTER_TOPOLOGY_PROFILE = "core.thread_matter_topology_read"
+THREAD_MATTER_TOPOLOGY_TOOL = "get_thread_matter_topology"
+THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE = "thread_matter_topology"
 # HAMCP-290: reviewed ha-mcp reads Engineering retired (Josh, 2026-11-08).  The
 # read gateway never exposes or dispatches these on any reviewed ha-mcp release,
 # whether or not a native route is registered, and nothing aliases or falls
@@ -368,6 +373,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_script_trace": (SCRIPT_TRACE_PROFILE,),
     MARKETPLACE_TOOL: (MARKETPLACE_PROFILE,),
     SECURITY_METADATA_TOOL: (SECURITY_METADATA_PROFILE,),
+    THREAD_MATTER_TOPOLOGY_TOOL: (THREAD_MATTER_TOPOLOGY_PROFILE,),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -838,6 +844,10 @@ PENDING_ADMISSION_TOOLS: Mapping[str, tuple[str, str]] = MappingProxyType(
         "get_script_trace": (SCRIPT_TRACE_RESOURCE_TYPE, SCRIPT_TRACE_PROFILE),
         MARKETPLACE_TOOL: (MARKETPLACE_RESOURCE_TYPE, MARKETPLACE_PROFILE),
         SECURITY_METADATA_TOOL: (SECURITY_METADATA_RESOURCE_TYPE, SECURITY_METADATA_PROFILE),
+        THREAD_MATTER_TOPOLOGY_TOOL: (
+            THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE,
+            THREAD_MATTER_TOPOLOGY_PROFILE,
+        ),
     }
 )
 
@@ -1193,6 +1203,8 @@ F3_ENTRY_ADMISSION_PROFILES = frozenset(
         MARKETPLACE_PROFILE,
         # HAMCP-134: read-only, never an F3 identity; same reason as above.
         SECURITY_METADATA_PROFILE,
+        # HAMCP-231: read-only, never an F3 identity; same reason as above.
+        THREAD_MATTER_TOPOLOGY_PROFILE,
         # Direct typed tool, never an F3 identity, so it never matches here;
         # listed so the entry set stays exactly "compiled minus shipped".
         HELPER_VALUE_PROFILE,
@@ -1301,6 +1313,9 @@ __all__ = [
     "SECURITY_METADATA_PROFILE",
     "SECURITY_METADATA_RESOURCE_TYPE",
     "SECURITY_METADATA_TOOL",
+    "THREAD_MATTER_TOPOLOGY_PROFILE",
+    "THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE",
+    "THREAD_MATTER_TOPOLOGY_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
     "StaticCoreRoute",

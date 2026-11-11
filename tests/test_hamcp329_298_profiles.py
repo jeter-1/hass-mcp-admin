@@ -63,6 +63,12 @@ from ha_mcp_engineering.ha_core_readmission.source import capability_evidence_fo
 
 REFERENCE_KEYS = ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")
 NEW = (SCENE_CREATE_DELETE_PROFILE, CREATED_HELPER_DELETE_PROFILE)
+# Runtime profiles added after EXISTING_REFERENCES_SHA256 was taken; test 1
+# leaves them out so the release-tip digest keeps proving the same 35.
+# HAMCP-231: its full fingerprint is pinned by PINNED_FINGERPRINT in
+# tests/test_hamcp231_thread_matter_topology.py
+# (ContractTests.test_profile_is_runtime_only_semantic_read_without_fallback).
+ADDED_AFTER_PIN = ("core.thread_matter_topology_read",)
 SIGNED_REGISTRY = ROOT / "upstream-trust" / "ha-core-release-registry.json"
 TARGET_CORE = "2026.11.0"
 OLDER_CORES = ("2026.10.0", "2026.10.1", "2026.10.3")
@@ -131,7 +137,7 @@ class ProfileContractTests(unittest.TestCase):
         )
 
     def test_1_existing_references_are_byte_identical(self):
-        existing = [reference(p) for p in existing_profiles()]
+        existing = [reference(p) for p in existing_profiles() if p.capability_id not in ADDED_AFTER_PIN]
         self.assertEqual(len(existing), 35)
         self.assertEqual(hashlib.sha256(canonical(existing)).hexdigest(), EXISTING_REFERENCES_SHA256)
         # Compared, never trusted: every retained owner-signed reference at

@@ -2693,6 +2693,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             CORE_SECURITY_METADATA_PROFILES,  # HAMCP-134
             CORE_DEVICE_CONFIGURATION_PROFILES,  # HAMCP-297
             CORE_CREATED_OBJECT_PROFILES,  # HAMCP-329/298
+            CORE_THREAD_MATTER_TOPOLOGY_PROFILES,  # HAMCP-231
         )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
@@ -2727,7 +2728,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                                             # HAMCP-297: so is the dormant device configuration profile.
                                                             + CORE_DEVICE_CONFIGURATION_PROFILES
                                                             # HAMCP-329/298: the dormant created-object profiles.
-                                                            + CORE_CREATED_OBJECT_PROFILES))
+                                                            + CORE_CREATED_OBJECT_PROFILES
+                                                            # HAMCP-231: the dormant Thread/Matter read too.
+                                                            + CORE_THREAD_MATTER_TOPOLOGY_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
@@ -2737,7 +2740,8 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
              + CORE_LABEL_REGISTRY_PROFILES + CORE_NOVEMBER_BATCH_PROFILES
              + CORE_MARKETPLACE_PROFILES + CORE_SECURITY_METADATA_PROFILES  # HAMCP-290, HAMCP-134
              + CORE_DEVICE_CONFIGURATION_PROFILES  # HAMCP-297
-             + CORE_CREATED_OBJECT_PROFILES},  # HAMCP-329/298
+             + CORE_CREATED_OBJECT_PROFILES  # HAMCP-329/298
+             + CORE_THREAD_MATTER_TOPOLOGY_PROFILES},  # HAMCP-231
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
@@ -3021,7 +3025,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -3041,7 +3045,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             if item.classification == "automatic_read"
         } & RETIRED_DELEGATED_READS
         self.assertEqual(retired, {"ha_get_hacs_info"})
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 112)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 113)  # HAMCP-231: + thread/matter topology
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
         # from the mapping (31 -> 30).
@@ -3116,7 +3120,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # only when the newest policy classifies it automatic_read; 9.1.2
         # already marks it unsupported, so 27 stay and 85 + 27 = 112 (HAMCP-134, HAMCP-297).
         self.assertEqual(counts["expected_delegated_reads"], 27)
-        self.assertEqual(counts["expected_connector_total"], 112)
+        self.assertEqual(counts["expected_connector_total"], 113)  # HAMCP-231: + thread/matter topology
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3194,7 +3198,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # device-dependent reads; 25 matched, 5 Core-withheld, 1 retired.
         self.assertEqual(health["core_withheld_read_count"], 5 + len(RETIRED_DELEGATED_READS))
         self.assertEqual(health["dynamically_exposed_count"], 20 - len(RETIRED_DELEGATED_READS))
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 104)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 105)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,

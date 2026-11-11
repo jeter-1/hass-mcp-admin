@@ -308,6 +308,9 @@ Topology semantics, from MJ:504-524 and matterjs-server
 - **Graph ids embed LAN identifiers.** Commissioned nodes use the decimal
   node id. Externals use `br_<XA>` and `unknown_<EXTADDR>`, and Wi-Fi APs use
   `ap_<BSSID>` with colons stripped (`MM:274-276`; built at `NT:402`).
+  Diagnostic mesh ids are `thread_<EXTMAC>` or `meshrloc_<EXTPANID>_<RLOC16>`
+  (ws-client `topology-utils.ts:428-429`); the implementation screens every
+  one of these prefixes, on node ids and on connection endpoints alike.
   Connection `source`/`target` carry the same ids. A `wifi_ap` node also
   copies the BSSID into `network_name` "for pre-`bssid` consumers"
   (`NT:402-415`).

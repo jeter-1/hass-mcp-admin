@@ -1,0 +1,159 @@
+{
+  "core_version": "2026.11.0",
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "source_archive_sha256": "85f3c42c9f77aa45e01faff4471007beadf5cb50c4324f496a239139eec70ff1",
+  "files": [
+    {
+      "path": "homeassistant/bootstrap.py",
+      "sha256": "85f413b5c08b5bef14d06e7a528be9fc8dbb8ded5a0e9aa4515d74e89fd270b0"
+    },
+    {
+      "path": "homeassistant/components/matter/__init__.py",
+      "sha256": "8902185bdf6f288c9b8c0af4752fa5e9ea9740d2ae8b184dcda82a9a5d1986b7"
+    },
+    {
+      "path": "homeassistant/components/matter/adapter.py",
+      "sha256": "fb55c4e1e37d795f6719865cc8746cb4babbb77fbdae0b7574a80f7a2c18b0d1"
+    },
+    {
+      "path": "homeassistant/components/matter/api.py",
+      "sha256": "f83c7ba3622f49933b70deecb089168069c904ce68c13cd8e260979e3ef3f6b4"
+    },
+    {
+      "path": "homeassistant/components/matter/const.py",
+      "sha256": "c4da8212f885ae7c439200cdd14e3d8c97900b016a3c4e16fb2b7305746d7b32"
+    },
+    {
+      "path": "homeassistant/components/matter/helpers.py",
+      "sha256": "c503db5cf088c666eca7880d032cff109ab137d0f6e18125ec5e0d922176760f"
+    },
+    {
+      "path": "homeassistant/components/matter/manifest.json",
+      "sha256": "151d3d03e8411a0814dccbe5cf414763c42800b7e20fc402c2a1eccfc7c1ae17"
+    },
+    {
+      "path": "homeassistant/components/thread/__init__.py",
+      "sha256": "0ff5764c8b48edac9a9b510d416f928e1ed5318aba03abfd723541225d8333a7"
+    },
+    {
+      "path": "homeassistant/components/thread/config_flow.py",
+      "sha256": "dca295e95f5b26b8d31eb3bde32f03a3e4adb40d7928612c37fdce6f6defc8b4"
+    },
+    {
+      "path": "homeassistant/components/thread/const.py",
+      "sha256": "9bb504bfafa57c90743b4b8abf1befe5dbfdea3f99535e19ff27b9995f95a80d"
+    },
+    {
+      "path": "homeassistant/components/thread/dataset_store.py",
+      "sha256": "c7be7120ce8d9e06def4cd685ccc5cb63eb9606c11a24fdd82d9784a31a56902"
+    },
+    {
+      "path": "homeassistant/components/thread/discovery.py",
+      "sha256": "9ccb0dbefdcc4db30c06033a8b01ff1f049c503b8812600629dca400348521d1"
+    },
+    {
+      "path": "homeassistant/components/thread/manifest.json",
+      "sha256": "fcba21f61a22ced66d91ce804e530e405c2511f5ed0d48f070b5cbe2ff09edeb"
+    },
+    {
+      "path": "homeassistant/components/thread/websocket_api.py",
+      "sha256": "0d954d29188ae452a562d4f908574c2d91e53b7c3f1b7dcf60789ec2aaacf5e1"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/__init__.py",
+      "sha256": "11167e420d9360fe7f1747d740ee54e8e6114fa8a804ae82f023b91d92fa70bf"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/auth.py",
+      "sha256": "b3155aa4fd313d687e1ae739381fbcbbbed487f8859a4c4e5db10d8f7b8a6cb9"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/automation.py",
+      "sha256": "00dbde145f6640262d568be969e565f41ef8eb05b3831351bff774b68221f178"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/commands.py",
+      "sha256": "e161f3e2f75cfcc25e0ad66871a6d9c1740111f65cb194791926cf6f8494d443"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/connection.py",
+      "sha256": "abe7fc8e7fabc9a552bfb5b6df36117b42d0aa75b948064c1a384e42c608368c"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/const.py",
+      "sha256": "8c797be2529ba7ff0d6d29b98ce9b84fe845fabc77520aecf743ba00efd1602a"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/decorators.py",
+      "sha256": "e69652a7301b374d65bbd7892707ecfb503bb6ecd89eca359d09088eb039051d"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/error.py",
+      "sha256": "3ba1670a6e5ebd1494bf874ddd836c50a4b99b1a6e7b1eaa4061b169fe8b632e"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/http.py",
+      "sha256": "41fc750a7b3a996a9dcab938571de573817a7c3c1aed09dbfc1cc2e3452c3464"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/manifest.json",
+      "sha256": "8303ed2a33d49102a15784784731f1b8da2029ba460ac527560bfa4f41626898"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/messages.py",
+      "sha256": "525d060ffc2aa2ab8f76a075d036c1ebb5cf243e5391f5ef11c73f7be1a5c7ed"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/sensor.py",
+      "sha256": "296b26508620757d6a0f5d17be9e99d4fda6f8b7645aff95d50ff4f9cf60adff"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/services.yaml",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/strings.json",
+      "sha256": "3eda21ee0c994c218e1be4aafe63013ad2ed8c7249fefc7149f14e8f084564df"
+    },
+    {
+      "path": "homeassistant/components/websocket_api/util.py",
+      "sha256": "205c173f78c4f4a8b89f9a657edc78be5736c25458bb7a14077c5fa05fa0f20f"
+    },
+    {
+      "path": "homeassistant/config_entries.py",
+      "sha256": "9ab88f7496b2b25f36956887ddb2ef83b54602068e50469c96d538af75f042aa"
+    },
+    {
+      "path": "homeassistant/const.py",
+      "sha256": "d063d49145f0b0f3abf7bca7439e803c04c7f3873484a7f85cdad88cfd6abf02"
+    },
+    {
+      "path": "homeassistant/core.py",
+      "sha256": "5671149ec3405c4ec81eed05f58e3c392dafe0af141ec6ac7ea1a2b4b658d038"
+    },
+    {
+      "path": "homeassistant/data_entry_flow.py",
+      "sha256": "123295caa363130a7b6a557b4340349e55b4e60a170f7e454fefba1455095cff"
+    },
+    {
+      "path": "homeassistant/helpers/device_registry.py",
+      "sha256": "b5a1ea7b8c622f9dffb1463b954f7899ab1345e260a53079a2574d94dd647f11"
+    },
+    {
+      "path": "homeassistant/helpers/json.py",
+      "sha256": "46cd30d50f658552a2eb0bbfe47d3b8ddca8a8dcb54ba42cb0037965a5ba7111"
+    },
+    {
+      "path": "homeassistant/helpers/storage.py",
+      "sha256": "f004ea812a9840a7aae8a1269e482be9361e303424a4a47d2b6bab5c40201064"
+    },
+    {
+      "path": "homeassistant/loader.py",
+      "sha256": "96ba3715f9f3ee297257da23e4682be3a1ee3ad27879707d1bd165316470e49a"
+    },
+    {
+      "path": "homeassistant/util/ulid.py",
+      "sha256": "4ec0ab0a283e19e698c5a39f09a16378c52126b88638686fe584531cbf378443"
+    }
+  ]
+}

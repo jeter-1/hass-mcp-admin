@@ -822,7 +822,9 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
                                        "core.device_configuration_entity_operation",
                                        # HAMCP-329/298 dormant created-object profiles (seq 18).
                                        "core.scene_create_delete_operation",
-                                       "core.created_helper_delete_operation"}]
+                                       "core.created_helper_delete_operation",
+                                       # HAMCP-231 dormant Thread/Matter topology read.
+                                       "core.thread_matter_topology_read"}]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
