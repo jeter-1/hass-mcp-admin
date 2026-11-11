@@ -176,6 +176,8 @@ ENTITY_NEAR = (
     {"type": "input_boolean/create", "name": E.HELPER_NAME},
     {"type": "input_boolean/create", "name": E.HELPER_NAME + " 0A1B2C3D"},
     {"type": "input_boolean/create", "name": E.HELPER_NAME + " " + HEX + "\n"},
+    {"type": "input_boolean/create", "name": E.HELPER_NAME + " " + HEX + "0"},
+    {"type": "input_boolean/create", "name": "Synthetic " + E.HELPER_NAME + " " + HEX},
     {"type": "input_boolean/create", "name": E.HELPER_NAME + " " + HEX, "initial": True},
     {"type": "config/category_registry/list"},
     {"type": "config/category_registry/list", "scope": "automation"},
@@ -225,6 +227,10 @@ SEQ13_NEAR = (
     {"type": S.ENTITY_UPDATE, "disabled_by": "user"},
     {"type": S.EXPOSE, "assistants": ["conversation"], "entity_ids": ["sensor.synthetic"], "should_expose": True},
     {"type": "input_boolean/create", "name": "Seq13 Lane 0a1b2c3"},
+    {"type": "input_boolean/create", "name": "Seq13 Lane " + HEX + "0"},
+    {"type": "input_boolean/create", "name": "Seq13 Lane " + HEX + "\n"},
+    {"type": "input_boolean/create", "name": "Synthetic Seq13 Lane " + HEX},
+    {"type": "input_boolean/create", "name": "Seq13 Lane 0A1B2C3D"},
     {"type": "input_boolean/create", "name": "Seq15 Select " + HEX},
     {"type": "input_boolean/create", "name": E.HELPER_NAME + " " + HEX},
     {"type": "config_entries/get", "domain": "synthetic"},
@@ -262,6 +268,22 @@ SEQ15_EXAMPLES = (
 SEQ15_NEAR = (
     {"type": "call_service", "domain": "homeassistant", "service": "restart", "service_data": {}},
     {**SCRIPT_RUN, "service": "turn_on"}, {**SCRIPT_RUN, "service": "seq15_" + HEX + "x"},
+    {**SCRIPT_RUN, "service": "x_seq15_" + HEX}, {**SCRIPT_RUN, "service": "seq15_" + HEX + "\n"},
+    # Each pattern is matched in full: nothing before it and nothing after it.
+    *({"type": Q.TRACE_LIST, "domain": "script", "item_id": item}
+      for item in ("seq15_" + HEX + "0", "x_seq15_" + HEX, "seq15_" + HEX + "\n")),
+    *({**BOARD, "url_path": path} for path in ("seq15-" + HEX + "0", "x-seq15-" + HEX, "seq15-" + HEX + "/x")),
+    *({"type": "lovelace/config/save", "url_path": path, "config": Q.DASHBOARD_CONFIG}
+      for path in ("seq15-" + HEX + "0", "x-seq15-" + HEX, "seq15-" + HEX + "\n")),
+    *({"type": Q.LOVELACE_CONFIG, "url_path": path, "force": True}
+      for path in ("seq15-" + HEX + "0", "x-seq15-" + HEX, "seq15-" + HEX + "\n")),
+    *({"type": Q.DASHBOARD_UPDATE, "dashboard_id": item, "title": "No implicit create"}
+      for item in ("seq15_absent_" + HEX + "0", "x_seq15_absent_" + HEX, "seq15_absent_" + HEX + "\n")),
+    *({**SELECT, "name": name} for name in ("Seq15 Select " + HEX + "0", "Synthetic Seq15 Select " + HEX,
+                                             "Seq15 Scene Member " + HEX + "\n", "Seq15 Select 0A1B2C3D")),
+    *({"type": "input_select/update", "input_select_id": "seq15_select_" + HEX, "name": name,
+       "options": ["Away", "Home", "Night"]}
+      for name in ("Seq15 Select " + HEX + "0", "Synthetic Seq15 Select " + HEX, "Seq15 Select " + HEX + "\n")),
     {**SCRIPT_RUN, "service": "seq15_0A1B2C3D"}, {**SCRIPT_RUN, "domain": "scene"},
     {**SCRIPT_RUN, "service_data": {"entity_id": "all"}}, {**SCRIPT_RUN, "service_data": None},
     {**SCRIPT_RUN, "target": {"entity_id": "light.synthetic"}},
@@ -934,9 +956,11 @@ class HarnessRequest(HarnessCase):
     async def test_a_target_whose_host_is_not_the_configured_core_is_refused_before_send(self):
         # A rooted path cannot change the host of a URL that has one, so the
         # join can only land elsewhere when the configured value has none. The
-        # check is made on the joined URL all the same, and refuses each.
+        # check is made on the joined URL all the same: it names a host, and
+        # that host is the configured one.
         for core, path in (("http:", "//" + ELSEWHERE + "/api/onboarding"),
                            ("", "//" + ELSEWHERE_NAME + "/api/onboarding"),
+                           ("http:", "//127.0.0.1:8123/api/onboarding"),
                            ("http:", "/api/onboarding"), ("", "/api/onboarding"),
                            ("http://", "/api/onboarding"), ("http://[", "/api/onboarding"),
                            ("http://[::1", "/api/onboarding"), ("http://:8123", "/api/onboarding")):
