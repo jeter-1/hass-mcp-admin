@@ -19,6 +19,7 @@ the disposable Core's own config flow pointing at the stub.
 import argparse
 import asyncio
 from dataclasses import replace
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,8 @@ STUB_ALIAS = "matter-stub"
 NETWORK = "beta-rc2-contract-" + LANE
 CORE_PORT = 8123
 NETWORK_ID = re.compile(r"[0-9a-f]{64}")
+STUB_ORIGIN = re.compile(r"http://(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}:[1-9][0-9]{0,4}")
+ADMIN_TARGET_REFUSED = "lane_admin_target_refused"
 STUB_MEMORY = "256m"
 RECEIPT = "thread_matter_topology_a2.json"
 NETWORK_POSTURE = {"driver": "bridge", "internal": True, "egress_allowed": False, "published_ports": False,
@@ -133,27 +136,65 @@ def hand_over_core(network_id, run_id):
     return origin, {"name": NETWORK, "subnet": subnet, "target_address": target}
 
 
+def stub_origin(network_id, run_id, port, subnet):
+    """The stub's control origin: its container address on the created network, inside that subnet."""
+    target = address(STUB, run_id, network_id)
+    try:
+        inside = ipaddress.IPv4Address(target) in ipaddress.IPv4Network(subnet)
+    except ValueError:
+        inside = False
+    if not inside:
+        raise Refusal("lane_stub_outside_created_network")
+    return f"http://{target}:{port}"
+
+
 class CoreAdmin:
-    """Harness-only REST to the disposable Core and the stub control endpoint; never through Engineering."""
+    """Harness-only REST to the disposable Core and the stub control endpoint; never through Engineering.
+
+    Two origins only. The Core is the one the harness accepted through
+    use_internal_lane_core, checked again at every request; the stub is the bare
+    http://<IPv4>:<port> origin given when built. A request to anything else, or
+    with a path that is not rooted, is refused before a session exists. Every
+    request is on the shared lane session and a redirect is refused; the token
+    goes to the Core only.
+    """
 
     def __init__(self, ha_url, token, stub_url):
+        import real_ha_contract_tests as harness
+        if type(ha_url) is not str or ha_url != harness.accepted_lane_core():
+            raise Refusal(ADMIN_TARGET_REFUSED)
+        if type(stub_url) is not str or not STUB_ORIGIN.fullmatch(stub_url) or stub_url == ha_url:
+            raise Refusal(ADMIN_TARGET_REFUSED)
         self.ha_url, self.token, self.stub_url = ha_url, token, stub_url
 
-    async def _call(self, method, url, body=None, headers=None):
+    async def _call(self, method, to_core, path, body=None):
         import aiohttp
-        async with aiohttp.ClientSession(trust_env=False, timeout=aiohttp.ClientTimeout(total=60)) as session:
+        import real_ha_contract_tests as harness
+        from lane_session import lane_session, refuse_redirect
+        origin = self.ha_url if to_core is True else self.stub_url
+        if to_core is True:
+            bound = type(origin) is str and origin == harness.accepted_lane_core()
+        else:
+            bound = (to_core is False and type(origin) is str and bool(STUB_ORIGIN.fullmatch(origin))
+                     and origin != harness.accepted_lane_core())
+        if not bound or type(path) is not str or not path.startswith("/"):
+            raise Refusal(ADMIN_TARGET_REFUSED)
+        headers = {"Authorization": f"Bearer {self.token}"} if to_core is True else None
+        url = origin + path
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=60)) as session:
             async with session.request(method, url, json=body, headers=headers, allow_redirects=False) as reply:
+                refuse_redirect(reply.status)
                 assert reply.status < 400, (method, reply.status)
                 return await reply.json()
 
     async def core(self, method, path, body=None):
-        return await self._call(method, self.ha_url + path, body, {"Authorization": f"Bearer {self.token}"})
+        return await self._call(method, True, path, body)
 
     async def stub_control(self, body):
-        return await self._call("POST", self.stub_url + "/_stub/control", body)
+        return await self._call("POST", False, "/_stub/control", body)
 
     async def stub_state(self):
-        return await self._call("GET", self.stub_url + "/_stub/control")
+        return await self._call("GET", False, "/_stub/control")
 
     async def matter_entry(self):
         entries = await self.core("GET", "/api/config/config_entries/entry?domain=matter")
@@ -188,8 +229,7 @@ async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record
     import real_ha_contract_tests as harness
     if harness.HA_URL != ha_url:
         raise Refusal("harness_core_address_mismatch")
-    from thread_matter_topology_a2_acceptance import run
-    from thread_matter_topology_contract_acceptance import RawCore
+    from thread_matter_topology_a2_acceptance import A2RawCore, run
     with diagnostics.check("auth", "bootstrap"):
         token = await harness.bootstrap_disposable_admin()
     configured = replace(harness.settings(token), audit_path=str(run_dir / "audit.jsonl"))
@@ -213,7 +253,7 @@ async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record
                 raise Refusal("running_container_memory_mismatch")
             identities[name] = {"image": image, "config_digest": data["Image"],
                                 "memory_bytes": data["HostConfig"]["Memory"]}
-    raw = RawCore(configured)
+    raw = A2RawCore(configured)
 
     async def devices():
         reply = await raw.command({"type": "config/device_registry/list"})
@@ -318,7 +358,7 @@ def _main(argv=None):
                     "--mount", f"type=bind,source={owned},target=/config", core_image)
         with diagnostics.check("container_start", "network_posture"):
             ha_url, result["lane_network"] = hand_over_core(network_id, run_id)
-            stub_url = f"http://{address(STUB, run_id, network_id)}:{stub['port']}"
+            stub_url = stub_origin(network_id, run_id, stub["port"], result["lane_network"]["subnet"])
             probe = command("docker", "exec", CORE, "python3", "-I", "-c", EGRESS_PROBE).stdout.decode().strip()
             if not probe.startswith("blocked"):
                 raise Refusal("lane_core_egress_reachable")

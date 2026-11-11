@@ -471,7 +471,8 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(kind)
 
         registry = SimpleNamespace(refresh=AsyncMock(return_value=True))
-        configured = SimpleNamespace(websocket_url="ws://synthetic", ha_token="synthetic-token",
+        # The raw client refuses any socket but its lane's own (HAMCP-364); its command is patched below.
+        configured = SimpleNamespace(websocket_url=acceptance.RAW_CORE_URL, ha_token="synthetic-token",
                                      access_secret="synthetic-secret")
         refs = [{"capability_id": f"core.synthetic_{i}"} for i in range(32)]
         with tempfile.TemporaryDirectory() as directory, \

@@ -5,6 +5,10 @@ real clients over real aiohttp sessions. While a test runs, every socket connect
 of the process is recorded: one to 127.0.0.1 is sent to the stub whatever port
 it names, and one to anything else is refused inside the test and never reaches
 the network. So no test connects off-host, with a guard in place or removed.
+The Thread/Matter A2 lane's Core and stub are not on loopback: a test of its
+clients names two synthetic bridge addresses as that lane's own, and a connect
+to either is sent to the same loopback stub and recorded under the address the
+client dialled.
 Redirect targets are address literals from the documentation ranges, which
 aiohttp does not resolve, and every other lookup is refused the same way. The
 Core harness is never run; only its request functions are called.
@@ -27,6 +31,7 @@ from aiohttp import web
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
+import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
 import lane_session as subject  # noqa: E402
@@ -35,12 +40,21 @@ import real_ha_contract_tests as harness  # noqa: E402
 import security_metadata_contract_acceptance as security  # noqa: E402
 import seq13_contract_acceptance as seq13  # noqa: E402
 import seq15_contract_acceptance as seq15  # noqa: E402
+import thread_matter_topology_a2_acceptance as a2  # noqa: E402
+import thread_matter_topology_contract_acceptance as thread  # noqa: E402
 
 SCRIPTS = ROOT / "scripts"
 LOOPBACK = "127.0.0.1"
 MAIN_PORT, LOCAL_PORT, UPSTREAM_PORT = 8123, 18123, 18086
 MAIN_CORE, LOCAL_CORE = f"http://{LOOPBACK}:{MAIN_PORT}", f"http://{LOOPBACK}:{LOCAL_PORT}"
 MAIN_SOCKET, LOCAL_SOCKET = f"ws://{LOOPBACK}:{MAIN_PORT}/api/websocket", f"ws://{LOOPBACK}:{LOCAL_PORT}/api/websocket"
+# The Thread/Matter lanes: A1's Core on its own loopback port; A2's Core and stub on the
+# internal bridge its runner creates, here two synthetic addresses that reach the stub above.
+THREAD_PORT, STUB_PORT = 18124, 5580
+THREAD_SOCKET = f"ws://{LOOPBACK}:{THREAD_PORT}/api/websocket"
+BRIDGE, BRIDGE_STUB, BRIDGE_SUBNET = "172.30.0.2", "172.30.0.3", "172.30.0.0/16"
+BRIDGE_CORE, BRIDGE_SOCKET = f"http://{BRIDGE}:{MAIN_PORT}", f"ws://{BRIDGE}:{MAIN_PORT}/api/websocket"
+BRIDGE_STUB_ORIGIN = f"http://{BRIDGE_STUB}:{STUB_PORT}"
 # Reserved documentation addresses (TEST-NET-2); never a real peer, and never dialled here.
 ELSEWHERE, PROXY = "198.51.100.7", "198.51.100.9"
 TOKEN = "synthetic-token-364"
@@ -69,6 +83,7 @@ class Stub:
 
     def __init__(self):
         self.requests, self.frames, self.answers, self.body = [], [], [], [{"step": "user", "done": False}]
+        self.bearers = []
 
     async def start(self):
         application = web.Application()
@@ -86,10 +101,11 @@ class Stub:
 
     def then(self, *answers):
         """Queue the next answers: None for the lane's own exchange, or (status, location). The last one repeats."""
-        self.requests, self.frames, self.answers = [], [], list(answers)
+        self.requests, self.frames, self.answers, self.bearers = [], [], list(answers), []
 
     async def answer(self, request):
         self.requests.append((request.method, request.path))
+        self.bearers.append(request.headers.get("Authorization"))
         answer = self.answers.pop(0) if len(self.answers) > 1 else (self.answers[0] if self.answers else None)
         if answer is not None:
             status, location = answer
@@ -115,17 +131,18 @@ class Wire:
 
     def __init__(self, stub_port):
         self.stub_port, self.connects, self.lookups = stub_port, [], []
+        self.local = {LOOPBACK}  # plus the bridge addresses of a test that hands a Core over
 
     @property
     def off_host(self):
-        return [target for target in self.connects if target[0] != LOOPBACK] + self.lookups
+        return [target for target in self.connects if target[0] not in self.local] + self.lookups
 
     def dial(self, real):
         def dial(sock, address):
             if type(address) is not tuple:  # a filesystem socket: on this host by construction
                 return real(sock, address)
             self.connects.append(tuple(address[:2]))
-            if address[0] != LOOPBACK:
+            if address[0] not in self.local:
                 raise ConnectionRefusedError(errno.ECONNREFUSED, "refused inside the test")
             return real(sock, (LOOPBACK, self.stub_port))
         return dial
@@ -161,11 +178,18 @@ class Wired(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(raised.exception), subject.LaneRedirectRefused)
         self.assertEqual(raised.exception.args, (REFUSED,))
 
-    def assert_refused(self, raised, port):
+    def hand_over(self):
+        """The A2 runner's hand-over, through the harness's own function; undone after the test."""
+        self.enterContext(patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID,
+                                         _lane_core=None))
+        self.assertEqual(harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET), BRIDGE_CORE)
+        self.wire.local |= {BRIDGE, BRIDGE_STUB}
+
+    def assert_refused(self, raised, port, host=LOOPBACK):
         """The fixed refusal; one connection, to the stub; one request; no frame; nothing dialled off-host."""
         self.assert_code(raised)
         self.assertEqual(self.wire.off_host, [])
-        self.assertEqual(self.wire.connects, [(LOOPBACK, port)])
+        self.assertEqual(self.wire.connects, [(host, port)])
         self.assertEqual(len(self.stub.requests), 1)
         self.assertEqual(self.stub.frames, [])
 
@@ -196,21 +220,33 @@ class LaneWebSocket(Wired):
                           LOCAL_PORT),
         "created_helper": (lambda: created.HelperLaneRaw(configured_local()).call, {"type": "input_boolean/list"},
                            LOCAL_PORT),
+        # The Thread/Matter lanes: A1 on its own loopback port, A2 on the Core handed over.
+        "thread_matter": (lambda: thread.RawCore(configured(THREAD_SOCKET)).command,
+                          {"type": thread.LIST_DATASETS_COMMAND}, THREAD_PORT),
+        "thread_matter_a2": (lambda: a2.A2RawCore(configured(BRIDGE_SOCKET)).command,
+                             {"type": a2.DEVICE_REGISTRY_COMMAND}, MAIN_PORT),
     }
+    # The one client whose Core is not on loopback.
+    HOSTS = {"thread_matter_a2": BRIDGE}
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.hand_over()
 
     async def refused(self, name):
         send, payload, port = self.CLIENTS[name]
+        host = self.HOSTS.get(name, LOOPBACK)
         self.redirect(302, AWAY[0])
         with self.assertRaises(Exception) as raised:
             await send()(dict(payload))
-        self.assert_refused(raised, port)
+        self.assert_refused(raised, port, host)
         for status in FOLLOWED:
             for location in (*AWAY, SAME_HOST):
                 with self.subTest(status=status, location=location):
                     self.redirect(status, location)
                     with self.assertRaises(Exception) as raised:
                         await send()(dict(payload))
-                    self.assert_refused(raised, port)
+                    self.assert_refused(raised, port, host)
 
     async def answered(self, name):
         send, payload, port = self.CLIENTS[name]
@@ -218,7 +254,7 @@ class LaneWebSocket(Wired):
         self.assertEqual(reply, {"id": 1, "type": "result", "success": True, "result": ["answer"]})
         self.assertEqual(self.stub.requests, [("GET", "/api/websocket")])
         self.assertEqual(self.stub.frames, [{"type": "auth", "access_token": TOKEN}, {"id": 1, **payload}])
-        self.assertEqual(self.wire.connects, [(LOOPBACK, port)])
+        self.assertEqual(self.wire.connects, [(self.HOSTS.get(name, LOOPBACK), port)])
         self.assertEqual(self.wire.off_host, [])
 
     async def test_marketplace_handshake_redirect_is_refused(self):
@@ -245,6 +281,16 @@ class LaneWebSocket(Wired):
     async def test_created_helper_handshake_redirect_is_refused(self):
         await self.refused("created_helper")
 
+    async def test_thread_matter_handshake_redirect_is_refused(self):
+        await self.refused("thread_matter")
+
+    async def test_thread_matter_a2_handshake_redirect_is_refused(self):
+        await self.refused("thread_matter_a2")
+
+    def test_every_client_in_the_table_has_its_redirect_test(self):
+        tests = {name for name in dir(self) if name.endswith("_handshake_redirect_is_refused")}
+        self.assertEqual(tests, {f"test_{name}_handshake_redirect_is_refused" for name in self.CLIENTS})
+
     async def test_each_lane_command_is_still_answered_over_its_pinned_socket(self):
         for name in self.CLIENTS:
             with self.subTest(client=name):
@@ -259,7 +305,7 @@ class LaneWebSocket(Wired):
                     self.redirect(status)
                     with self.assertRaises(aiohttp.WSServerHandshakeError):
                         await send()(dict(payload))
-                    self.assertEqual(self.wire.connects, [(LOOPBACK, port)])
+                    self.assertEqual(self.wire.connects, [(self.HOSTS.get(name, LOOPBACK), port)])
                     self.assertEqual((self.wire.off_host, len(self.stub.requests), self.stub.frames), ([], 1, []))
 
     def test_the_lane_subclasses_send_through_the_shared_call(self):
@@ -269,6 +315,169 @@ class LaneWebSocket(Wired):
         for client in created.LANE_CLIENTS.values():
             self.assertIs(client.call, entity.RawWebSocket.call)
             self.assertEqual(sorted(name for name in vars(client) if not name.startswith("__")), ["commands"])
+        # The A2 client is the A1 client with its own Core and list, and no send of its own.
+        self.assertIs(a2.A2RawCore.command, thread.RawCore.command)
+        self.assertEqual(sorted(name for name in vars(a2.A2RawCore) if not name.startswith("__")),
+                         ["commands", "core_url"])
+
+
+class A2Admin(Wired):
+    """The A2 runner's REST client: the accepted Core and the stub only; a 3xx from either is a refusal."""
+
+    ENTRY, FLOW = "/api/config/config_entries/entry", "/api/config/config_entries/flow"
+    REFUSED_TARGET = "lane_admin_target_refused"
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.hand_over()
+        self.admin = a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, BRIDGE_STUB_ORIGIN)
+
+    def requests(self):
+        """Every request the client sends: the send, then the method, path, host, port and bearer it arrives with."""
+        core, stub = (BRIDGE, MAIN_PORT, "Bearer " + TOKEN), (BRIDGE_STUB, STUB_PORT, None)
+        admin = self.admin
+        return (
+            (lambda: admin.core("GET", self.ENTRY + "?domain=matter"), "GET", self.ENTRY, *core),
+            (lambda: admin.core("POST", self.FLOW, {"handler": "matter"}), "POST", self.FLOW, *core),
+            (lambda: admin.core("POST", self.FLOW + "/synthetic", {"url": "ws://matter-stub:5580/ws"}),
+             "POST", self.FLOW + "/synthetic", *core),
+            (lambda: admin.core("GET", "/api/config"), "GET", "/api/config", *core),
+            (lambda: admin.core("POST", self.ENTRY + "/synthetic/reload"), "POST", self.ENTRY + "/synthetic/reload",
+             *core),
+            (lambda: admin.stub_control({"fault": "synthetic"}), "POST", "/_stub/control", *stub),
+            (admin.stub_state, "GET", "/_stub/control", *stub),
+        )
+
+    def assert_target_refused(self, raised):
+        self.assertIs(type(raised.exception), a2_runner.Refusal)
+        self.assertEqual(raised.exception.args, (self.REFUSED_TARGET,))
+        self.assertEqual((self.wire.connects, self.wire.lookups, self.stub.requests), ([], [], []))
+
+    def test_the_table_is_every_request_the_client_makes(self):
+        tree = ast.parse((SCRIPTS / "core_thread_matter_topology_a2_local.py").read_text(encoding="utf-8"))
+        admin, = (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "CoreAdmin")
+        sends = sorted(ast.unparse(call) for call in calls(admin) if named(call) in {"self.core", "self._call"})
+        self.assertEqual(sends, sorted([
+            "self._call(method, True, path, body)",
+            "self._call('POST', False, '/_stub/control', body)",
+            "self._call('GET', False, '/_stub/control')",
+            "self.core('GET', '/api/config/config_entries/entry?domain=matter')",
+            "self.core('POST', '/api/config/config_entries/flow', {'handler': 'matter'})",
+            "self.core('POST', f\"/api/config/config_entries/flow/{flow['flow_id']}\", "
+            "{'url': f'ws://{STUB_ALIAS}:5580/ws'})",
+            "self.core('GET', '/api/config')",
+            "self.core('POST', f\"/api/config/config_entries/entry/{entry['entry_id']}/reload\")"]))
+        self.assertEqual(len(self.requests()), 7)
+
+    async def test_each_request_answered_with_a_redirect_is_refused(self):
+        for send, method, path, host, port, _bearer in self.requests():
+            for status in (302, *FOLLOWED, *HANDED_BACK):
+                for location in (AWAY[0], AWAY[2], SAME_HOST):
+                    with self.subTest(method=method, path=path, status=status, location=location):
+                        self.redirect(status, location)
+                        with self.assertRaises(Exception) as raised:
+                            await send()
+                        self.assert_refused(raised, port, host)
+                        self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_without_the_status_check_a_redirect_would_be_taken_for_the_answer(self):
+        # The control: the request itself declines the redirect, so it stays on the one
+        # connection, and without the lane's check the 3xx body would be returned as the answer.
+        for send, method, path, host, port, _bearer in self.requests():
+            with self.subTest(method=method, path=path):
+                self.redirect(302, AWAY[0])
+                with patch.object(subject, "refuse_redirect", lambda status: None):
+                    answer = await send()
+                self.assertEqual(answer, [{"step": "user", "done": False}])
+                self.assertEqual((self.wire.connects, self.wire.off_host), ([(host, port)], []))
+                self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_other_answers_are_returned_and_the_token_goes_to_the_core_only(self):
+        for send, method, path, host, port, bearer in self.requests():
+            with self.subTest(method=method, path=path):
+                self.stub.then()
+                self.wire.connects.clear()
+                self.assertEqual(await send(), self.stub.body)
+                self.assertEqual((self.stub.requests, self.stub.bearers), ([(method, path)], [bearer]))
+                self.assertEqual((self.wire.connects, self.wire.off_host), ([(host, port)], []))
+
+    def test_only_the_accepted_core_and_a_bare_stub_origin_build_the_client(self):
+        self.stub.then()
+        self.wire.connects.clear()
+        for core in (MAIN_CORE, LOCAL_CORE, f"http://{ELSEWHERE}:{MAIN_PORT}", f"http://{BRIDGE_STUB}:{MAIN_PORT}",
+                     BRIDGE_CORE + "/", BRIDGE_CORE + "/api", BRIDGE_CORE.replace("http", "https"), "", None,
+                     BRIDGE_CORE.encode()):
+            with self.subTest(core=core), self.assertRaises(Exception) as raised:
+                a2_runner.CoreAdmin(core, TOKEN, BRIDGE_STUB_ORIGIN)
+            self.assert_target_refused(raised)
+        for stub in (BRIDGE_CORE, BRIDGE_STUB_ORIGIN + "/", BRIDGE_STUB_ORIGIN + "/_stub/control",
+                     f"http://{BRIDGE_STUB}", f"https://{BRIDGE_STUB}:{STUB_PORT}", f"ws://{BRIDGE_STUB}:{STUB_PORT}",
+                     f"http://matter-stub:{STUB_PORT}", f"http://localhost:{STUB_PORT}",
+                     f"http://token@{BRIDGE_STUB}:{STUB_PORT}", f"http://[::1]:{STUB_PORT}",
+                     f"http://172.030.0.3:{STUB_PORT}", f"http://{BRIDGE_STUB}:0", f"http://{BRIDGE_STUB}:055",
+                     BRIDGE_STUB_ORIGIN + "?x=1", BRIDGE_STUB_ORIGIN + "#x", " " + BRIDGE_STUB_ORIGIN,
+                     BRIDGE_STUB_ORIGIN + "\n", "", None, BRIDGE_STUB_ORIGIN.encode()):
+            with self.subTest(stub=stub), self.assertRaises(Exception) as raised:
+                a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, stub)
+            self.assert_target_refused(raised)
+
+    def test_no_client_is_built_before_a_core_is_handed_over(self):
+        self.stub.then()
+        self.wire.connects.clear()
+        with patch.object(harness, "_lane_core", None), self.assertRaises(Exception) as raised:
+            a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, BRIDGE_STUB_ORIGIN)
+        self.assert_target_refused(raised)
+
+    async def test_a_target_changed_after_the_client_was_built_is_refused_before_a_session(self):
+        elsewhere = f"http://{ELSEWHERE}:{MAIN_PORT}"
+        sessions = []
+        opened = patch.object(subject, "lane_session", lambda **kwargs: sessions.append(kwargs))
+        for name, value, send in (
+                ("ha_url", elsewhere, lambda admin: admin.core("GET", "/api/config")),
+                ("ha_url", MAIN_CORE, lambda admin: admin.core("GET", "/api/config")),
+                ("ha_url", BRIDGE_STUB_ORIGIN, lambda admin: admin.core("GET", "/api/config")),
+                ("ha_url", None, lambda admin: admin.core("GET", "/api/config")),
+                ("stub_url", BRIDGE_CORE, lambda admin: admin.stub_state()),
+                ("stub_url", f"http://matter-stub:{STUB_PORT}", lambda admin: admin.stub_state()),
+                ("stub_url", f"http://{ELSEWHERE}:{STUB_PORT}/", lambda admin: admin.stub_control({})),
+                ("stub_url", f"http://token@{ELSEWHERE}:{STUB_PORT}", lambda admin: admin.stub_control({})),
+                ("stub_url", None, lambda admin: admin.stub_state())):
+            with self.subTest(name=name, value=value):
+                admin = a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, BRIDGE_STUB_ORIGIN)
+                setattr(admin, name, value)
+                self.stub.then()
+                self.wire.connects.clear()
+                with opened, self.assertRaises(Exception) as raised:
+                    await send(admin)
+                self.assert_target_refused(raised)
+                self.assertEqual(sessions, [])
+        # Nor does the Core's request follow the harness to another Core: the two must agree.
+        admin = a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, BRIDGE_STUB_ORIGIN)
+        with patch.object(harness, "_lane_core", "http://172.30.0.9:8123"), opened:
+            with self.assertRaises(Exception) as raised:
+                await admin.core("GET", "/api/config")
+        self.assert_target_refused(raised)
+        self.assertEqual(sessions, [])
+
+    async def test_a_path_that_is_not_rooted_or_a_target_that_is_neither_is_refused_before_a_session(self):
+        sessions = []
+        opened = patch.object(subject, "lane_session", lambda **kwargs: sessions.append(kwargs))
+        self.stub.then()
+        self.wire.connects.clear()
+        for path in ("api/config", "", f"@{ELSEWHERE}/api/config", f".{ELSEWHERE}/api", ":9/api/config",
+                     f"{ELSEWHERE}/api/config", None, b"/api/config", ("/api/config",)):
+            for to_core in (True, False):
+                with self.subTest(path=path, to_core=to_core), opened:
+                    with self.assertRaises(Exception) as raised:
+                        await self.admin._call("GET", to_core, path)
+                    self.assert_target_refused(raised)
+        # The second argument says which of the two origins, and is never an origin itself.
+        for target in (BRIDGE_CORE, BRIDGE_STUB_ORIGIN, f"http://{ELSEWHERE}:{MAIN_PORT}", 1, 0, None, "", "core"):
+            with self.subTest(target=target), opened:
+                with self.assertRaises(Exception) as raised:
+                    await self.admin._call("GET", target, "/api/config")
+                self.assert_target_refused(raised)
+        self.assertEqual(sessions, [])
 
 
 class CreatedObjectRest(Wired):
@@ -563,6 +772,17 @@ class Inventory(unittest.TestCase):
         # ``call`` above and its runner signs in through the harness's bootstrap.
         "created_object_contract_acceptance.py": (0, 0),
         "core_created_object_local.py": (0, 0),
+        # The Thread/Matter lanes: A1's client; the A2 client is a subclass of it with no
+        # session of its own; the A2 runner's REST client; the A1 runner has none.
+        "thread_matter_topology_contract_acceptance.py": (1, 1),
+        "thread_matter_topology_a2_acceptance.py": (0, 0),
+        "core_thread_matter_topology_local.py": (0, 0),
+        "core_thread_matter_topology_a2_local.py": (1, 0),
+    }
+    # script: the requests it makes on a session, each inside ``async with``
+    REQUESTS = {
+        "real_ha_contract_tests.py": ["session.get", "session.get", "session.request"],
+        "core_thread_matter_topology_a2_local.py": ["session.request"],
     }
     VERBS = {"request", "get", "post", "put", "patch", "delete", "head", "options"}
 
@@ -607,22 +827,25 @@ class Inventory(unittest.TestCase):
             self.assertEqual(opened, sockets, name)
 
     def test_every_harness_request_declines_redirects_and_checks_the_status_first(self):
-        tree = self.tree("real_ha_contract_tests.py")
-        sent = [node for node in ast.walk(tree) if isinstance(node, ast.AsyncWith)
-                and isinstance(node.items[0].context_expr, ast.Call)
-                and named(node.items[0].context_expr) in {"session." + verb for verb in self.VERBS}]
-        self.assertEqual(sorted(named(node.items[0].context_expr) for node in sent),
-                         ["session.get", "session.get", "session.request"])
-        for node in sent:
-            call = node.items[0].context_expr
-            self.assertEqual([ast.unparse(word.value) for word in call.keywords if word.arg == "allow_redirects"],
-                             ["False"])
-            self.assertEqual(ast.unparse(node.body[0]), f"refuse_redirect({node.items[0].optional_vars.id}.status)")
-        # No request leaves a session any other way: not awaited bare, and not under another name.
-        every = [named(call) for call in calls(tree)
-                 if isinstance(call.func, ast.Attribute) and call.func.attr in self.VERBS
-                 and isinstance(call.func.value, ast.Name) and call.func.value.id == "session"]
-        self.assertEqual(len(every), len(sent))
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                tree = self.tree(name)
+                sent = [node for node in ast.walk(tree) if isinstance(node, ast.AsyncWith)
+                        and isinstance(node.items[0].context_expr, ast.Call)
+                        and named(node.items[0].context_expr) in {"session." + verb for verb in self.VERBS}]
+                self.assertEqual(sorted(named(node.items[0].context_expr) for node in sent),
+                                 self.REQUESTS.get(name, []))
+                for node in sent:
+                    call = node.items[0].context_expr
+                    self.assertEqual([ast.unparse(word.value) for word in call.keywords
+                                      if word.arg == "allow_redirects"], ["False"])
+                    self.assertEqual(ast.unparse(node.body[0]),
+                                     f"refuse_redirect({node.items[0].optional_vars.id}.status)")
+                # No request leaves a session any other way: not awaited bare, and not under another name.
+                every = [named(call) for call in calls(tree)
+                         if isinstance(call.func, ast.Attribute) and call.func.attr in self.VERBS
+                         and isinstance(call.func.value, ast.Name) and call.func.value.id == "session"]
+                self.assertEqual(len(every), len(sent))
 
 
 if __name__ == "__main__":

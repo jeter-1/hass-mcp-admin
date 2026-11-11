@@ -180,6 +180,13 @@ def use_internal_lane_core(origin, subnet):
         raise ValueError(LANE_CORE_OUTSIDE)
     HA_URL, CLIENT_ID, _lane_core = origin, f"{origin}/", origin
     return origin
+
+
+def accepted_lane_core():
+    """The origin use_internal_lane_core accepted in this process, or None; read-only."""
+    return _lane_core
+
+
 EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
 TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")

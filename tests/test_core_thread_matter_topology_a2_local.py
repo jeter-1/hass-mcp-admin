@@ -359,6 +359,32 @@ class HandOverTests(unittest.TestCase):
                 self.assertEqual(caught.exception.args, ("real_ha_lane_subnet_not_usable",))
                 self.assertIsNone(harness._lane_core)
 
+    def test_the_stub_origin_is_its_address_inside_the_created_subnet(self):
+        with self.docker(created(), address="172.30.0.3"):
+            self.assertEqual(lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET), "http://172.30.0.3:5580")
+        # The address is read from the stub's own container, on the network this run created.
+        self.assertEqual(self.commands, [])
+
+    def test_a_stub_address_outside_the_created_subnet_refuses(self):
+        for address, subnet in (("192.168.1.10", SUBNET), ("172.31.0.3", SUBNET), ("10.0.0.3", SUBNET),
+                                ("127.0.0.1", SUBNET), ("172.30.0.3", "172.30.1.0/24"),
+                                ("172.30.0.3", "not-a-subnet"), ("172.30.0.3", "172.30.0.1/16"),
+                                ("not-an-address", SUBNET), ("fd00::3", SUBNET), ("172.30.0.3", "fd00::/64")):
+            with self.subTest(address=address, subnet=subnet), self.docker(created(), address=address):
+                with self.assertRaises(a1.Refusal) as caught:
+                    lane.stub_origin(NETWORK_ID, RUN_ID, 5580, subnet)
+                self.assertEqual(caught.exception.args, ("lane_stub_outside_created_network",))
+
+    def test_a_stub_on_a_network_this_run_did_not_create_refuses(self):
+        with self.docker(created(), address="172.30.0.3", attached=OTHER_NETWORK_ID):
+            with self.assertRaises(a1.Refusal) as caught:
+                lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET)
+        self.assertEqual(caught.exception.args, ("lane_container_network_not_created_by_run",))
+        with self.docker(created(), address=""):
+            with self.assertRaises(a1.Refusal) as caught:
+                lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET)
+        self.assertEqual(caught.exception.args, ("lane_container_address_missing",))
+
     def test_the_runner_never_names_its_core_in_the_environment(self):
         source = Path(lane.__file__).read_text()
         self.assertNotIn('os.environ["REAL_HA_URL"]', source)
@@ -371,7 +397,8 @@ class HandOverTests(unittest.TestCase):
         self.assertIn("created_network(network_id, run_id)", posture)
         self.assertEqual(source.count("network_id = "), 1)
         self.assertIn('ha_url, result["lane_network"] = hand_over_core(network_id, run_id)', source)
-        self.assertIn('stub_url = f"http://{address(STUB, run_id, network_id)}:', source)
+        self.assertIn('stub_url = stub_origin(network_id, run_id, stub["port"], result["lane_network"]["subnet"])',
+                      source)
 
 
 class NetworkPostureTests(unittest.TestCase):

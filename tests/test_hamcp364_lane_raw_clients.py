@@ -1,4 +1,7 @@
-"""HAMCP-364: the acceptance lanes' own clients reach only a disposable loopback Core.
+"""HAMCP-364: the acceptance lanes' own clients reach only the disposable Core of their lane.
+
+That Core is on loopback, except the Thread/Matter A2 lane's, which is on the
+internal network its runner created and reaches the lane through one hand-over.
 
 Offline. A stand-in session records every construction, connection, frame and
 request; nothing here opens a socket, and the Core harness is never run.
@@ -21,12 +24,15 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
+import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
 import security_metadata_contract_acceptance as security  # noqa: E402
 import seq13_contract_acceptance as seq13  # noqa: E402
 import seq15_contract_acceptance as seq15  # noqa: E402
+import thread_matter_topology_a2_acceptance as a2  # noqa: E402
+import thread_matter_topology_contract_acceptance as thread  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from support.process_isolation import restore_after_class  # noqa: E402
 
@@ -34,6 +40,11 @@ SCRIPTS = ROOT / "scripts"
 HARNESS_PATH = SCRIPTS / "real_ha_contract_tests.py"
 MAIN_CORE, MAIN_SOCKET = "http://127.0.0.1:8123", "ws://127.0.0.1:8123/api/websocket"
 LOCAL_CORE, LOCAL_SOCKET = "http://127.0.0.1:18123", "ws://127.0.0.1:18123/api/websocket"
+# The Thread/Matter lanes: A1's Core on a loopback port of its own; A2's on the internal
+# bridge its runner creates, here a synthetic address inside a synthetic subnet.
+THREAD_CORE, THREAD_SOCKET = "http://127.0.0.1:18124", "ws://127.0.0.1:18124/api/websocket"
+BRIDGE_CORE, BRIDGE_SUBNET = "http://172.30.0.2:8123", "172.30.0.0/16"
+BRIDGE_SOCKET = "ws://172.30.0.2:8123/api/websocket"
 # Reserved documentation addresses and names; never a real peer.
 ELSEWHERE, ELSEWHERE_NAME = "198.51.100.7", "core.example.invalid"
 TOKEN = "synthetic-token-364"
@@ -414,6 +425,57 @@ SECURITY_NEAR = (
 )
 
 
+TOPOLOGY_READ = {"type": thread.NETWORK_TOPOLOGY_COMMAND, "refresh": False}
+THREAD_EXAMPLES = (
+    {"type": thread.LIST_DATASETS_COMMAND},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean", "tlv": "0e080000000000010000"},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-" + HEX, "tlv": "0e08000000000001000035060004001fffe0"},
+    TOPOLOGY_READ,
+)
+A2_EXAMPLES = (TOPOLOGY_READ, {"type": a2.DEVICE_REGISTRY_COMMAND})
+THREAD_MATTER_NEAR = (
+    # The topology read with a refresh, or with anything that is not the built-in False.
+    {**TOPOLOGY_READ, "refresh": True}, {**TOPOLOGY_READ, "refresh": 0}, {**TOPOLOGY_READ, "refresh": None},
+    {**TOPOLOGY_READ, "refresh": "false"}, {**TOPOLOGY_READ, "refresh": []},
+    {**TOPOLOGY_READ, "node_id": 1}, {"type": thread.NETWORK_TOPOLOGY_COMMAND},
+    # Other Thread and Matter commands, none of which either lane sends.
+    {"type": "thread/delete_dataset", "dataset_id": "synthetic"},
+    {"type": "thread/set_preferred_dataset", "dataset_id": "synthetic"},
+    {"type": "thread/get_dataset_tlv", "dataset_id": "synthetic"},
+    {"type": "thread/set_preferred_border_agent", "dataset_id": "synthetic", "border_agent_id": "synthetic",
+     "extended_address": "synthetic"},
+    {"type": "thread/discover_routers"}, {"type": "otbr/info"},
+    {"type": "matter/commission", "code": "synthetic"}, {"type": "matter/commission_on_network", "pin": 1},
+    {"type": "matter/set_thread", "thread_operation_dataset": "0e08"},
+    {"type": "matter/set_wifi_credentials", "network_name": "synthetic", "password": "synthetic"},
+    {"type": "matter/node_diagnostics", "device_id": "synthetic"},
+    {"type": "matter/ping_node", "device_id": "synthetic"},
+    {"type": "matter/remove_matter_fabric", "device_id": "synthetic", "fabric_index": 1},
+    # Registry and entry writes next to the one registry read the A2 lane sends.
+    {"type": "config/device_registry/update", "device_id": "synthetic", "name_by_user": "synthetic"},
+    {"type": "config/device_registry/remove_config_entry", "device_id": "synthetic", "config_entry_id": "synthetic"},
+    {"type": a2.DEVICE_REGISTRY_COMMAND, "refresh": False},
+    {"type": "config/entity_registry/list"}, {"type": "config_entries/get"},
+    {"type": "config_entries/disable", "entry_id": "synthetic", "disabled_by": "user"},
+)
+THREAD_NEAR = (
+    *THREAD_MATTER_NEAR,
+    # A dataset is stored under a source and a TLV that are both text, and not empty.
+    {"type": thread.ADD_DATASET_COMMAND, "source": "", "tlv": "0e08"},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean", "tlv": ""},
+    {"type": thread.ADD_DATASET_COMMAND, "source": None, "tlv": "0e08"},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean", "tlv": b"0e08"},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean", "tlv": ["0e08"]},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean", "tlv": "0e08", "preferred": True},
+    {"type": thread.ADD_DATASET_COMMAND, "source": "hamcp231-clean"},
+    {"type": thread.ADD_DATASET_COMMAND, "tlv": "0e08"},
+    {"type": thread.LIST_DATASETS_COMMAND, "source": "hamcp231-clean"},
+    # The A2 lane's registry read is not this lane's.
+    A2_EXAMPLES[1],
+)
+# The A1 lane's dataset commands are not the A2 lane's.
+A2_NEAR = (*THREAD_MATTER_NEAR, THREAD_EXAMPLES[0], THREAD_EXAMPLES[1], THREAD_EXAMPLES[2])
+
 HUB = {"type": E.UPDATE, "entity_id": E.HUB_SWITCH}
 CATEGORY = {"type": "config/category_registry/create", "scope": E.CATEGORY_SCOPE, "name": "HAMCP179 Lighting"}
 OWNED_BOARD = {"type": Q.DASHBOARD_UPDATE, "dashboard_id": "seq15_" + HEX}
@@ -454,6 +516,8 @@ NAMED = (
     ("seq15", {**OWNED_BOARD, "title": "Seq15 Drift"}, ("title",)),
     *(("security_metadata", {"type": X.EXPOSE_NEW_GET, "assistant": assistant}, ("assistant",))
       for assistant in X.KNOWN_ASSISTANTS),
+    ("thread_matter", TOPOLOGY_READ, ("refresh",)),
+    ("thread_matter_a2", TOPOLOGY_READ, ("refresh",)),
 )
 
 
@@ -493,14 +557,18 @@ def others(value):
 
 
 def lane(name, module, client, send, pin, examples, near, sources, methods, seconds, signatures,
-         settings=configured, earlier_check=False, commands=None):
+         settings=configured, earlier_check=False, commands=None, dial=None, named=True):
     """One lane's client. ``earlier_check`` marks a client whose own check of its settings runs before the pin.
 
     ``commands`` is the lane's closed list where its module holds more than one.
+    ``dial`` is what the client passes to the connection besides its target.
+    ``named`` is False for the one client whose target no constant names: the A2
+    lane's, which reads the Core the harness accepted each time it is used.
     """
+    constant = vars(module).get("RAW_CORE_URL", entity.RAW_CORE_URL) if named else None
     return SimpleNamespace(name=name, module=module, client=client, send=send, pin=pin, examples=examples,
                            near=near, sources=sources, methods=methods, seconds=seconds, signatures=signatures,
-                           settings=settings, earlier_check=earlier_check,
+                           settings=settings, earlier_check=earlier_check, dial=dial or {}, constant=constant,
                            commands=module.RAW_COMMANDS if commands is None else commands)
 
 
@@ -518,7 +586,8 @@ def security_signatures():
 
 SOCKET_METHODS = frozenset({"ok", "call", "refused"})
 # Every name a lane's client class goes by in its script.
-BUILDERS = frozenset({"RawWebSocket", "LaneRaw", "RawCore", "SceneLaneRaw", "HelperLaneRaw"})
+BUILDERS = frozenset({"RawWebSocket", "LaneRaw", "RawCore", "SceneLaneRaw", "HelperLaneRaw", "A2RawCore"})
+THREAD_DIAL = {"max_msg_size": thread.HARNESS_FRAME_BYTES}
 LANES = (
     lane("entity_metadata", entity, entity.RawWebSocket, call, MAIN_SOCKET, ENTITY_EXAMPLES, ENTITY_NEAR,
          (("entity_metadata_contract_acceptance.py", entity),), SOCKET_METHODS, 30,
@@ -543,18 +612,48 @@ LANES = (
     lane("security_metadata", security, security.RawCore, command, LOCAL_SOCKET, SECURITY_EXAMPLES, SECURITY_NEAR,
          (("security_metadata_contract_acceptance.py", security),), frozenset({"result", "command"}), 60,
          security_signatures),
+    lane("thread_matter", thread, thread.RawCore, command, THREAD_SOCKET, THREAD_EXAMPLES, THREAD_NEAR,
+         (("thread_matter_topology_contract_acceptance.py", thread),), frozenset({"command"}), 60,
+         lambda: shape_signatures(thread.RAW_COMMANDS), dial=THREAD_DIAL),
+    lane("thread_matter_a2", a2, a2.A2RawCore, command, BRIDGE_SOCKET, A2_EXAMPLES, A2_NEAR,
+         (("thread_matter_topology_a2_acceptance.py", a2), ("core_thread_matter_topology_a2_local.py", a2_runner)),
+         frozenset({"command"}), 60, lambda: shape_signatures(a2.A2_RAW_COMMANDS), commands=a2.A2_RAW_COMMANDS,
+         dial=THREAD_DIAL, named=False),
 )
 BY_NAME = {item.name: item for item in LANES}
 SHAPED = tuple(item for item in LANES if item.module is not security)
+# The two Thread/Matter lanes: a Core, a client class and a closed list each.
+THREAD_LANES = tuple(item for item in LANES if item.module in (thread, a2))
 # The two created-object lanes: one script and one Core, a client class and a closed list each.
 CREATED_LANES = tuple(item for item in LANES if item.module is created)
 # The lanes the Core harness runs, on its Core; the others each start a Core of their own.
 HARNESS_LANES = tuple(item for item in SHAPED if item.pin == MAIN_SOCKET)
 # Texts a refusal must not carry, whichever check made it.
-PRIVATE = ("127.0.0.1", "ws://", "http://", TOKEN, ELSEWHERE, ELSEWHERE_NAME, "18123", "8123")
+PRIVATE = ("127.0.0.1", "ws://", "http://", TOKEN, ELSEWHERE, ELSEWHERE_NAME, "18123", "8123", "18124",
+           "172.30.")
+
+
+def host_of(pin):
+    return pin.split("//")[1].split(":")[0]
 
 
 class ClientCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # The A2 lane's client has a Core only once its runner has handed one over, so every
+        # test here starts after that hand-over, made through the harness's own function and
+        # undone when the test ends.
+        manager = patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None)
+        manager.start()
+        self.addCleanup(manager.stop)
+        self.assertEqual(harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET), BRIDGE_CORE)
+
+    def assert_dialled(self, item, target):
+        """What was dialled is the lane's pin, and the very constant where one names it."""
+        self.assertIs(type(target), str)
+        self.assertEqual(target, item.pin)
+        if item.constant is not None:
+            self.assertIs(target, item.constant)
+
     def assert_fixed_code(self, exception, reason):
         # A fixed code and nothing else: no URL, token or payload text.
         self.assertIs(type(exception), ValueError)
@@ -605,12 +704,13 @@ class ClientCase(unittest.IsolatedAsyncioTestCase):
 
 
 class PinnedUrl(ClientCase):
-    """Each client is built only for its lane's one loopback Core socket."""
+    """Each client is built only for its lane's one Core socket."""
 
     def cases(self, pin):
-        port = pin.split(":")[2].split("/")[0]
-        other = {"8123": "18123", "18123": "8123"}[port]
-        origin = "ws://127.0.0.1:" + port
+        port, host = pin.split(":")[2].split("/")[0], host_of(pin)
+        other = {"8123": "18123", "18123": "8123", "18124": "18123"}[port]
+        origin = "ws://" + host + ":" + port
+        self.assertEqual(pin, origin + "/api/websocket")
         return (
             # Another port, including the other lanes' own.
             pin.replace(port, other), pin.replace(port, str(int(port) + 1)), pin.replace(":" + port, ""),
@@ -623,19 +723,24 @@ class PinnedUrl(ClientCase):
             origin + "/core/websocket", origin + "//api/websocket", origin + "/api", origin,
             # Userinfo, so that the pinned text is not the host.
             origin + "@" + ELSEWHERE + "/api/websocket", origin + "@" + ELSEWHERE_NAME + "/api/websocket",
-            pin + "@" + ELSEWHERE_NAME, "ws://user:synthetic@127.0.0.1:" + port + "/api/websocket",
-            "ws://@127.0.0.1:" + port + "/api/websocket",
+            pin + "@" + ELSEWHERE_NAME, "ws://user:synthetic@" + host + ":" + port + "/api/websocket",
+            "ws://@" + host + ":" + port + "/api/websocket",
             # Another host, including names and forms that only resolve to loopback.
-            pin.replace("127.0.0.1", "localhost"), pin.replace("127.0.0.1", "[::1]"),
-            pin.replace("127.0.0.1", "127.0.0.2"), pin.replace("127.0.0.1", "127.1"),
-            pin.replace("127.0.0.1", "2130706433"), pin.replace("127.0.0.1", "0.0.0.0"),
-            pin.replace("127.0.0.1", "127.0.0.1." + ELSEWHERE_NAME), pin.replace("127.0.0.1", ELSEWHERE),
-            pin.replace("127.0.0.1", ELSEWHERE_NAME), "ws://supervisor/core/websocket",
+            pin.replace(host, "localhost"), pin.replace(host, "[::1]"),
+            pin.replace(host, "127.0.0.2"), pin.replace(host, "127.1"),
+            pin.replace(host, "2130706433"), pin.replace(host, "0.0.0.0"),
+            pin.replace(host, host + "." + ELSEWHERE_NAME), pin.replace(host, ELSEWHERE),
+            pin.replace(host, ELSEWHERE_NAME), "ws://supervisor/core/websocket",
+            # Loopback, the bridge Core handed over in these tests, its neighbour on that
+            # bridge, and a household address: each is another lane's Core or no lane's.
+            *(pin.replace(host, another) for another in ("127.0.0.1", "172.30.0.2", "172.30.0.3", "172.30.0.02",
+                                                         "172.30.0.20", "192.168.1.10", "10.0.0.2")
+              if another != host),
             # Not exactly the text, or not text at all.
             " " + pin, pin + " ", pin + "\n", pin + "\x00", pin.upper(), "", None, 0, True,
             pin.encode(), (pin,), [pin], {"url": pin},
             # A str subclass, whether it merely equals the pin or only claims to.
-            Text(pin), Claims(pin), Claims(pin.replace("127.0.0.1", ELSEWHERE)))
+            Text(pin), Claims(pin), Claims(pin.replace(host, ELSEWHERE)))
 
     def test_any_url_but_the_lane_pin_is_refused_when_the_client_is_built(self):
         for item in LANES:
@@ -663,17 +768,34 @@ class PinnedUrl(ClientCase):
                 shown = str(caught.exception) + repr(caught.exception)
                 if not item.earlier_check:
                     self.assertEqual(str(caught.exception), URL_REFUSED)
-                for text in (private, TOKEN, ELSEWHERE_NAME, "synthetic-query", "127.0.0.1", "ws://"):
+                for text in (private, TOKEN, ELSEWHERE_NAME, "synthetic-query", "127.0.0.1", "ws://", "172.30."):
                     self.assertNotIn(text, shown)
 
-    def test_the_pins_are_the_two_disposable_loopback_sockets(self):
+    def test_each_pin_is_the_socket_of_its_lanes_own_disposable_core(self):
         self.assertEqual(entity.RAW_CORE_URL, MAIN_SOCKET)
         self.assertEqual(security.RAW_CORE_URL, LOCAL_SOCKET)
         self.assertEqual(created.RAW_CORE_URL, LOCAL_SOCKET)
+        self.assertEqual(thread.RAW_CORE_URL, THREAD_SOCKET)
+        # The A2 lane's Core has no address until its runner starts it, so its script names
+        # none: the class reads the one the harness accepted.
+        self.assertNotIn("RAW_CORE_URL", vars(a2))
+        self.assertEqual(sorted(name for name, value in vars(a2).items()
+                                if type(value) is str and value.startswith(("ws://", "http://"))), [])
+        self.assertEqual({item.pin for item in LANES}, {MAIN_SOCKET, LOCAL_SOCKET, THREAD_SOCKET, BRIDGE_SOCKET})
         for item in LANES:
             with self.subTest(lane=item.name):
                 self.assertNotIn("RAW_CORE_URL", vars(item.client))
                 if item.module is security:
+                    continue
+                if item in THREAD_LANES:
+                    # A client of their own, not the shared one: the target is still the class's,
+                    # never an instance's, and each class names its own.
+                    self.assertFalse(issubclass(item.client, entity.RawWebSocket))
+                    self.assertIn("core_url", vars(item.client))
+                    self.assertEqual(item.client.core_url, item.pin)
+                    client = item.client(item.settings(item.pin))
+                    self.assertNotIn("core_url", vars(client))
+                    self.assertEqual(sorted(vars(client)), ["token"])
                     continue
                 self.assertTrue(issubclass(item.client, entity.RawWebSocket))
                 # The target is the class's, never an instance's: the harness lanes share the
@@ -687,6 +809,70 @@ class PinnedUrl(ClientCase):
                 self.assertNotIn("core_url", vars(item.client(item.settings(item.pin))))
         self.assertIs(vars(entity.RawWebSocket)["core_url"], entity.RAW_CORE_URL)
         self.assertIs(vars(created.LaneRaw)["core_url"], created.RAW_CORE_URL)
+        self.assertIs(vars(thread.RawCore)["core_url"], thread.RAW_CORE_URL)
+        self.assertIs(type(vars(a2.A2RawCore)["core_url"]), a2.AcceptedCore)
+        self.assertEqual(a2.A2RawCore.__bases__, (thread.RawCore,))
+
+    def test_the_a2_client_has_no_core_until_the_harness_has_accepted_one(self):
+        item = BY_NAME["thread_matter_a2"]
+        events = []
+        with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+            built = item.client(item.settings(item.pin))
+            # No origin accepted, or a value there that is not an http origin: no socket to pin.
+            for accepted in (None, "", "https://172.30.0.2:8123", "ws://172.30.0.2:8123", "172.30.0.2:8123",
+                             BRIDGE_CORE.encode(), Text(BRIDGE_CORE), (BRIDGE_CORE,), 8123, True):
+                with self.subTest(accepted=accepted), patch.object(harness, "_lane_core", accepted):
+                    for url in (item.pin, MAIN_SOCKET, LOCAL_SOCKET, THREAD_SOCKET, None):
+                        with self.assertRaises(ValueError) as caught:
+                            item.client(item.settings(url))
+                        self.assert_fixed_code(caught.exception, URL_REFUSED)
+                    with self.assertRaises(ValueError) as caught:
+                        a2.A2RawCore.core_url
+                    self.assert_fixed_code(caught.exception, URL_REFUSED)
+        self.assertEqual(events, [])
+        self.assertIs(type(built), a2.A2RawCore)
+
+    async def test_an_a2_client_whose_core_is_no_longer_accepted_refuses_before_a_session(self):
+        item = BY_NAME["thread_matter_a2"]
+        for accepted in (None, "https://172.30.0.2:8123", 8123):
+            for payload in item.examples:
+                events = []
+                with self.subTest(accepted=accepted, payload=payload), \
+                        patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+                    client = item.client(item.settings(item.pin))
+                    with patch.object(harness, "_lane_core", accepted), self.assertRaises(ValueError) as caught:
+                        await item.send(client, dict(payload))
+                    self.assert_fixed_code(caught.exception, URL_REFUSED)
+                    self.assertEqual(events, [])
+
+    def test_the_a2_pin_is_the_accepted_origin_and_nothing_else_supplies_it(self):
+        item = BY_NAME["thread_matter_a2"]
+        self.assertEqual(harness.accepted_lane_core(), BRIDGE_CORE)
+        self.assertEqual(a2.A2RawCore.core_url, "ws://" + BRIDGE_CORE[len("http://"):] + "/api/websocket")
+        # Another run's network: the pin is that run's Core, and this one's is refused.
+        with patch.multiple(harness, HA_URL=MAIN_CORE, CLIENT_ID=MAIN_CORE + "/", _lane_core=None):
+            harness.use_internal_lane_core("http://10.89.4.7:8123", "10.89.4.0/24")
+            self.assertEqual(a2.A2RawCore.core_url, "ws://10.89.4.7:8123/api/websocket")
+            item.client(item.settings("ws://10.89.4.7:8123/api/websocket"))
+            self.refused_url(item, item.pin)
+        # Neither the settings, the class nor an instance moves it.
+        client = item.client(item.settings(item.pin))
+        client.core_url = MAIN_SOCKET
+        self.assertEqual(type(client).core_url, item.pin)
+        tree = ast.parse((SCRIPTS / "thread_matter_topology_a2_acceptance.py").read_text(encoding="utf-8"))
+        descriptor, = (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AcceptedCore")
+        self.assertEqual([node.name for node in descriptor.body if isinstance(node, ast.FunctionDef)], ["__get__"])
+        self.assertEqual([ast.unparse(statement) for statement in descriptor.body[-1].body], [
+            "import real_ha_contract_tests as harness",
+            "accepted = harness.accepted_lane_core()",
+            "if type(accepted) is not str or not accepted.startswith('http://'):\n    raise ValueError(RAW_URL_REFUSED)",
+            "return 'ws://' + accepted[len('http://'):] + '/api/websocket'"])
+        # The client reads the target from its class and never from itself or its settings.
+        source = (SCRIPTS / "thread_matter_topology_contract_acceptance.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("type(self).core_url"), 2)
+        self.assertEqual(source.count("self.core_url"), 0)
+        self.assertEqual(source.count("configured.websocket_url"), 1)
+        self.assertEqual(source.count("session.ws_connect(target, max_msg_size=HARNESS_FRAME_BYTES)"), 1)
 
     def test_a_loopback_core_that_is_not_the_created_object_pin_is_refused_by_the_pin(self):
         # Each pair is one loopback Core for REST and WebSocket alike, which is all the lane's
@@ -831,6 +1017,67 @@ class ClosedList(ClientCase):
             await self.refused_command(item, SEQ13_EXAMPLES[6])
         await self.refused_command(by_name["configuration_delete"], CREATED_HELPER_EXAMPLES[3])
         await self.refused_command(by_name["seq15"], CREATED_HELPER_EXAMPLES[6])
+        # The Thread/Matter lanes send no registry read of entities and no entity update, and
+        # no other lane sends a Thread or Matter command.
+        for item in THREAD_LANES:
+            with self.subTest(lane=item.name):
+                await self.refused_command(item, registry_list)
+                await self.refused_command(item, hub)
+        for item in LANES:
+            if item in THREAD_LANES:
+                continue
+            for payload in THREAD_EXAMPLES:
+                with self.subTest(lane=item.name, payload=payload):
+                    await self.refused_command(item, copy.deepcopy(payload))
+
+    def test_each_thread_matter_lane_list_is_exactly_this(self):
+        # Written out, so a command added to either list fails here.
+        topology = {"type": "matter/network_topology", "refresh": False}
+        self.assertEqual(thread.RAW_COMMANDS, (
+            {"type": "thread/list_datasets"}, {"type": "thread/add_dataset_tlv", "source": str, "tlv": str},
+            topology))
+        self.assertEqual(a2.A2_RAW_COMMANDS, (topology, {"type": "config/device_registry/list"}))
+        for commands in (thread.RAW_COMMANDS, a2.A2_RAW_COMMANDS):
+            self.assertIs(type(commands), tuple)
+            self.assertEqual([type(shape) for shape in commands], [dict] * len(commands))
+            # ``refresh`` is the built-in False itself, which 0 does not pass for.
+            self.assertEqual([shape["refresh"] for shape in commands if "refresh" in shape], [False])
+            self.assertIs(next(shape["refresh"] for shape in commands if "refresh" in shape), False)
+        # A list per lane: each class holds its own, and the A2 script has no list by the A1 name.
+        self.assertIsNot(thread.RAW_COMMANDS, a2.A2_RAW_COMMANDS)
+        self.assertNotIn("RAW_COMMANDS", vars(a2))
+        self.assertIs(vars(thread.RawCore)["commands"], thread.RAW_COMMANDS)
+        self.assertIs(vars(a2.A2RawCore)["commands"], a2.A2_RAW_COMMANDS)
+        self.assertEqual(set(vars(a2.A2RawCore)) - {"__module__", "__doc__", "__firstlineno__",
+                                                    "__static_attributes__"}, {"core_url", "commands"})
+        # The topology read is the one the product's own reader sends.
+        self.assertEqual(dict(thread.PAYLOADS[thread.TOPOLOGY]), topology)
+        self.assertEqual(dict(a2.PAYLOADS[a2.TOPOLOGY]), topology)
+
+    async def test_each_thread_matter_lane_refuses_what_only_the_other_lane_sends(self):
+        first, second = BY_NAME["thread_matter"], BY_NAME["thread_matter_a2"]
+        only_first = [shape for shape in thread.RAW_COMMANDS if shape not in a2.A2_RAW_COMMANDS]
+        only_second = [shape for shape in a2.A2_RAW_COMMANDS if shape not in thread.RAW_COMMANDS]
+        self.assertEqual(([shape["type"] for shape in only_first], [shape["type"] for shape in only_second]),
+                         (["thread/list_datasets", "thread/add_dataset_tlv"], ["config/device_registry/list"]))
+        for sends, refuses, only, examples in ((first, second, only_first, THREAD_EXAMPLES[:3]),
+                                               (second, first, only_second, A2_EXAMPLES[1:])):
+            for payload in examples:
+                with self.subTest(sends=sends.name, payload=payload):
+                    self.assertTrue(entity.raw_command_listed(payload, tuple(only)))
+                    self.assertFalse(entity.raw_command_listed(payload, refuses.commands))
+                    reply, events = await self.sent(sends, copy.deepcopy(payload))
+                    self.assertIs(reply["success"], True)
+                    self.assertEqual(events[-1][1], {"id": 1, **payload})
+                    await self.refused_command(refuses, copy.deepcopy(payload))
+            # Every shape that is only the one lane's was tried.
+            for shape in only:
+                self.assertTrue(any(entity.raw_command_listed(payload, (shape,)) for payload in examples))
+        # The one command both send is the topology read.
+        self.assertEqual([shape for shape in thread.RAW_COMMANDS if shape in a2.A2_RAW_COMMANDS], [TOPOLOGY_READ])
+        for item in (first, second):
+            reply, _events = await self.sent(item, dict(TOPOLOGY_READ))
+            self.assertIs(reply["success"], True)
 
     def test_each_created_object_lane_list_is_exactly_this(self):
         # Written out, so a command added to either list fails here.
@@ -906,7 +1153,7 @@ class NamedValue(ClientCase):
             for field in fields:
                 tabled.setdefault((name, example["type"], frozenset(example), field), []).append(example[field])
         self.assertEqual(set(tabled), set(listed))
-        self.assertEqual(len(tabled), 29)
+        self.assertEqual(len(tabled), 31)
         # And the values a list names for the field are the ones the table sends: no list names one more.
         for key, values in listed.items():
             with self.subTest(field=key):
@@ -950,7 +1197,6 @@ class DialTarget(ClientCase):
 
     async def test_every_command_a_lane_sends_goes_to_the_pin_unchanged(self):
         for item in LANES:
-            constant = vars(item.module).get("RAW_CORE_URL", entity.RAW_CORE_URL)
             for payload in item.examples:
                 with self.subTest(lane=item.name, payload=payload):
                     before = repr(payload)
@@ -960,18 +1206,20 @@ class DialTarget(ClientCase):
                     self.assertEqual(set(events[0][1]), {"timeout", "trust_env", "trace_configs"})
                     self.assertIs(events[0][1]["trust_env"], False)
                     self.assertEqual(events[0][1]["timeout"].total, item.seconds)
-                    self.assertIs(events[1][1], constant)
-                    self.assertEqual(events[1][1:], (item.pin, {}))
+                    self.assert_dialled(item, events[1][1])
+                    self.assertEqual(events[1][1:], (item.pin, item.dial))
                     self.assertEqual(events[2][1], {"type": "auth", "access_token": TOKEN})
                     self.assertEqual(events[3][1], {"id": 1, **payload})
                     self.assertEqual(repr(payload), before)
 
     async def test_the_dial_site_uses_the_constant_not_the_configured_value(self):
         for item in LANES:
-            constant = vars(item.module).get("RAW_CORE_URL", entity.RAW_CORE_URL)
-            equal, elsewhere = item.pin.encode().decode(), item.pin.replace("127.0.0.1", ELSEWHERE)
-            self.assertEqual(equal, constant)
-            self.assertIsNot(equal, constant)
+            equal, elsewhere = item.pin.encode().decode(), item.pin.replace(host_of(item.pin), ELSEWHERE)
+            self.assertNotEqual(elsewhere, item.pin)
+            self.assertEqual(equal, item.pin)
+            if item.constant is not None:
+                self.assertEqual(equal, item.constant)
+                self.assertIsNot(equal, item.constant)
             for label, later in (("an equal string", equal), ("changed after the client was built", elsewhere)):
                 with self.subTest(lane=item.name, configured=label):
                     settings, events = item.settings(equal), []
@@ -983,8 +1231,7 @@ class DialTarget(ClientCase):
                     self.assertIs(reply["success"], True)
                     dialled = [event[1] for event in events if event[0] == "ws_connect"]
                     self.assertEqual(len(dialled), 1)
-                    self.assertIs(dialled[0], constant)
-                    self.assertIs(type(dialled[0]), str)
+                    self.assert_dialled(item, dialled[0])
 
     async def test_the_socket_never_trusts_the_proxy_environment(self):
         proxies = {name: "http://proxy.invalid:3128" for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
@@ -1135,6 +1382,11 @@ DYNAMIC_SITES = {
             (domain + "/delete", frozenset({"type", domain + "_id"})) for domain in created.HELPER_DOMAINS}}),
     "security_metadata": {"payload": lambda: {
         (payload["type"], frozenset(payload)) for payload in security.SNAPSHOTS}},
+    # Both Thread/Matter lanes read the topology with the product reader's own payload.
+    "thread_matter": {"dict(PAYLOADS[TOPOLOGY])": lambda: {
+        (thread.PAYLOADS[thread.TOPOLOGY]["type"], frozenset(thread.PAYLOADS[thread.TOPOLOGY]))}},
+    "thread_matter_a2": {"dict(PAYLOADS[TOPOLOGY])": lambda: {
+        (a2.PAYLOADS[a2.TOPOLOGY]["type"], frozenset(a2.PAYLOADS[a2.TOPOLOGY]))}},
 }
 
 
@@ -1238,7 +1490,7 @@ class LaneInventory(ClientCase):
         builders = BUILDERS
         own = {"entity_metadata": "RawWebSocket", "configuration_delete": "LaneRaw", "seq13": "LaneRaw",
                "seq15": "LaneRaw", "created_scene": "SceneLaneRaw", "created_helper": "HelperLaneRaw",
-               "security_metadata": "RawCore"}
+               "security_metadata": "RawCore", "thread_matter": "RawCore", "thread_matter_a2": "A2RawCore"}
         self.assertEqual(set(own), {item.name for item in LANES})
         for item in LANES:
             with self.subTest(lane=item.name):
@@ -1263,6 +1515,12 @@ class LaneInventory(ClientCase):
                     self.assertEqual(bases, [("LaneRaw", "RawWebSocket"), ("SceneLaneRaw", "LaneRaw"),
                                              ("HelperLaneRaw", "LaneRaw")])
                     self.assertEqual(uses, len(bases) + 2)
+                elif item.name == "thread_matter_a2":
+                    # The script and its runner each build the A2 class once, for the one run; the
+                    # only other use of any of these names is that class naming the A1 client as its base.
+                    self.assertEqual(built, ["A2RawCore", "A2RawCore"])
+                    self.assertEqual(bases, [("A2RawCore", "RawCore")])
+                    self.assertEqual(uses, 3)
                 else:
                     self.assertEqual(built, [own[item.name]])
                     # The only other use of any of these names is the lane subclass naming its base.
@@ -1442,6 +1700,51 @@ class LaneSettings(ClientCase):
             self.refused_url(item, real.websocket_url)
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertNotIn("created_object", workflow)
+
+    def test_the_thread_matter_runner_core_is_its_pin(self):
+        # The A1 lane runs only through its local runner, on the Core it starts and publishes on loopback.
+        import core_thread_matter_topology_local as local
+        self.assertEqual((local.PORT, local.PORTS), (18124, (18124,)))
+        source = Path(local.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count('REAL_HA_URL=f"http://127.0.0.1:{PORT}"'), 1)
+        self.assertEqual(source.count('"--publish", f"127.0.0.1:{PORT}:8123"'), 1)
+        self.assertEqual(source.count("REAL_HA_URL="), 1)
+        self.assertEqual(thread.RAW_CORE_URL, f"ws://127.0.0.1:{local.PORT}/api/websocket")
+        real = self.settings(THREAD_CORE)
+        self.assertEqual(real.websocket_url, thread.RAW_CORE_URL)
+        item, events = BY_NAME["thread_matter"], []
+        with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+            thread.RawCore(real)
+        self.assertEqual(events, [])
+        # No other lane's Core is this client's, nor this Core any other lane's client's.
+        for core in (MAIN_CORE, LOCAL_CORE, BRIDGE_CORE):
+            self.refused_url(item, self.settings(core).websocket_url)
+        for other in LANES:
+            if other is not item:
+                with self.subTest(lane=other.name):
+                    self.refused_url(other, real.websocket_url)
+
+    def test_the_a2_runner_core_is_the_one_it_handed_over(self):
+        # The A2 lane runs only through its runner, which hands its Core to the harness; the
+        # settings the runner then takes from the harness are for that Core, and so is the pin.
+        source = (SCRIPTS / A2_RUNNER).read_text(encoding="utf-8")
+        self.assertEqual(source.count("configured = replace(harness.settings(token), "), 1)
+        self.assertEqual(source.count("raw = A2RawCore(configured)"), 1)
+        self.assertEqual((a2_runner.CORE_PORT, harness.HA_URL, harness.accepted_lane_core()),
+                         (8123, BRIDGE_CORE, BRIDGE_CORE))
+        real = self.settings(harness.HA_URL)
+        self.assertEqual(real.websocket_url, BRIDGE_SOCKET)
+        self.assertEqual(real.websocket_url, a2.A2RawCore.core_url)
+        item, events = BY_NAME["thread_matter_a2"], []
+        with patch.object(aiohttp, "ClientSession", new=fake_session(events)):
+            a2.A2RawCore(real)
+        self.assertEqual(events, [])
+        for core in (MAIN_CORE, LOCAL_CORE, THREAD_CORE, "http://172.30.0.3:8123", LAN_CORE):
+            self.refused_url(item, self.settings(core).websocket_url)
+        for other in LANES:
+            if other is not item:
+                with self.subTest(lane=other.name):
+                    self.refused_url(other, real.websocket_url)
 
 
 class Response:
@@ -1655,7 +1958,6 @@ class HarnessRequest(HarnessCase):
         self.assertEqual(len(session.calls), 1)
 
 
-BRIDGE_CORE, BRIDGE_SUBNET = "http://172.30.0.2:8123", "172.30.0.0/16"
 # A LAN-style private address, as a Home Assistant on a household network would have.
 LAN_CORE = "http://192.168.1.10:8123"
 A2_RUNNER = "core_thread_matter_topology_a2_local.py"
@@ -1804,13 +2106,28 @@ class HarnessHandOver(HarnessCase):
                          r"http://((?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}):8123")
         self.assertEqual(module._LANE_CORE.flags & ~32, 0)
 
+    def named_in(self, name):
+        """The scripts whose code names ``name``: as a name, an attribute, a definition, an import or a string."""
+        found = set()
+        for path in sorted(SCRIPTS.glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                names = (
+                    [node.id] if isinstance(node, ast.Name) else [node.attr] if isinstance(node, ast.Attribute)
+                    else [node.name] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                    else [alias.name for alias in node.names] + [alias.asname for alias in node.names]
+                    if isinstance(node, (ast.Import, ast.ImportFrom))
+                    else node.names if isinstance(node, (ast.Global, ast.Nonlocal))
+                    else [node.arg] if isinstance(node, (ast.arg, ast.keyword))
+                    else [node.value] if isinstance(node, ast.Constant) and type(node.value) is str else [])
+                if name in names:
+                    found.add(path.name)
+        return found
+
     def test_only_the_a2_runner_hands_a_core_over(self):
-        mentions = {path.name for path in sorted(SCRIPTS.glob("*.py"))
-                    if "use_internal_lane_core" in path.read_text(encoding="utf-8")}
-        self.assertEqual(mentions, {HARNESS_PATH.name, A2_RUNNER})
-        private = {path.name for path in sorted(SCRIPTS.glob("*.py"))
-                   if "_lane_core" in path.read_text(encoding="utf-8").replace("use_internal_lane_core", "")}
-        self.assertEqual(private, {HARNESS_PATH.name})
+        # By what each script's code names; a sentence in a docstring is not a use.
+        self.assertEqual(self.named_in("use_internal_lane_core"), {HARNESS_PATH.name, A2_RUNNER})
+        self.assertEqual(self.named_in("_lane_core"), {HARNESS_PATH.name})
+        self.assertEqual(self.named_in("_LANE_CORE"), {HARNESS_PATH.name})
         tree = ast.parse((SCRIPTS / A2_RUNNER).read_text(encoding="utf-8"))
         owners = [function.name for function in ast.walk(tree) if isinstance(function, ast.FunctionDef)
                   for node in ast.walk(function)
@@ -1841,6 +2158,34 @@ class HarnessHandOver(HarnessCase):
                     writers.append((getattr(scope, "name", "module"), tuple(sorted(names))))
         self.assertEqual(writers, [("module", ("HA_URL",)), ("module", ("CLIENT_ID",)), ("module", ("_lane_core",)),
                                    ("use_internal_lane_core", ("CLIENT_ID", "HA_URL", "_lane_core"))])
+
+    def test_the_accepted_core_is_read_only_by_the_a2_lanes_own_clients(self):
+        # What the harness accepted can be read, never set, and only the A2 lane's two clients read it.
+        self.assertIsNone(harness.accepted_lane_core())
+        harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET)
+        self.assertEqual(harness.accepted_lane_core(), BRIDGE_CORE)
+        self.assertIs(harness.accepted_lane_core(), harness._lane_core)
+        tree = ast.parse(HARNESS_PATH.read_text(encoding="utf-8"))
+        function, = (node for node in tree.body
+                     if isinstance(node, ast.FunctionDef) and node.name == "accepted_lane_core")
+        self.assertEqual(ast.unparse(function.args), "")
+        self.assertEqual([ast.unparse(statement) for statement in function.body[1:]], ["return _lane_core"])
+        self.assertIsInstance(function.body[0].value, ast.Constant)
+        # The harness itself never calls it: its own send-time check reads the record directly.
+        self.assertEqual([node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                          and getattr(node.func, "id", getattr(node.func, "attr", "")) == "accepted_lane_core"], [])
+        acceptance = "thread_matter_topology_a2_acceptance.py"
+        self.assertEqual(self.named_in("accepted_lane_core"), {HARNESS_PATH.name, A2_RUNNER, acceptance})
+        readers = {}
+        for name in (A2_RUNNER, acceptance):
+            script = ast.parse((SCRIPTS / name).read_text(encoding="utf-8"))
+            for owner in script.body:
+                read = [ast.unparse(node) for node in ast.walk(owner)
+                        if isinstance(node, ast.Attribute) and node.attr == "accepted_lane_core"]
+                if read:
+                    readers[name, getattr(owner, "name", type(owner).__name__)] = read
+        self.assertEqual(readers, {(A2_RUNNER, "CoreAdmin"): ["harness.accepted_lane_core"] * 3,
+                                   (acceptance, "AcceptedCore"): ["harness.accepted_lane_core"]})
 
 
 class HarnessFlow(HarnessCase):
