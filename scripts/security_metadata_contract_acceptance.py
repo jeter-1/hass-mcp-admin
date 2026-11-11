@@ -116,13 +116,18 @@ class RawCore:
     async def command(self, payload):
         if not raw_command_listed(payload):
             raise ValueError(RAW_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects. Every listed field is a
+        # string, so the items are the whole command.
+        checked = dict(payload)
         timeout = aiohttp.ClientTimeout(total=60)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
             async with session.ws_connect(RAW_CORE_URL) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 assert (await ws.receive_json())["type"] == "auth_ok"
-                await ws.send_json({"id": 1, **payload})
+                await ws.send_json({"id": 1, **checked})
                 reply = await ws.receive_json()
                 assert reply.get("type") == "result" and reply.get("id") == 1
                 return reply

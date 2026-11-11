@@ -13,6 +13,7 @@ Core 2026.10 area/name rule is restored exactly.
 """
 import asyncio
 import base64
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -176,13 +177,17 @@ class RawWebSocket:
     async def call(self, payload):
         if not raw_command_listed(payload, type(self).commands):
             raise ValueError(RAW_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects.
+        checked = copy.deepcopy(payload)
         import aiohttp
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30), trust_env=False) as session:
             async with session.ws_connect(RAW_CORE_URL) as websocket:
                 assert (await websocket.receive_json()).get("type") == "auth_required"
                 await websocket.send_json({"type": "auth", "access_token": self.token})
                 assert (await websocket.receive_json()).get("type") == "auth_ok"
-                await websocket.send_json({"id": 1, **payload})
+                await websocket.send_json({"id": 1, **checked})
                 while True:
                     message = await websocket.receive_json()
                     if message.get("id") == 1 and message.get("type") == "result":

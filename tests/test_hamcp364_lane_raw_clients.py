@@ -4,6 +4,7 @@ Offline. A stand-in session records every construction, connection, frame and
 request; nothing here opens a socket, and the Core harness is never run.
 """
 import ast
+import copy
 import importlib.util
 import os
 from pathlib import Path
@@ -67,24 +68,37 @@ class Hides(dict):
         return {key: None for key in self.shown}.keys()
 
 
-def fake_session(events, reply=None):
-    """Stand-in for aiohttp.ClientSession: records its construction, connection and frames."""
+# Every step a client takes between its command check and its command frame.
+STAGES = ("session", "session entered", "ws_connect", "socket entered", "auth_required", "auth sent", "auth_ok")
+
+
+def fake_session(events, reply=None, during=lambda stage: None):
+    """Stand-in for aiohttp.ClientSession: records its construction, connection and frames.
+
+    ``during`` is told each step before the command frame, as the caller's own
+    code would run while the client waits there.
+    """
     class Socket:
         def __init__(self):
             self.replies = [{"type": "auth_required"}]
 
         async def __aenter__(self):
+            during("socket entered")
             return self
 
         async def __aexit__(self, *_exc):
             return False
 
         async def receive_json(self):
-            return self.replies.pop(0)
+            message = self.replies.pop(0)
+            if message["type"] in ("auth_required", "auth_ok"):
+                during(message["type"])
+            return message
 
         async def send_json(self, payload):
             events.append(("send", payload))
             if payload.get("type") == "auth":
+                during("auth sent")
                 self.replies.append({"type": "auth_ok"})
             else:
                 self.replies.append({"type": "result", "id": payload["id"], "success": True,
@@ -93,8 +107,10 @@ def fake_session(events, reply=None):
     class Session:
         def __init__(self, **kwargs):
             events.append(("session", kwargs))
+            during("session")
 
         async def __aenter__(self):
+            during("session entered")
             return self
 
         async def __aexit__(self, *_exc):
@@ -102,6 +118,7 @@ def fake_session(events, reply=None):
 
         def ws_connect(self, url, **kwargs):
             events.append(("ws_connect", url, kwargs))
+            during("ws_connect")
             return Socket()
 
         def request(self, method, url, **kwargs):
@@ -653,6 +670,89 @@ class DialTarget(ClientCase):
                 _reply, events = await self.sent(item, item.examples[0])
                 self.assertIs(events[0][1].get("trust_env"), False)
                 self.assertEqual(events[1][1], item.pin)
+
+
+UNLISTED = {"type": "config/auth/delete", "user_id": "synthetic"}
+
+
+def replaced(payload):
+    payload.clear()
+    payload.update(UNLISTED)
+
+
+def retyped(payload):
+    payload["type"] = "config/core/update"
+
+
+def widened(payload):
+    payload["extra"] = True
+
+
+def nested(payload):
+    """Change a list or mapping inside the payload, leaving the payload's own items as they are."""
+    for value in payload.values():
+        if type(value) is list:
+            value.append("synthetic-added")
+        elif type(value) is dict:
+            value["synthetic-added"] = True
+
+
+class CheckedFrame(ClientCase):
+    """The frame sent is the command that was checked, whatever happens to the caller's payload meanwhile."""
+
+    async def changed_during(self, item, example, stage, change):
+        payload, checked, seen = copy.deepcopy(example), copy.deepcopy(example), []
+
+        def during(now):
+            seen.append(now)
+            if now == stage:
+                change(payload)
+
+        events = []
+        with patch.object(aiohttp, "ClientSession", new=fake_session(events, during=during)):
+            reply = await item.send(item.client(configured(item.pin)), payload)
+        self.assertEqual(tuple(seen), STAGES)
+        # The caller's payload really was changed while the client waited.
+        self.assertNotEqual(payload, checked)
+        self.assertEqual([event[1] for event in events if event[0] == "send"],
+                         [{"type": "auth", "access_token": TOKEN}, {"id": 1, **checked}])
+        self.assertEqual(reply, {"type": "result", "id": 1, "success": True, "result": None})
+
+    async def test_a_payload_changed_while_the_socket_connects_is_not_what_is_sent(self):
+        for item in LANES:
+            for stage in STAGES:
+                for change in (replaced, retyped, widened):
+                    for example in item.examples:
+                        with self.subTest(lane=item.name, stage=stage, change=change.__name__, payload=example):
+                            await self.changed_during(item, example, stage, change)
+
+    async def test_a_value_changed_inside_the_payload_while_the_socket_connects_is_not_what_is_sent(self):
+        # A copy of the payload's own items alone would still share these.
+        count = 0
+        for item in LANES:
+            for example in item.examples:
+                if not any(type(value) in (list, dict) for value in example.values()):
+                    continue
+                count += 1
+                for stage in STAGES:
+                    with self.subTest(lane=item.name, stage=stage, payload=example):
+                        await self.changed_during(item, example, stage, nested)
+        # entity_metadata's label and alias lists, and seq-15's options, service data and dashboard.
+        self.assertEqual(count, 11)
+
+    async def test_the_frame_shares_nothing_with_the_callers_payload(self):
+        # The copy is the client's own, and the caller's payload is left as it was.
+        for item in LANES:
+            for example in item.examples:
+                with self.subTest(lane=item.name, payload=example):
+                    payload = copy.deepcopy(example)
+                    _reply, events = await self.sent(item, payload)
+                    self.assertEqual(payload, example)
+                    frame = events[3][1]
+                    self.assertEqual(frame, {"id": 1, **example})
+                    for key, value in frame.items():
+                        if type(value) in (list, dict):
+                            self.assertIsNot(value, payload[key])
 
 
 def raw_sites(item):
