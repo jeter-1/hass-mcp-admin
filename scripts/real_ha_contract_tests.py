@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -139,6 +140,46 @@ def loopback_core_url(value):
 
 HA_URL = loopback_core_url(os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123"))
 CLIENT_ID = f"{HA_URL}/"
+
+# The one lane whose Core is not on loopback (the Thread/Matter A2 lane) starts it
+# on an internal Docker network it created itself. REAL_HA_URL above stays
+# loopback-only; that Core arrives only through use_internal_lane_core, as a bare
+# http://<IPv4>:8123 origin inside the subnet the runner read from its own network.
+_LANE_CORE = re.compile(r"http://((?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}):8123")
+LANE_CORE_REFUSED, LANE_SUBNET_REFUSED = "real_ha_lane_core_not_bare_ipv4", "real_ha_lane_subnet_not_usable"
+LANE_CORE_OUTSIDE, LANE_CORE_ALREADY_SET = "real_ha_lane_core_outside_subnet", "real_ha_lane_core_already_set"
+_lane_core = None
+
+
+def use_internal_lane_core(origin, subnet):
+    """Bind this process to the A2 runner's Core; anything else is refused before any send.
+
+    ``origin`` is the bare ``http://<IPv4>:8123`` of that Core and ``subnet`` the
+    IPv4 subnet of the internal network the runner created and inspected in this
+    process. The address must be a host address inside that subnet. The accepted
+    origin is bound once, and every later request is held to it.
+    """
+    global HA_URL, CLIENT_ID, _lane_core
+    if _lane_core is not None:
+        raise ValueError(LANE_CORE_ALREADY_SET)
+    found = _LANE_CORE.fullmatch(origin) if type(origin) is str else None
+    try:
+        address = ipaddress.IPv4Address(found[1]) if found else None
+    except ValueError:
+        address = None
+    if address is None:
+        raise ValueError(LANE_CORE_REFUSED)
+    try:
+        network = ipaddress.IPv4Network(subnet) if type(subnet) is str else None
+    except ValueError:
+        network = None
+    # The subnet as Docker reports one: canonical text, and never wider than a /16.
+    if network is None or str(network) != subnet or not 16 <= network.prefixlen <= 30:
+        raise ValueError(LANE_SUBNET_REFUSED)
+    if address not in network or address in (network.network_address, network.broadcast_address):
+        raise ValueError(LANE_CORE_OUTSIDE)
+    HA_URL, CLIENT_ID, _lane_core = origin, f"{origin}/", origin
+    return origin
 EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
 TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")
@@ -711,6 +752,9 @@ def _refuse_unless_configured_core(path):
     """
     if type(path) is not str or not path.startswith("/"):
         raise ValueError(CORE_PATH_REFUSED)
+    if _lane_core is not None and HA_URL != _lane_core:
+        # A Core handed over by use_internal_lane_core stays the one this process sends to.
+        raise ValueError(CORE_TARGET_REFUSED)
     try:
         target = urlsplit(f"{HA_URL}{path}").hostname
         same = bool(target) and target == urlsplit(HA_URL).hostname
@@ -745,6 +789,7 @@ async def bootstrap_disposable_admin() -> str:
     username = f"contract_{secrets.token_hex(6)}"
     password = secrets.token_urlsafe(32)
     timeout = aiohttp.ClientTimeout(total=30)
+    _refuse_unless_configured_core("/api/onboarding")
     async with lane_session(timeout=timeout) as session:
         with lane_diagnostics.check("core_boot", "onboarding_ready"):
             for _ in range(120):

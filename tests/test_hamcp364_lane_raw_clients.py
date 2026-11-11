@@ -1655,6 +1655,194 @@ class HarnessRequest(HarnessCase):
         self.assertEqual(len(session.calls), 1)
 
 
+BRIDGE_CORE, BRIDGE_SUBNET = "http://172.30.0.2:8123", "172.30.0.0/16"
+# A LAN-style private address, as a Home Assistant on a household network would have.
+LAN_CORE = "http://192.168.1.10:8123"
+A2_RUNNER = "core_thread_matter_topology_a2_local.py"
+
+
+class HarnessHandOver(HarnessCase):
+    """A Core off loopback reaches the harness only through ``use_internal_lane_core``.
+
+    The A2 runner calls it with the subnet of the internal network it created.
+    REAL_HA_URL stays loopback-only, and anything but a bare http://<IPv4>:8123
+    origin inside that subnet is refused before anything is sent.
+    """
+
+    def setUp(self):
+        self.events = []
+        for manager in (patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None),
+                        patch.object(aiohttp, "ClientSession", new=fake_session(self.events))):
+            manager.start()
+            self.addCleanup(manager.stop)
+        self.before = (harness.HA_URL, harness.CLIENT_ID)
+
+    def refused(self, origin, subnet, reason):
+        with self.assertRaises(ValueError) as caught:
+            harness.use_internal_lane_core(origin, subnet)
+        self.assert_fixed_code(caught.exception, reason)
+        shown = str(caught.exception) + repr(caught.exception)
+        for private in ("172.", "192.168", "http", "/16", ELSEWHERE, ELSEWHERE_NAME):
+            self.assertNotIn(private, shown)
+        # Nothing was bound and nothing was opened.
+        self.assertEqual((harness.HA_URL, harness.CLIENT_ID), self.before)
+        self.assertIsNone(harness._lane_core)
+        self.assertEqual(self.events, [])
+
+    def test_real_ha_url_with_a_bridge_or_lan_address_still_refuses(self):
+        for value in (BRIDGE_CORE, LAN_CORE, "http://172.17.0.1:8123", "http://172.25.0.2:8123",
+                      "http://10.0.0.5:8123", "http://192.168.0.1:8123", "http://169.254.1.1:8123"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as caught:
+                    harness.loopback_core_url(value)
+                self.assert_fixed_code(caught.exception, "real_ha_url_not_loopback")
+                # And the module itself does not start under it.
+                spec = importlib.util.spec_from_file_location("_hamcp364_harness_bridge_subject", HARNESS_PATH)
+                module = importlib.util.module_from_spec(spec)
+                with patch.dict(os.environ, {"REAL_HA_URL": value}), patch.object(sys, "path", list(sys.path)):
+                    with self.assertRaises(ValueError) as caught:
+                        spec.loader.exec_module(module)
+                self.assert_fixed_code(caught.exception, "real_ha_url_not_loopback")
+                for name in ("HA_URL", "use_internal_lane_core", "_json_request", "bootstrap_disposable_admin"):
+                    self.assertFalse(hasattr(module, name), name)
+        self.assertEqual(self.events, [])
+
+    def test_an_origin_that_is_not_a_bare_ipv4_on_8123_is_refused(self):
+        for origin in (
+                BRIDGE_CORE + "/", BRIDGE_CORE + "/api", BRIDGE_CORE + "?x=1", BRIDGE_CORE + "#x",
+                "http://user@172.30.0.2:8123", "http://user:synthetic@172.30.0.2:8123", "http://@172.30.0.2:8123",
+                "http://172.30.0.2:8123@" + ELSEWHERE, "http://[fd00::2]:8123", "http://[::1]:8123",
+                "http://[::ffff:172.30.0.2]:8123", "http://core:8123", "http://homeassistant.local:8123",
+                "http://172.30.0.2." + ELSEWHERE_NAME + ":8123", "http://localhost:8123",
+                "http://172.30.0.2", "http://172.30.0.2:", "http://172.30.0.2:80", "http://172.30.0.2:18123",
+                "http://172.30.0.2:08123", "http://172.30.0.2:81230", "https://172.30.0.2:8123",
+                "ws://172.30.0.2:8123", "HTTP://172.30.0.2:8123", "172.30.0.2:8123", "//172.30.0.2:8123",
+                # Not four plain decimal octets: each would be read as a name or as another address.
+                "http://172.030.0.2:8123", "http://172.30.0.02:8123", "http://172.300.0.2:8123",
+                "http://172.30.2:8123", "http://172.30.0.2.1:8123", "http://2887647234:8123",
+                "http://0xac.30.0.2:8123", "http://172.30.0.2\uff10:8123", "http://172-30-0-2:8123",
+                " " + BRIDGE_CORE, BRIDGE_CORE + " ", BRIDGE_CORE + "\n", BRIDGE_CORE + "\x00",
+                "", "http://", None, 8123, BRIDGE_CORE.encode(), (BRIDGE_CORE,), Text(BRIDGE_CORE),
+                Claims("http://" + ELSEWHERE + ":8123")):
+            with self.subTest(origin=origin, kind=type(origin).__name__):
+                self.refused(origin, BRIDGE_SUBNET, "real_ha_lane_core_not_bare_ipv4")
+
+    def test_a_subnet_that_is_not_one_canonical_ipv4_network_is_refused(self):
+        for subnet in ("172.30.0.0/8", "172.30.0.2/16", "172.30.0.0", "172.30.0.0/255.255.0.0", "172.30.0.0/016",
+                       "172.30.0.0/16 ", " 172.30.0.0/16", "172.30.0.0/16\n", "172.30.0.0/33", "172.30/16",
+                       # Wider than a Docker pool, or with no host address to give.
+                       "0.0.0.0/0", "10.0.0.0/8", "172.16.0.0/12", "172.30.0.0/15", "172.30.0.2/31",
+                       "172.30.0.2/32", "fd00::/64", "", None, 16, ["172.30.0.0/16"], ("172.30.0.0/16",),
+                       b"172.30.0.0/16", Text(BRIDGE_SUBNET), Claims("10.0.0.0/8")):
+            with self.subTest(subnet=subnet, kind=type(subnet).__name__):
+                self.refused(BRIDGE_CORE, subnet, "real_ha_lane_subnet_not_usable")
+
+    def test_an_address_outside_the_subnet_is_refused(self):
+        for origin, subnet in ((LAN_CORE, BRIDGE_SUBNET), ("http://172.31.0.2:8123", BRIDGE_SUBNET),
+                               ("http://172.29.255.254:8123", BRIDGE_SUBNET), ("http://10.0.0.5:8123", BRIDGE_SUBNET),
+                               (MAIN_CORE, BRIDGE_SUBNET), ("http://" + ELSEWHERE + ":8123", BRIDGE_SUBNET),
+                               (BRIDGE_CORE, "172.30.1.0/24"), (BRIDGE_CORE, "192.168.1.0/24"),
+                               # Inside the range, but the network's own address or its broadcast address.
+                               ("http://172.30.0.0:8123", BRIDGE_SUBNET),
+                               ("http://172.30.255.255:8123", BRIDGE_SUBNET)):
+            with self.subTest(origin=origin, subnet=subnet):
+                self.refused(origin, subnet, "real_ha_lane_core_outside_subnet")
+
+    async def test_the_accepted_core_is_the_one_the_harness_then_sends_to(self):
+        self.assertEqual(self.before, (MAIN_CORE, MAIN_CORE + "/"))
+        accepted = harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET)
+        self.assertEqual(accepted, BRIDGE_CORE)
+        self.assertIs(type(accepted), str)
+        self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core),
+                         (BRIDGE_CORE, BRIDGE_CORE + "/", BRIDGE_CORE))
+        self.assertEqual(harness.settings(TOKEN).ha_url, BRIDGE_CORE)
+        self.assertEqual(self.events, [])
+        session = Requests({"synthetic": "reply"})
+        self.assertEqual(await harness._json_request(session, "GET", "/api/onboarding"), {"synthetic": "reply"})
+        self.assertEqual(session.calls, [("GET", BRIDGE_CORE + "/api/onboarding",
+                                          {"json": None, "data": None, "headers": {}, "allow_redirects": False})])
+
+    async def test_the_send_time_check_is_bound_to_the_accepted_host(self):
+        harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET)
+        # Whatever the module names later, a request goes to the accepted Core or nowhere.
+        for later in (MAIN_CORE, LOCAL_CORE, LAN_CORE, "http://172.30.0.3:8123", "http://172.30.0.2:8124",
+                      "http://" + ELSEWHERE + ":8123", BRIDGE_CORE + "/", Text(BRIDGE_CORE + "0")):
+            with self.subTest(later=later):
+                session = Requests()
+                with patch.object(harness, "HA_URL", later):
+                    with self.assertRaises(ValueError) as caught:
+                        await harness._json_request(session, "GET", "/api/onboarding", token=TOKEN)
+                    self.assert_fixed_code(caught.exception, "real_ha_target_not_configured_core")
+                    self.assertEqual(session.calls, [])
+                    # The readiness probe of the bootstrap is held to it as well.
+                    with self.assertRaises(ValueError) as caught:
+                        await harness.bootstrap_disposable_admin()
+                    self.assert_fixed_code(caught.exception, "real_ha_target_not_configured_core")
+                self.assertEqual(self.events, [])
+
+    def test_a_second_hand_over_is_refused(self):
+        harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET)
+        for origin, subnet in ((BRIDGE_CORE, BRIDGE_SUBNET), ("http://172.30.0.3:8123", BRIDGE_SUBNET),
+                               (LAN_CORE, "192.168.1.0/24")):
+            with self.subTest(origin=origin):
+                with self.assertRaises(ValueError) as caught:
+                    harness.use_internal_lane_core(origin, subnet)
+                self.assert_fixed_code(caught.exception, "real_ha_lane_core_already_set")
+                self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core),
+                                 (BRIDGE_CORE, BRIDGE_CORE + "/", BRIDGE_CORE))
+
+    def test_no_core_is_handed_over_until_the_function_is_called(self):
+        # The four lanes that rebind HA_URL themselves never call it, and keep the check they had.
+        spec = importlib.util.spec_from_file_location("_hamcp364_harness_fresh_subject", HARNESS_PATH)
+        module = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ), patch.object(sys, "path", list(sys.path)):
+            os.environ.pop("REAL_HA_URL", None)
+            spec.loader.exec_module(module)
+        self.assertIsNone(module._lane_core)
+        self.assertEqual(module.HA_URL, MAIN_CORE)
+        self.assertEqual(module._LANE_CORE.pattern,
+                         r"http://((?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}):8123")
+        self.assertEqual(module._LANE_CORE.flags & ~32, 0)
+
+    def test_only_the_a2_runner_hands_a_core_over(self):
+        mentions = {path.name for path in sorted(SCRIPTS.glob("*.py"))
+                    if "use_internal_lane_core" in path.read_text(encoding="utf-8")}
+        self.assertEqual(mentions, {HARNESS_PATH.name, A2_RUNNER})
+        private = {path.name for path in sorted(SCRIPTS.glob("*.py"))
+                   if "_lane_core" in path.read_text(encoding="utf-8").replace("use_internal_lane_core", "")}
+        self.assertEqual(private, {HARNESS_PATH.name})
+        tree = ast.parse((SCRIPTS / A2_RUNNER).read_text(encoding="utf-8"))
+        owners = [function.name for function in ast.walk(tree) if isinstance(function, ast.FunctionDef)
+                  for node in ast.walk(function)
+                  if isinstance(node, ast.Attribute) and node.attr == "use_internal_lane_core"]
+        self.assertEqual(owners, ["hand_over_core"])
+        function, = (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "hand_over_core")
+        # The network is inspected, and the container's address read, before the harness is called.
+        steps = [ast.unparse(statement) for statement in function.body[1:]]
+        self.assertEqual(steps, [
+            "subnet = created_network(network_id, run_id)",
+            "target = address(CORE, run_id, network_id)",
+            "import real_ha_contract_tests as harness",
+            "origin = harness.use_internal_lane_core(f'http://{target}:{CORE_PORT}', subnet)",
+            "return (origin, {'name': NETWORK, 'subnet': subnet, 'target_address': target})"])
+        calls = [ast.unparse(node) for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "hand_over_core"]
+        self.assertEqual(calls, ["hand_over_core(network_id, run_id)"])
+        # In the harness, only the module body and the hand-over function name the Core.
+        harness_tree = ast.parse(HARNESS_PATH.read_text(encoding="utf-8"))
+        writers = []
+        for scope in [harness_tree, *(node for node in ast.walk(harness_tree)
+                                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))]:
+            body = scope.body if scope is harness_tree else list(ast.walk(scope))
+            for node in body:
+                targets = node.targets if isinstance(node, ast.Assign) else ()
+                names = {name.id for target in targets for name in ast.walk(target) if isinstance(name, ast.Name)}
+                if names & {"HA_URL", "CLIENT_ID", "_lane_core"}:
+                    writers.append((getattr(scope, "name", "module"), tuple(sorted(names))))
+        self.assertEqual(writers, [("module", ("HA_URL",)), ("module", ("CLIENT_ID",)), ("module", ("_lane_core",)),
+                                   ("use_internal_lane_core", ("CLIENT_ID", "HA_URL", "_lane_core"))])
+
+
 class HarnessFlow(HarnessCase):
     """A config flow id is what Core issues, or it never reaches a request path."""
 

@@ -22,6 +22,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -41,6 +42,7 @@ STUB = CORE + "-matter-stub"
 STUB_ALIAS = "matter-stub"
 NETWORK = "beta-rc2-contract-" + LANE
 CORE_PORT = 8123
+NETWORK_ID = re.compile(r"[0-9a-f]{64}")
 STUB_MEMORY = "256m"
 RECEIPT = "thread_matter_topology_a2.json"
 NETWORK_POSTURE = {"driver": "bridge", "internal": True, "egress_allowed": False, "published_ports": False,
@@ -78,15 +80,57 @@ def verify_stub(directory, stub):
             "files_verified": len(present)}
 
 
-def address(name, run_id):
+def created_network(network_id, run_id):
+    """The subnet of the network this run created, read from Docker again in this process.
+
+    Only the id ``docker network create`` printed in this run qualifies, and only
+    while Docker still reports it under this lane's name and this run's label as
+    an internal bridge with exactly one subnet. Any other network refuses.
+    """
+    if type(network_id) is not str or not NETWORK_ID.fullmatch(network_id):
+        raise Refusal("lane_network_not_created_by_run")
+    value = command("docker", "network", "inspect", network_id, check=False)
+    try:
+        found = json.loads(value.stdout) if value.returncode == 0 else None
+    except ValueError:
+        found = None
+    network = found[0] if type(found) is list and len(found) == 1 and type(found[0]) is dict else {}
+    if (network.get("Id") != network_id or network.get("Name") != NETWORK
+            or (network.get("Labels") or {}).get(a1.LABEL) != run_id):
+        raise Refusal("lane_network_not_created_by_run")
+    if network.get("Driver") != "bridge" or network.get("Internal") is not True:
+        raise Refusal("lane_requires_internal_bridge")
+    pools = (network.get("IPAM") or {}).get("Config") or []
+    if len(pools) != 1 or type(pools[0]) is not dict or type(pools[0].get("Subnet")) is not str:
+        raise Refusal("lane_network_subnet_unreadable")
+    return pools[0]["Subnet"]
+
+
+def address(name, run_id, network_id):
     data = inspect_owned("container", name, run_id) or {}
     networks = data.get("NetworkSettings", {}).get("Networks") or {}
     if set(networks) != {NETWORK} or any((data.get("NetworkSettings", {}).get("Ports") or {}).values()):
         raise Refusal("lane_container_network_unsafe")
+    if networks[NETWORK].get("NetworkID") != network_id:
+        raise Refusal("lane_container_network_not_created_by_run")
     value = networks[NETWORK].get("IPAddress")
     if not value:
         raise Refusal("lane_container_address_missing")
     return value
+
+
+def hand_over_core(network_id, run_id):
+    """Hand this run's Core to the harness; the only way the harness learns a Core off loopback.
+
+    REAL_HA_URL is never set to it. The network is inspected here, immediately
+    before the call, and its subnet goes to the harness with the address; the
+    harness refuses any origin that is not a bare http://<IPv4>:8123 inside it.
+    """
+    subnet = created_network(network_id, run_id)
+    target = address(CORE, run_id, network_id)
+    import real_ha_contract_tests as harness
+    origin = harness.use_internal_lane_core(f"http://{target}:{CORE_PORT}", subnet)
+    return origin, {"name": NETWORK, "subnet": subnet, "target_address": target}
 
 
 class CoreAdmin:
@@ -252,11 +296,12 @@ def _main(argv=None):
     previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
         with diagnostics.check("container_start", "network_create"):
-            command("docker", "network", "create", "--internal", "--driver", "bridge",
-                    "--label", a1.LABEL + "=" + run_id, NETWORK)
+            network_id = command("docker", "network", "create", "--internal", "--driver", "bridge",
+                                 "--label", a1.LABEL + "=" + run_id, NETWORK).stdout.decode().strip()
             network = inspect_owned("network", NETWORK, run_id)
             if network is None or network.get("Driver") != "bridge" or network.get("Internal") is not True:
                 raise Refusal("lane_requires_internal_bridge")
+            created_network(network_id, run_id)
         with diagnostics.check("container_start", "stub_start"):
             command("docker", "run", "--detach", "--pull", "never", "--name", STUB,
                     "--label", a1.LABEL + "=" + run_id, "--network", NETWORK, "--network-alias", STUB_ALIAS,
@@ -272,9 +317,8 @@ def _main(argv=None):
                     "--security-opt", "no-new-privileges",
                     "--mount", f"type=bind,source={owned},target=/config", core_image)
         with diagnostics.check("container_start", "network_posture"):
-            ha_url = f"http://{address(CORE, run_id)}:{CORE_PORT}"
-            stub_url = f"http://{address(STUB, run_id)}:{stub['port']}"
-            os.environ["REAL_HA_URL"] = ha_url
+            ha_url, result["lane_network"] = hand_over_core(network_id, run_id)
+            stub_url = f"http://{address(STUB, run_id, network_id)}:{stub['port']}"
             probe = command("docker", "exec", CORE, "python3", "-I", "-c", EGRESS_PROBE).stdout.decode().strip()
             if not probe.startswith("blocked"):
                 raise Refusal("lane_core_egress_reachable")
