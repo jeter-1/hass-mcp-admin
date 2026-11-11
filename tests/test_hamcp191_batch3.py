@@ -416,6 +416,7 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     # HAMCP-071: config_id and entity_id are identifiers; name and icon are
     # schema-bounded metadata, entities is the member patch the planner
     # re-validates, and expiration_minutes is a bounded number.
+    # HAMCP-329: the optional action is a screened identifier input.
     "create_scene_configuration_plan": frozenset(
         {"name", "icon", "entities", "expiration_minutes"}
     ),

@@ -235,7 +235,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(default.contract_fingerprint, explicit.contract_fingerprint)
         self.assertNotEqual(default.contract_fingerprint, declared.contract_fingerprint)
         others = [p for p in CORE_RUNTIME_CAPABILITY_PROFILES if p.capability_id != PROFILE]
-        self.assertEqual(len(others), 34)  # HAMCP-134: + core.security_metadata_read; HAMCP-297: + device configuration
+        self.assertEqual(len(others), 36)  # HAMCP-134: + core.security_metadata_read; HAMCP-297: + device configuration; HAMCP-329/298: + 2 dormant runtime-only profiles
 
     def test_tool_is_registered_read_only_and_policy_bound_under_its_own_name(self):
         self.assertIn(TOOL, ENGINEERING_STATIC_TOOL_NAMES)

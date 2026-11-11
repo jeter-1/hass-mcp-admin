@@ -1509,10 +1509,13 @@ class BetaApplicationTests(unittest.TestCase):
         service.gateway = synthetic_gateway
         previous_f3_gateways = []
         for adapter in service.f3_runtime._configuration_adapters.values():
-            previous_f3_gateways.append(
-                (adapter, adapter.gateway.delegate._gateway)
-            )
-            adapter.gateway.delegate._gateway = synthetic_gateway
+            # HAMCP-298: a created-object delete adapter reaches the same
+            # audited gateway through its closed five-call view.
+            audited = adapter.gateway
+            if not hasattr(audited, "delegate"):
+                audited = audited._gateway
+            previous_f3_gateways.append((audited, audited.delegate._gateway))
+            audited.delegate._gateway = synthetic_gateway
         try:
             proposed = {
                 "alias": "Governance fixture",
@@ -1631,8 +1634,8 @@ class BetaApplicationTests(unittest.TestCase):
             )
             self.assertTrue(json.loads(rollback_call["result"]["content"][0]["text"])["success"])
         finally:
-            for adapter, gateway in previous_f3_gateways:
-                adapter.gateway.delegate._gateway = gateway
+            for audited, gateway in previous_f3_gateways:
+                audited.delegate._gateway = gateway
             service.gateway = previous_gateway
 
     def test_governance_input_schemas_are_intentional(self):

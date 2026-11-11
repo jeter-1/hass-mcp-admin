@@ -23,6 +23,7 @@ from ha_mcp_engineering.f3.contracts import NormalizedOperationOutcome
 
 from ..errors import AuthorizationError
 from ..governance import configuration_delete as delete_contract
+from ..governance import created_object_rollback
 from ..governance.normalize import stable_hash
 from ..governance.resources import resource_identity_matches
 from .adapter import PRIOR_STATE_OBSERVED, ConfigurationOperationAdapter
@@ -49,6 +50,8 @@ REGISTRY_ENTRY_MISSING = "registry_entry_missing"
 REGISTRY_ENTRY_CHANGED = "registry_entry_changed"
 CONFIG_STILL_PRESENT = "config_still_present"
 EXACT_ABSENCE_VERIFIED = "exact_absence_verified"
+CREATED_OBJECT_IDENTITY_CHANGED = "created_object_identity_changed"
+CREATED_OBJECT_BINDING_UNAVAILABLE = "created_object_binding_unavailable"
 
 
 class ConfigurationDeleteStrategy(ConfigurationStrategy):
@@ -188,9 +191,17 @@ class ConfigurationDeleteAdapter(ConfigurationOperationAdapter):
         sleep: Callable[[float], Awaitable[Any]] | None = None,
         poll_attempts: int = delete_contract.ABSENCE_POLL_ATTEMPTS,
         poll_interval: float = delete_contract.ABSENCE_POLL_INTERVAL_SECONDS,
+        created_object_binding: (
+            Callable[[PreparedConfigurationOperation], dict[str, Any] | None]
+            | None
+        ) = None,
     ) -> None:
         if not callable(admission):
             raise TypeError("a delete adapter requires an admission check")
+        # HAMCP-298: returns the plan-bound created-object ownership marker
+        # for a rollback child (``None`` for an ordinary delete); raises if
+        # the binding cannot be established.
+        self._created_object_binding = created_object_binding
         # The base constructor resolves a create/update strategy, which a
         # delete never has; the shared state is set here instead.
         self.strategy = ConfigurationDeleteStrategy(resource_type)
@@ -322,6 +333,23 @@ class ConfigurationDeleteAdapter(ConfigurationOperationAdapter):
             return self._preflight_rejected(
                 operation, (REGISTRY_ENTRY_CHANGED,)
             )
+        if self._created_object_binding is not None:
+            # HAMCP-298 §3.4.3: a created-object rollback child also rechecks
+            # the registry ``created_at`` and the ``modified_at`` observed at
+            # planning, under the locks.  Any change is stale; zero writes.
+            try:
+                binding = self._created_object_binding(operation)
+            except Exception:
+                return self._preflight_rejected(
+                    operation, (CREATED_OBJECT_BINDING_UNAVAILABLE,)
+                )
+            if binding is not None and not created_object_rollback.entry_matches(
+                binding, entry
+            ):
+                self._increment("stale_rejections")
+                return self._preflight_rejected(
+                    operation, (CREATED_OBJECT_IDENTITY_CHANGED,)
+                )
         try:
             consumer_fingerprint = await self.gateway.delete_consumer_fingerprint(
                 intent["entity_id"]

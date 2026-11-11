@@ -271,11 +271,22 @@ def build_semantic_projection(
     if operation.action == "delete":
         # HAMCP-155: the proposal is the closed delete intent, not a
         # configuration. The reviewed change is the whole pre-image removed.
+        from . import created_object_delete, created_object_identity
         from .configuration_delete import intent_errors
 
         if not isinstance(before, dict):
             raise SemanticProjectionError("projection_before_state_missing")
-        if intent_errors(operation.resource_type, operation.target_id, after):
+        if created_object_delete.is_intent(after):
+            # HAMCP-298: a created scene or helper delete carries the closed
+            # created-object intent for its own created type.
+            created_type = created_object_identity.created_type(operation)
+            if created_type not in created_object_delete.RESOURCE_TYPES or (
+                created_object_delete.intent_errors(
+                    created_type, operation.target_id, after
+                )
+            ):
+                raise SemanticProjectionError("projection_after_state_malformed")
+        elif intent_errors(operation.resource_type, operation.target_id, after):
             raise SemanticProjectionError("projection_after_state_malformed")
         after = _ABSENT
     elif operation.resource_type == "config_entry_helper_options":
