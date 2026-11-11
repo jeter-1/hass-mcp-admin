@@ -950,6 +950,101 @@ class RawSocket(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[2][1], {"type": "auth", "access_token": "synthetic-token"})
         self.assertEqual(events[3][1], {"id": 1, "type": "marketplace/info"})
 
+    def test_an_unpinned_url_is_refused_when_the_client_is_built(self):
+        # Mutation survivor 1g (#421): the refusal is the constructor's own, so a
+        # client holding another URL never exists and no command is needed to
+        # find out.
+        for url in ("ws://localhost:18123/api/websocket", "ws://127.0.0.1:18124/api/websocket",
+                    "wss://127.0.0.1:18123/api/websocket", "ws://evil.example:18123/api/websocket", "", None):
+            with self.subTest(url=url):
+                events = []
+                configured = SimpleNamespace(websocket_url=url, ha_token="synthetic-token")
+                with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events)):
+                    with self.assertRaises(ValueError) as caught:
+                        acceptance.RawCore(configured)
+                self.assertIs(type(caught.exception), ValueError)
+                self.assertEqual(caught.exception.args, ("raw_core_url_not_pinned",))
+                self.assertEqual(events, [])
+        # The pinned URL builds a client, and building one opens nothing.
+        events = []
+        with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events)):
+            acceptance.RawCore(SimpleNamespace(websocket_url=PINNED_CORE_URL, ha_token="synthetic-token"))
+        self.assertEqual(events, [])
+
+    async def test_the_dial_site_uses_the_pinned_constant_not_the_configured_value(self):
+        # Mutation survivor 2a (#421): what is dialled is the constant itself. An
+        # equal string from the configuration is not passed on, and a value that
+        # only claims to be equal, or that changes once the client is built,
+        # changes nothing.
+        class Claims(str):
+            def __ne__(self, other):
+                return False
+
+        equal, elsewhere = PINNED_CORE_URL.encode().decode(), "ws://evil.example:18123/api/websocket"
+        self.assertEqual(equal, acceptance.RAW_CORE_URL)
+        self.assertIsNot(equal, acceptance.RAW_CORE_URL)
+        for label, checked, later in (("an equal string", equal, equal),
+                                      ("a value that claims to be equal", Claims(elsewhere), Claims(elsewhere)),
+                                      ("changed after the client was built", PINNED_CORE_URL, elsewhere)):
+            with self.subTest(configured=label):
+                events = []
+                configured = SimpleNamespace(websocket_url=checked, ha_token="synthetic-token")
+                with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events)):
+                    client = acceptance.RawCore(configured)
+                    configured.websocket_url = later
+                    reply = await client.command({"type": "marketplace/info"})
+                self.assertIs(reply["success"], True)
+                dialled = [event[1] for event in events if event[0] == "ws_connect"]
+                self.assertEqual(len(dialled), 1)
+                self.assertIs(dialled[0], acceptance.RAW_CORE_URL)
+                self.assertIs(type(dialled[0]), str)
+
+    async def test_a_str_subclass_in_a_command_is_refused_before_a_session(self):
+        # Mutation survivor 4h (#421): a field is the built-in str itself. A
+        # subclass can answer == as it likes while json writes its real text.
+        class Text(str):
+            pass
+
+        class Claims(str):
+            def __eq__(self, other):
+                return True
+
+        self.assertEqual(json.dumps({"disabled_by": Claims("system")}), '{"disabled_by": "system"}')
+        install = acceptance.INSTALL_COMMANDS[1]
+        cases = (
+            {"type": install, "repository": Text("200")},
+            {"type": "config_entries/get", "domain": Text("marketplace")},
+            {"type": "config_entries/get", "domain": Claims("hacs")},
+            {"type": "config_entries/disable", "entry_id": Text("synthetic-entry"), "disabled_by": "user"},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry", "disabled_by": Text("user")},
+            {"type": "config_entries/disable", "entry_id": "synthetic-entry", "disabled_by": Claims("system")},
+            # The command type itself (the check beside the mutated one).
+            {"type": Text("marketplace/info")})
+        for payload in cases:
+            with self.subTest(payload=payload):
+                await self.refused(PINNED_CORE_URL, payload, "raw_core_command_not_listed")
+
+    async def test_a_dict_subclass_payload_is_refused_before_a_session(self):
+        # Mutation survivor 4i (#421): a payload is the built-in dict itself. A
+        # subclass can show one set of keys while {"id": 1, **payload} copies
+        # every item it really holds.
+        class Mapping(dict):
+            pass
+
+        class Hides(dict):
+            def keys(self):
+                return {"type"}
+
+        hidden = Hides(type="marketplace/info", extra=1)
+        self.assertEqual(hidden.keys(), {"type"})
+        self.assertEqual({"id": 1, **hidden}, {"id": 1, "type": "marketplace/info", "extra": 1})
+        cases = (Mapping(type="marketplace/info"), hidden,
+                 Mapping(type=acceptance.INSTALL_COMMANDS[1], repository="200"),
+                 Mapping(type="config_entries/disable", entry_id="synthetic-entry", disabled_by="user"))
+        for payload in cases:
+            with self.subTest(payload=payload, kind=type(payload).__name__):
+                await self.refused(PINNED_CORE_URL, payload, "raw_core_command_not_listed")
+
 
 class InstallFixture(unittest.IsolatedAsyncioTestCase):
     """Offline checks of the install fixture and installed-record projection."""
@@ -1069,6 +1164,62 @@ class InstallFixture(unittest.IsolatedAsyncioTestCase):
             acceptance.FixtureError("free text from upstream")
         self.assertTrue(set(acceptance.FIXTURE_REASONS) <= lane.diagnostics.SAFE_MESSAGES)
         self.assertTrue({"install_fixture", "redaction_canary"} <= lane.diagnostics.CHECKS)
+
+    def info_raw(self, reply):
+        """A raw client that answers marketplace/info with ``reply``; every other command succeeds."""
+        class Raw:
+            def __init__(self):
+                self.sent = []
+
+            async def command(self, payload, seconds=60):
+                self.sent.append(payload["type"])
+                if payload["type"] == "marketplace/info":
+                    return reply
+                if payload["type"] == MARKETPLACE_LIST_COMMAND:
+                    return {"success": True, "result": store(("200",))}
+                return {"success": True, "result": None}
+        return Raw()
+
+    async def info_refused(self, reply):
+        raw = self.info_raw(reply)
+        with self.assertRaises(acceptance.FixtureError) as caught:
+            await acceptance.install_fixture(raw, store(), sleep=AsyncMock())
+        self.assertEqual(caught.exception.reason, "github_account_connected")
+        # Refused on the read-only info command: no warning accept, no install.
+        self.assertEqual(raw.sent, ["marketplace/info"])
+
+    async def test_marketplace_info_that_did_not_succeed_refuses_before_install(self):
+        # Mutation survivor 9d (#421): "not connected" counts only in a reply Core
+        # marks successful. Core's error reply (websocket_api error_message)
+        # carries no result at all; a failure that still says "not connected" is
+        # a failure. Each refuses with the code-owned reason, on the info command.
+        not_connected = {"stage": "running", "github_connected": False}
+        cases = {
+            "core error reply": {"id": 1, "type": "result", "success": False,
+                                 "error": {"code": "unknown_error", "message": "synthetic"}},
+            "failure with a result": {"id": 1, "type": "result", "success": False, "result": not_connected},
+            "success absent": {"id": 1, "type": "result", "result": not_connected},
+            "success null": {"id": 1, "type": "result", "success": None, "result": not_connected},
+            "the word true": {"id": 1, "type": "result", "success": "true", "result": not_connected}}
+        for label, reply in cases.items():
+            with self.subTest(info=label):
+                await self.info_refused(reply)
+
+    async def test_only_the_boolean_true_is_a_marketplace_info_success(self):
+        # Mutation survivor 9f (#421): success is the boolean True, not a value
+        # that merely equals it.
+        not_connected = {"stage": "running", "github_connected": False}
+        # The same client with the boolean does install, so the refusals below
+        # are the reply's and not the harness's.
+        raw = self.info_raw({"id": 1, "type": "result", "success": True, "result": not_connected})
+        record, _ = await acceptance.install_fixture(raw, store(), sleep=AsyncMock())
+        self.assertEqual(record["id"], "200")
+        self.assertEqual(raw.sent, ["marketplace/info", *acceptance.INSTALL_COMMANDS, MARKETPLACE_LIST_COMMAND])
+        for label, value in (("one", 1), ("one point zero", 1.0)):
+            with self.subTest(success=label):
+                self.assertEqual(value, True)
+                self.assertIsNot(value, True)
+                await self.info_refused({"id": 1, "type": "result", "success": value, "result": not_connected})
 
 
 if __name__ == "__main__":
