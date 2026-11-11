@@ -2634,5 +2634,240 @@ class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual([(event[1], event[2]) for event in requests], [("GET", acceptance.STUB_CONTROL_URL)])
 
 
+class LaneSourceShape(unittest.TestCase):
+    """HAMCP-366: what the acceptance module imports, looks up, calls and reads, pinned from its own source.
+
+    Every test here reads a syntax tree and runs nothing. The pins cover the
+    acceptance module and the import list of ``lane_failure_diagnostics``.
+    They do not cover what another ``scripts/`` module imports inside a
+    function body.
+    """
+
+    IMPORTS = (
+        "import asyncio", "import base64", "import contextvars", "import copy", "from dataclasses import replace",
+        "from datetime import datetime, timezone", "import hashlib", "import re", "import sys", "import time",
+        "from pathlib import Path", "from types import SimpleNamespace", "from uuid import uuid4", "import aiohttp",
+        "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey",
+        "from mcp.server.fastmcp import FastMCP",
+        "from alarmo_inspection_contract_acceptance import close_disposable_authority",
+        "from prepare_core_release_registry import prepare_candidate, sign_candidate",
+        "from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient",
+        "from ha_mcp_engineering.clients.paths import Route, rest_path",
+        "from ha_mcp_engineering.clients.rest import ExpectedHttpStatus",
+        "from ha_mcp_engineering.device_configuration.contracts import ALLOWLIST, DeviceConfigurationRefusal,"
+        " DeviceConfigurationRequest, digest, identity",
+        "from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway",
+        "from ha_mcp_engineering.device_configuration.service import DeviceConfigurationCoreAuthority,"
+        " DeviceConfigurationService",
+        "from ha_mcp_engineering.errors import HomeAssistantApiError",
+        "from ha_mcp_engineering.ha_core_readmission import CoreRuntime",
+        "from ha_mcp_engineering.ha_core_readmission.profiles import CORE_DEVICE_CONFIGURATION_PROFILES",
+        "from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry",
+        "from ha_mcp_engineering.power.contracts import PowerRequest, digest as power_digest",
+        "from ha_mcp_engineering.power.service import PowerCoreAuthority, PowerService",
+        "from ha_mcp_engineering.providers.upstream_power import PowerProvider",
+        "from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway",
+        "from ha_mcp_engineering.request_context import begin_request, end_request",
+        "from ha_mcp_engineering.signed_registry import canonical_json",
+        "from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry",
+        "import lane_failure_diagnostics as diagnostics",
+    )
+    DIAGNOSTICS_IMPORTS = (
+        "from contextlib import contextmanager", "from contextvars import ContextVar", "from functools import wraps",
+        "import inspect", "import os", "from pathlib import Path", "import stat", "import subprocess",
+        "import tempfile", "import traceback",
+    )
+    URLS = ("CORE_API_URL", "CORE_URL", "CORE_WS_URL", "MATTER_URL", "STUB_CONTROL_URL", "UPSTREAM_URL")
+    VERBS = {"get", "request", "post", "put", "delete", "patch", "head", "options", "ws_connect"}
+    # The fourth argument of every ``await zero_dispatch_refusal(...)``, in source order.
+    HELPER_LABELS = (
+        "'predecessor_authority'", "'number_above_maximum'", "'number_below_minimum'", "'number_off_step'",
+        "'select_option_not_offered'", "'fixture_' + case", "'matter_' + entity_id", "'undo_after_reregistration'",
+        "'undo_of_unverified_task'",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.module = lane_tree()
+        cls.nodes = sorted(ast.walk(cls.module), key=lambda node: (getattr(node, "lineno", 0),
+                                                                   getattr(node, "col_offset", 0)))
+
+    def named(self, name, kind=ast.Name):
+        return [node for node in self.nodes if isinstance(node, kind) and getattr(node, "id", None) == name]
+
+    def test_every_zero_dispatch_label_reaches_the_record_through_the_helper(self):
+        """A label recorded with zero sends by ``zero_dispatch_refusal`` is written nowhere else."""
+        defined = [(type(node).__name__, node.where) for node in self.nodes
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "zero_dispatch_refusal"]
+        self.assertEqual(defined, [("AsyncFunctionDef", "run")])
+        uses = self.named("zero_dispatch_refusal")
+        calls = [node.parent for node in uses]
+        for use, call in zip(uses, calls):
+            # The helper is only ever called, awaited, as a whole statement of the scenario.
+            self.assertTrue(isinstance(call, ast.Call) and call.func is use, ast.unparse(call))
+            self.assertIsInstance(call.parent, ast.Await)
+            self.assertIsInstance(call.parent.parent, ast.Expr)
+            self.assertEqual((call.where, len(call.args), call.keywords), ("run", 4, []))
+        self.assertEqual([ast.unparse(call.args[3]) for call in calls], list(self.HELPER_LABELS))
+        # Each label's text is in the module once: as that argument.
+        texts = [leaf for call in calls for leaf in ast.walk(call.args[3]) if isinstance(leaf, ast.Constant)]
+        self.assertEqual(len(texts), len(calls))
+        for text in texts:
+            same = [node for node in self.nodes if isinstance(node, ast.Constant) and node.value == text.value]
+            self.assertEqual(len(same), 1, text.value)
+            self.assertIs(same[0], text)
+        # The form of a refusal is read in one place: inside the helper.
+        forms = self.named("refusal_form")
+        self.assertEqual([(node.where, isinstance(node.parent, ast.Call) and node.parent.func is node)
+                          for node in forms], [("run.zero_dispatch_refusal", True)])
+
+    def test_the_refusal_records_written_outside_the_helper_are_the_reviewed_set(self):
+        """Every ``record["refusals"][...]`` store, by enclosing function and key."""
+        def refusals(node):
+            return isinstance(node, ast.Subscript) and ast.unparse(node) == "record['refusals']"
+        held = [node for node in self.nodes if refusals(node)]
+        stores = [node.parent for node in held
+                  if isinstance(node.parent, ast.Subscript) and isinstance(node.parent.ctx, ast.Store)]
+        self.assertEqual(sorted((node.where, ast.unparse(node.slice)) for node in stores), sorted([
+            ("run.zero_dispatch_refusal", "label"),
+            ("run", "label"), ("run.stale", "label"),
+            ("run", "'device_configuration_while_power_holds'"),
+            ("run", "'power_while_device_configuration_holds'"),
+            ("run", "'change_behind_hold'"),
+        ]))
+        for node in stores:
+            # Each store is the one target of a plain assignment of a dict display.
+            self.assertIsInstance(node.parent, ast.Assign)
+            self.assertEqual(node.parent.targets, [node])
+            self.assertIsInstance(node.parent.value, ast.Dict)
+        # The refusals are otherwise read once, into the result, and never through another name.
+        others = [node for node in held if node.parent not in stores]
+        self.assertEqual([(node.where, type(node.parent).__name__) for node in others], [("run", "Dict")])
+        record = self.named("record")
+        self.assertEqual([(node.where, ast.unparse(node.parent)) for node in record if isinstance(node.ctx, ast.Store)],
+                         [("run", "record = {'operations': {}, 'refusals': {}, 'observations': {}}")])
+        self.assertTrue(all(isinstance(node.parent, ast.Subscript) and node.parent.value is node
+                            for node in record if isinstance(node.ctx, ast.Load)))
+        self.assertEqual([node.arg for node in self.nodes if isinstance(node, ast.arg) and node.arg == "record"], [])
+
+    def test_nothing_is_imported_or_looked_up_by_a_computed_name(self):
+        """No ``__import__``, ``importlib``, ``getattr`` or other lookup by a name held in a string."""
+        names = {node.id for node in self.nodes if isinstance(node, ast.Name)}
+        self.assertEqual(sorted(names & {
+            "__import__", "importlib", "import_module", "getattr", "eval", "exec", "compile", "globals", "locals",
+            "vars", "builtins", "__builtins__"}), [])
+        self.assertEqual(sorted(name for name in names if name.startswith("__")), ["__file__"])
+        attributes = {node.attr for node in self.nodes if isinstance(node, ast.Attribute)}
+        self.assertEqual(sorted(name for name in attributes
+                                if name.startswith("__") or name in ("import_module", "modules")), [])
+        # ``sys`` is used for the import path only, and the one ``setattr`` sets a telemetry digest.
+        self.assertEqual([ast.unparse(node.parent) for node in self.named("sys")], ["sys.path"])
+        self.assertEqual([(node.where, ast.unparse(node.parent)) for node in self.named("setattr")],
+                         [("run.bound", "setattr(telemetry, attribute, digest_of(req.model_dump()))")])
+        # No string names the client library or this module.
+        own = Path(acceptance.__file__).stem
+        self.assertEqual([node.value for node in self.nodes if isinstance(node, ast.Constant)
+                          and isinstance(node.value, str) and ("aiohttp" in node.value or own in node.value)], [])
+
+    def test_every_call_named_like_a_client_verb_has_a_reviewed_receiver(self):
+        """``get`` included: each receiver is a reviewed mapping, the bound client, the stub client or a session."""
+        found = {}
+        for node in self.nodes:
+            if isinstance(node, ast.Attribute) and node.attr in self.VERBS:
+                # A verb is only ever called where it is named: none is bound to another name.
+                self.assertTrue(isinstance(node.parent, ast.Call) and node.parent.func is node, ast.unparse(node.parent))
+                found[ast.unparse(node)] = found.get(ast.unparse(node), 0) + 1
+        self.assertEqual(found, {
+            "self.reads.get": 2, "self.hooks.get": 1, "reply.get": 3, "sent.get": 1, "expected.get": 1,
+            "(exc.details if isinstance(exc.details, dict) else {}).get": 1,
+            "entry.get": 6, "item.get": 5, "owners[0].get": 1, "receipt.get": 7,
+            "(receipt.get('observation_status') or {}).get": 1, "before.get": 1, "after.get": 1,
+            "self.client.request": 2, "stub.post": 3, "session.request": 2, "session.ws_connect": 1,
+        })
+
+    def test_every_url_constant_is_read_only_in_the_reviewed_places(self):
+        """All six module-level ``*_URL`` constants: one assignment each, twelve reads, no other name."""
+        assigned = [node for node in self.module.body if isinstance(node, ast.Assign)
+                    and any(isinstance(leaf, ast.Name) and leaf.id.endswith("_URL")
+                            for target in node.targets for leaf in ast.walk(target))]
+        self.assertEqual(sorted(ast.unparse(target) for node in assigned for target in node.targets), list(self.URLS))
+        for node in assigned:
+            self.assertTrue(isinstance(node.value, ast.Constant) and isinstance(node.value.value, str),
+                            ast.unparse(node))
+        # No other name in the module ends in ``_URL``, and no address is written anywhere else.
+        self.assertEqual(sorted(node.id for node in self.nodes if isinstance(node, ast.Name)
+                                and node.id.endswith("_URL") and not isinstance(node.ctx, ast.Load)), list(self.URLS))
+        self.assertEqual({node.id for node in self.nodes if isinstance(node, ast.Name) and node.id.endswith("_URL")},
+                         set(self.URLS))
+        self.assertEqual([node.arg for node in self.nodes if isinstance(node, ast.arg) and node.arg.endswith("_URL")],
+                         [])
+        addresses = [node for node in self.nodes if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                     and ("://" in node.value or "127.0.0.1" in node.value or "localhost" in node.value)]
+        self.assertEqual(len(addresses), len(assigned))
+        self.assertTrue(all(any(node is statement.value for statement in assigned) for node in addresses))
+        reads = sorted((node.id, node.where, ast.unparse(node.parent)) for node in self.nodes
+                       if isinstance(node, ast.Name) and node.id in self.URLS and isinstance(node.ctx, ast.Load))
+        self.assertEqual(reads, sorted([
+            ("CORE_API_URL", "pinned", "(CORE_API_URL, CORE_WS_URL)"),
+            ("CORE_URL", "pinned", "configured.ha_url != CORE_URL"),
+            ("CORE_URL", "pinned", "ha_url=CORE_URL"),
+            ("CORE_URL", "RawRest.rest", "CORE_URL + path"),
+            ("CORE_WS_URL", "pinned", "(CORE_API_URL, CORE_WS_URL)"),
+            ("CORE_WS_URL", "RawCore.command", "session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES)"),
+            ("MATTER_URL", "", "{'url': MATTER_URL}"),
+            ("MATTER_URL", "run", "{'url': MATTER_URL}"),
+            ("STUB_CONTROL_URL", "StubControl.__init__", "url != STUB_CONTROL_URL"),
+            ("STUB_CONTROL_URL", "StubControl._request",
+             "session.request(method, STUB_CONTROL_URL, allow_redirects=False, **options)"),
+            ("UPSTREAM_URL", "pinned_upstream", "url != UPSTREAM_URL"),
+            ("UPSTREAM_URL", "pinned_upstream", "upstream_dashboard_mcp_url=UPSTREAM_URL"),
+        ]))
+        # The two statements that assign from an expression holding a constant bind the
+        # closed route table and a reply, not an address.
+        bound = [node for node in self.nodes
+                 if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr))
+                 and getattr(node, "value", None) is not None and names_in(node.value) & set(self.URLS)]
+        self.assertEqual([(node.where, [ast.unparse(target) for target in getattr(node, "targets", [None])])
+                          for node in bound], [("", ["RAW_REST"]), ("run", ["(status, flow)"])])
+
+    def test_the_import_statements_are_exactly_the_reviewed_list(self):
+        """Every import is a top-level statement on the reviewed list; the module does not import itself."""
+        top = [node for node in self.module.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+        self.assertEqual([ast.unparse(node) for node in top], list(self.IMPORTS))
+        # None is inside a function, a class or a conditional.
+        self.assertEqual(len([node for node in self.nodes if isinstance(node, (ast.Import, ast.ImportFrom))]),
+                         len(top))
+        own = Path(acceptance.__file__).stem
+        modules = [name for node in top
+                   for name in ([node.module] if isinstance(node, ast.ImportFrom) else [])
+                   + [alias.name for alias in node.names]]
+        self.assertNotIn(own, modules)
+        self.assertEqual([node.level for node in top if isinstance(node, ast.ImportFrom) and node.level], [])
+
+    def test_no_attribute_reaches_a_url_constant_or_a_session_class_through_another_name(self):
+        """``<name>.CORE_URL``, ``<name>.aiohttp`` and ``<name>.ClientSession`` exist only as ``aiohttp.ClientSession``."""
+        watched = set(self.URLS) | {"ClientSession", "aiohttp"}
+        self.assertEqual(sorted((node.where, ast.unparse(node)) for node in self.nodes
+                                if isinstance(node, ast.Attribute) and node.attr in watched),
+                         [("RawCore.command", "aiohttp.ClientSession"), ("RawRest.rest", "aiohttp.ClientSession"),
+                          ("StubControl._request", "aiohttp.ClientSession")])
+
+    def test_the_diagnostics_module_is_used_by_two_names_only(self):
+        """The acceptance module reaches ``lane_failure_diagnostics`` as ``check`` and ``checked`` and nothing else."""
+        uses = self.named("diagnostics")
+        self.assertTrue(all(isinstance(node.ctx, ast.Load) and isinstance(node.parent, ast.Attribute)
+                            and node.parent.value is node for node in uses))
+        self.assertEqual({node.parent.attr for node in uses}, {"check", "checked"})
+
+    def test_the_diagnostics_module_imports_only_the_reviewed_standard_library(self):
+        """``lane_failure_diagnostics`` imports ten standard-library modules at top level and no client."""
+        module = ast.parse(Path(diagnostics.__file__).read_text(encoding="utf-8"))
+        top = [node for node in module.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+        self.assertEqual([ast.unparse(node) for node in top], list(self.DIAGNOSTICS_IMPORTS))
+        self.assertEqual(len([node for node in ast.walk(module) if isinstance(node, (ast.Import, ast.ImportFrom))]),
+                         len(top))
+        names = {node.id for node in ast.walk(module) if isinstance(node, ast.Name)}
+        self.assertEqual(sorted(names & {"__import__", "importlib", "import_module"}), [])
+
 if __name__ == "__main__":
     unittest.main()
