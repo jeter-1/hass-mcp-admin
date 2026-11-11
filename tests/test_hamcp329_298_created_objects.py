@@ -25,6 +25,10 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.f3_configuration import (  # noqa: E402
     created_objects as created_adapters,
+    models as configuration_models,
+)
+from ha_mcp_engineering.f3_runtime import (  # noqa: E402
+    pre_dispatch_reasons as record_bounds,
 )
 from ha_mcp_engineering.governance import (  # noqa: E402
     created_object_identity as identity_model,
@@ -324,6 +328,34 @@ class SceneRestoredRegistryMetadataTests(CreatedObjectServiceTestCase):
         self.assertEqual({code for code in codes if code.startswith(OBSERVED)}, set())
         self.assertIn("exact_readback_verified", codes)
 
+    async def created_then_undone(self, *reported: str) -> str:
+        """Create the scene, undo it, and return the create's evidence hash."""
+
+        created = await self.created_scene()
+        self.assertEqual(
+            {code for code in self.codes(created["plan_id"]) if code.startswith(OBSERVED)},
+            {f"{OBSERVED}{name}" for name in reported},
+        )
+        (record,) = self.child_records(self.task_id(created["plan_id"]))
+        self.assertEqual(record.normalized_outcome, "succeeded_verified")
+        value = record.evidence["evidence_hash"]
+        _rollback, delete_plan = await self.rollback_plan(created)
+        result = await self.apply(delete_plan)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertNotIn(EVENING_ENTITY, self.ws.entries)
+        return value
+
+    async def test_restored_metadata_is_bound_in_the_verification_evidence_hash(self):
+        # The same create of the same absent scene gives the same evidence,
+        # so a different hash below can only come from the restored metadata.
+        fresh = await self.created_then_undone()
+        self.assertEqual(await self.created_then_undone(), fresh)
+        self.restores(disabled_by="user")
+        disabled = await self.created_then_undone("disabled_by_user")
+        self.restores(hidden_by="user")
+        hidden = await self.created_then_undone("hidden_by_user")
+        self.assertEqual(len({fresh, disabled, hidden}), 3, (fresh, disabled, hidden))
+
 
 class ObservedRegistryMetadataTests(unittest.TestCase):
     """The closed codes a verified scene create reports for its one entry."""
@@ -392,6 +424,15 @@ class ObservedRegistryMetadataTests(unittest.TestCase):
                     self.observed(area_id=value), (f"{OBSERVED}area_assigned",)
                 )
 
+    def test_only_a_null_area_is_no_area(self):
+        # The code as written: presence is ``is not None``, not truthiness.
+        # Whether Core can store such a value is not established here.
+        for value in ("", 0, False):
+            with self.subTest(area_id=value):
+                self.assertEqual(
+                    self.observed(area_id=value), (f"{OBSERVED}area_assigned",)
+                )
+
     def test_only_a_stored_boolean_exposure_of_a_known_assistant_is_reported(self):
         self.assertEqual(
             self.observed(
@@ -423,8 +464,6 @@ class ObservedRegistryMetadataTests(unittest.TestCase):
                 self.assertEqual(self.observed(options=options), ())
 
     def test_the_full_report_fits_the_durable_diagnostic_bounds(self):
-        from ha_mcp_engineering.f3_configuration.models import bounded_codes
-
         codes = self.observed(
             disabled_by="config_entry",
             hidden_by="integration",
@@ -437,13 +476,19 @@ class ObservedRegistryMetadataTests(unittest.TestCase):
         self.assertEqual(len(codes), 6)
         self.assertEqual(len(set(codes)), 6)
         recorded = ("exact_readback_completed", *codes)
-        self.assertEqual(set(bounded_codes(recorded)), set(recorded))
-        # The execution-record bounds of ``f3/models.py``, restated: at most
-        # 16 items, each a closed code of at most 96 characters.  The service
-        # test of every restored field proves the same through the record.
-        self.assertLessEqual(len(recorded), 16)
+        kept = sorted(recorded, key=lambda item: item.encode("utf-8"))
+        # The observation's own canonical form keeps every code.
+        self.assertEqual(list(configuration_models.bounded_codes(recorded)), kept)
+        # The execution-record bound, read from its restatement in
+        # ``f3_runtime/pre_dispatch_reasons.py``, which
+        # ``test_hamcp249_pre_dispatch_reasons`` pins equal to ``f3/models.py``:
+        # nothing is dropped and nothing is shortened.  The service test of
+        # every restored field proves the same through the record itself.
+        self.assertEqual(list(record_bounds.bounded_diagnostics(recorded)), kept)
+        self.assertLessEqual(len(recorded), record_bounds.MAX_DIAGNOSTIC_ITEMS)
         for code in recorded:
-            self.assertRegex(code, r"\A[a-z][a-z0-9_]{0,95}\Z")
+            self.assertIsNotNone(record_bounds.EVIDENCE_PATTERN.fullmatch(code), code)
+            self.assertLessEqual(len(code), record_bounds.MAX_DIAGNOSTIC_LENGTH)
 
 
 class HelperAcceptanceTests(CreatedObjectServiceTestCase):

@@ -1216,6 +1216,27 @@ class CreatedObjectReasonTests(unittest.TestCase):
                 self.assertEqual(reasons[0], ACKNOWLEDGED)
                 self.assertEqual(reasons[-1], RESIDUAL)
 
+    def test_a_reason_of_exactly_the_limit_is_shown_whole(self):
+        limit = rollback_model.REASON_LIMIT
+        fixed = modified_at_reason(
+            modified(captured_modified_at="", observed_modified_at="")
+        )
+        room = limit - len(fixed)
+        self.assertGreater(room, 1)
+        declared = "The registry modified_at values are too long to show here."
+        for extra, whole in ((0, True), (1, False)):
+            with self.subTest(length=limit + extra):
+                marker = modified(
+                    captured_modified_at="1" * (room // 2),
+                    observed_modified_at="2" * (room - room // 2 + extra),
+                )
+                reason = modified_at_reason(marker)
+                self.assertEqual(len(reason), limit + extra)
+                self.assertEqual(
+                    rollback_model.statements(marker),
+                    [ACKNOWLEDGED, reason if whole else declared, RESIDUAL],
+                )
+
     def classification(
         self, count: int, *, elevated: bool = False, marker: dict | None = None
     ) -> tuple[dict, list[str]]:
