@@ -57,6 +57,9 @@
   "helper_value": [
     "core.typed_helper_value_operation"
   ],
+  "marketplace_read": [
+    "core.marketplace_read"
+  ],
   "device_configuration_entity": [
     "core.device_configuration_entity_operation"
   ],
