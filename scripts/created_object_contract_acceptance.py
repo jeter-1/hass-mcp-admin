@@ -7,8 +7,14 @@ Each lane loads exactly one of the two compiled profiles into a test-signed,
 in-memory authority (the signed predecessor's references plus that profile) and
 drives the production composition against an owned loopback Core: a governed
 forward change that ends ``succeeded_verified``, its governed undo that ends
-``succeeded_verified``, and an independent raw read-back of each. The
-predecessor authority, which lacks the profile, must refuse first.
+``succeeded_verified``, and an independent read-back of each by the lane's own
+client. The predecessor authority, which lacks the profile, must refuse first.
+
+The lane's own REST requests go through a separate guarded Engineering client
+on bound runtime routes (HAMCP-200). That transport refuses a scene config
+DELETE from anything but the created-object delete gateway, so the lane never
+removes a scene itself: every scene it creates leaves Core through the governed
+undo it proves, and clean-up only reads that it is gone.
 
 No production authority, key, registry publication or deployed system is
 involved; the caller owns container start-up, image identity and teardown.
@@ -45,6 +51,7 @@ REGISTRY_LIST = "config/entity_registry/list"
 SCENE_TOOL = "create_scene_configuration_plan"
 SCENE_ROUTE = "/config/scene/config/{}"
 AUTOMATION_ROUTE = "/config/automation/config/{}"
+STATE_ROUTE = "/states/{}"
 SCENE_POST = "POST " + SCENE_ROUTE
 SCENE_DELETE = "DELETE " + SCENE_ROUTE
 AUTOMATION_POST = "POST " + AUTOMATION_ROUTE
@@ -58,7 +65,8 @@ LANES = {
         "capability": "core.scene_create_delete_operation",
         "fingerprint": "sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d",
         "kinds": ("scene",),
-        "scenarios": ("scene_create", "scene_undo", "scene_recreate", "scene_existing_id_refused"),
+        "scenarios": ("scene_create", "scene_undo", "scene_recreate", "scene_existing_id_refused",
+                      "scene_recreate_undo"),
         "writes": frozenset({SCENE_POST, SCENE_DELETE}),
     },
     "created_helper_delete": {
@@ -72,9 +80,14 @@ LANES = {
                                                 for verb in ("create", "delete"))}),
     },
 }
-RAW_ROUTE = re.compile(
-    r"/config/(?:scene|automation)/config/hamcp_g4_[0-9a-z_]{1,48}"
-    r"|/states/(?:scene|automation|input_boolean|input_number)\.[0-9a-z_]{1,80}")
+LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+# What the lane's own client may name: only fixtures this lane owns.
+LANE_ID = re.compile(r"hamcp_g4_[0-9a-z_]{1,48}")
+LANE_ENTITY = re.compile(r"(?:scene|input_boolean|input_number)\.hamcp_g4_[0-9a-z_]{1,72}")
+# Every method and route the lane's own client sends. No scene config write or
+# delete is among them: those are Engineering's, through its gateways.
+LANE_REQUESTS = frozenset({("GET", STATE_ROUTE), ("GET", SCENE_ROUTE), ("GET", AUTOMATION_ROUTE),
+                           ("POST", AUTOMATION_ROUTE), ("DELETE", AUTOMATION_ROUTE)})
 
 
 def reference(lane):
@@ -160,27 +173,69 @@ class ObservedWebSocket:
         return getattr(self.inner, name)
 
 
-class LaneRaw(RawWebSocket):
-    """The lane's own loopback client: fixture setup, independent read-back and cleanup.
+def _owned(pattern, value):
+    if type(value) is not str or pattern.fullmatch(value) is None:
+        raise ValueError("Not a created-object lane fixture")
+    return value
 
-    Never Engineering's client, so none of its requests is counted as
-    Engineering's and no Engineering transport guard answers for Core.
+
+def scene_route(config_id):
+    """The bound runtime route of one lane-owned scene config (HAMCP-200)."""
+    from ha_mcp_engineering.clients.paths import rest_path
+    return rest_path("/config/scene/config/{}", _owned(LANE_ID, config_id))
+
+
+def automation_route(target_id):
+    """The bound runtime route of the lane's synthetic consumer automation."""
+    from ha_mcp_engineering.clients.paths import rest_path
+    return rest_path("/config/automation/config/{}", _owned(LANE_ID, target_id))
+
+
+def state_route(entity_id):
+    """The state route of a lane-owned entity: a declared member or a captured or registered identity."""
+    from ha_mcp_engineering.clients.paths import rest_path
+    return rest_path("/states/{}", _owned(LANE_ENTITY, entity_id), kinds=("entity_id",))
+
+
+class LaneRaw(RawWebSocket):
+    """The lane's own loopback client: fixture setup, independent read-back and clean-up.
+
+    REST goes through a separate guarded Engineering client, never the one
+    Engineering's gateways hold, so every path is a bound runtime route
+    (HAMCP-200) and none of its requests is counted as Engineering's. Only the
+    ``LANE_REQUESTS`` pairs are sent, only for a lane-owned id.
     """
 
     def __init__(self, configured):
+        from ha_mcp_engineering.clients import HomeAssistantRestClient
+        api = urlsplit(configured.api_url)
+        # One exact loopback origin for REST and WebSocket: no credentials,
+        # other path, query or fragment a route could be re-rooted by.
+        if (api.hostname not in LOOPBACK or "@" in api.netloc
+                or configured.api_url != "http://" + api.netloc + "/api"
+                or configured.websocket_url != "ws://" + api.netloc + "/api/websocket"):
+            raise ValueError("Created-object lane requests go only to a loopback Core")
         super().__init__(configured)
-        self.api_url = configured.api_url.rstrip("/")
-        if urlsplit(self.api_url).hostname not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValueError("Created-object lane routes go only to a loopback Core")
+        self.client = HomeAssistantRestClient(configured)
 
-    async def status(self, method, path, body=None):
-        import aiohttp
-        if RAW_ROUTE.fullmatch(path) is None:
-            raise ValueError("Not a created-object lane route")
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.request(method, self.api_url + path, json=body, allow_redirects=False,
-                                       headers={"Authorization": "Bearer " + self.token}) as response:
-                return response.status, (await response.json() if response.status < 300 else None)
+    async def status(self, method, route, body=None):
+        from ha_mcp_engineering.clients.paths import is_route
+        from ha_mcp_engineering.clients.rest import ExpectedHttpStatus
+        from ha_mcp_engineering.errors import HomeAssistantApiError
+        if (not is_route(route) or (method, route.template) not in LANE_REQUESTS or len(route.values) != 1
+                or route.query):
+            raise ValueError("Not a created-object lane request")
+        _owned(LANE_ENTITY if route.template == STATE_ROUTE else LANE_ID, route.values[0])
+        try:
+            payload = await self.client.request(method, route, body, expected_statuses=frozenset({404}))
+        except HomeAssistantApiError as exc:
+            status = (exc.details if isinstance(exc.details, dict) else {}).get("status")
+            if type(status) is not int:
+                raise
+            return status, None
+        if isinstance(payload, ExpectedHttpStatus):
+            return payload.status, None
+        return 200, payload
 
 
 class Reader:
@@ -197,11 +252,11 @@ class Reader:
         return matches[0].get("entity_id") if matches else None
 
     async def state(self, entity_id):
-        status, value = await self.status("GET", "/states/" + entity_id)
+        status, value = await self.status("GET", state_route(entity_id))
         return status, (value or {}).get("state")
 
     async def scene(self, config_id, entity_id=None):
-        config_status, config = await self.status("GET", "/config/scene/config/" + config_id)
+        config_status, config = await self.status("GET", scene_route(config_id))
         registered = await self.registry("homeassistant", config_id)
         entity_id = entity_id or registered
         if entity_id is None:
@@ -219,7 +274,7 @@ class Reader:
                 "state_status": (await self.state(entity_id))[0]}, (stored[0] if stored else None)
 
     async def automation(self, target_id):
-        status, config = await self.status("GET", "/config/automation/config/" + target_id)
+        status, config = await self.status("GET", automation_route(target_id))
         assert status == 200
         return config
 
@@ -386,7 +441,7 @@ async def scene_create(c):
     name = "HAMCP G4 scene " + c.suffix
     entities = {c.members[0]: {"state": "on"}, c.members[1]: {"state": "off"}}
     before = [await c.reader.state(member) for member in c.members]
-    assert (await c.reader.status("GET", "/config/scene/config/" + config_id))[0] == 404
+    assert (await c.reader.status("GET", scene_route(config_id)))[0] == 404
     mark = c.log.mark()
     c.owned["scenes"].append(config_id)
     plan = await c.scene_plan({"action": "create", "config_id": config_id, "name": name, "entities": entities})
@@ -428,12 +483,16 @@ async def scene_recreate(c):
     assert c.log.writes_since(mark) == []
     plan = c.service.get_plan(rolled["rollback_plan_id"])
     result, value, _mark = await applied(c, plan, [SCENE_POST])
+    identity = captured(value)
     readback, stored = await c.until(lambda: c.reader.scene(config_id),
                                      lambda item: item["state_status"] == 200)
     assert readback["config_status"] == 200 and readback["registry_entity_id"] == readback["entity_id"]
+    assert identity["registry_unique_id"] == config_id and identity["entity_id"] == readback["entity_id"]
     assert stored == c.state["stored"]
-    return {"result": "PASS", **result, "rollback_status": rolled["status"], "same_config_id": True,
-            "config_matches_first_create": True, "readback": readback, "readback_fingerprint": digest(stored)}
+    c.state["recreate"] = (plan, readback["entity_id"])
+    return {"result": "PASS", **result, "rollback_status": rolled["status"], "identity_outcome": "captured",
+            "same_config_id": True, "config_matches_first_create": True, "readback": readback,
+            "readback_fingerprint": digest(stored)}
 
 
 async def scene_existing_id_refused(c):
@@ -447,6 +506,24 @@ async def scene_existing_id_refused(c):
     assert stored == c.state["stored"]
     return {"result": "PASS", "reason_code": reason, "plan_created": False, "writes": [],
             "existing_scene_unchanged": True}
+
+
+async def scene_recreate_undo(c):
+    """The recreate is a governed create like the first, so its undo is the same governed delete.
+
+    It runs last: only the created-object gateway may delete a scene config, so
+    this is also how the lane leaves no scene behind.
+    """
+    config_id = c.state["config_id"]
+    plan, entity_id = c.state["recreate"]
+    rolled, reverse = await undo_plan(c, plan["plan_id"], delete=["scene_create_1"])
+    result, _value, _mark = await applied(c, reverse, [SCENE_DELETE])
+    readback, stored = await c.until(lambda: c.reader.scene(config_id, entity_id),
+                                     lambda item: item["state_status"] == 404)
+    assert readback == {"config_status": 404, "registry_entity_id": None, "entity_id": entity_id,
+                        "state_status": 404} and stored is None, readback
+    return {"result": "PASS", **result, "rollback_status": rolled["status"], "readback": readback,
+            "readback_fingerprint": digest(readback)}
 
 
 # -- created-helper lane ---------------------------------------------------
@@ -536,7 +613,7 @@ async def mixed_plan_undo(c):
 
 
 SCENARIOS = {"scene_create": scene_create, "scene_undo": scene_undo, "scene_recreate": scene_recreate,
-             "scene_existing_id_refused": scene_existing_id_refused,
+             "scene_existing_id_refused": scene_existing_id_refused, "scene_recreate_undo": scene_recreate_undo,
              "mixed_plan_create": mixed_plan_create, "mixed_plan_undo": mixed_plan_undo}
 for _domain in HELPER_DOMAINS:
     SCENARIOS["helper_create_" + _domain], SCENARIOS["helper_undo_" + _domain] = _helper_scenarios(_domain)
@@ -550,20 +627,23 @@ async def run_scenarios(lane, c):
 
 
 async def cleanup_fixtures(raw, owned, *, attempts=50, delay=0.1):
-    """Remove every owned fixture with the lane's raw client, then read back absence."""
-    for config_id in owned["scenes"]:
-        await raw.status("DELETE", "/config/scene/config/" + config_id)
+    """Remove the owned automations and helpers with the lane's own client, then read back absence.
+
+    No scene is removed here: a scene config DELETE belongs to the created-object
+    delete gateway alone. A scene the governed undo did not remove is reported
+    as present and stays in the disposable Core until the caller's teardown.
+    """
     for target_id in owned["automations"]:
-        await raw.status("DELETE", "/config/automation/config/" + target_id)
+        await raw.status("DELETE", automation_route(target_id))
     for domain, object_id in owned["helpers"]:
         await raw.call({"type": domain + "/delete", domain + "_id": object_id})
 
     async def scenes():
-        return all([(await raw.status("GET", "/config/scene/config/" + item))[0] == 404
+        return all([(await raw.status("GET", scene_route(item)))[0] == 404
                     for item in owned["scenes"]])
 
     async def automations():
-        return all([(await raw.status("GET", "/config/automation/config/" + item))[0] == 404
+        return all([(await raw.status("GET", automation_route(item)))[0] == 404
                     for item in owned["automations"]])
 
     async def helpers():
@@ -633,6 +713,11 @@ def verify_result(lane, result):
         assert refused["writes"] == [] and refused["plan_created"] is False
         assert type(refused["reason_code"]) is str and refused["reason_code"]
         assert refused["existing_scene_unchanged"] is True
+        # The recreate is undone like the first create; nothing else removes a scene.
+        _forward_and_undo(scenarios, "scene_recreate", "scene_recreate_undo", ([SCENE_POST], [SCENE_DELETE]))
+        assert scenarios["scene_recreate_undo"]["readback"] == {
+            "config_status": 404, "registry_entity_id": None, "state_status": 404,
+            "entity_id": recreate["readback"]["entity_id"]}
     else:
         assert before["forward_task_state"] == VERIFIED and before["helper_retained"] is True
         assert before["identity_captured"] is False and before["identity_outcome"] == "capability_unadmitted"
@@ -802,7 +887,7 @@ async def run(lane, configured, entry, directory):
         config = {"alias": "HAMCP G4 consumer " + target_id[-8:], "description": "Synthetic consumer",
                   "triggers": [{"trigger": "event", "event_type": "hamcp_g4_noop"}], "conditions": [],
                   "actions": [{"event": "hamcp_g4_noop_done", "event_data": {}}], "mode": "single"}
-        status, _ = await raw.status("POST", "/config/automation/config/" + target_id, config)
+        status, _ = await raw.status("POST", automation_route(target_id), config)
         if status != 200:
             raise RawRefusal("POST automation", str(status))
         for _ in range(100):
