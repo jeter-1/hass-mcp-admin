@@ -7,6 +7,7 @@ tests pin the lane's guards, its refusal and failure-preservation paths, and
 the product service's behaviour through the lane's closed clients.
 """
 import asyncio
+import errno
 import hashlib
 import importlib.util
 import io
@@ -15,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
@@ -84,6 +86,26 @@ def url_cases(pinned):
     ]
     assert not any(type(case) is str and case == pinned for case in cases)
     return cases
+
+
+class Text(str):
+    """Equal to the str it wraps, and never exactly a str."""
+
+
+class Shape(dict):
+    """Equal to the dict it wraps, and never exactly a dict."""
+
+
+def tree(root):
+    """Every path below root, following links, relative to it."""
+    return {os.path.relpath(os.path.join(base, name), root)
+            for base, directories, files in os.walk(root, followlinks=True) for name in directories + files}
+
+
+def claims(calls):
+    """Docker calls that create or remove a container or a network."""
+    return [call for call in calls if call[:2] in (("docker", "run"), ("docker", "rm"))
+            or call[:3] in (("docker", "network", "create"), ("docker", "network", "rm"))]
 
 
 def chain(exc):
@@ -537,8 +559,8 @@ class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
                  admission_error=None, memory_args=(), network_override=None, ports_override=None,
                  outcome=None, profile_error=False, assets_error=None, refusal=None,
-                 stub_networks=None, ipam=None):
-        calls, resources = [], {}
+                 stub_networks=None, ipam=None, changed=None, run_dir=None):
+        calls, resources, admitted = [], {}, []
         lane_network = {"Driver": "bridge", "Internal": False,
                         "IPAM": {"Config": [dict(LANE_SUBNET)] if ipam is None else ipam}}
         good_ports = {lane.CORE: {"8123/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18297"}]},
@@ -548,9 +570,9 @@ class Orchestration(unittest.TestCase):
             calls.append(args)
             stdout, code = b"", 0
             if args[:2] == ("git", "status"):
-                stdout = b" M source.py" if dirty else b""
+                stdout = b" M source.py" if dirty or (admitted and changed == "worktree") else b""
             elif args[:2] == ("git", "rev-parse"):
-                stdout = b"a" * 40
+                stdout = (b"b" if admitted and changed == "head" else b"a") * 40
             elif "inspect" in args:
                 code = 0 if existing else 1
             elif args[:3] == ("docker", "network", "create"):
@@ -580,13 +602,20 @@ class Orchestration(unittest.TestCase):
                 raise lane.Refusal("cleanup_failed")
             shutil.rmtree(args.directory)
 
+        def admit(_path):
+            if admission_error is not None:
+                raise admission_error
+            admitted.append(True)  # the checkout can only change after this point
+            return {"other_heavy_jobs": 0}
+
         passing = {"result": "PASS", "profile": dict(lane.PROFILE), "stub": json.loads(json.dumps(RECEIPT_STUB))}
         profile_patch = (patch.object(lane, "loaded_profile", side_effect=lane.Refusal("profile_fingerprint_mismatch"))
                          if profile_error else patch.object(lane, "loaded_profile", wraps=lane.loaded_profile))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".artifacts").mkdir()
-            out = root / ".artifacts" / "run"
+            out = root / ".artifacts" / "run" if run_dir is None else run_dir(root)
+            present = tree(root)
             argv = ["--mode", "local", "--pull", "never", "--journal", "journal",
                     "--source-archive", "archive", "--run-dir", str(out), *memory_args]
             with patch.dict(os.environ, {}, clear=True), patch.object(lane, "ROOT", root), \
@@ -596,8 +625,7 @@ class Orchestration(unittest.TestCase):
                                  return_value=json.loads(json.dumps(STUB_HASHES))) as assets, \
                     patch.object(lane, "images", return_value=("core@sha256:a", "up@sha256:b", lane.host.FIXTURE_IMAGE)), \
                     patch.object(lane, "cached_image", return_value="config"), \
-                    patch.object(lane.resources, "wait_for_admission", side_effect=admission_error,
-                                 return_value={"other_heavy_jobs": 0}), \
+                    patch.object(lane.resources, "wait_for_admission", side_effect=admit), \
                     patch.object(lane, "sha256", return_value="c" * 64), \
                     patch.object(lane, "inspect_owned", side_effect=inspect), \
                     patch.object(lane.host, "local_remove", side_effect=remove), \
@@ -610,9 +638,12 @@ class Orchestration(unittest.TestCase):
                     with self.assertRaises(lane.Refusal) as caught:
                         lane.main(argv)
                     self.assertEqual(caught.exception.args, (refusal,))
-                    self.assertFalse(out.exists())
-                    self.assertFalse(any(call[0] == "docker" and call[1] in ("run", "rm", "network") for call in calls))
                     exercise.assert_not_called()
+                    self.created, self.admitted = sorted(tree(root) - present), bool(admitted)
+                    if changed is None and run_dir is None:
+                        self.assertFalse(out.exists())
+                        self.assertFalse(any(call[0] == "docker" and call[1] in ("run", "rm", "network")
+                                             for call in calls))
                     return calls, inputs, assets
                 code = lane.main(argv)
                 if network_override is not None or ports_override is not None or stub_networks is not None \
@@ -676,6 +707,58 @@ class Orchestration(unittest.TestCase):
         for forbidden in ("--privileged", "--net", "--volume", "-v", "-p", "-P", "--publish-all", "--env", "-e",
                           "--cap-add", "--pid", "--network-alias", "--dns"):
             self.assertNotIn(forbidden, core)
+
+    def test_core_container_cannot_gain_new_privileges(self):
+        _code, _result, calls = self.run_lane()
+        core = next(call for call in calls if call[:2] == ("docker", "run") and lane.CORE in call)
+        self.assertEqual(core[-1], "core@sha256:a")  # every flag below is an option of the run, not an argument
+        self.assertEqual([core[i + 1] for i, item in enumerate(core) if item == "--security-opt"],
+                         ["no-new-privileges"])
+
+    def test_checkout_change_during_the_admission_wait_refuses_before_any_container(self):
+        for changed in ("head", "worktree"):
+            with self.subTest(changed=changed):
+                calls, _inputs, _assets = self.run_lane(changed=changed, refusal="checkout_changed_during_admission")
+                self.assertTrue(self.admitted)  # the change is seen by the recheck, not by the first check
+                self.assertEqual(claims(calls), [])
+                # The run directory was claimed and holds nothing: no Core configuration, no receipt.
+                self.assertEqual(self.created, [os.path.join(".artifacts", "run")])
+
+    def test_run_directory_outside_the_artifact_directory_or_through_a_link_is_refused(self):
+        def elsewhere(root):
+            (root / "elsewhere").mkdir()
+            return root / "elsewhere" / "run"
+
+        def sibling(root):
+            (root / ".artifacts-other").mkdir()
+            return root / ".artifacts-other" / "run"
+
+        def parent_step(root):
+            (root / "elsewhere").mkdir()
+            return root / ".artifacts" / ".." / "elsewhere" / "run"
+
+        def link_inside(root):
+            (root / ".artifacts" / "real").mkdir()
+            (root / ".artifacts" / "link").symlink_to(root / ".artifacts" / "real", target_is_directory=True)
+            return root / ".artifacts" / "link" / "run"
+
+        def link_outside(root):
+            (root / "elsewhere").mkdir()
+            (root / ".artifacts" / "link").symlink_to(root / "elsewhere", target_is_directory=True)
+            return root / ".artifacts" / "link" / "run"
+
+        def linked_run(root):
+            (root / "elsewhere").mkdir()
+            (root / ".artifacts" / "run").symlink_to(root / "elsewhere" / "run")  # dangling until created
+            return root / ".artifacts" / "run"
+
+        for case in (elsewhere, sibling, parent_step, link_inside, link_outside, linked_run,
+                     lambda root: root / ".artifacts", lambda root: root):
+            with self.subTest(case=case.__name__):
+                calls, _inputs, _assets = self.run_lane(run_dir=case, refusal="new_task_artifact_directory_required")
+                self.assertEqual(self.created, [])  # nothing was made anywhere, through a link or not
+                self.assertFalse(self.admitted)
+                self.assertEqual(claims(calls), [])
 
     def test_stub_address_outside_the_lane_network_never_starts_core(self):
         cases = [{"stub_networks": networks} for networks in (
@@ -882,6 +965,75 @@ class PortMappings(unittest.TestCase):
                 lane.inspect_owned("container", "owned", "id")
 
 
+    def test_a_listed_resource_that_cannot_be_inspected_is_not_absent(self):
+        failed = subprocess.CompletedProcess([], 1, b"")
+        for kind, listing in (("container", ("ls", "-a", "--format", "{{.Names}}")),
+                              ("network", ("ls", "--format", "{{.Name}}"))):
+            with self.subTest(kind=kind):
+                listed = subprocess.CompletedProcess([], 0, b"another\nowned\n")
+                with patch.object(lane, "command", side_effect=[failed, listed]) as command:
+                    with self.assertRaises(lane.Refusal) as caught:
+                        lane.inspect_owned(kind, "owned", "id")
+                self.assertEqual(caught.exception.args, ("owned_resource_inspection_failed",))
+                self.assertEqual([(call.args, call.kwargs) for call in command.call_args_list],
+                                 [(("docker", kind, "inspect", "owned"), {"check": False}),
+                                  (("docker", kind, *listing), {})])
+                # The same failed inspection is absence only when a successful listing lacks the exact name.
+                others = subprocess.CompletedProcess([], 0, b"another\nowned-2\nnot-owned\n")
+                with patch.object(lane, "command", side_effect=[failed, others]):
+                    self.assertIsNone(lane.inspect_owned(kind, "owned", "id"))
+
+
+class HostPreflight(unittest.TestCase):
+    """Host checks that every orchestration test replaces: the ports and the cached images."""
+
+    def test_an_occupied_lane_port_is_refused(self):
+        self.assertEqual(lane.PORTS, (18297, 18298, 18299))
+        # Real loopback sockets on ports the system chose; never one of the lane's own ports.
+        with socket.socket() as held, socket.socket() as spare:
+            held.bind(("127.0.0.1", 0))
+            spare.bind(("127.0.0.1", 0))
+            occupied, free = held.getsockname()[1], spare.getsockname()[1]
+            spare.close()
+            self.assertFalse({occupied, free} & set(lane.PORTS))
+            for ports in ((occupied,), (free, occupied), (occupied, free), (free, free, occupied)):
+                with self.subTest(ports=ports), patch.object(lane, "PORTS", ports):
+                    with self.assertRaises(OSError) as caught:
+                        lane.require_free_ports()
+                    self.assertEqual(caught.exception.errno, errno.EADDRINUSE)
+            with patch.object(lane, "PORTS", (free,)):
+                lane.require_free_ports()
+                lane.require_free_ports()  # the check holds nothing after it returns
+        # Once the holder is gone the same port passes: the refusal was the occupied port.
+        with patch.object(lane, "PORTS", (occupied, free)):
+            lane.require_free_ports()
+
+    def test_cached_image_without_the_pinned_digest_is_refused(self):
+        pinned, other = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+        image = "registry.example/synthetic:1.0@" + pinned
+
+        def inspected(digests):
+            value = {"Id": "sha256:synthetic-config"}
+            if digests is not None:
+                value["RepoDigests"] = digests
+            return patch.object(lane, "command", return_value=subprocess.CompletedProcess(
+                [], 0, json.dumps([value]).encode()))
+
+        for digests in (None, [], ["registry.example/synthetic@" + other],
+                        ["registry.example/synthetic@" + other, "mirror.example/synthetic@" + other],
+                        ["registry.example/synthetic@" + pinned[:-1]], ["registry.example/synthetic@" + pinned + "0"],
+                        ["registry.example/synthetic@" + pinned.upper()], ["registry.example/synthetic:1.0@sha512:" + "a" * 64]):
+            with self.subTest(digests=digests), diagnostics.lane(lane.GROUP), inspected(digests) as command:
+                with self.assertRaises(lane.Refusal) as caught:
+                    lane.cached_image(image)
+                self.assertEqual(caught.exception.args, ("cached_image_digest_mismatch",))
+                self.assertEqual(caught.exception._local_lane_check, ("image_verify", "cached_image_digest"))
+                command.assert_called_once_with("docker", "image", "inspect", image)
+        # The digest decides, under whichever repository name the cache lists it.
+        with inspected(["mirror.example/other@" + other, "mirror.example/synthetic@" + pinned]):
+            self.assertEqual(lane.cached_image(image), "sha256:synthetic-config")
+
+
 class Exercise(unittest.IsolatedAsyncioTestCase):
     MEMORY = {"core": "2g", "upstream": "768m", "stub": "256m", "fixture": "128m"}
 
@@ -902,7 +1054,7 @@ class Exercise(unittest.IsolatedAsyncioTestCase):
             return data
         return inspect
 
-    async def run_exercise(self, *, configured=None, inspect=None, ready_error=None):
+    async def run_exercise(self, *, configured=None, inspect=None, ready_error=None, observed=None):
         import real_ha_contract_tests as harness
         self.order = []
 
@@ -926,7 +1078,8 @@ class Exercise(unittest.IsolatedAsyncioTestCase):
                 patch.object(harness, "bootstrap_disposable_admin", new=AsyncMock(return_value=TOKEN)), \
                 patch.object(harness, "settings", return_value=configured or settings()), \
                 patch.object(harness, "wait_for_runtime_ready",
-                             new=AsyncMock(return_value={"version": lane.VERSION})) as self.runtime_ready, \
+                             new=AsyncMock(return_value={"version": lane.VERSION} if observed is None
+                                           else observed)) as self.runtime_ready, \
                 patch.object(harness, "_start_exact_upstream", side_effect=started), \
                 patch.object(lane, "inspect_owned", side_effect=inspect or self.identity()), \
                 patch.object(lane, "cached_image", return_value="config"), \
@@ -952,6 +1105,18 @@ class Exercise(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.args, ("core_url_not_pinned",))
                 self.runtime_ready.assert_not_called()
                 self.assertEqual(self.order, [])
+
+    async def test_another_running_core_version_refuses_before_the_upstream_starts(self):
+        for observed in ({"version": "2026.10.4"}, {"version": "2026.11.1"}, {"version": "2026.11"},
+                         {"version": "2026.11.0 "}, {"version": "2026.11.0.dev0"}, {"version": None},
+                         {"version": 2026}, {"core_version": lane.VERSION}, {}):
+            with self.subTest(observed=observed):
+                with self.assertRaises(lane.Refusal) as caught:
+                    await self.run_exercise(observed=observed)
+                self.assertEqual(caught.exception.args, ("running_core_version_mismatch",))
+                self.assertEqual(caught.exception._local_lane_check, ("image_verify", "running_identity"))
+                self.runtime_ready.assert_awaited_once()
+                self.assertEqual(self.order, [])  # no upstream, no stub use, no acceptance run
 
     async def test_upstream_mapping_guard_runs_before_acceptance(self):
         with self.assertRaises(lane.Refusal) as caught:
@@ -1024,6 +1189,40 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError) as caught:
             acceptance.pinned(Unparsed())
         self.assert_code(caught, "core_url_not_pinned")
+
+    def test_a_str_subclass_equal_to_the_core_constant_is_refused(self):
+        configured = settings(ha_url=Text(acceptance.CORE_URL))
+        # Equal in every compared value; only its exact type differs from the constant.
+        self.assertIs(type(configured.ha_url), Text)
+        self.assertEqual((configured.ha_url, configured.api_url, configured.websocket_url),
+                         (acceptance.CORE_URL, acceptance.CORE_API_URL, acceptance.CORE_WS_URL))
+        for build in (acceptance.pinned, acceptance.LaneWebSocket, acceptance.LaneRest, acceptance.RawCore,
+                      acceptance.RawRest):
+            with self.subTest(build=build.__name__), NoTransport() as transport:
+                with self.assertRaises(ValueError) as caught:
+                    build(configured)
+                self.assert_code(caught, "core_url_not_pinned")
+                self.assertTrue(transport.untouched())
+
+    def test_a_str_subclass_equal_to_the_upstream_constant_is_refused(self):
+        configured = settings(upstream=Text(acceptance.UPSTREAM_URL))
+        self.assertIs(type(configured.upstream_dashboard_mcp_url), Text)
+        self.assertEqual(configured.upstream_dashboard_mcp_url, acceptance.UPSTREAM_URL)
+        with self.assertRaises(ValueError) as caught:
+            acceptance.pinned_upstream(configured)
+        self.assert_code(caught, "upstream_url_not_pinned")
+
+    async def test_a_str_subclass_equal_to_the_stub_constant_is_refused_before_a_session(self):
+        url = Text(acceptance.STUB_CONTROL_URL)
+        self.assertEqual(url, acceptance.STUB_CONTROL_URL)
+        with NoTransport() as transport:
+            with self.assertRaises(ValueError) as caught:
+                acceptance.StubControl(url)
+            self.assert_code(caught, "stub_url_not_pinned")
+            with self.assertRaises(ValueError) as caught:
+                await acceptance.stub_ready(url)
+            self.assert_code(caught, "stub_url_not_pinned")
+            self.assertTrue(transport.untouched())
 
     def test_any_upstream_url_but_the_constant_is_refused(self):
         for url in url_cases(acceptance.UPSTREAM_URL):
@@ -1184,6 +1383,30 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         for payload in refused:
             with self.subTest(payload=payload):
                 await self.raw_refused(payload)
+
+    async def test_a_dict_subclass_with_a_listed_shape_is_refused_unsent(self):
+        get = {"type": "config_entries/get", "domain": "matter"}
+        update = {"type": "config/entity_registry/update", "entity_id": "number.hamcp366_converter_number",
+                  "options_domain": "number", "options": {"unit_of_measurement": "°F"}}
+        nested = {**update, "options": Shape(update["options"])}
+        for plain, shaped in ((get, Shape(get)), (update, Shape(update)), (update, nested)):
+            with self.subTest(shaped=shaped):
+                self.assertEqual(shaped, plain)  # the same keys and values as a listed shape
+                self.assertTrue(acceptance.listed(plain, acceptance.RAW_COMMANDS))
+                self.assertFalse(acceptance.listed(shaped, acceptance.RAW_COMMANDS))
+                await self.raw_refused(shaped)
+        flow = {"handler": "matter"}
+        self.assertTrue(acceptance.listed({"method": "POST", "path": self.FLOW, "body": flow}, acceptance.RAW_REST))
+        fault = {"mode": "error"}
+        self.assertTrue(acceptance.listed(fault, acceptance.STUB_POSTS))
+        with NoTransport() as transport:
+            with self.assertRaises(ValueError) as caught:
+                await acceptance.RawRest(settings()).request("POST", self.FLOW, Shape(flow))
+            self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
+            with self.assertRaises(ValueError) as caught:
+                await acceptance.StubControl(acceptance.STUB_CONTROL_URL).post(Shape(fault))
+            self.assertEqual(caught.exception.args, ("stub_request_not_listed",))
+            self.assertTrue(transport.untouched())
 
     async def test_raw_websocket_sends_every_listed_shape(self):
         listed = [{"type": "config/entity_registry/list"}, {"type": "config/device_registry/list"},
@@ -1564,6 +1787,32 @@ class StubEntry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.out.exists())
         self.stub.push_attribute.assert_not_awaited()
         self.assertEqual(self.stub.writes, [])
+
+    async def refused_drifts(self, bodies):
+        before = self.snapshot()
+        for body in bodies:
+            with self.subTest(body=body):
+                response = await self.entry.control(self.request("POST", body))
+                self.assertEqual(response.status, 400)
+                self.assertEqual(json.loads(response.text), {"error": "lane_control_request_not_listed"})
+                self.assertEqual(self.snapshot(), before)
+        self.assertFalse(self.out.exists())
+        self.stub.push_attribute.assert_not_awaited()
+        self.assertEqual(self.stub.writes, [])
+
+    async def test_drift_node_id_that_is_not_exactly_an_integer_is_refused(self):
+        # 61.0 equals 61 and finds the same loaded node, so only the type check refuses it.
+        self.assertIs(self.stub.nodes.get(61.0), self.stub.nodes[61])
+        self.assertIn("1/6/16387", self.stub.nodes[61]["attributes"])
+        drift = {"action": "drift", "attribute_path": "1/6/16387", "value": 1}
+        await self.refused_drifts([{**drift, "node_id": 61.0}, {**drift, "node_id": 61.0, "value": None},
+                                   {**drift, "node_id": [61]}, {**drift, "node_id": {"id": 61}},
+                                   {**drift, "node_id": None}, {**drift, "node_id": True}])
+
+    async def test_drift_attribute_path_that_is_not_a_string_is_refused(self):
+        drift = {"action": "drift", "node_id": 61, "value": 1}
+        await self.refused_drifts([{**drift, "attribute_path": path} for path in (
+            ["1/6/16387"], ["1", "6", "16387"], [], {"1/6/16387": 1}, {}, 16387, 1.5, None, True)])
 
     async def test_malformed_json_and_other_methods_are_refused(self):
         before = self.snapshot()
