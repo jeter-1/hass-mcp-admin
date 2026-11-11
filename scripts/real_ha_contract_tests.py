@@ -38,6 +38,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
 import lane_failure_diagnostics as lane_diagnostics  # noqa: E402
+from lane_session import lane_session, refuse_redirect  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -729,7 +730,9 @@ async def _json_request(session, method, path, *, json_body=None, data=None, tok
         json=json_body,
         data=data,
         headers=headers,
+        allow_redirects=False,
     ) as response:
+        refuse_redirect(response.status)
         if response.status >= 400:
             raise RuntimeError(f"Disposable Home Assistant bootstrap failed at {path} ({response.status})")
         return await response.json(content_type=None)
@@ -742,11 +745,12 @@ async def bootstrap_disposable_admin() -> str:
     username = f"contract_{secrets.token_hex(6)}"
     password = secrets.token_urlsafe(32)
     timeout = aiohttp.ClientTimeout(total=30)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with lane_session(timeout=timeout) as session:
         with lane_diagnostics.check("core_boot", "onboarding_ready"):
             for _ in range(120):
                 try:
-                    async with session.get(f"{HA_URL}/api/onboarding") as response:
+                    async with session.get(f"{HA_URL}/api/onboarding", allow_redirects=False) as response:
+                        refuse_redirect(response.status)
                         if response.status == 200:
                             break
                 except (aiohttp.ClientError, asyncio.TimeoutError):
@@ -942,7 +946,7 @@ async def prepare_migration_fixture() -> None:
     await wait_for_runtime_ready(rest)
 
     timeout = aiohttp.ClientTimeout(total=30)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with lane_session(timeout=timeout) as session:
         for slot in ("a", "b"):
             await _advance_config_flow(
                 session,
@@ -2613,10 +2617,12 @@ async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), envi
     timeout = aiohttp.ClientTimeout(total=2)
     for _ in range(60):
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with lane_session(timeout=timeout) as session:
                 async with session.get(
-                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz"
+                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz",
+                    allow_redirects=False,
                 ) as response:
+                    refuse_redirect(response.status)
                     body = await response.content.read(257)
                     if (
                         response.status == 200

@@ -32,6 +32,7 @@ from ha_mcp_engineering.security_metadata import (
 from ha_mcp_engineering.signed_registry import canonical_json
 
 import lane_failure_diagnostics as diagnostics
+from lane_session import lane_session
 
 CAPABILITY = "core.security_metadata_read"
 GROUP = "security_metadata"
@@ -122,7 +123,7 @@ class RawCore:
         # string, so the items are the whole command.
         checked = dict(payload)
         timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
+        async with lane_session(timeout=timeout) as session:
             async with session.ws_connect(RAW_CORE_URL) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})

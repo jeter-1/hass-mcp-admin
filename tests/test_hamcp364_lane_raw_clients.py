@@ -767,7 +767,7 @@ class DialTarget(ClientCase):
                     reply, events = await self.sent(item, payload)
                     self.assertEqual(reply, {"type": "result", "id": 1, "success": True, "result": None})
                     self.assertEqual([event[0] for event in events], ["session", "ws_connect", "send", "send"])
-                    self.assertEqual(set(events[0][1]), {"timeout", "trust_env"})
+                    self.assertEqual(set(events[0][1]), {"timeout", "trust_env", "trace_configs"})
                     self.assertIs(events[0][1]["trust_env"], False)
                     self.assertEqual(events[0][1]["timeout"].total, item.seconds)
                     self.assertIs(events[1][1], constant)
@@ -1252,13 +1252,15 @@ class HarnessRequest(HarnessCase):
                         reply = await harness._json_request(session, "POST", path, json_body=body, token=TOKEN)
                     self.assertEqual(reply, {"synthetic": "reply"})
                     self.assertEqual(session.calls, [("POST", core + path, {
-                        "json": body, "data": None, "headers": {"Authorization": "Bearer " + TOKEN}})])
+                        "json": body, "data": None, "headers": {"Authorization": "Bearer " + TOKEN},
+                        "allow_redirects": False})])
         session = Requests([{"step": "user", "done": False}])
         with patch.object(harness, "HA_URL", MAIN_CORE):
             self.assertEqual(await harness._json_request(session, "GET", "/api/onboarding"),
                              [{"step": "user", "done": False}])
         self.assertEqual(session.calls, [("GET", MAIN_CORE + "/api/onboarding",
-                                          {"json": None, "data": None, "headers": {}})])
+                                          {"json": None, "data": None, "headers": {},
+                                           "allow_redirects": False})])
 
     async def test_a_lane_that_rebinds_the_core_keeps_its_own_host(self):
         # The candidate-image lane points the harness at its own fixture network
@@ -1326,9 +1328,9 @@ class HarnessFlow(HarnessCase):
         headers = {"Authorization": "Bearer " + TOKEN}
         self.assertEqual(session.calls, [
             ("POST", MAIN_CORE + self.OPEN, {"json": {"handler": "synthetic_fixture", "show_advanced_options": False},
-                                             "data": None, "headers": headers}),
+                                             "data": None, "headers": headers, "allow_redirects": False}),
             ("POST", MAIN_CORE + self.OPEN + "/" + self.FLOW, {"json": {"slot": "a"}, "data": None,
-                                                              "headers": headers})])
+                                                              "headers": headers, "allow_redirects": False})])
         # A menu step and then a form step, each on the id Core gave for it.
         other = "f" * 32
         result, session = await self.advance({"type": "menu", "flow_id": self.FLOW},

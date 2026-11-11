@@ -182,7 +182,8 @@ class RawWebSocket:
         # with its payload while the socket connects.
         checked = copy.deepcopy(payload)
         import aiohttp
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30), trust_env=False) as session:
+        from lane_session import lane_session
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
             async with session.ws_connect(RAW_CORE_URL) as websocket:
                 assert (await websocket.receive_json()).get("type") == "auth_required"
                 await websocket.send_json({"type": "auth", "access_token": self.token})

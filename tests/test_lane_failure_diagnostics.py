@@ -192,7 +192,7 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
             async def __aenter__(self): return self
             async def __aexit__(self, *args): pass
         class Session(Response):
-            def get(self, *_args): return Response()
+            def get(self, *_args, **_kwargs): return Response()
         with patch.object(harness.aiohttp, 'ClientSession', return_value=Session()), \
                 patch.object(harness.asyncio, 'sleep', new=AsyncMock()), diagnostics.lane('helper_value'):
             with self.assertRaises(RuntimeError) as caught:

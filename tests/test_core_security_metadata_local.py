@@ -561,7 +561,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(dialled)
         self.assertEqual((len(sessions), len(frames)), (len(dialled), 2 * len(dialled)))
         for kwargs in sessions:
-            self.assertEqual(set(kwargs), {"timeout", "trust_env"})
+            self.assertEqual(set(kwargs), {"timeout", "trust_env", "trace_configs"})
             self.assertIs(kwargs["trust_env"], False)
             self.assertEqual(kwargs["timeout"].total, 60)
         for _kind, url, kwargs in dialled:
