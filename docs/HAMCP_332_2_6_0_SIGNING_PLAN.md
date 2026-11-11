@@ -1165,6 +1165,19 @@ the commit the receipt binds.
 | `core_security_metadata_read_v1`; 1 | `core.security_metadata_read` | `compiled-core-security-metadata-read-v1` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55`; `02627caf` | `scripts/core_security_metadata_local.py`; `security_metadata` | pending: the signing commit (§5A.8 step 1) | pending: the lane re-run on the signing commit |
 | `core_device_configuration_entity_operation_v1`; 1 | `core.device_configuration_entity_operation` | `compiled-core-device-configuration-entity-operation-v1` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c`; `02627caf` | pending: HAMCP-366 (the design names the group `device_configuration_entity`) | pending: the signing commit (§5A.8 step 1) | pending: the HAMCP-366 lane, run on the signing commit |
 
+**Architect-computed fingerprints (recorded 2026-11-11 at Josh's
+direction).** These are the architect's values, reported by Josh. The
+agents did not recompute them at the commits named here.
+
+| Capability id | Architect-computed fingerprint | Commit | Status |
+| --- | --- | --- | --- |
+| `core.security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `6e65ba4d` (the HAMCP-134 merge) and `b810ba77` (the release/2.6.0 tip) | Same value at both commits |
+| `core.device_configuration_entity_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `b810ba77` | Provisional pending Josh's ruling 4 of 2026-11-11 (HAMCP-366: coverage of the three Eve entities by operation shape) |
+
+Both equal the compiled values in the M2 and M3 rows above, which the
+agents computed at `02627caf` [R]. Neither is final until it is recomputed
+on the signing commit (§5A.8 step 1).
+
 These rows join the sheet only if their pull request merges and their
 lanes pass on the signing commit in time (§5A.5). Their fingerprints are
 provisional, computed at the open head named.
