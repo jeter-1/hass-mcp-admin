@@ -952,6 +952,55 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         self.assertEqual([key for key in self.ws.entries if key.startswith("scene.")], [])
         self.assertEqual([key for key in self.rest.states if key.startswith("scene.")], [])
 
+    async def undo_waits_out_one_state_error(self, earlier, undo):
+        """``undo`` over a Core whose state route answers 500 once after the verified delete, then 404.
+
+        Only a 404 ends the wait for the entity to go. A 500 is not that answer, so the lane reads again
+        and the undo passes on the 404 that follows; a wait any non-200 could end would stop on the 500.
+        """
+        c, reads = self.lane_context, []
+        for step in earlier:
+            await step(c)
+        entity_id = self.rest.scene_entity(c.state["config_id"])
+        real, verified = acceptance.applied, []
+
+        async def applied(c, plan, writes):
+            outcome = await real(c, plan, writes)
+            verified.append(outcome[0]["task_state"])
+            # From here Core's state route answers 500; the shipped lane client classifies it.
+            self.raw.client.errors["GET", acceptance.STATE_ROUTE] = 500
+            return outcome
+
+        async def status(method, route, body=None):
+            answer = await self.raw.status(method, route, body)
+            if route.template == acceptance.STATE_ROUTE:
+                reads.append(answer[0])
+                # One answer only: the next state read is Core's own.
+                self.raw.client.errors.clear()
+            return answer
+        c.reader.status = status
+        try:
+            with patch.object(acceptance, "applied", applied):
+                value = await undo(c)
+        finally:
+            c.reader.status = self.raw.status
+            self.raw.client.errors.clear()
+        self.assertEqual(verified, ["succeeded_verified"])
+        self.assertEqual(self.log.writes_since(0)[-1], acceptance.SCENE_DELETE)
+        # The lane read the 500, waited, and read again: the 404 is the read-back it reports.
+        self.assertEqual(reads, [500, 404])
+        self.assertEqual((value["result"], value["readback"]), ("PASS", {
+            "config_status": 404, "registry_entity_id": None, "entity_id": entity_id, "state_status": 404}))
+        self.assertEqual(self.rest.scenes, {})
+
+    async def test_an_undo_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        await self.undo_waits_out_one_state_error([acceptance.scene_create], acceptance.scene_undo)
+
+    async def test_an_undo_of_the_recreate_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        await self.undo_waits_out_one_state_error(
+            [acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
+            acceptance.scene_recreate_undo)
+
     async def test_a_create_reads_what_its_members_hold_before_it_plans_and_compares_with_that(self):
         """What the members held before the create is read, never assumed: one starts off, which no default says."""
         c = self.lane_context
