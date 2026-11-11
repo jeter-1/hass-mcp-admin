@@ -5,6 +5,7 @@ here against the real service and F3 runtime over the synthetic Core store, so
 the shipped lane code is exercised before any container starts; the lane
 runner's orchestration runs with every host command replaced.
 """
+import ast
 import asyncio
 from copy import deepcopy
 import hashlib
@@ -18,6 +19,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -243,6 +245,33 @@ def lane_client(answer=None):
     return raw
 
 
+def lane_nodes():
+    """Every syntax node of the lane script, with the class and function it is written in."""
+    found = []
+
+    def visit(node, scope):
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            scope = scope + (node.name,)
+        found.append((".".join(scope), node))
+        for child in ast.iter_child_nodes(node):
+            visit(child, scope)
+    visit(ast.parse(inspect.getsource(acceptance)), ())
+    return found
+
+
+async def assertion_of(awaitable):
+    """The AssertionError an awaitable ends in, and the function and source line of the statement that raised it.
+
+    ``assertRaises`` drops the traceback, and where a lane assert was raised is the evidence here.
+    """
+    try:
+        await awaitable
+    except AssertionError as error:
+        frame = traceback.extract_tb(error.__traceback__)[-1]
+        return error, (frame.name, frame.line)
+    return None, None
+
+
 class LaneClient(unittest.IsolatedAsyncioTestCase):
     """The lane's own client (HAMCP-200): a guarded client, bound routes, lane fixtures only."""
 
@@ -371,6 +400,55 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
         self.assertIn("payload = await self.client.request(method, route, body, expected_statuses=frozenset({404}))",
                       inspect.getsource(acceptance.LaneRaw.status))
 
+    def test_the_script_holds_no_other_send_and_no_scene_write_or_delete(self):
+        """Read from the syntax tree, so a send added anywhere in the script is seen, not only inside LaneRaw."""
+        nodes = lane_nodes()
+        calls = {id(node.func): node for _scope, node in nodes
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+
+        def called(name):
+            return [(scope, node) for scope, node in nodes if id(getattr(node, "func", None)) in calls
+                    and node.func.attr == name]
+
+        def referenced(name):
+            """Uses of ``.name`` that are not a call of it: an alias, a store, a hand-over."""
+            return sorted((scope, ast.unparse(node)) for scope, node in nodes
+                          if isinstance(node, ast.Attribute) and node.attr == name and id(node) not in calls)
+        # One REST send in the whole script, in ``LaneRaw.status``; the other ``request`` is the observation
+        # wrapper around Engineering's own client. Nothing else touches the lane client's transport.
+        self.assertEqual(sorted((scope, ast.unparse(node.func.value)) for scope, node in called("request")),
+                         [("LaneRaw.status", "self.client"), ("ObservedRest.request", "self.inner")])
+        self.assertEqual(referenced("request"), [])
+        self.assertEqual(sorted(scope for scope, node in nodes
+                                if isinstance(node, ast.Attribute) and node.attr == "client"),
+                         ["LaneRaw.__init__", "LaneRaw.status"])
+        self.assertEqual(sorted((scope, ast.unparse(node)) for scope, node in nodes if isinstance(node, ast.Call)
+                                and isinstance(node.func, ast.Name) and node.func.id in ("getattr", "setattr")),
+                         [("ObservedRest.__getattr__", "getattr(self.inner, name)"),
+                          ("ObservedWebSocket.__getattr__", "getattr(self.inner, name)"),
+                          ("rest_kind", "getattr(path, 'template', None)")])
+        # Every ``status`` call names its method and binds its route where it is written, so the pairs
+        # the script can ask for are readable here: no scene POST, PUT or DELETE among them.
+        pairs = set()
+        for scope, node in called("status"):
+            with self.subTest(scope=scope, call=ast.unparse(node)):
+                method, route = node.args[0], node.args[1]
+                self.assertIsInstance(method, ast.Constant)
+                self.assertTrue(isinstance(route, ast.Call) and isinstance(route.func, ast.Name))
+                pairs.add((method.value, route.func.id))
+        self.assertEqual(pairs, {("GET", "state_route"), ("GET", "scene_route"), ("GET", "automation_route"),
+                                 ("POST", "automation_route"), ("DELETE", "automation_route")})
+        bound = {"state_route": acceptance.state_route(MEMBERS[0]), "scene_route": acceptance.scene_route(SCENE_ID),
+                 "automation_route": acceptance.automation_route(AUTOMATION_ID)}
+        self.assertEqual({(method, bound[name].template) for method, name in pairs}, LANE_REQUESTS)
+        self.assertEqual(referenced("status"), [("LaneRaw.status", "payload.status"),
+                                                ("Reader.__init__", "self.status"), ("run", "raw.status")])
+        # The method name itself is written three times: the allowed automation pair, the delete argument
+        # Engineering captured (a comparison), and the automation clean-up.
+        self.assertEqual(sorted(scope for scope, node in nodes
+                                if isinstance(node, ast.Constant) and node.value == "DELETE"),
+                         ["", "cleanup_fixtures", "scene_create"])
+
     async def test_the_guarded_client_refuses_a_base_that_would_re_root_a_route(self):
         # What the lane client's exact-origin check stands in front of.
         for api_url in (API_URL + "?", API_URL + "#", API_URL + "/services/homeassistant/restart?",
@@ -408,12 +486,16 @@ class GuardedStore:
 
     def __init__(self, core):
         self.core, self.sent = core, []
+        # A status Core answers with, whatever it stores, for one method and route template.
+        self.errors = {}
 
     async def request(self, method, path, body=None, raw=False, expected_statuses=frozenset()):
         route = paths.require_route(path, method)
         paths.request_url(API_URL, route, method)
         self.sent.append((method, route.template))
         status, payload = self.answer(method, route.template, route.values[0])
+        if (method, route.template) in self.errors:
+            status, payload = self.errors[method, route.template], None
         if status in expected_statuses:
             return fixtures.ExpectedHttpStatus(status)
         if status >= 300:
@@ -424,7 +506,7 @@ class GuardedStore:
         rest, websocket = self.core.rest, self.core.websocket
         if template == acceptance.STATE_ROUTE:
             assert method == "GET", method
-            return (200, {"state": "on"}) if key in rest.states else (404, None)
+            return (200, {"state": rest.activated.get(key, "on")}) if key in rest.states else (404, None)
         assert template in (acceptance.SCENE_ROUTE, acceptance.AUTOMATION_ROUTE), template
         store = rest.scenes if template == acceptance.SCENE_ROUTE else rest.configs["automation"]
         if method == "GET":
@@ -465,6 +547,30 @@ class OfflineCore(acceptance.LaneRaw):
         if not self.stuck:
             await self.websocket._answer(dict(payload))
         return {"success": True, "result": None}
+
+
+class Unrefusing:
+    """Stands in for the lane client in clean-up and refuses nothing.
+
+    Every REST request is recorded, whether it came through ``status`` or went
+    straight to the client; only a lane request is passed on to the store. A
+    request the shipped client would refuse is therefore seen, not raised.
+    """
+
+    def __init__(self, raw):
+        self.raw, self.sent = raw, []
+        self.ok, self.call = raw.ok, raw.call
+        self.client = SimpleNamespace(request=self.request)
+
+    async def status(self, method, route, body=None):
+        self.sent.append((method, route.template))
+        if (method, route.template) not in acceptance.LANE_REQUESTS:
+            return 200, None
+        return await self.raw.status(method, route, body)
+
+    async def request(self, method, route, *args, **kwargs):
+        self.sent.append((method, route.template))
+        return {"result": "ok"}
 
 
 class Scenarios(fixtures.CreatedObjectServiceTestCase):
@@ -521,6 +627,91 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         target[path[-1]] = value
         with self.subTest(path=path, value=value), self.assertRaises((AssertionError, KeyError, TypeError)):
             self.verify(group, changed)
+
+    def failure(self, group, receipt):
+        """How the strict check ends for a receipt: the exception type, or None when it is accepted."""
+        try:
+            self.verify(group, receipt)
+        except Exception as error:
+            return type(error)
+        return None
+
+    def requires_exactly_its_scenarios(self, group, receipt):
+        """A receipt without one of its lane's scenarios, or with another, is refused by the check itself.
+
+        A lookup that happens to miss later (KeyError) is not that check, so it does not count here.
+        """
+        for name in acceptance.LANES[group]["scenarios"]:
+            changed = deepcopy(receipt)
+            del changed["scenarios"][name]
+            with self.subTest(missing=name):
+                self.assertIs(self.failure(group, changed), AssertionError)
+        changed = deepcopy(receipt)
+        changed["scenarios"]["unlisted"] = {"result": "PASS"}
+        self.assertIs(self.failure(group, changed), AssertionError)
+
+    async def fails_after_verified_apply(self, step, leave):
+        """``step`` over a Core that ``leave`` alters once Engineering's own apply has verified.
+
+        The governed apply runs unchanged and reports succeeded_verified, so what
+        fails is the lane's own read of Core afterwards and nothing before it.
+        """
+        real, verified = acceptance.applied, []
+
+        async def applied(c, plan, writes):
+            outcome = await real(c, plan, writes)
+            verified.append(outcome[0]["task_state"])
+            leave()
+            return outcome
+        with patch.object(acceptance, "applied", applied):
+            error, where = await assertion_of(step(self.lane_context))
+        self.assertIsNotNone(error, step.__name__ + " accepted what it read")
+        self.assertEqual(verified, ["succeeded_verified"])
+        self.assertEqual(where[0], step.__name__)
+        return error, where[1]
+
+    async def undo_read_back_refuses(self, earlier, undo):
+        """One case per fact of an undo read-back: the governed undo verified, and Core still shows one thing."""
+        c = self.lane_context
+        for index, left in enumerate(("config", "config_error", "registry_entry", "state", "body_with_a_404")):
+            with self.subTest(left=left):
+                c.suffix, c.state = "0a1b2c3" + str(index), {}
+                for step in earlier:
+                    await step(c)
+                config_id = c.state["config_id"]
+                entity_id = self.rest.scene_entity(config_id)
+                config, entry = self.rest.scenes[config_id], self.ws.entries[entity_id]
+                shown = {"config_status": 404, "registry_entity_id": None, "entity_id": entity_id,
+                         "state_status": 404}
+
+                async def body_with_a_404(method, route, body=None):
+                    status, payload = await self.raw.status(method, route, body)
+                    return (status, config) if route.template == acceptance.SCENE_ROUTE else (status, payload)
+
+                def leave():
+                    if left == "config":
+                        self.rest.scenes[config_id] = config
+                    elif left == "config_error":
+                        self.raw.client.errors["GET", acceptance.SCENE_ROUTE] = 500
+                    elif left == "registry_entry":
+                        self.ws.entries[entity_id] = entry
+                    elif left == "state":
+                        self.rest.states.add(entity_id)
+                    else:
+                        # The shipped lane client never returns a body with a 404; another reader could.
+                        c.reader.status = body_with_a_404
+                shown.update({"config": {"config_status": 200}, "config_error": {"config_status": 500},
+                              "registry_entry": {"registry_entity_id": entity_id}, "state": {"state_status": 200},
+                              "body_with_a_404": {}}[left])
+                try:
+                    error, _line = await self.fails_after_verified_apply(undo, leave)
+                finally:
+                    c.reader.status = self.raw.status
+                    self.raw.client.errors.clear()
+                # Engineering's delete reached Core once and verified; the assert that refused is the
+                # read-back's own, and it names what the lane read.
+                self.assertEqual(self.log.writes_since(0)[-1], acceptance.SCENE_DELETE)
+                self.assertEqual(error.args, (shown,))
 
     async def test_scene_lane_forward_undo_recreate_and_refusals(self):
         group = "scene_create_delete"
@@ -584,10 +775,7 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                 (("scenarios", "scene_existing_id_refused", "plan_created"), True),
                 (("scenarios", "scene_existing_id_refused", "reason_code"), "")):
             self.refuses(group, receipt, *path, value=value)
-        without = deepcopy(receipt)
-        del without["scenarios"]["scene_recreate_undo"]
-        with self.assertRaises(AssertionError):
-            self.verify(group, without)
+        self.requires_exactly_its_scenarios(group, receipt)
         with self.assertRaises(AssertionError):
             self.verify("created_helper_delete", receipt)
 
@@ -606,9 +794,10 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
             self.assertEqual(self.log.writes_since(0).count(acceptance.SCENE_DELETE), 1)
         # ``acceptance.run`` ends in this strict check, so no PASS receipt exists for such a run:
         # not as it stands, and not with the absence claimed either.
+        # Each is refused by a check of the receipt (AssertionError); a later lookup that merely misses
+        # the absent scenario (KeyError) would not be one.
         for candidate in (receipt, {**receipt, "fixture_absence": ABSENT}):
-            with self.assertRaises(AssertionError):
-                self.verify(group, candidate)
+            self.assertIs(self.failure(group, candidate), AssertionError)
 
     async def test_helper_lane_forward_undo_and_mixed_reverse_plan(self):
         group = "created_helper_delete"
@@ -648,10 +837,7 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                 (("scenarios", "mixed_plan_undo", "writes"), ["input_boolean/delete", acceptance.AUTOMATION_POST]),
                 (("scenarios", "mixed_plan_undo", "consumer_restored"), False)):
             self.refuses(group, receipt, *path, value=value)
-        without = deepcopy(receipt)
-        del without["scenarios"]["helper_undo_input_number"]
-        with self.assertRaises(AssertionError):
-            self.verify(group, without)
+        self.requires_exactly_its_scenarios(group, receipt)
 
     async def test_a_lane_step_that_does_not_hold_fails_the_lane(self):
         c = self.lane_context
@@ -682,6 +868,76 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         self.assertEqual(await acceptance.cleanup_fixtures(self.raw, c.owned, attempts=2, delay=0),
                          {**ABSENT, "scenes": False, "registry_entries": False})
         self.assertNotIn(("DELETE", acceptance.SCENE_ROUTE), self.raw.client.sent)
+
+    async def test_an_undo_that_verified_but_left_the_scene_in_core_fails_its_read_back(self):
+        await self.undo_read_back_refuses([acceptance.scene_create], acceptance.scene_undo)
+
+    async def test_an_undo_of_the_recreate_that_verified_but_left_the_scene_fails_its_read_back(self):
+        await self.undo_read_back_refuses([acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
+                                          acceptance.scene_recreate_undo)
+
+    async def test_a_create_that_changes_a_member_fails_the_lane(self):
+        """Engineering verifies the scene it stored, not the members it names; the lane reads those itself."""
+        c = self.lane_context
+        self.rest.scene_post_activates = True
+        _error, line = await self.fails_after_verified_apply(acceptance.scene_create, lambda: None)
+        self.assertEqual(line, "assert [await c.reader.state(member) for member in c.members] == before")
+        # Everything the scenario checks before its members held: the scene is stored as asked and registered.
+        entity_id = self.rest.scene_entity(SCENE_ID)
+        self.assertEqual(await c.reader.scene(SCENE_ID), (
+            {"config_status": 200, "registry_entity_id": entity_id, "entity_id": entity_id, "state_status": 200},
+            {"id": SCENE_ID, "name": "HAMCP G4 scene 0a1b2c3d",
+             "entities": {MEMBERS[0]: {"state": "on"}, MEMBERS[1]: {"state": "off"}}}))
+        # Only the second member differs from before the create, and the scenario recorded no result.
+        self.assertEqual([await c.reader.state(member) for member in MEMBERS], [(200, "on"), (200, "off")])
+        self.assertEqual(c.state, {})
+
+    async def test_a_recreate_whose_stored_config_differs_from_the_first_create_fails_the_lane(self):
+        c = self.lane_context
+        for index, drifts in enumerate(("while_engineering_verifies", "after_engineering_verified")):
+            with self.subTest(drifts=drifts):
+                c.suffix, c.state = "0a1b2c3" + str(index), {}
+                await acceptance.scene_create(c)
+                await acceptance.scene_undo(c)
+                config_id = c.state["config_id"]
+                if drifts == "while_engineering_verifies":
+                    # Core's stored body differs from the POST: Engineering's own verification refuses first.
+                    self.rest.scene_drift = {"icon": "mdi:drift"}
+                    error, where = await assertion_of(acceptance.scene_recreate(c))
+                    self.rest.scene_drift = {}
+                    self.assertIsNotNone(error)
+                    self.assertEqual(where[0], "applied")
+                    self.assertEqual(error.args, ((
+                        "failed_post_dispatch", [["scene_create_1", "verification_mismatch", 1]]),))
+                else:
+                    # It drifts once Engineering has verified: only the lane's comparison with the first
+                    # create can see it.
+                    _error, line = await self.fails_after_verified_apply(
+                        acceptance.scene_recreate, lambda: self.rest.scenes[config_id].update(icon="mdi:drift"))
+                    self.assertEqual(line, 'assert stored == c.state["stored"]')
+                    self.assertEqual(self.rest.scenes[config_id], {**c.state["stored"], "icon": "mdi:drift"})
+                self.assertNotIn("recreate", c.state)
+
+    async def test_cleanup_sends_no_rest_delete_for_a_scene_by_any_door(self):
+        self.rest.add_scene("hamcp_g4_scene_left", {"name": "HAMCP G4 left", "entities": {}})
+        # The scene lane owns scenes only: its clean-up reads them and deletes nothing over REST.
+        raw = Unrefusing(self.raw)
+        owned = {"scenes": ["hamcp_g4_scene_left", "hamcp_g4_scene_never"], "automations": [], "helpers": []}
+        self.assertEqual(await acceptance.cleanup_fixtures(raw, owned, attempts=2, delay=0),
+                         {**ABSENT, "scenes": False, "registry_entries": False})
+        self.assertEqual(set(raw.sent), {("GET", acceptance.SCENE_ROUTE)})
+        # The helper lane's clean-up removes its automations, as designed, and still no scene.
+        self.ws.add_helper("input_boolean", {"name": "HAMCP G4 left"})
+        self.add("automation", "hamcp_g4_consumer_left")
+        raw = Unrefusing(self.raw)
+        owned.update(automations=["hamcp_g4_consumer_left", "hamcp_g4_consumer_never"],
+                     helpers=[("input_boolean", "hamcp_g4_left")])
+        self.assertEqual(await acceptance.cleanup_fixtures(raw, owned, attempts=2, delay=0),
+                         {"scenes": False, "automations": True, "helpers": True, "registry_entries": False})
+        self.assertEqual([pair for pair in raw.sent if pair[0] != "GET"], [("DELETE", acceptance.AUTOMATION_ROUTE)] * 2)
+        self.assertEqual({method for method, template in raw.sent if template == acceptance.SCENE_ROUTE}, {"GET"})
+        self.assertEqual(list(self.rest.scenes), ["hamcp_g4_scene_left"])
+        self.assertEqual((self.rest.configs["automation"], self.ws.helpers["input_boolean"]), ({}, {}))
 
     async def test_cleanup_removes_no_scene_and_reports_what_is_left(self):
         self.rest.add_scene("hamcp_g4_scene_left", {"name": "HAMCP G4 left", "entities": {}})

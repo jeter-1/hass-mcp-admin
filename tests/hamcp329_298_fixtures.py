@@ -275,6 +275,11 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
         # Called with the config id just before a scene POST is answered.
         self.before_scene_post: Any = None
         self.scene_posts: list[tuple[str, dict[str, Any]]] = []
+        # When True, a scene POST also activates the scene: each entity it
+        # names takes the state it names. Core never does that for a config
+        # write; the knob lets a reader prove it would notice.
+        self.scene_post_activates = False
+        self.activated: dict[str, Any] = {}
 
     # -- helpers --------------------------------------------------------
     def scene_deletes(self) -> list[tuple[str, str]]:
@@ -320,7 +325,11 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
     # -- Core model -----------------------------------------------------
     async def request(self, method: str, path: Any, **kwargs: Any) -> Any:
         if not str(path).startswith(SCENE_PREFIX):
-            return await super().request(method, path, **kwargs)
+            value = await super().request(method, path, **kwargs)
+            entity_id = str(path).removeprefix("/states/")
+            if method == "GET" and entity_id in self.activated and isinstance(value, dict):
+                value = {**value, "state": self.activated[entity_id]}
+            return value
         # The shipped transport guard (clients/rest.py ``request``): an issued
         # route, a reviewed method and, for a DELETE, the unclaimed
         # single-use permit for exactly this config id.
@@ -360,6 +369,11 @@ class SyntheticCreatedObjectRest(SyntheticConfigurationRest):
             # config/scene.py ``_write_value``: the key is stored as "id".
             stored = {"id": config_id, **body, **deepcopy(self.scene_drift)}
             self.scenes[config_id] = stored
+            if self.scene_post_activates:
+                for entity_id, wanted in body.get("entities", {}).items():
+                    self.activated[entity_id] = (
+                        wanted["state"] if isinstance(wanted, dict) else wanted
+                    )
             if self.scene_entity(config_id) is None and self.scene_post_registers_entity:
                 if self.scene_registers_after_gets:
                     self._pending_scene = (config_id, stored)
