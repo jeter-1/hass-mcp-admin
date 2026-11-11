@@ -364,8 +364,8 @@ class EntitiesRowClassificationTests(unittest.TestCase):
             ("sensor.synthetic_row", "object", ()),
             ("fan.synthetic_row", "bare", ()),
             ("input_boolean.synthetic_row", "object", ()),
-            ("valve.synthetic_row", "bare", ()),
-            ("valve.synthetic_row", "object", (RiskCategory.DISPLAY_ONLY,)),
+            # HAMCP-345 classifies valve rows as high-consequence controls
+            # (tests/test_hamcp345_dashboard_risk_breadth.py).
             ("garage_door.synthetic_row", "object", (RiskCategory.DISPLAY_ONLY,)),
         )
         for entity, shape, expected in cases:
@@ -706,19 +706,44 @@ class NativeControlShapeTests(unittest.TestCase):
         self.assertEqual(self.changed(risk), [])
 
     def test_toggle_group_card_targets_each_entity(self):
+        # The card sends one service, from the first entity's domain, to
+        # every listed entity (hui-toggle-group-card.ts:130-141), so a
+        # single-domain list is one finding per entity.
+        for entities, category, reason in (
+            (["light.synthetic", "light.synthetic_2"], RiskCategory.TOGGLE,
+             "toggle_group_toggle_control"),
+            ([LOCK, "lock.synthetic_back_door"], RiskCategory.HIGH_CONSEQUENCE,
+             "toggle_group_targets_high_consequence_domain"),
+        ):
+            with self.subTest(entities=entities):
+                risk = self.card_risk({"type": "toggle-group", "entities": entities})
+                self.assertEqual(
+                    [(item.path, item.category, item.reason_code)
+                     for item in self.changed(risk)],
+                    [
+                        (f"/views/0/cards/0/entities/{index}", category, reason)
+                        for index in range(len(entities))
+                    ],
+                )
+                self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+        # HAMCP-345 correction (owner rulings 2026-11-10): the lock in a
+        # light-first list receives the light service, not a lock service.
+        # A list whose domains differ is one disclosed finding for the card,
+        # and the lock stays counted as one listed high-consequence entity.
         risk = self.card_risk(
             {"type": "toggle-group", "entities": ["light.synthetic", LOCK]}
         )
         self.assertEqual(
             [(item.path, item.category, item.reason_code) for item in self.changed(risk)],
             [
-                ("/views/0/cards/0/entities/0", RiskCategory.TOGGLE,
-                 "toggle_group_toggle_control"),
+                ("/views/0/cards/0/entities", RiskCategory.UNKNOWN,
+                 "toggle_group_mixed_domains_receive_first_entity_service"),
                 ("/views/0/cards/0/entities/1", RiskCategory.HIGH_CONSEQUENCE,
-                 "toggle_group_targets_high_consequence_domain"),
+                 "toggle_group_mixed_domains_lists_high_consequence_entity"),
             ],
         )
-        self.assertIs(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+        self.assertIs(risk.disposition, RiskDisposition.MANUAL_REVIEW_REQUIRED)
+        self.assertEqual(risk.high_consequence_action_count, 1)
 
     def test_area_controls_feature_is_classified_from_its_domains(self):
         cases = (

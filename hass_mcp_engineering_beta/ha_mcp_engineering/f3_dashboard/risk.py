@@ -73,9 +73,11 @@ _TEMPLATE_MARKERS = ("{{", "{%", "${")
 # classified exactly like a toggle of the same entity on a tile, through
 # ``_domain_control_category``: lock, cover and alarm_control_panel are
 # high-consequence, light and switch are toggles.  Other domains are not
-# classified here.
+# classified here.  HAMCP-345: valve is a high-consequence control domain
+# (hui-valve-entity-row.ts:44-66 renders ha-entity-toggle, which calls
+# valve.open_valve/close_valve through get_toggle_action.ts).
 _ENTITY_ROW_CONTROL_DOMAINS = frozenset(
-    {"lock", "cover", "alarm_control_panel", "light", "switch"}
+    {"lock", "cover", "alarm_control_panel", "light", "switch", "valve"}
 )
 # HAMCP-337 F1: native row types, read at frontend 20261028.4 (commit
 # a67b691a, pinned by Core 2026.11.0).  An explicit row ``type`` takes
@@ -90,9 +92,71 @@ _ENTITY_ROW_CONTROL_DOMAINS = frozenset(
 _ENTITY_ROW_TYPE_CONTROLS = {
     "lock-entity": "entity_row_lock_control",
     "cover-entity": "entity_row_cover_control",
+    # HAMCP-345: create-row-element.ts:53 ``valve-entity`` always renders
+    # the valve row's toggle.
+    "valve-entity": "entity_row_valve_control",
 }
 _ENTITY_ROW_TOGGLE_TYPE = "toggle-entity"
 _CONDITIONAL_ROW_TYPE = "conditional"
+# HAMCP-345 (frontend a67b691a, pinned by Core 2026.11.0).
+# DOMAINS_TOGGLE (common/const.ts:102-111): the domains whose entities the
+# button card and row, the buttons row, the tile icon, picture-glance items
+# and the entities-card header toggle toggle by default.
+_DOMAINS_TOGGLE = frozenset(
+    {
+        "fan",
+        "input_boolean",
+        "light",
+        "switch",
+        "group",
+        "automation",
+        "humidifier",
+        "valve",
+    }
+)
+# Of those default toggles only the high-consequence domain and ``group``
+# (disclosed, members unknown) are classified on the button, buttons,
+# tile-icon and picture-glance shapes; their light/switch-class defaults
+# remain a documented residual.
+_DEFAULT_TOGGLE_HIGH_DOMAINS = _DOMAINS_TOGGLE & _HIGH_ENTITY_DOMAINS
+_GROUP_DOMAIN = "group"
+_GROUP_ROW_TYPE = "group-entity"
+_BUTTON_TYPE = "button"
+_BUTTONS_ROW_TYPE = "buttons"
+# A ``group`` entity's members are its runtime ``entity_id`` state
+# attribute (hui-group-entity-row.ts; Core group/entity.py), never part of
+# the dashboard configuration, so its row cannot be classified at plan time.
+_GROUP_MEMBERS_REASON = "group_row_members_not_established_at_plan_time"
+_HEADER_TOGGLE_GROUP_REASON = (
+    "header_toggle_group_members_not_established_at_plan_time"
+)
+# Owner direction 2026-11-10: the group-row rule also applies to a group
+# entity's default control on the button card, tile icon, picture-glance
+# items, toggle-group and header/footer ``buttons`` chips.
+_GROUP_CONTROL_REASON = "group_control_members_not_established_at_plan_time"
+# Owner rulings 2026-11-10: a toggle-group card sends one service, taken from
+# its first entity's domain, to every listed entity
+# (hui-toggle-group-card.ts:130-141).  A list whose domains differ is
+# disclosed as one group finding and requires manual review when it names a
+# domain this module classifies or holds an entry with no domain.
+_TOGGLE_GROUP_MIXED_REASON = "toggle_group_mixed_domains_receive_first_entity_service"
+# "A domain this module classifies": the direct-control domains, the
+# high-consequence entity domains and ``group``, taken from the tables above.
+_TOGGLE_GROUP_CLASSIFIED_DOMAINS = (
+    _ENTITY_ROW_CONTROL_DOMAINS | _HIGH_ENTITY_DOMAINS | {_GROUP_DOMAIN}
+)
+# In such a mixed list every entry of a high-consequence domain is one
+# ``high_consequence_action`` finding.  For that card the count is the
+# high-consequence entities listed on the card, not actions the card sends.
+_TOGGLE_GROUP_LISTED_HIGH_REASON = (
+    "toggle_group_mixed_domains_lists_high_consequence_entity"
+)
+# strategies/get-strategy.ts: a ``strategy`` key on the dashboard, a view
+# or a section is replaced by cards generated in the browser.  Only the
+# built-in ``iframe`` and ``map`` strategies generate their cards from the
+# configuration alone, and those cards render no control.
+_STRATEGY_REASON = "strategy_generated_controls_cannot_be_analyzed"
+_NO_CONTROL_STRATEGY_TYPES = frozenset({"iframe", "map"})
 # Shapes whose own configuration names the service a tap performs: the
 # ``call-service``/``perform-action`` entities row and the picture-elements
 # ``service-button``/``action-button`` element.
@@ -454,7 +518,24 @@ def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
             RiskCategory.HIGH_CONSEQUENCE,
             _ENTITY_ROW_TYPE_CONTROLS[row_type],
         )
-    if row_type in {None, _ENTITY_ROW_TOGGLE_TYPE}:
+    if row_type == _BUTTON_TYPE:
+        # hui-button-row.ts:44-54: the row toggles a DOMAINS_TOGGLE entity
+        # unless its own ``tap_action`` replaces the default.
+        if isinstance(row, dict) and "tap_action" in row:
+            return None
+        if domain == _GROUP_DOMAIN:
+            return entity, domain, RiskCategory.UNKNOWN, _GROUP_MEMBERS_REASON
+        if domain in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+            return (
+                entity,
+                domain,
+                RiskCategory.HIGH_CONSEQUENCE,
+                "button_row_default_toggle_targets_high_consequence_domain",
+            )
+        return None
+    if row_type in {None, _ENTITY_ROW_TOGGLE_TYPE, _GROUP_ROW_TYPE}:
+        if domain == _GROUP_DOMAIN:
+            return entity, domain, RiskCategory.UNKNOWN, _GROUP_MEMBERS_REASON
         if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
             return None
         category = _domain_control_category(domain)
@@ -465,6 +546,23 @@ def _row_control(row: Any) -> tuple[Any, str, RiskCategory, str] | None:
             "entity_row_control_targets_high_consequence_domain"
             if category is RiskCategory.HIGH_CONSEQUENCE
             else "entity_row_toggle_control",
+        )
+    return None
+
+
+def _default_toggle_control(
+    domain: str | None, shape: str
+) -> tuple[RiskCategory, str] | None:
+    """Classify the default toggle of a button card, tile icon or
+    picture-glance item: a group discloses, valve is high-consequence and
+    the light/switch-class defaults remain a documented residual."""
+
+    if domain == _GROUP_DOMAIN:
+        return RiskCategory.UNKNOWN, _GROUP_CONTROL_REASON
+    if domain in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+        return (
+            RiskCategory.HIGH_CONSEQUENCE,
+            f"{shape}_default_toggle_targets_high_consequence_domain",
         )
     return None
 
@@ -507,14 +605,20 @@ def _default_control_findings(
     conditional: bool,
     custom_card_configuration: Any,
     conditional_configuration: Any,
+    classified_locations: set[tuple[str, ...]],
 ) -> tuple[list[RiskFinding], set[tuple[str, ...]]]:
     """Classify the native controls ``value`` renders without action keys.
 
     HAMCP-338 rows and HAMCP-337 F1 typed rows, conditional rows,
     entity-filter rows, ``buttons`` header/footer chips, toggle-group cards,
-    area-controls features and the alarm-panel card.  Returns the findings
-    and the object locations already classified, which are therefore not
-    also reported as display-only entities.
+    area-controls features and the alarm-panel card.  HAMCP-345 adds valve
+    controls, group rows, ``button``/``buttons`` rows, the entities-card
+    header toggle, the valve defaults of the button card, tile icon and
+    picture-glance items, and the group defaults of those shapes, the
+    toggle-group and header/footer chips.  ``classified_locations`` are objects an enclosing
+    shape already classified (a ``button`` row is not also a button card).
+    Returns the findings and the object locations already classified, which
+    are therefore not also reported as display-only entities.
     """
 
     findings: list[RiskFinding] = []
@@ -570,6 +674,47 @@ def _default_control_findings(
             wrappers.append(row)
             row = row["row"]
             location = (*location, "row")
+        if (
+            isinstance(row, dict)
+            and row.get("type") == _BUTTONS_ROW_TYPE
+            and isinstance(row.get("entities"), list)
+        ):
+            # hui-buttons-row.ts:25-38: each button toggles a DOMAINS_TOGGLE
+            # entity unless its own ``tap_action`` replaces the default.
+            for button_index, button in enumerate(row["entities"]):
+                if isinstance(button, dict):
+                    if "tap_action" in button:
+                        continue
+                    button_entity = button.get("entity")
+                else:
+                    button_entity = button
+                button_domain = _entity_domain(button_entity)
+                if button_domain == _GROUP_DOMAIN:
+                    category = RiskCategory.UNKNOWN
+                    reason = _GROUP_MEMBERS_REASON
+                elif button_domain in _DEFAULT_TOGGLE_HIGH_DOMAINS:
+                    category = RiskCategory.HIGH_CONSEQUENCE
+                    reason = "buttons_row_default_toggle_targets_high_consequence_domain"
+                else:
+                    continue
+                button_location = (*location, "entities", str(button_index))
+                add(
+                    category,
+                    button_location,
+                    button_domain,
+                    reason,
+                    context_binding(
+                        "f3-dashboard-default-control-semantic-binding-v1",
+                        shape="buttons_row",
+                        complete_control=button,
+                        control_entity=button_entity,
+                        container_card_type=value.get("type"),
+                        conditional_rows=wrappers,
+                    ),
+                )
+                if isinstance(button, dict):
+                    classified.add(button_location)
+            continue
         control = _row_control(row)
         if control is None:
             continue
@@ -594,6 +739,141 @@ def _default_control_findings(
         if isinstance(row, dict):
             classified.add(location)
 
+    # Entities-card header toggle (hui-entities-card.ts:31-52, 242-254;
+    # hui-entities-toggle.ts:19-27, 61-65).  It is shown when
+    # ``show_header_toggle`` is truthy or, with that key absent and a
+    # ``title`` present, when at least two rows name a DOMAINS_TOGGLE
+    # entity.  It toggles every row entity in DOMAINS_TOGGLE at once.  An
+    # entity-filter card renders ``{type: "entities", entities: [],
+    # ...card}`` (hui-entity-filter-card.ts:123-127) with a state-filtered
+    # subset of its rows, so its rows are the superset here.
+    header_rows = _row_containers(value)
+    if value.get("type") == "entities":
+        header_config: Any = value
+        header_location = (*tokens, "show_header_toggle")
+    else:
+        header_config = value.get("card")
+        header_location = (*tokens, "card", "show_header_toggle")
+    if header_rows and isinstance(header_config, dict):
+        row_entities = [
+            row if isinstance(row, str) else row["entity"]
+            for row in header_rows
+            if isinstance(row, str) or (isinstance(row, dict) and "entity" in row)
+        ]
+        toggleable = [
+            entity for entity in row_entities if _entity_domain(entity) in _DOMAINS_TOGGLE
+        ]
+        if "show_header_toggle" in header_config:
+            shown = not _js_falsy(header_config["show_header_toggle"])
+        else:
+            shown = "title" in header_config and len(toggleable) >= 2
+        if shown:
+            by_domain: dict[str, list[Any]] = {}
+            for entity in toggleable:
+                by_domain.setdefault(_entity_domain(entity) or "", []).append(entity)
+            for domain in sorted(by_domain):
+                if domain == _GROUP_DOMAIN:
+                    category = RiskCategory.UNKNOWN
+                    reason = _HEADER_TOGGLE_GROUP_REASON
+                else:
+                    category = (
+                        RiskCategory.HIGH_CONSEQUENCE
+                        if domain in _HIGH_ENTITY_DOMAINS
+                        else RiskCategory.TOGGLE
+                    )
+                    reason = _domain_reason(category, "header_toggle")
+                add(
+                    category,
+                    header_location,
+                    domain,
+                    reason,
+                    context_binding(
+                        "f3-dashboard-header-toggle-semantic-binding-v1",
+                        shape="entities_header_toggle",
+                        container_card_type=value.get("type"),
+                        title_present="title" in header_config,
+                        show_header_toggle={
+                            "present": "show_header_toggle" in header_config,
+                            "value": header_config.get("show_header_toggle"),
+                        },
+                        toggled_entities=by_domain[domain],
+                    ),
+                )
+
+    # Valve and group defaults of the card shapes that toggle a
+    # DOMAINS_TOGGLE entity when no action key replaces the default.
+    own_entity = value.get("entity")
+    own_domain = _entity_domain(own_entity)
+    default_shape: str | None = None
+    if tokens in classified_locations:
+        pass
+    elif value.get("type") == _BUTTON_TYPE and "tap_action" not in value:
+        # hui-button-card.ts:71-74, 166-178.
+        default_shape = "button_card"
+    elif value.get("type") == "tile" and "icon_tap_action" not in value:
+        # tile-card-helpers.ts:10-25; hui-tile-card.ts:117-125 (defaults spread at 123).
+        default_shape = "tile_icon"
+    own_control = (
+        None
+        if default_shape is None
+        else _default_toggle_control(own_domain, default_shape)
+    )
+    if default_shape is not None and own_control is not None:
+        add(
+            own_control[0],
+            (*tokens, "entity"),
+            own_domain,
+            own_control[1],
+            context_binding(
+                "f3-dashboard-default-control-semantic-binding-v1",
+                shape=default_shape,
+                complete_control={
+                    key: value.get(key)
+                    for key in ("type", "entity", "tap_action", "icon_tap_action")
+                },
+                control_entity=own_entity,
+            ),
+        )
+        classified.add(tokens)
+    if (
+        value.get("type") == "picture-glance"
+        and isinstance(value.get("entities"), list)
+        and _js_falsy(value.get("force_dialog"))
+    ):
+        # hui-picture-glance-card.ts:96-105, 273-277: an item toggles a
+        # DOMAINS_TOGGLE entity unless ``force_dialog`` or its own
+        # ``tap_action`` replaces the default.
+        for index, item in enumerate(value["entities"]):
+            if isinstance(item, dict):
+                if "tap_action" in item:
+                    continue
+                item_entity = item.get("entity")
+            else:
+                item_entity = item
+            item_domain = _entity_domain(item_entity)
+            item_control = _default_toggle_control(item_domain, "picture_glance")
+            if item_control is None:
+                continue
+            location = (*tokens, "entities", str(index))
+            add(
+                item_control[0],
+                location,
+                item_domain,
+                item_control[1],
+                context_binding(
+                    "f3-dashboard-default-control-semantic-binding-v1",
+                    shape="picture_glance_entity",
+                    complete_control=item,
+                    control_entity=item_entity,
+                    force_dialog={
+                        "present": "force_dialog" in value,
+                        "value": value.get("force_dialog"),
+                    },
+                ),
+            )
+            if isinstance(item, dict):
+                classified.add(location)
+
     # ``buttons`` header/footer: every chip toggles on tap by default, with
     # no domain filter (hui-buttons-header-footer.ts merges ``{tap_action:
     # toggle, hold_action: more-info, ...chip}``).  Only the chip's own
@@ -613,15 +893,20 @@ def _default_control_findings(
             else:
                 entity = chip
             domain = _entity_domain(entity)
-            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
+            if domain == _GROUP_DOMAIN:
+                category = RiskCategory.UNKNOWN
+                reason = _GROUP_CONTROL_REASON
+            elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
+                category = _domain_control_category(domain)
+                reason = _domain_reason(category, "header_footer_button")
+            else:
                 continue
             location = (*tokens, "entities", str(index))
-            category = _domain_control_category(domain)
             add(
                 category,
                 location,
                 domain,
-                _domain_reason(category, "header_footer_button"),
+                reason,
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
                     shape="buttons_header_footer",
@@ -632,25 +917,88 @@ def _default_control_findings(
             if isinstance(chip, dict):
                 classified.add(location)
 
-    # Toggle-group card: one tap toggles every listed entity.
+    # Toggle-group card: one tap sends one service to every listed entity.
+    # The domain and the service come from the first entity alone
+    # (hui-toggle-group-card.ts:130-141: ``computeDomain(entities[0])``,
+    # ``getToggleAction`` for that domain, then ``callService`` with the whole
+    # list; get_toggle_action.ts:16-72).  When every entity shares the first
+    # entity's domain, each one receives its own domain's service and is
+    # classified by that domain.  A group entity is passed to ``group.<toggle
+    # action>``, whose effect on the group's runtime members is not
+    # established at plan time.  When any domain differs, the later entities
+    # receive a service of another domain (owner rulings 2026-11-10):
+    #
+    # * If the list names a domain this module classifies, or holds an entry
+    #   with no domain (not a string, or no ``domain.`` prefix), the card is
+    #   one disclosed finding and requires manual review.  Each entry of a
+    #   high-consequence domain is also one ``high_consequence_action``
+    #   finding, so the count is never below the count before this rule.
+    #   That count is the high-consequence entities listed on the card, not
+    #   actions the card sends.
+    # * Otherwise (for example fan + input_boolean, sensor + binary_sensor)
+    #   the card stays unclassified, as a single-domain list of those domains
+    #   does: it is an ordinary control that sends the first entity's
+    #   service for the whole list.
     if value.get("type") == "toggle-group" and isinstance(value.get("entities"), list):
-        for index, entity in enumerate(value["entities"]):
-            domain = _entity_domain(entity)
-            if domain not in _ENTITY_ROW_CONTROL_DOMAINS:
-                continue
-            category = _domain_control_category(domain)
+        group_entities = value["entities"]
+        group_domains = [_entity_domain(entity) for entity in group_entities]
+        mixed = any(domain != group_domains[0] for domain in group_domains[1:])
+        if mixed and any(
+            domain is None or domain in _TOGGLE_GROUP_CLASSIFIED_DOMAINS
+            for domain in group_domains
+        ):
             add(
-                category,
-                (*tokens, "entities", str(index)),
-                domain,
-                _domain_reason(category, "toggle_group"),
+                RiskCategory.UNKNOWN,
+                (*tokens, "entities"),
+                group_domains[0],
+                _TOGGLE_GROUP_MIXED_REASON,
                 context_binding(
                     "f3-dashboard-default-control-semantic-binding-v1",
-                    shape="toggle_group",
-                    complete_control=value["entities"],
-                    control_entity=entity,
+                    shape="toggle_group_mixed_domains",
+                    complete_control=group_entities,
+                    control_entity=group_entities[0],
                 ),
             )
+            for index, (entity, domain) in enumerate(
+                zip(group_entities, group_domains)
+            ):
+                if domain in _HIGH_ENTITY_DOMAINS:
+                    add(
+                        RiskCategory.HIGH_CONSEQUENCE,
+                        (*tokens, "entities", str(index)),
+                        domain,
+                        _TOGGLE_GROUP_LISTED_HIGH_REASON,
+                        context_binding(
+                            "f3-dashboard-default-control-semantic-binding-v1",
+                            shape="toggle_group_mixed_domains_listed_entity",
+                            complete_control=group_entities,
+                            control_entity=entity,
+                        ),
+                    )
+        elif not mixed:
+            for index, (entity, domain) in enumerate(
+                zip(group_entities, group_domains)
+            ):
+                if domain == _GROUP_DOMAIN:
+                    category = RiskCategory.UNKNOWN
+                    reason = _GROUP_CONTROL_REASON
+                elif domain in _ENTITY_ROW_CONTROL_DOMAINS:
+                    category = _domain_control_category(domain)
+                    reason = _domain_reason(category, "toggle_group")
+                else:
+                    continue
+                add(
+                    category,
+                    (*tokens, "entities", str(index)),
+                    domain,
+                    reason,
+                    context_binding(
+                        "f3-dashboard-default-control-semantic-binding-v1",
+                        shape="toggle_group",
+                        complete_control=group_entities,
+                        control_entity=entity,
+                    ),
+                )
 
     # Area-controls feature: toggles whole domains of the area; with falsy
     # ``controls`` it shows every default domain, cover classes included
@@ -767,9 +1115,95 @@ def _service_control_action(value: dict[str, Any]) -> tuple[str, dict[str, Any]]
     return key, action
 
 
+def _strategy_findings(configuration: dict[str, Any]) -> list[RiskFinding]:
+    """Disclose dashboard, view and section strategies (HAMCP-345).
+
+    strategies/get-strategy.ts:319-374 replaces a dashboard, view or
+    section carrying a ``strategy`` key (data/lovelace/config/types.ts:28-32,
+    view.ts:94-98, section.ts:57-61) with ``{...base, ...generated}``, where
+    ``generated`` comes from ``strategy.generate(config, hass)`` in the
+    browser (lines 156-199).  Built-in strategies other than ``iframe`` and
+    ``map`` read the live registries and states, and ``custom:`` strategies
+    run custom code, so the controls they render cannot be analyzed here.
+    The ``iframe`` and ``map`` view strategies generate one iframe or map
+    card from the configuration alone (iframe-view-strategy.ts:17-30,
+    map-view-strategy.ts:16-31; their dashboard strategies generate a view
+    with that strategy), and neither card renders a control.  Base keys
+    that survive the merge are scanned like any other configuration.
+    """
+
+    findings: list[RiskFinding] = []
+
+    def disclose(container: Any, tokens: tuple[str, ...], level: str) -> None:
+        if not isinstance(container, dict) or "strategy" not in container:
+            return
+        strategy = container["strategy"]
+        # A non-string ``type`` is never a built-in strategy and must not
+        # reach the set membership test (unhashable values raise).
+        if (
+            isinstance(strategy, dict)
+            and isinstance(strategy.get("type"), str)
+            and strategy["type"] in _NO_CONTROL_STRATEGY_TYPES
+        ):
+            return
+        findings.append(
+            RiskFinding(
+                RiskCategory.UNKNOWN,
+                _pointer((*tokens, "strategy")),
+                None,
+                None,
+                None,
+                False,
+                engineering_sha256(
+                    {
+                        "model": "f3-dashboard-strategy-semantic-binding-v1",
+                        "data_role": "untrusted_data",
+                        "level": level,
+                        "strategy": strategy,
+                    }
+                ),
+                False,
+                _STRATEGY_REASON,
+            )
+        )
+
+    disclose(configuration, (), "dashboard")
+    views = configuration.get("views")
+    if not isinstance(views, list):
+        return findings
+    sections: list[tuple[Any, tuple[str, ...]]] = []
+    for view_index, view in enumerate(views):
+        view_tokens = ("views", str(view_index))
+        disclose(view, view_tokens, "view")
+        if isinstance(view, dict) and isinstance(view.get("sections"), list):
+            sections.extend(
+                (section, (*view_tokens, "sections", str(index)))
+                for index, section in enumerate(view["sections"])
+            )
+    # Sections nest through their own ``sections`` key
+    # (expandLovelaceSectionStrategies); the JSON depth bound applies.
+    while sections:
+        section, section_tokens = sections.pop()
+        if len(section_tokens) > MAX_JSON_DEPTH:
+            raise RiskAnalysisError(
+                "Dashboard risk traversal exceeds its reviewed bound",
+                constraint="risk_traversal_depth",
+                stage=_RISK_STAGE,
+                limit=MAX_JSON_DEPTH,
+                card_path=_card_path(configuration, section_tokens),
+            )
+        disclose(section, section_tokens, "section")
+        if isinstance(section, dict) and isinstance(section.get("sections"), list):
+            sections.extend(
+                (child, (*section_tokens, "sections", str(index)))
+                for index, child in enumerate(section["sections"])
+            )
+    return findings
+
+
 def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
     validate_json_value(configuration)
-    findings: list[RiskFinding] = []
+    findings: list[RiskFinding] = _strategy_findings(configuration)
     stack: list[
         tuple[
             Any,
@@ -894,6 +1328,7 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
             conditional=conditional,
             custom_card_configuration=custom_configuration,
             conditional_configuration=conditional_configuration,
+            classified_locations=classified_rows,
         )
         findings.extend(row_findings)
         classified_rows.update(row_tokens)
