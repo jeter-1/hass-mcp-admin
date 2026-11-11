@@ -38,7 +38,7 @@ from core_release_evidence import groups, passing_subset  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
-    ALLOWLIST, SERVICES, DeviceConfigurationRefusal, digest, service_call)
+    ALLOWLIST, SERVICES, DeviceConfigurationRefusal, digest, identity, service_call)
 from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway  # noqa: E402
 from ha_mcp_engineering.device_configuration.service import (  # noqa: E402
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
@@ -1984,6 +1984,109 @@ class ProductThroughGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.ws.sends, self.ha.writes), ([], []))
         self.assertFalse(any(item["type"] == "call_service" for item in self.ha.commands[commands:]))
         self.assertEqual(self.ha.entities[self.OTHER]["state"], "off")
+
+
+class CompositeObservation(ProductThroughGuards):
+    """The lane reads the runtime's own composite observation; it does not restate it."""
+
+    async def test_composite_is_the_observation_the_undo_fingerprint_is_made_of(self):
+        for entity_id, value in ((acceptance.SELECT, "on"), (acceptance.SWITCH, "on"), (acceptance.NUMBER, "3")):
+            with self.subTest(entity_id=entity_id):
+                receipt = await self.control(acceptance.device_request(entity_id, value))
+                self.assertEqual(receipt["status"], "succeeded_verified", receipt)
+                mark, sends, commands = len(self.journal), len(self.ws.sends), len(self.ha.commands)
+                observed = await acceptance.composite(self.service, entity_id)
+                sidecar = self.service._load_verified(receipt["task_id"])
+                self.assertEqual(digest(observed), sidecar["post_fingerprint"])
+                self.assertEqual(digest(observed), receipt["verification"]["resulting_state_fingerprint"])
+                self.assertEqual(identity(observed), sidecar["identity"])
+                # One registry read, then one state read, through the closed lists; nothing sent.
+                self.assertEqual(self.journal[mark:], [("registry", entity_id), ("state", entity_id)])
+                self.assertEqual(len(self.ws.sends), sends)
+                self.assertFalse(any(item["type"] == "call_service" for item in self.ha.commands[commands:]))
+                # The authority window is taken and given back.
+                self.assertEqual((self.core.leases, self.core.commits), (set(), set()))
+        self.assertEqual((self.ws.refused, self.rest.refused), ([], []))
+
+    async def test_composite_keeps_the_runtime_refusals(self):
+        with self.assertRaises(DeviceConfigurationRefusal) as caught:
+            await acceptance.composite(self.service, self.OUTSIDE)
+        self.assertEqual(caught.exception.details["category"], "device_configuration_target_kind_not_admitted")
+        self.core.signed = False
+        commands = len(self.ha.commands)
+        with self.assertRaises(DeviceConfigurationRefusal) as caught:
+            await acceptance.composite(self.service, acceptance.SELECT)
+        self.assertEqual(caught.exception.details["category"], "device_configuration_core_authority_unavailable")
+        self.assertEqual(self.ha.commands[commands:], [])
+        self.assertEqual((self.ws.sends, self.ha.writes), ([], []))
+
+    async def test_delta_names_exactly_the_fields_that_move_the_fingerprint(self):
+        first = await acceptance.composite(self.service, acceptance.SELECT)
+        same = acceptance.observation_delta(first, await acceptance.composite(self.service, acceptance.SELECT))
+        self.assertEqual((same["fingerprint_changed"], same["changed_fields"], same["identity_restored"]),
+                         (False, [], True))
+        self.assertEqual(same["fingerprint_before"], same["fingerprint_after"])
+        self.assertEqual(same["fingerprint_before"], digest(first))
+        self.assertTrue(all(not item["changed"] and item["before"] == item["after"]
+                            for item in same["fields"].values()))
+
+        # A restored registry id: only what Core rewrote moves.
+        entity = self.ha.entities[acceptance.SELECT]
+        entity["registry"]["modified_at"] += 60
+        self.ha.touch(acceptance.SELECT)
+        second = await acceptance.composite(self.service, acceptance.SELECT)
+        restored = acceptance.observation_delta(first, second)
+        self.assertTrue(restored["fingerprint_changed"])
+        self.assertEqual(restored["fingerprint_after"], digest(second))
+        self.assertTrue(restored["identity_restored"])
+        self.assertEqual(restored["changed_fields"],
+                         ["context_id", "last_changed", "last_updated", "registry.modified_at"])
+        self.assertEqual(restored["fields"]["registry.modified_at"],
+                         {"before": first["registry"]["modified_at"],
+                          "after": first["registry"]["modified_at"] + 60, "changed": True})
+        self.assertFalse(restored["fields"]["registry.id"]["changed"])
+
+        # A new registry id is an identity change, and is named as a changed field.
+        entity["registry"]["id"] = "reg-replacement"
+        replaced = acceptance.observation_delta(second, await acceptance.composite(self.service, acceptance.SELECT))
+        self.assertFalse(replaced["identity_restored"])
+        self.assertEqual(replaced["changed_fields"], ["registry.id"])
+
+
+class FieldChanges(unittest.TestCase):
+    def test_every_leaf_is_listed_and_change_is_type_exact(self):
+        found = acceptance.field_changes(
+            {"a": {"b": 1, "c": [1, 2]}, "d": None, "e": 1, "gone": "x", "empty": {}},
+            {"a": {"b": 1, "c": [2, 1]}, "d": None, "e": 1.5, "new": "y", "empty": {}})
+        self.assertEqual(sorted(found), ["a.b", "a.c", "d", "e", "empty", "gone", "new"])
+        self.assertEqual(found["a.b"], {"before": 1, "after": 1, "changed": False})
+        self.assertEqual(found["d"], {"before": None, "after": None, "changed": False})
+        self.assertEqual(found["e"], {"before": 1, "after": 1.5, "changed": True})
+        self.assertEqual(found["a.c"], {"before": {"sha256": digest([1, 2])},
+                                        "after": {"sha256": digest([2, 1])}, "changed": True})
+        self.assertEqual(found["gone"], {"before": "x", "after": {"absent": True}, "changed": True})
+        self.assertEqual(found["new"], {"before": {"absent": True}, "after": "y", "changed": True})
+        self.assertFalse(found["empty"]["changed"])
+        # An absent field is not the same as a present null.
+        self.assertTrue(acceptance.field_changes({"a": None}, {})["a"]["changed"])
+
+    def test_registry_level_lists_only_the_named_registry_facts(self):
+        before = {"entity_id": "select.x", "id": "one", "created_at": 1.0, "modified_at": 2.0,
+                  "device_id": "dev", "unique_id": "u", "platform": "matter", "config_entry_id": "entry",
+                  "name": "never recorded"}
+        found = acceptance.registry_level(before, {**before, "modified_at": 3.0, "name": "other"})
+        self.assertEqual(tuple(sorted(found)), tuple(sorted(acceptance.REGISTRY_LEVEL)))
+        self.assertEqual([name for name, item in found.items() if item["changed"]], ["modified_at"])
+        self.assertEqual(found["id"], {"before": "one", "after": "one", "changed": False})
+
+    def test_reregistration_paths_are_inside_the_closed_lists(self):
+        """The observation uses no command or route the lane did not already allow."""
+        self.assertEqual(acceptance.REREGISTRATION_PATH,
+                         ("websocket config/entity_registry/remove",
+                          "POST /api/config/config_entries/entry/{entry_id}/reload"))
+        self.assertEqual(acceptance.RELOAD_ONLY_PATH, acceptance.REREGISTRATION_PATH[1:])
+        removes = [shape for shape in acceptance.RAW_COMMANDS if shape["type"] == "config/entity_registry/remove"]
+        self.assertEqual(removes, [{"type": "config/entity_registry/remove", "entity_id": acceptance.SELECT}])
 
 
 class StubEntry(unittest.IsolatedAsyncioTestCase):

@@ -25,6 +25,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import aiohttp
@@ -39,11 +40,12 @@ from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWeb
 from ha_mcp_engineering.clients.paths import Route, rest_path
 from ha_mcp_engineering.clients.rest import ExpectedHttpStatus
 from ha_mcp_engineering.device_configuration.contracts import (
-    ALLOWLIST, DeviceConfigurationRefusal, DeviceConfigurationRequest, digest)
+    ALLOWLIST, DeviceConfigurationRefusal, DeviceConfigurationRequest, digest, identity)
 from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway
 from ha_mcp_engineering.device_configuration.service import (
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
 from ha_mcp_engineering.errors import HomeAssistantApiError
+from ha_mcp_engineering.f3.contracts import OperationTarget
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_DEVICE_CONFIGURATION_PROFILES
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
@@ -111,6 +113,14 @@ FIXTURE_CASES = (
     ("converter_number", "number", "device_configuration_target_kind_not_admitted"),
 )
 HELD_STATUSES = ("changed_unverified", "verification_failed")
+# Registry-level facts recorded beside the fingerprint fields, read from Core's
+# own registry answer (not from the runtime projection).
+REGISTRY_LEVEL = ("entity_id", "id", "created_at", "modified_at", "device_id", "unique_id",
+                  "platform", "config_entry_id")
+# The re-registration path the lane takes. The Matter config entry is kept.
+REREGISTRATION_PATH = ("websocket config/entity_registry/remove",
+                       "POST /api/config/config_entries/entry/{entry_id}/reload")
+RELOAD_ONLY_PATH = REREGISTRATION_PATH[1:]
 EVIDENCE_WAIT_SECONDS = 260
 
 
@@ -477,6 +487,71 @@ def evidence(receipt):
     return value
 
 
+async def composite(service, entity_id):
+    """The runtime's own composite observation of one entity, in its own authority window.
+
+    ``DeviceConfigurationAdapter._read`` under ``DeviceConfigurationCoreAuthority.read``:
+    the call preparation, the locked preflight, ``once()`` and the readback make.
+    Its ``digest`` is the state fingerprint an undo compares with the recorded
+    post-change fingerprint. Nothing here restates the projection.
+    """
+    adapter = service.adapter.inner
+    window = SimpleNamespace(target=OperationTarget(entity_id.split(".", 1)[0], entity_id),
+                             provider_contract=None, core_binding=None)
+    _telemetry, token = begin_request("hamcp366-disposable-lane")
+    try:
+        observed, _display = await adapter.core.read(
+            lambda check: adapter._read(entity_id, check), window)
+    finally:
+        end_request(token)
+    return observed
+
+
+def field_changes(before, after):
+    """Every leaf field of two observations: before, after, changed.
+
+    A scalar is recorded as observed (disposable values only); a list is
+    recorded by the runtime digest of its value. ``changed`` is decided by that
+    digest, so it means exactly "this field moves the fingerprint".
+    """
+    def leaves(value, prefix):
+        if type(value) is dict and value:
+            for key in sorted(value):
+                yield from leaves(value[key], prefix + (key,))
+        else:
+            yield ".".join(prefix), value
+
+    def shown(found, name):
+        if name not in found:
+            return {"absent": True}
+        value = found[name]
+        return {"sha256": digest(value)} if type(value) in (list, dict) else value
+
+    old, new = dict(leaves(before, ())), dict(leaves(after, ()))
+    return {name: {"before": shown(old, name), "after": shown(new, name),
+                   "changed": (name in old) != (name in new)
+                   or (name in old and digest(old[name]) != digest(new[name]))}
+            for name in sorted(set(old) | set(new))}
+
+
+def observation_delta(before, after):
+    """What happened to the runtime's composite observation between two reads."""
+    fields = field_changes(before, after)
+    return {
+        "fingerprint_before": digest(before), "fingerprint_after": digest(after),
+        "fingerprint_changed": digest(before) != digest(after),
+        "identity_restored": identity(before) == identity(after),
+        "changed_fields": [name for name, item in fields.items() if item["changed"]],
+        "fields": fields,
+    }
+
+
+def registry_level(before, after):
+    """The REGISTRY_LEVEL facts of two raw registry answers: before, after, changed."""
+    return field_changes({key: before.get(key) for key in REGISTRY_LEVEL},
+                         {key: after.get(key) for key in REGISTRY_LEVEL})
+
+
 @diagnostics.checked("helper_setup", "helper_contract")
 async def run(configured, entry, directory, *, stub_url, stub_hashes):
     """Run only device_configuration_entity; caller owns startup, identity and teardown proof."""
@@ -656,6 +731,11 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
 
     async def others(entity_id, current, pool):
         return [item for item in pool if not same_state(entity_id, current, item)]
+
+    async def snapshot(service):
+        """Core's registry answer and the runtime's composite observation, per admitted entity."""
+        return {entity_id: (await registry_entry(entity_id), await composite(service, entity_id))
+                for entity_id in (SELECT, SWITCH, NUMBER)}
 
     try:
         # --- Stub identity and lane setup (fixture setup, never the product path) ---
@@ -881,6 +961,7 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
             forward = await verified(service, SELECT, target, SELECT_NODE, SELECT_PATH,
                                      "select_before_reregistration")
             registered = await registry_entry(SELECT)
+            first = await snapshot(service)
 
             async def reregister():
                 reply = await raw.command({"type": "config/entity_registry/remove", "entity_id": SELECT})
@@ -896,6 +977,8 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
             await stale(device_request(SELECT, third), SELECT, 3, reregister, "failed_pre_dispatch",
                         "device_configuration_state_changed", "reregistration_before_once")
             again = await registry_entry(SELECT)
+            second = await snapshot(service)
+            kept = await matter_entry()
             assert again["unique_id"] == registered["unique_id"]
             identity_changed = (again["id"], again["created_at"]) != (registered["id"], registered["created_at"])
             assert again["modified_at"] != registered["modified_at"] or identity_changed
@@ -911,6 +994,27 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
                 "created_at_changed": again["created_at"] != registered["created_at"],
                 "modified_at_changed": again["modified_at"] != registered["modified_at"],
                 "undo_refusal": code}
+
+            # Observation only (no assertion on its content): what the remove and
+            # same-unique_id re-registration did to the runtime's own composite
+            # observation, per field, with Core's registry-level facts beside it.
+            # The two entities that were only reloaded are a second path.
+            def table(entity_id):
+                return {"registry_level": registry_level(first[entity_id][0], second[entity_id][0]),
+                        **observation_delta(first[entity_id][1], second[entity_id][1])}
+
+            recorded = record["operations"]["select_before_reregistration"]["verification"]
+            record["observations"]["reregistration_fingerprint"] = {
+                "matter_config_entry_kept": (kept["entry_id"], kept["state"]) == (matter["entry_id"], "loaded"),
+                "remove_then_reload": {
+                    "path": list(REREGISTRATION_PATH), "when": "between_locked_preflight_and_once",
+                    "targets": {SELECT: {
+                        **table(SELECT), "undo_refusal": code,
+                        "before_is_recorded_post_fingerprint":
+                            digest(first[SELECT][1]) == recorded["resulting_state_fingerprint"]}}},
+                "reload_only": {
+                    "path": list(RELOAD_ONLY_PATH),
+                    "targets": {entity_id: table(entity_id) for entity_id in (SWITCH, NUMBER)}}}
 
         # C1: control_power holds the switch; the device-configuration change
         # does not send while it does.
