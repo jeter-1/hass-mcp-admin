@@ -103,7 +103,7 @@ class Beta29ReleaseBoundaryTests(unittest.TestCase):
             EXACT_CONTRACTS["8.1.1"].compatibility_entry,
             "ha-mcp-v8.1.1-e1d76a6e",
         )
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 60)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 61)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         dashboard = {
             item["tool"]: item for item in BETA_NATIVE_CAPABILITIES
         }["create_dashboard_update_plan"]

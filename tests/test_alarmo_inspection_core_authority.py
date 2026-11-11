@@ -136,7 +136,7 @@ class CoreAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p.to_mapping() for p in CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES
                           if p.capability_id != "core.typed_helper_value_operation"], retained["old_core_profiles"])
         self.assertEqual(CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint, retained["old_probe_fingerprint"])
-        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 37)  # HAMCP-165 label + HAMCP-155 delete + HAMCP-232/145 November batch (+3) + HAMCP-106 dashboard metadata + HAMCP-071 scene configuration + HAMCP-311 helper value + HAMCP-290 marketplace read + HAMCP-134 security metadata read: runtime-only profiles; HAMCP-297: + device configuration; HAMCP-329/298 + 2 created-object
+        self.assertEqual(len(CORE_RUNTIME_CAPABILITY_PROFILES), 38)  # HAMCP-165 label + HAMCP-155 delete + HAMCP-232/145 November batch (+3) + HAMCP-106 dashboard metadata + HAMCP-071 scene configuration + HAMCP-311 helper value + HAMCP-290 marketplace read + HAMCP-134 security metadata read: runtime-only profiles; HAMCP-297: + device configuration; HAMCP-329/298 + 2 created-object; HAMCP-231: + thread/matter topology
         self.assertNotIn(c.CORE_CAPABILITY, {name for s in compiled_exact_authority("2026.9.1") for name in s.capability_ids})
         profile = CORE_INTEGRATION_INSPECTION_PROFILES[0]
         self.assertTrue(profile.capability_class.semantic)
