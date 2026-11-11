@@ -64,6 +64,19 @@ class Contracts(unittest.TestCase):
         with patch("core_release_evidence.read_json", return_value=duplicated):
             with self.assertRaisesRegex(ValueError, "invalid evidence groups"):
                 groups()
+        # Any other number of general references is refused. Each mapping
+        # below is otherwise valid: every reference still in exactly one group.
+        extra = "core.synthetic_general_extra"
+        self.assertNotIn(extra, flat)
+        for general in (value["general"][:-1], [*value["general"], extra]):
+            with self.subTest(general_count=len(general)):
+                miscounted = {**value, "general": general}
+                refs = [ref for group in miscounted.values() for ref in group]
+                self.assertEqual(len(refs), len(set(refs)))
+                self.assertIn(len(general), (18, 20))
+                with patch("core_release_evidence.read_json", return_value=miscounted):
+                    with self.assertRaisesRegex(ValueError, "invalid evidence groups"):
+                        groups()
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())

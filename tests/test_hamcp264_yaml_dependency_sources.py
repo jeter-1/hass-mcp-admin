@@ -629,19 +629,30 @@ class BoundTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.script_ids), 200)
         for row in (result.template_coverage, result.script_coverage):
             self.assertNotIn(warning, row.warnings)
-        # One past the bound: packages are taken in name order, so the last is left out.
-        _, result = await self.collect({"homeassistant.packages": packages(201)})
-        self.assertEqual(result.profile["inline_packages"], 200)
-        self.assertEqual(len(result.script_ids), 200)
-        self.assertIn("synthetic_pkg_script_199", result.script_ids)
-        self.assertNotIn("synthetic_pkg_script_200", result.script_ids)
-        targets = {item.target_entity_id for item in result.findings}
-        self.assertEqual(len(targets), 200)
-        self.assertIn("light.synthetic_pkg_199", targets)
-        self.assertNotIn("light.synthetic_pkg_200", targets)
-        for row in (result.template_coverage, result.script_coverage):
-            self.assertEqual(row.completeness, "partial")
-            self.assertIn(warning, row.warnings)
+        # One past the bound: packages are taken in name order, whatever order
+        # the mapping holds them in, so the last name is the one left out.
+        ascending = packages(201)
+        descending = dict(reversed(list(ascending.items())))
+        # The premise: the mapping reaches the collector in the order it was built.
+        self.assertEqual(list(ys.withhold_references(descending, Counter()))[:2],
+                         ["synthetic_pkg_200", "synthetic_pkg_199"])
+        for order, mapping in (("ascending", ascending), ("descending", descending)):
+            with self.subTest(insertion_order=order):
+                reader, result = await self.collect({"homeassistant.packages": mapping})
+                self.assertEqual(list(reader.documents["homeassistant.packages"]), list(mapping))
+                self.assertEqual(result.profile["inline_packages"], 200)
+                self.assertEqual(len(result.script_ids), 200)
+                self.assertIn("synthetic_pkg_script_000", result.script_ids)
+                self.assertIn("synthetic_pkg_script_199", result.script_ids)
+                self.assertNotIn("synthetic_pkg_script_200", result.script_ids)
+                targets = {item.target_entity_id for item in result.findings}
+                self.assertEqual(len(targets), 200)
+                self.assertIn("light.synthetic_pkg_000", targets)
+                self.assertIn("light.synthetic_pkg_199", targets)
+                self.assertNotIn("light.synthetic_pkg_200", targets)
+                for row in (result.template_coverage, result.script_coverage):
+                    self.assertEqual(row.completeness, "partial")
+                    self.assertIn(warning, row.warnings)
 
     async def test_includes_and_non_inline_packages_are_partial_never_absent(self):
         _, result = await self.collect({"template": "!include templates.yaml",
