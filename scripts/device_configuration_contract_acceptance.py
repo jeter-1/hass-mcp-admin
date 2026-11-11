@@ -769,7 +769,13 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
                 value = "21"
             await zero_dispatch_refusal(service, device_request(entity_id, value), code, "fixture_" + case)
             observed = await state(entity_id)
-            if observed is not None:
+            if case == "disabled_switch":
+                assert observed is None  # a disabled entity has no state at all
+            elif case == "unavailable_select":
+                # Core publishes no extra attributes for an unavailable entity
+                # (helpers/entity.py, the available branch), so there is no counter to read.
+                assert observed["state"] == "unavailable" and "service_calls" not in observed["attributes"]
+            else:
                 assert observed["attributes"]["service_calls"] == 0
         # Every other matter select, switch or number the dumps create that the
         # registry facts place outside the allowlist is refused the same way.

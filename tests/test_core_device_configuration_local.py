@@ -50,6 +50,9 @@ STUB_HASHES = {"stub_sha256": "1" * 64, "entry_sha256": "2" * 64,
                "dump_hashes": {"synthetic.json": "3" * 64},
                "refusal_fixture_sha256": {"manifest.json": "4" * 64}}
 RECEIPT_STUB = {key: STUB_HASHES[key] for key in ("stub_sha256", "entry_sha256", "dump_hashes")}
+# Synthetic lane network facts (never a real network).
+LANE_SUBNET = {"Subnet": "172.30.5.0/24", "Gateway": "172.30.5.1"}
+STUB_ADDRESS = "172.30.5.3"
 
 
 def settings(ha_url=acceptance.CORE_URL, upstream=acceptance.UPSTREAM_URL, token=TOKEN):
@@ -491,8 +494,11 @@ class StubContainer(unittest.TestCase):
 class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
                  admission_error=None, memory_args=(), network_override=None, ports_override=None,
-                 outcome=None, profile_error=False, assets_error=None, refusal=None):
+                 outcome=None, profile_error=False, assets_error=None, refusal=None,
+                 stub_networks=None, ipam=None):
         calls, resources = [], {}
+        lane_network = {"Driver": "bridge", "Internal": False,
+                        "IPAM": {"Config": [dict(LANE_SUBNET)] if ipam is None else ipam}}
         good_ports = {lane.CORE: {"8123/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18297"}]},
                       lane.STUB: {"5580/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18299"}]}}
 
@@ -518,11 +524,14 @@ class Orchestration(unittest.TestCase):
             if name not in resources:
                 return None
             if kind == "network":
-                return network_override if network_override is not None else {"Driver": "bridge", "Internal": False}
+                return network_override if network_override is not None else lane_network
             ports = dict(good_ports[name])
             if ports_override is not None and name == ports_override[0]:
                 ports = ports_override[1]
-            return {"NetworkSettings": {"Networks": {lane.NETWORK: {}}, "Ports": ports}}
+            networks = {lane.NETWORK: {"IPAddress": STUB_ADDRESS if name == lane.STUB else "172.30.5.2"}}
+            if stub_networks is not None and name == lane.STUB:
+                networks = stub_networks
+            return {"NetworkSettings": {"Networks": networks, "Ports": ports}}
 
         def remove(args, *_):
             if cleanup_error:
@@ -564,7 +573,8 @@ class Orchestration(unittest.TestCase):
                     exercise.assert_not_called()
                     return calls, inputs, assets
                 code = lane.main(argv)
-                if network_override is not None or ports_override is not None:
+                if network_override is not None or ports_override is not None or stub_networks is not None \
+                        or ipam is not None:
                     exercise.assert_not_called()  # before onboarding, auth or any readiness check
                 result = json.loads((out / "device_configuration_entity.json").read_text())
                 self.assertEqual(sorted(path.name for path in out.iterdir() if path.suffix == ".json"),
@@ -611,12 +621,62 @@ class Orchestration(unittest.TestCase):
                          {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress_allowed": True})
         self.assertEqual(result["container_memory"], {"core": "2g", "upstream": "768m", "stub": "256m", "fixture": "128m"})
         started = [call[call.index("--name") + 1] for call in calls if call[:2] == ("docker", "run")]
-        self.assertEqual(started, [lane.CORE, lane.STUB])
+        self.assertEqual(started, [lane.STUB, lane.CORE])  # the stub's address is known before Core starts
         removed = [call[-1] for call in calls if call[:2] == ("docker", "rm")]
         self.assertEqual(sorted(removed), sorted([lane.CORE, lane.STUB]))
         core = next(call for call in calls if call[:2] == ("docker", "run") and lane.CORE in call)
         self.assertIn("127.0.0.1:18297:8123", core)
-        self.assertNotIn(lane.STUB_ALIAS, core)
+        # Core reaches the stub by one hosts entry: the stub name at the inspected lane address.
+        hosts = [core[i + 1] for i, item in enumerate(core) if item == "--add-host"]
+        self.assertEqual(hosts, [lane.STUB_ALIAS + ":" + STUB_ADDRESS])
+        self.assertEqual(result["stub_host_entry"], {"name": lane.STUB_ALIAS, "address": STUB_ADDRESS})
+        self.assertEqual(lane.STUB_ALIAS, acceptance.MATTER_URL.split("//")[1].split(":")[0])
+        for forbidden in ("--privileged", "--net", "--volume", "-v", "-p", "-P", "--publish-all", "--env", "-e",
+                          "--cap-add", "--pid", "--network-alias", "--dns"):
+            self.assertNotIn(forbidden, core)
+
+    def test_stub_address_outside_the_lane_network_never_starts_core(self):
+        cases = [{"stub_networks": networks} for networks in (
+            {}, {lane.NETWORK: {}}, {lane.NETWORK: {"IPAddress": ""}}, {lane.NETWORK: {"IPAddress": None}},
+            {lane.NETWORK: {"IPAddress": 2887648515}}, {lane.NETWORK: {"IPAddress": "172.31.0.3"}},
+            {lane.NETWORK: {"IPAddress": "172.30.5.0"}}, {lane.NETWORK: {"IPAddress": "172.30.5.255"}},
+            {lane.NETWORK: {"IPAddress": "172.30.5.1"}}, {lane.NETWORK: {"IPAddress": "172.30.5.03"}},
+            {lane.NETWORK: {"IPAddress": "172.30.5.3 "}}, {lane.NETWORK: {"IPAddress": "192.0.2.7"}},
+            {lane.NETWORK: {"IPAddress": "127.0.0.1"}}, {lane.NETWORK: {"IPAddress": "fd00::3"}},
+            {lane.NETWORK: {"IPAddress": "example.invalid"}},
+            {"unowned": {"IPAddress": STUB_ADDRESS}},
+            {lane.NETWORK: {"IPAddress": STUB_ADDRESS}, "bridge": {"IPAddress": "172.17.0.2"}})]
+        cases += [{"ipam": ipam} for ipam in (
+            [], [{}], [{"Subnet": None}], [{"Subnet": "not-a-subnet"}], [{"Subnet": "172.31.0.0/24"}],
+            [{"Subnet": "192.0.2.0/24"}], [{"Subnet": "fd00::/64"}], ["172.30.5.0/24"],
+            [dict(LANE_SUBNET), {"Subnet": "172.31.0.0/24"}],
+            [{"Subnet": "172.30.5.0/24", "Gateway": STUB_ADDRESS}])]
+        for case in cases:
+            with self.subTest(case=case):
+                code, result, calls = self.run_lane(**case)
+                self.assertEqual(code, 1)
+                self.assertEqual(result["result"], "WITHHELD")
+                self.assertEqual(result["failure_type"], "Refusal")
+                self.assertEqual((result["failure"]["stage"], result["failure"]["check"]),
+                                 ("container_start", "port_mapping"))
+                self.assertTrue(result["cleanup"]["clean"])
+                self.assertNotIn("stub_host_entry", result)
+                started = [call[call.index("--name") + 1] for call in calls if call[:2] == ("docker", "run")]
+                self.assertEqual(started, [lane.STUB])
+                self.assertFalse(any("--add-host" in call for call in calls))
+
+    def test_stub_address_refusal_reason_is_fixed(self):
+        network = {"IPAM": {"Config": [dict(LANE_SUBNET)]}}
+        good = {"NetworkSettings": {"Networks": {lane.NETWORK: {"IPAddress": STUB_ADDRESS}}}}
+        with patch.object(lane, "inspect_owned", return_value=good) as inspect:
+            self.assertEqual(lane.stub_address("run", network), STUB_ADDRESS)
+            inspect.assert_called_once_with("container", lane.STUB, "run")
+        for data, facts in ((None, network), (good, None), (good, {}), (good, {"IPAM": None}),
+                            ({"NetworkSettings": {"Networks": {lane.NETWORK: {"IPAddress": "192.0.2.7"}}}}, network)):
+            with self.subTest(data=data, facts=facts), patch.object(lane, "inspect_owned", return_value=data):
+                with self.assertRaises(lane.Refusal) as caught:
+                    lane.stub_address("run", facts)
+                self.assertEqual(caught.exception.args, ("stub_address_not_on_lane_network",))
 
     def test_admission_timeout_creates_refusal_receipt_without_containers(self):
         self.run_lane(admission_error=lane.resources.Refusal("host_admission_timeout"))
@@ -680,8 +740,8 @@ class Orchestration(unittest.TestCase):
                     self.assertEqual((result["failure"]["stage"], result["failure"]["check"]),
                                      ("container_start", "port_mapping"))
                     self.assertTrue(result["cleanup"]["clean"])
-                    if name == lane.CORE:  # the stub never starts beside an unsafe Core
-                        self.assertFalse(any(call[:2] == ("docker", "run") and lane.STUB in call for call in calls))
+                    if name == lane.STUB:  # Core never starts beside an unsafe stub
+                        self.assertFalse(any(call[:2] == ("docker", "run") and lane.CORE in call for call in calls))
 
     def test_wrong_network_posture_refuses_before_readiness(self):
         for network in ({"Driver": "bridge", "Internal": True}, {"Driver": "host", "Internal": False}, {}):

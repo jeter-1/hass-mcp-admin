@@ -17,6 +17,7 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -201,6 +202,32 @@ def start_stub(core_image, run_id, memory, output, dumps):
             "--entrypoint", "python3", core_image, "-I", "/wrapper/stub_entry.py",
             "--stub", "/lane/stub.py", "--nodes", "/nodes", "--out", "/out/stub.jsonl",
             "--port", str(STUB_CONTAINER_PORT))
+
+
+@diagnostics.checked("container_start", "port_mapping")
+def stub_address(run_id, network):
+    """The stub's one IPv4 address, which must lie inside the lane network's own subnet.
+
+    Observed on this lane's non-internal bridge: the running Core does not resolve
+    Docker's embedded-DNS names (resolver timeout; cause not established). The stub
+    name is therefore pinned for Core as a hosts entry. Only an address that the
+    lane's own dedicated network assigned to the lane's own stub may be pinned.
+    """
+    data = inspect_owned("container", STUB, run_id)
+    networks = ((data or {}).get("NetworkSettings") or {}).get("Networks") or {}
+    value = (networks.get(NETWORK) or {}).get("IPAddress") if set(networks) == {NETWORK} else None
+    ranges = ((network or {}).get("IPAM") or {}).get("Config") or []
+    try:
+        if type(value) is not str or len(ranges) != 1 or type(ranges[0].get("Subnet")) is not str:
+            raise ValueError
+        address, subnet = ipaddress.IPv4Address(value), ipaddress.IPv4Network(ranges[0]["Subnet"])
+    except (ValueError, AttributeError):
+        raise Refusal("stub_address_not_on_lane_network") from None
+    if (str(address) != value or not subnet.is_private or address not in subnet
+            or address in (subnet.network_address, subnet.broadcast_address)
+            or value == ranges[0].get("Gateway")):
+        raise Refusal("stub_address_not_on_lane_network")
+    return value
 
 
 def images():
@@ -393,15 +420,19 @@ def _main(argv=None):
             network = inspect_owned("network", NETWORK, run_id)
             if network is None or network.get("Driver") != "bridge" or network.get("Internal") is not False:
                 raise Refusal("Local lane requires a dedicated non-internal bridge")
-        with diagnostics.check("container_start", "core_start"):
-            command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
-                    "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
-                    "--publish", f"127.0.0.1:{CORE_PORT}:8123", "--security-opt", "no-new-privileges",
-                    "--mount", f"type=bind,source={owned},target=/config", core_image)
-        verify_port_mapping(CORE, 8123, CORE_PORT, run_id)
+        # The stub starts first: Core is given the stub's lane address as a hosts entry.
         with diagnostics.check("container_start", "core_start"):
             start_stub(core_image, run_id, args.stub_memory, stub_output, stub_hashes["dump_hashes"])
         verify_port_mapping(STUB, STUB_CONTAINER_PORT, STUB_PORT, run_id)
+        address = stub_address(run_id, network)
+        result["stub_host_entry"] = {"name": STUB_ALIAS, "address": address}
+        with diagnostics.check("container_start", "core_start"):
+            command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
+                    "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
+                    "--add-host", f"{STUB_ALIAS}:{address}",
+                    "--publish", f"127.0.0.1:{CORE_PORT}:8123", "--security-opt", "no-new-privileges",
+                    "--mount", f"type=bind,source={owned},target=/config", core_image)
+        verify_port_mapping(CORE, 8123, CORE_PORT, run_id)
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id, limits,
