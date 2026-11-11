@@ -16,6 +16,7 @@ Every network client this module opens is closed by construction:
 """
 import asyncio
 import base64
+import contextvars
 import copy
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -35,12 +36,14 @@ from mcp.server.fastmcp import FastMCP
 from alarmo_inspection_contract_acceptance import close_disposable_authority
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
-from ha_mcp_engineering.clients.paths import Route
+from ha_mcp_engineering.clients.paths import Route, rest_path
+from ha_mcp_engineering.clients.rest import ExpectedHttpStatus
 from ha_mcp_engineering.device_configuration.contracts import (
     ALLOWLIST, DeviceConfigurationRefusal, DeviceConfigurationRequest, digest)
 from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway
 from ha_mcp_engineering.device_configuration.service import (
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
+from ha_mcp_engineering.errors import HomeAssistantApiError
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_DEVICE_CONFIGURATION_PROFILES
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
@@ -166,9 +169,10 @@ RAW_COMMANDS = (
      "options_domain": "number", "options": {"unit_of_measurement": "°F"}},
     {"type": "config/entity_registry/remove", "entity_id": SELECT},
 )
-# Everything the lane's own REST client sends: method, exact path shape, body.
+# Everything the lane's own raw REST session sends: config-entry flow start,
+# flow continue and entry reload, by method, exact path shape and body. A state
+# read is not on it; LaneState reads state on the bound runtime route.
 RAW_REST = (
-    {"method": "GET", "path": _pattern(r"/api/states/" + ENTITY_PATTERN), "body": None},
     {"method": "POST", "path": "/api/config/config_entries/flow",
      "body": {"handler": _one_of("matter", FIXTURE_DOMAIN)}},
     {"method": "POST", "path": _pattern(r"/api/config/config_entries/flow/[0-9A-Za-z]{26,32}"),
@@ -295,14 +299,44 @@ class RawCore:
                 return reply
 
 
+class LaneState:
+    """Lane-side independent state readback: GET one entity state, nothing else.
+
+    A separate guarded runtime client, never the one the gateway holds, so the
+    path is a bound runtime route (HAMCP-200) and no read is journalled as the
+    product's. Each read runs in an empty context: a read made by a hook inside
+    a product request is not timed, counted or authorized as that request's.
+    """
+
+    NOT_FOUND = frozenset({404})
+
+    def __init__(self, configured):
+        self.client = HomeAssistantRestClient(pinned(configured))
+
+    async def read(self, entity_id):
+        """The state object, or None when Core answers anything but 200."""
+        if not ENTITY(entity_id):
+            raise ValueError(CORE_REST_REFUSED)
+        call = self.client.request("GET", rest_path("/states/{}", entity_id, kinds=("entity_id",)),
+                                   expected_statuses=self.NOT_FOUND)
+        try:
+            value = await asyncio.get_running_loop().create_task(call, context=contextvars.Context())
+        except HomeAssistantApiError as exc:
+            status = (exc.details if isinstance(exc.details, dict) else {}).get("status")
+            if type(status) is not int:
+                raise
+            return None
+        return None if isinstance(value, ExpectedHttpStatus) else value
+
+
 class RawRest:
-    """Lane-side authenticated REST for setup and independent state readback."""
+    """Lane-side authenticated REST for setup: only the three RAW_REST config-entry routes."""
 
     def __init__(self, configured):
         pinned(configured)
         self.token = configured.ha_token
 
-    async def request(self, method, path, body=None, *, seconds=60):
+    async def rest(self, method, path, body=None, *, seconds=60):
         if not listed({"method": method, "path": path, "body": body}, RAW_REST):
             raise ValueError(CORE_REST_REFUSED)
         timeout = aiohttp.ClientTimeout(total=seconds)
@@ -451,7 +485,7 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
     stub = StubControl(stub_url)
     journal = []
     ws, rest = LaneWebSocket(configured, journal), LaneRest(configured, journal)
-    raw, http = RawCore(configured), RawRest(configured)
+    raw, http, reader = RawCore(configured), RawRest(configured), LaneState(configured)
 
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
@@ -525,8 +559,7 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
             end_request(token)
 
     async def state(entity_id):
-        status, value = await http.request("GET", "/api/states/" + entity_id)
-        return value if status == 200 else None
+        return await reader.read(entity_id)
 
     async def wait_state(entity_id, accept, seconds):
         deadline = time.monotonic() + seconds
@@ -631,13 +664,13 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
         assert observed_stub["entry_sha256"] == stub_hashes["entry_sha256"]
         assert observed_stub["dump_hashes"] == stub_hashes["dump_hashes"]
         assert observed_stub["writes"] == []
-        status, flow = await http.request("POST", "/api/config/config_entries/flow",
-                                          {"handler": FIXTURE_DOMAIN})
+        status, flow = await http.rest("POST", "/api/config/config_entries/flow",
+                                       {"handler": FIXTURE_DOMAIN})
         assert status == 200 and flow["type"] == "create_entry"
-        status, flow = await http.request("POST", "/api/config/config_entries/flow", {"handler": "matter"})
+        status, flow = await http.rest("POST", "/api/config/config_entries/flow", {"handler": "matter"})
         assert status == 200 and flow["type"] == "form" and flow["step_id"] == "manual"
-        status, flow = await http.request("POST", "/api/config/config_entries/flow/" + flow["flow_id"],
-                                          {"url": MATTER_URL})
+        status, flow = await http.rest("POST", "/api/config/config_entries/flow/" + flow["flow_id"],
+                                       {"url": MATTER_URL})
         assert status == 200 and flow["type"] == "create_entry"
 
         async def matter_entry():
@@ -852,7 +885,7 @@ async def run(configured, entry, directory, *, stub_url, stub_hashes):
             async def reregister():
                 reply = await raw.command({"type": "config/entity_registry/remove", "entity_id": SELECT})
                 assert reply["success"] and await registry_entry(SELECT) is None
-                status, _body = await http.request(
+                status, _body = await http.rest(
                     "POST", "/api/config/config_entries/entry/" + matter["entry_id"] + "/reload")
                 assert status == 200
                 await wait_loaded()

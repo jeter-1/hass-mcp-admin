@@ -10,6 +10,7 @@ import asyncio
 import errno
 import hashlib
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -41,6 +42,7 @@ from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
 from ha_mcp_engineering.device_configuration.gateway import DeviceConfigurationGateway  # noqa: E402
 from ha_mcp_engineering.device_configuration.service import (  # noqa: E402
     DeviceConfigurationCoreAuthority, DeviceConfigurationService)
+from ha_mcp_engineering.errors import HomeAssistantTimeoutError, HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import profiles as profiles_module  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 
@@ -1154,7 +1156,7 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
 
     def test_any_core_url_but_the_constant_is_refused_before_any_client(self):
         builders = (acceptance.pinned, acceptance.LaneWebSocket, acceptance.LaneRest, acceptance.RawCore,
-                    acceptance.RawRest)
+                    acceptance.RawRest, acceptance.LaneState)
         for url in url_cases(acceptance.CORE_URL):
             for build in builders:
                 with self.subTest(url=url, build=build.__name__), NoTransport() as transport:
@@ -1170,7 +1172,7 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         bad += [{**good, "websocket_url": url} for url in url_cases(acceptance.CORE_WS_URL)]
         for fields in bad:
             for build in (acceptance.pinned, acceptance.LaneWebSocket, acceptance.LaneRest, acceptance.RawCore,
-                          acceptance.RawRest):
+                          acceptance.RawRest, acceptance.LaneState):
                 with self.subTest(fields=fields, build=build.__name__), NoTransport() as transport:
                     with self.assertRaises(ValueError) as caught:
                         build(SimpleNamespace(**fields))
@@ -1197,7 +1199,7 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((configured.ha_url, configured.api_url, configured.websocket_url),
                          (acceptance.CORE_URL, acceptance.CORE_API_URL, acceptance.CORE_WS_URL))
         for build in (acceptance.pinned, acceptance.LaneWebSocket, acceptance.LaneRest, acceptance.RawCore,
-                      acceptance.RawRest):
+                      acceptance.RawRest, acceptance.LaneState):
             with self.subTest(build=build.__name__), NoTransport() as transport:
                 with self.assertRaises(ValueError) as caught:
                     build(configured)
@@ -1266,8 +1268,10 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         with NoTransport() as transport:
             acceptance.LaneWebSocket(configured)
             acceptance.LaneRest(configured)
-            for product in (transport.websocket, transport.rest):
-                (given,), _kwargs = product.call_args
+            acceptance.LaneState(configured)
+            self.assertEqual((transport.websocket.call_count, transport.rest.call_count), (1, 2))
+            for call in transport.websocket.call_args_list + transport.rest.call_args_list:
+                (given,), _kwargs = call
                 self.assertEqual((given.ha_url, given.api_url, given.websocket_url),
                                  (acceptance.CORE_URL, acceptance.CORE_API_URL, acceptance.CORE_WS_URL))
             transport.session.assert_not_called()
@@ -1285,13 +1289,15 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
                                   ("send", {"type": "auth", "access_token": TOKEN}), ("send", {"id": 1, **payload})])
 
     async def test_raw_rest_dials_the_constant_without_proxies_or_redirects(self):
-        events = []
-        with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events, value={"state": "on"})):
-            status, value = await acceptance.RawRest(settings()).request("GET", "/api/states/" + acceptance.SWITCH)
-        self.assertEqual((status, value), (200, {"state": "on"}))
+        events, reload = [], "/api/config/config_entries/entry/01JSYNTHETICSYNTHETICSYNTH/reload"
+        proxies = {"HTTP_PROXY": "http://evil.example:3128", "ALL_PROXY": "http://evil.example:3128"}
+        with patch.dict(os.environ, proxies), patch.object(
+                acceptance.aiohttp, "ClientSession", new=fake_session(events, value={"require_restart": False})):
+            status, value = await acceptance.RawRest(settings()).rest("POST", reload)
+        self.assertEqual((status, value), (200, {"require_restart": False}))
         (session, request) = events
         self.assertEqual(session, ("session", False))
-        self.assertEqual(request[:3], ("request", "GET", "http://127.0.0.1:18297/api/states/" + acceptance.SWITCH))
+        self.assertEqual(request[:3], ("request", "POST", "http://127.0.0.1:18297" + reload))
         self.assertIs(request[3]["allow_redirects"], False)
         self.assertEqual(request[3]["headers"], {"Authorization": "Bearer " + TOKEN})
         self.assertNotIn("json", request[3])
@@ -1401,7 +1407,7 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(acceptance.listed(fault, acceptance.STUB_POSTS))
         with NoTransport() as transport:
             with self.assertRaises(ValueError) as caught:
-                await acceptance.RawRest(settings()).request("POST", self.FLOW, Shape(flow))
+                await acceptance.RawRest(settings()).rest("POST", self.FLOW, Shape(flow))
             self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
             with self.assertRaises(ValueError) as caught:
                 await acceptance.StubControl(acceptance.STUB_CONTROL_URL).post(Shape(fault))
@@ -1429,6 +1435,9 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         state = "/api/states/" + acceptance.SELECT
         flow_step = self.FLOW + "/0123456789abcdef0123456789abcdef"
         refused = [
+            # HAMCP-366 correction: the state read left the raw session for the bound runtime route.
+            ("GET", state, None), ("GET", "/api/states/" + acceptance.SWITCH, None),
+            ("GET", "/api/states/" + acceptance.NUMBER, None), ("GET", "/states/" + acceptance.SELECT, None),
             ("GET", "/api/states/light.kitchen", None), ("GET", "/api/states", None), ("GET", "/api/config", None),
             ("GET", "/api/", None), ("GET", state + "/../../config", None), ("GET", state + "?k=synthetic-query", None),
             ("GET", state + "\n", None), ("GET", state + "#f", None), ("GET", "//evil.example" + state, None),
@@ -1451,21 +1460,21 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         for method, path, body in refused:
             with self.subTest(method=method, path=path, body=body), NoTransport() as transport:
                 with self.assertRaises(ValueError) as caught:
-                    await acceptance.RawRest(settings()).request(method, path, body)
+                    await acceptance.RawRest(settings()).rest(method, path, body)
                 self.assertIs(type(caught.exception), ValueError)
                 self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
                 self.assertEqual(len(chain(caught.exception)), 1)
                 self.assertTrue(transport.untouched())
 
     async def test_raw_rest_sends_every_listed_request(self):
-        listed = [("GET", "/api/states/" + acceptance.NUMBER, None), ("POST", self.FLOW, {"handler": "matter"}),
+        listed = [("POST", self.FLOW, {"handler": "matter"}),
                   ("POST", self.FLOW, {"handler": acceptance.FIXTURE_DOMAIN}),
                   ("POST", self.FLOW + "/0123456789abcdef0123456789abcdef", {"url": acceptance.MATTER_URL}),
                   ("POST", self.ENTRY, None)]
         for method, path, body in listed:
             events = []
             with self.subTest(path=path), patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events)):
-                await acceptance.RawRest(settings()).request(method, path, body)
+                await acceptance.RawRest(settings()).rest(method, path, body)
                 self.assertEqual(events[1][1:3], (method, acceptance.CORE_URL + path))
 
     async def test_stub_client_refuses_unlisted_posts_before_a_session(self):
@@ -1611,6 +1620,242 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
             shown = str(exc) + repr(exc) + repr(exc.__dict__)
             for private in ("synthetic-private-service", "synthetic_private_entity", TOKEN, "127.0.0.1"):
                 self.assertNotIn(private, shown)
+
+
+def recording_session(sends, *, status=200, text="{}", error=None):
+    """Stand-in for aiohttp.ClientSession under either REST client: every construction and send is recorded."""
+
+    class Response:
+        def __init__(self):
+            self.status = status
+
+        async def __aenter__(self):
+            if error is not None:
+                raise error
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def json(self, content_type=None):
+            return json.loads(text)
+
+        async def text(self):
+            return text
+
+    class Session:
+        def __init__(self, **kwargs):
+            sends.append(("session", kwargs))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        def request(self, method, url, **kwargs):
+            sends.append(("request", method, str(url), kwargs))
+            return Response()
+
+    return Session
+
+
+class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-366: the raw REST session is closed to three config-entry routes on the pinned loopback Core.
+
+    Pins the one ``CORE_URL + path`` exemption in tests/test_hamcp200_path_safety.py.
+    """
+
+    FLOW = "/api/config/config_entries/flow"
+    STEP = FLOW + "/0123456789abcdef0123456789abcdef"
+    RELOAD = "/api/config/config_entries/entry/01JSYNTHETICSYNTHETICSYNTH/reload"
+    ALLOWED = (("POST", FLOW, {"handler": "matter"}), ("POST", FLOW, {"handler": acceptance.FIXTURE_DOMAIN}),
+               ("POST", STEP, {"url": acceptance.MATTER_URL}), ("POST", RELOAD, None))
+
+    def test_only_the_pinned_loopback_core_is_accepted(self):
+        sends = []
+        with patch.object(acceptance.aiohttp, "ClientSession", new=recording_session(sends)):
+            self.assertEqual(acceptance.RawRest(settings()).token, TOKEN)
+            for url in ("http://homeassistant.local:18297", "http://localhost:18297", "http://[::1]:18297",
+                        "http://127.0.0.1:8123", "https://127.0.0.1:18297", "http://supervisor/core",
+                        "http://192.0.2.10:18297", "http://127.0.0.1:18297@evil.example",
+                        "http://127.0.0.1:18297/"):
+                with self.subTest(url=url), self.assertRaises(ValueError) as caught:
+                    acceptance.RawRest(settings(ha_url=url))
+                self.assertEqual(caught.exception.args, ("core_url_not_pinned",))
+        self.assertEqual(sends, [])
+
+    def test_the_closed_set_is_exactly_flow_start_flow_continue_and_entry_reload(self):
+        self.assertEqual(len(acceptance.RAW_REST), 3)
+        self.assertEqual([spec["method"] for spec in acceptance.RAW_REST], ["POST", "POST", "POST"])
+        matched = []
+        for method, path, body in self.ALLOWED:
+            request = {"method": method, "path": path, "body": body}
+            hits = [index for index, spec in enumerate(acceptance.RAW_REST) if acceptance._match(request, spec)]
+            self.assertEqual(len(hits), 1, request)
+            matched.append(hits[0])
+        self.assertEqual(matched, [0, 0, 1, 2])
+        source = Path(acceptance.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("/api/states", source)
+        scenario = inspect.getsource(acceptance.run)
+        self.assertEqual(scenario.count("http.rest("), 4)
+        self.assertEqual(scenario.count("return await reader.read(entity_id)"), 1)
+        self.assertEqual(scenario.count("LaneState(configured)"), 1)
+
+    async def test_the_three_allowed_routes_are_sent_to_the_pinned_core_only(self):
+        for method, path, body in self.ALLOWED:
+            sends = []
+            with self.subTest(path=path, body=body), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=recording_session(sends, text='{"type": "form"}')):
+                status, value = await acceptance.RawRest(settings()).rest(method, path, body)
+                self.assertEqual((status, value), (200, {"type": "form"}))
+                (session, request) = sends
+                self.assertEqual(session[0], "session")
+                self.assertIs(session[1]["trust_env"], False)
+                self.assertEqual(request[:3], ("request", "POST", "http://127.0.0.1:18297" + path))
+                self.assertIs(request[3]["allow_redirects"], False)
+                self.assertEqual(request[3]["headers"], {"Authorization": "Bearer " + TOKEN})
+                self.assertEqual(request[3].get("json"), body)
+                self.assertEqual("json" in request[3], body is not None)
+
+    async def test_requests_outside_the_closed_set_are_refused_before_sending(self):
+        refused = [
+            ("GET", self.FLOW, None), ("GET", self.FLOW, {"handler": "matter"}), ("DELETE", self.STEP, None),
+            ("PUT", self.STEP, {"url": acceptance.MATTER_URL}), ("GET", self.RELOAD, None),
+            ("DELETE", self.RELOAD, None), ("post", self.RELOAD, None), ("POST", self.FLOW, {"handler": "hue"}),
+            ("POST", self.FLOW, None), ("POST", self.FLOW, {"handler": "matter", "extra": 1}),
+            ("POST", self.STEP, {"url": "ws://evil.example:5580/ws"}), ("POST", self.STEP, None),
+            ("POST", self.RELOAD, {}), ("POST", self.RELOAD, {"x": 1}), ("POST", self.RELOAD + "/", None),
+            ("POST", self.RELOAD[:-len("/reload")], None), ("DELETE", self.RELOAD[:-len("/reload")], None),
+            ("POST", self.RELOAD[:-len("/reload")] + "/disable", None),
+            ("POST", "/api/config/config_entries/options/flow", {"handler": "matter"}),
+            ("POST", "/api/config/config_entries/entry", None),
+            ("POST", self.FLOW + "/../entry/01JSYNTHETICSYNTHETICSYNTH/reload", None),
+            ("POST", self.FLOW + "/" + "a" * 33, {"url": acceptance.MATTER_URL}),
+            ("POST", "/config/config_entries/flow", {"handler": "matter"}),
+            ("POST", "/api/services/homeassistant/restart", None),
+            ("POST", "/api/services/switch/turn_on", {"entity_id": acceptance.SWITCH}),
+            ("POST", "//evil.example" + self.FLOW, {"handler": "matter"}),
+            ("POST", "@evil.example" + self.FLOW, {"handler": "matter"}),
+            ("POST", Text(self.FLOW), {"handler": "matter"}), ("POST", None, None), (None, self.RELOAD, None),
+        ]
+        for method, path, body in refused:
+            sends = []
+            with self.subTest(method=method, path=path, body=body), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=recording_session(sends)):
+                with self.assertRaises(ValueError) as caught:
+                    await acceptance.RawRest(settings()).rest(method, path, body)
+                self.assertIs(type(caught.exception), ValueError)
+                self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
+                self.assertEqual(sends, [])
+
+    async def test_the_moved_state_path_is_refused_by_the_raw_sender(self):
+        entities = (acceptance.SELECT, acceptance.SWITCH, acceptance.NUMBER, "select.hamcp366_t2_select")
+        for entity_id in entities:
+            for method, path, body in (("GET", "/api/states/" + entity_id, None), ("GET", "/states/" + entity_id, None),
+                                       ("POST", "/api/states/" + entity_id, {"state": "on"}),
+                                       ("GET", "/api/states", None)):
+                sends = []
+                with self.subTest(method=method, path=path), patch.object(
+                        acceptance.aiohttp, "ClientSession", new=recording_session(sends)):
+                    self.assertFalse(acceptance.listed({"method": method, "path": path, "body": body},
+                                                       acceptance.RAW_REST))
+                    with self.assertRaises(ValueError) as caught:
+                        await acceptance.RawRest(settings()).rest(method, path, body)
+                    self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
+                    self.assertEqual(sends, [])
+
+
+class LaneStateReadTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-366: the lane's own state readback is one bound runtime route on the pinned Core."""
+
+    STATE = '{"entity_id": "switch.synthetic", "state": "on", "attributes": {}}'
+
+    async def test_state_is_read_on_the_bound_runtime_route_from_the_pinned_core(self):
+        sends = []
+        proxies = {"HTTP_PROXY": "http://evil.example:3128", "ALL_PROXY": "http://evil.example:3128"}
+        with patch.dict(os.environ, proxies), patch.object(
+                acceptance.aiohttp, "ClientSession", new=recording_session(sends, text=self.STATE)):
+            value = await acceptance.LaneState(settings()).read(acceptance.SWITCH)
+        self.assertEqual(value, json.loads(self.STATE))
+        (session, request) = sends
+        # The runtime client leaves aiohttp's default in place: the environment's proxies are not used.
+        self.assertIs(session[1].get("trust_env", False), False)
+        self.assertEqual(request[:3], ("request", "GET", "http://127.0.0.1:18297/api/states/" + acceptance.SWITCH))
+        self.assertIs(request[3]["allow_redirects"], False)
+        self.assertIsNone(request[3]["json"])
+        self.assertEqual(request[3]["headers"]["Authorization"], "Bearer " + TOKEN)
+
+    async def test_the_inner_request_is_exactly_one_bound_state_route(self):
+        with NoTransport() as transport:
+            inner = transport.rest.return_value
+            inner.request = AsyncMock(return_value={"state": "previous"})
+            reader = acceptance.LaneState(settings())
+            self.assertEqual(await reader.read(acceptance.SELECT), {"state": "previous"})
+            transport.session.assert_not_called()
+        (method, route), kwargs = inner.request.await_args
+        self.assertEqual((method, kwargs), ("GET", {"expected_statuses": frozenset({404})}))
+        self.assertIs(type(route), acceptance.Route)
+        self.assertEqual((route.template, route.values, route.kinds, route.query),
+                         ("/states/{}", (acceptance.SELECT,), ("entity_id",), ()))
+        self.assertEqual(route, rest_path("/states/{}", acceptance.SELECT, kinds=("entity_id",)))
+        self.assertEqual(inner.request.await_count, 1)
+
+    async def test_anything_but_a_lane_entity_id_is_refused_before_a_client_call(self):
+        refused = ["light.kitchen", "sensor.eve_energy_plug_power", "select.", "select.A", "select.a/../b",
+                   "select.a?k=synthetic-query", "select.a#f", "select.a\n", " select.a", "select.a/config",
+                   "../config", "", None, 7, [acceptance.SELECT], Text(acceptance.SELECT),
+                   acceptance.SELECT.encode(), "number." + "a" * 121]
+        for entity_id in refused:
+            sends = []
+            with self.subTest(entity_id=entity_id), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=recording_session(sends)):
+                reader = acceptance.LaneState(settings())
+                with patch.object(reader.client, "request", new=AsyncMock()) as inner:
+                    with self.assertRaises(ValueError) as caught:
+                        await reader.read(entity_id)
+                    inner.assert_not_called()
+                self.assertIs(type(caught.exception), ValueError)
+                self.assertEqual(caught.exception.args, ("core_rest_request_not_listed",))
+                self.assertEqual(sends, [])
+
+    async def test_an_answer_other_than_200_is_no_state_and_is_never_followed(self):
+        for status in (404, 401, 302, 307, 500, 503):
+            sends = []
+            with self.subTest(status=status), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=recording_session(sends, status=status, text="")):
+                self.assertIsNone(await acceptance.LaneState(settings()).read(acceptance.SELECT))
+                self.assertEqual([item[0] for item in sends], ["session", "request"])
+                self.assertIs(sends[1][3]["allow_redirects"], False)
+
+    async def test_a_core_that_cannot_be_reached_is_an_error_and_not_a_missing_state(self):
+        for error in (acceptance.aiohttp.ClientConnectionError("synthetic"), asyncio.TimeoutError()):
+            sends = []
+            with self.subTest(error=type(error).__name__), patch.object(
+                    acceptance.aiohttp, "ClientSession", new=recording_session(sends, error=error)):
+                with self.assertRaises((HomeAssistantUnavailableError, HomeAssistantTimeoutError)):
+                    await acceptance.LaneState(settings()).read(acceptance.SELECT)
+
+    async def test_a_read_inside_a_product_request_is_not_that_requests(self):
+        sends, authorizer = [], Mock(return_value=False)
+        telemetry, token = begin_request("hamcp366-synthetic-request")
+        telemetry.core_dispatch_authorizer = authorizer
+        before = (telemetry.ha_duration_ms, set(telemetry.endpoint_categories), telemetry.error_code,
+                  telemetry.timeout_occurred)
+        try:
+            with patch.object(acceptance.aiohttp, "ClientSession", new=recording_session(sends, text=self.STATE)):
+                reader = acceptance.LaneState(settings())
+                # A product request that could not authorize a Core dispatch still lets the lane read back.
+                self.assertEqual((await reader.read(acceptance.SWITCH))["state"], "on")
+            with patch.object(acceptance.aiohttp, "ClientSession",
+                              new=recording_session(sends, status=404, text="")):
+                self.assertIsNone(await reader.read(acceptance.SELECT))
+        finally:
+            end_request(token)
+        authorizer.assert_not_called()
+        self.assertEqual((telemetry.ha_duration_ms, set(telemetry.endpoint_categories), telemetry.error_code,
+                          telemetry.timeout_occurred), before)
+        self.assertEqual([item[0] for item in sends], ["session", "request", "session", "request"])
 
 
 class ProductThroughGuards(unittest.IsolatedAsyncioTestCase):
