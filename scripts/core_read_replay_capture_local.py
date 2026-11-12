@@ -19,13 +19,17 @@ of the version under capture, read by ``git archive`` from a local clone at
 the bound source commit, with the ``ha_mcp`` package supplied from the pinned
 image.  Requirements the pinned image cannot supply must already be in the
 Core image: the lane refuses profile B otherwise and never adds a route.
+The committed image inventory shows two such requirements missing, so
+``run --profile B`` refuses at preflight and the overlay is not built here.
 
 No pull happens here (``--pull never`` everywhere).  A preflight refusal
 happens before any container, volume or run directory exists.  A failure
 after that point is recorded as WITHHELD and is not a reason to run again for
-a pass.  The Home Assistant tokens are minted in the disposable Core, live in
-the run directory with mode 0600 until cleanup and are never written to a
-receipt; every stored file is scanned for them.
+a pass.  The Home Assistant tokens are minted in the disposable Core and held
+in the memory of the host process; the administrator token is also in the
+environment of the peer container, passed by name.  They are written to no
+file and no receipt, every stored file is scanned for them, and they stop
+working when the Core and its volume are removed.
 
 Everything a container or the upstream clone produces is untrusted data: it is
 written under the run directory or streamed into the disposable Core, parsed
@@ -34,7 +38,9 @@ library only.
 """
 
 import argparse
+import io
 import json
+import os
 from pathlib import Path
 import re
 import signal
@@ -47,6 +53,8 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_lane_bindings  # noqa: E402
+import core_read_replay_calls as calls_step  # noqa: E402
+import core_read_replay_seed as seed_step  # noqa: E402
 import upstream_catalog_capture_local as s4  # noqa: E402
 from upstream_catalog_capture_local import Refusal, canonical, command, now  # noqa: E402
 
@@ -349,7 +357,523 @@ def inventory(args, launch):
     return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
 
 
-COMMANDS = {"inventory": inventory}
+# --- The disposable Core, its seed and the captures -------------------------
+
+CORE_URL = seed_step.BASE
+CORE_MEMORY, CORE_PIDS = "1536m", 1024
+MEMORY_CEILING = "3g"
+CONFIG_TARGET = "/config"
+HOLDER_SECONDS = 7200
+SEED_SECONDS, CALLS_SECONDS, RUNNING_SECONDS = 900, 900, 300
+# Engineering's adapter builds the wire arguments.  9.2.0 is not in the
+# reviewed registry before step S8, so both versions get the 9.1.2 arguments
+# and every stored call says so.
+ARGUMENT_POLICY = s4.BASELINE_VERSION
+CAPTURE_GROUPS = ("reads", "variants", "errors", "transport")
+RESTART_GROUPS = ("after_restart",)
+PROFILE_B_GROUPS = ("yaml",)
+PROFILES = ("A", "B")
+PROFILE_B_INVENTORY = ROOT / "docs/evidence/hamcp371/s5/inventory-3/receipt.json"
+TOKEN_VARIABLE = "HOMEASSISTANT_TOKEN"
+TOKEN = re.compile(r"[A-Za-z0-9._\-]{32,4096}")
+TOKEN_NAMES = ("administrator", "ordinary_user")
+CONFIG_NAME = re.compile(r"[a-z_]{1,32}\.yaml")
+# What the lane sets on the peer.  The token is passed by name only; no
+# redaction option or variable is set, so redaction is the image default.
+PEER_ENVIRONMENT = (
+    ("HOMEASSISTANT_URL", CORE_URL),
+    ("MCP_HOST", "127.0.0.1"),
+    ("MCP_PORT", str(s4.PEER_PORT)),
+    ("MCP_SECRET_PATH", "/mcp"),
+    ("HA_MCP_DISABLE_SETTINGS_UI", "true"),
+)
+WAIT_RUNNING = r"""import json,os,sys,time,urllib.request
+url,limit=sys.argv[1],float(sys.argv[2])
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+request=urllib.request.Request(url+'/api/config',
+ headers={'Authorization':'Bearer '+os.environ['HOMEASSISTANT_TOKEN']})
+end=time.monotonic()+limit
+while True:
+    try:
+        with opener.open(request,timeout=5) as r:
+            if json.loads(r.read(1048576)).get('state')=='RUNNING': break
+    except (OSError,ValueError,AttributeError): pass
+    if time.monotonic()>end: raise SystemExit(1)
+    time.sleep(1)
+"""
+NOT_BUILT = (
+    "profile B overlay (component tree and package copy): refused at preflight until the "
+    "owner answers how the missing requirements may be supplied",
+    "Supervisor facade (form 2): not built; reads that need a Supervisor record what the "
+    "peer returns without one",
+    "token revocation between calls (P4): not exercised; the unknown-identifier cases only",
+)
+
+
+def lane_names(command_name):
+    stem = f"{PROJECT}-{command_name}"
+    wanted = {"holder": stem + "-holder", "core": stem + "-core", "volume": stem + "-config"}
+    for version in VERSIONS:
+        wanted["peer-" + version] = f"{stem}-peer-{version.replace('.', '-')}"
+    return wanted
+
+
+def container_keys(wanted):
+    """Removal order: peers, then Core, then the namespace owner."""
+    return [*sorted(key for key in wanted if key.startswith("peer-")), "core", "holder"]
+
+
+def idle_holder_argv(name, run_id, out_dir):
+    """The namespace owner: the helper image, idle, with no network at all."""
+    argv = ["docker", "run", "--detach", "--pull", "never", "--name", name, *labels_argv(run_id),
+            "--network", "none", "--read-only", "--tmpfs", "/tmp", "--memory", s4.HOLDER_MEMORY,
+            "--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/",
+            "--mount", f"type=bind,source={ROOT / 'scripts'},target=/lane/scripts,readonly",
+            "--mount", (f"type=bind,source={ROOT / 'hass_mcp_engineering_beta'},"
+                        "target=/lane/hass_mcp_engineering_beta,readonly"),
+            "--mount", f"type=bind,source={out_dir},target=/out",
+            "--entrypoint", "python", s4.HELPER_IMAGE, "-I", "-c",
+            f"import time; time.sleep({HOLDER_SECONDS})"]
+    s4.host.require_memory(argv)
+    return argv
+
+
+def core_argv(name, run_id, holder, volume, image):
+    """``docker create`` for the disposable Core; its only network is the holder's namespace."""
+    s4.host.memory_bytes(CORE_MEMORY)
+    return ["docker", "create", "--pull", "never", "--name", name, *labels_argv(run_id),
+            "--network", "container:" + holder, "--memory", CORE_MEMORY,
+            "--pids-limit", str(CORE_PIDS), "--security-opt", "no-new-privileges",
+            "--env", "TZ=" + seed_step.TIME_ZONE,
+            "--mount", f"type=volume,source={volume},target={CONFIG_TARGET}", image]
+
+
+def peer_argv(name, run_id, holder, image):
+    """One pinned ha-mcp image against the disposable Core; the token is named, never written."""
+    argv = ["docker", "run", "--detach", "--pull", "never", "--name", name, *labels_argv(run_id),
+            "--network", "container:" + holder, "--read-only", "--tmpfs", "/tmp",
+            "--tmpfs", "/home/mcpuser/.ha-mcp", "--memory", s4.PEER_MEMORY, "--pids-limit", "256",
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges"]
+    for key, value in PEER_ENVIRONMENT:
+        argv += ["--env", f"{key}={value}"]
+    argv += ["--env", TOKEN_VARIABLE, image, s4.PEER_COMMAND]
+    s4.host.require_memory(argv)
+    return argv
+
+
+def memory_total():
+    return sum(s4.host.memory_bytes(value)
+               for value in (s4.HOLDER_MEMORY, CORE_MEMORY, s4.PEER_MEMORY))
+
+
+def with_token(token):
+    """The host environment plus the one variable Docker forwards by name."""
+    return {**os.environ, TOKEN_VARIABLE: token}
+
+
+def config_archive(files):
+    """The configuration files as one tar stream, for ``docker cp -``; nothing touches disk."""
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        for name in sorted(files):
+            if not CONFIG_NAME.fullmatch(name):
+                raise Refusal("configuration_file_name_not_reviewed")
+            body = files[name].encode("utf-8")
+            info = tarfile.TarInfo(name)
+            info.size, info.mode, info.mtime = len(body), 0o644, 0
+            archive.addfile(info, io.BytesIO(body))
+    return raw.getvalue()
+
+
+def stream_in(argv, raw, timeout=120):
+    result = subprocess.run(list(argv), cwd=ROOT, input=raw, capture_output=True,
+                            timeout=timeout)
+    if result.returncode:
+        raise Refusal("host_command_failed")
+
+
+def verify_core(data, holder_id, image, volume):
+    """Core runs the bound image in the holder's namespace with one volume and no way out."""
+    config, settings = data.get("HostConfig") or {}, data.get("NetworkSettings") or {}
+    if (data.get("Image") != image["config_digest"]
+            or (data.get("Config") or {}).get("Image") != image["image"]):
+        raise Refusal("running_image_mismatch")
+    if (config.get("Memory") != s4.host.memory_bytes(CORE_MEMORY)
+            or config.get("PidsLimit") != CORE_PIDS):
+        raise Refusal("running_container_limits_mismatch")
+    if config.get("Privileged") or config.get("CapAdd") or config.get("Devices"):
+        raise Refusal("core_has_added_privilege")
+    if "no-new-privileges" not in (config.get("SecurityOpt") or []):
+        raise Refusal("core_has_added_privilege")
+    if config.get("PortBindings") or config.get("PublishAllPorts"):
+        raise Refusal("container_publishes_ports")
+    if any(bindings for bindings in (settings.get("Ports") or {}).values()):
+        raise Refusal("container_publishes_ports")
+    if config.get("NetworkMode") != "container:" + holder_id or settings.get("Networks"):
+        raise Refusal("core_network_not_holder_namespace")
+    mounts = [(item.get("Type"), item.get("Name"), item.get("Destination"))
+              for item in data.get("Mounts") or []]
+    if mounts != [("volume", volume, CONFIG_TARGET)] or config.get("Binds"):
+        raise Refusal("core_mounts_not_the_run_volume")
+    if (data.get("State") or {}).get("Running") is not True:
+        raise Refusal("container_not_running")
+    return {"network_mode": "container:<holder>", "docker_networks": [], "published_ports": [],
+            "mounts": ["volume:" + CONFIG_TARGET], "memory": CORE_MEMORY,
+            "pids_limit": CORE_PIDS, "privileged": False, "no_new_privileges": True}
+
+
+def require_no_egress(probe):
+    """A namespace with ``lo`` only, no IPv4 route and a refused connection out."""
+    if (not isinstance(probe, dict) or probe.get("interfaces") != ["lo"]
+            or probe.get("ipv4_routes") != 0):
+        raise Refusal("namespace_not_loopback_only")
+    if probe.get("egress_errno") != s4.ENETUNREACH:
+        raise Refusal("namespace_egress_not_refused")
+    return {key: probe[key] for key in ("interfaces", "ipv4_routes", "egress_errno")}
+
+
+def namespace_probe(container, python):
+    result = command("docker", "exec", container, python, "-I", "-c", s4.NET_PROBE)
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        raise Refusal("namespace_probe_unreadable") from None
+
+
+def posture(wanted):
+    """No egress, as seen from the holder and from inside the Core container itself."""
+    return {"seen_from_holder": require_no_egress(namespace_probe(wanted["holder"], "python")),
+            "seen_from_core": require_no_egress(namespace_probe(wanted["core"], "python3")),
+            "checked": now()}
+
+
+def seed_output(stdout):
+    """The seed step's one line: whether every step passed, and the two tokens."""
+    lines = stdout.decode("ascii", "replace").splitlines()
+    try:
+        value = json.loads(lines[0]) if len(lines) == 1 else None
+    except ValueError:
+        value = None
+    if not isinstance(value, dict) or not isinstance(value.get("tokens"), dict):
+        raise Refusal("seed_output_unreadable")
+    tokens = value["tokens"]
+    if set(tokens) - set(TOKEN_NAMES) or any(
+            not isinstance(item, str) or not TOKEN.fullmatch(item) for item in tokens.values()):
+        raise Refusal("seed_output_unreadable")
+    return value.get("all_steps_ok") is True, dict(tokens)
+
+
+def seed_summary(path):
+    report = s4.read_json(path)
+    return {"all_steps_ok": report.get("all_steps_ok") is True,
+            "steps": {row.get("step"): row.get("status") for row in report.get("steps") or []},
+            "tokens_issued": report.get("tokens_issued")}
+
+
+def calls_summary(path):
+    """Counts only; the payloads stay in their own files."""
+    index = s4.read_json(Path(path) / "_index.json")
+    rows = index.get("calls") or []
+    return {"calls": len(rows),
+            "exchange_failures": sum(1 for row in rows if row.get("exchange_failure")),
+            "is_error": sum(1 for row in rows if row.get("is_error") is True),
+            "sessions_opened": index.get("sessions_opened"),
+            "arguments_built_with_policy": ARGUMENT_POLICY}
+
+
+def run_calls(holder, version, name, groups, out_dir):
+    done = command(*s4.exec_argv(
+        holder, "/lane/scripts/core_read_replay_calls.py", "--endpoint", s4.ENDPOINT,
+        "--seed", "/out/seed/seed.json", "--out", f"/out/{version}/{name}",
+        "--policy", ARGUMENT_POLICY, "--groups", ",".join(groups)),
+        check=False, timeout=CALLS_SECONDS)
+    if done.returncode:
+        raise Refusal("calls_step_failed")
+    return {"groups": list(groups), **calls_summary(out_dir / version / name)}
+
+
+def wait_running(holder, token):
+    command("docker", "exec", "--env", TOKEN_VARIABLE, holder, "python", "-I", "-B", "-c",
+            WAIT_RUNNING, CORE_URL, str(RUNNING_SECONDS), env=with_token(token),
+            timeout=RUNNING_SECONDS + 60)
+
+
+def restart_core(wanted, run_id, holder_id, core_image, token):
+    """Restart Core from the host; it must come back in the same namespace, still shut in."""
+    command("docker", "restart", "-t", "60", wanted["core"], timeout=180)
+    verify_core(s4.inspect_owned(wanted["core"], run_id) or {}, holder_id, core_image,
+                wanted["volume"])
+    checked = posture(wanted)
+    wait_running(wanted["holder"], token)
+    return checked
+
+
+def capture_version(version, wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
+    """One peer at a time: start it, capture, restart Core under it, capture again, remove it."""
+    holder, peer = wanted["holder"], wanted["peer-" + version]
+    out_dir = run_dir / "out"
+    section = {"network_before_capture": posture(wanted)}
+    command(*peer_argv(peer, run_id, holder, upstream["image"]),
+            env=with_token(tokens["administrator"]))
+    section["peer_network"] = s4.verify_peer(s4.inspect_owned(peer, run_id) or {}, holder_id,
+                                             upstream)
+    command(*s4.exec_argv(holder, "-c", s4.WAIT_HTTP, s4.ENDPOINT, "120", "any"), timeout=150)
+    (out_dir / version).mkdir(mode=0o700)
+    section["calls"] = run_calls(holder, version, "calls", CAPTURE_GROUPS, out_dir)
+    section["network_after_core_restart"] = restart_core(
+        wanted, run_id, holder_id, core_image, tokens["administrator"])
+    section["calls_after_core_restart"] = run_calls(
+        holder, version, "calls-after-core-restart", RESTART_GROUPS, out_dir)
+    state = (s4.inspect_owned(peer, run_id) or {}).get("State") or {}
+    if state.get("Running") is not True or state.get("OOMKilled"):
+        raise Refusal("peer_did_not_stay_running")
+    s4.bounded_logs(peer, run_dir / f"peer-{version}.log")
+    command("docker", "rm", "-f", "-v", peer)
+    if s4.inspect_owned(peer, run_id) is not None:
+        raise Refusal("owned_container_remains")
+    return section
+
+
+def secret_needles(tokens):
+    """Each token whole, and the signature segment of a three-part token."""
+    needles = set()
+    for value in tokens.values():
+        needles.add(value.encode("ascii"))
+        parts = value.split(".")
+        if len(parts) == 3 and len(parts[2]) >= 16:
+            needles.add(parts[2].encode("ascii"))
+    return needles
+
+
+def secret_scan(run_dir, tokens):
+    """Read every stored file for the exact token bytes; a file that has them is removed."""
+    needles, files, removed, links = secret_needles(tokens), 0, [], []
+    for path in sorted(Path(run_dir).rglob("*")):
+        name = path.relative_to(run_dir).as_posix()
+        if path.is_symlink():
+            links.append(name)
+        elif path.is_file():
+            files += 1
+            raw = path.read_bytes()
+            if any(needle in raw for needle in needles):
+                removed.append(name)
+                path.unlink()
+    return {"files_scanned": files, "needles": len(needles),
+            "method": "exact bytes of each token and of its signature segment",
+            "files_removed_for_a_secret": removed, "links": links}
+
+
+def write_sums(run_dir):
+    run_dir = Path(run_dir)
+    lines = [f"{s4.sha256_bytes(path.read_bytes())[7:]}  {path.relative_to(run_dir).as_posix()}\n"
+             for path in sorted(run_dir.rglob("*"))
+             if path.is_file() and not path.is_symlink() and path.name != "SHA256SUMS"]
+    (run_dir / "SHA256SUMS").write_text("".join(lines), encoding="utf-8")
+
+
+def volume_owned(name, run_id):
+    """Whether this run's volume exists; False only when it is proven absent."""
+    result = command("docker", "volume", "inspect", name, check=False)
+    if result.returncode:
+        listed = command("docker", "volume", "ls", "--format", "{{.Name}}")
+        if name in listed.stdout.decode().split():
+            raise Refusal("owned_volume_inspection_failed")
+        return False
+    data, = json.loads(result.stdout)
+    if (data.get("Labels") or {}).get(s4.LANE_LABEL) != run_id:
+        raise Refusal("volume_ownership_mismatch")
+    return True
+
+
+def require_volume_free(name):
+    listed = command("docker", "volume", "ls", "--format", "{{.Name}}")
+    if name in listed.stdout.decode().split():
+        raise Refusal("disposable_name_already_exists")
+
+
+def cleanup(wanted, run_id):
+    keys = container_keys(wanted)
+    for key in keys:
+        if s4.inspect_owned(wanted[key], run_id) is not None:
+            command("docker", "rm", "-f", "-v", wanted[key])
+    if volume_owned(wanted["volume"], run_id):
+        command("docker", "volume", "rm", wanted["volume"])
+    for key in keys:
+        if s4.inspect_owned(wanted[key], run_id) is not None:
+            raise Refusal("owned_container_remains")
+    if volume_owned(wanted["volume"], run_id):
+        raise Refusal("owned_volume_remains")
+    return {"clean": True, "containers_absent": True, "volume_absent": True,
+            "docker_networks_created": 0}
+
+
+def require_profile_b(core, inventory=PROFILE_B_INVENTORY):
+    """Profile B's preflight, from the committed image inventory.  Always refuses for now."""
+    try:
+        receipt = s4.read_json(inventory)
+    except (OSError, ValueError):
+        raise Refusal("profile_b_inventory_missing") from None
+    if (not isinstance(receipt, dict) or receipt.get("command") != "inventory"
+            or receipt.get("result") != "PASS"):
+        raise Refusal("profile_b_inventory_missing")
+    if ((receipt.get("bindings") or {}).get("core") or {}).get("image") != core["image"]:
+        raise Refusal("profile_b_inventory_stale")
+    for version in VERSIONS:
+        report = (receipt.get("profile_b") or {}).get(version)
+        if not isinstance(report, dict) or not isinstance(report.get("missing"), list):
+            raise Refusal("profile_b_inventory_missing")
+        require_profile_b_feasible(report)
+    # Nothing past this point exists yet: the overlay is deliberately not built.
+    raise Refusal("profile_b_overlay_not_built")
+
+
+def execute(args, launch):
+    """Shared body of ``selftest`` and ``run``; everything before mkdir is preflight."""
+    if not __debug__:
+        raise Refusal("assertions_required")
+    capture = args.command == "run"
+    core = core_binding()
+    if capture and args.profile != "A":
+        require_profile_b(core)
+    if memory_total() > s4.host.memory_bytes(MEMORY_CEILING):
+        raise Refusal("container_memory_above_ceiling")
+    revision = s4.require_clean_checkout()
+    helper = s4.cached_image(s4.HELPER_IMAGE, s4.HELPER_LABELS)
+    core_image = s4.cached_image(core["image"], CORE_LABELS)
+    bindings, upstream = {"core": core}, {}
+    if capture:
+        for version in VERSIONS:
+            bound = s4.binding(version)
+            bindings[version] = {key: bound[key] for key in sorted(bound)
+                                 if key not in ("labels", "image")}
+            upstream[version] = s4.cached_image(bound["image"], bound["labels"])
+    figures = s4.host_figures()
+    s4.require_host_floors(figures)
+    wanted = lane_names(args.command)
+    s4.require_names_free(wanted)
+    require_volume_free(wanted["volume"])
+    run_dir = s4.new_run_directory(args.run_dir)
+    run_dir.mkdir(mode=0o700, parents=False)  # Exclusive; evidence is never overwritten.
+    launch["execution_started"] = True
+    out_dir = run_dir / "out"
+    out_dir.mkdir(mode=0o700)
+    (out_dir / "seed").mkdir(mode=0o700)
+    run_id = uuid4().hex
+    result = {
+        "model": MODEL, "command": args.command, "result": "WITHHELD", "started": now(),
+        "harness_commit": revision, "run_id": run_id, "notes": list(args.note or []),
+        "profile": getattr(args, "profile", None), "bindings": bindings, "pull": "never",
+        "helper_image": helper, "core_image": core_image, "upstream_images": upstream,
+        "host_at_start": figures,
+        "home_assistant": ("one disposable Core started by this run in a namespace with no "
+                           "interface but loopback; removed with its volume at the end"),
+        "container_memory": {"holder": s4.HOLDER_MEMORY, "core": CORE_MEMORY,
+                             "peer": s4.PEER_MEMORY, "ceiling": MEMORY_CEILING,
+                             "one_peer_at_a_time": True},
+        "tokens": {"kind": "two long-lived access tokens minted in this disposable Core: its "
+                           "owner (administrator) and one ordinary user",
+                   "held": "in the memory of the host process and in the environment of the "
+                           "peer container; written to no file; gone with the Core",
+                   "production_equivalence": "assumed, not established: whether the token "
+                                             "ha-mcp is given in production is of the same "
+                                             "kind is for the owner to confirm"},
+        "redaction": {"setting": "image defaults",
+                      "detail": "the lane passes no redaction option or variable to the peer",
+                      "peer_environment": [list(item) for item in PEER_ENVIRONMENT],
+                      "peer_environment_by_name_only": [TOKEN_VARIABLE],
+                      "peer_command": s4.PEER_COMMAND,
+                      "production_setting": "not read by any agent; an entry in the upgrade "
+                                            "decision record, filled at upgrade time"},
+        "pass_means": ("the lane ran to its end, every posture check held, nothing stored "
+                       "carries a token and cleanup is proven; a call the peer answered with "
+                       "an error or broke is a stored result, counted here, not a failure"),
+        "not_built": list(NOT_BUILT), "captures": {}, "cleanup": {"clean": False}}
+    tokens = {}
+
+    def interrupted(_signum, _frame):
+        raise Refusal("lane_interrupted")
+    previous = signal.signal(signal.SIGTERM, interrupted)
+    started = time.monotonic()
+    try:
+        command(*idle_holder_argv(wanted["holder"], run_id, out_dir))
+        data = s4.inspect_owned(wanted["holder"], run_id)
+        if data is None:
+            raise Refusal("holder_missing")
+        holder_id = data["Id"]
+        network = {"holder": s4.verify_holder(
+            data, namespace_probe(wanted["holder"], "python"), helper)}
+        result["network_posture"] = network
+        result["helper_runtime"] = s4.helper_runtime(wanted["holder"])
+        command("docker", "volume", "create", *labels_argv(run_id), wanted["volume"])
+        command(*core_argv(wanted["core"], run_id, wanted["holder"], wanted["volume"],
+                           core_image["image"]))
+        stream_in(["docker", "cp", "-", f"{wanted['core']}:{CONFIG_TARGET}"],
+                  config_archive(seed_step.CONFIG_FILES))
+        command("docker", "start", wanted["core"])
+        result["core_container"] = verify_core(
+            s4.inspect_owned(wanted["core"], run_id) or {}, holder_id, core_image,
+            wanted["volume"])
+        network["before_seed"] = posture(wanted)
+        seeded = command(*s4.exec_argv(wanted["holder"], "/lane/scripts/core_read_replay_seed.py",
+                                       "--out", "/out/seed"), check=False, timeout=SEED_SECONDS)
+        complete, found = seed_output(seeded.stdout)
+        tokens.update(found)
+        result["seed"] = seed_summary(out_dir / "seed" / "seed-report.json")
+        if seeded.returncode or not complete or set(tokens) != set(TOKEN_NAMES):
+            raise Refusal("seed_incomplete")
+        wait_running(wanted["holder"], tokens["administrator"])
+        if capture:
+            for version in VERSIONS:
+                result["captures"][version] = capture_version(
+                    version, wanted, run_id, run_dir, upstream[version], holder_id, core_image,
+                    tokens)
+        else:
+            # Selftest: no upstream image.  The restart and the calls module's own
+            # start-up are exercised so the first capture is not their first use.
+            network["after_core_restart"] = restart_core(
+                wanted, run_id, holder_id, core_image, tokens["administrator"])
+            command(*s4.exec_argv(wanted["holder"], "/lane/scripts/core_read_replay_calls.py",
+                                  "--help"))
+        result["result"] = "PASS"
+    except BaseException as exc:  # WITHHELD, with a fixed token only.
+        result.update(result="WITHHELD", failure_type=type(exc).__name__,
+                      failure=str(exc) if isinstance(exc, Refusal) else "unexpected_error")
+    finally:
+        try:
+            for key in container_keys(wanted):
+                target = run_dir / (key + ".log")
+                if not target.exists() and s4.inspect_owned(wanted[key], run_id) is not None:
+                    s4.bounded_logs(wanted[key], target)
+            result["cleanup"] = cleanup(wanted, run_id)
+        except BaseException as exc:
+            result.update(result="WITHHELD",
+                          cleanup={"clean": False, "failure_type": type(exc).__name__})
+        try:
+            scan = secret_scan(run_dir, tokens)
+            result["secret_scan"] = scan
+            if scan["files_removed_for_a_secret"] or scan["links"]:
+                result.update(result="WITHHELD", failure="secret_or_link_in_stored_files")
+        except BaseException as exc:
+            result.update(result="WITHHELD", failure="stored_files_not_scanned",
+                          failure_type=type(exc).__name__)
+        result.update(ended=now(), seconds=round(time.monotonic() - started, 1),
+                      host_at_end=s4.host_figures())
+        receipt = canonical(result)
+        if any(needle in receipt for needle in secret_needles(tokens)):
+            receipt = canonical({"model": MODEL, "command": args.command, "result": "WITHHELD",
+                                 "failure": "secret_reached_the_receipt", "run_id": run_id,
+                                 "cleanup": result["cleanup"]})
+            result.update(result="WITHHELD", failure="secret_reached_the_receipt")
+        (run_dir / "receipt.json").write_bytes(receipt)
+        write_sums(run_dir)
+        signal.signal(signal.SIGTERM, previous)
+    launch.update(result=result["result"], failure=result.get("failure"),
+                  cleanup_clean=result["cleanup"]["clean"])
+    return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
+
+
+COMMANDS = {"inventory": inventory, "selftest": execute, "run": execute}
 
 
 def main(argv=None):
@@ -360,6 +884,8 @@ def main(argv=None):
         sub.add_argument("--run-dir", type=Path, required=True)
         sub.add_argument("--launch-log", type=Path, required=True)
         sub.add_argument("--note", action="append")
+        if name == "run":
+            sub.add_argument("--profile", choices=PROFILES, required=True)
     args = parser.parse_args(argv)
     launch = {"command": args.command, "run_dir": str(args.run_dir), "started": now(),
               "execution_started": False, "notes": list(args.note or [])}
