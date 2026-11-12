@@ -10,10 +10,12 @@ separate owner action.
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
-faults. **A2 signing evidence is complete** (run 3 below, PASS, on the catch-up
-merge with `release/2.6.0`). The A2 lane uses the HAMCP-297 Matter Server stub.
-PR #428 merged that stub into `release/2.6.0`, and run 3 uses the committed
-copy.
+faults. **A2 signing evidence is complete**: A2 success lane run 5 below (PASS,
+source commit `69e1dfff`, after the merge with `release/2.6.0` at `ccaed9ef`)
+produced the `thread_matter_topology_a2.json` in this directory. Runs 2, 3 and
+4 were earlier PASS runs whose receipts it replaced. The A2 lane uses the
+HAMCP-297 Matter Server stub. PR #428 merged that stub into `release/2.6.0`,
+and run 5 uses the committed copy.
 
 ## Exact authority and scope
 

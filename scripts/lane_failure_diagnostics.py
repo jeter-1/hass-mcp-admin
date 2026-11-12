@@ -20,7 +20,7 @@ RAW_DIRECTORY = Path.home() / '.local/state/hamcp-lane-failures'
 MAX_CHAIN, MAX_FRAMES, MAX_MESSAGE = 4, 8, 160
 # Explicitly integrated local lanes; any other name is recorded as 'unknown'.
 LANES = frozenset(('helper_value', 'marketplace_read', 'thread_matter_topology',
-                   'security_metadata'))
+                   'security_metadata', 'device_configuration_entity'))
 STAGES = frozenset(('image_verify', 'container_start', 'core_boot', 'auth',
                     'helper_setup', 'operation', 'readback', 'cleanup', 'admission'))
 # Code-owned identifiers only: callers cannot echo arbitrary exception metadata.
@@ -51,6 +51,10 @@ SAFE_MESSAGES = frozenset((
     'installed_record_unbounded', 'installed_record_text_changed', 'secret_in_page',
     'redaction_canary_unavailable', 'redaction_canary_leaked', 'redaction_canary_undisclosed',
     'redaction_canary_changed_records',
+    # Fixed refusals of the lanes' own loopback clients (marketplace_read RawCore; created-object
+    # LaneRaw): code-owned, never a URL, token, id, route or payload.
+    'raw_core_url_not_pinned', 'raw_core_command_not_listed', 'lane_raw_url_not_loopback',
+    'lane_raw_request_not_listed', 'lane_fixture_not_owned',
 ))
 SAFE_TYPES = frozenset(('Exception', 'BaseException', 'RuntimeError', 'AssertionError',
     'ValueError', 'TypeError', 'KeyError', 'OSError', 'PermissionError', 'FileNotFoundError',

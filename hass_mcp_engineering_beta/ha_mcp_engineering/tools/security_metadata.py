@@ -1,9 +1,9 @@
 """Public security and effective-permission metadata read (HAMCP-134).
 
-The input boundary never reflects a refused value. The read is dormant until
-the owner-signed registry admits ``core.security_metadata_read``; registration
-is pending wiring (``application.py`` and ``capabilities.py`` are outside this
-change).
+The input boundary never reflects a refused value. The tool is registered
+(``tools/registry.py``) and its runtime is configured in ``application.py``;
+the read stays dormant until the owner-signed registry admits
+``core.security_metadata_read``.
 """
 
 from typing import Literal

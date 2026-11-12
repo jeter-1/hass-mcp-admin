@@ -535,7 +535,9 @@ Output is the shipped ordinary-control receipt (§2.5) plus:
   `{"available": true, "undo_task_id": <task_id>, "restores": <prior value>}`
   with the rule that undo works only while the post-change observation is
   still exact (§5.11); otherwise `{"available": false, "reason": ...}`. An
-  undo result says `"undone": true` only when it is `succeeded_verified`.
+  available undo also carries a `rule` text that names what ends eligibility
+  and the recovery (§5.11.4). An undo result says `"undone": true` only when
+  it is `succeeded_verified`.
 
 ### 5.3 Routing, provider and admission
 
@@ -641,7 +643,9 @@ gateway requires all of the following. Any failure refuses before dispatch.
 Preparation records the target identity of §5.11.1 and the composite
 observation fingerprint of §5.7 in the receipt baseline. A later rename of the
 entity_id, a re-registration under a different registry id, or a replaced
-device therefore breaks the binding and is caught as stale.
+device therefore breaks the binding and is caught as stale. A re-registration
+that Core restores under the same registry id (§5.11.4) is caught as stale by
+the fingerprint: its registry `modified_at` and state timestamps differ.
 
 #### 5.5.1 Numeric exactness contract (`number` only)
 
@@ -1022,9 +1026,13 @@ operation_id=<new>)`:
   equal to the recorded one, else `device_configuration_undo_identity_changed`;
   and (b) the current composite observation fingerprint equal to the recorded
   post-change fingerprint, else `device_configuration_undo_post_state_unproven`.
-  Equal value alone is not enough: a replaced registry entity at the same
-  entity_id and value has a different registry `id`/`created_at`; a later
-  write that returns to the same value has a different
+  Equal value alone is not enough: the entity of a replaced device at the
+  same entity_id and value has a different registry `id` and `unique_id`
+  (R2); an entity removed and registered again with the same `unique_id` is
+  restored by Core 2026.11.0 under the same registry `id` and `created_at`,
+  and fails (b) through its registry `modified_at` and the state's
+  `last_changed`/`last_updated`/context id (R1, §5.11.4); a later write that
+  returns to the same value has a different
   `last_changed`/`last_updated`/context id.
 - **The undo's baseline is the recorded post-change observation.** Because the
   undo's prepared fingerprint equals it, the shipped locked preflight and
@@ -1113,8 +1121,10 @@ operation_id=<new>)`:
   value is its own; there is no sidecar, so undo refuses
   `device_configuration_undo_unavailable`, and the entity stays held (§5.12).
 - After a verified change whose post-state has since drifted (a third-party
-  change, or a Home Assistant restart that reset `last_changed`), undo refuses
-  `device_configuration_undo_post_state_unproven`.
+  change; an integration reload, observed in the Core 2026.11.0 lane to give
+  the state a new context id, `last_changed` and `last_updated`; or a Home
+  Assistant restart, which is expected to do the same and was not observed),
+  undo refuses `device_configuration_undo_post_state_unproven` (§5.11.4).
 - In both cases the recovery is a **compensating change**: an ordinary new
   `control_device_configuration` forward call toward the desired value, built
   from a freshly observed baseline with full §5.5 proof (after any hold is
@@ -1123,8 +1133,146 @@ operation_id=<new>)`:
   informational context. It is **never** reported as "the original change was
   undone".
 
+#### 5.11.4 Re-registration, device replacement, reload and restart on Core 2026.11.0 (HAMCP-366)
+
+This subsection restates R1 and R2 (§8) for the pinned Core, from its source
+and from the HAMCP-366 lane observation, and records product-owner rulings of
+2026-11-11 as they were relayed to the lane's implementer. It changes no undo
+or refusal behaviour: §5.11.2 stands as written. `E/` and `scripts/` line
+numbers in this subsection are at the HAMCP-366 head, not at the base named in
+the header.
+
+**Core source (2026.11.0, commit `74cf5a49`), read from the staged source
+archive.**
+
+- Removing an entity keeps a deleted entry keyed by
+  `(domain, platform, unique_id)` (`core:helpers/entity_registry.py:1812-1847`).
+- A deleted entry gets an `orphaned_timestamp` only when its config entry or
+  subentry is cleared (`:2694-2733`), and only orphaned entries are purged,
+  after 30 days (`:97`, `:2736-2749`).
+- Registering the same key again restores the deleted entry's `id`,
+  `created_at`, `disabled_by`, `hidden_by`, options and, when it is free, its
+  entity_id (`:1685-1708`). An entity_id that belongs only to a deleted entry
+  counts as available (`:1435-1447`).
+- A Matter entity that someone removes from the registry is not created again
+  by the running integration: discovery skips a key it has already created
+  (`core:components/matter/adapter.py:296-298`), and that set lives as long as
+  the adapter does (`:55`), so it takes a config-entry reload or a restart. An
+  entity that Matter removes itself, because a required attribute or feature
+  went away, discards its key (`core:components/matter/entity.py:398-419`) and
+  is discovered again on a later node update (`adapter.py:72-78`).
+- A device registered with identifiers that match a deleted device is restored
+  with the deleted device's `id` and `created_at` and the new registration's
+  identifiers. The lookup is `core:helpers/device_registry.py:2686-2702`; the
+  restore itself is `:2725-2736`, through `DeletedDeviceEntry.to_device_entry`
+  (`:1025-1047`). A match on any one identifier is enough (`:1544-1562`).
+  Matter gives a device a node identifier and, when the node reports a serial
+  number, a serial identifier (`core:components/matter/adapter.py:223`,
+  `:226-239`).
+- Not verified from Core source: that re-commissioning or replacing a device
+  gives it a new node id. That is Matter Server behaviour, outside the Core
+  archive.
+
+**Observation in the Core 2026.11.0 lane (step a).** The `matter` config entry
+was kept and stayed loaded. The fingerprint is the runtime's own
+(`E/device_configuration/adapter.py:148-160`,
+`E/device_configuration/contracts.py:451-457`). Every field with both values
+is in `docs/evidence/hamcp366/README.md` ("Re-registration observation") and
+in the lane receipt.
+
+| Target kind | Path | Re-registered | Registry `id`, `created_at`, `unique_id`, device `id`, entity_id | Fingerprint fields that changed |
+|---|---|---|---|---|
+| select (power-on behavior) | registry remove, then `matter` config-entry reload | yes | unchanged | registry `modified_at`; state context id, `last_changed`, `last_updated` |
+| config switch (child lock) | `matter` config-entry reload alone | no | unchanged | state context id, `last_changed`, `last_updated` |
+| number (sensitivity) | `matter` config-entry reload alone | no | unchanged | state context id, `last_changed`, `last_updated` |
+
+A Core restart was not run in the lane.
+
+**Why the config switch and the number were not removed in the lane
+(product-owner ruling 2026-11-11).** The lane's closed command list names the
+registry remove for the select only, and it is not widened. Step a stands on
+the select observation plus the reload-alone observations for the config
+switch and the number. Reason: Matter re-creates a removed entity only through
+a reload or restart, and a reload alone changed the context id, `last_changed`
+and `last_updated` for both, so the outcome "no fingerprint field changes"
+cannot occur for them. The lane asserts the exact restored-case code for the
+select only; the restored case for the config switch and the number is covered
+at unit level (`tests/test_hamcp297_device_configuration.py`:
+`test_r1_restored_config_switch_refuses_post_state_unproven_with_zero_sends`,
+`test_r1_restored_sensitivity_number_refuses_post_state_unproven_with_zero_sends`).
+
+**R1, the restored case.** HAMCP-297 targets keep their Matter config entry,
+so a same-`unique_id` re-registration restores the registry `id` and
+`created_at` with no time limit. The identity of §5.11.1 is then equal, and
+the undo refuses on the fingerprint:
+`device_configuration_undo_post_state_unproven`
+(`E/device_configuration/adapter.py:171-172`), with zero sends. The lane
+asserts exactly that code on the select remove-then-reload path
+(`scripts/device_configuration_contract_acceptance.py`,
+`REREGISTRATION_UNDO_REFUSAL` and `restored_reregistration`). A different
+registry `id`, `created_at` or `unique_id` on that path fails the lane; it is
+not accepted under another refusal code.
+
+**R2, a replaced device.** Re-commissioning or replacing a Matter device gives
+a new node id, so a new `unique_id` and a new registry `id`. When the device
+has a serial, Core restores the old Home Assistant device `id` onto it, and
+the old entity_id may be reused because a deleted entity's entity_id counts as
+available. Expected result: `device_configuration_undo_identity_changed`
+(`E/device_configuration/adapter.py:169-170`), caught by the registry `id` and
+`unique_id`. The test does not depend on the device `id` changing
+(`tests/test_hamcp297_device_configuration.py`:
+`test_r2_replaced_device_is_caught_by_registry_id_and_unique_id_alone`). The
+same code is the result for an entry that was purged after its config entry
+was removed and 30 days passed, and was then registered anew: it has a new
+registry `id`. R2 is covered at unit level only. Exercising it in the lane
+would need a stub control action that removes a node and commissions a
+replacement with the same serial under a new node id; the lane's closed lists
+have no such action and none was added.
+
+**Residual limitation (this document only).** A physical device replacement is
+detected when it changes at least one identity field that `identity()`
+compares (`E/device_configuration/contracts.py:460-469`): the registry `id`,
+`created_at`, `unique_id`, `platform`, `translation_key`, `config_entry_id`,
+`device_id` or `entity_category`, or the device `id`, `created_at`,
+`identifiers` or `primary_config_entry`. That a replacement gets a new Matter
+node id, and so a new `unique_id`, is an assumption about Matter Server
+behaviour; it is not verified from the Core archive (see the list above), and
+a replacement that kept every one of those fields would not be refused as an
+identity change. The other undetectable residual is a same-`unique_id`
+re-registration (the entity deleted and rediscovered, or a required attribute
+or feature lost and regained) that leaves the observation fingerprint
+unchanged. Step a shows that a re-registration changes registry `modified_at`
+and the state timestamps, so that second residual is theoretical. By the same
+ruling it is recorded in this design document only: the runtime result does
+not carry it, no seventh disclosure kind is added (§5.6), and
+`E/device_configuration/contracts.py` is unchanged.
+
+**Reload and restart end undo eligibility.** An integration reload (observed)
+and a Home Assistant restart (expected, not observed) end undo eligibility:
+the state gets a new context id, `last_changed` and `last_updated`, so the
+undo refuses `device_configuration_undo_post_state_unproven`. The lane
+observed exactly that for the config switch after a `matter` entry reload
+alone: the undo was refused with that code before any task, with zero sends
+(receipt `observations.reregistration_fingerprint.reload_only.undo_after_reload`).
+Recovery is the compensating change of §5.11.3. An available undo says so in its `rule` text
+(`E/device_configuration/service.py:419-423`): "only while the post-change
+observation is still exact; a later change or an integration reload ends
+eligibility, and a Home Assistant restart is expected to as well; after that,
+make a compensating change". The text explains; it decides nothing. It is not
+part of the signed profile material (§6), and the profile fingerprint is the
+same before and after it.
+
 #### Superseded (historical)
 
+- The R1 row of §8 expected `device_configuration_undo_identity_changed` for
+  an entity deleted and re-registered at the same entity_id, and the N12 F2
+  variant expected the registry `id` and `created_at` to change. Superseded
+  for Core 2026.11.0 by §5.11.4 (HAMCP-366): with the config entry kept, Core
+  restores both, and the undo refuses
+  `device_configuration_undo_post_state_unproven`. The R2 row described a
+  replaced device by a new device `id`. Superseded by §5.11.4: the device `id`
+  can be restored by serial, and the refusal turns on the registry `id` and
+  `unique_id`.
 - The c22af225 draft allowed rollback "while the live state still equals the
   verified readback value" and, after an indeterminate or mismatched apply, a
   rollback plan "from the observed state". Superseded by the Codex D2
@@ -1337,7 +1485,7 @@ unless the row says otherwise.
 | N9 | State `unavailable`/`unknown` | `device_configuration_entity_unavailable` | reads only |
 | N10 | `select` value not in `options` | `device_configuration_value_not_offered` | reads only |
 | N11 | Value equals the current state (numerically for `number`, for example `"30"` vs state `30.0`) | `no_change`, declared, zero sends, no undo sidecar | reads only |
-| N12 | Any observation field changes between preparation and the locked preflight, or between the preflight and `once()` (state, `last_changed`, `last_updated`, context, options, `min`/`max`/`step`/unit, registry `modified_at`, `device_id`, category, `options["number"]`, device identity). **Variant (F2):** between the locked preflight and `once()`, the registry entry is deleted and re-registered at the same entity_id so the registry `id` and `created_at` change while state, value and every state attribute stay identical | refused stale at `once()` by the composite comparison (`device_configuration_state_changed`), no `before_dispatch`, no intent, no `call_service` sent | reads only |
+| N12 | Any observation field changes between preparation and the locked preflight, or between the preflight and `once()` (state, `last_changed`, `last_updated`, context, options, `min`/`max`/`step`/unit, registry `modified_at`, `device_id`, category, `options["number"]`, device identity). **Variant (F2):** between the locked preflight and `once()`, the registry entry is deleted and re-registered at the same entity_id while state, value and every state attribute stay identical. On Core 2026.11.0 with the config entry kept, the entry comes back under the same registry `id` and `created_at` with a new `modified_at` (§5.11.4, observed in the lane); a different registry `id` and `created_at` arise for a replaced device or a purged entry (unit level) | refused stale at `once()` by the composite comparison (`device_configuration_state_changed`), no `before_dispatch`, no intent, no `call_service` sent | reads only |
 | N13 | `before_dispatch` raises (including a lost or fenced lease) | `FAILED_PRE_DISPATCH`, `call_not_sent` | reads only |
 | N14 | Gateway is asked for any never-sent service (§5.4) | Unreachable: payload builder has no branch for it. Test asserts the exact payloads and that no other is constructible | none |
 | N15 | Timeout after send | `DISPATCH_INDETERMINATE`, one send only, readback runs, `entity:` hold retained | one send |
@@ -1398,8 +1546,8 @@ dispatches in any of these:
 
 | # | Scenario | Expected |
 |---|---|---|
-| R1 | Registry entity deleted and re-registered at the same entity_id with the same name and value | `device_configuration_undo_identity_changed` at preparation; also at preflight/`once()` if it happens later |
-| R2 | Device replaced (new device `id`) with the same entity_id and value | `device_configuration_undo_identity_changed` |
+| R1 | The restored case (restated for Core 2026.11.0, §5.11.4): the registry entity is removed and registered again with the same `unique_id` while its config entry is kept, at the same entity_id with the same name and value. Core restores the registry `id` and `created_at`, with no time limit | `device_configuration_undo_post_state_unproven` at preparation (registry `modified_at` and the state's context id, `last_changed` and `last_updated` differ), zero sends; refused stale at preflight/`once()` if it happens later. The lane asserts exactly this code on the select remove-then-reload path, never either code; the config switch and the number are covered at unit level |
+| R2 | A replaced device (restated, §5.11.4): re-commissioning or replacing a Matter device gives a new node id, so a new `unique_id` and a new registry `id`. With a serial, Core restores the old device `id` onto it, and the old entity_id may be reused. The value is the same | `device_configuration_undo_identity_changed`, caught by the registry `id` and `unique_id`; the test must not depend on the device `id` changing. Also the result for an entry purged after its config entry was removed and 30 days passed, then registered anew. Unit level only (§5.11.4) |
 | R3 | ABA: after the change, a third party sets another value and then the changed value again | `device_configuration_undo_post_state_unproven` (timestamps/context differ) |
 | R4 | Identity or observation changes between undo preparation and the send | refused at preflight or `once()`, zero sends |
 | R5 | `select` prior option removed from `options` before undo | `device_configuration_baseline_not_restorable`, prior value reported |
@@ -1473,6 +1621,16 @@ disposable lane. No household access is needed for this.
   `core.device_configuration_entity_operation`, run by a new
   `run_disposable` acceptance module wired into `scripts/core_evidence_lanes.py`
   like the existing groups (`run_specialized`, `:27-58`).
+- **2.6 scope of the lane (HAMCP-366).** For 2.6 the lane is a local runner
+  only (`scripts/core_device_configuration_local.py`): it has the evidence
+  group above and writes a receipt bound to its source commit, and it is not
+  wired into `run_specialized` or any workflow. That wiring is a separate 2.7
+  row (HAMCP-368). The capability extension can bind a local receipt because
+  the extension evidence binds its review artifacts by SHA-256 only
+  (`scripts/prepare_core_release_registry.py:109-126`,
+  `review_artifacts_sha256`); the local lanes of HAMCP-315
+  (`docs/evidence/hamcp315/README.md`) and HAMCP-134
+  (`docs/evidence/hamcp134/lane/README.md`) set the precedent.
 - **The signed build only (review F1).** The G4 run executes the exact
   build whose compiled profile carries the final three-triple allowlist (B15,
   §4.1) and the final fingerprint. It contains no test seam, no extra triple
@@ -1494,10 +1652,17 @@ disposable lane. No household access is needed for this.
   - The stub implements only the server side of the WebSocket protocol subset
     that `matter-python-client==1.5.5` uses for connect, `start_listening`,
     node delivery, `write_attribute` and attribute-updated events. That
-    subset is derived from the pinned client source at build time and is
-    **unknown at this head**; if the client needs a command the stub cannot
-    answer faithfully, the build stops and reports it rather than patching
-    Core or the client.
+    subset is pinned by the build (see the build result below): the stub
+    answers `start_listening`, `get_nodes`, `get_node`, `server_info`,
+    `set_default_fabric_label`, `check_node_update`, `get_network_topology`
+    and `write_attribute`, and answers any other command with
+    `INVALID_COMMAND`
+    (`tests/fixtures/hamcp297_matter_server_stub/stub.py:212-236`). The pins
+    are matter-python-client 1.5.5 and matter-js/matterjs-server v1.5.5
+    (commit `a7922e85`), recorded in that fixture's `provenance.json`
+    (`protocol_pins`). If the client needs a command the stub cannot answer
+    faithfully, the build stops and reports it rather than patching Core or
+    the client.
   - It serves node dumps taken unchanged from Core's own test fixtures at
     `74cf5a49`, identified by sha256:
     `tests/components/matter/fixtures/nodes/eve_energy_20ecn4101.json`
@@ -1588,10 +1753,18 @@ disposable lane. No household access is needed for this.
   undo, each with exactly one recorded stub write; delayed state reporting
   verified on a later poll; rejected and stalled writes each followed by
   readback, exactly one write each, and the `entity:` hold present; a
-  stored-value mismatch held as `verification_failed`; numeric bounds and
-  step per N22–N26 on the sensitivity number (1..N from
-  `SupportedSensitivityLevels`); the composite-identity checks at `once()`
-  (N12 including the registry-id variant, R1, R4); wrong-domain, disabled,
+  stored-value mismatch held as `verification_failed`; numeric range, step
+  and readback per N24–N26 on the sensitivity number (1..N from
+  `SupportedSensitivityLevels`), while N22 and N23 are proven at unit level
+  (`tests/test_hamcp297_device_configuration.py`:
+  `test_number_unit_conversion_and_bounds_refuse`), because N22 is not
+  constructible in the lane and the kind check refuses the fixture's converter
+  number before the N23 check is reached; the composite-identity checks at
+  `once()`
+  (N12 including the re-registration variant, R1 as the restored case of
+  §5.11.4 with its one exact refusal code, R4; R2 and a changed registry id
+  are proven at unit level, because the lane has no action that replaces a
+  node); wrong-domain, disabled,
   diagnostic, non-config, device-less and non-admitted-kind entities refused
   with zero sends; S8 (no `confirmation_required` for any admitted kind); and
   C1/C2 against the lane's `control_power` on the Matter child-lock switch.

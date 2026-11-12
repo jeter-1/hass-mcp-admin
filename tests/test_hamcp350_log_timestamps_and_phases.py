@@ -28,6 +28,7 @@ from ha_mcp_engineering.logging_config import (  # noqa: E402
     uvicorn_log_config,
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
+from ha_mcp_engineering.sanitization import sanitize_untrusted_data  # noqa: E402
 
 ISO_MS_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
 # 2026-11-09T21:00:36.590Z
@@ -72,6 +73,44 @@ class LogTimestampTests(unittest.TestCase):
         self.assertEqual(payload["event"], "probe")
         self.assertTrue(payload["redaction_applied"])
         self.assertNotIn("hamcp350-synthetic-secret", json.dumps(payload))
+
+    def test_json_timestamp_is_written_after_sanitization(self):
+        """HAMCP-358 (7): a known secret equal to the timestamp text leaves it raw.
+
+        The formatter's sanitization pass has no per-call secret; the
+        process-wide secret path is the known secret it does see. With that
+        secret equal to the record's timestamp text, the pass redacts the
+        text in the message and the context. The timestamp stays raw only
+        because it is added to the payload after that pass.
+        """
+        secret_paths.configure(f"http://127.0.0.1:9583/{EXPECTED}/mcp")
+        self.addCleanup(secret_paths.reset)
+        # The premise: this pass redacts the timestamp text in any field it sees.
+        seen = sanitize_untrusted_data({"timestamp": EXPECTED}, max_string=2048)
+        self.assertEqual(seen.value, {"timestamp": secret_paths.MARKER})
+        captured = []
+        logger = logging.getLogger("ha_mcp_engineering.hamcp358_probe")
+        handler = logging.Handler()
+        handler.emit = captured.append
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        logger.setLevel(logging.INFO)
+        with patch("time.time", return_value=CREATED), patch(
+            "time.time_ns", return_value=int(CREATED * 1e9)
+        ):
+            log_event(
+                logger, logging.INFO, "probe", f"Probe at {EXPECTED} done",
+                context={"seen_at": EXPECTED},
+                secret=EXPECTED,
+            )
+        payload = json.loads(JsonFormatter().format(captured[0]))
+        self.assertEqual(payload["timestamp"], EXPECTED)
+        self.assertNotIn(EXPECTED, payload["message"])
+        self.assertIn("[REDACTED", payload["message"])
+        self.assertNotIn(EXPECTED, json.dumps(payload["context"]))
+        self.assertIn("[REDACTED", json.dumps(payload["context"]))
+        self.assertTrue(payload["redaction_applied"])
+        self.assertEqual(json.dumps(payload).count(EXPECTED), 1)
 
     def test_json_timestamp_follows_record_created_not_the_message(self):
         payload = json.loads(

@@ -54,7 +54,14 @@ acceptance_spec.loader.exec_module(acceptance)
 
 
 def application_gateway(runtime, *, reconciled=True, deadline_elapsed=False):
-    """Exercise the real composition callback without configuring live clients."""
+    """Exercise the real composition callback without configuring live clients.
+
+    HAMCP-358 (11): ``create_application`` configures process-wide state and
+    this helper does not restore it. No test in this module calls the
+    helper, so the module has no restore of its own; each caller restores
+    first with ``preserve_create_application_state`` (HAMCP-362), as
+    ``tests/test_f3_readiness.py`` and ``tests/test_f3_runtime_integration.py`` do.
+    """
     app = gateway_fixtures.RecordingApp()
     with ExitStack() as stack:
         for name in (
