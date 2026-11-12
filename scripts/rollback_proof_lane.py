@@ -1062,7 +1062,7 @@ def main(argv: list[str] | None = None) -> int:
             lane = Lane(options.work.resolve(), options.reader_python, options.writer_python,
                         options.writer_commit)
             receipts = lane.run(tuple(options.scenario or sorted(CLASSIFIERS)), tiers, exact)
-        except (LaneError, subprocess.TimeoutExpired) as error:
+        except (LaneError, OSError, subprocess.TimeoutExpired) as error:
             print(f"rollback proof lane: no evidence produced: {error}", file=sys.stderr)
             return 2
         for path in write_receipts(receipts, options.out.resolve()):
