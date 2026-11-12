@@ -1,4 +1,13 @@
 {
+ "candidate_tool": {
+  "blob_at_commit": "1ace9bcc66892acc22462a94bd42631bacc92ef9",
+  "blob_run": "1ace9bcc66892acc22462a94bd42631bacc92ef9",
+  "commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "operation": "extend-capabilities",
+  "path": "scripts/prepare_core_release_registry.py",
+  "sha256": "6e09d3f96e79253f730604ffb10caffe69d77c183fc734f5517a3733cdf4b368",
+  "source": "git-archive"
+ },
  "cases": {
   "registry": {
    "data_set": "registry",
@@ -9,11 +18,27 @@
     "quarantined": 0
    },
    "observed": {
+    "lane": {
+     "candidate": {
+      "file": "core-candidate.json",
+      "reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
+      "sequence": 18,
+      "sha256": "c016ec447c7d2d884fdcb19e341d53a8009c7d2f642206cef9e693909fb1f90b",
+      "shape": "candidate"
+     },
+     "journal": {
+      "file": "dry-run/ha-core-release-registry.json",
+      "reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
+      "sequence": 18,
+      "sha256": "83a49c18752d437d5b4e68692cf41f4f8625d3e6e486fbe949935786408d0bdb",
+      "shape": "signed journal"
+     }
+    },
     "reader": {
      "authority": {
       "entry_present": true,
       "positive_authority_current": true,
-      "sequence": 2,
+      "sequence": 18,
       "surface_denied": false
      },
      "before_refresh_compatible_count": 0,
@@ -65,6 +90,7 @@
       "unavailable_count": 0,
       "withheld_count": 0
      },
+     "entry_reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
      "entry_references": [
       "core.basic_rest_read",
       "core.basic_websocket_read",
@@ -105,7 +131,7 @@
       "core.created_helper_delete_operation",
       "core.thread_matter_topology_read"
      ],
-     "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e",
+     "journal_sha256": "83a49c18752d437d5b4e68692cf41f4f8625d3e6e486fbe949935786408d0bdb",
      "marketplace": {
       "compiled_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb",
       "entry_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb"
@@ -457,9 +483,34 @@
       "core.created_helper_delete_operation",
       "core.thread_matter_topology_read"
      ],
-     "built_by": "scripts/prepare_core_release_registry.py prepare_candidate and sign_candidate: add, then extend-capabilities",
+     "candidate": {
+      "entries": 4,
+      "expires_at": "2027-02-10T05:38:20Z",
+      "file": "core-candidate.json",
+      "generated_at": "2026-11-12T05:38:20Z",
+      "model": "core-registry-extension-candidate-v1",
+      "operation": "extend-capabilities",
+      "previous_journal_sha256": "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d",
+      "previous_registry_sha256": "sha256:a39172d552c076698943e6fe0dbae0d75f328c4228189a5db274e009ec4124e7",
+      "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+      "reported_sha256": "c016ec447c7d2d884fdcb19e341d53a8009c7d2f642206cef9e693909fb1f90b",
+      "review_evidence_sha256": "7d3e0e512d8e1a0ae2923e8741fe00658cf537651c3654f6e518345f4f2f0a82",
+      "revocations": 3,
+      "sequence": 18,
+      "sha256": "c016ec447c7d2d884fdcb19e341d53a8009c7d2f642206cef9e693909fb1f90b",
+      "unchanged_entries": [
+       "2026.10.0",
+       "2026.10.1",
+       "2026.10.3"
+      ]
+     },
      "compiled_profiles": 38,
-     "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e",
+     "inputs": {
+      "entry_sha256": "05af1c9d170ffe450ef154e99fdf71ba4e1d3c62458b64f3f795f136d57b4bbb",
+      "evidence_sha256": "7d3e0e512d8e1a0ae2923e8741fe00658cf537651c3654f6e518345f4f2f0a82",
+      "review_artifacts": "one placeholder digest; no review artifact exists for a test candidate"
+     },
+     "journal_sha256": "83a49c18752d437d5b4e68692cf41f4f8625d3e6e486fbe949935786408d0bdb",
      "previous_references": [
       "core.basic_rest_read",
       "core.basic_websocket_read",
@@ -494,8 +545,281 @@
       "core.scene_configuration_operation",
       "core.typed_helper_value_operation"
      ],
+     "published_expires_at": "2027-02-05T06:16:34Z",
      "published_journal_sha256": "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d",
+     "published_public_key": {
+      "key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+      "path": "docs/evidence/hamcp222/core-public-key.txt"
+     },
      "published_sequence": 17,
+     "reference_objects": [
+      {
+       "adapter_id": "compiled-core-rest-read-v1",
+       "capability_id": "core.basic_rest_read",
+       "contract_fingerprint": "sha256:3c76c2789952f16340ec51c83122e43cceb1de9581b4dfdf15821d9fc8282cc8",
+       "profile_id": "core_basic_rest_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-websocket-read-v1",
+       "capability_id": "core.basic_websocket_read",
+       "contract_fingerprint": "sha256:e1c15f0d838c44f40c2bcf7ae9df408c9cd186cea7874ab7976945be405294cc",
+       "profile_id": "core_basic_websocket_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-state-service-discovery-v1",
+       "capability_id": "core.state_service_discovery",
+       "contract_fingerprint": "sha256:f6647dfe70a6b477b97c7866d7b2f91f4ba00452547c9d16a8b8298a147c7225",
+       "profile_id": "core_state_service_discovery_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-non-device-registry-read-v1",
+       "capability_id": "core.non_device_registry_read",
+       "contract_fingerprint": "sha256:4e29009423e7f2438a6b5e0a9cccfcc6add46de73fc05a1edd9fdde9be639615",
+       "profile_id": "core_non_device_registry_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-direct-device-registry-v1",
+       "capability_id": "core.direct_device_registry_read",
+       "contract_fingerprint": "sha256:df4afeeea54fa4c59dbe5f8f5b63e63fab516ae69808d7d6ba4d0821b6818ee9",
+       "profile_id": "core_direct_device_registry_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-delegated-device-effective-area-v1",
+       "capability_id": "core.delegated_device_effective_area",
+       "contract_fingerprint": "sha256:b1c2352fe0e87b59a4f9451113d650ac474a56d9135f715d17d2ca31d25645ad",
+       "profile_id": "core_delegated_device_effective_area_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-direct-entity-state-read-v1",
+       "capability_id": "core.direct_entity_state_read",
+       "contract_fingerprint": "sha256:a42cec05d830e66ce830d07e413b8875dfcfd8d985ba2111b94419ef847cf9d1",
+       "profile_id": "core_direct_entity_state_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-automation-configuration-read-v1",
+       "capability_id": "core.automation_configuration_read",
+       "contract_fingerprint": "sha256:ec4344e7dc0a0f4b1a84a2dfbbeae1b412432cf787bcdf41d58ea21a6edb45ad",
+       "profile_id": "core_automation_configuration_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-automation-trace-read-v1",
+       "capability_id": "core.automation_trace_read",
+       "contract_fingerprint": "sha256:7f45584511fb1069561ba4ef7a43c4cd6e9a5f41cb9b2f2aac5bdadcd6511c9c",
+       "profile_id": "core_automation_trace_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-dashboard-configuration-read-v1",
+       "capability_id": "core.dashboard_configuration_read",
+       "contract_fingerprint": "sha256:134fa8fa48bdd085a491d2f311ee69c48f53c844a651c334974899e8b79f6424",
+       "profile_id": "core_dashboard_configuration_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-template-semantics-v1",
+       "capability_id": "core.template_semantics",
+       "contract_fingerprint": "sha256:0f6d682f1b4d02be622173bc56699ef6de208b5c45b52454cd6fc7a5a083cbe7",
+       "profile_id": "core_template_semantics_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-configuration-validation-v1",
+       "capability_id": "core.configuration_validation",
+       "contract_fingerprint": "sha256:f998f871e47ded521c5ff713fd738b48c813b0363385237b19c472a1ab540b9a",
+       "profile_id": "core_configuration_validation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-dependency-helper-planning-v1",
+       "capability_id": "core.dependency_helper_planning",
+       "contract_fingerprint": "sha256:4e981b75c8bf81ef24c3fa123827786ca57762db0d2e09108e499a5e8312efe9",
+       "profile_id": "core_dependency_helper_planning_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-typed-helper-operation-v1",
+       "capability_id": "core.typed_helper_operation",
+       "contract_fingerprint": "sha256:7ae55a050860e86089756ef8d9104977c630e7c6e593bee2dbd46c6bd2535936",
+       "profile_id": "core_typed_helper_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-f3-mutation-verification-v1",
+       "capability_id": "core.f3_mutation_verification",
+       "contract_fingerprint": "sha256:274c9beef6b4f6137715b7ab60a25cfcb93fbd1d1b2737ad776004dd3e47c873",
+       "profile_id": "core_f3_mutation_verification_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-governed-configuration-operation-v1",
+       "capability_id": "core.governed_configuration_operation",
+       "contract_fingerprint": "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441",
+       "profile_id": "core_governed_configuration_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-governance-observability-v1",
+       "capability_id": "core.governance_observability",
+       "contract_fingerprint": "sha256:b4fa34c413a21ea643de830de00477c7c4953efb43916a1d83fa1e3cbd9eb3e2",
+       "profile_id": "core_governance_observability_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-single-fan-v1",
+       "capability_id": "core.typed_fan_operation",
+       "contract_fingerprint": "sha256:25b3b6fdd25ca9c5ba8a7811d850f801fc7d3deefadd4a6bafbf1e9f6a6c042b",
+       "profile_id": "core_typed_fan_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-single-power-v1",
+       "capability_id": "core.typed_power_operation",
+       "contract_fingerprint": "sha256:9242b795a2d5ed3deeb3b8ea46fba13fc299c14fb274e3b29ed97a30b607001a",
+       "profile_id": "core_typed_power_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-alarmo-metadata-read-v1",
+       "capability_id": "core.integration_inspection_metadata_read",
+       "contract_fingerprint": "sha256:d10cb88811c65b4b45bed1941f1b8f920ac3eb217d05285f117d5ac23f09c36a",
+       "profile_id": "core_integration_inspection_metadata_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-automation-baseline-read-v1",
+       "capability_id": "core.automation_baseline_metadata_read",
+       "contract_fingerprint": "sha256:42ea1b1731aa0d73e01717aabfa99639c29af2755d8d341c39b4789256a3c540",
+       "profile_id": "core_automation_baseline_metadata_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-entity-registry-metadata-operation-v1",
+       "capability_id": "core.entity_registry_metadata_operation",
+       "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+       "profile_id": "core_entity_registry_metadata_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-entity-registry-availability-operation-v1",
+       "capability_id": "core.entity_registry_availability_operation",
+       "contract_fingerprint": "sha256:ae292fbc16ad82c8d8347b7e2eb1c3a7e8c7644d95783f5bf2ae9f9cc63a76b2",
+       "profile_id": "core_entity_registry_availability_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-entity-assistant-exposure-operation-v1",
+       "capability_id": "core.entity_assistant_exposure_operation",
+       "contract_fingerprint": "sha256:474c8ccaaae83c12f56a2848995ff089097936568a2ad5dc8d25ce855d51dbbd",
+       "profile_id": "core_entity_assistant_exposure_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-label-registry-operation-v1",
+       "capability_id": "core.label_registry_operation",
+       "contract_fingerprint": "sha256:b2f0dd11ff243aa2559c27738d962785e37455d37b836cb5a6997aeabb26813c",
+       "profile_id": "core_label_registry_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-configuration-delete-operation-v1",
+       "capability_id": "core.configuration_delete_operation",
+       "contract_fingerprint": "sha256:5688af5d141b97ca33eadf251ecfbb8f3b1f833024b0ee1acea4973f558f887d",
+       "profile_id": "core_configuration_delete_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-config-entry-helper-options-operation-v1",
+       "capability_id": "core.config_entry_helper_options_operation",
+       "contract_fingerprint": "sha256:ce2765dc5caf616ae199fdccf64ce6ec68e1386bb0949099d1896bcb50dd98d8",
+       "profile_id": "core_config_entry_helper_options_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-typed-input-select-option-operation-v1",
+       "capability_id": "core.typed_input_select_option_operation",
+       "contract_fingerprint": "sha256:e2240555fb35042e47e7ee7afb7f5552977d019a27058fb2c2c5802674fee38d",
+       "profile_id": "core_typed_input_select_option_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-script-trace-read-v1",
+       "capability_id": "core.script_trace_read",
+       "contract_fingerprint": "sha256:749904fe40b13db4289301d24b958836fc72c810829611729d8c26080f06ca03",
+       "profile_id": "core_script_trace_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-dashboard-metadata-operation-v1",
+       "capability_id": "core.dashboard_metadata_operation",
+       "contract_fingerprint": "sha256:62cd6c1453b0bc0b52c6e5f9775d1897294f31b62792dd9674a61b9e8a54cfaa",
+       "profile_id": "core_dashboard_metadata_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-scene-configuration-operation-v1",
+       "capability_id": "core.scene_configuration_operation",
+       "contract_fingerprint": "sha256:73bac9067f62b62b039ce03f7754d1312f9c0595d0fb16af49851a49c90ba6bb",
+       "profile_id": "core_scene_configuration_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-single-helper_value-v1",
+       "capability_id": "core.typed_helper_value_operation",
+       "contract_fingerprint": "sha256:d45ea23b2b7c0ade4c3d4b5ae28602a7d10af72db3dd103f20cffdcea8cc228d",
+       "profile_id": "core_typed_helper_value_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-marketplace-read-v1",
+       "capability_id": "core.marketplace_read",
+       "contract_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb",
+       "profile_id": "core_marketplace_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-security-metadata-read-v1",
+       "capability_id": "core.security_metadata_read",
+       "contract_fingerprint": "sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55",
+       "profile_id": "core_security_metadata_read_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-device-configuration-entity-operation-v1",
+       "capability_id": "core.device_configuration_entity_operation",
+       "contract_fingerprint": "sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c",
+       "profile_id": "core_device_configuration_entity_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-scene-create-delete-operation-v1",
+       "capability_id": "core.scene_create_delete_operation",
+       "contract_fingerprint": "sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d",
+       "profile_id": "core_scene_create_delete_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-created-helper-delete-operation-v1",
+       "capability_id": "core.created_helper_delete_operation",
+       "contract_fingerprint": "sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4",
+       "profile_id": "core_created_helper_delete_operation_v1",
+       "profile_version": 1
+      },
+      {
+       "adapter_id": "compiled-core-thread-matter-topology-read-v1",
+       "capability_id": "core.thread_matter_topology_read",
+       "contract_fingerprint": "sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c",
+       "profile_id": "core_thread_matter_topology_read_v1",
+       "profile_version": 1
+      }
+     ],
      "references": [
       "core.basic_rest_read",
       "core.basic_websocket_read",
@@ -536,30 +860,78 @@
       "core.created_helper_delete_operation",
       "core.thread_matter_topology_read"
      ],
-     "sequence": 2,
-     "signer": "ed25519 key generated in this process and not retained"
+     "sequence": 18,
+     "test_signed": {
+      "entry_references_equal_candidate": true,
+      "envelope_equals_candidate_envelope": true,
+      "envelopes": 18,
+      "file": "dry-run/ha-core-release-registry.json",
+      "key_sha256": "741445af417289392f2c5194efa43a9650635bb3b418a59a7dc5f79403db538a",
+      "predecessor_content_unchanged": true,
+      "sequence": 18,
+      "signer": "ed25519 key generated inside the dry run; its private half is never written"
+     },
+     "tools": {
+      "candidate": {
+       "arguments": [
+        "--entry",
+        "<data>/core-entry.json",
+        "--evidence",
+        "<data>/core-review-evidence.json",
+        "--public-key",
+        "<writer-source>/docs/evidence/hamcp222/core-public-key.txt",
+        "--previous",
+        "<published-journal>",
+        "--output",
+        "<data>/core-candidate.json"
+       ],
+       "exit": 0,
+       "operation": "extend-capabilities",
+       "path": "scripts/prepare_core_release_registry.py",
+       "sha256": "6e09d3f96e79253f730604ffb10caffe69d77c183fc734f5517a3733cdf4b368",
+       "stdout": "Prepared output SHA256: c016ec447c7d2d884fdcb19e341d53a8009c7d2f642206cef9e693909fb1f90b"
+      },
+      "test_signing": {
+       "arguments": [
+        "--candidate",
+        "<data>/core-candidate.json",
+        "--predecessor",
+        "<published-journal>",
+        "--public-key",
+        "<writer-source>/docs/evidence/hamcp222/core-public-key.txt",
+        "--output-dir",
+        "<data>/dry-run"
+       ],
+       "exit": 0,
+       "operation": "dry-run-sign",
+       "path": "scripts/core_registry_one_tap.py",
+       "sha256": "0e8e9b13994a54dd08ec786da04b573b888c2d7b978bdd5e7af61b173601e68c",
+       "stdout": "Dry run signed with an ephemeral key; the owner key was not used."
+      }
+     }
     }
    }
   }
  },
  "data": {
   "registry": {
-   "after_read": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
-   "after_write": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
-   "before_read": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
-   "files": 2,
-   "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e"
+   "after_read": "48021c34f40c9cd608f1701d79a2c913f052b155961a0efe4cbd24f3bcd18acc",
+   "after_write": "48021c34f40c9cd608f1701d79a2c913f052b155961a0efe4cbd24f3bcd18acc",
+   "before_read": "48021c34f40c9cd608f1701d79a2c913f052b155961a0efe4cbd24f3bcd18acc",
+   "candidate_sha256": "c016ec447c7d2d884fdcb19e341d53a8009c7d2f642206cef9e693909fb1f90b",
+   "files": 6,
+   "journal_sha256": "83a49c18752d437d5b4e68692cf41f4f8625d3e6e486fbe949935786408d0bdb"
   }
  },
  "drivers": {
-  "previous_reader.py": "f0427230aaccf439a26677ecf8b3214dd847db6a122d87367507587594b811ab",
-  "rollback_proof_lane.py": "2c14e54bb11f9a8b7e2f1cf2da4c5b216bf38db708694562defa3207c17ac18f",
-  "tip_writer.py": "7485113e156ea79489aae0ebd72233cccfde5427b4df45a5c2804a82221fb5fc"
+  "previous_reader.py": "f507fa35086addb60cb5377a20e8b0c44899af1905422f3fb6107f4a3d3f7349",
+  "rollback_proof_lane.py": "e8d064ba6f3fcc2ea5c83ca912c8962d0c25bc85cdefb472927a759d20824814",
+  "tip_writer.py": "0e4dc04e115f0015c2e1b5ab3fe79f2b0c10dc69aa55ec85586b21eda1f436ca"
  },
- "ended_at": "2026-11-12T04:41:28+00:00",
+ "ended_at": "2026-11-12T05:38:24+00:00",
  "failures": [],
  "lane": {
-  "checkout_commit": "747436e766bbb97e8576cd765c7d8a122a52d38e",
+  "checkout_commit": "cd2080846b25a4f632f404bc15ef9aabe24051fc",
   "commands": [
    [
     "<writer-python>",
@@ -589,7 +961,10 @@
   "note": "plain interpreter processes with a scrubbed environment; the drivers open no socket and start no container"
  },
  "limitations": [
-  "Synthetic provider: both releases ran their own offline test harness. No Home Assistant Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this receipt shows what the previous release's code does with these records, not what a deployed add-on does end to end."
+  "Synthetic provider: both releases ran their own offline test harness. No Home Assistant Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this receipt shows what the previous release's code does with these records, not what a deployed add-on does end to end.",
+  "The candidate's review evidence is a placeholder, and the tool stamps the time it runs. Its evidence digests, generated_at and expires_at therefore differ from those of any real candidate; its reference objects are what the comparison covers.",
+  "The test signature comes from the release's own dry run, which re-signs the published envelopes and the candidate with a key it generates and does not keep. The previous release read that journal under that key, not under the published key.",
+  "The lane identifies a supplied real candidate by its sha256 only. It does not establish that the file is the candidate that was or will be signed."
  ],
  "reader": {
   "archive_commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
@@ -611,6 +986,12 @@
   "tag_object": "998e9021e5f187b0f375bff9b4b867243fd270c0",
   "version": "2.4.2-beta.7"
  },
+ "real_candidate_comparison": {
+  "compares": "The canonical JSON bytes of each capability reference object of the Core 2026.11.0 entry, in order. Signature fields belong to envelopes and the journal, not to reference objects; they, the timestamps and the evidence digests are not compared.",
+  "lane_reference_count": 38,
+  "lane_reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
+  "status": "not yet available: the real candidate does not exist"
+ },
  "result": "PASS",
  "row": "HAMCP-377",
  "runs": [
@@ -629,11 +1010,22 @@
  ],
  "scenario": "12a",
  "schema": "hamcp377-rollback-proof-receipt-v1",
- "started_at": "2026-11-12T04:41:25+00:00",
+ "started_at": "2026-11-12T05:38:17+00:00",
  "subject": "source",
  "summary": [
-  "The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined."
+  "The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined.",
+  "The entry was built by scripts/prepare_core_release_registry.py extend-capabilities at commit aeb3b314dd180592874243c9ae370a63f0622c2b as sequence 18 on the published sequence 17 journal under the published public key, and test-signed by scripts/core_registry_one_tap.py dry-run-sign with a key generated in that dry run; the signed content equals the candidate and the published content.",
+  "Comparison with the real sequence 18 candidate: not yet available: the real candidate does not exist."
  ],
+ "test_signing_tool": {
+  "blob_at_commit": "7524f83d52b53287e0fc1bf0b9d7f0f3621f8918",
+  "blob_run": "7524f83d52b53287e0fc1bf0b9d7f0f3621f8918",
+  "commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "operation": "dry-run-sign",
+  "path": "scripts/core_registry_one_tap.py",
+  "sha256": "0e8e9b13994a54dd08ec786da04b573b888c2d7b978bdd5e7af61b173601e68c",
+  "source": "git-archive"
+ },
  "title": "registry entry with capability references the previous release does not compile",
  "trees_distinct": true,
  "writer": {

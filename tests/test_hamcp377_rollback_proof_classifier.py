@@ -14,7 +14,9 @@ import contextlib
 import copy
 import hashlib
 import io
+import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -33,6 +35,27 @@ def check(directory: Path) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = lane.main(["check", str(directory)])
+    return code, out.getvalue(), err.getvalue()
+
+
+def synthetic_candidate(objects: list, *, shape: str = "candidate", sequence: int = 18,
+                        newline: bool = True) -> bytes:
+    """A stand-in file for the comparison tests only. It is never a recorded receipt's input."""
+
+    envelope = {"sequence": sequence, "entries": [
+        {"version": "2026.10.3", "capabilities": objects[:1]},
+        {"version": lane.CORE_VERSION, "capabilities": objects}]}
+    value = {"candidate": {"model": "synthetic-test-candidate", "envelope": envelope},
+             "signed journal": {"envelopes": [{"sequence": sequence - 1, "entries": []},
+                                              envelope]},
+             "envelope": envelope}[shape]
+    return lane.canonical(value) + (b"\n" if newline else b"")
+
+
+def run_main(*arguments: str) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = lane.main(list(arguments))
     return code, out.getvalue(), err.getvalue()
 
 
@@ -112,6 +135,32 @@ class RecordedReceiptTests(GuardCase):
         self.assertIs(self.receipts["12a"]["cases"]["registry"]["observed"]["real_read"]
                       ["exercised"], False)
 
+    def test_recorded_12a_names_the_candidate_tool_and_claims_no_comparison(self) -> None:
+        receipt = self.receipts["12a"]
+        writer = receipt["cases"]["registry"]["observed"]["writer"]
+        for name, path, operation in (
+                ("candidate_tool", "scripts/prepare_core_release_registry.py",
+                 "extend-capabilities"),
+                ("test_signing_tool", "scripts/core_registry_one_tap.py", "dry-run-sign")):
+            tool = receipt[name]
+            self.assertEqual((tool["path"], tool["operation"]), (path, operation))
+            self.assertEqual((tool["commit"], tool["source"]),
+                             (receipt["writer"]["commit"], "git-archive"))
+            self.assertEqual(tool["blob_run"], tool["blob_at_commit"])
+        self.assertEqual((writer["published_sequence"], writer["candidate"]["sequence"],
+                          writer["test_signed"]["sequence"]), (17, 18, 18))
+        self.assertEqual(len(writer["reference_objects"]), 38)
+        # No real candidate existed when these were recorded; the receipt must say exactly that.
+        self.assertEqual(receipt["real_candidate_comparison"], {
+            "status": "not yet available: the real candidate does not exist",
+            "compares": lane.COMPARISON_SCOPE, "lane_reference_count": 38,
+            "lane_reference_objects_sha256": lane.reference_digest(writer["reference_objects"])})
+        self.assertIn("Comparison with the real sequence 18 candidate: not yet available: the "
+                      "real candidate does not exist.", receipt["summary"])
+        text = (RECEIPTS / "12a-source.json").read_text(encoding="utf-8")
+        for fragment in ("PRIVATE KEY", "SIGNING_KEY", str(Path.home())):
+            self.assertNotIn(fragment, text)
+
     def test_recorded_receipts_were_produced_by_the_committed_drivers(self) -> None:
         # Hash with LF line ends, as committed, whatever the checkout translated them to.
         for driver in (lane.WRITER_DRIVER, lane.READER_DRIVER):
@@ -156,6 +205,8 @@ class IdentityAndSeparationTests(GuardCase):
     def test_g1_a_worktree_writer_is_accepted_only_when_exactness_is_waived(self) -> None:
         receipt = copy.deepcopy(self.receipts["12a"])
         receipt["writer"].update({"source": "worktree", "archive_commit": None})
+        for name in ("candidate_tool", "test_signing_tool"):
+            receipt[name]["source"] = "worktree"
         receipt["lane"]["drivers_modified"] = ["?? scripts/rollback_proof_lane.py"]
         self.assertEqual(lane.classify(receipt, require_exact=False), [])
         self.assertTrue(lane.classify(receipt))
@@ -177,6 +228,12 @@ class IdentityAndSeparationTests(GuardCase):
         self.guard("G2", "12b", lambda receipt: receipt["data"].pop("device_crash"))
         self.guard("G2", "12a", lambda receipt: receipt["cases"]["registry"]["observed"]
                    ["reader"].update({"journal_sha256": "0" * 64}))
+        # Each of the four records of the test-signed journal is compared, one at a time.
+        text = "the journal the reader loaded is not the journal the writer signed"
+        self.guard("G2", "12a", lambda receipt: receipt["data"]["registry"].update(
+            {"journal_sha256": "0" * 64}), text=text)
+        self.guard("G2", "12a", lambda receipt: receipt["cases"]["registry"]["observed"]["lane"]
+                   ["journal"].update({"sha256": "0" * 64}), text=text)
 
 
 class RegistryTests(GuardCase):
@@ -184,19 +241,201 @@ class RegistryTests(GuardCase):
     def observed(receipt: dict) -> dict:
         return receipt["cases"]["registry"]["observed"]
 
+    @classmethod
+    def relist(cls, receipt: dict, objects: list) -> None:
+        """Rewrite every record of the reference list the way a consistent hand edit would."""
+
+        observed = cls.observed(receipt)
+        writer, digest = observed["writer"], lane.reference_digest(objects)
+        writer["reference_objects"] = objects
+        writer["references"] = [item["capability_id"] for item in objects]
+        writer["added"] = writer["references"][len(writer["previous_references"]):]
+        observed["reader"]["entry_references"] = list(writer["references"])
+        observed["reader"]["entry_reference_objects_sha256"] = digest
+        for name in ("candidate", "journal"):
+            observed["lane"][name]["reference_objects_sha256"] = digest
+        receipt["real_candidate_comparison"].update(
+            {"lane_reference_count": len(objects), "lane_reference_objects_sha256": digest})
+
     def test_g3_entry_must_extend_the_published_entry_in_the_ruled_order(self) -> None:
         def swap(receipt: dict) -> None:
-            observed = self.observed(receipt)
-            for target in (observed["writer"]["references"], observed["writer"]["added"],
-                           observed["reader"]["entry_references"]):
-                target[-1], target[-2] = target[-2], target[-1]
-        self.guard("G3", "12a", swap, consistent=True)
-        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"].update(
-            {"built_by": "written by hand"}))
-        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"].update(
-            {"published_journal_sha256": "0" * 64}))
+            objects = self.observed(receipt)["writer"]["reference_objects"]
+            self.relist(receipt, objects[:-2] + [objects[-1], objects[-2]])
+        self.assertEqual(self.guard("G3", "12a", swap, consistent=True, text="ruled six"), [
+            "G3: the added references are not the ruled six in the ruled order"])
+
+        def prefix_changed(receipt: dict) -> None:
+            objects = self.observed(receipt)["writer"]["reference_objects"]
+            self.relist(receipt, [objects[1], objects[0], *objects[2:]])
+        self.guard("G3", "12a", prefix_changed, consistent=True,
+                   text="extension of the published entry")
+        for key, value in (("published_journal_sha256", "0" * 64), ("published_sequence", 16),
+                           ("published_expires_at", "2099-01-01T00:00:00Z"), ("sequence", 2)):
+            with self.subTest(key=key):
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"].update(
+                    {key: value}), text="extension of the published entry")
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]
+                   ["previous_references"].pop(), text="extension of the published entry")
+        # The ruled six are checked in the entry and in the writer's own list of what it added.
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["added"]
+                   .reverse(), text="ruled six")
+
+        def swap_in_entry_only(receipt: dict) -> None:
+            swap(receipt)
+            self.observed(receipt)["writer"]["added"] = list(lane.RULED_ADDED)
+        self.guard("G3", "12a", swap_in_entry_only, consistent=True, text="ruled six")
         self.guard("G3", "12a", lambda receipt: self.observed(receipt)["reader"]
-                   ["entry_references"].pop())
+                   ["entry_references"].pop(), text="reader decoded a different reference list")
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["reader"].update(
+            {"entry_reference_objects_sha256": "0" * 64}),
+            text="reader decoded a different reference list")
+
+    def test_g3_candidate_must_come_from_the_candidate_tool_on_the_published_journal(self) -> None:
+        def tool(change) -> None:
+            self.guard("G3", "12a", lambda receipt: change(
+                self.observed(receipt)["writer"]["tools"]["candidate"]),
+                text="was not built by scripts/prepare_core_release_registry.py "
+                     "extend-capabilities on the published journal")
+        tool(lambda ran: ran.update(
+            {"path": "tests/fixtures/hamcp377_rollback_proof/tip_writer.py"}))
+        tool(lambda ran: ran.update({"operation": "add"}))
+        tool(lambda ran: ran.update({"exit": 1}))
+        tool(lambda ran: ran.update({"arguments": [
+            "<data>/test-journal.json" if item == "<published-journal>" else item
+            for item in ran["arguments"]]}))
+        tool(lambda ran: ran.update({"arguments": [
+            "<data>/test-public-key.txt" if item.endswith("core-public-key.txt") else item
+            for item in ran["arguments"]]}))
+        tool(lambda ran: ran.update({"arguments": ran["arguments"] + ["--now", "2026-01-01"]}))
+
+        test_key = self.observed(self.receipts["12a"])["writer"]["test_signed"]["key_sha256"]
+        for key, value in (("sequence", 2), ("previous_journal_sha256", "0" * 64),
+                           ("public_key_sha256", test_key), ("operation", "add"),
+                           ("model", "core-registry-candidate-v1"),
+                           ("unchanged_entries", ["2026.10.0"])):
+            with self.subTest(key=key):
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]
+                           ["candidate"].update({key: value}),
+                           text="not the next sequence on the published journal under the "
+                                "published public key with one changed entry")
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]
+                   ["published_public_key"].update({"key_sha256": test_key}),
+                   text="under the published public key")
+
+    def test_g3_candidate_in_the_data_set_is_the_file_the_tool_reported(self) -> None:
+        text = "not the file the tool reported"
+        for key in ("sha256", "reported_sha256"):
+            with self.subTest(key=key):
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]
+                           ["candidate"].update({key: "0" * 64}), text=text)
+        self.guard("G3", "12a", lambda receipt: receipt["data"]["registry"].update(
+            {"candidate_sha256": "0" * 64}), text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["lane"]["candidate"]
+                   .update({"sha256": "0" * 64}), text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["candidate"]
+                   .update({"file": "hand-built.json"}), text=text)
+
+    def test_g3_recorded_reference_objects_are_the_candidates(self) -> None:
+        text = "not the ones in the candidate and in the test-signed journal"
+
+        def objects(receipt: dict) -> list:
+            return self.observed(receipt)["writer"]["reference_objects"]
+        self.guard("G3", "12a", lambda receipt: objects(receipt)[-1].update(
+            {"contract_fingerprint": "sha256:" + "0" * 64}), text=text)
+        self.guard("G3", "12a", lambda receipt: objects(receipt)[0].update(
+            {"signature": "synthetic"}), text=text)
+        self.guard("G3", "12a", lambda receipt: objects(receipt).pop(), text=text)
+        for name in ("candidate", "journal"):
+            with self.subTest(name=name):
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["lane"][name]
+                           .update({"reference_objects_sha256": "0" * 64}), text=text)
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["lane"][name]
+                           .update({"sequence": 2}), text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["lane"]["candidate"]
+                   .update({"shape": "signed journal"}), text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["lane"]["journal"]
+                   .update({"shape": "candidate"}), text=text)
+
+        def both_sequences(receipt: dict) -> None:
+            for name in ("candidate", "journal"):
+                self.observed(receipt)["lane"][name]["sequence"] = 2
+        self.guard("G3", "12a", both_sequences, text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["references"]
+                   .reverse(), text=text)
+
+        # A sixth field stays a failure when every recorded digest is rewritten to include it.
+        def sixth_field(receipt: dict) -> None:
+            changed = copy.deepcopy(objects(receipt))
+            changed[0]["signature"] = "synthetic"
+            self.relist(receipt, changed)
+        self.guard("G3", "12a", sixth_field, consistent=True, text=text)
+
+        # A consistent lie: one field of one object changed everywhere the receipt records it,
+        # except in the files of the data set, whose hashes the receipt also carries.
+        def one_field(receipt: dict) -> None:
+            changed = copy.deepcopy(objects(receipt))
+            changed[-1]["adapter_id"] = "compiled-core-synthetic-v1"
+            self.relist(receipt, changed)
+            self.observed(receipt)["lane"]["journal"]["reference_objects_sha256"] = (
+                self.observed(self.receipts["12a"])["lane"]["journal"]["reference_objects_sha256"])
+        self.guard("G3", "12a", one_field, consistent=True, text=text)
+
+    def test_g3_test_signed_journal_differs_from_the_candidate_only_in_signatures(self) -> None:
+        text = "differs from the candidate in more than its signatures"
+
+        def signed(receipt: dict) -> dict:
+            return self.observed(receipt)["writer"]["test_signed"]
+        for key in ("envelope_equals_candidate_envelope", "entry_references_equal_candidate",
+                    "predecessor_content_unchanged"):
+            with self.subTest(key=key):
+                self.guard("G3", "12a", lambda receipt: signed(receipt).update({key: False}),
+                           consistent=True, text=text)
+                self.guard("G3", "12a", lambda receipt: signed(receipt).update({key: "yes"}),
+                           text=text)
+        self.guard("G3", "12a", lambda receipt: signed(receipt).update({"sequence": 2}), text=text)
+        self.guard("G3", "12a", lambda receipt: signed(receipt).update({"file": "journal.json"}),
+                   text=text)
+        for key, value in (("path", "scripts/prepare_core_release_registry.py"),
+                           ("operation", "sign"), ("exit", 1)):
+            with self.subTest(key=key):
+                self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["tools"]
+                           ["test_signing"].update({key: value}), text=text)
+        self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["tools"]
+                   ["test_signing"].update({"arguments": [
+                       "<data>/other.json" if item == "<data>/core-candidate.json" else item
+                       for item in self.observed(receipt)["writer"]["tools"]["test_signing"]
+                       ["arguments"]]}), text=text)
+        self.guard("G3", "12a", lambda receipt: signed(receipt).update(
+            {"key_sha256": lane.PUBLISHED_KEY_SHA256}), text="a key of the run's own")
+        self.guard("G3", "12a", lambda receipt: signed(receipt).update({"key_sha256": None}),
+                   text="a key of the run's own")
+
+    def test_g3_each_tool_is_tied_to_the_writer_commit(self) -> None:
+        for name, path in (("candidate_tool", "scripts/prepare_core_release_registry.py"),
+                           ("test_signing_tool", "scripts/core_registry_one_tap.py")):
+            text = f"does not tie {path} as it ran to the writer commit"
+            for key, value in (("commit", "0" * 40), ("sha256", "0" * 64), ("path", "other.py"),
+                               ("operation", "sign"), ("source", "worktree"),
+                               ("blob_run", "0" * 40), ("blob_at_commit", "0" * 40)):
+                with self.subTest(name=name, key=key):
+                    self.guard("G3", "12a", lambda receipt: receipt[name].update({key: value}),
+                               text=text)
+            self.guard("G3", "12a", lambda receipt: receipt.pop(name), text=text)
+            self.guard("G3", "12a", lambda receipt: receipt[name].update(
+                {"blob_run": "abc", "blob_at_commit": "abc"}), text=text)
+            self.guard("G3", "12a", lambda receipt: self.observed(receipt)["writer"]["tools"][
+                "candidate" if name == "candidate_tool" else "test_signing"].update(
+                    {"sha256": "0" * 64}), text=text)
+
+    def test_g3_a_tool_edited_in_a_checkout_is_accepted_only_when_exactness_is_waived(self) -> None:
+        receipt = copy.deepcopy(self.receipts["12a"])
+        receipt["writer"].update({"source": "worktree", "archive_commit": None})
+        for name in ("candidate_tool", "test_signing_tool"):
+            receipt[name].update({"source": "worktree", "blob_run": "1" * 40})
+        self.assertEqual(lane.classify(receipt, require_exact=False), [])
+        failures = lane.classify(receipt)
+        self.assertEqual(sum("as it ran to the writer commit" in item for item in failures), 2,
+                         failures)
 
     def test_g4_a_reference_the_previous_release_does_not_compile_is_never_admitted(self) -> None:
         def admit(receipt: dict) -> None:
@@ -212,6 +451,14 @@ class RegistryTests(GuardCase):
             self.observed(receipt)["reader"]["route_status"][
                 "core.thread_matter_topology_read"]["available"] = True
         self.guard("G4", "12a", routable_only, consistent=True)
+        text = "core.thread_matter_topology_read is selected or routable"
+        self.guard("G4", "12a", lambda receipt: self.observed(receipt)["reader"]["selected"]
+                   .update({"core.thread_matter_topology_read": ["verified_compatibility",
+                                                                 "positive"]}),
+                   consistent=True, text=text)
+        self.guard("G4", "12a", lambda receipt: self.observed(receipt)["reader"]["route_status"]
+                   ["core.thread_matter_topology_read"].update({"disposition": "admitted"}),
+                   consistent=True, text=text)
 
     def test_g4_the_uncompiled_references_are_exactly_the_expected_five(self) -> None:
         self.guard("G4", "12a", lambda receipt: self.observed(receipt)["reader"]["compiled"]
@@ -238,6 +485,15 @@ class RegistryTests(GuardCase):
         self.guard("G5", "12a", hold, consistent=True, text="but not admitted")
         self.guard("G5", "12a", lambda receipt: self.observed(receipt)["reader"]["selected"].pop(
             "core.typed_power_operation"), consistent=True, text="but not admitted")
+        for change in ({"available": False}, {"disposition": "held"}):
+            with self.subTest(change=change):
+                self.guard("G5", "12a", lambda receipt: self.observed(receipt)["reader"]
+                           ["route_status"]["core.typed_power_operation"].update(change),
+                           consistent=True,
+                           text="core.typed_power_operation is compiled by the previous release "
+                                "but not admitted")
+        self.guard("G5", "12a", lambda receipt: self.observed(receipt)["reader"].update(
+            {"refreshed": False}), text="did not accept the journal as current authority")
         for count in ("held_count", "quarantined_count", "unavailable_count", "withheld_count",
                       "fallback_count"):
             with self.subTest(count=count):
@@ -251,14 +507,285 @@ class RegistryTests(GuardCase):
             {"compatible_count": 38}), consistent=True, text="held, quarantined or withheld")
         self.guard("G5", "12a", lambda receipt: self.observed(receipt)["reader"]["authority"]
                    .update({"positive_authority_current": False}))
+        # The authority the previous release holds is the test-signed sequence 18, not the
+        # published 17 and not a bootstrap journal's 2.
+        for sequence in (2, 17):
+            with self.subTest(sequence=sequence):
+                self.guard("G5", "12a", lambda receipt: self.observed(receipt)["reader"]
+                           ["authority"].update({"sequence": sequence}))
         self.guard("G5", "12a", lambda receipt: receipt["cases"]["registry"]["derived"].update(
             {"quarantined": 5, "not_admitted": 0}))
 
     def test_g6_marketplace_read_is_bound_to_the_pinned_fingerprint(self) -> None:
         self.guard("G6", "12a", lambda receipt: self.observed(receipt)["reader"]["marketplace"]
                    .update({"entry_fingerprint": "sha256:" + "0" * 64}))
+        text = "not bound to the pinned contract fingerprint"
+        self.guard("G6", "12a", lambda receipt: self.observed(receipt)["reader"]["marketplace"]
+                   .update({"compiled_fingerprint": "sha256:" + "0" * 64}), text=text)
+        self.guard("G6", "12a", lambda receipt: self.observed(receipt)["reader"]["marketplace"]
+                   .update({"entry_fingerprint": "sha256:" + "0" * 64,
+                            "compiled_fingerprint": "sha256:" + "0" * 64}), text=text)
+        text = "cannot claim a real marketplace read"
         self.guard("G6", "12a", lambda receipt: self.observed(receipt)["real_read"].update(
-            {"exercised": True}))
+            {"exercised": True}), text=text)
+        self.guard("G6", "12a", lambda receipt: self.observed(receipt)["real_read"].update(
+            {"reason": ""}), text=text)
+        # That refusal is about the source subject: it has no Core to read from.
+        claimed = copy.deepcopy(self.receipts["12a"])
+        self.observed(claimed)["real_read"]["exercised"] = True
+        self.assertTrue(any(text in item for item in lane.classify_registry(claimed)))
+        claimed["subject"] = "image"
+        self.assertFalse(any(text in item for item in lane.classify_registry(claimed)))
+
+
+class RealCandidateComparisonTests(GuardCase):
+    """G14 and the comparison it guards. Every candidate here is a synthetic test file."""
+
+    def setUp(self) -> None:
+        self.temp = Path(tempfile.mkdtemp(prefix="hamcp377-compare-"))
+        self.addCleanup(shutil.rmtree, self.temp)
+        self.objects = copy.deepcopy(self.receipts["12a"]["cases"]["registry"]["observed"]
+                                     ["writer"]["reference_objects"])
+
+    def file(self, raw: bytes, name: str = "supplied-candidate.json") -> Path:
+        path = self.temp / name
+        path.write_bytes(raw)
+        return path
+
+    def compared(self, raw: bytes) -> dict:
+        return lane.compare_real_candidate(self.objects, self.file(raw))
+
+    def with_comparison(self, comparison: dict) -> dict:
+        receipt = copy.deepcopy(self.receipts["12a"])
+        receipt["real_candidate_comparison"] = comparison
+        receipt["summary"] = lane.summarize(receipt)
+        return receipt
+
+    def test_no_candidate_is_reported_as_not_yet_available(self) -> None:
+        pending = lane.compare_real_candidate(self.objects, None)
+        self.assertEqual(pending, self.receipts["12a"]["real_candidate_comparison"])
+        self.assertEqual(pending["status"], "not yet available: the real candidate does not exist")
+        self.assertEqual(lane.classify(self.with_comparison(pending)), [])
+
+    def test_identical_reference_objects_compare_byte_for_byte_in_every_file_shape(self) -> None:
+        for shape in ("candidate", "signed journal", "envelope"):
+            for newline in (True, False):
+                with self.subTest(shape=shape, newline=newline):
+                    raw = synthetic_candidate(self.objects, shape=shape, newline=newline)
+                    result = self.compared(raw)
+                    self.assertEqual(
+                        {key: result[key] for key in (
+                            "status", "identical", "differences", "candidate_shape",
+                            "candidate_sequence", "candidate_reference_count",
+                            "candidate_sha256", "candidate_file")},
+                        {"status": "compared", "identical": True, "differences": [],
+                         "candidate_shape": shape, "candidate_sequence": 18,
+                         "candidate_reference_count": 38,
+                         "candidate_sha256": hashlib.sha256(raw).hexdigest(),
+                         "candidate_file": "supplied-candidate.json"})
+                    self.assertEqual(result["candidate_reference_objects_sha256"],
+                                     result["lane_reference_objects_sha256"])
+                    self.assertIn("not established by the lane", result["candidate_authenticity"])
+                    receipt = self.with_comparison(result)
+                    self.assertEqual(lane.classify(receipt), [])
+                    self.assertTrue(any("are byte-identical to those of the supplied" in line
+                                        for line in receipt["summary"]), receipt["summary"])
+                    self.assertNotIn(str(self.temp), json.dumps(result))
+
+    def test_g14_any_differing_byte_of_a_reference_object_fails_the_gate(self) -> None:
+        def changed(change) -> list:
+            objects = copy.deepcopy(self.objects)
+            change(objects)
+            return objects
+        cases = {
+            "fingerprint": (changed(lambda items: items[-1].update(
+                {"contract_fingerprint": "sha256:" + "0" * 64})), [37]),
+            "adapter": (changed(lambda items: items[3].update({"adapter_id": "other"})), [3]),
+            "version": (changed(lambda items: items[0].update({"profile_version": 2})), [0]),
+            "order": (changed(lambda items: items.reverse()), list(range(38))),
+            "missing": (self.objects[:-1], [37]),
+            "extra": (self.objects + [dict(self.objects[0], capability_id="core.synthetic")],
+                      [38])}
+        for name, (objects, indexes) in cases.items():
+            with self.subTest(name=name):
+                result = self.compared(synthetic_candidate(objects))
+                self.assertIs(result["identical"], False)
+                self.assertEqual([item["index"] for item in result["differences"]], indexes)
+                receipt = self.with_comparison(result)
+                failures = lane.classify(receipt)
+                self.assertEqual(failures, [
+                    "G14: the real candidate's reference objects are not byte-identical to the "
+                    "ones the previous release read"])
+                self.assertEqual(lane.gate([receipt, self.receipts["12b"], self.receipts["12c"]]),
+                                 ["12a: " + failures[0]])
+                self.assertTrue(any("different at" in line for line in receipt["summary"]))
+        missing = self.compared(synthetic_candidate(self.objects[:-1]))["differences"][0]
+        self.assertEqual((missing["lane"], missing["candidate"]), (self.objects[-1], None))
+
+    def test_g14_a_difference_cannot_be_edited_into_a_match(self) -> None:
+        different = copy.deepcopy(self.objects)
+        different[5]["contract_fingerprint"] = "sha256:" + "1" * 64
+        result = self.compared(synthetic_candidate(different))
+        text = "not byte-identical"
+        for edit in ({"identical": True}, {"identical": True, "differences": []},
+                     {"identical": True, "differences": [],
+                      "candidate_reference_objects_sha256":
+                          result["lane_reference_objects_sha256"],
+                      "candidate_reference_count": 37}):
+            with self.subTest(edit=sorted(edit)):
+                receipt = self.with_comparison({**result, **edit})
+                self.assertTrue(any(item.startswith("G14:") and text in item
+                                    for item in lane.classify(receipt)))
+        # Nor does a match stand when one of its own fields says otherwise.
+        same = self.compared(synthetic_candidate(self.objects))
+        for edit in ({"identical": False}, {"identical": "true"},
+                     {"differences": result["differences"]}, {"differences": None},
+                     {"candidate_reference_count": 37},
+                     {"candidate_reference_objects_sha256": "0" * 64}):
+            with self.subTest(edit=sorted(edit)):
+                self.assertEqual(lane.classify(self.with_comparison({**same, **edit})), [
+                    "G14: the real candidate's reference objects are not byte-identical to the "
+                    "ones the previous release read"])
+
+    def test_g14_the_comparison_must_be_pending_or_recorded_against_these_objects(self) -> None:
+        self.guard("G14", "12a", lambda receipt: receipt.pop("real_candidate_comparison"),
+                   text="not recorded against the reference objects")
+        for key, value in (("lane_reference_objects_sha256", "0" * 64),
+                           ("lane_reference_count", 32), ("compares", "everything")):
+            with self.subTest(key=key):
+                self.guard("G14", "12a", lambda receipt: receipt["real_candidate_comparison"]
+                           .update({key: value}), text="not recorded against the reference objects")
+        for status in ("identical", "compared", "not applicable", None):
+            with self.subTest(status=status):
+                self.guard("G14", "12a", lambda receipt: receipt["real_candidate_comparison"]
+                           .update({"status": status}), text="neither pending nor a recorded")
+        self.guard("G14", "12a", lambda receipt: receipt["real_candidate_comparison"].update(
+            {"identical": True}), text="a pending comparison carries a comparison result")
+
+    def test_g14_the_lanes_own_test_candidate_is_not_a_real_candidate(self) -> None:
+        own = self.receipts["12a"]["cases"]["registry"]["observed"]["lane"]
+        result = self.compared(synthetic_candidate(self.objects))
+        for name in ("candidate", "journal"):
+            with self.subTest(name=name):
+                receipt = self.with_comparison({**result, "candidate_sha256": own[name]["sha256"]})
+                self.assertEqual(lane.classify(receipt), [
+                    "G14: the file compared is the lane's own test candidate, not a real one"])
+        for sequence in (17, 19):
+            with self.subTest(sequence=sequence):
+                receipt = self.with_comparison(
+                    self.compared(synthetic_candidate(self.objects, sequence=sequence)))
+                self.assertEqual(lane.classify(receipt), [
+                    "G14: the file compared is not a sequence 18 candidate"])
+        for edit in ({"candidate_sha256": "not a digest"}, {"candidate_sha256": "0" * 63},
+                     {"candidate_sha256": "A" * 64}, {"status": "identical"},
+                     {"status": "compared and accepted"}):
+            with self.subTest(edit=edit):
+                self.assertEqual(lane.classify(self.with_comparison({**result, **edit})), [
+                    "G14: the real-candidate comparison is neither pending nor a recorded "
+                    "comparison"])
+
+    def test_a_file_that_cannot_be_compared_is_refused_and_never_compared(self) -> None:
+        good = json.loads(synthetic_candidate(self.objects))
+        entries = good["envelope"]["entries"]
+        refused = {
+            "not JSON": b"core-candidate",
+            "not UTF-8": b"\xff\xfe",
+            "not canonical": json.dumps(good, indent=1).encode(),
+            "trailing bytes": synthetic_candidate(self.objects) + b"\n",
+            "duplicate key": b'{"envelope":{"entries":[],"sequence":18},"envelope":{}}',
+            "non-finite number": b'{"entries":[],"sequence":NaN}',
+            "a list": b"[]",
+            "no envelope": lane.canonical({"model": "synthetic"}),
+            "no entry for the Core version": lane.canonical(
+                {"envelope": {"sequence": 18, "entries": entries[:1]}}),
+            "two entries for the Core version": lane.canonical(
+                {"envelope": {"sequence": 18, "entries": entries + entries[1:]}}),
+            "no references": synthetic_candidate([]),
+            "a reference with a sixth field": synthetic_candidate(
+                [dict(self.objects[0], signature="synthetic"), *self.objects[1:]]),
+            "a reference with a missing field": synthetic_candidate(
+                [{key: value for key, value in self.objects[0].items() if key != "adapter_id"}]),
+            "a reference that is not an object": synthetic_candidate(["core.basic_rest_read"]),
+            "a reference that is a list of the field names": synthetic_candidate(
+                [list(lane.REFERENCE_FIELDS)]),
+            "a reference with a nested value": synthetic_candidate(
+                [dict(self.objects[0], adapter_id=["x"])]),
+            "a sequence that is not an integer": lane.canonical(
+                {"envelope": {"sequence": "18", "entries": entries}}),
+            "empty envelopes": lane.canonical({"envelopes": []}),
+        }
+        because = {
+            "not canonical": "not canonical JSON", "trailing bytes": "not canonical JSON",
+            "duplicate key": "duplicate object key",
+            "non-finite number": "non-finite number NaN",
+            "no envelope": "neither a candidate, a signed journal nor an envelope",
+            "a sequence that is not an integer": "the sequence is not an integer"}
+        for name, raw in refused.items():
+            with self.subTest(name=name):
+                with self.assertRaises(lane.LaneError) as caught:
+                    self.compared(raw)
+                self.assertIn("the candidate file cannot be compared: " + because.get(
+                    name, "a capability reference is not a five-field reference object"
+                    if name.startswith(("a reference", "no references")) else ""),
+                    str(caught.exception))
+        with mock.patch.object(lane, "MAX_CANDIDATE_BYTES", 64):
+            with self.assertRaises(lane.LaneError):
+                self.compared(synthetic_candidate(self.objects))
+        with self.assertRaises(lane.LaneError) as caught:
+            lane.compare_real_candidate(self.objects, self.temp / "absent.json")
+        self.assertIn("cannot be read", str(caught.exception))
+        self.assertNotIn(str(self.temp), str(caught.exception))
+
+    def test_compare_candidate_command_records_only_when_asked(self) -> None:
+        directory = self.temp / "receipts"
+        shutil.copytree(RECEIPTS, directory, ignore=shutil.ignore_patterns("*.md"))
+        before = (directory / "12a-source.json").read_bytes()
+        same = self.file(synthetic_candidate(self.objects))
+        different = self.file(synthetic_candidate(self.objects[:-1]), "different.json")
+
+        code, out, err = run_main("compare-candidate", str(directory), str(same))
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(out.endswith("rollback proof lane: PASS\n"), out)
+        self.assertIs(json.loads(out.rsplit("rollback proof lane:", 1)[0])["identical"], True)
+        self.assertEqual((directory / "12a-source.json").read_bytes(), before)
+
+        code, out, err = run_main("compare-candidate", str(directory), str(different))
+        self.assertEqual(code, 1)
+        self.assertIn("12a: G14: the real candidate's reference objects are not byte-identical",
+                      err)
+        self.assertEqual((directory / "12a-source.json").read_bytes(), before)
+
+        for candidate in (self.file(b"{}", "empty.json"), self.temp / "absent.json"):
+            code, out, err = run_main("compare-candidate", str(directory), str(candidate),
+                                      "--record")
+            self.assertEqual((code, out), (2, ""))
+            self.assertIn("no comparison made", err)
+            self.assertEqual((directory / "12a-source.json").read_bytes(), before)
+
+        code, out, err = run_main("compare-candidate", str(directory), str(same), "--record")
+        self.assertEqual((code, err), (0, ""))
+        recorded = json.loads((directory / "12a-source.json").read_text(encoding="utf-8"))
+        self.assertEqual((recorded["result"], recorded["failures"]), ("PASS", []))
+        self.assertEqual(recorded["real_candidate_comparison"]["status"], "compared")
+        self.assertEqual(recorded["summary"], lane.summarize(recorded))
+        self.assertEqual(check(directory), (0, "rollback proof lane: PASS\n", ""))
+
+        code, out, err = run_main("compare-candidate", str(directory), str(different), "--record")
+        self.assertEqual(code, 1)
+        recorded = json.loads((directory / "12a-source.json").read_text(encoding="utf-8"))
+        self.assertEqual(recorded["result"], "FAIL")
+        code, out, err = check(directory)
+        self.assertEqual((code, out), (1, "rollback proof lane: FAIL\n"))
+        self.assertIn("G14", err)
+
+    def test_compare_candidate_command_needs_a_recorded_12a_receipt(self) -> None:
+        empty = self.temp / "empty"
+        empty.mkdir()
+        code, out, err = run_main("compare-candidate", str(empty),
+                                  str(self.file(synthetic_candidate(self.objects))), "--record")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("no usable 12a receipt", err)
+        self.assertEqual(list(empty.iterdir()), [])
 
 
 class DeviceTests(GuardCase):

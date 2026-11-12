@@ -9,6 +9,8 @@ container, no Home Assistant.
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -18,6 +20,7 @@ import sys
 import tempfile
 from typing import Any
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -98,6 +101,57 @@ class SourceSubjectLaneTests(unittest.TestCase):
                                 if item not in reader["compiled"]), sorted(lane.NOT_ADMITTED))
         self.assertIs(case["observed"]["real_read"]["exercised"], False)
 
+    def test_registry_entry_comes_out_of_the_candidate_tool_and_its_dry_run(self) -> None:
+        receipt = RUN["receipts"]["12a"]
+        observed = receipt["cases"]["registry"]["observed"]
+        writer, data = observed["writer"], RUN["temp"] / "work/data/registry"
+        self.assertEqual(sorted(str(path.relative_to(data).as_posix())
+                                for path in data.rglob("*") if path.is_file()),
+                         ["core-candidate.json", "core-entry.json", "core-review-evidence.json",
+                          "dry-run/ephemeral-predecessor.json", "dry-run/ephemeral-public-key.txt",
+                          "dry-run/ha-core-release-registry.json"])
+        for name, path, operation in (
+                ("candidate", "scripts/prepare_core_release_registry.py", "extend-capabilities"),
+                ("test_signing", "scripts/core_registry_one_tap.py", "dry-run-sign")):
+            ran = writer["tools"][name]
+            self.assertEqual((ran["path"], ran["operation"], ran["exit"]), (path, operation, 0))
+            self.assertEqual(ran["sha256"], lane.sha256_file(ROOT / path))
+            tool = receipt[f"{name}_tool"]
+            self.assertEqual((tool["path"], tool["commit"], tool["sha256"]),
+                             (path, receipt["writer"]["commit"], ran["sha256"]))
+        candidate = data / "core-candidate.json"
+        self.assertEqual(writer["candidate"]["sha256"], lane.sha256_file(candidate))
+        self.assertEqual(writer["candidate"]["sha256"], writer["candidate"]["reported_sha256"])
+        self.assertEqual((writer["published_sequence"], writer["candidate"]["sequence"],
+                          observed["reader"]["authority"]["sequence"]), (17, 18, 18))
+        self.assertEqual(writer["candidate"]["previous_journal_sha256"],
+                         lane.PUBLISHED_JOURNAL_SHA256)
+        self.assertEqual(writer["candidate"]["public_key_sha256"], lane.PUBLISHED_KEY_SHA256)
+        self.assertNotEqual(writer["test_signed"]["key_sha256"], lane.PUBLISHED_KEY_SHA256)
+        # The objects the previous release decoded are the ones in the tool's candidate file.
+        in_file = lane.candidate_reference_objects(candidate.read_bytes())
+        self.assertEqual(in_file["objects"], writer["reference_objects"])
+        self.assertEqual(observed["reader"]["entry_reference_objects_sha256"],
+                         lane.reference_digest(in_file["objects"]))
+        self.assertEqual(len(in_file["objects"]), 38)
+        for path in data.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(b"PRIVATE", path.read_bytes(), path.name)
+
+    def test_no_real_candidate_is_claimed_and_the_runs_own_candidate_is_not_one(self) -> None:
+        receipt = RUN["receipts"]["12a"]
+        self.assertEqual(receipt["real_candidate_comparison"]["status"],
+                         "not yet available: the real candidate does not exist")
+        before = (RUN["out"] / "12a-source.json").read_bytes()
+        code, out, err = run_lane(
+            "compare-candidate", str(RUN["out"]),
+            str(RUN["temp"] / "work/data/registry/core-candidate.json"))
+        self.assertEqual(code, 1)
+        self.assertIn("12a: G14: the file compared is the lane's own test candidate, not a real "
+                      "one", err)
+        self.assertIs(json.loads(out.rsplit("rollback proof lane:", 1)[0])["identical"], True)
+        self.assertEqual((RUN["out"] / "12a-source.json").read_bytes(), before)
+
     def test_lock_records_block_the_previous_release_as_recorded(self) -> None:
         receipt = RUN["receipts"]["12b"]
         self.assertEqual({name: case["derived"] for name, case in receipt["cases"].items()},
@@ -159,6 +213,39 @@ class SourceSubjectLaneTests(unittest.TestCase):
         self.assertEqual((code, out), (2, ""))
         self.assertIn("no evidence produced", err)
         self.assertFalse((RUN["temp"] / "again").exists())
+
+
+class PublishedJournalTests(unittest.TestCase):
+    """The candidate tool extends only a current journal, so the lane depends on the clock."""
+
+    def test_pinned_expiry_is_the_pinned_journals_own(self) -> None:
+        raw = lane.git("cat-file", "blob", lane.PUBLISHED_JOURNAL_BLOB)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), lane.PUBLISHED_JOURNAL_SHA256)
+        tip = json.loads(raw)["envelopes"][-1]
+        self.assertEqual((tip["sequence"], tip["expires_at"]),
+                         (lane.PUBLISHED_SEQUENCE, lane.PUBLISHED_EXPIRES_AT))
+
+    def test_an_expired_published_journal_is_a_missing_prerequisite(self) -> None:
+        expires = datetime(2027, 2, 5, 6, 16, 34, tzinfo=timezone.utc)
+        self.assertEqual(lane.prerequisites(expires - timedelta(seconds=1)), [])
+        for moment in (expires, expires + timedelta(days=400)):
+            missing = lane.prerequisites(moment)
+            self.assertEqual(len(missing), 1, missing)
+            self.assertIn("the pinned published journal expired at 2027-02-05T06:16:34Z",
+                          missing[0])
+
+    def test_an_expired_published_journal_is_no_evidence(self) -> None:
+        temp = Path(tempfile.mkdtemp(prefix="hamcp377-expired-"))
+        self.addCleanup(shutil.rmtree, temp)
+        real = lane.prerequisites
+        with mock.patch.object(lane, "prerequisites", lambda: real(
+                datetime(2027, 2, 5, 6, 16, 34, tzinfo=timezone.utc))):
+            code, out, err = run_lane("run", "--out", str(temp / "out"), "--work",
+                                      str(temp / "work"), "--reader-python", RUN["interpreter"])
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("no evidence produced", err)
+        self.assertIn("the pinned published journal expired", err)
+        self.assertFalse((temp / "out").exists())
 
 
 class NoEvidenceTests(unittest.TestCase):

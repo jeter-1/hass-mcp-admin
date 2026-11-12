@@ -22,7 +22,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       "4c567933608e249181383195656faffe",
        4,
        true,
        "2026-11-10T06:04:00+00:00"
@@ -32,7 +32,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       "4c567933608e249181383195656faffe",
        4,
        true,
        "2026-11-10T06:04:00+00:00"
@@ -84,7 +84,7 @@
        "lease_status": "conflict_hold",
        "lock_key": "entity:switch.plug_child_lock",
        "release": "governed_hold_release_required",
-       "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+       "task_id": "4c567933608e249181383195656faffe"
       }
      ],
      "entity_id": "switch.plug_child_lock",
@@ -109,10 +109,10 @@
     "power": {
      "files": {
       "added": [
-       "ordinary-power-v1/5cdd4f90c861a66fd1d37777c7a209ce.json",
-       "ordinary-power-v1/b891b5e6d135c8cff8de4ef5bc20332e.json",
-       "ordinary-power-v1/f3-operation-executions-v1/77ed6a099c5785e18c62f1f10130050c146a7af3c876cb4b373a8da666974163.json",
-       "ordinary-power-v1/f3-operation-executions-v1/d4cc640a139e156ebc94fe149ee92a6ddd986787f2fc9dc48f9a3b832fb04550.json"
+       "ordinary-power-v1/83ccbc1db77ad279e6ba8207e3016b48.json",
+       "ordinary-power-v1/b3cc743db96946fdd3e11d1ebf6b97c5.json",
+       "ordinary-power-v1/f3-operation-executions-v1/4cee040818cd5bd1228b4918127f942ce3091ac4370de6bf0128218389015a33.json",
+       "ordinary-power-v1/f3-operation-executions-v1/cbd4d3951fb56a3ed8390a0baaded037e35ccb6ca5ae791fb7b5e9e41ad1640d.json"
       ],
       "modified": [
        "f3-operation-locks-v1/state.json"
@@ -123,7 +123,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       "4c567933608e249181383195656faffe",
        4,
        true,
        "2026-11-10T06:04:00+00:00"
@@ -133,7 +133,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       "4c567933608e249181383195656faffe",
        4,
        true,
        "2026-11-10T06:04:00+00:00"
@@ -142,7 +142,7 @@
      "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
      "provider_writes": 1
     },
-    "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+    "task_id": "4c567933608e249181383195656faffe"
    },
    "writer": {
     "action": "turn_on",
@@ -153,7 +153,7 @@
      [
       "entity:switch.plug_child_lock",
       "exclusive",
-      "34e83d2c2d11c27ecd1a28b1e1078ab6",
+      "4c567933608e249181383195656faffe",
       4,
       true,
       "2026-11-10T06:04:00+00:00"
@@ -176,7 +176,7 @@
     },
     "scenario": "device_hold",
     "started_at": "2026-11-10T06:00:00+00:00",
-    "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+    "task_id": "4c567933608e249181383195656faffe"
    }
   },
   "in_flight_active": {
@@ -201,7 +201,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -209,7 +209,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -217,7 +217,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -227,7 +227,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -235,7 +235,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -243,7 +243,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -295,7 +295,7 @@
        "lease_status": "active",
        "lock_key": "entity:switch.plug_child_lock",
        "release": "verified_readback_or_deadline_final_read",
-       "task_id": "8af663062cee27009075296b58a14385"
+       "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
       }
      ],
      "entity_id": "switch.plug_child_lock",
@@ -320,10 +320,10 @@
     "power": {
      "files": {
       "added": [
-       "ordinary-power-v1/42b900a94d191e11bf76bbaa26fa042b.json",
-       "ordinary-power-v1/642497e8907d8f1dc42ea0dd52144687.json",
-       "ordinary-power-v1/f3-operation-executions-v1/8831afa5d380195bc11292deb61916eb591f83b030282d5bc18316d859188e28.json",
-       "ordinary-power-v1/f3-operation-executions-v1/ce90949bf073bbd02701755b1b2f78ec6f83d84771893d8cce48155eabf7474c.json"
+       "ordinary-power-v1/67636eaf4581ff99c406b4f4008e7874.json",
+       "ordinary-power-v1/a38599f08674fdc1f0d1a000f984508d.json",
+       "ordinary-power-v1/f3-operation-executions-v1/a30057a9b4435512ca5444148c5b7ffd05c6d1da276f106b9afe5c062d1b920c.json",
+       "ordinary-power-v1/f3-operation-executions-v1/f42f16be2ca0e639600ffada7c9fc198c832c754230544c62374c45e34478369.json"
       ],
       "modified": [
        "f3-operation-locks-v1/state.json"
@@ -334,7 +334,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -342,7 +342,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -350,7 +350,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -360,7 +360,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -368,7 +368,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -376,7 +376,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -385,7 +385,7 @@
      "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
      "provider_writes": 1
     },
-    "task_id": "8af663062cee27009075296b58a14385"
+    "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
    },
    "writer": {
     "action": "turn_on",
@@ -396,7 +396,7 @@
      [
       "entity:switch.plug_child_lock",
       "exclusive",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       1,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -404,7 +404,7 @@
      [
       "entity_registry:switch.plug_child_lock",
       "shared",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       2,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -412,7 +412,7 @@
      [
       "home_assistant:core",
       "shared",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       3,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -423,7 +423,7 @@
     "result": null,
     "scenario": "device_crash",
     "started_at": "2026-11-10T06:00:00+00:00",
-    "task_id": "8af663062cee27009075296b58a14385"
+    "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
    }
   },
   "in_flight_expired": {
@@ -448,7 +448,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -456,7 +456,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -464,7 +464,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -474,7 +474,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -482,7 +482,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -490,7 +490,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -548,13 +548,13 @@
        "lease_status": "expired_pending_recovery",
        "lock_key": "entity:switch.plug_child_lock",
        "release": "recovery_sweep_reconciles_expired_lease",
-       "task_id": "8af663062cee27009075296b58a14385"
+       "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
       },
       {
        "lease_status": "expired_pending_recovery",
        "lock_key": "home_assistant:core",
        "release": "recovery_sweep_reconciles_expired_lease",
-       "task_id": "8af663062cee27009075296b58a14385"
+       "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
       }
      ],
      "entity_id": "switch.plug_child_lock",
@@ -572,7 +572,7 @@
        "lease_status": "expired_pending_recovery",
        "lock_key": "home_assistant:core",
        "release": "recovery_sweep_reconciles_expired_lease",
-       "task_id": "8af663062cee27009075296b58a14385"
+       "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
       }
      ],
      "entity_id": "switch.synthetic",
@@ -586,10 +586,10 @@
     "power": {
      "files": {
       "added": [
-       "ordinary-power-v1/925d0b3656ff54e4959601b45ef1f019.json",
-       "ordinary-power-v1/ece5600ee9cd3752e532921b405f0299.json",
-       "ordinary-power-v1/f3-operation-executions-v1/0f2f707a569e83cd0691f1a6bc96a94b6c912ddd70fb37dd24ce10c928398207.json",
-       "ordinary-power-v1/f3-operation-executions-v1/ccb01cec81057db39d29b00d92c10b1d03629b532ae76920db88690cffa5f9fb.json"
+       "ordinary-power-v1/5c7c78d19111e5c46c786caa85460706.json",
+       "ordinary-power-v1/ac360f85f0b8b69b0ae1c60e55a97568.json",
+       "ordinary-power-v1/f3-operation-executions-v1/1e1bed3bc7b33e43a0ecd01e05b13bfc38906a127a87619884583b0a86476246.json",
+       "ordinary-power-v1/f3-operation-executions-v1/2464b6d44a2925aa34a47d031e27dfcae01c7c0a6148c474fce417a27b04cd3b.json"
       ],
       "modified": [],
       "removed": []
@@ -598,7 +598,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -606,7 +606,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -614,7 +614,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -624,7 +624,7 @@
       [
        "entity:switch.plug_child_lock",
        "exclusive",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        1,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -632,7 +632,7 @@
       [
        "entity_registry:switch.plug_child_lock",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        2,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -640,7 +640,7 @@
       [
        "home_assistant:core",
        "shared",
-       "8af663062cee27009075296b58a14385",
+       "f9d2d474bdaea1ad9c9f73230c93c54f",
        3,
        false,
        "2026-11-10T06:00:30+00:00"
@@ -649,7 +649,7 @@
      "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
      "provider_writes": 0
     },
-    "task_id": "8af663062cee27009075296b58a14385"
+    "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
    },
    "writer": {
     "action": "turn_on",
@@ -660,7 +660,7 @@
      [
       "entity:switch.plug_child_lock",
       "exclusive",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       1,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -668,7 +668,7 @@
      [
       "entity_registry:switch.plug_child_lock",
       "shared",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       2,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -676,7 +676,7 @@
      [
       "home_assistant:core",
       "shared",
-      "8af663062cee27009075296b58a14385",
+      "f9d2d474bdaea1ad9c9f73230c93c54f",
       3,
       false,
       "2026-11-10T06:00:30+00:00"
@@ -687,32 +687,32 @@
     "result": null,
     "scenario": "device_crash",
     "started_at": "2026-11-10T06:00:00+00:00",
-    "task_id": "8af663062cee27009075296b58a14385"
+    "task_id": "f9d2d474bdaea1ad9c9f73230c93c54f"
    }
   }
  },
  "data": {
   "device_crash": {
-   "after_read": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
-   "after_write": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
-   "before_read": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
+   "after_read": "a989e02cc3bf685fb0933462113d809932fcf597cd612babb6a635761bbb035f",
+   "after_write": "a989e02cc3bf685fb0933462113d809932fcf597cd612babb6a635761bbb035f",
+   "before_read": "a989e02cc3bf685fb0933462113d809932fcf597cd612babb6a635761bbb035f",
    "files": 6
   },
   "device_hold": {
-   "after_read": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
-   "after_write": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
-   "before_read": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
+   "after_read": "63d04be177ed4b82647e36b590bfadb754d076e08b758d42312b592cae9a3154",
+   "after_write": "63d04be177ed4b82647e36b590bfadb754d076e08b758d42312b592cae9a3154",
+   "before_read": "63d04be177ed4b82647e36b590bfadb754d076e08b758d42312b592cae9a3154",
    "files": 6
   },
   "device_recovery_27a": {
-   "after_read": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
-   "after_write": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
-   "before_read": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
+   "after_read": "e691dfd4312eab313124e85b1149d16c24a1f0c111e02ee7c43ee8e0d842d3b0",
+   "after_write": "e691dfd4312eab313124e85b1149d16c24a1f0c111e02ee7c43ee8e0d842d3b0",
+   "before_read": "e691dfd4312eab313124e85b1149d16c24a1f0c111e02ee7c43ee8e0d842d3b0",
    "earlier": [
     {
-     "after_read": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
-     "after_write": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
-     "before_read": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
+     "after_read": "d2d40fb0202fbfb6e0edd3217ecaa4ee3b43b6602958233cfb29900adb0cca30",
+     "after_write": "d2d40fb0202fbfb6e0edd3217ecaa4ee3b43b6602958233cfb29900adb0cca30",
+     "before_read": "d2d40fb0202fbfb6e0edd3217ecaa4ee3b43b6602958233cfb29900adb0cca30",
      "files": 6
     }
    ],
@@ -720,14 +720,14 @@
   }
  },
  "drivers": {
-  "previous_reader.py": "f0427230aaccf439a26677ecf8b3214dd847db6a122d87367507587594b811ab",
-  "rollback_proof_lane.py": "2c14e54bb11f9a8b7e2f1cf2da4c5b216bf38db708694562defa3207c17ac18f",
-  "tip_writer.py": "7485113e156ea79489aae0ebd72233cccfde5427b4df45a5c2804a82221fb5fc"
+  "previous_reader.py": "f507fa35086addb60cb5377a20e8b0c44899af1905422f3fb6107f4a3d3f7349",
+  "rollback_proof_lane.py": "e8d064ba6f3fcc2ea5c83ca912c8962d0c25bc85cdefb472927a759d20824814",
+  "tip_writer.py": "0e4dc04e115f0015c2e1b5ab3fe79f2b0c10dc69aa55ec85586b21eda1f436ca"
  },
- "ended_at": "2026-11-12T04:41:52+00:00",
+ "ended_at": "2026-11-12T05:38:55+00:00",
  "failures": [],
  "lane": {
-  "checkout_commit": "747436e766bbb97e8576cd765c7d8a122a52d38e",
+  "checkout_commit": "cd2080846b25a4f632f404bc15ef9aabe24051fc",
   "commands": [
    [
     "<writer-python>",
@@ -757,7 +757,7 @@
     "<work>/data/device_hold",
     "<work>/read/hold",
     "2026-11-11T06:03:30+00:00",
-    "34e83d2c2d11c27ecd1a28b1e1078ab6"
+    "4c567933608e249181383195656faffe"
    ],
    [
     "<reader-python>",
@@ -769,7 +769,7 @@
     "<work>/data/device_crash",
     "<work>/read/in_flight_active",
     "2026-11-10T06:00:10+00:00",
-    "8af663062cee27009075296b58a14385"
+    "f9d2d474bdaea1ad9c9f73230c93c54f"
    ],
    [
     "<reader-python>",
@@ -781,7 +781,7 @@
     "<work>/data/device_crash",
     "<work>/read/in_flight_expired",
     "2026-11-11T06:00:30+00:00",
-    "8af663062cee27009075296b58a14385"
+    "f9d2d474bdaea1ad9c9f73230c93c54f"
    ],
    [
     "<writer-python>",
@@ -802,7 +802,7 @@
     "<work>/data/device_recovery_27a",
     "<work>/read/27a-before",
     "2026-11-10T06:01:00+00:00",
-    "4973570bb89f4d8b1da0cab5f72aa534"
+    "0d49245cbc64b609190e10c4a01dff8f"
    ],
    [
     "<writer-python>",
@@ -812,7 +812,7 @@
     "<work>/writer-source",
     "device_settle_release",
     "<work>/data/device_recovery_27a",
-    "4973570bb89f4d8b1da0cab5f72aa534",
+    "0d49245cbc64b609190e10c4a01dff8f",
     "300"
    ],
    [
@@ -825,7 +825,7 @@
     "<work>/data/device_recovery_27a",
     "<work>/read/27a",
     "2026-11-10T06:10:00+00:00",
-    "4973570bb89f4d8b1da0cab5f72aa534"
+    "0d49245cbc64b609190e10c4a01dff8f"
    ]
   ],
   "containers": 0,
@@ -883,7 +883,7 @@
         [
          "entity:switch.plug_child_lock",
          "exclusive",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          1,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -891,7 +891,7 @@
         [
          "entity_registry:switch.plug_child_lock",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          2,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -899,7 +899,7 @@
         [
          "home_assistant:core",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          3,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -909,7 +909,7 @@
         [
          "entity:switch.plug_child_lock",
          "exclusive",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          1,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -917,7 +917,7 @@
         [
          "entity_registry:switch.plug_child_lock",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          2,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -925,7 +925,7 @@
         [
          "home_assistant:core",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          3,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -983,13 +983,13 @@
          "lease_status": "expired_pending_recovery",
          "lock_key": "entity:switch.plug_child_lock",
          "release": "recovery_sweep_reconciles_expired_lease",
-         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+         "task_id": "0d49245cbc64b609190e10c4a01dff8f"
         },
         {
          "lease_status": "expired_pending_recovery",
          "lock_key": "home_assistant:core",
          "release": "recovery_sweep_reconciles_expired_lease",
-         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+         "task_id": "0d49245cbc64b609190e10c4a01dff8f"
         }
        ],
        "entity_id": "switch.plug_child_lock",
@@ -1007,7 +1007,7 @@
          "lease_status": "expired_pending_recovery",
          "lock_key": "home_assistant:core",
          "release": "recovery_sweep_reconciles_expired_lease",
-         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+         "task_id": "0d49245cbc64b609190e10c4a01dff8f"
         }
        ],
        "entity_id": "switch.synthetic",
@@ -1021,10 +1021,10 @@
       "power": {
        "files": {
         "added": [
-         "ordinary-power-v1/3511cc28b794c3d08efe0a7cfe41b935.json",
-         "ordinary-power-v1/b21b818e3d6a9eb4c0b6065e7df5d3df.json",
-         "ordinary-power-v1/f3-operation-executions-v1/8038448f4913b2ee2a4a89b1718f98425bef3a44a1850ef320bb3741d8733a9c.json",
-         "ordinary-power-v1/f3-operation-executions-v1/9929e42dac26bd6bcfebbdcbc8590671c20b2cc6f931b36cba3191d560a7b0fb.json"
+         "ordinary-power-v1/617ddc7192efb81f980397d18ec8ee55.json",
+         "ordinary-power-v1/f3-operation-executions-v1/547417e14960f4117e3ead1acd697e77e41628d446f7a972f1b5ef7411975998.json",
+         "ordinary-power-v1/f3-operation-executions-v1/9e5680a7eeecb54dfe82a412a3852f2d179e43074fc668249a1b5333e3c73f6d.json",
+         "ordinary-power-v1/fad4f985876042e27b17140570820c77.json"
         ],
         "modified": [],
         "removed": []
@@ -1033,7 +1033,7 @@
         [
          "entity:switch.plug_child_lock",
          "exclusive",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          1,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1041,7 +1041,7 @@
         [
          "entity_registry:switch.plug_child_lock",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          2,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1049,7 +1049,7 @@
         [
          "home_assistant:core",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          3,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1059,7 +1059,7 @@
         [
          "entity:switch.plug_child_lock",
          "exclusive",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          1,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1067,7 +1067,7 @@
         [
          "entity_registry:switch.plug_child_lock",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          2,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1075,7 +1075,7 @@
         [
          "home_assistant:core",
          "shared",
-         "4973570bb89f4d8b1da0cab5f72aa534",
+         "0d49245cbc64b609190e10c4a01dff8f",
          3,
          false,
          "2026-11-10T06:00:30+00:00"
@@ -1084,7 +1084,7 @@
        "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
        "provider_writes": 0
       },
-      "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+      "task_id": "0d49245cbc64b609190e10c4a01dff8f"
      }
     },
     "crash": {
@@ -1107,7 +1107,7 @@
       ]
      ],
      "provider_writes": 1,
-     "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+     "task_id": "0d49245cbc64b609190e10c4a01dff8f"
     },
     "previous_release_read": {
      "data_set": "device_recovery_27a",
@@ -1191,10 +1191,10 @@
       "power": {
        "files": {
         "added": [
-         "ordinary-power-v1/235e82fb0a527150df14d57f885f7317.json",
-         "ordinary-power-v1/b5f68e5b7d864134a0fa67e0b2ef704b.json",
-         "ordinary-power-v1/f3-operation-executions-v1/335f35ad0560f3c0d5d618d805239305c7cc84f0d8e7628af9f4acc8ecfe3197.json",
-         "ordinary-power-v1/f3-operation-executions-v1/6baeb1f7969e59d2c1967c1e569723714b966a4f97805acb4dfe8319f6194d39.json"
+         "ordinary-power-v1/35ceaa6354121429cc1cffd73f39cf44.json",
+         "ordinary-power-v1/6fd32f99fff4100f70b5521d61685638.json",
+         "ordinary-power-v1/f3-operation-executions-v1/483f8ef0afc1ce9177061fa51d77e63044817b4d6c73cfb50e1d0c875d45c0bb.json",
+         "ordinary-power-v1/f3-operation-executions-v1/fbcf3adc6fd1fb0596326f689b50b88c58e1ded9e0795ae8e720d8b90d8f1f0e.json"
         ],
         "modified": [
          "f3-operation-locks-v1/state.json"
@@ -1206,7 +1206,7 @@
        "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
        "provider_writes": 2
       },
-      "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+      "task_id": "0d49245cbc64b609190e10c4a01dff8f"
      }
     },
     "settle_release": {
@@ -1248,7 +1248,7 @@
       "provider_writes": 0,
       "terminal": true
      },
-     "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+     "task_id": "0d49245cbc64b609190e10c4a01dff8f"
     }
    },
    "title": "roll forward to the current release, let it settle the lock, release the hold there, then roll back"
@@ -1314,7 +1314,7 @@
  ],
  "scenario": "12b",
  "schema": "hamcp377-rollback-proof-receipt-v1",
- "started_at": "2026-11-12T04:41:28+00:00",
+ "started_at": "2026-11-12T05:38:24+00:00",
  "subject": "source",
  "summary": [
   "Conflict hold left by a settled device-configuration task: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.",
