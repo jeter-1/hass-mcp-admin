@@ -546,20 +546,20 @@ async def _get_execution_task(task_id):
     from ..fan.service import FAN_OPERATIONS
     service = FAN_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
-        return await service.reconcile(task_id)
+        return await service.read_task(task_id)
     from ..power.service import POWER_OPERATIONS
     service = POWER_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
-        return await service.reconcile(task_id)
+        return await service.read_task(task_id)
     from ..helper_value.service import HELPER_VALUE_OPERATIONS
     service = HELPER_VALUE_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
-        return await service.reconcile(task_id)
+        return await service.read_task(task_id)
     # HAMCP-297: read-only reconciliation of an ordinary device-configuration task.
     from ..device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
     service = DEVICE_CONFIGURATION_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
-        return await service.reconcile(task_id)
+        return await service.read_task(task_id)
     return GOVERNANCE.require().get_execution_task(task_id)
 
 

@@ -19,7 +19,7 @@ import uuid
 
 from ..f3.executor import SharedOperationExecutor, PreIntentRetryRequired
 from ..f3.locks import LockOwnershipError, normalize_lock_requests
-from ..f3.models import (ExecutionIdentity, ExecutorTiming, LockOwner, LockToken,
+from ..f3.models import (ExecutionIdentity, ExecutorTiming, LockHandle, LockOwner, LockToken,
                          parse_timestamp, validate_sha256)
 from ..request_context import current_telemetry
 from .adapter import FanAdapter, prepare_record
@@ -207,7 +207,7 @@ class FanService:
             lock_store=self.locks, execution_repository=self.executions,
             lock_timing=FAN_LOCK_TIMING,
             executor_timing=ExecutorTiming(180, 120, 6, 6), now=self.now,
-            final_read_at_deadline=True,
+            final_read_at_deadline=True, recovery_containment=True,
         )
 
     def _authorization(self, request):
@@ -805,6 +805,14 @@ class FanService:
         self._write_release(release)
         return release
 
+    async def read_task(self, task_id):
+        """get_execution_task: the stored record and receipt, nothing else.
+
+        HAMCP-379: a pure read. No claim, no lock change, no Core read and no
+        event append. The 30 s sweep (recover_once) does the recovery.
+        """
+        return self.receipt(task_id)
+
     async def reconcile(self, task_id):
         prepared = self.load(task_id)
         if prepared is None:
@@ -868,10 +876,38 @@ class FanService:
             locks_by_task.setdefault(item.task_id, []).append(item)
         for path in sorted(self.root.glob("*.json"))[:MAX_RECORDS]:
             record = self.executions.get(path.stem)
+            owned = locks_by_task.get(path.stem, [])
             if (record is None or not record.terminal
                     or (record.normalized_outcome == "manual_review_required"
-                        and not self._hold_settled(record, locks_by_task.get(path.stem, [])))):
+                        and not self._hold_settled(record, owned))):
                 candidates.append(path.stem)
+            elif (owned and record.normalized_outcome != "manual_review_required"
+                  and path.stem not in self.active):
+                # HAMCP-379: a terminal task that is not in manual review owns
+                # no lock, yet a failed or interrupted release left rows. Free
+                # them by task_id, whatever generations the record names (the
+                # full release of the normal terminal path, entity included).
+                # Nothing runs between the scan above and this release, so
+                # the rows are the task's current ones. No event is appended;
+                # a failed release is counted and retried by the next sweep.
+                # A conflict hold is never expected here and is never freed.
+                owners = {}
+                for item in owned:
+                    owners.setdefault((item.owner_id, item.plan_id, item.operation_id,
+                                       item.attempt_id), []).append(item)
+                if any(item.conflict_hold for item in owned):
+                    owners = {}
+                    self.recovery_failures += 1
+                for (owner_id, plan_id, operation_id, attempt_id), rows in owners.items():
+                    rows.sort(key=lambda item: item.key.encode("utf-8"))
+                    try:
+                        self.locks.release(LockHandle(
+                            LockOwner(owner_id, path.stem, plan_id, operation_id, attempt_id),
+                            tuple(LockToken(item.key, item.generation, item.mode) for item in rows),
+                            min(item.acquired_at for item in rows),
+                            min(item.lease_expires_at for item in rows), FAN_LOCK_TIMING))
+                    except Exception:
+                        self.recovery_failures += 1
         try:
             async with asyncio.timeout(45):
                 for task_id in candidates[:8]:
