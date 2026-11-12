@@ -1,0 +1,656 @@
+{
+ "cases": {
+  "registry": {
+   "data_set": "registry",
+   "derived": {
+    "admitted": 33,
+    "marketplace_admitted": true,
+    "not_admitted": 5,
+    "quarantined": 0
+   },
+   "observed": {
+    "reader": {
+     "authority": {
+      "entry_present": true,
+      "positive_authority_current": true,
+      "sequence": 2,
+      "surface_denied": false
+     },
+     "before_refresh_compatible_count": 0,
+     "compiled": [
+      "core.automation_baseline_metadata_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.config_entry_helper_options_operation",
+      "core.configuration_delete_operation",
+      "core.configuration_validation",
+      "core.dashboard_configuration_read",
+      "core.dashboard_metadata_operation",
+      "core.delegated_device_effective_area",
+      "core.dependency_helper_planning",
+      "core.direct_device_registry_read",
+      "core.direct_entity_state_read",
+      "core.entity_assistant_exposure_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_registry_metadata_operation",
+      "core.f3_mutation_verification",
+      "core.governance_observability",
+      "core.governed_configuration_operation",
+      "core.integration_inspection_metadata_read",
+      "core.label_registry_operation",
+      "core.marketplace_read",
+      "core.non_device_registry_read",
+      "core.scene_configuration_operation",
+      "core.script_trace_read",
+      "core.state_service_discovery",
+      "core.template_semantics",
+      "core.typed_fan_operation",
+      "core.typed_helper_operation",
+      "core.typed_helper_value_operation",
+      "core.typed_input_select_option_operation",
+      "core.typed_power_operation"
+     ],
+     "core": "synthetic observation built by the reader tree's capability_evidence_for_probes; no Home Assistant",
+     "counts": {
+      "active_commit_count": 0,
+      "capacity_exhaustion_count": 0,
+      "compatible_count": 33,
+      "fallback_count": 0,
+      "held_count": 0,
+      "issued_lease_count": 0,
+      "quarantined_count": 0,
+      "retained_retirement_count": 0,
+      "unavailable_count": 0,
+      "withheld_count": 0
+     },
+     "entry_references": [
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.state_service_discovery",
+      "core.non_device_registry_read",
+      "core.direct_device_registry_read",
+      "core.delegated_device_effective_area",
+      "core.direct_entity_state_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.dashboard_configuration_read",
+      "core.template_semantics",
+      "core.configuration_validation",
+      "core.dependency_helper_planning",
+      "core.typed_helper_operation",
+      "core.f3_mutation_verification",
+      "core.governed_configuration_operation",
+      "core.governance_observability",
+      "core.typed_fan_operation",
+      "core.typed_power_operation",
+      "core.integration_inspection_metadata_read",
+      "core.automation_baseline_metadata_read",
+      "core.entity_registry_metadata_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_assistant_exposure_operation",
+      "core.label_registry_operation",
+      "core.configuration_delete_operation",
+      "core.config_entry_helper_options_operation",
+      "core.typed_input_select_option_operation",
+      "core.script_trace_read",
+      "core.dashboard_metadata_operation",
+      "core.scene_configuration_operation",
+      "core.typed_helper_value_operation",
+      "core.marketplace_read",
+      "core.security_metadata_read",
+      "core.device_configuration_entity_operation",
+      "core.scene_create_delete_operation",
+      "core.created_helper_delete_operation",
+      "core.thread_matter_topology_read"
+     ],
+     "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e",
+     "marketplace": {
+      "compiled_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb",
+      "entry_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb"
+     },
+     "recovery_state": "restored",
+     "refreshed": true,
+     "route_status": {
+      "core.automation_baseline_metadata_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.automation_configuration_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.automation_trace_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.basic_rest_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.basic_websocket_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.config_entry_helper_options_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.configuration_delete_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.configuration_validation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.created_helper_delete_operation": {
+       "available": false,
+       "disposition": "unavailable",
+       "reason_codes": []
+      },
+      "core.dashboard_configuration_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.dashboard_metadata_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.delegated_device_effective_area": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.dependency_helper_planning": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.device_configuration_entity_operation": {
+       "available": false,
+       "disposition": "unavailable",
+       "reason_codes": []
+      },
+      "core.direct_device_registry_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.direct_entity_state_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.entity_assistant_exposure_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.entity_registry_availability_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.entity_registry_metadata_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.f3_mutation_verification": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.governance_observability": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.governed_configuration_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.integration_inspection_metadata_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.label_registry_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.marketplace_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.non_device_registry_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.scene_configuration_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.scene_create_delete_operation": {
+       "available": false,
+       "disposition": "unavailable",
+       "reason_codes": []
+      },
+      "core.script_trace_read": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.security_metadata_read": {
+       "available": false,
+       "disposition": "unavailable",
+       "reason_codes": []
+      },
+      "core.state_service_discovery": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.template_semantics": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.thread_matter_topology_read": {
+       "available": false,
+       "disposition": "unavailable",
+       "reason_codes": []
+      },
+      "core.typed_fan_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.typed_helper_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.typed_helper_value_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.typed_input_select_option_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      },
+      "core.typed_power_operation": {
+       "available": true,
+       "disposition": "admitted",
+       "reason_codes": []
+      }
+     },
+     "selected": {
+      "core.automation_baseline_metadata_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.automation_configuration_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.automation_trace_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.basic_rest_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.basic_websocket_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.config_entry_helper_options_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.configuration_delete_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.configuration_validation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.dashboard_configuration_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.dashboard_metadata_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.delegated_device_effective_area": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.dependency_helper_planning": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.direct_device_registry_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.direct_entity_state_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.entity_assistant_exposure_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.entity_registry_availability_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.entity_registry_metadata_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.f3_mutation_verification": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.governance_observability": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.governed_configuration_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.integration_inspection_metadata_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.label_registry_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.marketplace_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.non_device_registry_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.scene_configuration_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.script_trace_read": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.state_service_discovery": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.template_semantics": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.typed_fan_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.typed_helper_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.typed_helper_value_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.typed_input_select_option_operation": [
+       "verified_compatibility",
+       "positive"
+      ],
+      "core.typed_power_operation": [
+       "verified_compatibility",
+       "positive"
+      ]
+     },
+     "withheld": {
+      "held_capabilities": [],
+      "quarantined_capabilities": [],
+      "unavailable_capabilities": []
+     }
+    },
+    "real_read": {
+     "exercised": false,
+     "reason": "the source subject has no Home Assistant Core; the real marketplace read belongs to the image subject"
+    },
+    "writer": {
+     "added": [
+      "core.marketplace_read",
+      "core.security_metadata_read",
+      "core.device_configuration_entity_operation",
+      "core.scene_create_delete_operation",
+      "core.created_helper_delete_operation",
+      "core.thread_matter_topology_read"
+     ],
+     "built_by": "scripts/prepare_core_release_registry.py prepare_candidate and sign_candidate: add, then extend-capabilities",
+     "compiled_profiles": 38,
+     "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e",
+     "previous_references": [
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.state_service_discovery",
+      "core.non_device_registry_read",
+      "core.direct_device_registry_read",
+      "core.delegated_device_effective_area",
+      "core.direct_entity_state_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.dashboard_configuration_read",
+      "core.template_semantics",
+      "core.configuration_validation",
+      "core.dependency_helper_planning",
+      "core.typed_helper_operation",
+      "core.f3_mutation_verification",
+      "core.governed_configuration_operation",
+      "core.governance_observability",
+      "core.typed_fan_operation",
+      "core.typed_power_operation",
+      "core.integration_inspection_metadata_read",
+      "core.automation_baseline_metadata_read",
+      "core.entity_registry_metadata_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_assistant_exposure_operation",
+      "core.label_registry_operation",
+      "core.configuration_delete_operation",
+      "core.config_entry_helper_options_operation",
+      "core.typed_input_select_option_operation",
+      "core.script_trace_read",
+      "core.dashboard_metadata_operation",
+      "core.scene_configuration_operation",
+      "core.typed_helper_value_operation"
+     ],
+     "published_journal_sha256": "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d",
+     "published_sequence": 17,
+     "references": [
+      "core.basic_rest_read",
+      "core.basic_websocket_read",
+      "core.state_service_discovery",
+      "core.non_device_registry_read",
+      "core.direct_device_registry_read",
+      "core.delegated_device_effective_area",
+      "core.direct_entity_state_read",
+      "core.automation_configuration_read",
+      "core.automation_trace_read",
+      "core.dashboard_configuration_read",
+      "core.template_semantics",
+      "core.configuration_validation",
+      "core.dependency_helper_planning",
+      "core.typed_helper_operation",
+      "core.f3_mutation_verification",
+      "core.governed_configuration_operation",
+      "core.governance_observability",
+      "core.typed_fan_operation",
+      "core.typed_power_operation",
+      "core.integration_inspection_metadata_read",
+      "core.automation_baseline_metadata_read",
+      "core.entity_registry_metadata_operation",
+      "core.entity_registry_availability_operation",
+      "core.entity_assistant_exposure_operation",
+      "core.label_registry_operation",
+      "core.configuration_delete_operation",
+      "core.config_entry_helper_options_operation",
+      "core.typed_input_select_option_operation",
+      "core.script_trace_read",
+      "core.dashboard_metadata_operation",
+      "core.scene_configuration_operation",
+      "core.typed_helper_value_operation",
+      "core.marketplace_read",
+      "core.security_metadata_read",
+      "core.device_configuration_entity_operation",
+      "core.scene_create_delete_operation",
+      "core.created_helper_delete_operation",
+      "core.thread_matter_topology_read"
+     ],
+     "sequence": 2,
+     "signer": "ed25519 key generated in this process and not retained"
+    }
+   }
+  }
+ },
+ "data": {
+  "registry": {
+   "after_read": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
+   "after_write": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
+   "before_read": "be376a84334b7107fdc6c3e797de19ca0edf23b25cca7e302f2d33981f5a4cf3",
+   "files": 2,
+   "journal_sha256": "248eeaf4440894af153f642f6be67ce1cdce65482e0f8684b05056eafb4b965e"
+  }
+ },
+ "drivers": {
+  "previous_reader.py": "f0427230aaccf439a26677ecf8b3214dd847db6a122d87367507587594b811ab",
+  "rollback_proof_lane.py": "2c14e54bb11f9a8b7e2f1cf2da4c5b216bf38db708694562defa3207c17ac18f",
+  "tip_writer.py": "7485113e156ea79489aae0ebd72233cccfde5427b4df45a5c2804a82221fb5fc"
+ },
+ "ended_at": "2026-11-12T04:41:28+00:00",
+ "failures": [],
+ "lane": {
+  "checkout_commit": "747436e766bbb97e8576cd765c7d8a122a52d38e",
+  "commands": [
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "registry",
+    "<work>/data/registry",
+    "<work>/published-journal.json"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "registry",
+    "<work>/data/registry",
+    "<work>/read/registry",
+    "<work>/reader-source/tests/fixtures/core_2026_10_device_registry/records.json"
+   ]
+  ],
+  "containers": 0,
+  "drivers_modified": [],
+  "network": "none",
+  "note": "plain interpreter processes with a scrubbed environment; the drivers open no socket and start no container"
+ },
+ "limitations": [
+  "Synthetic provider: both releases ran their own offline test harness. No Home Assistant Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this receipt shows what the previous release's code does with these records, not what a deployed add-on does end to end."
+ ],
+ "reader": {
+  "archive_commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "declared_version": "2.4.2-beta.7",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "isolated": true,
+  "source": "git-archive",
+  "tag": "v2.4.2-beta.7",
+  "tag_object": "998e9021e5f187b0f375bff9b4b867243fd270c0",
+  "version": "2.4.2-beta.7"
+ },
+ "result": "PASS",
+ "row": "HAMCP-377",
+ "runs": [
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12a-write",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12a-read",
+   "version": "2.4.2-beta.7"
+  }
+ ],
+ "scenario": "12a",
+ "schema": "hamcp377-rollback-proof-receipt-v1",
+ "started_at": "2026-11-12T04:41:25+00:00",
+ "subject": "source",
+ "summary": [
+  "The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined."
+ ],
+ "title": "registry entry with capability references the previous release does not compile",
+ "trees_distinct": true,
+ "writer": {
+  "archive_commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "declared_version": "2.4.2-beta.8",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "source": "git-archive",
+  "version": "2.4.2-beta.8"
+ }
+}

@@ -1,0 +1,1347 @@
+{
+ "cases": {
+  "hold": {
+   "data_set": "device_hold",
+   "derived": {
+    "behaviour": "block",
+    "governed": "ready",
+    "lease": [
+     "conflict_hold"
+    ],
+    "scope": "held_entity_only"
+   },
+   "observed": {
+    "governed": {
+     "driver": "tests/fixtures/f3_hamcp181_candidate/shipped_reader.py",
+     "files": {
+      "added": [],
+      "modified": [],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       4,
+       true,
+       "2026-11-10T06:04:00+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       4,
+       true,
+       "2026-11-10T06:04:00+00:00"
+      ]
+     ],
+     "passes": [
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "startup"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      }
+     ],
+     "provider_calls": [],
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": []
+      },
+      {
+       "execution_ready": true,
+       "faults": []
+      },
+      {
+       "execution_ready": true,
+       "faults": []
+      }
+     ],
+     "require_execution_ready": {
+      "code": null,
+      "ok": true,
+      "text": null
+     },
+     "runtime_status": "manual_intervention_required",
+     "sdk_ok": true
+    },
+    "held_switch": {
+     "blocking": [
+      {
+       "lease_status": "conflict_hold",
+       "lock_key": "entity:switch.plug_child_lock",
+       "release": "governed_hold_release_required",
+       "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+      }
+     ],
+     "entity_id": "switch.plug_child_lock",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 0,
+     "provider_writes": 0,
+     "state": "failed_pre_dispatch",
+     "terminal_outcome": "lock_conflict"
+    },
+    "now": "2026-11-11T06:03:30+00:00",
+    "other_switch": {
+     "blocking": [],
+     "entity_id": "switch.synthetic",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 1,
+     "provider_writes": 1,
+     "state": "succeeded_verified",
+     "terminal_outcome": "succeeded_verified"
+    },
+    "power": {
+     "files": {
+      "added": [
+       "ordinary-power-v1/5cdd4f90c861a66fd1d37777c7a209ce.json",
+       "ordinary-power-v1/b891b5e6d135c8cff8de4ef5bc20332e.json",
+       "ordinary-power-v1/f3-operation-executions-v1/77ed6a099c5785e18c62f1f10130050c146a7af3c876cb4b373a8da666974163.json",
+       "ordinary-power-v1/f3-operation-executions-v1/d4cc640a139e156ebc94fe149ee92a6ddd986787f2fc9dc48f9a3b832fb04550.json"
+      ],
+      "modified": [
+       "f3-operation-locks-v1/state.json"
+      ],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       4,
+       true,
+       "2026-11-10T06:04:00+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "34e83d2c2d11c27ecd1a28b1e1078ab6",
+       4,
+       true,
+       "2026-11-10T06:04:00+00:00"
+      ]
+     ],
+     "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
+     "provider_writes": 1
+    },
+    "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+   },
+   "writer": {
+    "action": "turn_on",
+    "clock": "2026-11-10T06:03:30+00:00",
+    "died_in": null,
+    "entity_id": "switch.plug_child_lock",
+    "locks": [
+     [
+      "entity:switch.plug_child_lock",
+      "exclusive",
+      "34e83d2c2d11c27ecd1a28b1e1078ab6",
+      4,
+      true,
+      "2026-11-10T06:04:00+00:00"
+     ]
+    ],
+    "provider": "synthetic FakeHomeAssistant from the writer tree's tests/test_hamcp297_device_configuration.py",
+    "provider_writes": 1,
+    "result": {
+     "control": {
+      "dispatch_intent_recorded": true,
+      "state": "observing",
+      "status": "changed_unverified",
+      "terminal_outcome": null
+     },
+     "reconcile": {
+      "state": "manual_review_required",
+      "status": "verification_failed",
+      "terminal_outcome": "manual_review_required"
+     }
+    },
+    "scenario": "device_hold",
+    "started_at": "2026-11-10T06:00:00+00:00",
+    "task_id": "34e83d2c2d11c27ecd1a28b1e1078ab6"
+   }
+  },
+  "in_flight_active": {
+   "data_set": "device_crash",
+   "derived": {
+    "behaviour": "block",
+    "governed": "ready",
+    "lease": [
+     "active"
+    ],
+    "scope": "held_entity_only"
+   },
+   "observed": {
+    "governed": {
+     "driver": "tests/fixtures/f3_hamcp181_candidate/shipped_reader.py",
+     "files": {
+      "added": [],
+      "modified": [],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "passes": [
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "startup"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      }
+     ],
+     "provider_calls": [],
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": []
+      },
+      {
+       "execution_ready": true,
+       "faults": []
+      },
+      {
+       "execution_ready": true,
+       "faults": []
+      }
+     ],
+     "require_execution_ready": {
+      "code": null,
+      "ok": true,
+      "text": null
+     },
+     "runtime_status": "ready",
+     "sdk_ok": true
+    },
+    "held_switch": {
+     "blocking": [
+      {
+       "lease_status": "active",
+       "lock_key": "entity:switch.plug_child_lock",
+       "release": "verified_readback_or_deadline_final_read",
+       "task_id": "8af663062cee27009075296b58a14385"
+      }
+     ],
+     "entity_id": "switch.plug_child_lock",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 0,
+     "provider_writes": 0,
+     "state": "failed_pre_dispatch",
+     "terminal_outcome": "lock_conflict"
+    },
+    "now": "2026-11-10T06:00:10+00:00",
+    "other_switch": {
+     "blocking": [],
+     "entity_id": "switch.synthetic",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 1,
+     "provider_writes": 1,
+     "state": "succeeded_verified",
+     "terminal_outcome": "succeeded_verified"
+    },
+    "power": {
+     "files": {
+      "added": [
+       "ordinary-power-v1/42b900a94d191e11bf76bbaa26fa042b.json",
+       "ordinary-power-v1/642497e8907d8f1dc42ea0dd52144687.json",
+       "ordinary-power-v1/f3-operation-executions-v1/8831afa5d380195bc11292deb61916eb591f83b030282d5bc18316d859188e28.json",
+       "ordinary-power-v1/f3-operation-executions-v1/ce90949bf073bbd02701755b1b2f78ec6f83d84771893d8cce48155eabf7474c.json"
+      ],
+      "modified": [
+       "f3-operation-locks-v1/state.json"
+      ],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
+     "provider_writes": 1
+    },
+    "task_id": "8af663062cee27009075296b58a14385"
+   },
+   "writer": {
+    "action": "turn_on",
+    "clock": "2026-11-10T06:00:00+00:00",
+    "died_in": "provider call_service, after dispatch intent was recorded",
+    "entity_id": "switch.plug_child_lock",
+    "locks": [
+     [
+      "entity:switch.plug_child_lock",
+      "exclusive",
+      "8af663062cee27009075296b58a14385",
+      1,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ],
+     [
+      "entity_registry:switch.plug_child_lock",
+      "shared",
+      "8af663062cee27009075296b58a14385",
+      2,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ],
+     [
+      "home_assistant:core",
+      "shared",
+      "8af663062cee27009075296b58a14385",
+      3,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ]
+    ],
+    "provider": "synthetic FakeHomeAssistant from the writer tree's tests/test_hamcp297_device_configuration.py",
+    "provider_writes": 1,
+    "result": null,
+    "scenario": "device_crash",
+    "started_at": "2026-11-10T06:00:00+00:00",
+    "task_id": "8af663062cee27009075296b58a14385"
+   }
+  },
+  "in_flight_expired": {
+   "data_set": "device_crash",
+   "derived": {
+    "behaviour": "block",
+    "governed": "faulted",
+    "lease": [
+     "expired_pending_recovery"
+    ],
+    "scope": "unrelated_entity_also_blocked"
+   },
+   "observed": {
+    "governed": {
+     "driver": "tests/fixtures/f3_hamcp181_candidate/shipped_reader.py",
+     "files": {
+      "added": [],
+      "modified": [],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "passes": [
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "startup"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      },
+      {
+       "code": null,
+       "ok": true,
+       "trigger": "periodic"
+      }
+     ],
+     "provider_calls": [],
+     "readiness": [
+      {
+       "execution_ready": false,
+       "faults": [
+        "storage_read"
+       ]
+      },
+      {
+       "execution_ready": false,
+       "faults": [
+        "storage_read"
+       ]
+      },
+      {
+       "execution_ready": false,
+       "faults": [
+        "storage_read"
+       ]
+      }
+     ],
+     "require_execution_ready": {
+      "code": "execution_task_storage_error",
+      "ok": false,
+      "text": "Execution-task storage is unavailable."
+     },
+     "runtime_status": "unavailable",
+     "sdk_ok": true
+    },
+    "held_switch": {
+     "blocking": [
+      {
+       "lease_status": "expired_pending_recovery",
+       "lock_key": "entity:switch.plug_child_lock",
+       "release": "recovery_sweep_reconciles_expired_lease",
+       "task_id": "8af663062cee27009075296b58a14385"
+      },
+      {
+       "lease_status": "expired_pending_recovery",
+       "lock_key": "home_assistant:core",
+       "release": "recovery_sweep_reconciles_expired_lease",
+       "task_id": "8af663062cee27009075296b58a14385"
+      }
+     ],
+     "entity_id": "switch.plug_child_lock",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 0,
+     "provider_writes": 0,
+     "state": "failed_pre_dispatch",
+     "terminal_outcome": "lock_conflict"
+    },
+    "now": "2026-11-11T06:00:30+00:00",
+    "other_switch": {
+     "blocking": [
+      {
+       "lease_status": "expired_pending_recovery",
+       "lock_key": "home_assistant:core",
+       "release": "recovery_sweep_reconciles_expired_lease",
+       "task_id": "8af663062cee27009075296b58a14385"
+      }
+     ],
+     "entity_id": "switch.synthetic",
+     "error": null,
+     "ok": true,
+     "provider_attempt_count": 0,
+     "provider_writes": 0,
+     "state": "failed_pre_dispatch",
+     "terminal_outcome": "lock_conflict"
+    },
+    "power": {
+     "files": {
+      "added": [
+       "ordinary-power-v1/925d0b3656ff54e4959601b45ef1f019.json",
+       "ordinary-power-v1/ece5600ee9cd3752e532921b405f0299.json",
+       "ordinary-power-v1/f3-operation-executions-v1/0f2f707a569e83cd0691f1a6bc96a94b6c912ddd70fb37dd24ce10c928398207.json",
+       "ordinary-power-v1/f3-operation-executions-v1/ccb01cec81057db39d29b00d92c10b1d03629b532ae76920db88690cffa5f9fb.json"
+      ],
+      "modified": [],
+      "removed": []
+     },
+     "locks_after": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "locks_before": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "8af663062cee27009075296b58a14385",
+       1,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       2,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "8af663062cee27009075296b58a14385",
+       3,
+       false,
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
+     "provider_writes": 0
+    },
+    "task_id": "8af663062cee27009075296b58a14385"
+   },
+   "writer": {
+    "action": "turn_on",
+    "clock": "2026-11-10T06:00:00+00:00",
+    "died_in": "provider call_service, after dispatch intent was recorded",
+    "entity_id": "switch.plug_child_lock",
+    "locks": [
+     [
+      "entity:switch.plug_child_lock",
+      "exclusive",
+      "8af663062cee27009075296b58a14385",
+      1,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ],
+     [
+      "entity_registry:switch.plug_child_lock",
+      "shared",
+      "8af663062cee27009075296b58a14385",
+      2,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ],
+     [
+      "home_assistant:core",
+      "shared",
+      "8af663062cee27009075296b58a14385",
+      3,
+      false,
+      "2026-11-10T06:00:30+00:00"
+     ]
+    ],
+    "provider": "synthetic FakeHomeAssistant from the writer tree's tests/test_hamcp297_device_configuration.py",
+    "provider_writes": 1,
+    "result": null,
+    "scenario": "device_crash",
+    "started_at": "2026-11-10T06:00:00+00:00",
+    "task_id": "8af663062cee27009075296b58a14385"
+   }
+  }
+ },
+ "data": {
+  "device_crash": {
+   "after_read": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
+   "after_write": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
+   "before_read": "3bbb5c02312b2cb3595fe92e0f017c66146a0c9a2510bc690b22b34237f69979",
+   "files": 6
+  },
+  "device_hold": {
+   "after_read": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
+   "after_write": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
+   "before_read": "32929c030af4ed16d66398705329115e81d2c36e2c2fea4ae0d45be741145e68",
+   "files": 6
+  },
+  "device_recovery_27a": {
+   "after_read": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
+   "after_write": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
+   "before_read": "947fafb8175332a0866875e0d567f707809900107d6a81f225b733d0495c066e",
+   "earlier": [
+    {
+     "after_read": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
+     "after_write": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
+     "before_read": "13fecff7b943e80609d588a604cb63702124454fecfceaf4c21912373897ab48",
+     "files": 6
+    }
+   ],
+   "files": 7
+  }
+ },
+ "drivers": {
+  "previous_reader.py": "f0427230aaccf439a26677ecf8b3214dd847db6a122d87367507587594b811ab",
+  "rollback_proof_lane.py": "2c14e54bb11f9a8b7e2f1cf2da4c5b216bf38db708694562defa3207c17ac18f",
+  "tip_writer.py": "7485113e156ea79489aae0ebd72233cccfde5427b4df45a5c2804a82221fb5fc"
+ },
+ "ended_at": "2026-11-12T04:41:52+00:00",
+ "failures": [],
+ "lane": {
+  "checkout_commit": "747436e766bbb97e8576cd765c7d8a122a52d38e",
+  "commands": [
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "device_hold",
+    "<work>/data/device_hold"
+   ],
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "device_crash",
+    "<work>/data/device_crash"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "device",
+    "<work>/data/device_hold",
+    "<work>/read/hold",
+    "2026-11-11T06:03:30+00:00",
+    "34e83d2c2d11c27ecd1a28b1e1078ab6"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "device",
+    "<work>/data/device_crash",
+    "<work>/read/in_flight_active",
+    "2026-11-10T06:00:10+00:00",
+    "8af663062cee27009075296b58a14385"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "device",
+    "<work>/data/device_crash",
+    "<work>/read/in_flight_expired",
+    "2026-11-11T06:00:30+00:00",
+    "8af663062cee27009075296b58a14385"
+   ],
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "device_crash",
+    "<work>/data/device_recovery_27a"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "device",
+    "<work>/data/device_recovery_27a",
+    "<work>/read/27a-before",
+    "2026-11-10T06:01:00+00:00",
+    "4973570bb89f4d8b1da0cab5f72aa534"
+   ],
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "device_settle_release",
+    "<work>/data/device_recovery_27a",
+    "4973570bb89f4d8b1da0cab5f72aa534",
+    "300"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "device",
+    "<work>/data/device_recovery_27a",
+    "<work>/read/27a",
+    "2026-11-10T06:10:00+00:00",
+    "4973570bb89f4d8b1da0cab5f72aa534"
+   ]
+  ],
+  "containers": 0,
+  "drivers_modified": [],
+  "network": "none",
+  "note": "plain interpreter processes with a scrubbed environment; the drivers open no socket and start no container"
+ },
+ "limitations": [
+  "Synthetic provider: both releases ran their own offline test harness. No Home Assistant Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this receipt shows what the previous release's code does with these records, not what a deployed add-on does end to end."
+ ],
+ "reader": {
+  "archive_commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "declared_version": "2.4.2-beta.7",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "isolated": true,
+  "source": "git-archive",
+  "tag": "v2.4.2-beta.7",
+  "tag_object": "998e9021e5f187b0f375bff9b4b867243fd270c0",
+  "version": "2.4.2-beta.7"
+ },
+ "recovery": {
+  "27a": {
+   "exercised": true,
+   "limitation": "The hold was released by calling the current release's service methods with a synthetic Ingress principal. The Ingress HTTP layer and its administrator check were not exercised.",
+   "steps": {
+    "blocked_before_recovery": {
+     "data_set": "device_recovery_27a",
+     "derived": {
+      "behaviour": "block",
+      "governed": "faulted",
+      "lease": [
+       "expired_pending_recovery"
+      ],
+      "scope": "unrelated_entity_also_blocked"
+     },
+     "observed": {
+      "governed": {
+       "driver": "tests/fixtures/f3_hamcp181_candidate/shipped_reader.py",
+       "files": {
+        "added": [],
+        "modified": [],
+        "removed": []
+       },
+       "locks_after": [
+        [
+         "entity:switch.plug_child_lock",
+         "exclusive",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         1,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "entity_registry:switch.plug_child_lock",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         2,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "home_assistant:core",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         3,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ]
+       ],
+       "locks_before": [
+        [
+         "entity:switch.plug_child_lock",
+         "exclusive",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         1,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "entity_registry:switch.plug_child_lock",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         2,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "home_assistant:core",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         3,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ]
+       ],
+       "passes": [
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "startup"
+        },
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "periodic"
+        },
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "periodic"
+        }
+       ],
+       "provider_calls": [],
+       "readiness": [
+        {
+         "execution_ready": false,
+         "faults": [
+          "storage_read"
+         ]
+        },
+        {
+         "execution_ready": false,
+         "faults": [
+          "storage_read"
+         ]
+        },
+        {
+         "execution_ready": false,
+         "faults": [
+          "storage_read"
+         ]
+        }
+       ],
+       "require_execution_ready": {
+        "code": "execution_task_storage_error",
+        "ok": false,
+        "text": "Execution-task storage is unavailable."
+       },
+       "runtime_status": "unavailable",
+       "sdk_ok": true
+      },
+      "held_switch": {
+       "blocking": [
+        {
+         "lease_status": "expired_pending_recovery",
+         "lock_key": "entity:switch.plug_child_lock",
+         "release": "recovery_sweep_reconciles_expired_lease",
+         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+        },
+        {
+         "lease_status": "expired_pending_recovery",
+         "lock_key": "home_assistant:core",
+         "release": "recovery_sweep_reconciles_expired_lease",
+         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+        }
+       ],
+       "entity_id": "switch.plug_child_lock",
+       "error": null,
+       "ok": true,
+       "provider_attempt_count": 0,
+       "provider_writes": 0,
+       "state": "failed_pre_dispatch",
+       "terminal_outcome": "lock_conflict"
+      },
+      "now": "2026-11-10T06:01:00+00:00",
+      "other_switch": {
+       "blocking": [
+        {
+         "lease_status": "expired_pending_recovery",
+         "lock_key": "home_assistant:core",
+         "release": "recovery_sweep_reconciles_expired_lease",
+         "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+        }
+       ],
+       "entity_id": "switch.synthetic",
+       "error": null,
+       "ok": true,
+       "provider_attempt_count": 0,
+       "provider_writes": 0,
+       "state": "failed_pre_dispatch",
+       "terminal_outcome": "lock_conflict"
+      },
+      "power": {
+       "files": {
+        "added": [
+         "ordinary-power-v1/3511cc28b794c3d08efe0a7cfe41b935.json",
+         "ordinary-power-v1/b21b818e3d6a9eb4c0b6065e7df5d3df.json",
+         "ordinary-power-v1/f3-operation-executions-v1/8038448f4913b2ee2a4a89b1718f98425bef3a44a1850ef320bb3741d8733a9c.json",
+         "ordinary-power-v1/f3-operation-executions-v1/9929e42dac26bd6bcfebbdcbc8590671c20b2cc6f931b36cba3191d560a7b0fb.json"
+        ],
+        "modified": [],
+        "removed": []
+       },
+       "locks_after": [
+        [
+         "entity:switch.plug_child_lock",
+         "exclusive",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         1,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "entity_registry:switch.plug_child_lock",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         2,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "home_assistant:core",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         3,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ]
+       ],
+       "locks_before": [
+        [
+         "entity:switch.plug_child_lock",
+         "exclusive",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         1,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "entity_registry:switch.plug_child_lock",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         2,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ],
+        [
+         "home_assistant:core",
+         "shared",
+         "4973570bb89f4d8b1da0cab5f72aa534",
+         3,
+         false,
+         "2026-11-10T06:00:30+00:00"
+        ]
+       ],
+       "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
+       "provider_writes": 0
+      },
+      "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+     }
+    },
+    "crash": {
+     "died_in": "provider call_service, after dispatch intent was recorded",
+     "locks": [
+      [
+       "entity:switch.plug_child_lock",
+       "exclusive",
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "entity_registry:switch.plug_child_lock",
+       "shared",
+       "2026-11-10T06:00:30+00:00"
+      ],
+      [
+       "home_assistant:core",
+       "shared",
+       "2026-11-10T06:00:30+00:00"
+      ]
+     ],
+     "provider_writes": 1,
+     "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+    },
+    "previous_release_read": {
+     "data_set": "device_recovery_27a",
+     "derived": {
+      "behaviour": "proceed",
+      "governed": "ready",
+      "lease": [],
+      "scope": "none_blocked"
+     },
+     "observed": {
+      "governed": {
+       "driver": "tests/fixtures/f3_hamcp181_candidate/shipped_reader.py",
+       "files": {
+        "added": [],
+        "modified": [],
+        "removed": []
+       },
+       "locks_after": [],
+       "locks_before": [],
+       "passes": [
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "startup"
+        },
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "periodic"
+        },
+        {
+         "code": null,
+         "ok": true,
+         "trigger": "periodic"
+        }
+       ],
+       "provider_calls": [],
+       "readiness": [
+        {
+         "execution_ready": true,
+         "faults": []
+        },
+        {
+         "execution_ready": true,
+         "faults": []
+        },
+        {
+         "execution_ready": true,
+         "faults": []
+        }
+       ],
+       "require_execution_ready": {
+        "code": null,
+        "ok": true,
+        "text": null
+       },
+       "runtime_status": "ready",
+       "sdk_ok": true
+      },
+      "held_switch": {
+       "blocking": [],
+       "entity_id": "switch.plug_child_lock",
+       "error": null,
+       "ok": true,
+       "provider_attempt_count": 1,
+       "provider_writes": 1,
+       "state": "succeeded_verified",
+       "terminal_outcome": "succeeded_verified"
+      },
+      "now": "2026-11-10T06:10:00+00:00",
+      "other_switch": {
+       "blocking": [],
+       "entity_id": "switch.synthetic",
+       "error": null,
+       "ok": true,
+       "provider_attempt_count": 1,
+       "provider_writes": 1,
+       "state": "succeeded_verified",
+       "terminal_outcome": "succeeded_verified"
+      },
+      "power": {
+       "files": {
+        "added": [
+         "ordinary-power-v1/235e82fb0a527150df14d57f885f7317.json",
+         "ordinary-power-v1/b5f68e5b7d864134a0fa67e0b2ef704b.json",
+         "ordinary-power-v1/f3-operation-executions-v1/335f35ad0560f3c0d5d618d805239305c7cc84f0d8e7628af9f4acc8ecfe3197.json",
+         "ordinary-power-v1/f3-operation-executions-v1/6baeb1f7969e59d2c1967c1e569723714b966a4f97805acb4dfe8319f6194d39.json"
+        ],
+        "modified": [
+         "f3-operation-locks-v1/state.json"
+        ],
+        "removed": []
+       },
+       "locks_after": [],
+       "locks_before": [],
+       "provider": "synthetic PowerTransport from the reader tree's tests/test_typed_power.py",
+       "provider_writes": 2
+      },
+      "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+     }
+    },
+    "settle_release": {
+     "advance_seconds": 300,
+     "recovery_passes": 3,
+     "release": {
+      "audit_recorded": false,
+      "audit_unrecorded_reason": "audit_disabled",
+      "dispatch": "none",
+      "locks_after": [],
+      "path": "DeviceConfigurationService.hold_release_review then release_hold",
+      "principal": "home_assistant_admin_ingress:synthetic-hamcp377-lane",
+      "provider_writes": 0,
+      "readback_matches_requested_state": false,
+      "status": "hold_released_state_differs",
+      "terminal_outcome": "manual_review_required"
+     },
+     "review": {
+      "comparison": [
+       [
+        "state",
+        "on",
+        "off"
+       ]
+      ],
+      "hold_binding": "entity:switch.plug_child_lock:4",
+      "manual_review_reason": "post_dispatch_evidence_deadline_expired",
+      "record_generation": 9
+     },
+     "settled": {
+      "locks": [
+       [
+        "entity:switch.plug_child_lock",
+        "exclusive",
+        true
+       ]
+      ],
+      "normalized_outcome": "manual_review_required",
+      "provider_writes": 0,
+      "terminal": true
+     },
+     "task_id": "4973570bb89f4d8b1da0cab5f72aa534"
+    }
+   },
+   "title": "roll forward to the current release, let it settle the lock, release the hold there, then roll back"
+  }
+ },
+ "result": "PASS",
+ "row": "HAMCP-377",
+ "runs": [
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12b-write-hold",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12b-write-crash",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12b-read-hold",
+   "version": "2.4.2-beta.7"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12b-read-in_flight_active",
+   "version": "2.4.2-beta.7"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12b-read-in_flight_expired",
+   "version": "2.4.2-beta.7"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12b-27a-write-crash",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12b-read-27a-before",
+   "version": "2.4.2-beta.7"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12b-27a-settle-release",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12b-read-27a",
+   "version": "2.4.2-beta.7"
+  }
+ ],
+ "scenario": "12b",
+ "schema": "hamcp377-rollback-proof-receipt-v1",
+ "started_at": "2026-11-12T04:41:28+00:00",
+ "subject": "source",
+ "summary": [
+  "Conflict hold left by a settled device-configuration task: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.",
+  "Crash during a device-configuration operation, lease still live: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.",
+  "Crash during a device-configuration operation, lease expired: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch is refused with lock_conflict as well; the governed runtime reports execution not ready (storage_read) after three recovery passes and refuses with execution_task_storage_error.",
+  "Recovery 27a, before (the same crash, read before rolling forward): on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch is refused with lock_conflict as well; the governed runtime reports execution not ready (storage_read) after three recovery passes and refuses with execution_task_storage_error.",
+  "Recovery 27a, roll forward: the current release settled the crashed task to manual_review_required with 0 further provider writes, and its hold-release path returned hold_released_state_differs leaving 0 lock records.",
+  "Recovery 27a, after (rolled back again): on the previous release control_power on the previously held switch succeeds and is verified; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.",
+  "Recovery 27a, observed: on this store the previous release ran no governed control before the roll forward (execution not ready, control_power refused) and ran it after (execution ready, control_power verified)."
+ ],
+ "title": "device-configuration lock records left for the previous release",
+ "trees_distinct": true,
+ "writer": {
+  "archive_commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "declared_version": "2.4.2-beta.8",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "source": "git-archive",
+  "version": "2.4.2-beta.8"
+ }
+}

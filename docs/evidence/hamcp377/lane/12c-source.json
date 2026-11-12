@@ -1,0 +1,1385 @@
+{
+ "cases": {
+  "automation_created": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "no_rollback_plan_no_write"
+   },
+   "observed": {
+    "decode": {
+     "8fac8e0208b54675906f94b5cc4ffd81": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     }
+    },
+    "file_count": 7,
+    "files": {
+     "added": [],
+     "modified": [
+      "plans/execution-tasks-v1/8fac8e0208b54675906f94b5cc4ffd81.f4b6c62b40584c508ebfef060cd6424a.json"
+     ],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 1,
+     "partial": false,
+     "projection_failure_count": 0
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "already_applied",
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "rollback_not_available",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "automation",
+        "porch_light"
+       ]
+      ],
+      "plan_id": "8fac8e0208b54675906f94b5cc4ffd81",
+      "writer_status": "applied"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": [
+     [
+      "automation",
+      "porch_light"
+     ]
+    ]
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "automation",
+       "porch_light"
+      ]
+     ],
+     "plan_hash": "6bfc108e8c899477acd0798d8d196fa873653d7f7017e104c9c36de2cead9c56",
+     "plan_id": "8fac8e0208b54675906f94b5cc4ffd81",
+     "status": "applied"
+    }
+   }
+  },
+  "automation_rollback_approved": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "executed"
+   },
+   "observed": {
+    "decode": {
+     "2b2a610c974f40e29bf6fd3c3abb0e1d": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     },
+     "5a62e871b2f945a4ba83834ebc91293a": {
+      "error": null,
+      "ok": true,
+      "status": "approved"
+     }
+    },
+    "file_count": 8,
+    "files": {
+     "added": [
+      "plans/execution-tasks-v1/5a62e871b2f945a4ba83834ebc91293a.3fc59a02465c4edbaeb03436bad17878.json",
+      "plans/f3-child-execution-v1/3fc59a02465c4edbaeb03436bad17878.manifest.json",
+      "plans/f3-child-execution-v1/f82ec67cdf2589a9e825a1d6a9d4099d03443e0b32da9f5bcf3f4c1b2b393497.child.json"
+     ],
+     "modified": [
+      "plans/5a62e871b2f945a4ba83834ebc91293a.json",
+      "plans/execution-tasks-v1/2b2a610c974f40e29bf6fd3c3abb0e1d.06edcc3bb0ec406b86366c9335c605c9.json",
+      "plans/f3-child-execution-v1/.recovery-declaration-cursor.json",
+      "plans/f3-operation-locks-v1/state.json"
+     ],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 2,
+     "partial": false,
+     "projection_failure_count": 0
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "already_applied",
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       },
+       "rollback_change": {
+        "code": null,
+        "ok": true,
+        "rollback_plan_id": "5a62e871b2f945a4ba83834ebc91293a",
+        "status": "rollback_plan_created",
+        "writes": []
+       },
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "automation",
+        "porch_light"
+       ]
+      ],
+      "plan_id": "2b2a610c974f40e29bf6fd3c3abb0e1d",
+      "writer_status": "applied"
+     },
+     "rollback": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": [
+         [
+          "rest",
+          "DELETE",
+          "/config/automation/config/porch_light"
+         ]
+        ]
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "approved",
+        "writes": []
+       },
+       "rollback_change": null,
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "delete",
+        "automation",
+        "porch_light"
+       ]
+      ],
+      "plan_id": "5a62e871b2f945a4ba83834ebc91293a",
+      "writer_status": "approved"
+     }
+    },
+    "provider_writes": [
+     [
+      "rest",
+      "DELETE",
+      "/config/automation/config/porch_light"
+     ]
+    ],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": [
+     [
+      "automation",
+      "porch_light"
+     ]
+    ]
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "automation",
+       "porch_light"
+      ]
+     ],
+     "plan_hash": "72236953af9d7a0d9d4f186919612ea812a46d2a532c81162ebf9758f30e2071",
+     "plan_id": "2b2a610c974f40e29bf6fd3c3abb0e1d",
+     "status": "applied"
+    },
+    "rollback": {
+     "operations": [
+      [
+       "delete",
+       "automation",
+       "porch_light"
+      ]
+     ],
+     "plan_hash": "9fcc39ef5f2deb6ad8d519d53cda17d453788f351f836de8d7b4a754e72aa9e5",
+     "plan_id": "5a62e871b2f945a4ba83834ebc91293a",
+     "status": "approved"
+    }
+   }
+  },
+  "automation_rollback_pending": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "approved_then_executed"
+   },
+   "observed": {
+    "decode": {
+     "a475aee955ef4710a461164fa104a60b": {
+      "error": null,
+      "ok": true,
+      "status": "awaiting_approval"
+     },
+     "a8cf4f842975459780fe5ac86b0da35c": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     }
+    },
+    "file_count": 8,
+    "files": {
+     "added": [
+      "plans/execution-tasks-v1/a475aee955ef4710a461164fa104a60b.bea719419d4b45449d034ba9d71f8206.json",
+      "plans/f3-child-execution-v1/bea719419d4b45449d034ba9d71f8206.manifest.json",
+      "plans/f3-child-execution-v1/f2c771cc121fcb0eecd8f403f0778fb06f0d3b374f671167a332d5b47ee0bfbc.child.json"
+     ],
+     "modified": [
+      "plans/a475aee955ef4710a461164fa104a60b.json",
+      "plans/execution-tasks-v1/a8cf4f842975459780fe5ac86b0da35c.a9c73dcba8454036b5f0cec84d6c87ad.json",
+      "plans/f3-child-execution-v1/.recovery-declaration-cursor.json",
+      "plans/f3-operation-locks-v1/state.json"
+     ],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 2,
+     "partial": false,
+     "projection_failure_count": 0
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "already_applied",
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       },
+       "rollback_change": {
+        "code": null,
+        "ok": true,
+        "rollback_plan_id": "a475aee955ef4710a461164fa104a60b",
+        "status": "rollback_plan_created",
+        "writes": []
+       },
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "automation",
+        "porch_light"
+       ]
+      ],
+      "plan_id": "a8cf4f842975459780fe5ac86b0da35c",
+      "writer_status": "applied"
+     },
+     "rollback": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": [
+         [
+          "rest",
+          "DELETE",
+          "/config/automation/config/porch_light"
+         ]
+        ]
+       },
+       "approval_decision": {
+        "code": null,
+        "ok": true,
+        "status": "approved",
+        "writes": []
+       },
+       "approve": {
+        "code": null,
+        "ok": true,
+        "status": "approval_pending",
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "awaiting_approval",
+        "writes": []
+       },
+       "rollback_change": null,
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "delete",
+        "automation",
+        "porch_light"
+       ]
+      ],
+      "plan_id": "a475aee955ef4710a461164fa104a60b",
+      "writer_status": "awaiting_approval"
+     }
+    },
+    "provider_writes": [
+     [
+      "rest",
+      "DELETE",
+      "/config/automation/config/porch_light"
+     ]
+    ],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": [
+     [
+      "automation",
+      "porch_light"
+     ]
+    ]
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "automation",
+       "porch_light"
+      ]
+     ],
+     "plan_hash": "658c72995acf798ddd86e0964353ea9d2dfd15ab1493b8e5dc069a0b79d9e4d7",
+     "plan_id": "a8cf4f842975459780fe5ac86b0da35c",
+     "status": "applied"
+    },
+    "rollback": {
+     "operations": [
+      [
+       "delete",
+       "automation",
+       "porch_light"
+      ]
+     ],
+     "plan_hash": "4d6b8c8af27e4293e824b35d96dfb30603062224cc7ebadcb05038a19c74429d",
+     "plan_id": "a475aee955ef4710a461164fa104a60b",
+     "status": "awaiting_approval"
+    }
+   }
+  },
+  "helper_rollback_approved": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "refused"
+   },
+   "observed": {
+    "decode": {
+     "432215fbf8084c9ca559b6d82869c20a": {
+      "error": null,
+      "ok": true,
+      "status": "approved"
+     },
+     "c3b523ad4f904757a6f5e697fa9b2d4a": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     }
+    },
+    "file_count": 8,
+    "files": {
+     "added": [],
+     "modified": [
+      "plans/execution-tasks-v1/c3b523ad4f904757a6f5e697fa9b2d4a.4712e4d6ea834b18bed46562161ac350.json"
+     ],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 1,
+     "partial": true,
+     "projection_failure_count": 1
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "already_applied",
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       },
+       "rollback_change": {
+        "code": null,
+        "ok": true,
+        "rollback_plan_id": "432215fbf8084c9ca559b6d82869c20a",
+        "status": "rollback_plan_created",
+        "writes": []
+       },
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "helper",
+        "input_boolean.hvac_override"
+       ]
+      ],
+      "plan_id": "c3b523ad4f904757a6f5e697fa9b2d4a",
+      "writer_status": "applied"
+     },
+     "rollback": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "delete",
+        "helper",
+        "input_boolean.hvac_override"
+       ]
+      ],
+      "plan_id": "432215fbf8084c9ca559b6d82869c20a",
+      "writer_status": "approved"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": []
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "helper",
+       "input_boolean.hvac_override"
+      ]
+     ],
+     "plan_hash": "fffd556a7b74de765cea2654b3c8ac57103687ce9ef69eef04574e3b6e1cb4db",
+     "plan_id": "c3b523ad4f904757a6f5e697fa9b2d4a",
+     "status": "applied"
+    },
+    "rollback": {
+     "operations": [
+      [
+       "delete",
+       "helper",
+       "input_boolean.hvac_override"
+      ]
+     ],
+     "plan_hash": "ca560aa460b28e4f9411c91bd648de22930ff1ed64b759c1f0464673b29456bc",
+     "plan_id": "432215fbf8084c9ca559b6d82869c20a",
+     "status": "approved"
+    }
+   }
+  },
+  "scene_applied": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "refused"
+   },
+   "observed": {
+    "decode": {
+     "e5599bf5d37848a6a9852a72c3963bd7": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     }
+    },
+    "file_count": 7,
+    "files": {
+     "added": [],
+     "modified": [],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 0,
+     "partial": true,
+     "projection_failure_count": 1
+    },
+    "plans": {
+     "plan": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "scene_configuration",
+        "synthetic_evening"
+       ]
+      ],
+      "plan_id": "e5599bf5d37848a6a9852a72c3963bd7",
+      "writer_status": "applied"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": []
+   },
+   "writer": {
+    "plan": {
+     "operations": [
+      [
+       "create",
+       "scene_configuration",
+       "synthetic_evening"
+      ]
+     ],
+     "plan_hash": "5b822a5b796a07daed9e8bca2943173b008d9ebe06c1cab0bb2abb0a42a717be",
+     "plan_id": "e5599bf5d37848a6a9852a72c3963bd7",
+     "status": "applied"
+    }
+   }
+  },
+  "scene_approved": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "refused"
+   },
+   "observed": {
+    "decode": {
+     "469c040e78014743ac6a07e3e1990674": {
+      "error": null,
+      "ok": true,
+      "status": "approved"
+     }
+    },
+    "file_count": 1,
+    "files": {
+     "added": [],
+     "modified": [],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 0,
+     "partial": true,
+     "projection_failure_count": 1
+    },
+    "plans": {
+     "plan": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "scene_configuration",
+        "synthetic_evening"
+       ]
+      ],
+      "plan_id": "469c040e78014743ac6a07e3e1990674",
+      "writer_status": "approved"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": []
+   },
+   "writer": {
+    "plan": {
+     "operations": [
+      [
+       "create",
+       "scene_configuration",
+       "synthetic_evening"
+      ]
+     ],
+     "plan_hash": "76b1901b8cd4b22d53748af5f4a461d907d1c55fb50bf0757d4642a705c064dc",
+     "plan_id": "469c040e78014743ac6a07e3e1990674",
+     "status": "approved"
+    }
+   }
+  },
+  "scene_pending": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "refused"
+   },
+   "observed": {
+    "decode": {
+     "1850871174f54f4283b02c7f7879cf93": {
+      "error": null,
+      "ok": true,
+      "status": "awaiting_approval"
+     }
+    },
+    "file_count": 1,
+    "files": {
+     "added": [],
+     "modified": [],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 0,
+     "partial": true,
+     "projection_failure_count": 1
+    },
+    "plans": {
+     "plan": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "scene_configuration",
+        "synthetic_evening"
+       ]
+      ],
+      "plan_id": "1850871174f54f4283b02c7f7879cf93",
+      "writer_status": "awaiting_approval"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": []
+   },
+   "writer": {
+    "plan": {
+     "operations": [
+      [
+       "create",
+       "scene_configuration",
+       "synthetic_evening"
+      ]
+     ],
+     "plan_hash": "cb0519f2be60fa051d214c210dd017ad1f929f614db877806b7df7815a1efec4",
+     "plan_id": "1850871174f54f4283b02c7f7879cf93",
+     "status": "awaiting_approval"
+    }
+   }
+  },
+  "scene_rollback_approved": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "refused"
+   },
+   "observed": {
+    "decode": {
+     "29971f65f29f4a6faea6d43be4640712": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     },
+     "7188f93687a949eeb0e4721fd812636a": {
+      "error": null,
+      "ok": true,
+      "status": "approved"
+     }
+    },
+    "file_count": 8,
+    "files": {
+     "added": [],
+     "modified": [],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 0,
+     "partial": true,
+     "projection_failure_count": 2
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "scene_configuration",
+        "synthetic_evening"
+       ]
+      ],
+      "plan_id": "29971f65f29f4a6faea6d43be4640712",
+      "writer_status": "applied"
+     },
+     "rollback": {
+      "calls": {
+       "apply": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "rollback_change": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "status_after": {
+        "code": "policy_snapshot_mismatch",
+        "ok": false,
+        "status": null,
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "delete",
+        "scene_configuration",
+        "synthetic_evening"
+       ]
+      ],
+      "plan_id": "7188f93687a949eeb0e4721fd812636a",
+      "writer_status": "approved"
+     }
+    },
+    "provider_writes": [],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": []
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "scene_configuration",
+       "synthetic_evening"
+      ]
+     ],
+     "plan_hash": "58623d6204005d56e74fcdf4d32811d3938631b6358eb46d7af4373e7ea8a7e2",
+     "plan_id": "29971f65f29f4a6faea6d43be4640712",
+     "status": "applied"
+    },
+    "rollback": {
+     "operations": [
+      [
+       "delete",
+       "scene_configuration",
+       "synthetic_evening"
+      ]
+     ],
+     "plan_hash": "5ea57557f64a8999f60680a46d83e689d6d22f3f5ba94ad6397aabd05223e3d4",
+     "plan_id": "7188f93687a949eeb0e4721fd812636a",
+     "status": "approved"
+    }
+   }
+  },
+  "script_rollback_approved": {
+   "data_set": "plans",
+   "derived": {
+    "outcome": "executed"
+   },
+   "observed": {
+    "decode": {
+     "a5977c204ec541959a34ff82d65e775e": {
+      "error": null,
+      "ok": true,
+      "status": "approved"
+     },
+     "cea17d9df929411d867e3f7d1cb699e2": {
+      "error": null,
+      "ok": true,
+      "status": "applied"
+     }
+    },
+    "file_count": 8,
+    "files": {
+     "added": [
+      "plans/execution-tasks-v1/a5977c204ec541959a34ff82d65e775e.0e6cd0632ff6463a98f0694bbb274639.json",
+      "plans/f3-child-execution-v1/0e6cd0632ff6463a98f0694bbb274639.manifest.json",
+      "plans/f3-child-execution-v1/81c9fdd40a9fa01a7e61c61852fc222e39c3f6b7e66eaa704cbd9747e61ee1a4.child.json"
+     ],
+     "modified": [
+      "plans/a5977c204ec541959a34ff82d65e775e.json",
+      "plans/execution-tasks-v1/cea17d9df929411d867e3f7d1cb699e2.ad16506094b64c95a16888f118992d05.json",
+      "plans/f3-child-execution-v1/.recovery-declaration-cursor.json",
+      "plans/f3-operation-locks-v1/state.json"
+     ],
+     "removed": []
+    },
+    "list_plans": {
+     "count": 2,
+     "partial": false,
+     "projection_failure_count": 0
+    },
+    "plans": {
+     "created": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "already_applied",
+        "writes": []
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       },
+       "rollback_change": {
+        "code": null,
+        "ok": true,
+        "rollback_plan_id": "a5977c204ec541959a34ff82d65e775e",
+        "status": "rollback_plan_created",
+        "writes": []
+       },
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "create",
+        "script",
+        "porch_script"
+       ]
+      ],
+      "plan_id": "cea17d9df929411d867e3f7d1cb699e2",
+      "writer_status": "applied"
+     },
+     "rollback": {
+      "calls": {
+       "apply": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": [
+         [
+          "rest",
+          "DELETE",
+          "/config/script/config/porch_script"
+         ]
+        ]
+       },
+       "approval_decision": null,
+       "approve": {
+        "code": "approval_already_consumed",
+        "ok": false,
+        "status": null,
+        "writes": []
+       },
+       "get_plan": {
+        "code": null,
+        "ok": true,
+        "status": "approved",
+        "writes": []
+       },
+       "rollback_change": null,
+       "status_after": {
+        "code": null,
+        "ok": true,
+        "status": "applied",
+        "writes": []
+       }
+      },
+      "operations": [
+       [
+        "delete",
+        "script",
+        "porch_script"
+       ]
+      ],
+      "plan_id": "a5977c204ec541959a34ff82d65e775e",
+      "writer_status": "approved"
+     }
+    },
+    "provider_writes": [
+     [
+      "rest",
+      "DELETE",
+      "/config/script/config/porch_script"
+     ]
+    ],
+    "ready_after_startup": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "ready_final": {
+     "execution_ready": true,
+     "faults": []
+    },
+    "startup_assertions": [],
+    "synthetic_core_objects": [
+     [
+      "script",
+      "porch_script"
+     ]
+    ]
+   },
+   "writer": {
+    "created": {
+     "operations": [
+      [
+       "create",
+       "script",
+       "porch_script"
+      ]
+     ],
+     "plan_hash": "52b47907cef1d33b7987f66b5f55a91e0b2db8f5ea0257023134c5042e0401c2",
+     "plan_id": "cea17d9df929411d867e3f7d1cb699e2",
+     "status": "applied"
+    },
+    "rollback": {
+     "operations": [
+      [
+       "delete",
+       "script",
+       "porch_script"
+      ]
+     ],
+     "plan_hash": "f08ba6a8e51394eabbf4ae9fac78ce6b5d34bf25962657a29c46343c969d06ac",
+     "plan_id": "a5977c204ec541959a34ff82d65e775e",
+     "status": "approved"
+    }
+   }
+  }
+ },
+ "data": {
+  "plans": {
+   "after_read": "471e3026d14292f265bc78635883514fc05cc7ecc4efc94f88b241574af61df0",
+   "after_write": "471e3026d14292f265bc78635883514fc05cc7ecc4efc94f88b241574af61df0",
+   "before_read": "471e3026d14292f265bc78635883514fc05cc7ecc4efc94f88b241574af61df0",
+   "files": 103
+  }
+ },
+ "drivers": {
+  "previous_reader.py": "f0427230aaccf439a26677ecf8b3214dd847db6a122d87367507587594b811ab",
+  "rollback_proof_lane.py": "2c14e54bb11f9a8b7e2f1cf2da4c5b216bf38db708694562defa3207c17ac18f",
+  "tip_writer.py": "7485113e156ea79489aae0ebd72233cccfde5427b4df45a5c2804a82221fb5fc"
+ },
+ "ended_at": "2026-11-12T04:42:17+00:00",
+ "failures": [],
+ "lane": {
+  "checkout_commit": "747436e766bbb97e8576cd765c7d8a122a52d38e",
+  "commands": [
+   [
+    "<writer-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+    "<work>/writer-source",
+    "plans",
+    "<work>/data/plans"
+   ],
+   [
+    "<reader-python>",
+    "-B",
+    "-I",
+    "<checkout>/tests/fixtures/hamcp377_rollback_proof/previous_reader.py",
+    "<work>/reader-source",
+    "plans",
+    "<work>/data/plans",
+    "<work>/read/plans",
+    "<work>/raw/12c-writer-summary.json"
+   ]
+  ],
+  "containers": 0,
+  "drivers_modified": [],
+  "network": "none",
+  "note": "plain interpreter processes with a scrubbed environment; the drivers open no socket and start no container"
+ },
+ "limitations": [
+  "Synthetic provider: both releases ran their own offline test harness. No Home Assistant Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this receipt shows what the previous release's code does with these records, not what a deployed add-on does end to end.",
+  "The objects the previous release deleted were placed in its synthetic Core by the reader harness under the ids the writer's plans name. They are not the objects the current release created."
+ ],
+ "reader": {
+  "archive_commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+  "declared_version": "2.4.2-beta.7",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "isolated": true,
+  "source": "git-archive",
+  "tag": "v2.4.2-beta.7",
+  "tag_object": "998e9021e5f187b0f375bff9b4b867243fd270c0",
+  "version": "2.4.2-beta.7"
+ },
+ "reader_harness": {
+  "errors": [],
+  "ok": true
+ },
+ "result": "PASS",
+ "row": "HAMCP-377",
+ "runs": [
+  {
+   "package_in_own_tree": true,
+   "side": "writer",
+   "step": "12c-write",
+   "version": "2.4.2-beta.8"
+  },
+  {
+   "package_in_own_tree": true,
+   "side": "reader",
+   "step": "12c-read",
+   "version": "2.4.2-beta.7"
+  }
+ ],
+ "scenario": "12c",
+ "schema": "hamcp377-rollback-proof-receipt-v1",
+ "source_facts": {
+  "reader_created_identity_references": 0,
+  "writer_created_identity_references": 6
+ },
+ "started_at": "2026-11-12T04:41:52+00:00",
+ "subject": "source",
+ "summary": [
+  "automation_rollback_pending: approved on the previous release and then applied as an ordinary delete: one provider DELETE.",
+  "automation_rollback_approved, script_rollback_approved: applied by the previous release as an ordinary delete: one provider DELETE each.",
+  "automation_created: no rollback plan in the store: nothing to execute, no provider write.",
+  "helper_rollback_approved, scene_applied, scene_approved, scene_pending, scene_rollback_approved: refused on get, approve, apply and rollback with policy_snapshot_mismatch, no provider write.",
+  "References to created_identity in the previous release's runtime source: 0; in the writer's: 6."
+ ],
+ "title": "scene-create and created-object rollback plans left for the previous release",
+ "trees_distinct": true,
+ "writer": {
+  "archive_commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "commit": "aeb3b314dd180592874243c9ae370a63f0622c2b",
+  "declared_version": "2.4.2-beta.8",
+  "dependencies": {
+   "lock_sha256": "f0ed2856e5c30ade513a3088e173a5b103782754bb450f3955746106109e229c",
+   "mismatches": [],
+   "pins": 39,
+   "python": "3.12.14"
+  },
+  "flags": [
+   "-B",
+   "-I"
+  ],
+  "source": "git-archive",
+  "version": "2.4.2-beta.8"
+ }
+}
