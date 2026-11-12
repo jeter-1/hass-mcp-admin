@@ -47,12 +47,24 @@ EXECUTION_RETENTION_DAYS = 90
 # returned. A read that raised, a pass cancelled during its read and a pass
 # that yielded without reading complete no observation.
 #
-# Consecutive recovery claims: the ``recovery_claimed`` events after the most
-# recent completed observation, or in the whole record when there is none.
+# Counted recovery claims: walking the ``recovery_claimed`` events after the
+# most recent completed observation (or the whole record when there is none),
+# a claim counts when it is the first of them, or when its ``occurred_at`` is
+# at least _RECOVERY_CLAIM_WINDOW_SECONDS from the previous counted claim's, by
+# absolute distance so a clock step back cannot make every claim count. A
+# claim that does not count does not move that start point.
 #
-# The recovery pass whose claim brings that count to RECOVERY_CLAIM_BOUND
+# Under containment a claim that would not count appends no bookkeeping event,
+# and ``recovery_locks_transferred`` and ``execution_claim_yielded`` are each
+# appended at most once after the latest counted ``recovery_claimed``. The
+# claim counters, claim expiry and lock tokens still update every time.
+#
+# The recovery pass whose claim brings the count to RECOVERY_CLAIM_BOUND
 # settles the task to manual review without another read.
 RECOVERY_CLAIM_BOUND = 8
+# Equal to fan.service.RECOVERY_SWEEP_SECONDS (a test keeps them equal); f3
+# does not import the typed write families.
+_RECOVERY_CLAIM_WINDOW_SECONDS = 30
 # Backstop: a recovery claim that finds this many events settles the task too.
 RECOVERY_SETTLE_BOUND = MAX_EXECUTION_EVENTS - 8
 # Recovery bookkeeping: these events carry no readback or dispatch evidence.
@@ -66,24 +78,70 @@ _SETTLEMENT_EVENTS = 2
 RECOVERY_DROPPED_CODE_PREFIX = "recovery_bookkeeping_dropped_"
 
 
-def consecutive_recovery_claims(events: list[dict[str, Any]]) -> int:
-    """Recovery claims since the last completed observation (see above)."""
+def _completed_observation(event: dict[str, Any]) -> bool:
+    return (
+        event["event_type"] == "observation_recorded"
+        and "observation_failed" not in event["diagnostic_codes"]
+    )
+
+
+def _claim_counts(anchor: datetime | None, occurred_at: datetime) -> bool:
+    return anchor is None or (
+        abs((occurred_at - anchor).total_seconds())
+        >= _RECOVERY_CLAIM_WINDOW_SECONDS
+    )
+
+
+def _counted_recovery_claims(
+    events: list[dict[str, Any]],
+) -> tuple[int, datetime | None, int | None]:
+    """Walk the record once (see above).
+
+    Returns the counted claims since the last completed observation, the
+    ``occurred_at`` of the latest of them (None when there is none), and the
+    index of the latest counted claim in the whole record.
+    """
     count = 0
-    for event in reversed(events):
-        if (
-            event["event_type"] == "observation_recorded"
-            and "observation_failed" not in event["diagnostic_codes"]
-        ):
-            break
-        if event["event_type"] == "recovery_claimed":
-            count += 1
-    return count
+    anchor: datetime | None = None
+    latest: int | None = None
+    for index, event in enumerate(events):
+        if _completed_observation(event):
+            count, anchor = 0, None
+            continue
+        if event["event_type"] != "recovery_claimed":
+            continue
+        occurred_at = parse_timestamp(
+            event["occurred_at"], field_name="occurred_at"
+        )
+        if _claim_counts(anchor, occurred_at):
+            count, anchor, latest = count + 1, occurred_at, index
+    return count, anchor, latest
+
+
+def consecutive_recovery_claims(events: list[dict[str, Any]]) -> int:
+    """Counted recovery claims since the last completed observation."""
+    return _counted_recovery_claims(events)[0]
 
 
 def recovery_bound_reached(record: ExecutionRecord) -> bool:
     return (
         consecutive_recovery_claims(record.events) >= RECOVERY_CLAIM_BOUND
         or len(record.events) >= RECOVERY_SETTLE_BOUND
+    )
+
+
+def _bookkeeping_suppressed(
+    record: ExecutionRecord, event_type: str, occurred_at: str
+) -> bool:
+    """Under containment: is this bookkeeping event left out (see above)?"""
+    _, anchor, latest = _counted_recovery_claims(record.events)
+    if event_type == "recovery_claimed":
+        return not _claim_counts(
+            anchor, parse_timestamp(occurred_at, field_name="occurred_at")
+        )
+    return latest is not None and any(
+        event["event_type"] == event_type
+        for event in record.events[latest + 1 :]
     )
 
 
@@ -95,12 +153,17 @@ def _append_recovery_bookkeeping(
     occurred_at: str,
     diagnostic_codes: tuple[str, ...],
 ) -> None:
-    """Append one bookkeeping event; under containment, not at the bound.
+    """Append one bookkeeping event; under containment, only when it counts.
 
     A task at the recovery bound only waits to settle. Its waiting passes
-    append nothing, so the settlement event always fits.
+    append nothing, so the settlement event always fits. Below the bound, a
+    claim that does not count, and a repeated lock transfer or yield after the
+    latest counted claim, append nothing either (see above).
     """
-    if containment and recovery_bound_reached(record):
+    if containment and (
+        recovery_bound_reached(record)
+        or _bookkeeping_suppressed(record, event_type, occurred_at)
+    ):
         return
     append_execution_event(
         record,
