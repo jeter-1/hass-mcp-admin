@@ -197,7 +197,8 @@ as unit `hamcp364-security-lane-b6f81dcf`. HAMCP-364 changed
 dials only the constant `RAW_CORE_URL` (`ws://127.0.0.1:18123/api/websocket`),
 sends only the shapes listed in `RAW_COMMANDS`, and opens its session through
 `scripts/lane_session.py`, which refuses a redirect. `security_metadata.json`
-now records this run (the run 1 receipt is in commit `32beeb20`):
+recorded this run until run 3 replaced it (the run 1 receipt is in commit
+`32beeb20`, the run 2 receipt in commit `5ea622ec`):
 
 - source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
 - manifest SHA-256
@@ -210,8 +211,26 @@ now records this run (the run 1 receipt is in commit `32beeb20`):
   `88a3dd1c41871bfb4814a6c6769d969148549f9d7eae075f10a2e7dd30182b8b`.
 
 Apart from the source commit, the manifest hash, the times and the host
-admission snapshot, every receipt field equals run 1. The limitation below
-applies to both runs.
+admission snapshot, every receipt field equals run 1.
+
+### Run 3: PASS (2026-11-12 03:30 CST)
+
+Run 3 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-security-lane-5fc40f93`. After run 2 the branch changed
+`scripts/real_ha_contract_tests.py`, which the lane runner
+`scripts/core_security_metadata_local.py` imports: the config flow id that
+harness accepts is now the 26-character ULID Core issues (commit `4a72ee8a`).
+`scripts/security_metadata_contract_acceptance.py` did not change.
+`security_metadata.json` now records this run:
+
+- source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
+- the same manifest SHA-256, image, memory limits and `contract_fingerprint`
+  as run 2;
+- receipt SHA-256
+  `a7f0697af9d350b69a122d540e5b5af29e5090a0779edebb3264c7a66e8d4a47`.
+
+Apart from the source commit, the times and the host admission snapshot, every
+receipt field equals run 2. The limitation below applies to all three runs.
 
 Limitation: the disposable Core has one owner (the onboarding user) and no
 non-admin user, no pending or trial HTTP configuration and no Supervisor

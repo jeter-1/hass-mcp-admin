@@ -11,17 +11,17 @@ against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
 faults. **The A2 success lane has a passing receipt on source commit
-`b6f81dcf`; nothing has been signed**: A2 success lane run 6 below (PASS, on
+`5fc40f93`; nothing has been signed**: A2 success lane run 7 below (PASS, on
 the HAMCP-364 branch after its merge with `release/2.6.0` at `aeb3b314`)
 produced the `thread_matter_topology_a2.json` in this directory. That receipt
 is review evidence for that commit, not a signing receipt: every lane proposed
 for sequence 18, this one included, re-runs on the signing commit, and the
-signing receipt will bind that commit. The run 6 receipt records, as
+signing receipt will bind that commit. The run 7 receipt records, as
 `lane_network`, the internal network the run created and inspected again
-before it handed Core to the harness. Runs 2, 3, 4 and 5 were earlier PASS
+before it handed Core to the harness. Runs 2, 3, 4, 5 and 6 were earlier PASS
 runs whose receipts it replaced.
 The A2 lane uses the HAMCP-297 Matter Server stub. PR #428 merged that stub
-into `release/2.6.0`, and run 6 uses the committed copy.
+into `release/2.6.0`, and run 7 uses the committed copy.
 
 ## Exact authority and scope
 
@@ -267,7 +267,8 @@ as unit `hamcp364-a1-lane-b6f81dcf`. HAMCP-364 changed
 client dials only the constant `RAW_CORE_URL`
 (`ws://127.0.0.1:18124/api/websocket`), sends only the shapes listed in
 `RAW_COMMANDS`, and opens its session through `scripts/lane_session.py`, which
-refuses a redirect. `thread_matter_topology.json` now records this run:
+refuses a redirect. `thread_matter_topology.json` recorded this run until run
+5 replaced it (the run 4 receipt is in commit `5ea622ec`):
 
 - source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
 - the same manifest SHA-256 as run 3 (the manifest's bytes did not change);
@@ -277,6 +278,25 @@ refuses a redirect. `thread_matter_topology.json` now records this run:
 
 Apart from the source commit, the times and the host admission snapshot, every
 receipt field equals run 3.
+
+### Run 5: PASS (2026-11-12 03:32 CST)
+
+Run 5 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-a1-lane-5fc40f93`. After run 4 the branch changed
+`scripts/real_ha_contract_tests.py`, which the lane runner
+`scripts/core_thread_matter_topology_local.py` imports: the config flow id
+that harness accepts is now the 26-character ULID Core issues (commit
+`4a72ee8a`). `scripts/thread_matter_topology_contract_acceptance.py` did not
+change. `thread_matter_topology.json` now records this run:
+
+- source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
+- the same manifest SHA-256, image, memory limits and profile fingerprint as
+  run 4;
+- receipt SHA-256
+  `6bafb4b6eb49079435e9305f0e7f2a62a324b5579bcad69cc4a974561da2e2c2`.
+
+Apart from the source commit, the times and the host admission snapshot, every
+receipt field equals run 4.
 
 These runs cover A2 only for its fail-closed case. The A2 success lane below
 covers success.
@@ -457,7 +477,8 @@ an internal bridge with one subnet. The harness accepts only a bare
 holds every later request to it. The harness socket sends only the two shapes
 in `A2_RAW_COMMANDS`, and every session is opened through
 `scripts/lane_session.py`, which refuses a redirect.
-`thread_matter_topology_a2.json` now records this run:
+`thread_matter_topology_a2.json` recorded this run until run 7 replaced it
+(the run 6 receipt is in commit `5ea622ec`):
 
 - source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
 - the same profile, fingerprint and manifest SHA-256 as run 5;
@@ -476,6 +497,33 @@ The first launch, one minute earlier as unit `hamcp364-a2-lane-b6f81dcf`, was
 refused before any container started (`a2_stub_file_set_mismatch`), for the
 cause recorded under run 3: a local test run had left an ignored `__pycache__`
 directory in the stub directory. Removing it was the only change.
+
+### Run 7: PASS (2026-11-12 03:32 CST)
+
+Run 7 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-a2-lane-5fc40f93`. After run 6 the branch changed
+`scripts/real_ha_contract_tests.py`, which the lane runner
+`scripts/core_thread_matter_topology_a2_local.py` imports: the config flow id
+that harness accepts is now the 26-character ULID Core issues (commit
+`4a72ee8a`). Neither the lane script nor
+`scripts/thread_matter_topology_a2_acceptance.py` changed.
+`thread_matter_topology_a2.json` now records this run:
+
+- source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
+- the same profile, fingerprint and manifest SHA-256 as run 6;
+- stub at `committed`, with the same 7 files verified;
+- egress probe `blocked`;
+- the same `lane_network` values as run 6;
+- receipt SHA-256
+  `1b4506263090a3f56cba85841ce64cee66e1c323f51729364cadd3868f3826da`.
+
+Apart from the source commit, the times and the host admission snapshot, every
+receipt field equals run 6.
+
+The lane was launched once. Before the first lane of this batch was launched,
+the ignored `__pycache__` directory that a local test run had again left in
+the stub directory (the cause of the refused launches recorded under runs 3
+and 6) was moved out of it. No tracked file changed.
 
 **Residuals.**
 

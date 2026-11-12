@@ -22,15 +22,15 @@ on whose head they ran.
 | Capability | `core.scene_create_delete_operation` | `core.created_helper_delete_operation` |
 | `contract_fingerprint` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` |
 | Result | `PASS`, `cleanup.clean: true` | `PASS`, `cleanup.clean: true` |
-| Receipt SHA-256 | `ed8659bd548c4f29865b16d10e5ecbb399a292fee3623b95a4ffbd7cef208b30` (5,403 bytes) | `fdd6991386289849a66b89b085750712d532061b70c20a596a577bbee262fca7` (6,907 bytes) |
-| User unit (heavy-job gate, kind `lane`) | `hamcp364-scene-lane-b6f81dcf` | `hamcp364-helper-lane-b6f81dcf-r2` |
-| Run, 2026-11-11 Central (the receipt's `started_utc` and `ended_utc`) | 21:17:54 to 21:18:14 | 21:19:31 to 21:19:57 |
+| Receipt SHA-256 | `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860` (5,402 bytes) | `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6` (6,906 bytes) |
+| User unit (heavy-job gate, kind `lane`) | `hamcp364-scene-lane-5fc40f93` | `hamcp364-helper-lane-5fc40f93` |
+| Run, 2026-11-12 Central (the receipt's `started_utc` and `ended_utc`) | 03:26:38 to 03:27:03 | 03:28:06 to 03:29:07 |
 | Profile paths | 19 | 10 |
 | Scenarios | `scene_create`, `scene_existing_id_refused`, `scene_recreate`, `scene_recreate_undo`, `scene_undo` | `helper_create_input_boolean`, `helper_create_input_number`, `helper_undo_input_boolean`, `helper_undo_input_number`, `mixed_plan_create`, `mixed_plan_undo` |
 
 Both receipts record:
 
-- source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5` (clean committed
+- source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8` (clean committed
   checkout of the HAMCP-364 branch, which contains `release/2.6.0` at
   `aeb3b314dd180592874243c9ae370a63f0622c2b`);
 - manifest SHA-256
@@ -45,23 +45,29 @@ Both receipts record:
 - the lane's own Docker bridge with host port 18123 bound to `127.0.0.1`, and
   `production_authority: false`.
 
-The first launch of the created-helper lane, as unit
-`hamcp364-helper-lane-b6f81dcf` at 21:18:20, was refused at the runner's port
-check before any container or run directory existed: the scene lane had ended
-on the same host port five seconds earlier and the port could not yet be
-bound. The second launch, a minute later, changed nothing else.
-
-The other five lanes ran on the same source commit. Security metadata,
-Marketplace, Thread/Matter A1 and device configuration were launched once
-each. Thread/Matter A2 was launched twice: the first launch, as unit
-`hamcp364-a2-lane-b6f81dcf` at 21:23:12, was refused by the runner's stub
-file-set check (`a2_stub_file_set_mismatch`) before any container started,
-because a local test run had left an ignored `__pycache__` directory in the
-stub directory; the second, as unit `hamcp364-a2-lane-b6f81dcf-r2` at
-21:24:19, passed and wrote the receipt, and removing that directory was the
-only change between them. Each lane has one passing run. The receipts are in
-the directories that already held them:
+All seven lanes ran on this source commit, one at a time and once each: no
+launch was refused and none was repeated. Between lanes the launcher waited
+until the previous lane's host port could be bound again. Before the first
+launch, three ignored `__pycache__` directories that local test runs had left
+in fixture directories (the Matter Server stub directory and two
+device-configuration fixture directories) were moved out of them; no tracked
+file changed. The receipts of the other five lanes are in the directories
+that already held them:
 [`../../hamcp134/lane/`](../../hamcp134/lane/README.md) (security metadata),
 [`../../hamcp290/lane/`](../../hamcp290/lane/README.md) (Marketplace),
 [`../../hamcp231/lane/`](../../hamcp231/lane/README.md) (Thread/Matter A1 and
 A2) and [`../../hamcp366/`](../../hamcp366/README.md) (device configuration).
+
+These two receipts replace the ones recorded on source commit `b6f81dcf`
+(scene `ed8659bd548c4f29865b16d10e5ecbb399a292fee3623b95a4ffbd7cef208b30`,
+created helper
+`fdd6991386289849a66b89b085750712d532061b70c20a596a577bbee262fca7`; both are in
+commit `5ea622ec`). After that commit the branch changed
+`scripts/real_ha_contract_tests.py`, which `scripts/core_created_object_local.py`
+and every other lane runner import (commit `4a72ee8a`: the config flow id that
+harness accepts is the 26-character ULID Core issues), and
+`scripts/device_configuration_contract_acceptance.py` (commits `58bdab1c` and
+`5fc40f93`), so all seven lanes ran again. Apart from the source commit, the
+times, the host admission snapshot and the entity ids and readback
+fingerprints each run issues, every field of the two receipts equals the
+earlier one.
