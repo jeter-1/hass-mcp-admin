@@ -1,0 +1,10 @@
+== admission for hamcp371-s4-selftest-2 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-11 22:56:23 CST
+units:
+  mut364-final-2.service
+lanes(containers):
+  
+stray:
+heavy_total=1 evidence=0 mem_avail_gb=12.3 load1=2.69 root_free_gb=50.2
+Running as unit: hamcp371-s4-selftest-2.service; invocation ID: 2661a8a3e1274c29b789337b8e584508
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/upstream_catalog_capture_local.py\ selftest\ --run-dir\ .artifacts/hamcp371-s4/runs/selftest-2\ --launch-log\ .artifacts/hamcp371-s4/launch-log.jsonl\ --note\ \'second\ selftest\;\ selftest-1\ \(harness\ a6b96736\)\ was\ withheld\ after\ start\ with\ fixture_recorded_a_mutation_surface\;\ cause:\ harness\ defect\,\ the\ mutation\ counters\ are\ maps\ and\ lists\ and\ were\ compared\ with\ zero\;\ fix:\ commit\ fd68e780\ \(tracked\ harness\ change\ with\ tests\,\ not\ an\ environmental\ fix\)\;\ no\ upstream\ image\ had\ been\ started\'\ \>\ .artifacts/hamcp371-s4/selftest-2.log\ 2\>\&1 

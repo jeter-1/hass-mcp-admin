@@ -1,0 +1,985 @@
+{
+ "comparison": "mechanical; states differences, reviews nothing",
+ "error_shapes": {
+  "equal": true,
+  "new": {
+   "invalid_search": {
+    "is_error": true,
+    "shape_fingerprint": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+    "structured_code": "VALIDATION_FAILED"
+   },
+   "missing_automation": {
+    "is_error": true,
+    "shape_fingerprint": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
+    "structured_code": "RESOURCE_NOT_FOUND"
+   },
+   "missing_registry_entity": {
+    "is_error": true,
+    "shape_fingerprint": "4b23e6fe3cb9f2b2b8f6c8f7eb150774ec4316309ee9c722d9b78bace033067a",
+    "structured_code": "AUTH_INVALID_TOKEN"
+   },
+   "missing_state": {
+    "is_error": true,
+    "shape_fingerprint": "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c",
+    "structured_code": "ENTITY_NOT_FOUND"
+   }
+  },
+  "old": {
+   "invalid_search": {
+    "is_error": true,
+    "shape_fingerprint": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+    "structured_code": "VALIDATION_FAILED"
+   },
+   "missing_automation": {
+    "is_error": true,
+    "shape_fingerprint": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
+    "structured_code": "RESOURCE_NOT_FOUND"
+   },
+   "missing_registry_entity": {
+    "is_error": true,
+    "shape_fingerprint": "4b23e6fe3cb9f2b2b8f6c8f7eb150774ec4316309ee9c722d9b78bace033067a",
+    "structured_code": "AUTH_INVALID_TOKEN"
+   },
+   "missing_state": {
+    "is_error": true,
+    "shape_fingerprint": "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c",
+    "structured_code": "ENTITY_NOT_FOUND"
+   }
+  }
+ },
+ "image_resources": {
+  "distributions_added": [],
+  "distributions_changed": {
+   "attrs": {
+    "new": "attrs-26.1.0",
+    "old": "attrs-25.3.0"
+   },
+   "authlib": {
+    "new": "authlib-1.9.2",
+    "old": "authlib-1.9.1"
+   },
+   "certifi": {
+    "new": "certifi-2026.10.23",
+    "old": "certifi-2026.10.19"
+   },
+   "cyclopts": {
+    "new": "cyclopts-5.3.3",
+    "old": "cyclopts-5.3.0"
+   },
+   "ha_mcp": {
+    "new": "ha_mcp-9.2.0",
+    "old": "ha_mcp-9.1.2"
+   },
+   "httpcore2": {
+    "new": "httpcore2-2.14.0",
+    "old": "httpcore2-2.16.0"
+   },
+   "httpx2": {
+    "new": "httpx2-2.14.0",
+    "old": "httpx2-2.16.0"
+   },
+   "opentelemetry_api": {
+    "new": "opentelemetry_api-1.45.2",
+    "old": "opentelemetry_api-1.45.1"
+   },
+   "platformdirs": {
+    "new": "platformdirs-4.14.3",
+    "old": "platformdirs-4.13.5"
+   },
+   "pydantic": {
+    "new": "pydantic-2.14.1",
+    "old": "pydantic-2.13.5"
+   },
+   "pydantic_core": {
+    "new": "pydantic_core-2.50.1",
+    "old": "pydantic_core-2.46.5"
+   },
+   "pydantic_settings": {
+    "new": "pydantic_settings-2.16.2",
+    "old": "pydantic_settings-2.16.1"
+   },
+   "pyjwt": {
+    "new": "pyjwt-2.15.1",
+    "old": "pyjwt-2.15.0"
+   },
+   "python_multipart": {
+    "new": "python_multipart-0.0.33",
+    "old": "python_multipart-0.0.32"
+   },
+   "truststore": {
+    "new": "truststore-0.10.4",
+    "old": "truststore-0.10.5"
+   },
+   "tzdata": {
+    "new": "tzdata-2026.6",
+    "old": "tzdata-2026.5"
+   }
+  },
+  "distributions_removed": [],
+  "file_count": {
+   "new": 17,
+   "old": 17
+  },
+  "files_added": [],
+  "files_changed": [],
+  "files_removed": [],
+  "links": {
+   "new": [],
+   "old": []
+  },
+  "total_bytes": {
+   "new": 299349,
+   "old": 299349
+  },
+  "tree_sha256": {
+   "new": "5f5687ca62cf40116c69676022bf139f357b0a9a126b106ba224e86758d4819e",
+   "old": "5f5687ca62cf40116c69676022bf139f357b0a9a126b106ba224e86758d4819e"
+  }
+ },
+ "initialize": {
+  "capabilities": {
+   "new": {
+    "logging": {},
+    "prompts": {
+     "listChanged": true
+    },
+    "resources": {
+     "listChanged": true,
+     "subscribe": false
+    },
+    "tools": {
+     "listChanged": true
+    }
+   },
+   "old": {
+    "logging": {},
+    "prompts": {
+     "listChanged": true
+    },
+    "resources": {
+     "listChanged": true,
+     "subscribe": false
+    },
+    "tools": {
+     "listChanged": true
+    }
+   }
+  },
+  "capabilities_equal": true,
+  "instructions_diff": [],
+  "instructions_sha256": {
+   "new": "09296d189729486755a70c429f7ae0e7f9d46489f34d5ea20eaf95aa2a73584a",
+   "old": "09296d189729486755a70c429f7ae0e7f9d46489f34d5ea20eaf95aa2a73584a"
+  },
+  "keys_changed": [
+   "serverInfo"
+  ],
+  "protocolVersion": {
+   "new": "2025-03-26",
+   "old": "2025-03-26"
+  },
+  "response_header_names": {
+   "new": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "old": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ]
+  },
+  "result_keys": {
+   "new": [
+    "capabilities",
+    "instructions",
+    "protocolVersion",
+    "serverInfo"
+   ],
+   "old": [
+    "capabilities",
+    "instructions",
+    "protocolVersion",
+    "serverInfo"
+   ]
+  },
+  "serverInfo": {
+   "new": {
+    "name": "ha-mcp",
+    "version": "9.2.0"
+   },
+   "old": {
+    "name": "ha-mcp",
+    "version": "9.1.2"
+   }
+  },
+  "tools_list_pages": {
+   "new": 1,
+   "old": 1
+  },
+  "wire_order_equal": true
+ },
+ "new": {
+  "catalog_fingerprint": "0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147",
+  "protocol_version": "2025-03-26",
+  "server_name": "ha-mcp",
+  "server_version": "9.2.0",
+  "tool_count": 77
+ },
+ "old": {
+  "catalog_fingerprint": "7c8ee48bfedea7a992a04a3260757b66fe4734c65fd7e311f024733a52f7821d",
+  "protocol_version": "2025-03-26",
+  "server_name": "ha-mcp",
+  "server_version": "9.1.2",
+  "tool_count": 77
+ },
+ "tools": {
+  "added": [],
+  "changed": {
+   "ha_config_list_helpers": {
+    "description_diff": [
+     "@@ -33,3 +33,3 @@",
+     "-default and (with helper_id) current value, or the menu_options a",
+     "-menu-based helper needs a menu_choice from. Call it before",
+     "-ha_config_set_helper to learn the config keys for a type.",
+     "+default and (with helper_id) current value, the later_forms of a",
+     "+helper with several forms, or the menu_options a menu-based helper",
+     "+needs a menu_choice from. Call it before ha_config_set_helper."
+    ],
+    "fields_changed": [
+     "description"
+    ],
+    "sha256": {
+     "description": {
+      "new": "ec3cd1d1b3747270c807e42fe89f07a89401f583c9ae302cc5db41fdbb761140",
+      "old": "3c522a8ad5b8bb78e3838f2a1aba0b63e0d57c936902e478ce31dad0c02ec8f3"
+     }
+    }
+   },
+   "ha_config_set_automation": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "python_transform": {
+       "description_diff": [
+        "@@ -19,0 +20,3 @@",
+        "+- Guards (a failed guard raises and the config is not changed):",
+        "+  one match: [a] = [a for a in config['actions'] if a.get('alias') == 'Y']",
+        "+  a value: [a] = [a for a in [config['actions'][2]] if a['data']['v'] == 1]"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "68f34ef9b5d4e21f28b2726eceab001a169e23857f87f7d483909d3e23ee4790",
+      "old": "4e24269ee6774a6549afc3737bcb059fdf5ad27a2b5ead3a2658c7f13e61d62d"
+     }
+    }
+   },
+   "ha_config_set_dashboard": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "python_transform": {
+       "description_diff": [
+        "@@ -19,0 +20,3 @@",
+        "+- Guards (a failed guard raises and the config is not changed):",
+        "+  one match: [a] = [a for a in config['actions'] if a.get('alias') == 'Y']",
+        "+  a value: [a] = [a for a in [config['actions'][2]] if a['data']['v'] == 1]"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "5b548fb4d7640fd455685590ed541e79723cae19f7fd2703bd56bd8cf689ce99",
+      "old": "774f5f230ee452e55a7f56d19953be9cd00d67c171d592ac062ac895ae6d49ae"
+     }
+    }
+   },
+   "ha_config_set_dashboard_resource": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "edits": {
+       "keys_changed": [
+        "anyOf"
+       ],
+       "values": {
+        "anyOf": {
+         "new": [
+          {
+           "items": {
+            "additionalProperties": false,
+            "description": "One exact-match replacement.",
+            "properties": {
+             "new": {
+              "description": "Replacement text (may be empty).",
+              "type": "string"
+             },
+             "old": {
+              "description": "Exact text to replace. Must occur exactly once in the content at the point this edit is applied; include surrounding context to make it unique.",
+              "type": "string"
+             }
+            },
+            "required": [
+             "old",
+             "new"
+            ],
+            "type": "object"
+           },
+           "maxItems": 100,
+           "minItems": 1,
+           "type": "array"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "old": [
+          {
+           "items": {
+            "additionalProperties": false,
+            "description": "One exact-match replacement in an inline resource.",
+            "properties": {
+             "new": {
+              "description": "Replacement text (may be empty).",
+              "type": "string"
+             },
+             "old": {
+              "description": "Exact text to replace. Must occur exactly once in the content at the point this edit is applied; include surrounding context to make it unique.",
+              "type": "string"
+             }
+            },
+            "required": [
+             "old",
+             "new"
+            ],
+            "type": "object"
+           },
+           "maxItems": 100,
+           "minItems": 1,
+           "type": "array"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "e11621054682845bb2e32f85f31e759f54da74d238a40219bfec945f33759272",
+      "old": "cc132e50196f106fee3dce01c1d9ad70fb4a3b3995e537a217abffe6967744d4"
+     }
+    }
+   },
+   "ha_config_set_helper": {
+    "description_diff": [
+     "@@ -7 +7 @@",
+     "-SIMPLE types (pass `config` dict): input_boolean, input_button,",
+     "+SIMPLE types, written in one call: input_boolean, input_button,",
+     "@@ -9 +9 @@",
+     "-zone, person, tag. Create requires `name`; update requires `helper_id`.",
+     "+zone, person, tag.",
+     "@@ -11,6 +11,5 @@",
+     "-FLOW types (pass `config` dict, Config Entry Flow API): every helper flow",
+     "-Home Assistant lists, read from it at call time \u2014 template, group,",
+     "-utility_meter, derivative, min_max, threshold, integration, statistics,",
+     "-trend, ... and custom helper integrations. Create requires `name`; for",
+     "-updates pass the existing entry_id as `helper_id` (options flows reject",
+     "-the `name` key).",
+     "+FLOW types: every helper flow Home Assistant lists, read from it at",
+     "+call time \u2014 template, group, utility_meter, derivative, min_max,",
+     "+threshold, integration, statistics, trend, ... and custom helper",
+     "+integrations. Creating one runs its config flow; `helper_id` (the",
+     "+config entry id) runs its options flow instead.",
+     "@@ -21,3 +20,25 @@",
+     "-CONFIG_SUBENTRY type (Config Subentry Flow API): pass `entry_id`,",
+     "-`subentry_type` and `config`; pass `subentry_id` to reconfigure an existing",
+     "-subentry, omit it to create one.",
+     "+CONFIG_SUBENTRY type: pass `entry_id` and `subentry_type`; with",
+     "+`subentry_id` the subentry's reconfigure flow runs, without it its",
+     "+create flow.",
+     "+",
+     "+Flows, one step per call, as the HA UI runs them: a call answers the",
+     "+step the flow is at and returns Home Assistant's next answer. A form",
+     "+comes back with its fields (type, default, current value, Home",
+     "+Assistant's help text) and flow_id; a menu with menu_options. Answer",
+     "+with flow_id and config (a form) or menu_choice (a menu); flow_id alone",
+     "+returns the step again, and flow_id with abort=True ends the flow.",
+     "+Without flow_id a new flow starts: menu_choice answers its opening",
+     "+menu and config the form after it, so a one-form helper is created or",
+     "+updated in one call; without config the call returns the form, and",
+     "+its later_forms when the helper has more than one (statistics,",
+     "+history_stats, generic_thermostat, ...). With a config list the call",
+     "+answers form after form and returns at the first one Home Assistant",
+     "+rejects, or once the answers run out. A rejected form is an error",
+     "+with Core's text, and the flow stays open to correct it. Nothing is",
+     "+saved until the flow finishes.",
+     "+",
+     "+WHEN NOT TO USE:",
+     "+- An integration that is not a helper: ha_set_integration.",
+     "+- Removing a helper: ha_remove_helpers_integrations.",
+     "+- Renaming a flow helper's entity, or its registry settings alone:",
+     "+  ha_set_entity.",
+     "@@ -26,14 +47,10 @@",
+     "-- UPDATE preserves type-specific fields not re-passed (a rename never wipes",
+     "-  initial/icon/etc.); flow-helper and config subentry updates behave the same",
+     "-  way (see `config`).",
+     "-- Omitted `action` falls back to the `helper_id`-presence discriminator",
+     "-  (SIMPLE/FLOW) or the `subentry_id`-presence discriminator (config",
+     "-  subentries).",
+     "-- For flow-based helpers, config keys not declared by any step's data_schema",
+     "-  are silently ignored by HA. Validation errors carry the helper's",
+     "-  `data_schema` (and `menu_options` for menu-rooted helpers like",
+     "-  `template`/`group` when no sub-type is chosen yet), so a follow-up call",
+     "-  can self-correct without a separate schema-discovery round-trip.",
+     "-- Flows that present more than one menu (e.g. an MQTT device subentry",
+     "-  reconfigure looping through its summary menu) take `next_step_id` as a",
+     "-  LIST of successive selections, consumed one per menu encounter.",
+     "+- A SIMPLE update preserves type-specific fields not re-passed (a rename",
+     "+  never wipes initial/icon/etc.).",
+     "+- Omitted `action`: update when `helper_id` (for a config subentry,",
+     "+  `subentry_id`) is given, else create.",
+     "+- area_id, labels, category and icon are applied to a flow helper's",
+     "+  entities by the call that finishes the flow.",
+     "+- A progress step (Home Assistant working in the background) is waited",
+     "+  out for up to 120 s. When Home Assistant does not answer a submit,",
+     "+  the error carries status applied_but_unverified: check the helper",
+     "+  before retrying.",
+     "@@ -43,2 +60,5 @@",
+     "-- template sensor: ha_config_set_helper(helper_type=\"template\", name=\"Room Temp\", config={\"next_step_id\": \"sensor\", \"state\": \"{{ states('sensor.x')|float }}\", \"unit_of_measurement\": \"\u00b0C\"})",
+     "-- group: ha_config_set_helper(helper_type=\"group\", name=\"Kitchen Lights\", config={\"group_type\": \"light\", \"entities\": [\"light.a\", \"light.b\"]})",
+     "+- template sensor: ha_config_set_helper(helper_type=\"template\", menu_choice=\"sensor\", config={\"name\": \"Room Temp\", \"state\": \"{{ states('sensor.x')|float }}\", \"unit_of_measurement\": \"\u00b0C\"})",
+     "+- group: ha_config_set_helper(helper_type=\"group\", menu_choice=\"light\", config={\"name\": \"Kitchen Lights\", \"entities\": [\"light.a\", \"light.b\"]})",
+     "+- see a form first: ha_config_set_helper(helper_type=\"statistics\"), then answer it: ha_config_set_helper(helper_type=\"statistics\", flow_id=\"...\", config={...})",
+     "+- several forms in one call: ha_config_set_helper(helper_type=\"statistics\", config=[{\"name\": \"Temp Mean\", \"entity_id\": \"sensor.temp\"}, {\"state_characteristic\": \"mean\"}, {\"sampling_size\": 20}])",
+     "+- update one option: ha_config_set_helper(helper_type=\"group\", helper_id=\"01HXYZ...\", config={\"hide_members\": true})"
+    ],
+    "fields_changed": [
+     "description",
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {
+      "abort": {
+       "default": false,
+       "description": "With flow_id: end the open flow without saving.",
+       "type": "boolean"
+      },
+      "flow_id": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Continue an open flow: the flow_id a previous call returned, with the same helper_type and helper_id (or entry_id, subentry_type and subentry_id)."
+      },
+      "menu_choice": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "FLOW types and config_subentry: the option to pick at a menu step (template and group open with one)."
+      }
+     },
+     "properties_changed": {
+      "config": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Type-specific fields. On update it is a patch: a field you omit keeps its current value. SIMPLE types take these keys: input_select: options (list, required), initial. input_number: min, max (required), step, unit_of_measurement, mode ('box'/'slider'), initial. input_text: min, max (length), mode ('text'/'password'), initial, unit_of_measurement, pattern (regex the value must match). input_datetime: has_date, has_time, initial. input_boolean: initial. counter: initial (starting value), minimum, maximum, step, restore (default true). timer: duration ('HH:MM:SS' or seconds), restore (default false). schedule: monday..sunday, each a list of {'from': 'HH:MM', 'to': 'HH:MM'} with optional 'data' dict of extra attributes. zone: latitude, longitude (both required), radius (meters, default 100), passive (won't trigger person state changes). person: user_id, device_trackers (device_tracker entity IDs), picture (URL). tag: tag_id (omit on create to auto-generate), description. On input_* types, `initial` \u2014 even false/0 \u2014 disables last-state restore and forces that value on every HA restart. ha_config_list_helpers(helper_type, describe=True) lists a type's fields. FLOW types and config_subentry take the flow's fields; a field set to null is cleared where the schema allows that field to be empty. A field two steps declare gets your one value both times; pass step_values={'<step_id>': {'<field>': <value>}} to give a step its own value, or to leave it out of that step; a LIST of those objects supplies one per encounter when the flow presents a step more than once.",
+        "+Type-specific fields. On update it is a patch: a field you omit keeps its current value, and a SIMPLE type's field set to null is removed. SIMPLE types take these keys: the fields of the type's own Home Assistant schema, under its names; Home Assistant validates them and its error names any mistake. With the ha_mcp_tools component installed, ha_config_list_helpers(helper_type, describe=True) lists a type's fields. FLOW types and config_subentry: the answers to the form the flow is at, under the form's own field names (a section's fields nested under the section's name). On an update a field you omit is sent as the form shows it (its `current` value); a field set to null is left empty. Home Assistant validates the answer. A list answers several forms: one object per form, in the order Home Assistant asks for them."
+       ],
+       "keys_changed": [
+        "anyOf",
+        "description"
+       ],
+       "values": {
+        "anyOf": {
+         "new": [
+          {
+           "additionalProperties": true,
+           "type": "object"
+          },
+          {
+           "items": {
+            "additionalProperties": true,
+            "type": "object"
+           },
+           "type": "array"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "old": [
+          {
+           "additionalProperties": true,
+           "type": "object"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       }
+      },
+      "helper_id": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-The helper's storage id ('my_button'), not the name of its entity, or its full entity_id ('input_button.my_button'). Omit to create a new helper.",
+        "+The helper's storage id ('my_button'), not the name of its entity, or its full entity_id ('input_button.my_button'); for a FLOW helper its config entry id. Omit to create a new helper."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      },
+      "icon": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Material Design Icon (e.g., 'mdi:bell'); '' or ' ' clears it, except a zone's stored icon (the icon in the zone's own config, as the Home Assistant UI stores it; ha_get_zone shows it), which cannot be removed. On create, a storage helper's icon goes into its stored config when Home Assistant's schema for the type has an icon field, otherwise (person, tag, a new zone, or without the ha_mcp_tools component) into the entity registry; an update always sets the registry icon, and the stored icon too where the schema has one. Restoring a storage helper's automatic backup also puts back its registry icon, unless the backup predates registry icons being recorded; a flow helper's backup holds no icon, so its restore does not set one",
+        "+Material Design Icon (e.g., 'mdi:bell'); '' or ' ' clears it, except a zone's stored icon, which Home Assistant keeps on update as the zone dialog does: it can be changed but not removed. A storage helper's icon goes into its stored config when Home Assistant's schema for the type has an icon field, as the helper's own dialog stores it, and the entity registry is left alone; otherwise (person, tag, or another type without the ha_mcp_tools component) it goes into the entity registry. An icon override in the entity registry is set or cleared with ha_set_entity. Restoring a storage helper's automatic backup also puts back its registry icon, unless the backup predates registry icons being recorded; a flow helper's backup holds no icon, so its restore does not set one"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      },
+      "name": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Display name for simple/flow helper creation. Optional on helper update. Ignored for helper_type='config_subentry', which uses entry_id/subentry_type/subentry_id instead. For flow-based helper updates (template, group, utility_meter, ...), this is ignored because options flows don't expose renaming; change the resulting entity's display name with ha_set_entity(name=...).",
+        "+Display name. Home Assistant decides which SIMPLE helper types need one to be created; optional on an update. Creating a FLOW helper, it answers the form's `name` field when the form has one and config sets none; a FLOW update does not use it (rename the entity with ha_set_entity). Not used by config_subentry."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "description": {
+      "new": "9a07a86f5b2f7ee82b66b4a879a3f551c89a75bd2593e1926186c30e5c42a3b6",
+      "old": "71c5d8f9cd515d8944b247d0bb0fde5def4540be546faa3c92f09a9e229d1236"
+     },
+     "inputSchema": {
+      "new": "2de93afedfea252d48256a1528e361106ee43b396c4d51330916929c50d41cd7",
+      "old": "f10d2035e164a76d3afb5c13cdb4c01d13b8720c784b59bd68f8368fcb09c84d"
+     }
+    }
+   },
+   "ha_config_set_scene": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "python_transform": {
+       "description_diff": [
+        "@@ -19,0 +20,3 @@",
+        "+- Guards (a failed guard raises and the config is not changed):",
+        "+  one match: [a] = [a for a in config['actions'] if a.get('alias') == 'Y']",
+        "+  a value: [a] = [a for a in [config['actions'][2]] if a['data']['v'] == 1]"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "c761c9fc8baf29b6dc2d98d9d4e38630c7b7f2910ffbd67309a1f989b6a0c508",
+      "old": "98043ef656be5fddfe39f52860c5e0fd8ce38f10844d794ebc4ac5b8032e37a9"
+     }
+    }
+   },
+   "ha_config_set_script": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "python_transform": {
+       "description_diff": [
+        "@@ -19,0 +20,3 @@",
+        "+- Guards (a failed guard raises and the config is not changed):",
+        "+  one match: [a] = [a for a in config['actions'] if a.get('alias') == 'Y']",
+        "+  a value: [a] = [a for a in [config['actions'][2]] if a['data']['v'] == 1]"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "e92dbaab8ee24e7f95eb4ab0d18ad20639f937816fa49f8198486eaa8aa0377b",
+      "old": "3d59207e521d14d64a6a39af46b6b7c1d4fb2ecd0659f3c4f0b9e7ec4daeba2a"
+     }
+    }
+   },
+   "ha_get_history": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "start_time": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Start time: ISO datetime or a look-back from now with unit min, h, d, w or m (= 30 days), e.g. '30min' = 30 minutes ago. Default: 24h ago for history, 30d ago for statistics",
+        "+Start time: ISO datetime (HA local time without an offset) or a look-back from now with unit min, h, d, w or m (= 30 days), e.g. '30min' = 30 minutes ago. Default: 24h ago for history, 30d ago for statistics"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "3dee30ee49cc4d27cb6f46dd92f70306d7cc09b8706746732c264cd1d6802c1e",
+      "old": "30ae8c30856877789915181869814e7f5bb749217fb361c455011a26841a557f"
+     }
+    }
+   },
+   "ha_get_overview": {
+    "description_diff": [
+     "@@ -7,0 +8,5 @@",
+     "+",
+     "+Entities are listed by friendly_name, the legacy state attribute. A row",
+     "+also carries name where Home Assistant shows a different one, composed",
+     "+from the parent device, device and entity names (served by a current",
+     "+ha_mcp_tools component).",
+     "@@ -29,0 +35,2 @@",
+     "+If it carries ``python_required``, the release needs that Python: give",
+     "+the user ``upgrade_command``."
+    ],
+    "fields_changed": [
+     "description"
+    ],
+    "sha256": {
+     "description": {
+      "new": "a016015c25f19f0d77b57e26994006de489d464752894a4c192a418e3383deb3",
+      "old": "98b5034c1d51ab6c569928520c1b4bd8545ebc8b4de9cced108f849c6bf22cfa"
+     }
+    }
+   },
+   "ha_get_system_health": {
+    "description_diff": [
+     "@@ -8,2 +8,2 @@",
+     "-update_available}``. When update_available is true, tell the user a",
+     "-newer ha-mcp release is available.",
+     "+update_available}``. When update_available is true, tell the user a newer",
+     "+ha-mcp release is available (with ``python_required``, give ``upgrade_command``)."
+    ],
+    "fields_changed": [
+     "description"
+    ],
+    "sha256": {
+     "description": {
+      "new": "4ba55493d24f9039c628aff7c9d21ce3ec605617293dd76dfd83eb5be004ee5a",
+      "old": "6446ece4fc836eaf8935241459c995f60711ba44dd239bf74b4d1a1ed6cb4ae7"
+     }
+    }
+   },
+   "ha_get_zone": {
+    "description_diff": [
+     "@@ -14,0 +15,5 @@",
+     "+",
+     "+A stored zone's ``icon`` is the one stored in the zone, which the",
+     "+Zones editor shows. ``entity_icon`` is an icon override in the zone",
+     "+entity's registry entry: the map and the zone's state show it instead.",
+     "+Set or clear the override with ha_set_entity."
+    ],
+    "fields_changed": [
+     "description"
+    ],
+    "sha256": {
+     "description": {
+      "new": "38a85e1818b1a64846475f3a904b7f2d56e721ebd8b222c26a6531a786746ad9",
+      "old": "725d35536b803ee5e8bfb39978d6f5cf5f162a8661ba1ab55fa3bc938e9836c1"
+     }
+    }
+   },
+   "ha_list_services": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "detail_level": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-'summary': name, description, domain, service, and target when the service has one. 'full': additionally include parameter field schemas.",
+        "+'summary': name, description, domain, service, target and response when the service returns data. 'full': additionally include parameter field schemas."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      },
+      "service_fields": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Project each service record to only the specified keys. E.g. [\"name\", \"description\"] returns slim service records. None = full records. Unknown keys yield empty records. Available keys: name, description, domain, service, target (when present), fields (full mode only).",
+        "+Project each service record to only the specified keys. E.g. [\"name\", \"description\"] returns slim service records. None = full records. Unknown keys yield empty records. Available keys: name, description, domain, service, target (when present), response (when present), fields (full mode only)."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "c6d7591f741e487dc77c9934d076b8646c49dc7847013c572784df110a865da8",
+      "old": "da65206809eafce40f77be1ef87045a4155fd4c085b149b85a41c7d5db280ce1"
+     }
+    }
+   },
+   "ha_manage_updates": {
+    "description_diff": [
+     "@@ -15 +15 @@",
+     "-latest, update_available}, so a newer ha-mcp release can be flagged.",
+     "+latest, update_available; python_required + upgrade_command if it needs another Python}."
+    ],
+    "fields_changed": [
+     "description"
+    ],
+    "sha256": {
+     "description": {
+      "new": "9baba5b47c8bde70e29ecd8be0e30290561c55c77256ce979fd0c36bede27ace",
+      "old": "f6178865cdb06a77388504097a4589532a68a0614f0c2b1cf843030bed6146f7"
+     }
+    }
+   },
+   "ha_report_issue": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "fields": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Return only the specified top-level response keys. None = full response. Typical: 'issue_title,issue_body,issue_url,duplicate_check_urls,anonymization_guide,missing_tool_hint,known_client_issues_hint,instructions'. issue_body already embeds the relevant logs, so the raw log keys are only needed for your own analysis. Available keys: diagnostic_info, recent_logs, startup_logs, addon_logs, core_error_log, log_count, startup_log_count, formatted_report, issue_title, issue_body, issue_url, anonymization_guide, duplicate_check_urls, missing_tool_hint, known_client_issues_hint, instructions.",
+        "+Return only the specified top-level response keys. None = full response. Typical: 'issue_title,issue_body,issue_url,duplicate_check_urls,anonymization_guide,missing_tool_hint,known_client_issues_hint,instructions'. issue_body already embeds the relevant logs, so the raw log keys are only needed for your own analysis. Available keys: diagnostic_info, recent_logs, startup_logs, addon_logs, core_error_log, log_count, startup_log_count, formatted_report, issue_title, issue_body, issue_url, anonymization_guide, duplicate_check_urls, missing_tool_hint, known_client_issues_hint, python_upgrade_hint, instructions."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "a888b58f72bba67b6f8212d71898bf8c1ab54387fad68ceba66b30282db3aee9",
+      "old": "990d1a38b9b14600a2faab9124512f0606893112e5acab63cd45a401b8575859"
+     }
+    }
+   },
+   "ha_search": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "result_fields": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Project each entity-registry record to only the specified keys (e.g. [\"entity_id\", \"state\"]). None = full records. Base keys: entity_id, friendly_name, domain, state, score, match_type. Opt-in enrichment/membership keys (computed on request): area, floor, labels, aliases, is_group, member_entity_ids. Membership is recognized only when HA explicitly exposes a valid group_entities or legacy entity_id collection; member IDs are sorted, direct (not recursively expanded), and omitted if visibility/include_hidden excludes a member. Requesting member_entity_ids also retains is_group. An unknown key is rejected.",
+        "+Project each entity-registry record to only the specified keys (e.g. [\"entity_id\", \"state\"]). None = full records. Base keys: entity_id, friendly_name, domain, state, score, match_type, name. name is the name Home Assistant shows, composed from the parent device, device and entity names (served by a current ha_mcp_tools component); friendly_name is the legacy state attribute and can differ from it. Opt-in enrichment/membership keys (computed on request): area, floor, labels, aliases, is_group, member_entity_ids. Membership is recognized only when HA explicitly exposes a valid group_entities or legacy entity_id collection; member IDs are sorted, direct (not recursively expanded), and omitted if visibility/include_hidden excludes a member. Requesting member_entity_ids also retains is_group. An unknown key is rejected."
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "2258e36ce603a00a654ed3459dd78f2bfa46c21451b3b2cac90a23395eb754a2",
+      "old": "58ed5cc91f928d9dc33437a97ad0ae46641b17891dfed2f7657f2658c83276c5"
+     }
+    }
+   },
+   "ha_set_integration": {
+    "description_diff": [
+     "@@ -27,6 +27,6 @@",
+     "-starts: its first form gets config, and without config the call",
+     "-returns that first step. A form Home Assistant rejects is an error",
+     "-with errors and error_text (Core's text), and the flow stays open to",
+     "-correct it. A flow stays open until Home Assistant finishes",
+     "-it or you abort it; while a setup flow is open, Home Assistant",
+     "-refuses another one for the same device as already_in_progress.",
+     "+starts: config answers its first form, or returns it when omitted. A",
+     "+config list answers several forms, one object each in order (see a",
+     "+form's later_forms). A form Home Assistant rejects is an error with",
+     "+errors and error_text (Core's text), and the flow stays open to",
+     "+correct it, until Home Assistant finishes it or you abort it; while a",
+     "+setup flow is open, another for the same device is already_in_progress."
+    ],
+    "fields_changed": [
+     "description",
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "config": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-The values for the form the flow is at: one form per call. Without flow_id it answers the new flow's first form (after menu_choice, when the flow opens with a menu). A key the form does not declare is refused before anything is sent. On an existing entry (options, reconfigure) a field you omit keeps its current value, and a field set to null is cleared where the integration's schema allows that field to be empty.",
+        "+The values for the form the flow is at; a list answers that form and the ones after it, one object per form in order. Without flow_id it answers the new flow's first form (after menu_choice, when the flow opens with a menu). Home Assistant validates each answer. On an existing entry (options, reconfigure) a field you omit keeps its current value, and a field set to null is left empty."
+       ],
+       "keys_changed": [
+        "anyOf",
+        "description"
+       ],
+       "values": {
+        "anyOf": {
+         "new": [
+          {
+           "additionalProperties": true,
+           "type": "object"
+          },
+          {
+           "items": {
+            "additionalProperties": true,
+            "type": "object"
+           },
+           "type": "array"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "old": [
+          {
+           "additionalProperties": true,
+           "type": "object"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "description": {
+      "new": "dafde6395bc60e2e5a0f050051de4d35703686de0369b7c4aa39a3ad8fc13938",
+      "old": "c8505226171803fd23955c58bddc404b3bf5a8400c023c39dbd1f7dad80f0ec6"
+     },
+     "inputSchema": {
+      "new": "eaac26ad90bf36a767ab09843ccf136d3ce80d34bf95b01b6af1ff95e1f5c22f",
+      "old": "18d3920d405abc78cbe08f8a5f6fbd760ae5b646781b572cc6e54d9b61db21e2"
+     }
+    }
+   },
+   "ha_set_zone": {
+    "fields_changed": [
+     "inputSchema"
+    ],
+    "inputSchema_diff": {
+     "other_keys_changed": {},
+     "properties_added": {},
+     "properties_changed": {
+      "icon": {
+       "description_diff": [
+        "@@ -1 +1 @@",
+        "-Material Design Icon (e.g., 'mdi:briefcase'). On update, '' clears it, except an icon stored in the zone itself (as the Home Assistant UI stores it; ha_get_zone shows it), which cannot be removed",
+        "+Material Design Icon (e.g., 'mdi:briefcase'), stored in the zone as the Home Assistant zone dialog stores it. Home Assistant keeps a zone's stored icon on update: it can be changed but not removed, so '' leaves it. An icon override in the entity registry (ha_get_zone's entity_icon) is set or cleared with ha_set_entity"
+       ],
+       "keys_changed": [
+        "description"
+       ]
+      }
+     },
+     "properties_removed": []
+    },
+    "sha256": {
+     "inputSchema": {
+      "new": "243b7387b835bd489db25968fd0a8c93c173001b0f1694f465f0bb8ebe5e225c",
+      "old": "e747612372a7aca5d02daf88c64791249b4164981a50676b93e8260e9b92ad60"
+     }
+    }
+   }
+  },
+  "changed_count": 17,
+  "descriptor_fields_outside_the_known_set": [],
+  "new_count": 77,
+  "old_count": 77,
+  "removed": [],
+  "unchanged_count": 60
+ }
+}

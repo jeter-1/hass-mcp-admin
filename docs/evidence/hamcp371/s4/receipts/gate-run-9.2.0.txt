@@ -1,0 +1,10 @@
+== admission for hamcp371-s4-run-920 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-11 23:01:30 CST
+units:
+  mut364-final-2.service
+lanes(containers):
+  
+stray:
+heavy_total=1 evidence=0 mem_avail_gb=12.3 load1=2.06 root_free_gb=49.9
+Running as unit: hamcp371-s4-run-920.service; invocation ID: bbb9a2a730824dd18a2483561b8de3bb
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/upstream_catalog_capture_local.py\ run\ --version\ 9.2.0\ --run-dir\ .artifacts/hamcp371-s4/runs/run-9.2.0\ --launch-log\ .artifacts/hamcp371-s4/launch-log.jsonl\ \>\ .artifacts/hamcp371-s4/run-9.2.0.log\ 2\>\&1 

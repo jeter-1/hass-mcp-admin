@@ -1,0 +1,168 @@
+{
+ "file_count": 17,
+ "files": [
+  {
+   "bytes": 1109,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/LICENSE",
+   "sha256": "68eaf9eb28babab65015e2194e32f43ad96ca1a9539c8b6613e9822cfbd61205"
+  },
+  {
+   "bytes": 22936,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/SKILL.md",
+   "sha256": "6bd2d18d5edf237f5ff0d19ec28decc92af1fdabdc416919a9b547f29b39b186"
+  },
+  {
+   "bytes": 18382,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/appdaemon.md",
+   "sha256": "cafd134ff6c90f7aa9bc2f56e7f02836466d33405091ac33b02ebd80c42b1eb4"
+  },
+  {
+   "bytes": 23093,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/automation-actions.md",
+   "sha256": "82cfb07622e28f46ba1df361c6283e393c21f27be6ef51a32e6abf257065e1fd"
+  },
+  {
+   "bytes": 13002,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/backups.md",
+   "sha256": "fd130e2e239e20578596ebfbf12f85a487e8466432920a4a70e05de3d82a6afe"
+  },
+  {
+   "bytes": 14656,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/blueprint-guide.md",
+   "sha256": "72904598254cc2ae776ea5c48dbd74124e3180175403bdab855da69416990411"
+  },
+  {
+   "bytes": 4574,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/dashboard-cards.md",
+   "sha256": "ac5e0f8d009f378dc514502e7bcacb478084f3e47ebf0e9828a50eef52ac34d2"
+  },
+  {
+   "bytes": 31666,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/dashboard-guide.md",
+   "sha256": "b4d42e9383fe929ecc87fb52150ceb3222173b528b1cf9f8663218c65544d293"
+  },
+  {
+   "bytes": 16732,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/device-control.md",
+   "sha256": "bb3f5e0f86448789e95d71f09fb1efc635c4f40112ef7812d238829097e58ae3"
+  },
+  {
+   "bytes": 1621,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/domain-docs.md",
+   "sha256": "8207a5b50aaeae4d510614e9cbdad6c10ef7b0028a4dc50c716a096c2c5f5d31"
+  },
+  {
+   "bytes": 11626,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/examples.yaml",
+   "sha256": "06dff5e876681f0ef3214cf0f8d26e9253f4eac4fbb02852b8a8aa4207481da2"
+  },
+  {
+   "bytes": 51467,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/helper-selection.md",
+   "sha256": "ed3e9a21b3bb6558d897575da80124cadf004b022aeb75fa0584930196d1a45e"
+  },
+  {
+   "bytes": 18413,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/safe-refactoring.md",
+   "sha256": "fcb1f1e1eb0ba626f225bcd9cbd60263115099e929e1b1b2520abf2615bf6a07"
+  },
+  {
+   "bytes": 3640,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/scenes.md",
+   "sha256": "829d7e02f69ac7cbba8d05df19d4ae2de9dfe5c1ce085cc130d72ba0a074ab70"
+  },
+  {
+   "bytes": 30139,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/template-guidelines.md",
+   "sha256": "9336c7ac247a1ecd23a3575b005f01b793e613b00de3d1c446f6744a15ec1f5a"
+  },
+  {
+   "bytes": 32222,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/triggers-and-conditions.md",
+   "sha256": "c9375a88e9367aca87626dd4f473b471d92db487417069640cc455153f9991f3"
+  },
+  {
+   "bytes": 4071,
+   "path": "/app/src/ha_mcp/resources/skills-vendor/skills/home-assistant-best-practices/references/yaml-only-integrations.md",
+   "sha256": "3b740e27c0810c0ad5a5546ed3abe2e3d60103cfed441aeb1a0d739f0e3dfcca"
+  }
+ ],
+ "installed_distributions": [
+  "aiofile-3.9.0",
+  "annotated_types-0.7.0",
+  "anyio-4.15.1",
+  "attrs-25.3.0",
+  "authlib-1.9.1",
+  "beartype-0.22.6",
+  "cachetools-6.2.2",
+  "caio-0.9.25",
+  "certifi-2026.10.19",
+  "cffi-2.0.0",
+  "click-8.1.8",
+  "cryptography-50.0.2",
+  "cyclopts-5.3.0",
+  "dnspython-2.9.0",
+  "docstring_parser-0.17.0",
+  "email_validator-2.3.0",
+  "exceptiongroup-1.3.1",
+  "griffelib-2.4.1",
+  "h11-0.16.0",
+  "ha_mcp-9.1.2",
+  "httpcore-1.0.9",
+  "httpcore2-2.16.0",
+  "httpx-0.28.1",
+  "httpx2-2.16.0",
+  "idna-3.18",
+  "jaraco.classes-3.4.0",
+  "jaraco_context-6.1.2",
+  "jaraco_functools-4.3.0",
+  "jeepney-0.9.0",
+  "joserfc-1.7.7",
+  "jsonref-1.1.0",
+  "jsonschema-4.26.0",
+  "jsonschema_path-0.5.0",
+  "jsonschema_specifications-2025.4.1",
+  "keyring-25.7.0",
+  "markdown_it_py-4.0.0",
+  "mdurl-0.1.2",
+  "more_itertools-10.8.0",
+  "openapi_pydantic-0.6.0",
+  "opentelemetry_api-1.45.1",
+  "packaging-26.3",
+  "pathable-0.6.0",
+  "pip-26.2.2",
+  "platformdirs-4.13.5",
+  "psutil-7.2.2",
+  "py_key_value_aio-0.4.4",
+  "pycparser-2.22",
+  "pydantic-2.13.5",
+  "pydantic_core-2.46.5",
+  "pydantic_monty-0.0.18",
+  "pydantic_settings-2.16.1",
+  "pygments-2.20.0",
+  "pyjwt-2.15.0",
+  "pyperclip-1.11.0",
+  "python_dotenv-1.2.4",
+  "python_multipart-0.0.32",
+  "pyyaml-6.0.3",
+  "referencing-0.36.2",
+  "rich-15.0.0",
+  "rich_rst-2.2.0",
+  "rpds_py-0.27.1",
+  "secretstorage-3.5.0",
+  "socksio-1.0.0",
+  "sse_starlette-3.6.0",
+  "starlette-1.10.0",
+  "truststore-0.10.5",
+  "typing_extensions-4.16.0",
+  "typing_inspection-0.4.4",
+  "tzdata-2026.5",
+  "uncalled_for-0.4.1",
+  "uvicorn-0.54.0",
+  "watchfiles-1.3.0"
+ ],
+ "links": [],
+ "marker": "/ha_mcp/resources/",
+ "total_bytes": 299349,
+ "tree_sha256": "5f5687ca62cf40116c69676022bf139f357b0a9a126b106ba224e86758d4819e"
+}

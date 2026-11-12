@@ -1,0 +1,10 @@
+== admission for hamcp371-s4-selftest (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-11 22:55:24 CST
+units:
+  mut364-final-2.service
+lanes(containers):
+  
+stray:
+heavy_total=1 evidence=0 mem_avail_gb=12.2 load1=3.01 root_free_gb=50.2
+Running as unit: hamcp371-s4-selftest.service; invocation ID: 07c2632de64948c8a0b9e82245d5428c
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/upstream_catalog_capture_local.py\ selftest\ --run-dir\ .artifacts/hamcp371-s4/runs/selftest-1\ --launch-log\ .artifacts/hamcp371-s4/launch-log.jsonl\ \>\ .artifacts/hamcp371-s4/selftest-1.log\ 2\>\&1 

@@ -1,0 +1,59 @@
+{
+ "binding": {
+  "bound_by": "committed provenance record",
+  "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+  "index_digest": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+  "provenance_record_sha256": "sha256:100f0142934a6b10fc6df88db19aeaaca0cd45304e4577dcc20d8341e0bb2771",
+  "revision": "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
+  "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+  "version": "9.2.0"
+ },
+ "command": "pull",
+ "ended": "2026-11-11T22:56:40-06:00",
+ "host_after": {
+  "load_1m": 2.52490234375,
+  "memory_available_gb": 12.3,
+  "root_free_gb": 49.99,
+  "root_total_gb": 143.14
+ },
+ "host_before": {
+  "load_1m": 2.52490234375,
+  "memory_available_gb": 12.31,
+  "root_free_gb": 50.21,
+  "root_total_gb": 143.14
+ },
+ "model": "hamcp371-upstream-catalog-capture-local-v1",
+ "notes": [],
+ "platform": "linux/amd64",
+ "registry_authentication": "none (empty DOCKER_CONFIG)",
+ "result": "PASS",
+ "started": "2026-11-11T22:56:36-06:00",
+ "upstream_image": {
+  "architecture": "amd64",
+  "config_digest": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+  "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+  "image_defaults": {
+   "cmd": [
+    "ha-mcp"
+   ],
+   "entrypoint": null,
+   "environment": [
+    "HA_MCP_BUILD_VERSION=9.2.0",
+    "HOME=/home/mcpuser",
+    "HOMEASSISTANT_TOKEN=",
+    "HOMEASSISTANT_URL=",
+    "LANG=C.UTF-8",
+    "PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PYTHON_SHA256=de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+    "PYTHON_VERSION=3.14.10"
+   ],
+   "user": "mcpuser"
+  },
+  "labels": {
+   "org.opencontainers.image.revision": "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
+   "org.opencontainers.image.source": "https://github.com/homeassistant-ai/ha-mcp",
+   "org.opencontainers.image.version": "9.2.0"
+  },
+  "size_bytes": 359128729
+ }
+}
