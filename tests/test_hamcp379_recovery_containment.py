@@ -23,6 +23,7 @@ import ast
 import asyncio
 import contextlib
 from copy import deepcopy
+import dataclasses
 from datetime import datetime, timedelta, timezone
 import functools
 import hashlib
@@ -44,10 +45,12 @@ import tests.test_typed_helper_value as helper_fixtures  # noqa: E402
 import tests.test_hamcp297_device_configuration as device_fixtures  # noqa: E402
 from ha_mcp_engineering.device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantTimeoutError, HomeAssistantUnavailableError  # noqa: E402
-from ha_mcp_engineering.f3.executor import ExecutorTiming, SharedOperationExecutor  # noqa: E402
+from ha_mcp_engineering.f3.executor import (  # noqa: E402
+    ExecutorTiming, OperationExecutorError, SharedOperationExecutor)
 from ha_mcp_engineering.f3.locks import LockStorageError  # noqa: E402
 from ha_mcp_engineering.f3.models import (  # noqa: E402
-    MAX_EXECUTION_EVENTS, ExecutionRecord, LockHandle, LockOwner, LockToken)
+    MAX_EXECUTION_EVENTS, ExecutionRecord, LockHandle, LockOwner, LockToken,
+    append_execution_event, parse_timestamp, timestamp)
 from ha_mcp_engineering.fan.service import FAN_LOCK_TIMING, FAN_OPERATIONS  # noqa: E402
 from ha_mcp_engineering.helper_value.service import HELPER_VALUE_OPERATIONS  # noqa: E402
 from ha_mcp_engineering.power.service import POWER_OPERATIONS  # noqa: E402
@@ -66,6 +69,8 @@ EVENT_BACKSTOP = 120
 BOUND_REASON = "recovery_bound_reached"
 DEADLINE_REASON = "post_dispatch_evidence_deadline_expired"
 SWEEP_SECONDS = 30
+# The executor's own view of the bound, patched to force a settlement.
+BOUND_REACHED = "ha_mcp_engineering.f3.executor.recovery_bound_reached"
 
 
 class ProcessLoss(BaseException):
@@ -327,6 +332,18 @@ def tree_digest(root):
         if path.is_file():
             out[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
     return out
+
+
+def lock_handle(process, task_id):
+    """A handle on a task's current lock rows, as the lock store holds them."""
+    rows = sorted((row for row in process.service.locks.records() if row.task_id == task_id),
+                  key=lambda row: row.key.encode("utf-8"))
+    first = rows[0]
+    return LockHandle(
+        LockOwner(first.owner_id, task_id, first.plan_id, first.operation_id, first.attempt_id),
+        tuple(LockToken(row.key, row.generation, row.mode) for row in rows),
+        min(row.acquired_at for row in rows), min(row.lease_expires_at for row in rows),
+        FAN_LOCK_TIMING)
 
 
 def event_types(record):
@@ -1179,14 +1196,7 @@ class ContainmentContract:
 
     def release_rows(self, process, task_id):
         """Remove a task's lock rows through the lock store's own release."""
-        rows = sorted((row for row in process.service.locks.records() if row.task_id == task_id),
-                      key=lambda row: row.key.encode("utf-8"))
-        first = rows[0]
-        process.service.locks.release(LockHandle(
-            LockOwner(first.owner_id, task_id, first.plan_id, first.operation_id, first.attempt_id),
-            tuple(LockToken(row.key, row.generation, row.mode) for row in rows),
-            min(row.acquired_at for row in rows), min(row.lease_expires_at for row in rows),
-            FAN_LOCK_TIMING))
+        process.service.locks.release(lock_handle(process, task_id))
         self.assertEqual(process.lock_rows(task_id), [])
 
     @virtual
@@ -1316,6 +1326,355 @@ class ContainmentContract:
     @virtual
     async def test_sweep_frees_rows_left_after_a_pre_dispatch_cancellation(self):
         await self.assert_sweep_frees_leftover_rows("cancelled")
+
+    # -- adversarial closing tests (F1-F10) --------------------------------------------------
+    # Each pins a guard whose removal no other test noticed (HAMCP-379 mutation
+    # record, 2026-11-12). The read and sweep tests run in every family too:
+    # fan/service.py's read_task and recover_once are the four services' shared
+    # methods (test_only_the_typed_write_service_turns_containment_on).
+
+    def other_family(self):
+        return self.process(next(family for family in FAMILIES if family != self.family))
+
+    async def awaiting_recovery(self):
+        """A post-intent task whose dead owner's claim and lock lease have expired."""
+        request = await self.crash_after_dispatch_intent()
+        await asyncio.sleep(205)
+        return self.process(), request.task_id
+
+    # Q6.3: one lock transfer and one yield after the latest counted claim.
+
+    async def recovery_claim_arguments(self):
+        """A wedged task and the exact claim arguments of its next recovery pass."""
+        process, task_id = await self.awaiting_recovery()
+        repository, seen = process.service.executions, {}
+
+        def capture(**kwargs):
+            seen.update(kwargs)
+            raise ProcessLoss()  # the pass ends before its claim is recorded
+        with patch.object(repository, "claim", capture):
+            with self.assertRaises(ProcessLoss):
+                await process.service.recover_once()
+        self.assertIs(seen["recovery_containment"], True)
+        self.assertEqual(seen["identity"].task_id, task_id)
+        return process, task_id, seen
+
+    def pass_claims(self, process, seen, *, containment):
+        """One recovery pass's claim by a new owner; without containment, an older release's."""
+        identity = dataclasses.replace(seen["identity"], owner_id=uuid.uuid4().hex)
+        claim = process.service.executions.claim(
+            identity=identity, prepared=seen["prepared"], timing=seen["timing"],
+            now=process.now(), recovery_containment=containment)
+        return identity, claim
+
+    def pass_yields(self, process, identity, claim):
+        return process.service.executions.yield_claim(
+            identity.task_id, owner_id=identity.owner_id, claim_generation=claim.claim_generation,
+            now=process.now(), recovery_containment=True)
+
+    def pass_transfers(self, process, identity, claim, handle):
+        return process.service.executions.replace_recovery_locks(
+            identity.task_id, owner_id=identity.owner_id, claim_generation=claim.claim_generation,
+            handle=handle, now=process.now(), recovery_containment=True)
+
+    @virtual
+    async def test_an_uncounted_old_writer_claim_does_not_reopen_the_one_yield_limit(self):
+        # An older release's claim 10 s after a counted claim is recorded but
+        # does not count, so it opens no new allowance: the yield of a pass
+        # under containment 10 s later releases the claim and records nothing.
+        process, task_id, seen = await self.recovery_claim_arguments()
+        start = len(process.record(task_id).events)
+        identity, claim = self.pass_claims(process, seen, containment=True)
+        self.pass_yields(process, identity, claim)
+        await asyncio.sleep(10)
+        identity, claim = self.pass_claims(process, seen, containment=False)
+        await asyncio.sleep(10)
+        before = process.record(task_id)
+        yielded = self.pass_yields(process, identity, claim)
+        self.assertEqual(yielded.events, before.events)
+        self.assertEqual(event_types(yielded)[start:],
+                         ["recovery_claimed", "execution_claim_yielded", "recovery_claimed"])
+        self.assertEqual(counted_claims(yielded.events), 1)
+        self.assertEqual(yielded.claim_expires_at, timestamp(process.now()))
+        self.assertEqual(process.record(task_id).to_dict(), yielded.to_dict())
+        self.assertEqual((process.writes(), process.dispatches, yielded.dispatch_count), (0, 0, 1))
+
+    @virtual
+    async def test_one_lock_transfer_is_recorded_per_counted_claim(self):
+        # A pass 29 s after a counted claim (its own claim does not count and is
+        # not recorded) can still find the earlier pass's lock lease expired and
+        # transfer the locks again; the record gains no second transfer.
+        process, task_id, seen = await self.recovery_claim_arguments()
+        start = len(process.record(task_id).events)
+        handle = lock_handle(process, task_id)
+        identity, claim = self.pass_claims(process, seen, containment=True)
+        self.pass_transfers(process, identity, claim, handle)
+        self.pass_yields(process, identity, claim)
+        await asyncio.sleep(29)
+        identity, claim = self.pass_claims(process, seen, containment=True)
+        before = process.record(task_id)
+        self.assertEqual(before.claim_generation, claim.claim_generation)
+        transferred = self.pass_transfers(process, identity, claim, handle)
+        self.assertEqual(transferred.events, before.events)
+        self.pass_yields(process, identity, claim)
+        record = process.record(task_id)
+        self.assertEqual(event_types(record)[start:],
+                         ["recovery_claimed", "recovery_locks_transferred", "execution_claim_yielded"])
+        self.assertEqual(counted_claims(record.events), 1)
+        self.assertEqual((process.writes(), process.dispatches, record.dispatch_count), (0, 0, 1))
+
+    # Ruling 5 trim of an older release's record whose newest event is evidence.
+
+    async def full_old_writer_record_ending_in_evidence(self):
+        """An older release's record at the event bound whose newest event is a failed read.
+
+        Its passes claimed and yielded every second; the last one claimed,
+        transferred the locks and recorded a failed read, and then no yield fitted.
+        """
+        process, task_id = await self.awaiting_recovery()
+        repository = process.service.executions
+        record = repository.get(task_id)
+        second = 5
+
+        def add(event_type, *codes):
+            nonlocal second
+            second += 1
+            append_execution_event(record, event_type=event_type, diagnostic_codes=codes,
+                                   occurred_at=timestamp(BASE + timedelta(seconds=second)))
+        while len(record.events) < MAX_EXECUTION_EVENTS - 3:
+            add("recovery_claimed", "redispatch_prohibited")
+            if len(record.events) < MAX_EXECUTION_EVENTS - 3:
+                add("execution_claim_yielded", "observation_resume_allowed")
+        add("recovery_claimed", "redispatch_prohibited")
+        add("recovery_locks_transferred", "observation_only")
+        add("observation_recorded", "observation_failed")
+        record.observation_attempts += 1  # the record counts its observation events
+        with repository._exclusive_transaction():
+            repository._write_unlocked(record)
+        record = process.record(task_id)
+        self.assertEqual((len(record.events), record.terminal, record.dispatch_count),
+                         (MAX_EXECUTION_EVENTS, False, 1))
+        self.assertEqual(event_types(record)[-3:], ["recovery_claimed", "recovery_locks_transferred",
+                                                    "observation_recorded"])
+        return process, task_id, record
+
+    @virtual
+    async def test_the_trim_keeps_a_newest_evidence_event_and_renumbers_the_record(self):
+        # The trim drops the two newest bookkeeping events (here the transfer and
+        # the claim before the failed read), never evidence, and renumbers the
+        # events it keeps; the record then settles at the bound and still loads.
+        process, task_id, before = await self.full_old_writer_record_ending_in_evidence()
+        await process.service.recover_once()
+        record = self.assert_bound_settlement(process, task_id, dropped=2)
+
+        def unnumbered(events):
+            return [{key: value for key, value in event.items() if key != "sequence"}
+                    for event in events]
+        self.assertEqual(unnumbered(record.events[:-2]),
+                         unnumbered(before.events[:-3] + before.events[-1:]))
+        self.assertEqual((record.events[-2]["event_type"], sorted(record.events[-2]["diagnostic_codes"])),
+                         ("recovery_claimed", sorted(["redispatch_prohibited",
+                                                      "recovery_bookkeeping_dropped_2"])))
+        self.assertEqual([event["sequence"] for event in record.events],
+                         list(range(1, len(record.events) + 1)))
+        self.assertEqual(ExecutionRecord.from_dict(record.to_dict()).to_dict(), record.to_dict())
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    # Bound settlement when no lock record of the task can be taken over.
+
+    async def settle_without_a_handle(self, process, task_id, error=None):
+        """Force the bound; the lock takeover finds nothing, or raises ``error``."""
+        before = process.service.recovery_failures
+        rows = process.lock_rows(task_id)
+
+        def no_handle(executor, **kwargs):
+            if error is not None:
+                raise error
+            return None
+        with patch.object(SharedOperationExecutor, "_recovery_handle", no_handle), \
+                patch(BOUND_REACHED, lambda record: True):
+            await process.service.recover_once()
+        record = process.record(task_id)
+        self.assertEqual((record.terminal, record.normalized_outcome,
+                          record.evidence.get("manual_review_reason_code"), record.dispatch_count),
+                         (True, "manual_review_required", BOUND_REASON, 1))
+        self.assertEqual(record.events[-1]["event_type"], "verification_recorded")
+        self.assertEqual(process.service.recovery_failures, before)
+        # Nothing is promoted or released.
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+        return record
+
+    @virtual
+    async def test_a_lock_store_error_at_the_bound_still_settles(self):
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id,
+                                           LockStorageError("synthetic lock store failure"))
+
+    @virtual
+    async def test_a_contradictory_lock_owner_set_at_the_bound_still_settles(self):
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(
+            process, task_id, OperationExecutorError("durable lock owner set is contradictory"))
+
+    @virtual
+    async def test_a_lock_store_error_below_the_bound_is_a_counted_failure(self):
+        # Below the bound the error is not turned into a lease wait: the sweep
+        # counts it, the claim is kept to its lease and nothing is yielded.
+        process, task_id = await self.awaiting_recovery()
+        before = process.service.recovery_failures
+        rows = process.lock_rows(task_id)
+
+        def fail(executor, **kwargs):
+            raise LockStorageError("synthetic lock store failure")
+        with patch.object(SharedOperationExecutor, "_recovery_handle", fail):
+            await process.service.recover_once()
+        record = process.record(task_id)
+        self.assertFalse(record.terminal)
+        self.assertEqual(process.service.recovery_failures, before + 1)
+        self.assertEqual(event_types(record)[-1], "recovery_claimed")
+        self.assertGreater(parse_timestamp(record.claim_expires_at, field_name="claim_expires_at"),
+                           process.now())
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertEqual((process.writes(), process.dispatches, record.dispatch_count), (0, 0, 1))
+
+    @virtual
+    async def test_expired_rows_of_the_task_do_not_hold_off_the_bound_settlement(self):
+        process, task_id = await self.awaiting_recovery()
+        self.assertEqual(len(process.lock_rows(task_id)), 3)
+        await self.settle_without_a_handle(process, task_id)
+
+    @virtual
+    async def test_another_tasks_live_lease_does_not_hold_off_the_bound_settlement(self):
+        process, task_id = await self.awaiting_recovery()
+        self.release_rows(process, task_id)
+        other, held = await self.observing_live_task(self.other_family())
+        theirs = other.lock_rows(held.task_id)
+        self.assertEqual(len(theirs), 3)
+        await self.settle_without_a_handle(process, task_id)
+        self.assertEqual(other.lock_rows(held.task_id), theirs)
+
+    @virtual
+    async def test_an_unreadable_lock_store_does_not_hold_off_the_bound_settlement(self):
+        process, task_id = await self.awaiting_recovery()
+        store, records, raised = process.service.locks, process.service.locks.records, []
+
+        def unreadable_to_the_lease_check():
+            if sys._getframe(1).f_code.co_name == "_recovery_lease_live":
+                raised.append(True)
+                raise LockStorageError("synthetic lock store failure")
+            return records()
+        with patch.object(store, "records", unreadable_to_the_lease_check):
+            await self.settle_without_a_handle(process, task_id)
+        self.assertEqual(raised, [True])
+
+    @virtual
+    async def test_the_bound_settlement_keeps_the_last_recorded_readback(self):
+        process, request = await self.observing_live_task()
+        task_id = request.task_id
+        await asyncio.sleep(31)  # the observing pass's lock lease has expired
+        before = dict(process.record(task_id).evidence)
+        self.assertTrue(before, "the observing task recorded no readback evidence")
+        with patch(BOUND_REACHED, lambda record: True):
+            await process.service.recover_once()
+        record = self.assert_bound_settlement(process, task_id)
+        self.assertEqual(record.evidence, {**before, "manual_review_reason_code": BOUND_REASON})
+        self.assertEqual((process.writes(), process.dispatches), (1, 1))
+
+    # Reads and the sweep's lock release (the shared FanService methods).
+
+    @virtual
+    async def test_a_read_of_an_unpromoted_manual_review_task_changes_no_lock(self):
+        # The bound settles the task but its hold promotion fails, leaving a
+        # terminal manual-review record whose full lock set is still stored.
+        # The service read and the get_execution_task tool promote nothing.
+        process, task_id = await self.awaiting_recovery()
+        with patch(BOUND_REACHED, lambda record: True), \
+                patch.object(process.service.locks, "promote_to_conflict_hold",
+                             side_effect=LockStorageError("synthetic promotion failure")):
+            await process.service.recover_once()
+        record = process.record(task_id)
+        self.assertEqual((record.terminal, record.normalized_outcome),
+                         (True, "manual_review_required"))
+        rows = process.lock_rows(task_id)
+        self.assertEqual((len(rows), any(row[4] for row in rows)), (3, False))
+        store = tree_digest(self.root)
+        await process.service.read_task(task_id)
+        out = await self.tool_read(task_id, process)
+        self.assertEqual((out["data"]["task_id"], out["data"]["terminal"]), (task_id, True))
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertEqual(tree_digest(self.root), store)
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_a_settled_manual_review_hold_is_not_a_sweep_failure(self):
+        process, task_id = await self.awaiting_recovery()
+        with patch(BOUND_REACHED, lambda record: True):
+            await process.service.recover_once()
+        self.assert_bound_settlement(process, task_id)
+        rows = process.lock_rows(task_id)
+        before, store = process.service.recovery_failures, tree_digest(self.root)
+        for _ in range(3):
+            await asyncio.sleep(SWEEP_SECONDS)
+            await process.service.recover_once()
+        self.assertEqual(process.service.recovery_failures, before)
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertEqual(tree_digest(self.root), store)
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_a_conflict_hold_of_a_task_not_in_manual_review_is_never_freed(self):
+        # Synthetic state: holds are promoted only for manual review, so the
+        # sweep's release never expects one. Found, it is kept and every sweep
+        # counts the skip.
+        process, task_id, _ = await self.leftover_rows("verified")
+        handle = lock_handle(process, task_id)
+        entity = next(token.key for token in handle.tokens if token.key.startswith("entity:"))
+        process.service.locks.promote_selective_conflict_hold(
+            handle, retained_keys=(entity,), reason_code="manual_review_unresolved_dispatch")
+        rows = process.lock_rows(task_id)
+        self.assertEqual([(row[0], row[4]) for row in rows], [(entity, True)])
+        await asyncio.sleep(31)  # the lease has expired
+        before = process.service.recovery_failures
+        for _ in range(2):
+            await process.service.recover_once()
+            await asyncio.sleep(SWEEP_SECONDS)
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertEqual(process.service.recovery_failures, before + 2)
+
+    @virtual
+    async def test_sweep_frees_rows_the_record_never_named(self):
+        # The process dies after the lock acquisition and before the record
+        # names the tokens. Recovery cancels the declaration, whose release
+        # names nothing; the next sweep frees the rows by task_id.
+        dying = self.process()
+        request = self.request(dying)
+        task_id = request.task_id
+
+        def die(*args, **kwargs):
+            raise ProcessLoss()
+        with patch.object(dying.service.executions, "record_locks", die):
+            with self.assertRaises(ProcessLoss):
+                await dying.service.control(request)
+        record = dying.record(task_id)
+        self.assertFalse(record.terminal)
+        self.assertEqual(record.lock_tokens, [])
+        self.assertEqual(len(dying.lock_rows(task_id)), 3)
+        process = self.process()
+        await asyncio.sleep(205)
+        await process.service.recover_once()
+        record = process.record(task_id)
+        self.assertEqual((record.terminal, record.task_state), (True, "cancelled_pre_dispatch"))
+        self.assertEqual(len(process.lock_rows(task_id)), 3)
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assertEqual(process.lock_rows(task_id), [])
+        self.assertEqual((dying.writes(), process.writes(), process.dispatches), (0, 0, 0))
+        other = self.other_family()
+        free = self.request(other)
+        await other.service.control(free)
+        self.assertEqual((other.record(free.task_id).normalized_outcome, other.writes()),
+                         ("succeeded_verified", 1))
 
 
 class FanContainment(ContainmentContract, Scenario):
