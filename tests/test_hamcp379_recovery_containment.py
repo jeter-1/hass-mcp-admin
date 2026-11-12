@@ -530,6 +530,59 @@ def all_codes(record):
     return [code for event in record.events for code in event["diagnostic_codes"]]
 
 
+class AuditCollector:
+    """Stands in for the audit logger: keeps every projected batch."""
+
+    def __init__(self):
+        self.batches = []
+
+    def write_batch(self, entries):
+        self.batches.append(deepcopy(entries))
+        return len(entries)
+
+    def entries(self, event):
+        return [entry for batch in self.batches for entry in batch if entry["event"] == event]
+
+
+def completed_observation(event):
+    return (event["event_type"] == "observation_recorded"
+            and "observation_failed" not in event["diagnostic_codes"])
+
+
+def occurred(event):
+    return datetime.fromisoformat(event["occurred_at"])
+
+
+def seconds_between(first, second):
+    return abs((occurred(second) - occurred(first)).total_seconds())
+
+
+def counted_claims(events):
+    """The amended ruling 3 count, restated (Q6.1, Q6.2).
+
+    After the last completed observation, a recovery claim counts when it is
+    the first, or at least 30 s (absolute distance) from the previous counted
+    claim. A claim that does not count does not move that start point.
+    """
+    count, anchor = 0, None
+    for event in events:
+        if completed_observation(event):
+            count, anchor = 0, None
+        elif event["event_type"] == "recovery_claimed" and (
+                anchor is None or seconds_between(anchor, event) >= SWEEP_SECONDS):
+            count, anchor = count + 1, event
+    return count
+
+
+def claim_indexes(record):
+    return [index for index, event in enumerate(record.events)
+            if event["event_type"] == "recovery_claimed"]
+
+
+def claim_sequences(record):
+    return [record.events[index]["sequence"] for index in claim_indexes(record)]
+
+
 class ContainmentContract:
     """The HAMCP-379 contract, run once per typed write family."""
 
@@ -842,6 +895,138 @@ class ContainmentContract:
         self.assertEqual({dropped for _, dropped in results}, {0})
         self.assertLess(max(size for size, _ in results), EVENT_BACKSTOP)
         self.assertFalse([code for code in all_codes(record) if "dropped" in code])
+
+    # -- counted claims (amended ruling 3: Q2, Q6.1-6.4) --------------------------------
+
+    def collect_audit(self, process):
+        """Capture the family's audit projection of every record write."""
+        collector = AuditCollector()
+        process.service.executions.audit = collector
+        return collector
+
+    def projected_claims(self, process, collector):
+        event = process.service.executions.kind + "_recovery_claimed"
+        return collector.entries(event)
+
+    async def repeated_control_calls(self, calls):
+        """``calls`` identical control calls inside one 30 s window on a live task."""
+        process, request = await self.observing_live_task()
+        collector = self.collect_audit(process)
+        task_id = request.task_id
+        before = process.record(task_id)
+        started = self.loop.time()
+        for _ in range(calls):
+            await process.service.control(request)
+            await asyncio.sleep(25.0 / calls)
+        self.assertLess(self.loop.time() - started, SWEEP_SECONDS)
+        record = process.record(task_id)
+        self.assertEqual((record.terminal, record.task_state), (False, "observing"))
+        self.assertEqual((process.writes(), process.dispatches, record.dispatch_count), (1, 1, 1))
+        self.assertEqual(record.claim_generation, before.claim_generation + calls)
+        self.assertLessEqual(len(record.events), EVENT_BACKSTOP + 3)
+        # One counted claim, and one yield after it, whatever the number of calls.
+        self.assertEqual(record.events[:len(before.events)], before.events)
+        self.assertEqual(event_types(record)[len(before.events):],
+                         ["recovery_claimed", "execution_claim_yielded"])
+        self.assertEqual(counted_claims(record.events), 1)
+        held = process.lock_rows(task_id)
+        self.assertEqual((len(held), any(row[4] for row in held)), (3, False))
+        projected = self.projected_claims(process, collector)
+        self.assertEqual(sorted({entry["event_sequence"] for entry in projected}),
+                         claim_sequences(record))
+        return process, request
+
+    @virtual
+    async def test_8_identical_control_calls_in_one_window_do_not_settle_a_healthy_task(self):
+        await self.repeated_control_calls(8)
+
+    @virtual
+    async def test_100_identical_control_calls_in_one_window_do_not_settle_a_healthy_task(self):
+        process, request = await self.repeated_control_calls(100)
+        # The task still settles normally once its observation can run; the
+        # live process's one write is the original dispatch.
+        await self.sweep(process, request.task_id, limit=600,
+                         expect={"writes": 1, "dispatches": 1})
+        self.assert_manual_review(process, request.task_id, DEADLINE_REASON)
+
+    @virtual
+    async def test_a_completed_observation_resets_the_claim_count(self):
+        process, request = await self.repeated_control_calls(8)
+        task_id = request.task_id
+        await asyncio.sleep(SWEEP_SECONDS)  # the observing pass's lock lease lapses
+        await process.service.control(request)  # this call observes
+        record = process.record(task_id)
+        self.assertFalse(record.terminal)
+        self.assertTrue(completed_observation(record.events[-3]), event_types(record)[-4:])
+        self.assertEqual(counted_claims(record.events), 0)
+        await asyncio.sleep(1)
+        await process.service.control(request)
+        record = process.record(task_id)
+        # 1 s after the previous counted claim, and it counts: the first since that observation.
+        self.assertEqual(event_types(record)[-2:], ["recovery_claimed", "execution_claim_yielded"])
+        self.assertLess(seconds_between(*[record.events[i] for i in claim_indexes(record)[-2:]]),
+                        SWEEP_SECONDS)
+        self.assertEqual(counted_claims(record.events), 1)
+        size = len(record.events)
+        await asyncio.sleep(1)
+        await process.service.control(request)
+        self.assertEqual(len(process.record(task_id).events), size)
+
+    @virtual
+    async def test_a_failed_observation_does_not_reset_the_claim_count(self):
+        process, request = await self.repeated_control_calls(8)
+        task_id = request.task_id
+        await asyncio.sleep(SWEEP_SECONDS)
+        process.fail = "refuse"  # the next read raises at once
+        await process.service.control(request)
+        record = process.record(task_id)
+        self.assertFalse(record.terminal)
+        observations = [event for event in record.events if event["event_type"] == "observation_recorded"]
+        self.assertIn("observation_failed", observations[-1]["diagnostic_codes"])
+        self.assertEqual(counted_claims(record.events), 2)
+        size = len(record.events)
+        await asyncio.sleep(1)
+        await process.service.control(request)
+        # Inside the window of the last counted claim: nothing appended.
+        self.assertEqual(len(process.record(task_id).events), size)
+        self.assertEqual(counted_claims(process.record(task_id).events), 2)
+
+    @virtual
+    async def test_the_audit_projection_shows_each_counted_claim(self):
+        request = await self.crash_after_dispatch_intent()
+        await asyncio.sleep(5)
+        process = self.process()
+        collector = self.collect_audit(process)
+        process.slow_reads(60.0)
+        await self.sweep(process, request.task_id, limit=1500)
+        record = self.assert_bound_settlement(process, request.task_id)
+        self.assertEqual(counted_claims(record.events), CLAIM_BOUND)
+        self.assertEqual(claims(record), CLAIM_BOUND)
+        projected = self.projected_claims(process, collector)
+        self.assertEqual(sorted({entry["event_sequence"] for entry in projected}),
+                         claim_sequences(record))
+        self.assertEqual(len({entry["audit_event_id"] for entry in projected}), CLAIM_BOUND)
+        times = sorted({entry["timestamp"] for entry in projected})
+        self.assertEqual(times, [record.events[i]["occurred_at"] for i in claim_indexes(record)])
+        self.assertTrue(all(entry["read_only_recovery"] for entry in projected))
+
+    @virtual
+    async def test_old_writer_claims_inside_one_window_count_once(self):
+        # The executor without the flag claims about once a second here.
+        old, task_id = await self.old_writer_record(41)
+        before = old.record(task_id)
+        from ha_mcp_engineering.f3.persistence import consecutive_recovery_claims
+        self.assertGreaterEqual(claims(before), CLAIM_BOUND)
+        self.assertEqual(consecutive_recovery_claims(before.events), counted_claims(before.events))
+        counted = counted_claims(before.events)
+        self.assertLess(counted, CLAIM_BOUND)
+        process = self.process()
+        process.slow_reads(60.0)
+        await self.sweep(process, task_id, limit=1500)
+        record = self.assert_bound_settlement(process, task_id)
+        self.assertEqual(counted_claims(record.events), CLAIM_BOUND)
+        self.assertEqual(claims(record) - claims(before), CLAIM_BOUND - counted)
+        self.assertEqual(record.events[:len(before.events)], before.events)
 
     # -- executors without the flag ---------------------------------------------------------
 
@@ -1161,6 +1346,51 @@ class ContainmentScope(unittest.TestCase):
         self.assertEqual(executor.RECOVERY_BOUND_REASON, BOUND_REASON)
         self.assertEqual(service.RECOVERY_SWEEP_SECONDS, SWEEP_SECONDS)
         self.assertEqual(persistence.RECOVERY_BOOKKEEPING_EVENT_TYPES, frozenset(BOOKKEEPING))
+
+    def test_the_claim_window_is_the_sweep_interval(self):
+        # Q6.4: the private window in f3 equals fan.service.RECOVERY_SWEEP_SECONDS.
+        from ha_mcp_engineering.f3 import persistence
+        from ha_mcp_engineering.fan import service
+        self.assertEqual(persistence._RECOVERY_CLAIM_WINDOW_SECONDS, service.RECOVERY_SWEEP_SECONDS)
+        self.assertEqual(persistence._RECOVERY_CLAIM_WINDOW_SECONDS, SWEEP_SECONDS)
+
+    def test_the_claim_count_rule(self):
+        from ha_mcp_engineering.f3.persistence import consecutive_recovery_claims, recovery_bound_reached
+
+        def claim(seconds):
+            return {"event_type": "recovery_claimed", "diagnostic_codes": ["redispatch_prohibited"],
+                    "occurred_at": (BASE + timedelta(seconds=seconds)).isoformat()}
+
+        def observation(failed=False):
+            return {"event_type": "observation_recorded", "occurred_at": BASE.isoformat(),
+                    "diagnostic_codes": ["observation_failed"] if failed else []}
+        cases = {
+            "one window": ([claim(0), claim(1), claim(29.999)], 1),
+            "boundary": ([claim(0), claim(30)], 2),
+            # Q6.1: the uncounted claim at 20 s does not move the start point.
+            "start point": ([claim(0), claim(20), claim(40)], 2),
+            "start point, uncounted chain": ([claim(0), claim(20), claim(29), claim(45), claim(59)], 2),
+            # Q6.2: a clock step back counts by absolute distance.
+            "backwards inside": ([claim(0), claim(-10)], 1),
+            "backwards outside": ([claim(0), claim(-30)], 2),
+            "back and forth": ([claim(0), claim(-40), claim(-5)], 3),
+            "completed observation": ([claim(0), claim(30), observation(), claim(31)], 1),
+            "failed observation": ([claim(0), observation(failed=True), claim(1)], 1),
+            "every 30 s": ([claim(30 * n) for n in range(8)], 8),
+            "every second": ([claim(n) for n in range(200)], 7),
+        }
+        for name, (events, expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(counted_claims(events), expected)
+                self.assertEqual(consecutive_recovery_claims(events), expected)
+
+        class Record:
+            def __init__(self, events):
+                self.events = events
+        self.assertFalse(recovery_bound_reached(Record([claim(30 * n) for n in range(7)])))
+        self.assertTrue(recovery_bound_reached(Record([claim(30 * n) for n in range(8)])))
+        self.assertFalse(recovery_bound_reached(Record([claim(n) for n in range(119)])))
+        self.assertTrue(recovery_bound_reached(Record([claim(n) for n in range(120)])))
 
 
 if __name__ == "__main__":
