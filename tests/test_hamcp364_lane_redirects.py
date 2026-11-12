@@ -749,7 +749,7 @@ class Helper(Wired):
         for waited_through in (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, OSError, ValueError):
             self.assertFalse(issubclass(subject.LaneRedirectRefused, waited_through))
 
-    def test_a_lane_receipt_shows_the_redirect_code_and_no_other_code_of_these_clients(self):
+    def test_a_lane_receipt_shows_only_the_listed_codes_of_these_clients(self):
         import lane_failure_diagnostics as diagnostics
 
         def shown(error):
@@ -758,8 +758,16 @@ class Helper(Wired):
 
         self.assertIn(REFUSED, diagnostics.SAFE_MESSAGES)
         self.assertEqual(shown(subject.LaneRedirectRefused(REFUSED)), REFUSED)
+        # HAMCP-358 listed the websocket client's two fixed codes; this change lists only the redirect code.
+        listed = (entity.RAW_URL_REFUSED, entity.RAW_COMMAND_REFUSED)
+        self.assertEqual(listed, ("raw_core_url_not_pinned", "raw_core_command_not_listed"))
+        for code in listed:
+            with self.subTest(code=code):
+                self.assertIn(code, diagnostics.SAFE_MESSAGES)
+                self.assertEqual(shown(ValueError(code)), code)
+                self.assertEqual(shown(ValueError(code + " ws://private.invalid/api/websocket")), "[redacted]")
         # Every other refusal these clients raise is still shown as redacted.
-        others = (entity.RAW_URL_REFUSED, entity.RAW_COMMAND_REFUSED, harness.CORE_URL_REFUSED,
+        others = (harness.CORE_URL_REFUSED,
                   harness.CORE_PATH_REFUSED, harness.CORE_TARGET_REFUSED, harness.FLOW_ID_REFUSED,
                   harness.LANE_CORE_REFUSED, harness.LANE_SUBNET_REFUSED, harness.LANE_CORE_OUTSIDE,
                   harness.LANE_CORE_ALREADY_SET, a2_runner.ADMIN_TARGET_REFUSED,
