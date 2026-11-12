@@ -2251,5 +2251,136 @@ class HarnessFlow(HarnessCase):
         self.assertEqual(seq15._FLOW_ID.pattern, r"/[0-9a-f]{32}\Z")
 
 
+# The A2 stub's control origin, as its runner reads it: the stub's address on the same bridge.
+BRIDGE_STUB_ORIGIN = "http://172.30.0.3:5580"
+
+
+class OtherLaneOrigin(ClientCase):
+    """Neither Thread/Matter lane can be pointed at the other lane's Core.
+
+    A1's Core is on loopback. A2's is the bare ``http://<IPv4>:8123`` its runner
+    handed over from inside the internal subnet it verified, which ``setUp`` has
+    done here. So both origins exist in the one process, and each lane refuses
+    the other's before a session exists.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.events = []
+        manager = patch.object(aiohttp, "ClientSession", new=fake_session(self.events))
+        manager.start()
+        self.addCleanup(manager.stop)
+
+    def dialled(self, events):
+        return [event[1] for event in events if event[0] == "ws_connect"]
+
+    async def test_the_a1_lane_refuses_the_a2_lanes_internal_network_origin(self):
+        first = BY_NAME["thread_matter"]
+        # A2's origin as its runner hands it over: verified inside the internal subnet, and accepted.
+        self.assertEqual((harness.accepted_lane_core(), harness.HA_URL), (BRIDGE_CORE, BRIDGE_CORE))
+        self.assertEqual(a2.A2RawCore.core_url, BRIDGE_SOCKET)
+        # The A1 client is not built for it, as a socket or as the origin, while the harness holds it.
+        for url in (BRIDGE_SOCKET, a2.A2RawCore.core_url, BRIDGE_CORE, BRIDGE_CORE + "/api/websocket"):
+            for api_url in (THREAD_CORE + "/api", BRIDGE_CORE + "/api"):
+                with self.subTest(url=url, api_url=api_url):
+                    with self.assertRaises(ValueError) as caught:
+                        thread.RawCore(configured(url, api_url))
+                    self.assert_fixed_code(caught.exception, URL_REFUSED)
+        # Its pin did not follow the hand-over: it is still the constant that names loopback.
+        self.assertIs(thread.RawCore.core_url, thread.RAW_CORE_URL)
+        self.assertEqual(thread.RAW_CORE_URL, THREAD_SOCKET)
+        # The harness on the A1 side takes its Core from REAL_HA_URL, which refuses that origin as well.
+        for value in (BRIDGE_CORE, BRIDGE_CORE + "/"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as caught:
+                    harness.loopback_core_url(value)
+                self.assert_fixed_code(caught.exception, "real_ha_url_not_loopback")
+        # Every refusal above came before anything was opened.
+        self.assertEqual(self.events, [])
+        # What A1 does send goes to loopback, even through an instance told to dial the bridge.
+        client = thread.RawCore(configured(THREAD_SOCKET))
+        client.core_url = BRIDGE_SOCKET
+        reply, events = await self.sent(first, dict(TOPOLOGY_READ), client=client)
+        self.assertIs(reply["success"], True)
+        self.assertEqual(self.dialled(events), [THREAD_SOCKET])
+        self.assertNotIn("172.30.", repr(events))
+
+    async def test_the_a2_lane_refuses_the_a1_lanes_loopback_origin(self):
+        second = BY_NAME["thread_matter_a2"]
+        self.assertEqual(harness.accepted_lane_core(), BRIDGE_CORE)
+        # The websocket client: A1's own socket, and every other loopback one, is not A2's pin.
+        for url in (THREAD_SOCKET, thread.RAW_CORE_URL, THREAD_CORE, MAIN_SOCKET, LOCAL_SOCKET,
+                    "ws://127.30.0.2:8123/api/websocket", "ws://[::1]:8123/api/websocket"):
+            for api_url in (BRIDGE_CORE + "/api", THREAD_CORE + "/api"):
+                with self.subTest(url=url, api_url=api_url):
+                    with self.assertRaises(ValueError) as caught:
+                        a2.A2RawCore(configured(url, api_url))
+                    self.assert_fixed_code(caught.exception, URL_REFUSED)
+        # The hand-over: no loopback Core is accepted, so the pin can never become A1's.
+        with patch.multiple(harness, HA_URL=MAIN_CORE, CLIENT_ID=MAIN_CORE + "/", _lane_core=None):
+            for origin, subnet, reason in (
+                    # A1's own origin: not the port a handed-over Core has, whatever the subnet.
+                    (THREAD_CORE, BRIDGE_SUBNET, "real_ha_lane_core_not_bare_ipv4"),
+                    (THREAD_CORE, "127.0.0.0/16", "real_ha_lane_core_not_bare_ipv4"),
+                    ("http://[::1]:8123", "127.0.0.0/16", "real_ha_lane_core_not_bare_ipv4"),
+                    # Loopback on the handed-over port: outside the bridge's subnet,
+                    (MAIN_CORE, BRIDGE_SUBNET, "real_ha_lane_core_outside_subnet"),
+                    # and a loopback subnet is not one a created network has.
+                    (MAIN_CORE, "127.0.0.0/16", "real_ha_lane_subnet_not_usable"),
+                    (MAIN_CORE, "127.0.0.0/24", "real_ha_lane_subnet_not_usable"),
+                    (MAIN_CORE, "127.0.0.0/30", "real_ha_lane_subnet_not_usable"),
+                    ("http://127.30.0.2:8123", "127.30.0.0/16", "real_ha_lane_subnet_not_usable"),
+                    ("http://127.255.255.254:8123", "127.255.0.0/16", "real_ha_lane_subnet_not_usable")):
+                with self.subTest(origin=origin, subnet=subnet):
+                    with self.assertRaises(ValueError) as caught:
+                        harness.use_internal_lane_core(origin, subnet)
+                    self.assert_fixed_code(caught.exception, reason)
+                    self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core),
+                                     (MAIN_CORE, MAIN_CORE + "/", None))
+                    # With no Core accepted the client has no socket at all, A1's included.
+                    with self.assertRaises(ValueError) as caught:
+                        a2.A2RawCore(configured(THREAD_SOCKET))
+                    self.assert_fixed_code(caught.exception, URL_REFUSED)
+        # The runner's REST client: loopback is neither its Core nor its stub, when built ...
+        for core, stub in ((THREAD_CORE, BRIDGE_STUB_ORIGIN), (MAIN_CORE, BRIDGE_STUB_ORIGIN),
+                           (LOCAL_CORE, BRIDGE_STUB_ORIGIN), (BRIDGE_CORE, THREAD_CORE), (BRIDGE_CORE, MAIN_CORE),
+                           (BRIDGE_CORE, LOCAL_CORE), (BRIDGE_CORE, "http://127.0.0.1:5580"),
+                           (BRIDGE_CORE, "http://127.30.0.3:5580"), (BRIDGE_CORE, "http://0.0.0.0:5580"),
+                           (BRIDGE_CORE, "http://[::1]:5580"), (BRIDGE_CORE, "http://localhost:5580")):
+            with self.subTest(core=core, stub=stub):
+                with self.assertRaises(a2_runner.Refusal) as raised:
+                    a2_runner.CoreAdmin(core, TOKEN, stub)
+                self.assertEqual(raised.exception.args, (a2_runner.ADMIN_TARGET_REFUSED,))
+        # ... and when it sends, should either origin have been changed since.
+        for name, value, send in (
+                ("ha_url", THREAD_CORE, lambda admin: admin.core("GET", "/api/config")),
+                ("ha_url", MAIN_CORE, lambda admin: admin.core("GET", "/api/config")),
+                ("stub_url", THREAD_CORE, lambda admin: admin.stub_state()),
+                ("stub_url", MAIN_CORE, lambda admin: admin.stub_control({})),
+                ("stub_url", "http://127.0.0.1:5580", lambda admin: admin.stub_state()),
+                ("stub_url", "http://0.0.0.0:5580", lambda admin: admin.stub_control({}))):
+            with self.subTest(name=name, value=value):
+                admin = a2_runner.CoreAdmin(BRIDGE_CORE, TOKEN, BRIDGE_STUB_ORIGIN)
+                setattr(admin, name, value)
+                with self.assertRaises(a2_runner.Refusal) as raised:
+                    await send(admin)
+                self.assertEqual(raised.exception.args, (a2_runner.ADMIN_TARGET_REFUSED,))
+        # The harness's own requests stay on the accepted Core when the module later names loopback.
+        for later in (THREAD_CORE, MAIN_CORE, LOCAL_CORE):
+            with self.subTest(later=later), patch.object(harness, "HA_URL", later):
+                session = Requests()
+                with self.assertRaises(ValueError) as caught:
+                    await harness._json_request(session, "GET", "/api/onboarding", token=TOKEN)
+                self.assertEqual(caught.exception.args, ("real_ha_target_not_configured_core",))
+                self.assertEqual(session.calls, [])
+        # Every refusal above came before anything was opened.
+        self.assertEqual(self.events, [])
+        # What A2 does send goes to the accepted Core on the bridge, and nothing to loopback.
+        reply, events = await self.sent(second, dict(TOPOLOGY_READ))
+        self.assertIs(reply["success"], True)
+        self.assertEqual(self.dialled(events), [BRIDGE_SOCKET])
+        self.assertNotIn("127.", repr(events))
+
+
 if __name__ == "__main__":
     unittest.main()

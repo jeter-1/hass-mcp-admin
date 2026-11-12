@@ -173,8 +173,9 @@ def use_internal_lane_core(origin, subnet):
         network = ipaddress.IPv4Network(subnet) if type(subnet) is str else None
     except ValueError:
         network = None
-    # The subnet as Docker reports one: canonical text, and never wider than a /16.
-    if network is None or str(network) != subnet or not 16 <= network.prefixlen <= 30:
+    # The subnet as Docker reports one: canonical text, never wider than a /16, and never
+    # loopback, where the other lanes' Cores are.
+    if network is None or str(network) != subnet or not 16 <= network.prefixlen <= 30 or network.is_loopback:
         raise ValueError(LANE_SUBNET_REFUSED)
     if address not in network or address in (network.network_address, network.broadcast_address):
         raise ValueError(LANE_CORE_OUTSIDE)

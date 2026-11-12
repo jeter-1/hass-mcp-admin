@@ -44,7 +44,8 @@ STUB_ALIAS = "matter-stub"
 NETWORK = "beta-rc2-contract-" + LANE
 CORE_PORT = 8123
 NETWORK_ID = re.compile(r"[0-9a-f]{64}")
-STUB_ORIGIN = re.compile(r"http://(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}:[1-9][0-9]{0,4}")
+# A bare http://<IPv4>:<port>, and never this host itself (127.x or 0.x), where the other lanes' Cores are.
+STUB_ORIGIN = re.compile(r"http://(?!(?:0|127)\.)(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}:[1-9][0-9]{0,4}")
 ADMIN_TARGET_REFUSED = "lane_admin_target_refused"
 STUB_MEMORY = "256m"
 RECEIPT = "thread_matter_topology_a2.json"
