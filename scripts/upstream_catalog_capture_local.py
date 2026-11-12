@@ -446,10 +446,30 @@ def start_holder(wanted, run_id, out_dir, version, helper):
     return data["Id"], posture
 
 
+def recorded_nothing(stats):
+    """Every mutation counter is present and empty: an empty map or list, or zero.
+
+    The fixture reports per-path counts as maps and backup creates as a list;
+    the reviewed workflow tests the same four entries for truth.
+    """
+    if not isinstance(stats, dict):
+        return False
+    for key in MUTATION_COUNTERS:
+        if key not in stats:
+            return False
+        value = stats[key]
+        if not (type(value) in (dict, list) and not value or type(value) is int and value == 0):
+            return False
+    return True
+
+
 def fixture_stats(holder):
     raw = command(*exec_argv(holder, "-c", FETCH, FIXTURE_URL + "/__fixture__/stats")).stdout
-    stats = json.loads(raw)
-    if not isinstance(stats, dict) or any(stats.get(key) != 0 for key in MUTATION_COUNTERS):
+    try:
+        stats = json.loads(raw)
+    except ValueError:
+        raise Refusal("fixture_stats_unreadable") from None
+    if not recorded_nothing(stats):
         raise Refusal("fixture_recorded_a_mutation_surface")
     return stats
 

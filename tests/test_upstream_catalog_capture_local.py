@@ -267,6 +267,37 @@ class ResourceInventoryTests(unittest.TestCase):
             lane.resource_inventory(export(self.ENTRIES))
 
 
+class FixtureStatsTests(unittest.TestCase):
+    QUIET = {"rest_reads": {"/api/": 3}, "http_mutations": {}, "websocket_mutations": {},
+             "operational_backup_creates": [], "approval_notification_calls": []}
+
+    def test_the_fixture_shape_with_no_mutation_is_accepted(self) -> None:
+        self.assertTrue(lane.recorded_nothing(self.QUIET))
+        self.assertEqual(
+            set(lane.MUTATION_COUNTERS),
+            {"http_mutations", "websocket_mutations", "operational_backup_creates",
+             "approval_notification_calls"})
+        # The fixture source still reports each counter the lane reads.
+        source = (ROOT / "scripts/fake_ha_read_gateway_contract_server.py").read_text()
+        for key in lane.MUTATION_COUNTERS:
+            self.assertIn(f'"{key}"', source)
+
+    def test_any_recorded_mutation_or_missing_counter_is_refused(self) -> None:
+        for key, value in (("http_mutations", {"POST /api/synthetic": 1}),
+                           ("websocket_mutations", {"synthetic/write": 2}),
+                           ("operational_backup_creates", [{"synthetic": True}]),
+                           ("approval_notification_calls", 1),
+                           ("approval_notification_calls", None),
+                           ("approval_notification_calls", False),
+                           ("http_mutations", "")):
+            with self.subTest(key=key, value=value):
+                self.assertFalse(lane.recorded_nothing({**self.QUIET, key: value}))
+        for key in lane.MUTATION_COUNTERS:
+            reduced = {name: value for name, value in self.QUIET.items() if name != key}
+            self.assertFalse(lane.recorded_nothing(reduced))
+        self.assertFalse(lane.recorded_nothing([]))
+
+
 class Completed:
     def __init__(self, returncode=0, stdout=b"", stderr=b"") -> None:
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
@@ -353,8 +384,12 @@ class FakeHost:
             return Completed(stdout=json.dumps(
                 {"python": "3.12.0", "mcp": pins["mcp"], "aiohttp": pins["aiohttp"]}).encode())
         if lane.FETCH in argv:
-            stats = dict.fromkeys(lane.MUTATION_COUNTERS, 0)
-            stats["http_mutations"] = self.options.get("mutations", 0)
+            # The shape the fixture really reports: per-path maps and lists.
+            stats = {"rest_reads": {"/api/": 1}, "http_mutations": {},
+                     "websocket_mutations": {}, "operational_backup_creates": [],
+                     "approval_notification_calls": []}
+            if self.options.get("mutations"):
+                stats["http_mutations"] = {"POST /api/synthetic": 1}
             return Completed(stdout=json.dumps(stats).encode())
         if "capture --endpoint" in text:
             index = int(argv[-1].rsplit("-", 1)[1].split(".")[0])
