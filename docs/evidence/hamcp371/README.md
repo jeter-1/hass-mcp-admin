@@ -1,7 +1,8 @@
 # HAMCP-371 ha-mcp 9.2.0 admission: source-read evidence
 
 Read-only source findings for the ha-mcp 9.1.2 to 9.2.0 admission lane, written
-2026-11-11 (Central). This directory holds the reading half only. Nothing here
+2026-11-11 (Central). The files at this level are the reading half; `s4/` holds
+the image identity and capture records. Nothing here
 admits a release, binds a provider or changes a reviewed value.
 
 ## What was compared
@@ -60,6 +61,7 @@ is marked **[source, inference]**.
 | `trace/trace_reads.py` | S2 | the static tracer |
 | `trace/trace-v9.1.2.txt`, `trace/trace-v9.2.0.txt` | S2 | raw tracer output for the 27 admitted reads at each tag |
 | `trace/trace-mixins-v9.1.2.txt`, `trace/trace-mixins-v9.2.0.txt` | S2 | raw tracer output for the methods reached through mixins and thin wrappers |
+| `s4/README.md` and the files beside it | S4 | the 9.2.0 index digest, the provenance verification output, the attested-revision comparison, and the capture lane's posture and receipts |
 
 ## Tracer limits
 
@@ -87,9 +89,11 @@ observation in P9.
 
 ## Not done here
 
-- No descriptor, catalog or error-shape fingerprint was computed. Those need
-  the pinned images (S4, P2).
+- The source-read files (S2, S3, SW, SY) compute no descriptor, catalog or
+  error-shape fingerprint. Those come from the pinned images in S4; see
+  `s4/README.md`.
 - Skills content was not read. It is hashed from the two pinned images in S4.
 - Pydantic, attrs, the HTTP client and Home Assistant Core source are not in
   the clone and were not read. No package source was fetched.
-- S4, S5 and the later groups were not started.
+- The source-read files were written before S4 and S5 started. S4 is recorded
+  under `s4/`.

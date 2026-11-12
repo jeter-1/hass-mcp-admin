@@ -1,0 +1,18 @@
+tags at attested revision 4d7148309af7e4d3da95e16ced8bb67d6a43b9c1:
+tags at source commit 51e3aac788482a081807591cd5d58d07dc4e540b:
+stable
+v9.2.0
+is-ancestor(source, attested):
+rc=0
+commits source..attested:
+4d7148309af7e4d3da95e16ced8bb67d6a43b9c1 9be6d259d283c40bf558b78c41bd6264760e851c | github-actions[bot] | chore(addon): publish version 9.2.0 [skip ci]
+9be6d259d283c40bf558b78c41bd6264760e851c 51e3aac788482a081807591cd5d58d07dc4e540b | github-actions[bot] | chore(addon): sync changelog for Home Assistant add-on [skip ci]
+diff --name-status source attested:
+M	homeassistant-addon/CHANGELOG.md
+M	homeassistant-addon/config.yaml
+unexpected paths (excluding the two add-on release files):
+0
+diff stat:
+ homeassistant-addon/CHANGELOG.md | 122 +++++++++++++++++++++++++++++++++++++++
+ homeassistant-addon/config.yaml  |   2 +-
+ 2 files changed, 123 insertions(+), 1 deletion(-)
