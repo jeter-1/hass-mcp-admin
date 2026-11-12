@@ -47,9 +47,9 @@ from ha_mcp_engineering.device_configuration.service import DEVICE_CONFIGURATION
 from ha_mcp_engineering.errors import HomeAssistantTimeoutError, HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.f3.executor import (  # noqa: E402
     ExecutorTiming, OperationExecutorError, SharedOperationExecutor)
-from ha_mcp_engineering.f3.locks import LockStorageError  # noqa: E402
+from ha_mcp_engineering.f3.locks import LockOwnershipError, LockStorageError  # noqa: E402
 from ha_mcp_engineering.f3.models import (  # noqa: E402
-    MAX_EXECUTION_EVENTS, ExecutionRecord, LockHandle, LockOwner, LockToken,
+    MAX_EXECUTION_EVENTS, ExecutionRecord, LockHandle, LockOwner, LockRecord, LockToken,
     append_execution_event, parse_timestamp, timestamp)
 from ha_mcp_engineering.fan.service import FAN_LOCK_TIMING, FAN_OPERATIONS  # noqa: E402
 from ha_mcp_engineering.helper_value.service import HELPER_VALUE_OPERATIONS  # noqa: E402
@@ -1567,6 +1567,327 @@ class ContainmentContract:
         with patch.object(store, "records", unreadable_to_the_lease_check):
             await self.settle_without_a_handle(process, task_id)
         self.assertEqual(raised, [True])
+
+    # Architect ruling A (2026-11-12): a bound settlement that found no lock
+    # handle leaves the terminal manual-review task holding all its rows,
+    # home_assistant:core included, under the dead owner's identity. The
+    # next sweep promotes them by the rows' own owner: the entity row stays
+    # as the conflict hold and every dependency row is released.
+
+    async def assert_unpromoted_settlement_is_contained(self, error):
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id, error)
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        rows = process.lock_rows(task_id)
+        with self.subTest(item="1: the entity conflict hold is kept"):
+            self.assertIn(("entity:" + process.entity, True), [(row[0], row[4]) for row in rows])
+        with self.subTest(item="2: no other row of the task is left"):
+            self.assert_entity_hold_only(process, task_id)
+        with self.subTest(item="3: another family acquires home_assistant:core"):
+            other = self.other_family()
+            free = self.request(other)
+            await other.service.control(free)
+            self.assertEqual((other.record(free.task_id).normalized_outcome, other.writes()),
+                             ("succeeded_verified", 1))
+        with self.subTest(item="4: two further sweeps count nothing and append nothing"):
+            before = (process.service.recovery_failures, process.record(task_id).events,
+                      process.lock_rows(task_id), tree_digest(self.root))
+            for _ in range(2):
+                await asyncio.sleep(SWEEP_SECONDS)
+                await process.service.recover_once()
+            self.assertEqual((process.service.recovery_failures, process.record(task_id).events,
+                              process.lock_rows(task_id), tree_digest(self.root)), before)
+        with self.subTest(item="5: the hold-release flow releases the promoted hold"):
+            review = await process.service.hold_release_review(task_id)
+            self.assertIsNotNone(review, "the promoted hold is not offered for release")
+            if review is not None:
+                out = await process.service.release_hold(
+                    task_id, record_generation=review["record_generation"],
+                    prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+                    reviewed_readback_hash=review["readback_hash"],
+                    authorized_principal="home_assistant_admin_ingress:admin-fixture")
+                self.assertTrue(out["status"].startswith("hold_released_"), out)
+                self.assertEqual((out["dispatch"], out["terminal_outcome"]),
+                                 ("none", "manual_review_required"))
+                self.assertEqual(process.lock_rows(task_id), [])
+        self.assertEqual((process.writes(), process.dispatches,
+                          process.record(task_id).dispatch_count), (0, 0, 1))
+
+    @virtual
+    async def test_a_lock_store_error_settlement_is_contained_by_the_next_sweep(self):
+        await self.assert_unpromoted_settlement_is_contained(
+            LockStorageError("synthetic lock store failure"))
+
+    @virtual
+    async def test_a_contradictory_owner_settlement_is_contained_by_the_next_sweep(self):
+        await self.assert_unpromoted_settlement_is_contained(
+            OperationExecutorError("durable lock owner set is contradictory"))
+
+    @virtual
+    async def test_a_missing_handle_settlement_is_contained_by_the_next_sweep(self):
+        await self.assert_unpromoted_settlement_is_contained(None)
+
+    @virtual
+    async def test_a_lock_store_that_stays_unreadable_is_counted_and_retried(self):
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id,
+                                           LockStorageError("synthetic lock store failure"))
+        store = process.service.locks
+        rows, events = process.lock_rows(task_id), process.record(task_id).events
+        before, digest = process.service.recovery_failures, tree_digest(self.root)
+
+        def unreadable():
+            raise LockStorageError("synthetic lock store failure")
+        for sweep in (1, 2):
+            await asyncio.sleep(SWEEP_SECONDS)
+            with patch.object(store, "records", unreadable):
+                await process.service.recover_once()
+            self.assertEqual(process.service.recovery_failures, before + sweep)
+            self.assertEqual(process.record(task_id).events, events)
+            self.assertEqual(process.lock_rows(task_id), rows)
+            self.assertEqual(tree_digest(self.root), digest)
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assert_entity_hold_only(process, task_id)
+        self.assertEqual(process.record(task_id).events, events)
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    # Architect ruling 1 (Option 1, narrowed, 2026-11-12): the fan hold checks
+    # bind the hold to the one owner the record's own lock_tokens name, not
+    # to the claim's owner; task, attempt, operation, plan None, generation
+    # membership and the single entity hold stay bound exactly as before.
+
+    def reown_row(self, process, task_id, key, owner_id):
+        """Rewrite one stored row's owner, as lock-store corruption would."""
+        def mutate(state):
+            state["records"] = [
+                LockRecord.from_dict({**item.to_dict(), "owner_id": owner_id})
+                if item.task_id == task_id and item.key == key else item
+                for item in state["records"]]
+            return None, True
+        process.service.locks._transact(mutate)
+
+    async def release_the_hold(self, process, task_id):
+        """The existing review and release flow, end to end."""
+        review = await process.service.hold_release_review(task_id)
+        self.assertIsNotNone(review, "the hold is not offered for release")
+        out = await process.service.release_hold(
+            task_id, record_generation=review["record_generation"],
+            prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+            reviewed_readback_hash=review["readback_hash"],
+            authorized_principal="home_assistant_admin_ingress:admin-fixture")
+        self.assertTrue(out["status"].startswith("hold_released_"), out)
+        self.assertEqual((out["dispatch"], out["terminal_outcome"]),
+                         ("none", "manual_review_required"))
+        self.assertEqual(process.lock_rows(task_id), [])
+
+    async def normal_hold(self):
+        """A bound settlement that took the lock handle: the ordinary hold."""
+        process, task_id = await self.awaiting_recovery()
+        with patch(BOUND_REACHED, lambda record: True):
+            await process.service.recover_once()
+        record = self.assert_bound_settlement(process, task_id)
+        owner = record.execution_identity().owner_id
+        self.assertEqual({item["owner_id"] for item in record.lock_tokens}, {owner})
+        self.assertEqual({row.owner_id for row in process.service.locks.records()
+                          if row.task_id == task_id}, {owner})
+        return process, task_id
+
+    async def promoted_unpromoted_settlement(self):
+        """Ruling A: a handle-less settlement whose rows the next sweep promoted."""
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id,
+                                           LockStorageError("synthetic lock store failure"))
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assert_entity_hold_only(process, task_id)
+        record = process.record(task_id)
+        tokens = {item["owner_id"] for item in record.lock_tokens}
+        self.assertEqual({row.owner_id for row in process.service.locks.records()
+                          if row.task_id == task_id}, tokens)
+        self.assertNotEqual(tokens, {record.execution_identity().owner_id})
+        return process, task_id
+
+    @virtual
+    async def test_a_normal_manual_review_hold_settles_and_releases_as_before(self):
+        process, task_id = await self.normal_hold()
+        store = process.service.locks
+        record = process.record(task_id)
+        owned = [row for row in store.records() if row.task_id == task_id]
+        self.assertTrue(store.hold_settled(record, owned))
+        self.assertIsNotNone(process.service.hold_release_item(task_id))
+        before = (process.service.recovery_failures, record.events,
+                  process.lock_rows(task_id), tree_digest(self.root))
+        store.reconcile_terminal_hold(record)
+        for _ in range(2):
+            await asyncio.sleep(SWEEP_SECONDS)
+            await process.service.recover_once()
+        self.assertEqual((process.service.recovery_failures, process.record(task_id).events,
+                          process.lock_rows(task_id), tree_digest(self.root)), before)
+        await self.release_the_hold(process, task_id)
+        self.assertEqual((process.writes(), process.dispatches,
+                          process.record(task_id).dispatch_count), (0, 0, 1))
+
+    async def assert_a_third_owner_is_refused(self, process, task_id):
+        # The hold row names neither the lock_tokens owner nor the claim's.
+        self.reown_row(process, task_id, "entity:" + process.entity, "intruder-" + uuid.uuid4().hex)
+        store = process.service.locks
+        record = process.record(task_id)
+        owned = [row for row in store.records() if row.task_id == task_id]
+        self.assertNotIn(owned[0].owner_id, {record.execution_identity().owner_id}
+                         | {item["owner_id"] for item in record.lock_tokens})
+        with self.assertRaisesRegex(LockOwnershipError, "fan hold owner changed"):
+            store.reconcile_terminal_hold(record)
+        self.assertFalse(store.hold_settled(record, owned))
+        self.assertIsNone(process.service.hold_release_item(task_id))
+        before = (process.service.recovery_failures, record.events,
+                  process.lock_rows(task_id), tree_digest(self.root))
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assertEqual((process.service.recovery_failures, process.record(task_id).events,
+                          process.lock_rows(task_id), tree_digest(self.root)),
+                         (before[0] + 1,) + before[1:])
+        with self.assertRaisesRegex(process.service.refusal, "hold_release_unavailable"):
+            await process.service.release_hold(
+                task_id, record_generation=len(record.events),
+                prepared_hash=record.prepared_operation_hash,
+                hold_binding=f"{owned[0].key}:{owned[0].generation}",
+                reviewed_readback_hash="0" * 64,
+                authorized_principal="home_assistant_admin_ingress:admin-fixture")
+        self.assertEqual(process.lock_rows(task_id), before[2])
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_a_normal_hold_under_a_third_owner_is_still_refused(self):
+        await self.assert_a_third_owner_is_refused(*await self.normal_hold())
+
+    @virtual
+    async def test_a_promoted_hold_under_a_third_owner_is_still_refused(self):
+        await self.assert_a_third_owner_is_refused(*await self.promoted_unpromoted_settlement())
+
+    @virtual
+    async def test_a_hold_reowned_after_the_release_decision_is_not_released(self):
+        # _clear_released_hold releases only under the lock_tokens owner.
+        process, task_id = await self.promoted_unpromoted_settlement()
+        service, write = process.service, process.service._write_release
+        hold = "entity:" + process.entity
+
+        def write_then_reown(release):
+            write(release)
+            if release["released_at"] is None:
+                self.reown_row(process, task_id, hold, "intruder-" + uuid.uuid4().hex)
+        review = await service.hold_release_review(task_id)
+        self.assertIsNotNone(review, "the promoted hold is not offered for release")
+        with patch.object(service, "_write_release", write_then_reown), \
+                self.assertRaisesRegex(LockOwnershipError, "conflict-hold release was fenced"):
+            await service.release_hold(
+                task_id, record_generation=review["record_generation"],
+                prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+                reviewed_readback_hash=review["readback_hash"],
+                authorized_principal="home_assistant_admin_ingress:admin-fixture")
+        self.assertEqual([(key, held) for key, _, _, _, held in process.lock_rows(task_id)],
+                         [(hold, True)])
+        self.assertIsNone(service._load_release(task_id)["released_at"])
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_lock_tokens_naming_no_single_owner_keep_the_refusal(self):
+        process, task_id = await self.normal_hold()
+        service, store = process.service, process.service.locks
+        record = process.record(task_id)
+        owned = [row for row in store.records() if row.task_id == task_id]
+        hold = owned[0]
+        release = {"prepared_hash": record.prepared_operation_hash,
+                   "hold_key": hold.key, "hold_generation": hold.generation}
+        stored = service.executions.get
+        two = [{**item, "owner_id": item["owner_id"] if item["key"] == hold.key else "other"}
+               for item in record.lock_tokens]
+        for name, tokens in (("none", []), ("two owners", two)):
+            with self.subTest(lock_tokens=name):
+                altered = deepcopy(record)
+                altered.lock_tokens = tokens
+                self.assertFalse(store.hold_settled(altered, owned))
+                with self.assertRaises(LockOwnershipError):
+                    store.reconcile_terminal_hold(altered)
+                with patch.object(service.executions, "get",
+                                  lambda key: altered if key == task_id else stored(key)):
+                    self.assertIsNone(service.hold_release_item(task_id))
+                    with self.assertRaises(LockOwnershipError):
+                        service._clear_released_hold(task_id, release)
+                self.assertEqual([(key, held) for key, _, _, _, held in process.lock_rows(task_id)],
+                                 [(hold.key, True)])
+        self.assertTrue(store.hold_settled(record, owned))
+
+    # Architect ruling on Stop A (2026-11-12), the beta.8 known limit: a real
+    # contradictory owner set at the bound (a row the record's lock_tokens do
+    # not name) arises only from lock-store corruption, and recovery is a
+    # restore. The sweep fails closed: it never releases a row the record's
+    # lock_tokens do not name, so the remaining rows stay, the other families
+    # keep getting lock_conflict, every sweep is counted and no release is
+    # offered.
+
+    async def assert_a_contradictory_owner_set_fails_closed(self, foreign_row):
+        process, task_id = await self.awaiting_recovery()
+        target = "entity:" + process.entity
+        foreign_key = target if foreign_row == "entity" else "home_assistant:core"
+        keys = [row[0] for row in process.lock_rows(task_id)]
+        self.assertIn(foreign_key, keys)
+        foreign = "foreign-" + uuid.uuid4().hex
+        self.reown_row(process, task_id, foreign_key, foreign)
+        before = process.service.recovery_failures
+        # A real bound sweep: the lock takeover itself finds the owner set
+        # contradictory (_recovery_handle is not patched).
+        with patch(BOUND_REACHED, lambda record: True):
+            await process.service.recover_once()
+        record = process.record(task_id)
+        self.assertEqual((record.terminal, record.normalized_outcome,
+                          record.evidence.get("manual_review_reason_code"), record.dispatch_count),
+                         (True, "manual_review_required", BOUND_REASON, 1))
+        self.assertNotIn(foreign, {item["owner_id"] for item in record.lock_tokens})
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assertEqual(process.service.recovery_failures, before + 1)
+        rows = process.lock_rows(task_id)
+        # Only rows grouped with the entity row are promoted (its dependency
+        # rows released); the group without the entity row stays.
+        remaining = {target, foreign_key} if foreign_row == "core" else set(keys)
+        with self.subTest(bullet="1: the entity conflict hold holds"):
+            self.assertIn((target, True), [(row[0], row[4]) for row in rows])
+        with self.subTest(bullet="2: the remaining rows stay"):
+            self.assertEqual({row[0] for row in rows}, remaining)
+            self.assertEqual({row.owner_id for row in process.service.locks.records()
+                              if row.task_id == task_id and row.key == foreign_key}, {foreign})
+        with self.subTest(bullet="4: each further sweep counts 1 in recovery_failures"):
+            for sweep in (1, 2):
+                await asyncio.sleep(SWEEP_SECONDS)
+                await process.service.recover_once()
+                self.assertEqual(process.service.recovery_failures, before + 1 + sweep)
+                self.assertEqual(process.lock_rows(task_id), rows)
+        with self.subTest(bullet="5: hold_release_item returns None"):
+            self.assertIsNone(process.service.hold_release_item(task_id))
+        with self.subTest(bullet="3: another family gets lock_conflict"):
+            other = self.other_family()
+            attempt = self.request(other)
+            await other.service.control(attempt)
+            blocked = other.record(attempt.task_id)
+            self.assertEqual((blocked.terminal, blocked.task_state, blocked.normalized_outcome,
+                              blocked.dispatch_count),
+                             (True, "failed_pre_dispatch", "lock_conflict", 0))
+            self.assertEqual((other.writes(), other.dispatches,
+                              other.lock_rows(attempt.task_id)), (0, 0, []))
+            self.assertEqual(process.lock_rows(task_id), rows)
+        with self.subTest(bullet="6: 0 writes and 0 dispatches"):
+            self.assertEqual((process.writes(), process.dispatches,
+                              process.record(task_id).dispatch_count), (0, 0, 1))
+
+    @virtual
+    async def test_a_foreign_entity_row_at_the_bound_fails_closed_as_the_known_limit(self):
+        await self.assert_a_contradictory_owner_set_fails_closed("entity")
+
+    @virtual
+    async def test_a_foreign_core_row_at_the_bound_fails_closed_as_the_known_limit(self):
+        await self.assert_a_contradictory_owner_set_fails_closed("core")
 
     @virtual
     async def test_the_bound_settlement_keeps_the_last_recorded_readback(self):
