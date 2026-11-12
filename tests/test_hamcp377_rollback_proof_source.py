@@ -307,8 +307,16 @@ class ExactRunTests(unittest.TestCase):
         self.assertEqual(EXACT["code"], 1 if gate else 0)
         self.assertTrue(EXACT["stdout"].endswith(verdict), EXACT["stdout"])
         self.assertEqual(EXACT["stderr"], "".join(item + "\n" for item in said))
+        # M1 (a): `check` also pins the committed receipts' writer commit, which `gate` does
+        # not. A run from any other commit is refused by `check` alone.
+        pin = [f"{scenario}: G1: the writer is not the pinned writer commit "
+               f"{lane.WRITER_COMMIT}" for scenario in ("12a", "12b", "12c")
+               if EXACT["receipts"][scenario]["writer"]["commit"] != lane.WRITER_COMMIT]
+        checked = gate + pin
         self.assertEqual(run_lane("check", str(EXACT["out"])),
-                         (EXACT["code"], verdict, "".join(item + "\n" for item in gate)))
+                         (1 if checked else 0, f"rollback proof lane: "
+                          f"{'FAIL' if checked else 'PASS'}\n",
+                          "".join(item + "\n" for item in checked)))
 
     def test_the_writer_is_an_archive_of_the_checked_out_commit(self) -> None:
         head = EXACT["before"]["head"]

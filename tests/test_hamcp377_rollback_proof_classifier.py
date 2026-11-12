@@ -1556,8 +1556,8 @@ class GitBoundReceiptTests(GuardCase):
 
     `check` does not consult git, so it cannot tell a recorded driver hash, tool blob or
     checkout commit from an invented one. These tests can, wherever the repository is at
-    hand. They are skipped where git is unavailable. They do not pin `writer.commit`: a
-    receipt without tool records (12b, 12c) has no writer-commit field these tests bind.
+    hand. They are skipped where git is unavailable. Each side's commit, version and lock
+    hash are compared by `WriterCommitGitTests`, and `check` pins the writer commit.
     """
 
     @classmethod
@@ -1635,6 +1635,158 @@ class RecordedTimeTests(GuardCase):
                                  ["started_at and ended_at do not both carry a UTC offset"])
 
 
+# --- the writer commit: pinned in `check`, bound to git (M1 a, b, d) -------------------------
+PINNED_WRITER = "aeb3b314dd180592874243c9ae370a63f0622c2b"
+CONFIG = "hass_mcp_engineering_beta/config.yaml"
+ANCESTRY = "writer.commit is not an ancestor of lane.checkout_commit"
+
+
+def declared_at(commit: str) -> str | None:
+    for line in (git_out("show", f"{commit}:{CONFIG}") or b"").decode("utf-8").splitlines():
+        if line.startswith("version:"):
+            return line.split(":", 1)[1].strip().strip("\"'")
+    return None
+
+
+def tree_binding_failures(receipt: dict) -> list[str]:
+    """What a receipt records about each side's tree that the side's own commit contradicts."""
+
+    failures = []
+    for side in ("writer", "reader"):
+        record = receipt[side]
+        commit = record.get("commit")
+        if not is_commit(commit):
+            failures.append(f"{side}.commit is not a commit of this repository")
+            continue
+        if record.get("archive_commit") != commit:
+            failures.append(f"{side}.archive_commit is not {side}.commit")
+        if not record.get("version") == record.get("declared_version") == declared_at(commit):
+            failures.append(f"{side}.version is not the version {CONFIG} declares at "
+                            f"{side}.commit")
+        lock = git_out("show", f"{commit}:{lane.LOCK}")
+        if lock is None or (record.get("dependencies") or {}).get(
+                "lock_sha256") != hashlib.sha256(lock).hexdigest():
+            failures.append(f"{side}.dependencies.lock_sha256 is not the sha256 of {lane.LOCK} "
+                            f"at {side}.commit")
+    return failures
+
+
+def ancestry_failures(receipt: dict) -> list[str]:
+    writer, checkout = receipt["writer"].get("commit"), receipt["lane"].get("checkout_commit")
+    if not (is_commit(writer) and is_commit(checkout)) or git_out(
+            "merge-base", "--is-ancestor", writer, checkout) is None:
+        return [ANCESTRY]
+    return []
+
+
+def writer_commit(commit: str):
+    """The record's B08: one writer commit named consistently, with its tools' commits."""
+
+    def change(receipt: dict) -> None:
+        receipt["writer"]["commit"] = receipt["writer"]["archive_commit"] = commit
+        for key in TOOLS:
+            if key in receipt:
+                receipt[key]["commit"] = commit
+    return change
+
+
+def writer_version(version: str):
+    def change(receipt: dict) -> None:
+        receipt["writer"]["version"] = receipt["writer"]["declared_version"] = version
+        for run in receipt["runs"]:
+            if run["side"] == "writer":
+                run["version"] = version
+    return change
+
+
+class WriterPinTests(GuardCase):
+    """M1 (a): `check` accepts only the writer commit the committed receipts were written from."""
+
+    def test_check_pins_the_writer_commit_of_the_committed_receipts(self) -> None:
+        self.assertEqual(lane.WRITER_COMMIT, PINNED_WRITER)
+        for scenario, receipt in self.receipts.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual((receipt["writer"]["commit"],
+                                  receipt["writer"]["archive_commit"]),
+                                 (PINNED_WRITER, PINNED_WRITER))
+        self.assertEqual(check(self.written(self.committed())),
+                         (0, "rollback proof lane: PASS\n", ""))
+
+    def test_check_command_refuses_a_consistent_writer_commit_forgery(self) -> None:
+        pin = f"G1: the writer is not the pinned writer commit {PINNED_WRITER}"
+        for name, commit in (("invented", "f" * 40),
+                             ("a real commit", self.receipts["12a"]["lane"]["checkout_commit"])):
+            with self.subTest(commit=name):
+                files = self.committed()
+                for receipt in files.values():
+                    writer_commit(commit)(receipt)
+                    rederive(receipt)
+                self.assertEqual(lane.gate(list(files.values())), [])  # the classifier passes it
+                code, out, err = check(self.written(files))
+                self.assertEqual((code, out), (1, FAIL))
+                self.assertEqual(err.splitlines(), [f"{scenario}: {pin}" for scenario in ALL])
+
+
+class WriterCommitGitTests(GuardCase):
+    """M1 (b), (d): each side's commit, version and lock against git, where git is at hand."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        if shutil.which("git") is None or git_out("rev-parse", "--git-dir") is None:
+            raise unittest.SkipTest("git is unavailable; the writer commit is not compared")
+        named = {receipt[side]["commit"] for receipt in cls.receipts.values()
+                 for side in ("writer", "reader")}
+        named |= {receipt["lane"]["checkout_commit"] for receipt in cls.receipts.values()}
+        if not all(is_commit(commit) for commit in named):
+            raise unittest.SkipTest("this clone does not hold the commits the receipts name")
+        cls.shallow = (git_out("rev-parse", "--is-shallow-repository") or b"").strip() == b"true"
+
+    def test_each_side_is_the_version_and_lock_its_commit_holds(self) -> None:  # (d)
+        for scenario, receipt in self.receipts.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(tree_binding_failures(receipt), [])
+                self.assertEqual(declared_at(receipt["writer"]["commit"]), "2.4.2-beta.8")
+                self.assertEqual(declared_at(receipt["reader"]["commit"]), lane.PREVIOUS_VERSION)
+
+    def test_the_writer_commit_is_an_ancestor_of_the_checkout_commit(self) -> None:  # (b)
+        if self.shallow:
+            self.skipTest("skipped: shallow clone; the writer commit's ancestry is not compared")
+        for scenario, receipt in self.receipts.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(ancestry_failures(receipt), [])
+
+    def test_forged_writer_facts_do_not_match_git(self) -> None:
+        version = f"writer.version is not the version {CONFIG} declares at writer.commit"
+        lock = f"dependencies.lock_sha256 is not the sha256 of {lane.LOCK} at "
+        edits = [
+            ("writer version forged", writer_version("2.4.2-beta.9"), [version], []),
+            ("writer lock hash forged (B21)", put("writer", "dependencies", "lock_sha256",
+                                                  "0" * 64), ["writer." + lock + "writer.commit"],
+             []),
+            ("reader lock hash forged (B21)", put("reader", "dependencies", "lock_sha256",
+                                                  "0" * 64), ["reader." + lock + "reader.commit"],
+             []),
+            ("writer commit invented (B08)", writer_commit("f" * 40),
+             ["writer.commit is not a commit of this repository"], [ANCESTRY])]
+        head = (git_out("rev-parse", "HEAD") or b"").decode().strip()
+        checkout = self.receipts["12a"]["lane"]["checkout_commit"]
+        if head != checkout and git_out("merge-base", "--is-ancestor", head, checkout) is None:
+            # A real commit after the checkout: it holds a tree, so only its ancestry is wrong.
+            edits.append(("writer commit a later commit", writer_commit(head), None, [ANCESTRY]))
+        for name, change, tree, ancestry in edits:
+            for scenario in ALL:
+                with self.subTest(edit=name, scenario=scenario):
+                    edited = copy.deepcopy(self.receipts[scenario])
+                    change(edited)
+                    rederive(edited)
+                    self.assertEqual(lane.classify(edited), [])  # the classifier passes it
+                    if tree is not None:
+                        self.assertEqual(tree_binding_failures(edited), tree)
+                    if not self.shallow:
+                        self.assertEqual(ancestry_failures(edited), ancestry)
+
+
 # --- closed schema, recovery outcome, receipt directory, limitations -------------------------
 FAIL = "rollback proof lane: FAIL\n"
 
@@ -1669,6 +1821,68 @@ class ClosedSchemaTests(GuardCase):
                                  lane.RECEIPT_KEYS | lane.SCENARIO_KEYS[scenario])
                 self.assertEqual(set(receipt["lane"]), lane.LANE_KEYS)
         self.assertEqual(set(lane.SCENARIO_KEYS), set(lane.CLASSIFIERS))
+
+    def test_g13_a_top_level_note_is_not_a_receipt_key(self) -> None:
+        # NK-07: `note` is a key of the lane record only. At the top level it is a statement
+        # nothing checks, so a receipt carrying one is not a PASS.
+        self.assertIn("note", lane.LANE_KEYS)
+        self.assertNotIn("note", lane.RECEIPT_KEYS)
+        for scenario in ALL:
+            with self.subTest(scenario=scenario):
+                self.guard("G13", scenario, put("note", "a real Home Assistant Core took part"),
+                           consistent=True,
+                           text="the receipt carries keys its schema does not define: note")
+
+    def test_g13_nested_records_carry_no_key_their_schema_does_not_define(self) -> None:
+        # R1: the records inside a receipt are closed as well as its top level.
+        text = "the receipt's {} record carries keys its schema does not define: unchecked_claim"
+        for scenario in ALL:
+            receipt = self.receipts[scenario]
+            case = sorted(receipt["cases"])[0]
+            paths = [("writer",), ("reader",), ("writer", "dependencies"),
+                     ("reader", "dependencies"), ("runs", 0), ("cases", case),
+                     ("cases", case, "derived"), ("cases", case, "observed"),
+                     *(("data", name) for name in sorted(receipt["data"])),
+                     *((key,) for key in TOOLS if key in receipt)]
+            if scenario == "12a":
+                paths += [*(("cases", case, "observed", part)
+                            for part in ("writer", "lane", "reader", "real_read")),
+                          ("real_candidate_comparison",)]
+            if scenario == "12c":
+                paths += [("source_facts",), ("reader_harness",)]
+            if scenario == "12b":
+                paths += [("data", "device_recovery_27a", "earlier", 0), ("recovery", "27a"),
+                          ("recovery", "27a", "steps"),
+                          *(("recovery", "27a", "steps", step)
+                            for step in sorted(receipt["recovery"]["27a"]["steps"]))]
+            for path in paths:
+                where = ".".join(str(part) for part in path).replace(".0", "[0]")
+                with self.subTest(scenario=scenario, record=where):
+                    # Rederiving would rewrite a derived record and drop the key again.
+                    self.guard("G13", scenario, put(*path, "unchecked_claim", True),
+                               consistent=path[-1] != "derived", text=text.format(where))
+
+            def another_case(edited: dict, case: str = case) -> None:
+                edited["cases"]["unchecked_claim"] = copy.deepcopy(edited["cases"][case])
+            with self.subTest(scenario=scenario, record="cases"):
+                self.guard("G13", scenario, another_case, consistent=True,
+                           text=text.format("cases"))
+
+    def test_committed_nested_records_hold_only_the_keys_the_schema_defines(self) -> None:
+        for scenario, receipt in self.receipts.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual([where for where, record, known in
+                                  lane.closed_records(receipt, scenario)
+                                  if not set(record) <= known], [])
+                self.assertEqual(set(receipt["cases"]), set(lane.REQUIRED_CASES[scenario]))
+                # A writer recorded from the worktree also records whether it was clean.
+                self.assertEqual(lane.SIDE_KEYS["writer"] - set(receipt["writer"]),
+                                 {"worktree_clean"})
+                self.assertEqual(set(receipt["reader"]), lane.SIDE_KEYS["reader"])
+        worktree = copy.deepcopy(self.receipts["12c"])
+        writer_from_the_worktree(worktree)
+        worktree["writer"].update(archive_commit=None, worktree_clean=True)
+        self.assertEqual(lane.classify(worktree, require_exact=False), [])
 
 
 def settled_as_succeeded(receipt: dict) -> None:

@@ -56,6 +56,9 @@ PREVIOUS_VERSION = "2.4.2-beta.7"
 PREVIOUS_TAG = "v2.4.2-beta.7"
 PREVIOUS_TAG_OBJECT = "998e9021e5f187b0f375bff9b4b867243fd270c0"
 PREVIOUS_COMMIT = "b614be43f8c56ae06fdec0ac0bcb479b9da39715"
+# M1 (a). The commit the committed receipts' writer ran from (2.4.2-beta.8). `classify` and
+# `gate` cannot tell this commit from another one named consistently, so `check` pins it.
+WRITER_COMMIT = "aeb3b314dd180592874243c9ae370a63f0622c2b"
 # Published Core release registry journal (sequence 17), by content.
 PUBLISHED_JOURNAL_BLOB = "59c4100473fd7722b4b8e44ac5061bef9d599c87"
 PUBLISHED_JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d"
@@ -111,8 +114,9 @@ PLAN_LIMITATIONS = (
 LIMITATIONS = {"12a": [SYNTHETIC_PROVIDER_LIMITATION, *REGISTRY_LIMITATIONS],
                "12b": [SYNTHETIC_PROVIDER_LIMITATION],
                "12c": [SYNTHETIC_PROVIDER_LIMITATION, *PLAN_LIMITATIONS]}
-# The receipt schema is closed at the top level and in its `lane` record: a key these sets do
-# not name is a statement nothing checks, so a receipt carrying one is not a PASS.
+# The receipt schema is closed at the top level, in its `lane` record and in the records
+# `closed_records` lists: a key these sets do not name is a statement nothing checks, so a
+# receipt carrying one is not a PASS.
 SUBJECTS = ("source",)
 RECEIPT_KEYS = frozenset({
     "schema", "row", "scenario", "title", "subject", "result", "failures", "summary",
@@ -124,6 +128,64 @@ SCENARIO_KEYS = {
     "12c": frozenset({"source_facts", "reader_harness"})}
 LANE_KEYS = frozenset({"checkout_commit", "commands", "containers", "drivers_modified",
                        "network", "note"})
+# R1. A writer recorded from the worktree also records whether the worktree was clean; an
+# exact writer does not.
+SIDE_KEYS = {
+    "writer": frozenset({"commit", "source", "archive_commit", "version", "flags",
+                         "declared_version", "dependencies", "worktree_clean"}),
+    "reader": frozenset({"version", "tag", "tag_object", "commit", "archive_commit", "source",
+                         "isolated", "declared_version", "flags", "dependencies"})}
+DEPENDENCY_KEYS = frozenset({"python", "pins", "lock_sha256", "mismatches"})
+RUN_KEYS = frozenset({"side", "step", "version", "package_in_own_tree"})
+TOOL_KEYS = frozenset({"path", "operation", "commit", "source", "sha256", "blob_run",
+                       "blob_at_commit"})
+DATA_KEYS = frozenset({"files", "after_write", "before_read", "after_read"})
+DATA_EXTRA_KEYS = {"registry": frozenset({"candidate_sha256", "journal_sha256"}),
+                   "device_recovery_27a": frozenset({"earlier"})}
+CASE_KEYS = {"12a": frozenset({"data_set", "observed", "derived"}),
+             "12b": frozenset({"data_set", "observed", "derived", "writer"}),
+             "12c": frozenset({"data_set", "observed", "derived", "writer"})}
+DERIVED_KEYS = {"12a": frozenset({"admitted", "marketplace_admitted", "not_admitted",
+                                  "quarantined"}),
+                "12b": frozenset({"behaviour", "governed", "lease", "scope"}),
+                "12c": frozenset({"outcome"})}
+OBSERVED_KEYS = {
+    "12a": frozenset({"writer", "lane", "reader", "real_read"}),
+    "12b": frozenset({"task_id", "now", "held_switch", "other_switch", "power", "governed"}),
+    "12c": frozenset({"startup_assertions", "ready_after_startup", "ready_final", "decode",
+                      "list_plans", "plans", "provider_writes", "file_count", "files",
+                      "synthetic_core_objects"})}
+REGISTRY_OBSERVED_KEYS = {
+    "writer": frozenset({"published_journal_sha256", "published_sequence",
+                         "published_expires_at", "published_public_key", "tools", "inputs",
+                         "candidate", "reference_objects", "test_signed", "journal_sha256",
+                         "sequence", "previous_references", "added", "references",
+                         "compiled_profiles"}),
+    "lane": frozenset({"candidate", "journal"}),
+    "reader": frozenset({"refreshed", "journal_sha256", "authority", "compiled",
+                         "entry_references", "entry_reference_objects_sha256", "selected",
+                         "route_status", "counts", "withheld", "recovery_state",
+                         "before_refresh_compatible_count", "marketplace", "core"}),
+    "real_read": frozenset({"exercised", "reason"})}
+COMPARISON_KEYS = frozenset({
+    "status", "compares", "lane_reference_count", "lane_reference_objects_sha256",
+    "compared_at", "candidate_file", "candidate_sha256", "candidate_shape",
+    "candidate_sequence", "candidate_reference_count", "candidate_reference_objects_sha256",
+    "identical", "differences", "candidate_authenticity"})
+SCENARIO_RECORD_KEYS = {
+    "12a": {"real_candidate_comparison": COMPARISON_KEYS},
+    "12c": {"source_facts": frozenset({"writer_created_identity_references",
+                                       "reader_created_identity_references"}),
+            "reader_harness": frozenset({"ok", "errors"})}}
+# Only an exercised tier with a reviewed record shape is closed. Any other tier record is
+# left to G9, which fails it.
+TIER_KEYS = frozenset({"exercised", "title", "limitation", "steps"})
+TIER_STEP_KEYS = {"27a": {
+    "crash": frozenset({"task_id", "died_in", "provider_writes", "locks"}),
+    "blocked_before_recovery": frozenset({"data_set", "observed", "derived"}),
+    "settle_release": frozenset({"task_id", "advance_seconds", "recovery_passes", "settled",
+                                 "review", "release"}),
+    "previous_release_read": frozenset({"data_set", "observed", "derived"})}}
 
 # 12a. The candidate appends these to the 32 published references.
 RULED_ADDED = (
@@ -780,6 +842,61 @@ def summarize(receipt: dict) -> list[str]:
     return lines
 
 
+def closed_records(receipt: dict, scenario: str):
+    """Each closed record of a receipt: (where, record, the keys its schema defines).
+
+    `where` is "" for the top level and otherwise the record's path in the receipt. A record
+    that is not a mapping is left out here; the guard that reads it fails it instead.
+    """
+
+    def walk(where: str, record, known):
+        if isinstance(record, dict):
+            yield where, record, known
+
+    yield from walk("", receipt, RECEIPT_KEYS | SCENARIO_KEYS[scenario])
+    yield from walk("lane", receipt.get("lane"), LANE_KEYS)
+    for side in ("writer", "reader"):
+        record = receipt.get(side)
+        yield from walk(side, record, SIDE_KEYS[side])
+        if isinstance(record, dict):
+            yield from walk(f"{side}.dependencies", record.get("dependencies"), DEPENDENCY_KEYS)
+    for index, run in enumerate(receipt.get("runs") or []):
+        yield from walk(f"runs[{index}]", run, RUN_KEYS)
+    cases = receipt.get("cases")
+    yield from walk("cases", cases, frozenset(REQUIRED_CASES[scenario]))
+    for name, case in (cases.items() if isinstance(cases, dict) else ()):
+        yield from walk(f"cases.{name}", case, CASE_KEYS[scenario])
+        if not isinstance(case, dict):
+            continue
+        yield from walk(f"cases.{name}.derived", case.get("derived"), DERIVED_KEYS[scenario])
+        observed = case.get("observed")
+        yield from walk(f"cases.{name}.observed", observed, OBSERVED_KEYS[scenario])
+        if scenario == "12a" and isinstance(observed, dict):
+            for part, known in REGISTRY_OBSERVED_KEYS.items():
+                yield from walk(f"cases.{name}.observed.{part}", observed.get(part), known)
+    data = receipt.get("data")
+    for name, record in (data.items() if isinstance(data, dict) else ()):
+        yield from walk(f"data.{name}", record, DATA_KEYS | DATA_EXTRA_KEYS.get(name, set()))
+        earlier = record.get("earlier") if isinstance(record, dict) else None
+        for index, part in enumerate(earlier if isinstance(earlier, list) else ()):
+            yield from walk(f"data.{name}.earlier[{index}]", part, DATA_KEYS)
+    for key in SCENARIO_KEYS[scenario] & {"candidate_tool", "test_signing_tool"}:
+        yield from walk(key, receipt.get(key), TOOL_KEYS)
+    for key, known in SCENARIO_RECORD_KEYS.get(scenario, {}).items():
+        yield from walk(key, receipt.get(key), known)
+    recovery = receipt.get("recovery") if scenario == "12b" else None
+    for tier, record in (recovery.items() if isinstance(recovery, dict) else ()):
+        if tier not in TIER_STEP_KEYS or not isinstance(record, dict) or record.get(
+                "exercised") is not True:
+            continue
+        yield from walk(f"recovery.{tier}", record, TIER_KEYS)
+        steps = record.get("steps")
+        yield from walk(f"recovery.{tier}.steps", steps, frozenset(TIER_STEP_KEYS[tier]))
+        for step, known in TIER_STEP_KEYS[tier].items():
+            yield from walk(f"recovery.{tier}.steps.{step}",
+                            steps.get(step) if isinstance(steps, dict) else None, known)
+
+
 CLASSIFIERS = {"12a": lambda receipt, tiers, exact: classify_registry(receipt, exact),
                "12b": lambda receipt, tiers, exact: classify_device(receipt, tiers),
                "12c": lambda receipt, tiers, exact: classify_plans(receipt)}
@@ -854,12 +971,12 @@ def _classify(receipt: dict, require_exact: bool, recovery_tiers: tuple[str, ...
     elif receipt.get("limitations") != LIMITATIONS[scenario]:
         failures.append("G13: the receipt's limitations are not exactly the ones scenario "
                         f"{scenario} must state")
-    for where, record, known in (("", receipt, RECEIPT_KEYS | SCENARIO_KEYS[scenario]),
-                                 ("'s lane record", lane, LANE_KEYS)):
+    for where, record, known in closed_records(receipt, scenario):
         unknown = sorted(str(key) for key in set(record) - known)
         if unknown:
-            failures.append(f"G13: the receipt{where} carries keys its schema does not define: "
-                            + ", ".join(unknown))
+            record_name = f"'s {where} record" if where else ""
+            failures.append(f"G13: the receipt{record_name} carries keys its schema does not "
+                            "define: " + ", ".join(unknown))
     for name in REQUIRED_CASES[scenario]:
         if name not in receipt.get("cases", {}):
             failures.append(f"G13: case {name} is missing")
@@ -1474,7 +1591,12 @@ def main(argv: list[str] | None = None) -> int:
     options = parser.parse_args(argv)
     tiers = tuple(options.recovery_tier or DEFAULT_RECOVERY_TIERS)
     if options.command == "check":
-        failures = gate(load_receipts(options.directory), recovery_tiers=tiers)
+        receipts = load_receipts(options.directory)
+        failures = gate(receipts, recovery_tiers=tiers)
+        failures += [f"{receipt.get('scenario')}: G1: the writer is not the pinned writer "
+                     f"commit {WRITER_COMMIT}" for receipt in receipts
+                     if not isinstance(receipt.get("writer"), dict)
+                     or receipt["writer"].get("commit") != WRITER_COMMIT]
         failures = read_receipts(options.directory)[1] + failures
     elif options.command == "compare-candidate":
         try:
