@@ -26,7 +26,9 @@ if str(ROOT / "tests") not in sys.path:
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
 import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
+import device_configuration_contract_acceptance as device  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
+import lane_session as shared  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
 import security_metadata_contract_acceptance as security  # noqa: E402
 import seq13_contract_acceptance as seq13  # noqa: E402
@@ -2380,6 +2382,227 @@ class OtherLaneOrigin(ClientCase):
         self.assertIs(reply["success"], True)
         self.assertEqual(self.dialled(events), [BRIDGE_SOCKET])
         self.assertNotIn("127.", repr(events))
+
+
+# The device-configuration lane. Its clients keep the refusal codes and the settings type of
+# their own lane, so they have a table of their own here and not a row of ``LANES``.
+DEVICE_CORE, DEVICE_SOCKET = "http://127.0.0.1:18297", "ws://127.0.0.1:18297/api/websocket"
+DEVICE_UPSTREAM, DEVICE_STUB = "http://127.0.0.1:18298/beta23-real-ha-mcp", "http://127.0.0.1:18299/_lane/control"
+DEVICE_FLOW = "/api/config/config_entries/flow"
+DEVICE_RELOAD = "/api/config/config_entries/entry/01JSYNTHETICSYNTHETICSYNTH/reload"
+DEVICE_COMMAND = {"type": "config_entries/get", "domain": "matter"}
+DEVICE_BEARER = {"Authorization": "Bearer " + TOKEN}
+REDIRECT_REFUSED = "lane_redirect_refused"
+
+
+def device_settings(core=DEVICE_CORE, upstream=DEVICE_UPSTREAM):
+    return Settings(ha_url=core, ha_token=TOKEN, access_secret="synthetic-secret", port=8100, audit_path="unused",
+                    rate_limit_per_minute=120, rate_limit_burst=25, destructive_services=frozenset(),
+                    upstream_dashboard_mcp_url=upstream)
+
+
+# client: the function of the lane script that opens its session, one listed send, the seconds
+# of that session, the session call as the script writes it, and the one thing the send dials.
+DEVICE_CLIENTS = {
+    "raw_core": ("RawCore.command", lambda: device.RawCore(device_settings()).command(dict(DEVICE_COMMAND)), 60,
+                 "lane_session(timeout=aiohttp.ClientTimeout(total=seconds))",
+                 ("ws_connect", DEVICE_SOCKET, {"max_msg_size": 8 * 1024 * 1024})),
+    "raw_rest": ("RawRest.rest", lambda: device.RawRest(device_settings()).rest("POST", DEVICE_RELOAD), 60,
+                 "lane_session(timeout=aiohttp.ClientTimeout(total=seconds))",
+                 ("request", "POST", DEVICE_CORE + DEVICE_RELOAD, {"headers": DEVICE_BEARER, "allow_redirects": False})),
+    "stub_control": ("StubControl._request", lambda: device.StubControl(DEVICE_STUB).read(), 30,
+                     "lane_session(timeout=aiohttp.ClientTimeout(total=30))",
+                     ("request", "GET", DEVICE_STUB, {"allow_redirects": False})),
+}
+# Every other request the two REST clients send, each to the same pin.
+DEVICE_REQUESTS = (
+    (lambda: device.RawRest(device_settings()).rest("POST", DEVICE_FLOW, {"handler": "matter"}),
+     ("request", "POST", DEVICE_CORE + DEVICE_FLOW,
+      {"headers": DEVICE_BEARER, "allow_redirects": False, "json": {"handler": "matter"}})),
+    (lambda: device.StubControl(DEVICE_STUB).post({"mode": "none"}),
+     ("request", "POST", DEVICE_STUB, {"allow_redirects": False, "json": {"mode": "none"}})),
+)
+
+
+def device_session(events, status=200, value=None):
+    """Stand-in for aiohttp.ClientSession with a REST answer: records construction, dials and reads."""
+    class Answer:
+        def __init__(self):
+            self.status = status
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def json(self, **kwargs):
+            events.append(("json", kwargs))
+            return value
+
+    class Session(fake_session(events)):
+        def request(self, method, url, **kwargs):
+            events.append(("request", method, url, kwargs))
+            return Answer()
+
+    return Session
+
+
+class DeviceConfigurationClients(unittest.IsolatedAsyncioTestCase):
+    """The device-configuration lane's three clients: the shared lane session, to the lane's pins only."""
+
+    def test_the_table_is_every_function_of_the_lane_script_that_opens_a_session(self):
+        tree = ast.parse((SCRIPTS / "device_configuration_contract_acceptance.py").read_text(encoding="utf-8"))
+        opened = []
+        for owner in tree.body:
+            for function in ast.walk(owner):
+                if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    opened += [(owner.name if owner is function else f"{owner.name}.{function.name}", ast.unparse(node))
+                               for node in ast.walk(function) if isinstance(node, ast.Call)
+                               and "lane_session" in ast.unparse(node.func)]
+        self.assertEqual(sorted(opened), sorted((where, written)
+                                                for where, _send, _seconds, written, _dial in DEVICE_CLIENTS.values()))
+        # The session is used where it is opened, by the name ``session``, and nowhere else.
+        held = [ast.unparse(node.context_expr) + " as " + ast.unparse(node.optional_vars)
+                for node in ast.walk(tree) if isinstance(node, ast.withitem) and "lane_session" in ast.unparse(node)]
+        self.assertEqual(sorted(held), sorted(written + " as session"
+                                              for _where, _send, _seconds, written, _dial in DEVICE_CLIENTS.values()))
+        # The pins and the frame bound of the table are the script's own.
+        self.assertEqual((device.CORE_URL, device.CORE_WS_URL, device.UPSTREAM_URL, device.STUB_CONTROL_URL),
+                         (DEVICE_CORE, DEVICE_SOCKET, DEVICE_UPSTREAM, DEVICE_STUB))
+        self.assertEqual((device.CORE_PORT, device.UPSTREAM_PORT, device.STUB_PORT, device.FRAME_BYTES),
+                         (18297, 18298, 18299, 8 * 1024 * 1024))
+
+    async def test_each_client_opens_one_shared_lane_session_and_dials_its_pin(self):
+        proxies = {name: "http://proxy.invalid:3128" for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                                                  "WS_PROXY", "WSS_PROXY", "NO_PROXY")}
+        for name, (_where, send, seconds, _written, dial) in DEVICE_CLIENTS.items():
+            for environment in ({}, proxies):
+                with self.subTest(client=name, proxies=bool(environment)), patch.dict(os.environ, environment):
+                    events = []
+                    with patch.object(aiohttp, "ClientSession", new=device_session(events, value=["answer"])):
+                        await send()
+                    sessions = [event[1] for event in events if event[0] == "session"]
+                    self.assertEqual(len(sessions), 1)
+                    self.assertEqual(set(sessions[0]), {"timeout", "trust_env", "trace_configs"})
+                    self.assertIs(sessions[0]["trust_env"], False)
+                    self.assertEqual(sessions[0]["timeout"], aiohttp.ClientTimeout(total=seconds))
+                    trace, = sessions[0]["trace_configs"]
+                    self.assertIs(type(trace), aiohttp.TraceConfig)
+                    # The one redirect callback is the shared helper's, which raises the shared refusal.
+                    self.assertEqual(list(trace.on_request_redirect), [shared._refuse_redirect_hop])
+                    self.assertEqual([event for event in events if event[0] in ("ws_connect", "request")], [dial])
+                    self.assertEqual(events[0][0], "session")
+                    self.assertNotIn(ELSEWHERE, repr(events))
+
+    async def test_every_other_request_of_the_rest_clients_goes_to_the_same_pin(self):
+        for number, (send, dial) in enumerate(DEVICE_REQUESTS):
+            with self.subTest(request=number):
+                events = []
+                with patch.object(aiohttp, "ClientSession", new=device_session(events, value={"flow_id": HEX})):
+                    await send()
+                self.assertEqual([event[0] for event in events], ["session", "request", "json"])
+                self.assertEqual(events[1], dial)
+
+    async def test_each_client_asks_the_shared_helper_for_its_session_and_builds_none_itself(self):
+        self.assertIs(device.lane_session, shared.lane_session)
+        self.assertIs(device.refuse_redirect, shared.refuse_redirect)
+        for name, (_where, send, seconds, _written, dial) in DEVICE_CLIENTS.items():
+            with self.subTest(client=name):
+                asked, events = [], []
+
+                def helper(*args, **kwargs):
+                    asked.append((args, kwargs))
+                    return device_session(events, value=["answer"])()
+
+                def built(*_args, **_kwargs):
+                    raise AssertionError("the lane built a session of its own")
+
+                with patch.object(device, "lane_session", helper), patch.object(aiohttp, "ClientSession", built):
+                    await send()
+                # One session, asked of the helper by keyword, with nothing but the timeout.
+                self.assertEqual(asked, [((), {"timeout": aiohttp.ClientTimeout(total=seconds)})])
+                self.assertEqual([event for event in events if event[0] in ("ws_connect", "request")], [dial])
+
+    async def test_a_redirect_status_is_the_shared_refusal_before_the_answer_is_read(self):
+        rest = {name: row for name, row in DEVICE_CLIENTS.items() if row[4][0] == "request"}
+        self.assertEqual(sorted(rest), ["raw_rest", "stub_control"])
+        for name, (_where, send, _seconds, _written, dial) in rest.items():
+            for status in (300, 301, 302, 303, 304, 305, 307, 308, 399):
+                with self.subTest(client=name, status=status):
+                    events = []
+                    with patch.object(aiohttp, "ClientSession", new=device_session(events, status, ["answer"])):
+                        with self.assertRaises(Exception) as caught:
+                            await send()
+                    self.assertIs(type(caught.exception), shared.LaneRedirectRefused)
+                    self.assertEqual(caught.exception.args, (REDIRECT_REFUSED,))
+                    self.assertEqual(caught.exception.__dict__, {})
+                    # Declined on the request itself, and refused before the body is read.
+                    self.assertEqual([event[0] for event in events], ["session", "request"])
+                    self.assertEqual(events[1], dial)
+                    self.assertIs(events[1][3]["allow_redirects"], False)
+        # Either side of the range keeps the meaning it had: a Core status is handed
+        # back with no body, and the stub's is the lane's own failure.
+        for status in (299, 400):
+            with self.subTest(status=status):
+                events = []
+                with patch.object(aiohttp, "ClientSession", new=device_session(events, status, ["answer"])):
+                    self.assertEqual(await rest["raw_rest"][1](), (status, None))
+                    with self.assertRaises(AssertionError):
+                        await rest["stub_control"][1]()
+                self.assertEqual([event[0] for event in events], ["session", "request", "session", "request"])
+        events = []
+        with patch.object(aiohttp, "ClientSession", new=device_session(events, 200, ["answer"])):
+            self.assertEqual(await rest["raw_rest"][1](), (200, ["answer"]))
+            self.assertEqual(await rest["stub_control"][1](), ["answer"])
+        self.assertEqual([event for event in events if event[0] == "json"], [("json", {"content_type": None})] * 2)
+
+    async def test_the_shared_refusal_ends_the_stub_wait_at_once(self):
+        events = []
+
+        async def waited(_seconds):
+            raise AssertionError("the wait asked again")
+
+        with patch.object(aiohttp, "ClientSession", new=device_session(events, 302)), \
+                patch.object(device.asyncio, "sleep", waited):
+            with self.assertRaises(shared.LaneRedirectRefused) as caught:
+                await device.stub_ready(DEVICE_STUB, seconds=30)
+        self.assertEqual(caught.exception.args, (REDIRECT_REFUSED,))
+        self.assertEqual([event[0] for event in events], ["session", "request"])
+        # It is not one of the errors the wait retries on.
+        self.assertFalse(issubclass(shared.LaneRedirectRefused, (aiohttp.ClientError, TimeoutError, AssertionError)))
+
+    async def test_what_the_lane_refuses_before_a_session_is_refused_as_before(self):
+        events = []
+        refusals = (
+            ("core_url_not_pinned", lambda: device.RawCore(device_settings(MAIN_CORE))),
+            ("core_url_not_pinned", lambda: device.RawRest(device_settings(f"http://{ELSEWHERE}:18297"))),
+            ("core_url_not_pinned", lambda: device.RawRest(device_settings(DEVICE_CORE + "/"))),
+            ("stub_url_not_pinned", lambda: device.StubControl(DEVICE_STUB + "/")),
+            ("stub_url_not_pinned", lambda: device.StubControl(f"http://{ELSEWHERE}:18299/_lane/control")),
+            ("stub_url_not_pinned", lambda: device.stub_ready(DEVICE_CORE)),
+            ("core_command_not_listed", lambda: device.RawCore(device_settings()).command(dict(UNLISTED))),
+            ("core_command_not_listed",
+             lambda: device.RawCore(device_settings()).command({"type": "config_entries/get", "domain": "thread"})),
+            ("core_rest_request_not_listed", lambda: device.RawRest(device_settings()).rest("GET", DEVICE_FLOW)),
+            ("core_rest_request_not_listed",
+             lambda: device.RawRest(device_settings()).rest("POST", DEVICE_RELOAD + "/../..")),
+            ("core_rest_request_not_listed",
+             lambda: device.RawRest(device_settings()).rest("POST", f"//{ELSEWHERE}{DEVICE_FLOW}",
+                                                            {"handler": "matter"})),
+            ("stub_request_not_listed", lambda: device.StubControl(DEVICE_STUB).post({"mode": "open"})),
+        )
+        with patch.object(aiohttp, "ClientSession", new=device_session(events)):
+            for number, (code, attempt) in enumerate(refusals):
+                with self.subTest(refusal=number, code=code):
+                    with self.assertRaises(ValueError) as caught:
+                        made = attempt()
+                        if hasattr(made, "__await__"):
+                            await made
+                    self.assertIs(type(caught.exception), ValueError)
+                    self.assertEqual(caught.exception.args, (code,))
+        # None of them opened a session, so nothing was dialled.
+        self.assertEqual(events, [])
 
 
 if __name__ == "__main__":

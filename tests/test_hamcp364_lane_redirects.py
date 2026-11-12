@@ -33,6 +33,7 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 import configuration_delete_contract_acceptance as config_delete  # noqa: E402
 import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
+import device_configuration_contract_acceptance as device  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
 import lane_session as subject  # noqa: E402
 import marketplace_read_contract_acceptance as marketplace  # noqa: E402
@@ -42,6 +43,7 @@ import seq13_contract_acceptance as seq13  # noqa: E402
 import seq15_contract_acceptance as seq15  # noqa: E402
 import thread_matter_topology_a2_acceptance as a2  # noqa: E402
 import thread_matter_topology_contract_acceptance as thread  # noqa: E402
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
 
 SCRIPTS = ROOT / "scripts"
 LOOPBACK = "127.0.0.1"
@@ -55,6 +57,11 @@ THREAD_SOCKET = f"ws://{LOOPBACK}:{THREAD_PORT}/api/websocket"
 BRIDGE, BRIDGE_STUB, BRIDGE_SUBNET = "172.30.0.2", "172.30.0.3", "172.30.0.0/16"
 BRIDGE_CORE, BRIDGE_SOCKET = f"http://{BRIDGE}:{MAIN_PORT}", f"ws://{BRIDGE}:{MAIN_PORT}/api/websocket"
 BRIDGE_STUB_ORIGIN = f"http://{BRIDGE_STUB}:{STUB_PORT}"
+# The device-configuration lane: its Core and its Matter Server stub, each on a loopback port of its own.
+DEVICE_PORT, DEVICE_STUB_PORT = 18297, 18299
+DEVICE_FLOW, DEVICE_CONTROL = "/api/config/config_entries/flow", "/_lane/control"
+DEVICE_CONTINUE = DEVICE_FLOW + "/0123456789abcdef0123456789abcdef"
+DEVICE_RELOAD = "/api/config/config_entries/entry/01JSYNTHETICSYNTHETICSYNTH/reload"
 # Reserved documentation addresses (TEST-NET-2); never a real peer, and never dialled here.
 ELSEWHERE, PROXY = "198.51.100.7", "198.51.100.9"
 TOKEN = "synthetic-token-364"
@@ -76,6 +83,13 @@ def configured_local():
     """Settings for the created-object client: its own Core, for the WebSocket and for REST."""
     return SimpleNamespace(websocket_url=LOCAL_SOCKET, api_url=LOCAL_CORE + "/api", ha_token=TOKEN,
                            ha_timeout_seconds=10)
+
+
+def configured_device():
+    """Settings for the device-configuration clients, whose pin reads all three URLs of the lane's Core."""
+    return Settings(ha_url=f"http://{LOOPBACK}:{DEVICE_PORT}", ha_token=TOKEN, access_secret="synthetic-secret",
+                    port=8100, audit_path="unused", rate_limit_per_minute=120, rate_limit_burst=25,
+                    destructive_services=frozenset(), upstream_dashboard_mcp_url=device.UPSTREAM_URL)
 
 
 class Stub:
@@ -225,6 +239,9 @@ class LaneWebSocket(Wired):
                           {"type": thread.LIST_DATASETS_COMMAND}, THREAD_PORT),
         "thread_matter_a2": (lambda: a2.A2RawCore(configured(BRIDGE_SOCKET)).command,
                              {"type": a2.DEVICE_REGISTRY_COMMAND}, MAIN_PORT),
+        # The device-configuration lane: its raw websocket, to a Core on a loopback port of its own.
+        "device_configuration": (lambda: device.RawCore(configured_device()).command,
+                                 {"type": "config_entries/get", "domain": "matter"}, DEVICE_PORT),
     }
     # The one client whose Core is not on loopback.
     HOSTS = {"thread_matter_a2": BRIDGE}
@@ -286,6 +303,9 @@ class LaneWebSocket(Wired):
 
     async def test_thread_matter_a2_handshake_redirect_is_refused(self):
         await self.refused("thread_matter_a2")
+
+    async def test_device_configuration_handshake_redirect_is_refused(self):
+        await self.refused("device_configuration")
 
     def test_every_client_in_the_table_has_its_redirect_test(self):
         tests = {name for name in dir(self) if name.endswith("_handshake_redirect_is_refused")}
@@ -566,6 +586,156 @@ class CreatedObjectRest(Wired):
         self.assertIs(created.refuse_redirect, subject.refuse_redirect)
 
 
+class DeviceConfigurationRest(Wired):
+    """The device-configuration lane's two REST clients: a 3xx from its Core or from its stub is a refusal.
+
+    Each opens a lane session, sends with ``allow_redirects=False`` and hands the
+    status it receives to ``refuse_redirect`` before anything else reads the
+    answer. The lane's websocket client is in the table of ``LaneWebSocket``.
+    """
+
+    CORE, STUB = "Bearer " + TOKEN, None
+    # client: the port of its pin, the bearer its requests carry, and every request it makes
+    # as (method, path, send). The stub client is also what the lane's readiness wait reads through.
+    CLIENTS = {
+        "core_rest": (DEVICE_PORT, CORE, (
+            ("POST", DEVICE_FLOW,
+             lambda: device.RawRest(configured_device()).rest("POST", DEVICE_FLOW, {"handler": "matter"})),
+            ("POST", DEVICE_FLOW,
+             lambda: device.RawRest(configured_device()).rest("POST", DEVICE_FLOW,
+                                                             {"handler": device.FIXTURE_DOMAIN})),
+            ("POST", DEVICE_CONTINUE,
+             lambda: device.RawRest(configured_device()).rest("POST", DEVICE_CONTINUE, {"url": device.MATTER_URL})),
+            ("POST", DEVICE_RELOAD, lambda: device.RawRest(configured_device()).rest("POST", DEVICE_RELOAD)))),
+        "stub_control": (DEVICE_STUB_PORT, STUB, (
+            ("GET", DEVICE_CONTROL, lambda: device.StubControl(device.STUB_CONTROL_URL).read()),
+            ("POST", DEVICE_CONTROL, lambda: device.StubControl(device.STUB_CONTROL_URL).post({"mode": "none"})),
+            ("GET", DEVICE_CONTROL, lambda: device.stub_ready(device.STUB_CONTROL_URL, seconds=30)))),
+    }
+
+    async def refused(self, name):
+        port, _bearer, requests = self.CLIENTS[name]
+        for number, (method, path, send) in enumerate(requests):
+            for status in (302, *FOLLOWED, *HANDED_BACK):
+                for location in (AWAY[0], AWAY[2], SAME_HOST):
+                    with self.subTest(request=number, method=method, path=path, status=status, location=location):
+                        self.redirect(status, location)
+                        with self.assertRaises(Exception) as raised:
+                            await send()
+                        # One request on one connection, the readiness wait included: it does not ask again.
+                        self.assert_refused(raised, port)
+                        self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_core_rest_redirect_is_refused(self):
+        await self.refused("core_rest")
+
+    async def test_stub_control_redirect_is_refused(self):
+        await self.refused("stub_control")
+
+    def test_every_client_in_the_table_has_its_redirect_test(self):
+        tests = {name for name in dir(self) if name.endswith("_redirect_is_refused")}
+        self.assertEqual(tests, {f"test_{name}_redirect_is_refused" for name in self.CLIENTS})
+
+    def test_the_table_is_every_session_and_request_of_the_lane_script(self):
+        tree = ast.parse((SCRIPTS / "device_configuration_contract_acceptance.py").read_text(encoding="utf-8"))
+        opened = {}
+        for owner in tree.body:
+            for function in ast.walk(owner):
+                if isinstance(function, ast.AsyncFunctionDef):
+                    sessions = [call for call in calls(function) if named(call) == "lane_session"]
+                    if sessions:
+                        opened[f"{owner.name}.{function.name}"] = sorted(
+                            ast.unparse(call) for call in calls(function)
+                            if named(call) in ("session.request", "session.ws_connect"))
+                        self.assertEqual(len(sessions), 1)
+        # Three sessions: the websocket of ``LaneWebSocket.CLIENTS`` and the two clients of this table.
+        self.assertEqual(opened, {
+            "RawCore.command": ["session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES)"],
+            "RawRest.rest": ["session.request(method, CORE_URL + path, headers=headers, allow_redirects=False, "
+                             "**options)"],
+            "StubControl._request": ["session.request(method, STUB_CONTROL_URL, allow_redirects=False, **options)"]})
+        self.assertEqual(sorted(self.CLIENTS), ["core_rest", "stub_control"])
+        self.assertIn("device_configuration", LaneWebSocket.CLIENTS)
+        # Each shape on the lane's closed REST list is sent here, and nothing else is.
+        sent = [{"method": "POST", "path": DEVICE_FLOW, "body": {"handler": "matter"}},
+                {"method": "POST", "path": DEVICE_FLOW, "body": {"handler": device.FIXTURE_DOMAIN}},
+                {"method": "POST", "path": DEVICE_CONTINUE, "body": {"url": device.MATTER_URL}},
+                {"method": "POST", "path": DEVICE_RELOAD, "body": None}]
+        self.assertEqual([[index for index, shape in enumerate(device.RAW_REST) if device.listed(request, (shape,))]
+                          for request in sent], [[0], [0], [1], [2]])
+        self.assertEqual((len(device.RAW_REST), len(self.CLIENTS["core_rest"][2])), (3, len(sent)))
+        self.assertTrue(device.listed({"mode": "none"}, device.STUB_POSTS))
+        # The pins the three clients dial, which the wire of these tests is told to expect.
+        self.assertEqual((device.CORE_URL, device.CORE_WS_URL, device.STUB_CONTROL_URL),
+                         (f"http://{LOOPBACK}:{DEVICE_PORT}", f"ws://{LOOPBACK}:{DEVICE_PORT}/api/websocket",
+                          f"http://{LOOPBACK}:{DEVICE_STUB_PORT}{DEVICE_CONTROL}"))
+
+    def test_the_lane_opens_its_sessions_and_checks_its_answers_through_the_shared_helper(self):
+        self.assertIs(device.lane_session, subject.lane_session)
+        self.assertIs(device.refuse_redirect, subject.refuse_redirect)
+        # Nothing of the mechanism the lane had before is left in the module.
+        for name in ("RedirectRefused", "REDIRECT_REFUSED", "_refuse_redirect", "LaneRedirectRefused"):
+            self.assertFalse(hasattr(device, name), name)
+
+    async def test_without_the_status_check_a_redirect_would_be_taken_for_the_answer(self):
+        # The control for the lane's own check: each request declines the redirect itself, so it stays
+        # on the one connection, and with the check taken away the 3xx is read as any other answer.
+        for name, (port, _bearer, requests) in self.CLIENTS.items():
+            for number, (method, path, send) in enumerate(requests[:-1] if name == "stub_control" else requests):
+                with self.subTest(client=name, request=number):
+                    self.redirect(302, AWAY[0])
+                    with patch.object(device, "refuse_redirect", lambda status: None):
+                        if name == "core_rest":
+                            self.assertEqual(await send(), (302, None))
+                        else:
+                            with self.assertRaises(AssertionError):
+                                await send()
+                    self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, port)], []))
+                    self.assertEqual(self.stub.requests, [(method, path)])
+
+    async def test_other_answers_are_still_reported_and_the_token_goes_to_the_core_only(self):
+        for name, (port, bearer, requests) in self.CLIENTS.items():
+            for number, (method, path, send) in enumerate(requests):
+                with self.subTest(client=name, request=number):
+                    self.stub.then()
+                    self.wire.connects.clear()
+                    answer = await send()
+                    self.assertEqual(answer, (200, self.stub.body) if name == "core_rest" else self.stub.body)
+                    self.assertEqual((self.stub.requests, self.stub.bearers), ([(method, path)], [bearer]))
+                    self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, port)], []))
+        # An answer that is neither good nor a redirect keeps the meaning it had.
+        for status in (400, 401, 404, 500):
+            with self.subTest(status=status):
+                self.redirect(status, AWAY[0])
+                self.assertEqual(await self.CLIENTS["core_rest"][2][0][2](), (status, None))
+                self.redirect(status, AWAY[0])
+                with self.assertRaises(AssertionError):
+                    await self.CLIENTS["stub_control"][2][0][2]()
+                self.assertEqual((self.wire.connects, self.wire.off_host), ([(LOOPBACK, DEVICE_STUB_PORT)], []))
+
+    async def test_a_refusal_from_these_clients_is_shown_by_its_code_in_a_lane_receipt(self):
+        import lane_failure_diagnostics as diagnostics
+
+        sends = [send for _port, _bearer, requests in self.CLIENTS.values() for _method, _path, send in requests]
+        sends.append(lambda: LaneWebSocket.CLIENTS["device_configuration"][0]()(
+            dict(LaneWebSocket.CLIENTS["device_configuration"][1])))
+        for number, send in enumerate(sends):
+            with self.subTest(send=number):
+                self.redirect(302, AWAY[0])
+                with self.assertRaises(Exception) as raised:
+                    await send()
+                with patch.object(diagnostics, "_raw_log", return_value=False):
+                    shown = diagnostics.failure(raised.exception)["exception_chain"][0]
+                # The receipt names the code, which is on the fixed list of lane refusals; a class
+                # that is not on the receipt's list of types is shown as ``Exception``.
+                self.assertIs(type(raised.exception), subject.LaneRedirectRefused)
+                self.assertEqual((shown["type"], shown["message"]), ("Exception", REFUSED))
+                # Neither the token nor an address is in what the refusal carries.
+                carried = repr(raised.exception) + repr(raised.exception.__dict__)
+                for private in (TOKEN, ELSEWHERE, LOOPBACK, "http", str(DEVICE_PORT), str(DEVICE_STUB_PORT)):
+                    self.assertNotIn(private, carried)
+
+
 class HarnessRest(Wired):
     """The Core harness's REST requests: a 3xx answer is a refusal, never an answer and never followed."""
 
@@ -810,12 +980,20 @@ class Inventory(unittest.TestCase):
         "thread_matter_topology_a2_acceptance.py": (0, 0),
         "core_thread_matter_topology_local.py": (0, 0),
         "core_thread_matter_topology_a2_local.py": (1, 0),
+        # The device-configuration lane: its raw websocket, its raw REST client and its stub
+        # client, a session each. Its runner opens none.
+        "device_configuration_contract_acceptance.py": (3, 1),
+        "core_device_configuration_local.py": (0, 0),
     }
     # script: the requests it makes on a session, each inside ``async with``
     REQUESTS = {
         "real_ha_contract_tests.py": ["session.get", "session.get", "session.request"],
         "core_thread_matter_topology_a2_local.py": ["session.request"],
+        "device_configuration_contract_acceptance.py": ["session.request", "session.request"],
     }
+    # The names of the shared helper, and what builds a session or a redirect trace without it.
+    SHARED = ("lane_session", "refuse_redirect", "LaneRedirectRefused")
+    OWN = ("ClientSession", "TraceConfig", "TCPConnector", "on_request_redirect")
     VERBS = {"request", "get", "post", "put", "patch", "delete", "head", "options"}
 
     def tree(self, name):
@@ -830,6 +1008,39 @@ class Inventory(unittest.TestCase):
                                  [])
                 self.assertEqual(made.count("lane_session"), sessions)
                 self.assertEqual(len([item for item in made if item.endswith(".ws_connect")]), sockets)
+
+    def test_the_helper_names_of_a_lane_script_are_the_shared_ones_and_no_script_has_a_builder_of_its_own(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name):
+                tree = self.tree(name)
+                # A helper name is bound by an import from the helper and by nothing else: no
+                # function, class, assignment, argument or other import of that name.
+                bound = [f"from {node.module} import {alias.name}" for node in ast.walk(tree)
+                         if isinstance(node, ast.ImportFrom) for alias in node.names
+                         if (alias.asname or alias.name) in self.SHARED]
+                self.assertEqual(sorted(set(bound)), sorted(f"from lane_session import {used}" for used in self.SHARED
+                                                            if f"from lane_session import {used}" in bound))
+                self.assertEqual([alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                                  for alias in node.names
+                                  if (alias.asname or alias.name).split(".")[0] in (*self.SHARED, "lane_session")], [])
+                self.assertEqual([node.name for node in ast.walk(tree)
+                                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                                  and node.name in self.SHARED], [])
+                self.assertEqual([node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+                                  and node.id in self.SHARED and not isinstance(node.ctx, ast.Load)], [])
+                self.assertEqual([node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)
+                                  and node.arg in self.SHARED], [])
+                # A script that opens a session imports the builder, and each use of it is a call.
+                sessions, _sockets = self.SCRIPTS[name]
+                uses = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "lane_session"]
+                self.assertEqual(len(uses), sessions)
+                self.assertEqual("from lane_session import lane_session" in bound, sessions > 0)
+                # No session class, connector or redirect trace is named by the script itself.
+                own = sorted({node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+                              and node.attr in self.OWN}
+                             | {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+                                and node.id in self.OWN})
+                self.assertEqual(own, ["ClientSession"] if name == "real_ha_contract_tests.py" else [])
 
     def test_the_one_other_session_of_the_harness_is_the_protocol_client_not_an_http_session(self):
         tree = self.tree("real_ha_contract_tests.py")
