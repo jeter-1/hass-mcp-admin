@@ -123,6 +123,75 @@ gate fails if any object differs, if the file is not a sequence 18 candidate,
 or if the file is the lane's own test candidate. Without `--record` the receipt
 is left as it is. `run --real-candidate <file>` does the same during a run.
 
+The 12a values that carry the sequence 18 proof, and the comparison `check`
+holds each to. Paths without a top-level name are under
+`cases.registry.observed`. Line numbers are those of the commit that added this
+list.
+
+- `writer.published_journal_sha256`, `writer.published_sequence` (17),
+  `writer.published_expires_at`, `writer.previous_references` (the 32 published
+  references, a prefix of `writer.references`) and `writer.sequence` (18) equal
+  the constants the lane pins: `scripts/rollback_proof_lane.py:467-471` (G3).
+- `writer.added` and the last six of `writer.references` are the ruled six in
+  the ruled order: `scripts/rollback_proof_lane.py:475` (G3).
+- `writer.tools.candidate`: path, operation `extend-capabilities`, exit 0 and the
+  argument list naming the published public key and the published journal:
+  `scripts/rollback_proof_lane.py:403-407` (G3).
+- `writer.candidate`: model, operation, `sequence` 18, `previous_journal_sha256`
+  equal to the published sequence 17 journal, `public_key_sha256` and
+  `writer.published_public_key` equal to the committed public key, and one
+  changed entry: `scripts/rollback_proof_lane.py:410-416` (G3).
+- `writer.candidate.sha256`, `writer.candidate.reported_sha256`,
+  `lane.candidate.sha256` and the top-level `data.registry.candidate_sha256` are
+  one value, and `writer.candidate.file` is `core-candidate.json`:
+  `scripts/rollback_proof_lane.py:419-420` (G3).
+- `writer.reference_objects`: their `capability_id`s are `writer.references`,
+  each has exactly the five reference fields, their digest equals
+  `lane.candidate.reference_objects_sha256` and
+  `lane.journal.reference_objects_sha256`, the two files read as a candidate and
+  a signed journal, and `lane.candidate.sequence`, `lane.journal.sequence` and
+  `writer.candidate.sequence` are equal: `scripts/rollback_proof_lane.py:422-430`
+  (G3).
+- `writer.tools.test_signing` (path, operation `dry-run-sign`, exit 0, argument
+  list) and `writer.test_signed`: `file`, `sequence` equal to the candidate's,
+  and `envelope_equals_candidate_envelope`, `entry_references_equal_candidate`
+  and `predecessor_content_unchanged` each true:
+  `scripts/rollback_proof_lane.py:434-442` (G3).
+- `writer.test_signed.key_sha256` has 64 digits and is not the published key's:
+  `scripts/rollback_proof_lane.py:445` (G3).
+- The top-level `candidate_tool` and `test_signing_tool`: path, operation, and a
+  commit and source equal to the writer's; `sha256` equal to the tool's as it
+  ran; `blob_run` equal to `blob_at_commit`: `scripts/rollback_proof_lane.py:451-455`
+  (G3). That the blobs and hashes are those of the tool files at that commit is
+  compared with git by `GitBoundReceiptTests`, not by `check`:
+  `tests/test_hamcp377_rollback_proof_classifier.py:1528-1539`, called at
+  `tests/test_hamcp377_rollback_proof_classifier.py:1578`.
+- The top-level `writer.commit` equals `WRITER_COMMIT`:
+  `scripts/rollback_proof_lane.py:1596-1599`, in the `check` command only.
+- `reader.entry_references` equals `writer.references`, and
+  `reader.entry_reference_objects_sha256` is the digest of
+  `writer.reference_objects` (`33264f99…`): `scripts/rollback_proof_lane.py:477-478`
+  (G3).
+- `writer.journal_sha256`, `reader.journal_sha256`, `lane.journal.sha256` and the
+  top-level `data.registry.journal_sha256` are one value:
+  `scripts/rollback_proof_lane.py:480-482` (G2).
+- `reader.refreshed` is true and `reader.authority` is exactly `entry_present`
+  true, `positive_authority_current` true, `sequence` 18 and `surface_denied`
+  false: `scripts/rollback_proof_lane.py:501-503` (G5).
+- The top-level `real_candidate_comparison`: its scope text,
+  `lane_reference_count` (38) and `lane_reference_objects_sha256` (the digest of
+  `writer.reference_objects`), and, while pending, no other key:
+  `scripts/rollback_proof_lane.py:349-357` (G14).
+- The second `summary` sentence (sequence 18 on the published sequence 17
+  journal; the signed content equals the candidate and the published content) is
+  computed from these values at `scripts/rollback_proof_lane.py:774-781` and
+  compared at `scripts/rollback_proof_lane.py:984-985` (G8).
+
+`check` calls `gate` at `scripts/rollback_proof_lane.py:1595`, which classifies
+each receipt again at `scripts/rollback_proof_lane.py:1016`. The candidate and
+journal digests are compared only with each other; `check` cannot re-measure
+them.
+
 ### 12b
 
 Recorded `summary` of `12b-source.json`:
@@ -151,6 +220,94 @@ automation_created: no rollback plan in the store: nothing to execute, no provid
 helper_rollback_approved, scene_applied, scene_approved, scene_pending, scene_rollback_approved: refused on get, approve, apply and rollback with policy_snapshot_mismatch, no provider write.
 References to created_identity in the previous release's runtime source: 0; in the writer's: 6.
 ```
+
+## 12a against the lane this change ships, without regenerating
+
+The committed `12a-source.json` was produced by the lane at checkout
+`cd2080846b25a4f632f404bc15ef9aabe24051fc`. `scripts/rollback_proof_lane.py`
+changed after that (50e6f3b8 and cba3557a); `tip_writer.py` and
+`previous_reader.py` did not. The receipt therefore names older lane code than
+the lane this change ships. It was kept, not regenerated, on the following
+comparison.
+
+The 12a driver was run again from the lane at 33cfe46a, in a clean clone outside
+this worktree, with writer commit `aeb3b314dd180592874243c9ae370a63f0622c2b`
+and `--scenario 12a`, into a scratch directory outside this worktree: PASS,
+2026-11-12 11:23:10 to 11:23:17 Central. The scratch receipt is not committed.
+Its sha256 begins `8fff6aa7`; the full digest is in the pull request. Values
+that only the scratch receipt holds are given here in short form, since
+`ReadmeTests` binds every full-length identity in this file to a committed
+receipt.
+
+Both receipts were flattened to key paths (object keys joined by dots, list items
+by index, an empty list or object as a path of its own): 722 paths each, 677 of
+them scalar values and 45 empty lists or objects. No path is in only one
+receipt.
+
+These 17 paths were declared ignorable before the scratch receipt was read. Each
+is a timestamp, or a field of the writer's run whose value carries the run time
+or the dry run's new key:
+
+- `started_at` (timestamp): wall-clock start of the lane run.
+- `ended_at` (timestamp): wall-clock end of the lane run.
+- `cases.registry.observed.writer.candidate.generated_at` (timestamp):
+  extend-capabilities stamps the time it runs (receipt `limitations[1]`).
+- `cases.registry.observed.writer.candidate.expires_at` (timestamp):
+  `generated_at` plus the tool's fixed validity window.
+- `cases.registry.observed.writer.candidate.sha256` (writer field): sha256 of
+  the writer's `core-candidate.json`, whose bytes carry `generated_at`.
+- `cases.registry.observed.writer.candidate.reported_sha256` (writer field): the
+  same digest as printed by the candidate tool.
+- `cases.registry.observed.writer.tools.candidate.stdout` (writer field): the
+  candidate tool's stdout line, `Prepared output SHA256: <candidate sha256>`.
+- `cases.registry.observed.writer.journal_sha256` (writer field): sha256 of the
+  dry-run-signed journal, which carries `generated_at` and an ed25519 signature
+  by a key generated inside each dry run.
+- `cases.registry.observed.writer.test_signed.key_sha256` (writer field): sha256
+  of the public half of the dry run's ephemeral key, new each run.
+- `cases.registry.observed.lane.candidate.sha256` (writer field): the lane's
+  digest of the writer's `core-candidate.json` (as `candidate.sha256`).
+- `cases.registry.observed.lane.journal.sha256` (writer field): the lane's digest
+  of the writer's signed journal (as `writer.journal_sha256`).
+- `cases.registry.observed.reader.journal_sha256` (writer field): the reader's
+  digest of the writer's signed journal (as `writer.journal_sha256`).
+- `data.registry.candidate_sha256` (writer field): the data-set digest of the
+  writer's `core-candidate.json`.
+- `data.registry.journal_sha256` (writer field): the data-set digest of the
+  writer's signed journal.
+- `data.registry.before_read` (writer field): tree digest of the writer's data
+  directory, which holds the candidate and the journal.
+- `data.registry.after_write` (writer field): the same tree digest, taken after
+  the write.
+- `data.registry.after_read` (writer field): the same tree digest, taken after
+  the read.
+
+All 17 differ, as expected. Inside the scratch receipt the ignored digests agree
+with each other: the four candidate digests are one value, the four journal
+digests are one value and the three data-tree digests are one value, so ignoring
+them hides no disagreement between writer, lane and reader.
+
+Two further paths differ. Both name the lane that ran, and both were accepted by
+the architect's ruling of 2026-11-12 11:33 Central:
+
+- `drivers.rollback_proof_lane.py`: committed
+  `e8d064ba6f3fcc2ea5c83ca912c8962d0c25bc85cdefb472927a759d20824814`, the
+  sha256 of `scripts/rollback_proof_lane.py` at cd208084; scratch `dbec9b15…`,
+  its sha256 at 33cfe46a.
+- `lane.checkout_commit`: committed `cd2080846b25a4f632f404bc15ef9aabe24051fc`;
+  scratch 33cfe46a.
+
+Every other path is identical: the remaining 658 scalar values and the 45 empty
+lists and objects. They include the 38 entries of `writer.reference_objects`; the derived counts 33
+admitted, 5 not admitted, 0 quarantined; `route_status`; `compiled`; sequence 18
+in the writer, the candidate, the test-signed journal and the reader's authority;
+the reference digest `33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6`;
+the rest of the `reader` record, `reader.authority` included; `runs`; the
+`summary`; and the
+driver hashes `tip_writer.py`
+`0e4dc04e115f0015c2e1b5ab3fe79f2b0c10dc69aa55ec85586b21eda1f436ca` and
+`previous_reader.py`
+`f507fa35086addb60cb5377a20e8b0c44899af1905422f3fb6107f4a3d3f7349`.
 
 ## Limits of these receipts
 
@@ -200,6 +357,19 @@ what `check` cannot see, and none changes a recorded result:
   directory. Another file or a subdirectory beside them is not read.
 - R7: the recorded start and end times are bound only by their order, not to
   the commits or to the clock.
+- R1 (architect's ruling of 2026-11-12 11:19 Central): `closed_records`
+  (`scripts/rollback_proof_lane.py:845-897`) does not close every record a
+  receipt holds, so "a key the receipt schema does not define" fails only in the
+  records it walks. Three gaps remain:
+  - the names of the data sets are not closed: each record under `data` is
+    closed by its name (`:877-879`), but an added name is not refused;
+  - the `writer` record of a 12b or 12c case (`cases.<name>.writer`, allowed by
+    `CASE_KEYS` at `:145-147`) is not walked;
+  - in 12a, only the first level below `cases.registry.observed` is closed
+    (`:874-876`). A key added deeper, for example in `writer.candidate`,
+    `writer.test_signed`, `writer.tools`, `lane.candidate` or `lane.journal`,
+    fails only where a classifier compares the whole record, as G5 does for
+    `reader.authority`.
 - `check` cannot re-measure what a receipt records as constants or digests: the
   commands and flags (B11, B12), the store digests (B17), the dependency pins
   (B20) and the lock file hashes (B21). For B21, `WriterCommitGitTests`
@@ -243,6 +413,16 @@ version `hass_mcp_engineering_beta/config.yaml` declares at it is the recorded
 version, that the recorded lock hash is the sha256 of
 `hass_mcp_engineering_beta/requirements.lock` at it, and, unless the clone is
 shallow, that the writer commit is an ancestor of the recorded checkout commit.
+
+In a shallow clone these tests do not compare everything. `WriterCommitGitTests`
+is skipped as a class where the clone does not hold the commits the receipts
+name (`tests/test_hamcp377_rollback_proof_classifier.py:1741-1742`), and its
+ancestry test is skipped in any shallow clone (`:1753-1754`; the forged-fact
+test likewise leaves ancestry out, `:1786-1787`). `GitBoundReceiptTests` is
+skipped in a shallow clone that lacks the recorded commits (`:1571-1573`), and
+both are skipped where git is unavailable (`:1566-1567`, `:1736-1737`). A run
+in which any of them was skipped must be reported with those tests as skipped,
+not as passed.
 
 To regenerate all three receipts, run the one command under "What ran" into this
 directory, then update the table, the identities above and the three recorded
