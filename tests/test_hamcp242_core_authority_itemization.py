@@ -519,7 +519,7 @@ class LiveCaseTests(_LiveCase):
         self.assertEqual(public, json.loads(json.dumps(projection)))
         self.assertEqual(tuple(public), PRE_242_KEYS[:15] + NEW_KEYS + PRE_242_KEYS[15:])
         assert_entries_are_identifiers(self, public["withheld_capabilities"])
-        # These nine withheld profiles are still refused (HAMCP-290: + Marketplace;
+        # These eleven withheld profiles are still refused (HAMCP-290: + Marketplace;
         # HAMCP-297: + device configuration; HAMCP-231: + Thread/Matter topology).
         for capability in (
             INPUT_SELECT, SCRIPT_TRACE, HELPER_OPTIONS, DASHBOARD_METADATA, SCENE_CONFIGURATION,
