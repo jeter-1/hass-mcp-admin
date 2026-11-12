@@ -555,7 +555,7 @@ async def _get_execution_task(task_id):
     service = HELPER_VALUE_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
         return await service.read_task(task_id)
-    # HAMCP-297: read-only reconciliation of an ordinary device-configuration task.
+    # HAMCP-297: reads one stored device-configuration task; no Home Assistant call; recovery runs in the background.
     from ..device_configuration.service import DEVICE_CONFIGURATION_OPERATIONS
     service = DEVICE_CONFIGURATION_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
