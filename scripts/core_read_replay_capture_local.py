@@ -73,6 +73,15 @@ DISTRIBUTION = re.compile(
 DIST_INFO = re.compile(
     r"/site-packages/([A-Za-z0-9_.]+)-([0-9][A-Za-z0-9_.+!]*)\.dist-info(?:/|$)")
 REQUIREMENT = re.compile(r"([A-Za-z0-9_.\-]+)(>=|==)([0-9]+(?:\.[0-9]+)*)")
+PACKAGE_METADATA = re.compile(
+    r"/site-packages/ha_mcp-[0-9][A-Za-z0-9_.+!]*\.dist-info/METADATA$")
+METADATA_BYTES = 262144
+REQUIRES_ROWS = 200
+REQUIRES = re.compile(
+    r"Requires-Dist:[ \t]*([A-Za-z0-9][A-Za-z0-9._\-]*)[ \t]*(\[[^\]]*\])?[ \t]*([^;]*?)[ \t]*"
+    r"(?:;[ \t]*(.*?))?[ \t]*")
+SPECIFIER = re.compile(r"[0-9A-Za-z.,<>=!~*() ]*")
+MARKER = re.compile(r"[0-9A-Za-z._<>=!~\"' ()]*")
 EXPORT_SECONDS = 900
 UPSTREAM_DISTRIBUTIONS = ("ha-mcp", "fastmcp", "mcp")
 
@@ -137,10 +146,49 @@ def require_profile_b_feasible(report):
         raise Refusal("profile_b_core_requirement_missing")
 
 
+def package_requires(text):
+    """The ``Requires-Dist`` header rows of one METADATA text, as bounded data.
+
+    A specifier or marker outside the plain character set is recorded as
+    ``unreadable``; nothing here is evaluated.
+    """
+    rows = []
+    for line in text.split("\n\n", 1)[0].splitlines():
+        match = REQUIRES.fullmatch(line.rstrip("\r"))
+        if not match or len(rows) >= REQUIRES_ROWS:
+            continue
+        name, _extras, specifier, marker = match.groups()
+        rows.append({
+            "name": normalized(name),
+            "specifier": specifier if SPECIFIER.fullmatch(specifier) else "unreadable",
+            "marker": None if marker is None else (
+                marker if MARKER.fullmatch(marker) else "unreadable")})
+    return rows
+
+
+def package_requirement_report(rows, core_distributions):
+    """Which declared requirements of the package the Core image does not carry by name.
+
+    Rows that apply only to an extra are listed but not compared.  Versions
+    are shown next to the specifier and are not evaluated against it.
+    """
+    out, absent = [], []
+    for row in rows:
+        optional = row["marker"] is not None and "extra" in row["marker"]
+        installed = core_distributions.get(row["name"])
+        out.append({**row, "core_image_version": installed, "extra_only": optional})
+        if not optional and installed is None and row["name"] not in absent:
+            absent.append(row["name"])
+    return {"declared": len(rows), "rows": out, "absent_from_core_image": sorted(absent),
+            "specifiers_evaluated": False}
+
+
 def scan_export(stream):
     """Names and versions only, from a container export stream.
 
     Members are read from the stream; nothing is extracted to disk or executed.
+    The one member whose content is read is the METADATA text of the ``ha-mcp``
+    distribution, for its ``Requires-Dist`` rows.
     A distribution counts when its METADATA member is a regular file or a hard
     link (an export stream writes the second name of one inode as a link).  A
     dist-info directory seen without such a member is listed, not counted.
@@ -148,6 +196,7 @@ def scan_export(stream):
     pythons, distributions, manifests, seen = set(), {}, [], set()
     kinds = {"regular": 0, "hard_link": 0}
     package_files = package_bytes = 0
+    requires = None
     with tarfile.open(fileobj=stream, mode="r|") as archive:
         for member in archive:
             path = "/" + member.name.lstrip("./")
@@ -159,6 +208,10 @@ def scan_export(stream):
                 kinds["regular" if member.isreg() else "hard_link"] += 1
                 pythons.add(match.group(1))
                 distributions[normalized(match.group(2))] = match.group(3)
+            if (PACKAGE_METADATA.search(path) and member.isreg()
+                    and member.size <= METADATA_BYTES and requires is None):
+                requires = package_requires(
+                    archive.extractfile(member).read().decode("utf-8", "replace"))
             if path.endswith("/" + COMPONENT_PATH + "/manifest.json"):
                 manifests.append(path)
             if path.startswith(PACKAGE_SOURCE) and (member.isreg() or member.islnk()):
@@ -169,6 +222,7 @@ def scan_export(stream):
             "metadata_members": kinds,
             "dist_info_without_metadata_file": sorted(seen - set(distributions)),
             "component_manifests_in_image": sorted(manifests),
+            "package_requires": requires,
             "package_source": {"path": PACKAGE_SOURCE, "files": package_files,
                                "bytes": package_bytes}}
 
@@ -272,6 +326,11 @@ def inventory(args, launch):
                                 "dist_info_without_metadata_file":
                                     scans[key]["dist_info_without_metadata_file"]}
                           for key in scans}
+        result["package_requires"] = {
+            version: None if scans[version]["package_requires"] is None
+            else package_requirement_report(scans[version]["package_requires"],
+                                            core_distributions)
+            for version in VERSIONS}
         result["upstream_python"] = {version: scans[version]["python"] for version in VERSIONS}
         result["result"] = "PASS"
     except BaseException as exc:  # WITHHELD, with a fixed token only.

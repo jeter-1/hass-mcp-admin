@@ -136,6 +136,34 @@ class ExportScanTests(unittest.TestCase):
         self.assertEqual(found["dist_info_without_metadata_file"], ["synthetic-other"])
         lane.require_scan_complete({"core": found})
 
+    def test_the_package_requirements_are_read_as_rows_and_compared_by_name(self):
+        metadata = (b"Metadata-Version: 2.4\nName: ha-mcp\n"
+                    b"Requires-Dist: synthetic-one>=1.0\n"
+                    b"Requires-Dist: Synthetic_Two[fast] (>=2,<3) ; python_version >= '3.13'\n"
+                    b"Requires-Dist: synthetic-three ; extra == 'dev'\n"
+                    b"Requires-Dist: synthetic-four @ https://synthetic.invalid/x\n"
+                    b"\nRequires-Dist: in-the-body\n")
+        found = lane.scan_export(export_stream({
+            SITE + "ha_mcp-9.2.0.dist-info/METADATA": metadata,
+            SITE + "other-1.0.dist-info/METADATA": b"Requires-Dist: not-read\n"}))
+        rows = found["package_requires"]
+        self.assertEqual([row["name"] for row in rows], [
+            "synthetic-one", "synthetic-two", "synthetic-three", "synthetic-four"])
+        self.assertEqual(rows[0], {"name": "synthetic-one", "specifier": ">=1.0",
+                                   "marker": None})
+        self.assertEqual(rows[1]["specifier"], "(>=2,<3)")
+        self.assertEqual(rows[1]["marker"], "python_version >= '3.13'")
+        self.assertEqual(rows[3]["specifier"], "unreadable")
+        report = lane.package_requirement_report(rows, {"synthetic-one": "1.2"})
+        self.assertEqual(report["absent_from_core_image"],
+                         ["synthetic-four", "synthetic-two"])
+        self.assertIs(report["rows"][2]["extra_only"], True)
+        self.assertIs(report["specifiers_evaluated"], False)
+
+    def test_an_image_without_the_package_metadata_reports_none(self):
+        found = lane.scan_export(export_stream({SITE + "mcp-2.3.0.dist-info/METADATA": b"x"}))
+        self.assertIsNone(found["package_requires"])
+
     def test_nothing_is_extracted(self):
         # A member that points outside the stream is read as a name, never written.
         raw = io.BytesIO()
