@@ -96,6 +96,9 @@ CONFIG_FILES = {
 FLOW_ANSWERS = {"calendar_name": "HAMCP371 calendar", "import": "create_empty",
                 "todo_list_name": "HAMCP371 todo"}
 FLOW_STEPS = 4
+# Core answers a configuration write before its reload of that domain has run
+# (the reload is a task of its own), so a reloaded entity is polled for.
+RELOAD_POLLS = 30
 
 
 class SeedError(Exception):
@@ -162,6 +165,16 @@ def registry_entity(entries, platform, unique_id=None):
              and (unique_id is None or str(entry.get("unique_id")) == str(unique_id))]
     expect(len(found) == 1, "seeded_entity_not_in_registry")
     return found[0]
+
+
+async def reloaded_entity(ctx, platform, unique_id):
+    """The registry entry a domain reload creates; a bounded wait, never a guess."""
+    for _ in range(RELOAD_POLLS):
+        try:
+            return registry_entity(await entities(ctx), platform, unique_id)
+        except SeedError:
+            await ctx["sleep"](1)
+    raise SeedError("seeded_entity_not_in_registry")
 
 
 def window(local_now):
@@ -324,8 +337,8 @@ async def configured_objects(ctx):
         expect(isinstance(stored, dict), "configured_object_not_readable")
         ctx["seed"][domain + "_id"] = object_id
         readback[domain] = sorted(stored)
-    ctx["seed"]["automation_entity"] = registry_entity(
-        await entities(ctx), "automation", ctx["seed"]["automation_id"])
+    ctx["seed"]["automation_entity"] = await reloaded_entity(
+        ctx, "automation", ctx["seed"]["automation_id"])
     return {"stored_keys": readback, "automation_entity": ctx["seed"]["automation_entity"]}
 
 

@@ -35,7 +35,9 @@ class World:
             {"entity_id": f"group.{seed.PREFIX}_group",
              "attributes": {"friendly_name": seed.GROUP_NAME}}]
         self.options = {"version": seed.CORE_VERSION, "ordinary_is_admin": False,
-                        "refuse": (), "fresh": True, "flow_fields": None, **overrides}
+                        "refuse": (), "fresh": True, "flow_fields": None,
+                        "reload_lag": 0, **overrides}
+        self.pending = []
         self.register("template", seed.STATISTICS_UNIQUE_ID, "sensor.synthetic_energy")
         self.codes, self.flows, self.passwords = {}, {}, []
 
@@ -81,7 +83,9 @@ class FakeCore:
         if path == "/api/template":
             return 200, LOCAL_NOW
         if path.startswith("/api/config/automation/config/") and method == "POST":
-            world.register("automation", path.rsplit("/", 1)[1], "automation.synthetic")
+            # Core reloads the domain after it has answered the write.
+            world.pending.append([world.options["reload_lag"], (
+                "automation", path.rsplit("/", 1)[1], "automation.synthetic")])
             return 200, {"result": "ok"}
         if "/config/" in path and path.startswith("/api/config/") and method == "POST" \
                 and "config_entries" not in path:
@@ -142,6 +146,11 @@ class FakeCore:
         if kind.endswith("_registry/list") and "entity" not in kind:
             return [{}]
         if kind == "config/entity_registry/list":
+            for waiting in list(world.pending):
+                if waiting[0] <= 0:
+                    world.register(*waiting[1])
+                    world.pending.remove(waiting)
+                waiting[0] -= 1
             return list(world.entities)
         if kind == "config/entity_registry/get":
             return {"area_id": "synthetic-area", "labels": ["synthetic-label"]}
@@ -158,8 +167,8 @@ class FakeCore:
 
 
 def run_seed(world):
-    async def no_sleep(_seconds):
-        return None
+    async def no_sleep(seconds):
+        world.calls.append(("SLEEP", seconds))
     return asyncio.run(seed.seed(FakeCore(world), second_client=lambda: FakeCore(world),
                                  sleep=no_sleep, boot_polls=2))
 
@@ -249,6 +258,33 @@ class SeedTests(unittest.TestCase):
                          "ordinary_user_is_administrator")
         self.assertNotIn("ordinary_user", tokens)
         self.assertIsNone(values)
+
+    def test_an_automation_core_has_not_reloaded_yet_is_waited_for(self):
+        world = World(reload_lag=3)
+        report, values, _ = run_seed(world)
+        self.assertIs(report["all_steps_ok"], True)
+        self.assertEqual(values["automation_entity"], "automation.synthetic")
+        rows = {row["step"]: row for row in report["steps"]}
+        self.assertEqual(rows["configured_objects"]["readback"]["automation_entity"],
+                         "automation.synthetic")
+        first = world.calls.index(("POST", "/api/config/scene/config/hamcp371_scene"))
+        last = world.calls.index(("WS", "lovelace/resources/create"))
+        waited = [call for call in world.calls[first:last] if call[0] in ("WS", "SLEEP")]
+        self.assertEqual(waited, [("WS", "config/entity_registry/list"), ("SLEEP", 1)] * 3
+                         + [("WS", "config/entity_registry/list")])
+
+    def test_an_automation_that_never_appears_stops_the_seed_after_a_bounded_wait(self):
+        world = World(reload_lag=10 ** 6)
+        report, values, _ = run_seed(world)
+        rows = {row["step"]: row for row in report["steps"]}
+        self.assertEqual(rows["configured_objects"],
+                         {"step": "configured_objects", "status": "failed",
+                          "failure": "seeded_entity_not_in_registry"})
+        self.assertEqual(rows["dashboard_resource"], {"step": "dashboard_resource",
+                                                      "status": "not_run"})
+        self.assertIsNone(values)
+        self.assertEqual(world.calls.count(("SLEEP", 1)), seed.RELOAD_POLLS)
+        self.assertNotIn(("POST", "/api/services/automation/trigger"), world.calls)
 
     def test_a_config_flow_field_outside_the_answer_table_is_refused(self):
         world = World(flow_fields=["synthetic_unreviewed_field"])
