@@ -56,6 +56,7 @@ is marked **[source, inference]**.
 | `sw-write-providers.md` | SW, source half | #3050 first, then one finding per governed write provider (fan, power, helper value, dashboard) |
 | `s2-source-findings.md` | S2 | transports per admitted read, component manifest, zone rows and `friendly_name`, redaction default and the `secret` rule |
 | `s3-vendored-and-dependencies.md` | S3 | the `_vendor` diff, locked dependency versions, what was not read |
+| `sy-yaml-read-path.md` | SY | the YAML read path compared between the tags, for item 4 of the 2026-11-11 21:36 rulings record |
 | `trace/trace_reads.py` | S2 | the static tracer |
 | `trace/trace-v9.1.2.txt`, `trace/trace-v9.2.0.txt` | S2 | raw tracer output for the 27 admitted reads at each tag |
 | `trace/trace-mixins-v9.1.2.txt`, `trace/trace-mixins-v9.2.0.txt` | S2 | raw tracer output for the methods reached through mixins and thin wrappers |
