@@ -1,20 +1,20 @@
 """HAMCP-319: the exact-image oracle is bound to the Engineering image under test.
 
 The side_by_side rollback stage runs ``scripts/exact_image_read_gateway_acceptance.py``
-against the previous published release 2.4.2-beta.6 (tag v2.4.2-beta.6, source
-af5ec837). That release predates HAMCP-290, HAMCP-229 and HAMCP-231: it registers 81 static
-tools (no ``get_marketplace_inventory``, ``automation_reliability_batch_analysis``
-or ``get_thread_matter_topology``)
+against the previous published release. Until HAMCP-377 that was 2.4.2-beta.6
+(tag v2.4.2-beta.6, source af5ec837). That release predates HAMCP-290, HAMCP-229
+and HAMCP-231: it registers 81 static tools (no ``get_marketplace_inventory``,
+``automation_reliability_batch_analysis`` or ``get_thread_matter_topology``)
 and still delegates ``ha_get_hacs_info`` (nothing
 retired, ``core_withheld_read_count`` 0). Applying the current source's
 expectation to it failed CI run 42547738402 (``sbs_rollback_85_legacy_useful``).
 
-HAMCP-377: the stage moves to 2.4.2-beta.7 (tag v2.4.2-beta.7, source b614be43)
-when the workflow's rollback identity changes. That release has the HAMCP-290
-marketplace tool and retirement (82 static tools, ``ha_get_hacs_info``
-withheld, ``core_withheld_read_count`` 1). Its expectation is pinned and
-recomputed from its source here; the 2.4.2-beta.6 expectation stays until the
-workflow stops running that image.
+HAMCP-377 (ruling 32): the stage runs 2.4.2-beta.7 (tag v2.4.2-beta.7, source
+b614be43). That release has the HAMCP-290 marketplace tool and retirement (82
+static tools, ``ha_get_hacs_info`` withheld, ``core_withheld_read_count`` 1).
+Its expectation is pinned and recomputed from its source here. The reviewed
+2.4.2-beta.6 expectation is kept and still tested; the workflow no longer
+runs that image.
 
 Offline: the Engineering session is a synthetic in-process fake; no Docker,
 network, live Home Assistant or credentials. The fake stops at the first
@@ -72,7 +72,8 @@ def _load_script(name: str):
 acceptance = _load_script("exact_image_read_gateway_acceptance")
 runners = _load_script("exact_image_admission_91_runners")
 
-ROLLBACK_VERSION = "2.4.2-beta.6"
+# The reviewed beta.6 expectation (kept; the stage ran it before HAMCP-377).
+BETA6_VERSION = "2.4.2-beta.6"
 MARKETPLACE = "get_marketplace_inventory"
 RELIABILITY_BATCH = "automation_reliability_batch_analysis"
 SECURITY_METADATA = "get_security_metadata"  # HAMCP-134, after beta.6
@@ -220,12 +221,12 @@ class RollbackImageCatalogOracleTests(_OracleAssertions, unittest.TestCase):
         self.assertIn(DEVICE_CONFIGURATION, CURRENT_STATIC)  # HAMCP-297
         self.assertIn(THREAD_MATTER, CURRENT_STATIC)
         self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 5)
-        self.assertNotEqual(SERVER_VERSION, ROLLBACK_VERSION)
+        self.assertNotEqual(SERVER_VERSION, BETA6_VERSION)
 
     def test_beta6_rollback_image_catalog_is_accepted(self):
         # Failed before the correction: "The first accepted Engineering catalog
         # is incomplete" (current 82-tool base applied to beta.6's 81).
-        self.assert_catalog_accepted(catalog=BETA6_CATALOG, version=ROLLBACK_VERSION)
+        self.assert_catalog_accepted(catalog=BETA6_CATALOG, version=BETA6_VERSION)
 
     def test_current_image_keeps_the_full_hamcp290_checks(self):
         self.assert_catalog_accepted(catalog=CURRENT_CATALOG, version=SERVER_VERSION)
@@ -255,12 +256,12 @@ class RollbackImageCatalogOracleTests(_OracleAssertions, unittest.TestCase):
     def test_mutant_a_beta6_expectation_on_current_image_fails(self):
         # A current-source catalog cannot pass by self-reporting beta.6.
         self.assert_refused(
-            catalog=CURRENT_CATALOG, health=_health(ROLLBACK_VERSION),
+            catalog=CURRENT_CATALOG, health=_health(BETA6_VERSION),
             message="catalog is incomplete",
         )
         catalog = _catalog(CURRENT_STATIC, READS_850)
         self.assert_refused(
-            catalog=catalog, health=_health(ROLLBACK_VERSION),
+            catalog=catalog, health=_health(BETA6_VERSION),
             message="unexpected tool exposed",
         )
 
@@ -287,7 +288,7 @@ class PreviousReleaseCatalogOracleTests(_OracleAssertions, unittest.TestCase):
     def test_fixture_preconditions(self):
         self.assertEqual(len(PREVIOUS_RELEASE_STATIC), len(CURRENT_STATIC) - 4)
         self.assertIn(MARKETPLACE, PREVIOUS_RELEASE_STATIC)
-        self.assertNotIn(PREVIOUS_RELEASE_VERSION, (SERVER_VERSION, ROLLBACK_VERSION))
+        self.assertNotIn(PREVIOUS_RELEASE_VERSION, (SERVER_VERSION, BETA6_VERSION))
 
     def test_previous_release_catalog_is_accepted(self):
         # Before HAMCP-377: "unreviewed Engineering version".
@@ -320,7 +321,7 @@ class PreviousReleaseCatalogOracleTests(_OracleAssertions, unittest.TestCase):
         )
 
     def test_previous_release_catalog_cannot_pass_under_another_expectation(self):
-        for version in (SERVER_VERSION, ROLLBACK_VERSION):
+        for version in (SERVER_VERSION, BETA6_VERSION):
             with self.subTest(version=version):
                 self.assert_refused(
                     catalog=PREVIOUS_RELEASE_CATALOG, health=_health(version),
@@ -386,7 +387,7 @@ class PreviousReleaseCatalogOracleTests(_OracleAssertions, unittest.TestCase):
 
 class VersionBoundExpectationTests(unittest.TestCase):
     def test_pinned_beta6_expectation_matches_published_source(self):
-        self.assertEqual(acceptance.BETA6_ENGINEERING_VERSION, ROLLBACK_VERSION)
+        self.assertEqual(acceptance.BETA6_ENGINEERING_VERSION, BETA6_VERSION)
         self.assertEqual(len(acceptance.BETA6_STATIC_TOOL_NAMES), 81)
         self.assertEqual(acceptance.BETA6_STATIC_TOOL_NAMES, BETA6_STATIC)
         self.assertEqual(acceptance.BETA6_RETIRED_DELEGATED_READS, frozenset())
@@ -395,12 +396,17 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertNotIn(DEVICE_CONFIGURATION, acceptance.BETA6_STATIC_TOOL_NAMES)  # HAMCP-297
 
     def test_pinned_version_is_the_rollback_identity(self):
-        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, ROLLBACK_VERSION)
+        # HAMCP-377 (ruling 32): the stage runs 2.4.2-beta.7, whose expectation
+        # is recomputed from the same commit the rollback identity pins.
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(acceptance.PREVIOUS_RELEASE_ENGINEERING_VERSION, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_REVISION, PREVIOUS_RELEASE_COMMIT)
         workflow = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         )
         env = workflow["jobs"]["exact-image-admission-lanes"]["env"]
-        self.assertEqual(env["ROLLBACK_ENGINEERING_VERSION"], ROLLBACK_VERSION)
+        self.assertEqual(env["ROLLBACK_ENGINEERING_VERSION"], PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(env["ROLLBACK_ENGINEERING_IMAGE"], runners.ROLLBACK_ENGINEERING_IMAGE)
 
     def test_provenance_is_recorded(self):
         source = (ROOT / "scripts" / "exact_image_read_gateway_acceptance.py").read_text(
@@ -417,7 +423,7 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertEqual(current.static_names, CURRENT_STATIC)
         self.assertEqual(current.retired_upstream, frozenset(RETIRED_DELEGATED_READS))
         beta6 = acceptance.engineering_expectation(
-            ROLLBACK_VERSION, current_static_names=CURRENT_STATIC
+            BETA6_VERSION, current_static_names=CURRENT_STATIC
         )
         self.assertEqual(beta6.static_names, BETA6_STATIC)
         self.assertEqual(beta6.retired_upstream, frozenset())
@@ -445,19 +451,19 @@ class VersionBoundExpectationTests(unittest.TestCase):
     def test_mutant_pinned_set_equal_to_current_rejects_beta6(self):
         with mock.patch.object(acceptance, "BETA6_STATIC_TOOL_NAMES", CURRENT_STATIC):
             with self.assertRaises(acceptance.AcceptanceFailure):
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
 
     def test_mutant_beta6_retiring_hacs_rejects_beta6(self):
         with mock.patch.object(
             acceptance, "BETA6_RETIRED_DELEGATED_READS", frozenset(RETIRED_DELEGATED_READS)
         ):
             with self.assertRaises(acceptance.AcceptanceFailure):
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
 
     def test_beta6_outside_its_reviewed_upstream_version_fails_closed(self):
         with self.assertRaises(acceptance.AcceptanceFailure) as raised:
             _inspect(
-                acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION),
+                acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION),
                 expected_upstream_version="9.1.0",
             )
         self.assertIn("no reviewed expectation", str(raised.exception))
@@ -468,7 +474,7 @@ class VersionBoundExpectationTests(unittest.TestCase):
             acceptance, "BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION", drifted
         ):
             with self.assertRaises(acceptance.AcceptanceFailure) as raised:
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
         self.assertIn("differs from the Engineering image's own source", str(raised.exception))
 
 

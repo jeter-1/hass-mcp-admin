@@ -99,7 +99,9 @@ EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 # HAMCP-319: the Engineering expectation is bound to the image under test,
 # selected by the image's self-reported get_server_health server.version. The
 # current source's expectation applies only to SERVER_VERSION. The side_by_side
-# rollback stage runs the previous published release, which predates HAMCP-290
+# rollback stage runs the previous published release (2.4.2-beta.7 since
+# HAMCP-377; PREVIOUS_RELEASE_* below). The 2.4.2-beta.6 expectation, which the
+# stage ran before HAMCP-377, stays reviewed: that release predates HAMCP-290
 # (no get_marketplace_inventory; ha_get_hacs_info still delegated, nothing
 # retired, core_withheld_read_count 0). Any other version fails closed.
 BETA6_ENGINEERING_VERSION = "2.4.2-beta.6"
@@ -240,9 +242,8 @@ BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
     )
 )
 
-# HAMCP-377: the release the rollback stage moves to when the workflow's
-# ROLLBACK_ENGINEERING_VERSION changes to 2.4.2-beta.7. Until then the workflow
-# still runs 2.4.2-beta.6, and the expectation above stays in force for it.
+# HAMCP-377: the release the rollback stage runs. The workflow's
+# ROLLBACK_ENGINEERING_VERSION is 2.4.2-beta.7 (ruling 32; it was 2.4.2-beta.6).
 # Provenance: tag v2.4.2-beta.7, commit b614be43f8c56ae06fdec0ac0bcb479b9da39715.
 # Derived the same way, from `git archive b614be43 hass_mcp_engineering_beta`:
 # 82 registered names (its ENGINEERING_STATIC_TOOL_COUNT is 82, with

@@ -985,9 +985,9 @@ jobs:
       PEER_STRICT_FULL_URL: http://127.0.0.1:18086/synthetic-upstream-secret/mcp/catalog/full
       FIXTURE_STATS_URL: http://127.0.0.1:18123/__fixture__/stats
       # Previous Engineering release for the side_by_side rollback stage, by its
-      # published index digest (tag v2.4.2-beta.6, source af5ec837).
-      ROLLBACK_ENGINEERING_IMAGE: ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:9284290132d1d4f06195f5ee5bb27797238b86d8a250db13c6c78f2171059f6a
-      ROLLBACK_ENGINEERING_VERSION: 2.4.2-beta.6
+      # published index digest (tag v2.4.2-beta.7, source b614be43).
+      ROLLBACK_ENGINEERING_IMAGE: ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47
+      ROLLBACK_ENGINEERING_VERSION: 2.4.2-beta.7
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -1430,14 +1430,14 @@ jobs:
             --upstream-endpoint "$PEER_STRICT_FULL_URL" \
             --expected-engineering-version "$ENGINEERING_LANE_VERSION" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_b2_91_strict_full_useful.json"
-      - name: Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5
+      - name: Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5
         if: matrix.state == 'active' && matrix.configuration == 'side_by_side'
         shell: bash
         run: |
           set -euo pipefail
           # Roll back to the previous release on the SAME persisted data: the
           # current build writes a trace and a terminal task and records its
-          # own reader view, then beta.6's readers record theirs on restart.
+          # own reader view, then beta.7's readers record theirs on restart.
           python scripts/exact_image_admission_91_runners.py persisted-snapshot \
             --engineering-container engineering-admission-sbs \
             --engineering-endpoint "http://127.0.0.1:18300/${ENGINEERING_ACCESS_SECRET}/mcp" \
@@ -1508,7 +1508,7 @@ jobs:
         run: |
           set -euo pipefail
           # Roll forward from the previous release on the SAME persisted data,
-          # with no state reset: beta.6 writes a trace and a terminal task and
+          # with no state reset: beta.7 writes a trace and a terminal task and
           # records its own reader view while it is still running, then the
           # current build's readers record theirs on restart.
           python scripts/exact_image_admission_91_runners.py persisted-snapshot \
@@ -1552,7 +1552,7 @@ jobs:
             --persisted-snapshot "$RUNNER_TEMP/admission-persisted-previous-release.json" \
             --persisted-restart "$RUNNER_TEMP/admission-persisted-roll-forward-restart.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_stage_a_again_85_legacy_useful.json"
-      - name: Cases side-by-side governed dashboard and public typed controls (stage A, beta.6 rollback, stage A again)
+      - name: Cases side-by-side governed dashboard and public typed controls (stage A, beta.7 rollback, stage A again)
         if: ${{ !cancelled() && matrix.state == 'active' && matrix.configuration == 'side_by_side' }}
         shell: bash
         timeout-minutes: 20
