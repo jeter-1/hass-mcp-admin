@@ -251,9 +251,13 @@ class LaneWebSocket:
         if not listed(payload, GATEWAY_COMMANDS):
             self.refused.append(CORE_COMMAND_REFUSED)
             raise ValueError(CORE_COMMAND_REFUSED)
-        kind = payload["type"]
+        # Copied with the check, as RawCore.command copies, before a hook or the
+        # product client awaits: what is journalled and what is forwarded are the
+        # command that was checked, whatever the caller does with its payload.
+        checked = copy.deepcopy(payload)
+        kind = checked["type"]
         if kind == "config/entity_registry/get":
-            entity_id = payload["entity_id"]
+            entity_id = checked["entity_id"]
             self.reads[entity_id] = self.reads.get(entity_id, 0) + 1
             self.journal.append(("registry", entity_id))
             armed = self.hooks.get(entity_id)
@@ -261,9 +265,9 @@ class LaneWebSocket:
                 del self.hooks[entity_id]
                 await armed[1]()
         elif kind == "call_service":
-            self.sends.append(copy.deepcopy(payload))
-            self.journal.append(("send", payload["target"]["entity_id"]))
-        return await self.client.command(payload)
+            self.sends.append(copy.deepcopy(checked))
+            self.journal.append(("send", checked["target"]["entity_id"]))
+        return await self.client.command(checked)
 
 
 class LaneRest:

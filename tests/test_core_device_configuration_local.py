@@ -9,6 +9,7 @@ the product service's behaviour through the lane's closed clients.
 """
 import ast
 import asyncio
+import copy
 import errno
 import hashlib
 import importlib.util
@@ -1796,9 +1797,12 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         for payload in listed:
             with self.subTest(payload=payload):
                 ws, _rest, inner, _inner_rest, _journal = self.gateway_clients()
-                self.assertEqual(await ws.command(payload), "reply")
+                handed = copy.deepcopy(payload)
+                self.assertEqual(await ws.command(handed), "reply")
                 inner.command.assert_awaited_once_with(payload)
-                self.assertIs(inner.command.await_args.args[0], payload)
+                # Equal to what was handed over and not that object: the wrapper forwards the copy it checked.
+                self.assertEqual(handed, payload)
+                self.assertIsNot(inner.command.await_args.args[0], handed)
                 self.assertEqual(ws.refused, [])
                 self.assertEqual(len(ws.sends), 1 if payload["type"] == "call_service" else 0)
 
@@ -3259,7 +3263,7 @@ class LaneSourceShape(unittest.TestCase):
         self.assertEqual(statements, [
             ("LaneWebSocket.__init__", "Store", "self.client",
              "self.client = HomeAssistantWebSocketClient(pinned(configured))"),
-            ("LaneWebSocket.command", "Load", "self.client", "return await self.client.command(payload)"),
+            ("LaneWebSocket.command", "Load", "self.client", "return await self.client.command(checked)"),
             ("LaneRest.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),
             ("LaneRest.request", "Load", "self.client", "return await self.client.request(method, path)"),
             ("LaneState.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),

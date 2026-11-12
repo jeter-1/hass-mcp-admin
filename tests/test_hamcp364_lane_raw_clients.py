@@ -2692,6 +2692,20 @@ DEVICE_CHECKED_BODIES = ((DEVICE_FLOW, {"handler": "matter"}),
 DEVICE_CHECKED_POSTS = ({"mode": "none"}, {"mode": "delay", "seconds": 5},
                         {"action": "drift", "node_id": device.SELECT_NODE, "attribute_path": device.SELECT_PATH,
                          "value": 1})
+# What the product path sends through the lane's guarded WebSocket wrapper: one read, one send of each kind.
+DEVICE_GATEWAY_READ = {"type": "config/entity_registry/get", "entity_id": "select.synthetic"}
+DEVICE_GATEWAY_SENDS = (
+    {"type": "call_service", "domain": "select", "service": "select_option", "service_data": {"option": "on"},
+     "target": {"entity_id": device.SELECT}},
+    {"type": "call_service", "domain": "switch", "service": "turn_on", "target": {"entity_id": device.SWITCH}},
+    {"type": "call_service", "domain": "number", "service": "set_value", "service_data": {"value": 2.0},
+     "target": {"entity_id": device.NUMBER}},
+)
+
+
+def retargeted(payload):
+    """Another listed read: the same command, of another entity."""
+    payload["entity_id"] = device.SWITCH
 
 
 class DeviceCheckedRequest(unittest.IsolatedAsyncioTestCase):
@@ -2710,6 +2724,28 @@ class DeviceCheckedRequest(unittest.IsolatedAsyncioTestCase):
             await send(held)
         self.assertEqual(tuple(seen), stages)
         return events
+
+    def gateway(self, change=None, held=None):
+        """A ``LaneWebSocket`` over a stand-in product client, and every command that client is handed.
+
+        The stand-in applies ``change`` to ``held`` before it reads its
+        command, as the product client connects and signs in before it writes
+        the frame. Each record is the object handed over and its value then.
+        """
+        forwarded = []
+
+        class Product:
+            def __init__(self, configured):
+                self.settings = configured
+
+            async def command(self, payload):
+                if change is not None:
+                    change(held)
+                forwarded.append((payload, copy.deepcopy(payload)))
+                return ["answer"]
+
+        with patch.object(device, "HomeAssistantWebSocketClient", new=Product):
+            return device.LaneWebSocket(device_settings()), forwarded
 
     def test_the_examples_are_listed_shapes(self):
         for example in DEVICE_CHECKED_COMMANDS:
@@ -2786,6 +2822,74 @@ class DeviceCheckedRequest(unittest.IsolatedAsyncioTestCase):
                 request, = [event for event in events if event[0] == "request"]
                 self.assertEqual((body, request[3]["json"]), (example, example))
                 self.assertIsNot(request[3]["json"], body)
+
+    def test_the_gateway_examples_are_listed_shapes(self):
+        for example in (DEVICE_GATEWAY_READ,) + DEVICE_GATEWAY_SENDS:
+            self.assertTrue(device.listed(example, device.GATEWAY_COMMANDS), example)
+        self.assertEqual({example["target"]["entity_id"] for example in DEVICE_GATEWAY_SENDS},
+                         {device.SELECT, device.SWITCH, device.NUMBER})
+
+    async def test_a_gateway_read_changed_while_the_armed_hook_runs_is_not_the_command_forwarded(self):
+        entity_id = DEVICE_GATEWAY_READ["entity_id"]
+        for change in (replaced, retyped, widened, retargeted):
+            with self.subTest(change=change.__name__):
+                payload = copy.deepcopy(DEVICE_GATEWAY_READ)
+                ws, forwarded = self.gateway()
+                ran = []
+
+                async def hook():
+                    ran.append(len(forwarded))
+                    change(payload)
+                ws.arm(entity_id, 1, hook)
+                self.assertEqual(await ws.command(payload), ["answer"])
+                # The hook ran before anything was forwarded, and the caller's payload really was changed.
+                self.assertEqual(ran, [0])
+                self.assertNotEqual(payload, DEVICE_GATEWAY_READ)
+                self.assertEqual(device.listed(payload, device.GATEWAY_COMMANDS), change is retargeted)
+                # What was forwarded is what was checked and journalled, not what the caller holds now.
+                self.assertEqual([value for _handed, value in forwarded], [DEVICE_GATEWAY_READ])
+                self.assertEqual((ws.journal, ws.reads, ws.sends, ws.refused, ws.hooks),
+                                 ([("registry", entity_id)], {entity_id: 1}, [], [], {}))
+
+    async def test_a_gateway_send_changed_while_the_product_client_connects_is_not_the_command_it_holds(self):
+        for example in DEVICE_GATEWAY_SENDS:
+            for change in (replaced, retyped, widened, nested):
+                with self.subTest(domain=example["domain"], change=change.__name__):
+                    payload = copy.deepcopy(example)
+                    ws, forwarded = self.gateway(change, payload)
+                    self.assertEqual(await ws.command(payload), ["answer"])
+                    self.assertNotEqual(payload, example)
+                    self.assertFalse(device.listed(payload, device.GATEWAY_COMMANDS))
+                    self.assertEqual([value for _handed, value in forwarded], [example])
+                    self.assertEqual((ws.sends, ws.journal, ws.reads, ws.refused),
+                                     ([example], [("send", example["target"]["entity_id"])], {}, []))
+
+    async def test_what_the_gateway_forwards_and_records_shares_nothing_with_what_the_caller_handed_over(self):
+        for example in DEVICE_GATEWAY_SENDS:
+            with self.subTest(domain=example["domain"]):
+                payload = copy.deepcopy(example)
+                ws, forwarded = self.gateway()
+                await ws.command(payload)
+                (handed, value), = forwarded
+                self.assertEqual((payload, value, ws.sends), (example, example, [example]))
+                self.assertIsNot(handed, payload)
+                self.assertIsNot(handed["target"], payload["target"])
+                # The record of the send is its own copy as well: neither the caller's object nor the one forwarded.
+                for other in (payload, handed):
+                    self.assertIsNot(ws.sends[0], other)
+                    self.assertIsNot(ws.sends[0]["target"], other["target"])
+
+    async def test_a_gateway_command_off_the_list_is_refused_with_nothing_forwarded(self):
+        for example in (UNLISTED, {**DEVICE_GATEWAY_READ, "extra": True},
+                        {**DEVICE_GATEWAY_SENDS[1], "service": "toggle"}):
+            with self.subTest(payload=example["type"]):
+                payload = copy.deepcopy(example)
+                ws, forwarded = self.gateway()
+                with self.assertRaises(ValueError) as caught:
+                    await ws.command(payload)
+                self.assertEqual(caught.exception.args, ("core_command_not_listed",))
+                self.assertEqual((forwarded, ws.journal, ws.sends, ws.reads, ws.refused, payload),
+                                 ([], [], [], {}, ["core_command_not_listed"], example))
 
 
 if __name__ == "__main__":
