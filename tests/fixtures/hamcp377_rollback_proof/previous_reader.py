@@ -14,9 +14,11 @@ directory's file hashes before and after.
 Scenarios (each prints exactly one JSON object on its last output line):
 
 ``registry DATA WORK RECORDS``
-    The tree's registry client loads ``DATA/journal.json`` under
-    ``DATA/public_key``; its Core runtime then reconciles a synthetic Core
-    2026.11.0 observation against it.
+    The tree's registry client loads the test-signed journal the writer's dry
+    run left (``DATA/dry-run/ha-core-release-registry.json``) under the public
+    half of the dry run's key (``DATA/dry-run/ephemeral-public-key.txt``); its
+    Core runtime then reconciles a synthetic Core 2026.11.0 observation
+    against it.
 ``device STORE WORK NOW TASK_ID``
     Over one copy of the store the tree's typed power service controls the
     held switch and an unrelated switch; over another the tree's governed
@@ -94,6 +96,10 @@ def changed(before: dict, after: dict) -> dict:
             "modified": sorted(key for key in set(before) & set(after) if before[key] != after[key])}
 
 
+SIGNED_JOURNAL = "dry-run/ha-core-release-registry.json"
+TEST_PUBLIC_KEY = "dry-run/ephemeral-public-key.txt"
+
+
 # --- registry --------------------------------------------------------------------------------
 
 async def registry(data: Path, work: Path, records: Path) -> None:
@@ -105,8 +111,8 @@ async def registry(data: Path, work: Path, records: Path) -> None:
     from ha_mcp_engineering.ha_core_readmission.source import capability_evidence_for_probes
 
     logging.disable(logging.CRITICAL)
-    signed = (data / "journal.json").read_bytes()
-    public_key = (data / "public_key").read_text(encoding="ascii").strip()
+    signed = (data / SIGNED_JOURNAL).read_bytes()
+    public_key = (data / TEST_PUBLIC_KEY).read_text(encoding="ascii").strip()
     fixture = json.loads(records.read_text(encoding="utf-8"))
     work.mkdir(parents=True, exist_ok=False)
 
@@ -157,9 +163,8 @@ async def registry(data: Path, work: Path, records: Path) -> None:
                         "positive_authority_current": authority.positive_authority_current,
                         "surface_denied": authority.surface_denied,
                         "entry_present": entry is not None}
-    references = [] if entry is None else [
-        {"capability_id": item.capability_id, "contract_fingerprint": item.contract_fingerprint}
-        for item in entry.capabilities]
+    # Each reference as this tree decoded it: the five fields of a reference object.
+    references = [] if entry is None else [item.to_mapping() for item in entry.capabilities]
     out["entry_references"] = references
     out["selections"] = [
         {"capability_ids": list(item.capability_ids), "source": item.source.value,

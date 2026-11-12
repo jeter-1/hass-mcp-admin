@@ -22,5 +22,16 @@ exits, before the read and after the read. The reader writes only to its own
 work directory.
 
 Both sides use synthetic providers from their own tree's tests. No Home
-Assistant, container or network is involved. The signing key for the test
-registry journal is generated in the writer process and never written to disk.
+Assistant, container or network is involved.
+
+The registry scenario does not assemble its entry by calling functions. The
+writer runs the tree's own candidate tool as a program,
+`scripts/prepare_core_release_registry.py extend-capabilities`, on the
+published journal under the committed public key: the command that prepares a
+real candidate. The tree's own dry run,
+`scripts/core_registry_one_tap.py dry-run-sign`, then signs that candidate
+with a key it generates itself; only the public half is written, for the
+reader. The writer supplies no signing key and never runs the tool's `sign`
+command. What the writer adds is the two input files the tool takes: the
+published entry with its reference list extended, and review evidence with a
+placeholder artifact digest.

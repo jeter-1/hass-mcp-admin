@@ -13,10 +13,13 @@ provider. No Home Assistant, no socket, no container.
 Scenarios (each prints exactly one JSON object on its last output line):
 
 ``registry OUT PUBLISHED_JOURNAL``
-    The tree's registry tooling builds a journal signed by a key generated in
-    this process and never written: sequence 1 carries the published Core
-    2026.11.0 entry as published, sequence 2 extends it to every capability
-    profile the tree compiles.
+    The tree's own candidate tool, run as its own program
+    (``scripts/prepare_core_release_registry.py extend-capabilities``), extends
+    the published Core 2026.11.0 entry of the published journal to every
+    capability profile the tree compiles, under the published public key. The
+    tree's own dry run (``scripts/core_registry_one_tap.py dry-run-sign``) then
+    signs that candidate with a key it generates, whose private half it never
+    writes. No signing key is supplied to either program.
 ``device_hold STORE``
     One device-configuration operation ends in manual review with a conflict
     hold on its entity.
@@ -37,13 +40,12 @@ The driver asserts nothing about the previous release. The lane classifies.
 from __future__ import annotations
 
 import asyncio
-import base64
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import unittest
 import uuid
@@ -51,6 +53,10 @@ import uuid
 
 PUBLISHED_JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d"
 CORE_VERSION = "2026.11.0"
+PUBLISHED_PUBLIC_KEY = "docs/evidence/hamcp222/core-public-key.txt"
+CANDIDATE_TOOL = "scripts/prepare_core_release_registry.py"
+TEST_SIGNING_TOOL = "scripts/core_registry_one_tap.py"
+CANDIDATE_FILE = "core-candidate.json"
 REFERENCE_KEYS = ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")
 HOLD_RELEASE_PRINCIPAL = "home_assistant_admin_ingress:synthetic-hamcp377-lane"
 PLAN_MODES = (
@@ -72,66 +78,135 @@ def identity() -> dict:
             "writer_package": str(Path(ha_mcp_engineering.__file__).resolve().parent)}
 
 
-def registry(root: Path, out: Path, published: Path) -> None:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+def run_tool(root: Path, out: Path, published: Path, script: str, operation: str,
+             *arguments: str) -> dict:
+    """Run one of the tree's own registry tools as its own program and record how."""
+    tool = root / script
+    completed = subprocess.run(
+        [sys.executable, "-B", "-I", str(tool), operation, *arguments],
+        cwd=out, capture_output=True, text=True, timeout=300, check=False)
+    shown = [argument.replace(str(out), "<data>").replace(str(published), "<published-journal>")
+             .replace(str(root), "<writer-source>") for argument in arguments]
+    record = {"path": script, "sha256": hashlib.sha256(tool.read_bytes()).hexdigest(),
+              "operation": operation, "arguments": shown, "exit": completed.returncode,
+              "stdout": completed.stdout.strip()[-400:]}
+    if completed.returncode != 0:
+        raise SystemExit(f"{script} {operation} exited {completed.returncode}: "
+                         f"{completed.stdout.strip()[-400:]} {completed.stderr.strip()[-400:]}")
+    return record
 
+
+def registry(root: Path, out: Path, published: Path) -> None:
     from core_registry_one_tap import load_public_key
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
     from ha_mcp_engineering.signed_registry import canonical_json
-    from prepare_core_release_registry import (
-        EXTENSION_EVIDENCE_MODEL, parse_journal, prepare_candidate, sign_candidate)
+    from prepare_core_release_registry import EXTENSION_EVIDENCE_MODEL, parse_journal
+
+    def digest(raw: bytes) -> str:
+        return hashlib.sha256(raw).hexdigest()
 
     raw = published.read_bytes()
-    published_sha256 = hashlib.sha256(raw).hexdigest()
-    if published_sha256 != PUBLISHED_JOURNAL_SHA256:
-        raise SystemExit(f"published journal sha256 {published_sha256} is not the pinned one")
-    pinned_key = load_public_key(
-        (root / "docs/evidence/hamcp222/core-public-key.txt").read_bytes(), pinned=True)
-    accepted = parse_journal(raw, pinned_key).accepted
+    if digest(raw) != PUBLISHED_JOURNAL_SHA256:
+        raise SystemExit(f"published journal sha256 {digest(raw)} is not the pinned one")
+    public_key_file = root / PUBLISHED_PUBLIC_KEY
+    pinned_key = load_public_key(public_key_file.read_bytes(), pinned=True)
+    published_journal = parse_journal(raw, pinned_key)
+    accepted = published_journal.accepted
     entry, = (item.to_mapping() for item in accepted.entries if item.version == CORE_VERSION)
     previous = entry["capabilities"]
     signed = {reference["capability_id"] for reference in previous}
     added = [{key: profile.to_mapping()[key] for key in REFERENCE_KEYS}
              for profile in CORE_RUNTIME_CAPABILITY_PROFILES if profile.capability_id not in signed]
 
-    key = Ed25519PrivateKey.generate()
-    now = datetime.now(timezone.utc)
-    first_evidence = b"Disposable rollback-proof test authority; not registry publication authority"
-    first = {**entry, "evidence_sha256": hashlib.sha256(first_evidence).hexdigest()}
-    candidate = canonical_json(prepare_candidate(
-        entry=first, evidence=first_evidence, previous=None, public_key=key.public_key(), now=now))
-    journal = sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(),
-                             previous=None, key=key, now=now)
-    extension_evidence = canonical_json({
+    # The two inputs the candidate tool takes, in the shape its own checks require: the
+    # published entry with only the reference list extended, and evidence binding that
+    # exact transition. The review artifact is a placeholder, not a review.
+    evidence = canonical_json({
         "model": EXTENSION_EVIDENCE_MODEL, "version": entry["version"],
-        "previous_entry_sha256": hashlib.sha256(canonical_json(first)).hexdigest(),
+        "previous_entry_sha256": digest(canonical_json(entry)),
         "previous_capabilities": previous, "added_capabilities": added,
-        "review_artifacts_sha256": [
-            hashlib.sha256(b"disposable rollback-proof review artifact").hexdigest()]})
-    second = {**first, "capabilities": previous + added,
-              "evidence_sha256": hashlib.sha256(extension_evidence).hexdigest()}
-    candidate = canonical_json(prepare_candidate(
-        entry=second, evidence=extension_evidence, previous=journal, public_key=key.public_key(),
-        operation="extend-capabilities", now=now))
-    journal = sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(),
-                             previous=journal, key=key, now=now)
-    public_key = key.public_key()
-    del key
-    reparsed = parse_journal(journal, public_key).accepted
-    final, = (item.to_mapping() for item in reparsed.entries if item.version == CORE_VERSION)
-
+        "review_artifacts_sha256": [digest(b"disposable rollback-proof review artifact")]})
+    extended = {**entry, "capabilities": previous + added, "evidence_sha256": digest(evidence)}
     out.mkdir(parents=True, exist_ok=False)
-    (out / "journal.json").write_bytes(journal)
-    (out / "public_key").write_text(
-        base64.b64encode(public_key.public_bytes_raw()).decode() + "\n", encoding="ascii")
+    (out / "core-entry.json").write_bytes(canonical_json(extended) + b"\n")
+    (out / "core-review-evidence.json").write_bytes(evidence)
+
+    # The candidate: the tool's own command line, on the published journal, under the
+    # published public key. Nothing here differs from a real preparation but the evidence.
+    prepared = run_tool(
+        root, out, published, CANDIDATE_TOOL, "extend-capabilities",
+        "--entry", str(out / "core-entry.json"),
+        "--evidence", str(out / "core-review-evidence.json"),
+        "--public-key", str(public_key_file), "--previous", str(published),
+        "--output", str(out / CANDIDATE_FILE))
+    # The test signature: the tree's own dry run, which signs with a key it generates and
+    # writes only the public half of. No signing key is given to either program.
+    signed_by = run_tool(
+        root, out, published, TEST_SIGNING_TOOL, "dry-run-sign",
+        "--candidate", str(out / CANDIDATE_FILE), "--predecessor", str(published),
+        "--public-key", str(public_key_file), "--output-dir", str(out / "dry-run"))
+
+    candidate_raw = (out / CANDIDATE_FILE).read_bytes()
+    candidate = json.loads(candidate_raw)
+    envelope = candidate["envelope"]
+    candidate_entry, = (item for item in envelope["entries"] if item["version"] == CORE_VERSION)
+    journal_raw = (out / "dry-run/ha-core-release-registry.json").read_bytes()
+    predecessor_raw = (out / "dry-run/ephemeral-predecessor.json").read_bytes()
+    test_key_text = (out / "dry-run/ephemeral-public-key.txt").read_bytes()
+    test_key = load_public_key(test_key_text, pinned=False)
+    test_journal = parse_journal(journal_raw, test_key)
+    test_predecessor = parse_journal(predecessor_raw, test_key)
+    final, = (item.to_mapping() for item in test_journal.accepted.entries
+              if item.version == CORE_VERSION)
+
+    def content(journal) -> list:
+        return [item.unsigned_mapping() for item in journal.envelopes]
+
+    reported = prepared["stdout"].rsplit("SHA256:", 1)[-1].strip()
     emit({**identity(), "scenario": "registry",
-          "published_journal_sha256": published_sha256,
+          "published_journal_sha256": digest(raw),
           "published_sequence": accepted.sequence,
-          "journal_sha256": hashlib.sha256(journal).hexdigest(),
-          "sequence": reparsed.sequence,
-          "signer": "ed25519 key generated in this process and not retained",
-          "built_by": "scripts/prepare_core_release_registry.py prepare_candidate and "
-                      "sign_candidate: add, then extend-capabilities",
+          "published_expires_at": accepted.unsigned_mapping()["expires_at"],
+          "published_public_key": {
+              "path": PUBLISHED_PUBLIC_KEY,
+              "key_sha256": digest(pinned_key.public_bytes_raw())},
+          "tools": {"candidate": prepared, "test_signing": signed_by},
+          "inputs": {
+              "entry_sha256": digest((out / "core-entry.json").read_bytes()),
+              "evidence_sha256": digest(evidence),
+              "review_artifacts": "one placeholder digest; no review artifact exists for a test "
+                                  "candidate"},
+          "candidate": {
+              "file": CANDIDATE_FILE, "sha256": digest(candidate_raw),
+              "reported_sha256": reported, "model": candidate["model"],
+              "operation": candidate["operation"],
+              "public_key_sha256": candidate["public_key_sha256"],
+              "previous_journal_sha256": candidate["previous_journal_sha256"],
+              "review_evidence_sha256": candidate["review_evidence_sha256"],
+              "sequence": envelope["sequence"],
+              "previous_registry_sha256": envelope["previous_registry_sha256"],
+              "generated_at": envelope["generated_at"], "expires_at": envelope["expires_at"],
+              "entries": len(envelope["entries"]), "revocations": len(envelope["revocations"]),
+              "unchanged_entries": [
+                  item["version"] for item in envelope["entries"]
+                  if item in [other.to_mapping() for other in accepted.entries]]},
+          "reference_objects": candidate_entry["capabilities"],
+          "test_signed": {
+              "file": "dry-run/ha-core-release-registry.json",
+              "key_sha256": digest(test_key.public_bytes_raw()),
+              "signer": "ed25519 key generated inside the dry run; its private half is "
+                        "never written",
+              "sequence": test_journal.accepted.sequence,
+              "envelopes": len(test_journal.envelopes),
+              "envelope_equals_candidate_envelope":
+                  test_journal.accepted.unsigned_mapping() == envelope,
+              "entry_references_equal_candidate":
+                  final["capabilities"] == candidate_entry["capabilities"],
+              "predecessor_content_unchanged":
+                  content(test_predecessor) == content(published_journal)
+                  and content(test_journal)[:-1] == content(published_journal)},
+          "journal_sha256": digest(journal_raw),
+          "sequence": test_journal.accepted.sequence,
           "previous_references": [reference["capability_id"] for reference in previous],
           "added": [reference["capability_id"] for reference in added],
           "references": [reference["capability_id"] for reference in final["capabilities"]],

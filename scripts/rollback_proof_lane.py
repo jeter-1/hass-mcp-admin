@@ -8,7 +8,8 @@ test harness over a synthetic provider, and every receipt says so.
 
 Scenarios
   12a  registry   an entry carrying capability references the previous release
-                  does not compile
+                  does not compile, built by the release's own candidate tool
+                  on the published journal and test-signed by its own dry run
   12b  device     device-configuration lock records: a conflict hold, a crash
                   with the lease still live, the same crash after the lease
                   expired; plus the recovery tiers in ``RECOVERY_TIERS``
@@ -19,9 +20,15 @@ receipts. A receipt carries observations and the words derived from them; the
 classifier derives the words again and compares both with the pinned
 expectation, so a receipt cannot assert a result its observations do not show.
 
+``compare-candidate`` compares the reference objects the previous release read
+with those of a supplied registry candidate, byte for byte. Until a real
+candidate exists the 12a receipt says so; the lane never builds a stand-in.
+
   python scripts/rollback_proof_lane.py run --out DIR --work NEW_DIR \\
-      --reader-python PYTHON [--writer-python PYTHON] [--writer-commit SHA]
+      --reader-python PYTHON [--writer-python PYTHON] [--writer-commit SHA] \\
+      [--real-candidate FILE]
   python scripts/rollback_proof_lane.py check DIR
+  python scripts/rollback_proof_lane.py compare-candidate DIR FILE [--record]
 """
 
 from __future__ import annotations
@@ -52,6 +59,29 @@ PREVIOUS_COMMIT = "b614be43f8c56ae06fdec0ac0bcb479b9da39715"
 # Published Core release registry journal (sequence 17), by content.
 PUBLISHED_JOURNAL_BLOB = "59c4100473fd7722b4b8e44ac5061bef9d599c87"
 PUBLISHED_JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d"
+PUBLISHED_SEQUENCE = 17
+PUBLISHED_EXPIRES_AT = "2027-02-05T06:16:34Z"
+# The committed public half of the registry key, by the sha256 of its raw bytes.
+PUBLISHED_PUBLIC_KEY = "docs/evidence/hamcp222/core-public-key.txt"
+PUBLISHED_KEY_SHA256 = "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac"
+CORE_VERSION = "2026.11.0"
+# 12a. The tool and command that prepare a real registry candidate, and the release's own
+# key-free dry run that test-signs one. The lane runs both unmodified from the writer tree.
+CANDIDATE_TOOL = "scripts/prepare_core_release_registry.py"
+CANDIDATE_OPERATION = "extend-capabilities"
+CANDIDATE_MODEL = "core-registry-extension-candidate-v1"
+TEST_SIGNING_TOOL = "scripts/core_registry_one_tap.py"
+TEST_SIGNING_OPERATION = "dry-run-sign"
+CANDIDATE_FILE = "core-candidate.json"
+SIGNED_JOURNAL = "dry-run/ha-core-release-registry.json"
+REFERENCE_FIELDS = ("adapter_id", "capability_id", "contract_fingerprint", "profile_id",
+                    "profile_version")
+COMPARISON_PENDING = "not yet available: the real candidate does not exist"
+COMPARISON_SCOPE = (
+    "The canonical JSON bytes of each capability reference object of the Core "
+    + CORE_VERSION + " entry, in order. Signature fields belong to envelopes and the journal, "
+    "not to reference objects; they, the timestamps and the evidence digests are not compared.")
+MAX_CANDIDATE_BYTES = 8 * 1024 * 1024
 LOCK = "hass_mcp_engineering_beta/requirements.lock"
 REGISTRY_RECORDS = "tests/fixtures/core_2026_10_device_registry/records.json"
 DRIVER_TIMEOUT_SECONDS = 900
@@ -62,7 +92,7 @@ SYNTHETIC_PROVIDER_LIMITATION = (
     "receipt shows what the previous release's code does with these records, not what a "
     "deployed add-on does end to end.")
 
-# 12a. Sequence 2 of the test journal appends these to the 32 published references.
+# 12a. The candidate appends these to the 32 published references.
 RULED_ADDED = (
     "core.marketplace_read", "core.security_metadata_read",
     "core.device_configuration_entity_operation", "core.scene_create_delete_operation",
@@ -114,6 +144,142 @@ class LaneError(RuntimeError):
     """The lane could not produce evidence. Never a PASS."""
 
 
+# --- reference objects: what 12a's result is about, and how it is compared -------------------
+
+def canonical(value: Any) -> bytes:
+    """The registry's canonical JSON (``signed_registry.canonical_json``), standard library only."""
+
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                      allow_nan=False).encode("utf-8")
+
+
+def reference_digest(objects: list) -> str:
+    return hashlib.sha256(b"\n".join(canonical(item) for item in objects)).hexdigest()
+
+
+def _no_duplicates(pairs: list) -> dict:
+    value = dict(pairs)
+    if len(value) != len(pairs):
+        raise ValueError("duplicate object key")
+    return value
+
+
+def _no_constant(name: str) -> None:
+    raise ValueError(f"non-finite number {name}")
+
+
+def candidate_reference_objects(raw: bytes) -> dict:
+    """The reference objects a registry candidate file carries, read without trusting it.
+
+    Accepts the candidate tool's output (a wrapper around one unsigned envelope), a signed
+    journal (its newest envelope) or a bare envelope. The file must be canonical JSON, as the
+    tool writes it, so the objects compared are the bytes in the file.
+    """
+
+    if len(raw) > MAX_CANDIDATE_BYTES:
+        raise LaneError("the candidate file is larger than a registry journal can be")
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicates,
+                           parse_constant=_no_constant)
+        if raw not in (canonical(value), canonical(value) + b"\n"):
+            raise ValueError("not canonical JSON")
+        if isinstance(value.get("envelope"), dict):
+            shape, envelope = "candidate", value["envelope"]
+        elif isinstance(value.get("envelopes"), list) and value["envelopes"]:
+            shape, envelope = "signed journal", value["envelopes"][-1]
+        elif isinstance(value.get("entries"), list):
+            shape, envelope = "envelope", value
+        else:
+            raise ValueError("neither a candidate, a signed journal nor an envelope")
+        entry, = (item for item in envelope["entries"] if item["version"] == CORE_VERSION)
+        objects = entry["capabilities"]
+        if not objects or any(
+                not isinstance(item, dict) or tuple(sorted(item)) != REFERENCE_FIELDS
+                or any(type(field) not in (str, int) for field in item.values())
+                for item in objects):
+            raise ValueError("a capability reference is not a five-field reference object")
+        sequence = envelope["sequence"]
+        if type(sequence) is not int:
+            raise ValueError("the sequence is not an integer")
+    except (AttributeError, KeyError, TypeError, UnicodeDecodeError, ValueError) as error:
+        raise LaneError(f"the candidate file cannot be compared: {error}") from None
+    return {"shape": shape, "sequence": sequence, "objects": objects,
+            "sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def compare_real_candidate(objects: list, candidate: Path | None) -> dict:
+    """Compare the lane's reference objects with a supplied candidate's, byte for byte.
+
+    With no candidate the result says the comparison is not yet available. The lane never
+    builds or approximates the real candidate, and it does not establish that a supplied
+    file is the real one: the file is identified by its sha256 for a reviewer to match.
+    """
+
+    result = {"status": COMPARISON_PENDING, "compares": COMPARISON_SCOPE,
+              "lane_reference_count": len(objects),
+              "lane_reference_objects_sha256": reference_digest(objects)}
+    if candidate is None:
+        return result
+    try:
+        raw = candidate.read_bytes()
+    except OSError as error:
+        raise LaneError(f"the candidate file cannot be read: {type(error).__name__}") from None
+    found = candidate_reference_objects(raw)
+    theirs = found["objects"]
+    differences = [
+        {"index": index,
+         "lane": objects[index] if index < len(objects) else None,
+         "candidate": theirs[index] if index < len(theirs) else None}
+        for index in range(max(len(objects), len(theirs)))
+        if index >= len(objects) or index >= len(theirs)
+        or canonical(objects[index]) != canonical(theirs[index])]
+    result.update(
+        status="compared", compared_at=utc_now(), candidate_file=candidate.name,
+        candidate_sha256=found["sha256"], candidate_shape=found["shape"],
+        candidate_sequence=found["sequence"], candidate_reference_count=len(theirs),
+        candidate_reference_objects_sha256=reference_digest(theirs),
+        identical=not differences, differences=differences,
+        candidate_authenticity="not established by the lane: the file is identified by its "
+                               "sha256 only")
+    return result
+
+
+def classify_comparison(receipt: dict) -> list[str]:
+    """G14: the real-candidate comparison is pending, or recorded and byte-identical."""
+
+    failures: list[str] = []
+    comparison = receipt.get("real_candidate_comparison")
+    observed = receipt["cases"]["registry"]["observed"]
+    objects = observed["writer"]["reference_objects"]
+    if (not isinstance(comparison, dict) or comparison.get("compares") != COMPARISON_SCOPE
+            or comparison.get("lane_reference_count") != len(objects)
+            or comparison.get("lane_reference_objects_sha256") != reference_digest(objects)):
+        return ["G14: the real-candidate comparison is not recorded against the reference "
+                "objects the previous release read"]
+    if comparison.get("status") == COMPARISON_PENDING:
+        if set(comparison) != {"status", "compares", "lane_reference_count",
+                               "lane_reference_objects_sha256"}:
+            failures.append("G14: a pending comparison carries a comparison result")
+        return failures
+    own = {observed["lane"]["candidate"]["sha256"], observed["lane"]["journal"]["sha256"]}
+    digest = str(comparison.get("candidate_sha256"))
+    if (comparison.get("status") != "compared" or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)):
+        return ["G14: the real-candidate comparison is neither pending nor a recorded comparison"]
+    if digest in own:
+        failures.append("G14: the file compared is the lane's own test candidate, not a real one")
+    if comparison.get("candidate_sequence") != PUBLISHED_SEQUENCE + 1:
+        failures.append("G14: the file compared is not a sequence "
+                        f"{PUBLISHED_SEQUENCE + 1} candidate")
+    if (comparison.get("identical") is not True or comparison.get("differences") != []
+            or comparison.get("candidate_reference_count") != len(objects)
+            or comparison.get("candidate_reference_objects_sha256")
+            != comparison["lane_reference_objects_sha256"]):
+        failures.append("G14: the real candidate's reference objects are not byte-identical to "
+                        "the ones the previous release read")
+    return failures
+
+
 # --- classification: pure functions over a receipt -------------------------------------------
 
 def registry_words(case: dict) -> dict:
@@ -129,7 +295,74 @@ def registry_words(case: dict) -> dict:
             "marketplace_admitted": MARKETPLACE in admitted}
 
 
-def classify_registry(receipt: dict) -> list[str]:
+def classify_candidate_path(receipt: dict, require_exact: bool) -> list[str]:
+    """G3: 12a's entry comes out of the candidate tool's own command, test key aside."""
+
+    failures: list[str] = []
+    observed = receipt["cases"]["registry"]["observed"]
+    writer, lane = observed["writer"], observed["lane"]
+    candidate, signed, tools = writer["candidate"], writer["test_signed"], writer["tools"]
+    data = receipt["data"].get("registry", {})
+    public_key = f"<writer-source>/{PUBLISHED_PUBLIC_KEY}"
+    prepared = tools["candidate"]
+    if (prepared["path"] != CANDIDATE_TOOL or prepared["operation"] != CANDIDATE_OPERATION
+            or prepared["exit"] != 0 or prepared["arguments"] != [
+                "--entry", "<data>/core-entry.json", "--evidence",
+                "<data>/core-review-evidence.json", "--public-key", public_key,
+                "--previous", "<published-journal>", "--output", f"<data>/{CANDIDATE_FILE}"]):
+        failures.append(f"G3: the candidate was not built by {CANDIDATE_TOOL} "
+                        f"{CANDIDATE_OPERATION} on the published journal")
+    if (candidate["model"] != CANDIDATE_MODEL or candidate["operation"] != CANDIDATE_OPERATION
+            or candidate["sequence"] != PUBLISHED_SEQUENCE + 1
+            or candidate["previous_journal_sha256"] != PUBLISHED_JOURNAL_SHA256
+            or candidate["public_key_sha256"] != PUBLISHED_KEY_SHA256
+            or writer["published_public_key"] != {"path": PUBLISHED_PUBLIC_KEY,
+                                                  "key_sha256": PUBLISHED_KEY_SHA256}
+            or len(candidate["unchanged_entries"]) != candidate["entries"] - 1):
+        failures.append("G3: the candidate is not the next sequence on the published journal "
+                        "under the published public key with one changed entry")
+    if not (candidate["sha256"] == candidate["reported_sha256"] == data.get("candidate_sha256")
+            == lane["candidate"]["sha256"]) or candidate["file"] != CANDIDATE_FILE:
+        failures.append("G3: the candidate in the data set is not the file the tool reported")
+    objects = writer["reference_objects"]
+    if ([item.get("capability_id") for item in objects] != writer["references"]
+            or any(tuple(sorted(item)) != REFERENCE_FIELDS for item in objects)
+            or not (reference_digest(objects) == lane["candidate"]["reference_objects_sha256"]
+                    == lane["journal"]["reference_objects_sha256"])
+            or lane["candidate"]["shape"] != "candidate"
+            or lane["journal"]["shape"] != "signed journal"
+            or not (lane["candidate"]["sequence"] == lane["journal"]["sequence"]
+                    == candidate["sequence"])):
+        failures.append("G3: the recorded reference objects are not the ones in the candidate "
+                        "and in the test-signed journal")
+    signing = tools["test_signing"]
+    if (signing["path"] != TEST_SIGNING_TOOL or signing["operation"] != TEST_SIGNING_OPERATION
+            or signing["exit"] != 0 or signing["arguments"] != [
+                "--candidate", f"<data>/{CANDIDATE_FILE}", "--predecessor",
+                "<published-journal>", "--public-key", public_key,
+                "--output-dir", "<data>/dry-run"]
+            or signed["file"] != SIGNED_JOURNAL or signed["sequence"] != candidate["sequence"]
+            or signed["envelope_equals_candidate_envelope"] is not True
+            or signed["entry_references_equal_candidate"] is not True
+            or signed["predecessor_content_unchanged"] is not True):
+        failures.append("G3: the test-signed journal differs from the candidate in more than "
+                        "its signatures")
+    if len(str(signed["key_sha256"])) != 64 or signed["key_sha256"] == PUBLISHED_KEY_SHA256:
+        failures.append("G3: the test signature was not made with a key of the run's own")
+    for name, path, operation, ran in (
+            ("candidate_tool", CANDIDATE_TOOL, CANDIDATE_OPERATION, prepared),
+            ("test_signing_tool", TEST_SIGNING_TOOL, TEST_SIGNING_OPERATION, signing)):
+        tool = receipt.get(name) or {}
+        if (tool.get("path") != path or tool.get("operation") != operation
+                or tool.get("commit") != receipt["writer"].get("commit")
+                or tool.get("source") != receipt["writer"].get("source")
+                or tool.get("sha256") != ran["sha256"] or len(str(tool.get("blob_run"))) != 40
+                or (require_exact and tool.get("blob_run") != tool.get("blob_at_commit"))):
+            failures.append(f"G3: the receipt does not tie {path} as it ran to the writer commit")
+    return failures
+
+
+def classify_registry(receipt: dict, require_exact: bool = True) -> list[str]:
     failures: list[str] = []
     case = receipt["cases"].get("registry")
     if case is None:
@@ -137,18 +370,23 @@ def classify_registry(receipt: dict) -> list[str]:
     writer, reader = case["observed"]["writer"], case["observed"]["reader"]
     references, previous = writer["references"], writer["previous_references"]
     if (writer["published_journal_sha256"] != PUBLISHED_JOURNAL_SHA256
+            or writer["published_sequence"] != PUBLISHED_SEQUENCE
+            or writer["published_expires_at"] != PUBLISHED_EXPIRES_AT
             or len(previous) != PUBLISHED_REFERENCES or references[:len(previous)] != previous
-            or "prepare_core_release_registry.py" not in writer["built_by"]
-            or writer["sequence"] != 2):
-        failures.append("G3: the entry was not built by the registry tooling as an extension "
-                        "of the published entry")
+            or writer["sequence"] != PUBLISHED_SEQUENCE + 1):
+        failures.append("G3: the entry was not built as an extension of the published entry on "
+                        "the published journal")
+    failures += classify_candidate_path(receipt, require_exact)
     if references[len(previous):] != list(RULED_ADDED) or writer["added"] != list(RULED_ADDED):
         failures.append("G3: the added references are not the ruled six in the ruled order")
-    if reader["entry_references"] != references:
+    if (reader["entry_references"] != references or reader["entry_reference_objects_sha256"]
+            != reference_digest(writer["reference_objects"])):
         failures.append("G3: the reader decoded a different reference list than the writer built")
     if not (writer["journal_sha256"] == reader["journal_sha256"]
-            == receipt["data"].get("registry", {}).get("journal_sha256")):
+            == receipt["data"].get("registry", {}).get("journal_sha256")
+            == case["observed"]["lane"]["journal"]["sha256"]):
         failures.append("G2: the journal the reader loaded is not the journal the writer signed")
+    failures += classify_comparison(receipt)
     route, selected = reader["route_status"], reader["selected"]
     unknown = [item for item in references if item not in reader["compiled"]]
     if sorted(unknown) != sorted(NOT_ADMITTED):
@@ -166,8 +404,8 @@ def classify_registry(receipt: dict) -> list[str]:
             failures.append(f"G5: {item} is compiled by the previous release but not admitted")
     counts = reader["counts"]
     if (reader["refreshed"] is not True or reader["authority"] != {
-            "entry_present": True, "positive_authority_current": True, "sequence": 2,
-            "surface_denied": False}):
+            "entry_present": True, "positive_authority_current": True,
+            "sequence": PUBLISHED_SEQUENCE + 1, "surface_denied": False}):
         failures.append("G5: the previous release did not accept the journal as current authority")
     if (counts.get("compatible_count") != len(known)
             or any(counts.get(key) for key in ("held_count", "quarantined_count",
@@ -417,6 +655,32 @@ def summarize(receipt: dict) -> list[str]:
             f"admitted{' including ' + MARKETPLACE if words['marketplace_admitted'] else ''}, "
             f"{words['not_admitted']} not admitted ({', '.join(sorted(unknown))}), "
             f"{words['quarantined']} quarantined.")
+        writer, tool = cases["registry"]["observed"]["writer"], receipt.get("candidate_tool", {})
+        signed = writer["test_signed"]
+        same = all(signed[key] is True for key in (
+            "envelope_equals_candidate_envelope", "entry_references_equal_candidate",
+            "predecessor_content_unchanged"))
+        lines.append(
+            f"The entry was built by {tool.get('path')} {tool.get('operation')} at commit "
+            f"{tool.get('commit')} as sequence {writer['candidate']['sequence']} on the "
+            f"published sequence {writer['published_sequence']} journal under the published "
+            f"public key, and test-signed by {writer['tools']['test_signing']['path']} "
+            f"{writer['tools']['test_signing']['operation']} with a key generated in that dry "
+            f"run; the signed content "
+            f"{'equals' if same else 'does not equal'} the candidate and the published content.")
+        comparison = receipt.get("real_candidate_comparison", {})
+        if comparison.get("status") == "compared":
+            verdict = ("byte-identical to" if comparison.get("identical") is True
+                       else f"different at {len(comparison.get('differences') or [])} "
+                            f"positions from")
+            lines.append(
+                f"Comparison with the real sequence {PUBLISHED_SEQUENCE + 1} candidate: the "
+                f"{comparison.get('lane_reference_count')} reference objects are {verdict} "
+                f"those of the supplied {comparison.get('candidate_shape')} file with sha256 "
+                f"{comparison.get('candidate_sha256')}.")
+        else:
+            lines.append(f"Comparison with the real sequence {PUBLISHED_SEQUENCE + 1} "
+                         f"candidate: {comparison.get('status')}.")
     if scenario == "12b":
         lines += [device_sentence(label, cases[name]) for name, label in DEVICE_CASE.items()
                   if name in cases]
@@ -467,9 +731,9 @@ def summarize(receipt: dict) -> list[str]:
     return lines
 
 
-CLASSIFIERS = {"12a": lambda receipt, tiers: classify_registry(receipt),
-               "12b": classify_device,
-               "12c": lambda receipt, tiers: classify_plans(receipt)}
+CLASSIFIERS = {"12a": lambda receipt, tiers, exact: classify_registry(receipt, exact),
+               "12b": lambda receipt, tiers, exact: classify_device(receipt, tiers),
+               "12c": lambda receipt, tiers, exact: classify_plans(receipt)}
 
 
 def classify(receipt: dict, *, require_exact: bool = True,
@@ -541,7 +805,7 @@ def _classify(receipt: dict, require_exact: bool, recovery_tiers: tuple[str, ...
     for name in REQUIRED_CASES[scenario]:
         if name not in receipt.get("cases", {}):
             failures.append(f"G13: case {name} is missing")
-    failures += CLASSIFIERS[scenario](receipt, recovery_tiers)
+    failures += CLASSIFIERS[scenario](receipt, recovery_tiers, require_exact)
     if receipt.get("summary") != summarize(receipt):
         failures.append("G8: the receipt's summary is not the summary its observations give")
     return failures
@@ -568,7 +832,7 @@ def gate(receipts: list[dict], *, subject: str = "source", require_exact: bool =
 
 # --- projection: driver output to the observations a receipt keeps ---------------------------
 
-def observe_registry(writer: dict, reader: dict) -> dict:
+def observe_registry(writer: dict, reader: dict, lane: dict) -> dict:
     selected = {item: [selection["source"], selection["status"]]
                 for selection in reader["selections"] for item in selection["capability_ids"]}
     reconcile = reader["reconcile"]
@@ -576,14 +840,17 @@ def observe_registry(writer: dict, reader: dict) -> dict:
                     for item in reader["entry_references"]}
     return {
         "writer": {key: writer[key] for key in (
-            "published_journal_sha256", "published_sequence", "journal_sha256", "sequence",
-            "signer", "built_by", "previous_references", "added", "references",
-            "compiled_profiles")},
+            "published_journal_sha256", "published_sequence", "published_expires_at",
+            "published_public_key", "tools", "inputs", "candidate", "reference_objects",
+            "test_signed", "journal_sha256", "sequence", "previous_references", "added",
+            "references", "compiled_profiles")},
+        "lane": lane,
         "reader": {
             "refreshed": reader["refreshed"].get("value") if reader["refreshed"]["ok"] else False,
             "journal_sha256": reader["journal_sha256"], "authority": reader["authority"],
             "compiled": sorted(reader["compiled"]),
             "entry_references": [item["capability_id"] for item in reader["entry_references"]],
+            "entry_reference_objects_sha256": reference_digest(reader["entry_references"]),
             "selected": selected,
             "route_status": {item: {key: status.get(key) for key in (
                 "available", "disposition", "reason_codes")}
@@ -713,10 +980,15 @@ def git(*arguments: str, data: bytes | None = None) -> bytes:
     return result.stdout
 
 
-def prerequisites() -> list[str]:
+def prerequisites(now: datetime | None = None) -> list[str]:
     """What this checkout lacks to run the lane. Empty when it can run."""
 
     missing = []
+    expires = datetime.fromisoformat(PUBLISHED_EXPIRES_AT.replace("Z", "+00:00"))
+    if (now or datetime.now(timezone.utc)) >= expires:
+        missing.append(f"the pinned published journal expired at {PUBLISHED_EXPIRES_AT}; the "
+                       "candidate tool extends only a current journal, so the lane needs the "
+                       "journal now published pinned in its place")
     for name, expected in ((PREVIOUS_TAG, PREVIOUS_TAG_OBJECT),
                            (f"{PREVIOUS_TAG}^{{commit}}", PREVIOUS_COMMIT),
                            (f"{PUBLISHED_JOURNAL_BLOB}^{{blob}}", PUBLISHED_JOURNAL_BLOB)):
@@ -753,13 +1025,14 @@ class Lane:
     """One run: two source trees, two interpreters, one work directory."""
 
     def __init__(self, work: Path, reader_python: str, writer_python: str,
-                 writer_commit: str | None) -> None:
+                 writer_commit: str | None, real_candidate: Path | None = None) -> None:
         if work.exists() and any(work.iterdir()):
             raise LaneError(f"work directory {work} is not empty")
         missing = prerequisites()
         if missing:
             raise LaneError("checkout cannot run the lane: " + "; ".join(missing))
         self.work = work
+        self.real_candidate = real_candidate
         self.python = {"reader": reader_python, "writer": writer_python}
         for name in ("data", "read", "raw", "tmp"):
             (work / name).mkdir(parents=True, exist_ok=True)
@@ -883,17 +1156,50 @@ class Lane:
 
     # --- scenarios ---------------------------------------------------------------------------
 
+    def tool(self, path: str, operation: str) -> dict:
+        """Which file ran as a registry tool, and that it is the writer commit's file."""
+
+        file = self.tree["writer"] / path
+        return {"path": path, "operation": operation, "commit": self.writer["commit"],
+                "source": self.writer["source"], "sha256": sha256_file(file),
+                "blob_run": git("hash-object", "--no-filters", str(file)).decode().strip(),
+                "blob_at_commit": git("rev-parse", "--verify",
+                                      f"{self.writer['commit']}:{path}").decode().strip()}
+
     def registry(self) -> dict:
         root = self.work / "data/registry"
         writer = self.drive("writer", "12a-write", "registry", root,
                             self.work / "published-journal.json")
         data = {"registry": {**self.written("registry"),
-                             "journal_sha256": sha256_file(root / "journal.json")}}
+                             "candidate_sha256": sha256_file(root / CANDIDATE_FILE),
+                             "journal_sha256": sha256_file(root / SIGNED_JOURNAL)}}
+        own = {}
+        for name, file in (("candidate", CANDIDATE_FILE), ("journal", SIGNED_JOURNAL)):
+            found = candidate_reference_objects((root / file).read_bytes())
+            own[name] = {"file": file, "sha256": found["sha256"], "shape": found["shape"],
+                         "sequence": found["sequence"],
+                         "reference_objects_sha256": reference_digest(found["objects"])}
         reader = self.read(data["registry"], "registry", "12a-read", "registry", root,
                            self.work / "read/registry", self.tree["reader"] / REGISTRY_RECORDS)
-        case = {"data_set": "registry", "observed": observe_registry(writer, reader)}
+        case = {"data_set": "registry", "observed": observe_registry(writer, reader, own)}
         case["derived"] = registry_words(case)
-        return {"data": data, "cases": {"registry": case}}
+        return {
+            "data": data, "cases": {"registry": case},
+            "candidate_tool": self.tool(CANDIDATE_TOOL, CANDIDATE_OPERATION),
+            "test_signing_tool": self.tool(TEST_SIGNING_TOOL, TEST_SIGNING_OPERATION),
+            "real_candidate_comparison": compare_real_candidate(
+                writer["reference_objects"], self.real_candidate),
+            "limitations": [
+                "The candidate's review evidence is a placeholder, and the tool stamps the time "
+                "it runs. Its evidence digests, generated_at and expires_at therefore differ "
+                "from those of any real candidate; its reference objects are what the "
+                "comparison covers.",
+                "The test signature comes from the release's own dry run, which re-signs the "
+                "published envelopes and the candidate with a key it generates and does not "
+                "keep. The previous release read that journal under that key, not under the "
+                "published key.",
+                "The lane identifies a supplied real candidate by its sha256 only. It does not "
+                "establish that the file is the candidate that was or will be signed."]}
 
     def device_case(self, record: dict, name: str, case: str, now: datetime, task: str) -> dict:
         reader = self.read(record, name, f"12b-read-{case}", "device", self.work / "data" / name,
@@ -1035,6 +1341,25 @@ def load_receipts(directory: Path) -> list[dict]:
             for path in sorted(directory.glob("*-*.json"))]
 
 
+def record_comparison(directory: Path, candidate: Path, record: bool,
+                      tiers: tuple[str, ...]) -> tuple[dict, list[str]]:
+    """Compare a recorded 12a receipt's reference objects with a supplied candidate file."""
+
+    path = directory / "12a-source.json"
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        objects = receipt["cases"]["registry"]["observed"]["writer"]["reference_objects"]
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise LaneError(f"no usable 12a receipt in {directory}: {type(error).__name__}") from None
+    receipt["real_candidate_comparison"] = compare_real_candidate(objects, candidate)
+    receipt["summary"] = summarize(receipt)
+    receipt["failures"] = classify(receipt, recovery_tiers=tiers)
+    receipt["result"] = "PASS" if not receipt["failures"] else "FAIL"
+    if record:
+        write_receipts([receipt], directory)
+    return receipt["real_candidate_comparison"], receipt["failures"]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1047,20 +1372,38 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--writer-commit",
                      help="write from a git archive of this commit instead of the checkout")
     run.add_argument("--scenario", action="append", choices=sorted(CLASSIFIERS))
+    run.add_argument("--real-candidate", type=Path,
+                     help="a real registry candidate to compare 12a's reference objects with")
     check = commands.add_parser("check", help="re-classify recorded receipts")
     check.add_argument("directory", type=Path)
-    for command in (run, check):
+    compare = commands.add_parser(
+        "compare-candidate",
+        help="compare a recorded 12a receipt's reference objects with a real candidate file")
+    compare.add_argument("directory", type=Path)
+    compare.add_argument("candidate", type=Path)
+    compare.add_argument("--record", action="store_true",
+                         help="write the comparison into the 12a receipt")
+    for command in (run, check, compare):
         command.add_argument("--recovery-tier", action="append", choices=sorted(RECOVERY_TIERS),
                              help="recovery tiers required of 12b (default: every tier)")
     options = parser.parse_args(argv)
     tiers = tuple(options.recovery_tier or DEFAULT_RECOVERY_TIERS)
     if options.command == "check":
         failures = gate(load_receipts(options.directory), recovery_tiers=tiers)
+    elif options.command == "compare-candidate":
+        try:
+            comparison, failures = record_comparison(
+                options.directory, options.candidate, options.record, tiers)
+        except LaneError as error:
+            print(f"rollback proof lane: no comparison made: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(comparison, indent=1, sort_keys=True))
+        failures = [f"12a: {item}" for item in failures]
     else:
         exact = bool(options.writer_commit)
         try:
             lane = Lane(options.work.resolve(), options.reader_python, options.writer_python,
-                        options.writer_commit)
+                        options.writer_commit, options.real_candidate)
             receipts = lane.run(tuple(options.scenario or sorted(CLASSIFIERS)), tiers, exact)
         except (LaneError, OSError, subprocess.TimeoutExpired) as error:
             print(f"rollback proof lane: no evidence produced: {error}", file=sys.stderr)
