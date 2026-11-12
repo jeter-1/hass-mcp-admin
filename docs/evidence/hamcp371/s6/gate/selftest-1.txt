@@ -1,0 +1,10 @@
+== admission for hamcp371-s6-selftest-1 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-12 00:20:51 CST
+units:
+  hamcp364-evidence-63c127b4.service
+lanes(containers):
+  
+stray:
+heavy_total=1 evidence=1 mem_avail_gb=10.0 load1=5.08 root_free_gb=48.5
+Running as unit: hamcp371-s6-selftest-1.service; invocation ID: 93255b3c9a3e4222b5072197b71dfe6f
+launched rc=0 cmd=/bin/bash -c TMPDIR=/home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/tmp\ python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ selftest\ --run-dir\ .artifacts/hamcp371-s6/selftest-1\ --launch-log\ .artifacts/hamcp371-s6/launches.jsonl\ --note\ \'first\ S6\ selftest\;\ harness\ 6f10c4a2\ \(seed\ waits\ for\ the\ reloaded\ automation\ entity\,\ committed\ before\ any\ launch\)\;\ images\ from\ the\ local\ cache\ by\ digest\,\ no\ pull\'\ \>\ .artifacts/hamcp371-s6/selftest-1.log\ 2\>\&1 
