@@ -167,9 +167,11 @@ References to created_identity in the previous release's runtime source: 0; in t
 - 12a: the comparison identifies a supplied candidate by its sha256 only. The
   lane does not establish that the file is the candidate that was or will be
   signed.
-- 12a: the candidate tool extends only a journal that has not expired. After
-  2027-02-05T06:16:34Z the lane reports that it cannot run until the journal
-  then published is pinned in its place.
+- 12a: the candidate tool extends only a journal that has not expired. The 12a
+  receipt cannot be regenerated after 2027-02-05 00:16 CST
+  (2027-02-05T06:16:34Z), when the pinned sequence 17 journal expires. After
+  that the lane reports that it cannot run until the journal then published is
+  pinned in its place.
 - 12b, recovery 27a: the hold was released by calling beta.8's service methods
   with a synthetic Ingress principal. The Ingress HTTP layer and its
   administrator check were not exercised.
@@ -181,6 +183,28 @@ References to created_identity in the previous release's runtime source: 0; in t
   statement about the lane, not as a measurement.
 - Restoring the Engineering add-on backup taken before deploy is not exercised
   here.
+- Recovery 27a (roll forward, settle, roll back on the same data) is not a
+  supported recovery path. Its tier, classifier and the 12b record of it stay
+  as committed; they show what happened in this run, not a path to follow.
+
+Known limits that are not corrected, by decision; each is a statement about
+what `check` cannot see, and none changes a recorded result:
+
+- L5: the 12c reader's synthetic Core counts POST and DELETE provider writes but
+  not PUT. The 12c plans write with POST and DELETE only. Correcting it changes
+  the reader driver's bytes, which would require regenerating the receipts.
+- R4: the recorded `flags` are the command line the lane built, and the reader's
+  `isolated` is written as a constant; neither is what the interpreter reports.
+  `check` does not read `flags`.
+- R5: `check` reads only the `*.json` files at the top of the receipt
+  directory. Another file or a subdirectory beside them is not read.
+- R7: the recorded start and end times are bound only by their order, not to
+  the commits or to the clock.
+- `check` cannot re-measure what a receipt records as constants or digests: the
+  commands and flags (B11, B12), the store digests (B17), the dependency pins
+  (B20) and the lock file hashes (B21). For B21, `WriterCommitGitTests`
+  compares each side's recorded lock hash with the lock file at that side's
+  commit where git is at hand; `check` does not.
 
 ## Re-checking and regenerating
 
@@ -195,8 +219,14 @@ for recovery 27a, the crash point, the `manual_review_required` outcome and the
 presence of the review record. It compares recorded fields with each other and
 with the constants the lane pins, and it accepts only receipts that record a
 writer taken by `git archive` from one commit, interpreters holding the locked
-dependencies and unmodified drivers. It fails on a key the receipt schema or its
-`lane` record does not define, on more than one receipt for a subject and
+dependencies and unmodified drivers. It accepts only receipts whose writer commit
+is the one the lane pins (`WRITER_COMMIT`,
+`aeb3b314dd180592874243c9ae370a63f0622c2b`); `gate` does not compare it. It fails
+on a key the receipt schema does not define, at the top level or in any record
+`closed_records` lists (the `lane`, writer and reader records, their
+dependencies, the runs, the cases and their observed and derived records, the
+data sets, the tool and comparison records and an exercised 27a tier), on more
+than one receipt for a subject and
 scenario, on a file whose name is not that of the receipt it holds, on an
 unknown subject or scenario, and on a `.json` file it cannot read as a receipt.
 
@@ -207,9 +237,14 @@ exists, that each recorded driver hash is the sha256 of that file at that
 commit, and that the recorded tool blobs and hashes are those of the tool files
 at the commit recorded with them. It is skipped where git or the recorded
 commits are unavailable. `RecordedTimeTests` compares that a run did not end
-before it started. The writer commit a receipt records is not compared with a
-pinned value.
+before it started. `WriterCommitGitTests` compares each side's commit with git:
+that it is a commit of the repository and equals its `archive_commit`, that the
+version `hass_mcp_engineering_beta/config.yaml` declares at it is the recorded
+version, that the recorded lock hash is the sha256 of
+`hass_mcp_engineering_beta/requirements.lock` at it, and, unless the clone is
+shallow, that the writer commit is an ancestor of the recorded checkout commit.
 
 To regenerate all three receipts, run the one command under "What ran" into this
 directory, then update the table, the identities above and the three recorded
-`summary` blocks.
+`summary` blocks. A run from another writer commit also needs `WRITER_COMMIT`
+changed to that commit in the same change.
