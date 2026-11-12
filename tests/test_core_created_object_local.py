@@ -283,6 +283,31 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
         return (acceptance.scene_route(SCENE_ID), acceptance.automation_route(AUTOMATION_ID),
                 acceptance.state_route(MEMBERS[0]))
 
+    async def test_refusals_are_fixed_codes_a_withheld_receipt_may_name(self):
+        codes = (acceptance.LANE_URL_REFUSED, acceptance.LANE_REQUEST_REFUSED, acceptance.LANE_FIXTURE_REFUSED)
+        self.assertEqual(codes, ("lane_raw_url_not_loopback", "lane_raw_request_not_listed",
+                                 "lane_fixture_not_owned"))
+        self.assertLessEqual(set(codes), acceptance.diagnostics.SAFE_MESSAGES)
+        # Each real refusal reaches the receipt as its code and nothing else: no URL, id or route.
+        raised = []
+        with self.assertRaises(ValueError) as caught:
+            acceptance.LaneRaw(configured("http://192.0.2.10:8123/api", "ws://192.0.2.10:8123/api/websocket"))
+        raised.append(caught.exception)
+        with self.assertRaises(ValueError) as caught:
+            await lane_client().status("DELETE", acceptance.scene_route(SCENE_ID))
+        raised.append(caught.exception)
+        with self.assertRaises(ValueError) as caught:
+            acceptance.scene_route("users_own_scene")
+        raised.append(caught.exception)
+        self.assertEqual([error.args for error in raised], [(code,) for code in codes])
+        with patch.object(acceptance.diagnostics, "_raw_log", return_value=False):
+            receipts = [acceptance.diagnostics.failure(error) for error in raised]
+        self.assertEqual([[(item["type"], item["message"]) for item in receipt["exception_chain"]]
+                          for receipt in receipts], [[("ValueError", code)] for code in codes])
+        for private in ("192.0.2.10", "users_own_scene", SCENE_ID, "/config/scene"):
+            self.assertNotIn(private, json.dumps([[item["message"] for item in receipt["exception_chain"]]
+                                                  for receipt in receipts]))
+
     def test_only_one_exact_loopback_core_is_accepted_for_rest_and_websocket(self):
         for host in ("127.0.0.1:18123", "localhost:8123", "[::1]:8123", "127.0.0.1"):
             with self.subTest(host=host):
@@ -314,8 +339,10 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
         ]
         for api_url, websocket_url in refused:
             with self.subTest(api_url=api_url, websocket_url=websocket_url):
-                with patch.object(acceptance.RawWebSocket, "__init__") as built, self.assertRaises(ValueError):
+                with patch.object(acceptance.RawWebSocket, "__init__") as built, \
+                        self.assertRaises(ValueError) as caught:
                     acceptance.LaneRaw(configured(api_url, websocket_url))
+                self.assertEqual(caught.exception.args, ("lane_raw_url_not_loopback",))
                 built.assert_not_called()
 
     async def test_only_the_lane_method_and_route_pairs_are_sent(self):
@@ -327,8 +354,9 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
                 raw = lane_client({"id": "x"})
                 with self.subTest(method=method, template=route.template):
                     if (method, route.template) not in LANE_REQUESTS:
-                        with self.assertRaises(ValueError):
+                        with self.assertRaises(ValueError) as caught:
                             await raw.status(method, route, {"alias": "x"})
+                        self.assertEqual(caught.exception.args, ("lane_raw_request_not_listed",))
                         self.assertEqual(raw.client.sent, [])
                         continue
                     self.assertEqual(await raw.status(method, route, {"alias": "x"}), (200, {"id": "x"}))
@@ -355,35 +383,47 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
         for binder, values in ((acceptance.scene_route, foreign_ids), (acceptance.automation_route, foreign_ids),
                                (acceptance.state_route, foreign_entities)):
             for value in values:
-                with self.subTest(binder=binder.__name__, value=value), self.assertRaises(ValueError):
-                    binder(value)
+                with self.subTest(binder=binder.__name__, value=value):
+                    with self.assertRaises(ValueError) as caught:
+                        binder(value)
+                    self.assertEqual(caught.exception.args, ("lane_fixture_not_owned",))
         # A path the binders did not issue is refused before any request, whatever built it.
+        # Beside each: the methods whose pair is a lane request, so the refusal is the foreign id's.
+        everything, reads = ("GET", "POST", "DELETE"), ("GET",)
         unbound = [
-            "/config/scene/config/" + SCENE_ID, "/states/" + MEMBERS[0], "/config/automation/config/" + AUTOMATION_ID,
-            "/services/scene/turn_on", "/config/scene/config/hamcp_g4_x/../y", "", None,
-            paths.rest_path("/config/scene/config/{}", "users_own_scene"),
-            paths.rest_path("/config/automation/config/{}", "users_own_automation"),
-            paths.rest_path("/states/{}", "light.kitchen", kinds=("entity_id",)),
-            paths.rest_path("/states/{}", "input_boolean.users_real_lamp", kinds=("entity_id",)),
-            paths.rest_path("/states/{}", "automation.hamcp_g4_x", kinds=("entity_id",)),
-            paths.rest_path("/states/{}", MEMBERS[0], kinds=("entity_id",), query={"x": "y"}),
-            paths.rest_path("/config/script/config/{}", "hamcp_g4_x"),
-            paths.rest_path("/services/notify/{}", "hamcp_g4_x"), paths.rest_path("/states"),
-            paths.rest_path("/config/core/check_config"),
+            *[(path, ()) for path in (
+                "/config/scene/config/" + SCENE_ID, "/states/" + MEMBERS[0],
+                "/config/automation/config/" + AUTOMATION_ID, "/services/scene/turn_on",
+                "/config/scene/config/hamcp_g4_x/../y", "", None)],
+            (paths.rest_path("/config/scene/config/{}", "users_own_scene"), reads),
+            (paths.rest_path("/config/automation/config/{}", "users_own_automation"), everything),
+            (paths.rest_path("/states/{}", "light.kitchen", kinds=("entity_id",)), reads),
+            (paths.rest_path("/states/{}", "input_boolean.users_real_lamp", kinds=("entity_id",)), reads),
+            (paths.rest_path("/states/{}", "automation.hamcp_g4_x", kinds=("entity_id",)), reads),
+            (paths.rest_path("/states/{}", MEMBERS[0], kinds=("entity_id",), query={"x": "y"}), ()),
+            (paths.rest_path("/config/script/config/{}", "hamcp_g4_x"), ()),
+            (paths.rest_path("/services/notify/{}", "hamcp_g4_x"), ()), (paths.rest_path("/states"), ()),
+            (paths.rest_path("/config/core/check_config"), ()),
         ]
-        for path in unbound:
-            for method in ("GET", "POST", "DELETE"):
+        for path, foreign_id_methods in unbound:
+            for method in everything:
                 raw = lane_client({"id": "x"})
-                with self.subTest(path=path, method=method), self.assertRaises(ValueError):
-                    await raw.status(method, path)
+                with self.subTest(path=path, method=method):
+                    with self.assertRaises(ValueError) as caught:
+                        await raw.status(method, path)
+                    self.assertEqual(caught.exception.args, (
+                        "lane_fixture_not_owned" if method in foreign_id_methods
+                        else "lane_raw_request_not_listed",))
                 self.assertEqual(raw.client.sent, [])
 
     async def test_a_scene_config_delete_or_write_is_unreachable_from_the_lane_client(self):
         route = acceptance.scene_route(SCENE_ID)
         for method in ("DELETE", "POST", "PUT"):
             raw = lane_client()
-            with self.subTest(method=method), self.assertRaises(ValueError):
-                await raw.status(method, route, {"name": "x", "entities": {}})
+            with self.subTest(method=method):
+                with self.assertRaises(ValueError) as caught:
+                    await raw.status(method, route, {"name": "x", "entities": {}})
+                self.assertEqual(caught.exception.args, ("lane_raw_request_not_listed",))
             self.assertEqual(raw.client.sent, [])
         # Behind that check stands the shipped transport guard: the lane's
         # guarded client holds no delete permit, so nothing is sent.
@@ -911,6 +951,63 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
         self.assertEqual(self.rest.scenes, {})
         self.assertEqual([key for key in self.ws.entries if key.startswith("scene.")], [])
         self.assertEqual([key for key in self.rest.states if key.startswith("scene.")], [])
+
+    async def undo_waits_out_one_state_error(self, earlier, undo, write=acceptance.SCENE_DELETE, gone=None):
+        """``undo`` over a Core whose state route answers 500 once after the verified delete, then 404.
+
+        Only a 404 ends the wait for the entity to go. A 500 is not that answer, so the lane reads again
+        and the undo passes on the 404 that follows; a wait any non-200 could end would stop on the 500.
+        ``write`` is the delete the undo sends and ``gone`` the read-back of what it removed, scene by default.
+        """
+        c, reads = self.lane_context, []
+        for step in earlier:
+            await step(c)
+        # What the read-back must be, from what Core holds before the undo.
+        gone = gone(c) if gone else {"config_status": 404, "registry_entity_id": None,
+                                     "entity_id": self.rest.scene_entity(c.state["config_id"])}
+        real, verified = acceptance.applied, []
+
+        async def applied(c, plan, writes):
+            outcome = await real(c, plan, writes)
+            verified.append(outcome[0]["task_state"])
+            # From here Core's state route answers 500; the shipped lane client classifies it.
+            self.raw.client.errors["GET", acceptance.STATE_ROUTE] = 500
+            return outcome
+
+        async def status(method, route, body=None):
+            answer = await self.raw.status(method, route, body)
+            if route.template == acceptance.STATE_ROUTE:
+                reads.append(answer[0])
+                # One answer only: the next state read is Core's own.
+                self.raw.client.errors.clear()
+            return answer
+        c.reader.status = status
+        try:
+            with patch.object(acceptance, "applied", applied):
+                value = await undo(c)
+        finally:
+            c.reader.status = self.raw.status
+            self.raw.client.errors.clear()
+        self.assertEqual(verified, ["succeeded_verified"])
+        self.assertEqual(self.log.writes_since(0)[-1], write)
+        # The lane read the 500, waited, and read again: the 404 is the read-back it reports.
+        self.assertEqual(reads, [500, 404])
+        self.assertEqual((value["result"], value["readback"]), ("PASS", {**gone, "state_status": 404}))
+        self.assertEqual((self.rest.scenes, self.ws.helpers), ({}, {"input_boolean": {}, "input_number": {}}))
+
+    async def test_an_undo_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        await self.undo_waits_out_one_state_error([acceptance.scene_create], acceptance.scene_undo)
+
+    async def test_an_undo_of_the_recreate_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        await self.undo_waits_out_one_state_error(
+            [acceptance.scene_create, acceptance.scene_undo, acceptance.scene_recreate],
+            acceptance.scene_recreate_undo)
+
+    async def test_a_helper_undo_waits_out_one_state_error_and_passes_on_the_404_after_it(self):
+        """The helper delete has one wait of its own, shared by every helper undo; this is its 500-then-404."""
+        create, undo = (acceptance.SCENARIOS[step + "_input_boolean"] for step in ("helper_create", "helper_undo"))
+        await self.undo_waits_out_one_state_error([create], undo, "input_boolean/delete", lambda c: {
+            "stored": False, "registry_entity_id": None, "entity_id": c.state["input_boolean"][1]["entity_id"]})
 
     async def test_a_create_reads_what_its_members_hold_before_it_plans_and_compares_with_that(self):
         """What the members held before the create is read, never assumed: one starts off, which no default says."""

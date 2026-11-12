@@ -399,8 +399,11 @@ matrix's largest helper gap is here.
     for the other config-entry helpers (RCG-042).
   - Recovery of a create is a delete: `{type}/delete` for storage
     collections (RCG-023, RCG-029, RCG-033), or config-entry removal
-    (RCG-038). This is the same signed delete-profile decision as 071
-    Part 3.
+    (RCG-038). No implemented profile covers these types: the dormant
+    `core.created_helper_delete_operation` covers only `input_boolean` and
+    `input_number`, and it is separate from the scene profile of 071
+    Part 3. A delete profile for the types above is still an owner
+    decision.
 - **Readback:** exact stored-definition readback is possible for storage
   collections. For config-flow helpers, per-type evidence must first show
   what the delegated list returns; OD-1 still restricts the options-flow
@@ -474,11 +477,14 @@ profile is omitted, every tool that depends on it becomes unavailable on
 
 ### Future sequences: new profiles, each after its feature is merged
 
-The six entries below are future candidates, not sequence-16 additions. A
-new or revised profile first needs approved scope, implemented and
-independently reviewed code, merge and build provenance, and exact contract
-evidence. Its fingerprint comes from the merged code, and it is signed in
-a later applicable sequence. Each entry stays conditional on its gate.
+None of the six entries below is a sequence-16 addition. Entries 1 and 2
+are implemented and dormant: two separate profiles whose fingerprints are
+not signed yet (registry sequence 18). Entries 3 to 6 are future
+candidates. A new or revised profile first needs approved scope,
+implemented and independently reviewed code, merge and build provenance,
+and exact contract evidence. Its fingerprint comes from the merged code,
+and it is signed in a later applicable sequence. Each entry stays
+conditional on its gate.
 
 | # | Profile (candidate) | For | Commands | Constraints | Gate before implementation |
 |---|---|---|---|---|---|
@@ -525,11 +531,17 @@ This is a recommendation for the architect and Josh, not a decision.
 6. **HAMCP-253** (M, ready). It is Engineering-local, with no upstream
    dependency, and it removes manual triage of refused records. Its
    persistence boundary needs a security section.
-7. **Owner decisions for future profiles.** Josh decides on the
-   delete-profile question (071 Part 3) and the helper-create scope.
-8. **HAMCP-071 Part 3**, then the **helper-create candidate**: implement,
-   review and merge, then sign their new profiles in a sequence after 16.
-   They share the delete profile.
+7. **Owner decisions for future profiles.** Scene create and delete (071
+   Part 3) and delete of a created `input_boolean` or `input_number` are
+   implemented and dormant as two separate profiles (entries 1 and 2 of the
+   table above), so no delete-profile decision remains for them. Josh still
+   decides the helper-create scope, including a delete profile for the
+   helper types those two profiles do not cover.
+8. **HAMCP-071 Part 3** is implemented and dormant: its profile and the
+   created-helper delete profile wait for signing in registry sequence 18.
+   Then the **helper-create candidate**: implement, review and merge, then
+   sign its new profiles in a later sequence. It shares neither dormant
+   profile.
 9. **HAMCP-149** fixture (S), whenever a slot is free. It is
    non-executing.
 10. Hold for owner decisions or feasibility: 262, 109, 134, 231 and 156.

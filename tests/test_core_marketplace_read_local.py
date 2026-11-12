@@ -1,6 +1,7 @@
 """Offline HAMCP-290 marketplace_read lane boundaries; no Docker, network or production key."""
 import argparse
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 import unittest
 from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
@@ -71,6 +73,77 @@ class Contracts(unittest.TestCase):
         result = subprocess.run([sys.executable, "-I", str(GENERATOR), *args, "--check"],
                                 capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_generator_refuses_a_duplicate_archive_member(self):
+        # Low 9 (#421): two copies of one manifest path in the archive are refused,
+        # never resolved to the later (or the earlier) copy. Needs no Core archive.
+        spec = importlib.util.spec_from_file_location("hamcp290_generate_source_records", GENERATOR)
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        commit, path = "a" * 40, "homeassistant/components/marketplace/__init__.py"
+
+        def archive(directory, *members):
+            target = Path(directory) / ("core-%d.tar.gz" % len(members))
+            with tarfile.open(target, "w:gz") as tar:
+                for name, data in members:
+                    info = tarfile.TarInfo("core-" + commit + "/" + name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+            fixture = {"source_commit": commit, "source_tree": "b" * 40,
+                       "source_archive_sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+            return target, fixture
+
+        with tempfile.TemporaryDirectory() as directory:
+            once, fixture = archive(directory, (path, b"first"), ("homeassistant/other.py", b"other"))
+            with patch.object(generator, "provenance", return_value=fixture) as bound:
+                self.assertEqual(generator.archive_hashes("2026.11.0", once, [path])[1]["hashes"],
+                                 {path: hashlib.sha256(b"first").hexdigest()})
+            bound.assert_called_once_with("2026.11.0")
+            # A path outside the manifest may repeat: it is never read.
+            unlisted, fixture = archive(directory, (path, b"first"), ("homeassistant/other.py", b"other"),
+                                        ("homeassistant/other.py", b"again"))
+            with patch.object(generator, "provenance", return_value=fixture):
+                self.assertEqual(list(generator.archive_hashes("2026.11.0", unlisted, [path])[1]["hashes"]), [path])
+            for label, second in (("same bytes", b"first"), ("different bytes", b"second")):
+                twice, fixture = archive(directory, (path, b"first"), ("homeassistant/other.py", b"other"),
+                                         ("homeassistant/third.py", b"third"), (path, second))
+                with self.subTest(copy=label), patch.object(generator, "provenance", return_value=fixture):
+                    with self.assertRaises(ValueError) as caught:
+                        generator.archive_hashes("2026.11.0", twice, [path])
+                    self.assertEqual(caught.exception.args, ("2026.11.0: duplicate archive member " + path,))
+
+    def test_host_command_refuses_a_container_run_without_one_explicit_memory_limit(self):
+        # Low 8 (#421): the lane's own command() keeps the memory preflight in
+        # front of Docker; nothing is executed for a run that lost its limit.
+        done = subprocess.CompletedProcess([], 0, b"", b"")
+        for argv in (("docker", "run", "--rm", "image"), ("docker", "run", "--memory"),
+                     ("docker", "run", "--memory", "1g", "--memory", "2g", "image"),
+                     ("docker", "run", "--memory=2g", "image"), ("docker", "run", "--memory", "0", "image"),
+                     ("docker", "run", "--memory", "image")):
+            with self.subTest(argv=argv), patch.object(lane.subprocess, "run", return_value=done) as ran:
+                with self.assertRaises(lane.host.Refusal) as caught:
+                    lane.command(*argv)
+                self.assertEqual(caught.exception.args, ("explicit_positive_container_memory_required",))
+                ran.assert_not_called()
+        for argv in (("docker", "run", "--memory", lane.CORE_MEMORY, "image"), ("docker", "inspect", "name"),
+                     ("git", "rev-parse", "HEAD")):
+            with self.subTest(argv=argv), patch.object(lane.subprocess, "run", return_value=done) as ran:
+                self.assertIs(lane.command(*argv), done)
+                ran.assert_called_once_with(argv, cwd=ROOT, capture_output=True, timeout=120)
+
+    def test_main_refuses_when_assertions_are_compiled_out(self):
+        # Low 4 (#421): __debug__ is fixed when a module is compiled, so the
+        # refusal is reached only in an interpreter started with -O. No
+        # arguments are given: were the refusal gone, argparse would exit 2
+        # before any host command.
+        code = ("import sys\nsys.path.insert(0, sys.argv[1])\nimport core_marketplace_read_local as lane\n"
+                "try:\n    lane._main([])\nexcept lane.Refusal as refusal:\n"
+                "    print(__debug__, type(refusal).__name__, *refusal.args)\n")
+        for flags, expected in ((("-O",), (0, "False Refusal assertions_required")), ((), (2, ""))):
+            with self.subTest(flags=flags):
+                result = subprocess.run([sys.executable, "-I", "-B", *flags, "-c", code, str(ROOT / "scripts")],
+                                        capture_output=True, text=True, timeout=60, cwd=ROOT)
+                self.assertEqual((result.returncode, result.stdout.strip()), expected, result.stderr[-400:])
 
     def test_cached_image_requires_exact_repo_digest(self):
         def reply(digests):
@@ -512,13 +585,17 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
                              github_connected=False, install_success=True, installs=True, project=None,
                              inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0],
-                             theme_id="200", configured=None, socket=False):
+                             theme_id="200", configured=None, socket=False, stray=None):
         # socket=True: RawCore.command is the real one, over a fake aiohttp session
         # (self.raw_events); otherwise RawCore.command itself is replaced.
         # inject=(n, written): the n-th reader call also admits (and, if written,
         # writes) the HACS list command while the backend stays core_marketplace.
         # Calls: 1 routed read, 2 redaction canary, 3 wrong identity, 4 disabled entry.
-        created, sent_frames, raw_sent, read_calls = [], [], [], []
+        # stray=n: during the n-th reader call the first reader's record of what it
+        # wrote gains a HACS list command, outside any read of that reader. The
+        # service's own callbacks refuse an unadmitted command, so the record is
+        # set directly: the lane's history check is the layer under test.
+        created, sent_frames, raw_sent, read_calls, readers = [], [], [], [], []
         state = {"disabled": False, "installed": ()}
         self.raw_sent, self.raw_events = raw_sent, []
 
@@ -558,6 +635,9 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
 
         async def read(reader, *, core_version, authorize, on_dispatch, on_sent):
             read_calls.append(core_version)
+            readers.append(reader)
+            if stray == len(read_calls):
+                readers[0].sent.append(HACS_LIST_COMMAND)
             authorize()
             if core_version != reply_version or core_version == "2026.10.3":
                 raise MarketplaceError("identity_mismatch")
@@ -614,7 +694,12 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         transport = (patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(self.raw_events, raw))
                      if socket else patch.object(acceptance.RawCore, "command", new=raw))
         refs = [{"capability_id": f"core.synthetic_{i}"} for i in range(32)]
+        # run() calls install_fixture without a sleep, so the one bound at its
+        # definition is used: replace that default, or a record that never reads
+        # back installed really waits out the whole poll window.
+        self.install_sleep = AsyncMock()
         with tempfile.TemporaryDirectory() as directory, \
+                patch.object(acceptance.install_fixture, "__kwdefaults__", {"sleep": self.install_sleep}), \
                 patch.object(acceptance, "CoreRuntime", side_effect=Runtime), \
                 patch.object(acceptance, "CoreReleaseRegistry", return_value=registry), \
                 patch.object(acceptance, "prepare_candidate", return_value={}), \
@@ -693,6 +778,10 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             await self.run_acceptance(installs=False)
         self.assertEqual(caught.exception.reason, "installed_record_missing")
         self.assertEqual(self.raw_sent.count("marketplace/repository/install"), 1)
+        # The whole poll window was used, every wait the fixture's own five seconds, none of it real.
+        polls = acceptance.INSTALLED_POLL_SECONDS // 5
+        self.assertEqual([wait.args for wait in self.install_sleep.await_args_list], [(5,)] * polls)
+        self.assertEqual(self.raw_sent.count(MARKETPLACE_LIST_COMMAND), 1 + polls)  # store_ready, then each poll
 
     async def test_record_missing_from_routed_page_fails_the_lane(self):
         # The service read omits the installed record: the lane must not pass.
@@ -708,6 +797,24 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def test_hacs_fallback_fails_the_lane(self):
         with self.assertRaises(AssertionError):
             await self.run_acceptance(fallback=True)
+
+    async def test_hacs_command_in_the_reader_history_fails_the_lane_at_the_history_check(self):
+        # Low 5 (#421): a HACS list command in the service reader's history, a
+        # Marketplace-only tail for the final read and backend core_marketplace
+        # throughout. No PASS dict (with its hacs_commands_sent) is returned, and
+        # the check that refuses is the history conjunct itself, not only the
+        # derived count after it.
+        try:
+            await self.run_acceptance(stray=2)
+        except AssertionError as error:  # assertRaises would drop the traceback
+            frame = traceback.extract_tb(error.__traceback__)[-1]
+        else:
+            self.fail("the lane passed with a HACS list command in its reader history")
+        self.assertEqual((frame.name, frame.line), (
+            "run", "assert reader.sent[sent:] == [MARKETPLACE_LIST_COMMAND] and HACS_LIST_COMMAND not in reader.sent"))
+        # Control: the same scenario without the stray command passes.
+        result, _sent = await self.run_acceptance()
+        self.assertEqual((result["result"], result["hacs_commands_sent"]), ("PASS", 0))
 
     async def test_injected_fallback_command_fails_the_lane(self):
         # Cursor M2 (#421): the backend still says core_marketplace, so only the
@@ -844,6 +951,13 @@ class RawSocket(unittest.IsolatedAsyncioTestCase):
                 shown = str(caught.exception) + repr(caught.exception) + repr(caught.exception.__dict__)
                 for private in (token, url, "evil.example", "synthetic-query", "127.0.0.1", "ws://"):
                     self.assertNotIn(private, shown)
+                # A withheld receipt names that code: it is on the exact redaction allowlist.
+                with patch.object(lane.diagnostics, "_raw_log", return_value=False):
+                    receipt = lane.diagnostics.failure(caught.exception)
+                self.assertEqual([(item["type"], item["message"]) for item in receipt["exception_chain"]],
+                                 [("ValueError", str(caught.exception))])
+                for private in (token, url, "evil.example", "synthetic-query", "127.0.0.1", "ws://"):
+                    self.assertNotIn(private, json.dumps(receipt))
 
     async def test_any_url_but_the_pinned_loopback_core_is_refused_before_a_session(self):
         cases = (
@@ -1163,6 +1277,11 @@ class InstallFixture(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             acceptance.FixtureError("free text from upstream")
         self.assertTrue(set(acceptance.FIXTURE_REASONS) <= lane.diagnostics.SAFE_MESSAGES)
+        # The raw client's two refusals are fixed codes of the same allowlist.
+        self.assertEqual((acceptance.RAW_URL_REFUSED, acceptance.RAW_COMMAND_REFUSED),
+                         ("raw_core_url_not_pinned", "raw_core_command_not_listed"))
+        self.assertTrue({acceptance.RAW_URL_REFUSED, acceptance.RAW_COMMAND_REFUSED}
+                        <= lane.diagnostics.SAFE_MESSAGES)
         self.assertTrue({"install_fixture", "redaction_canary"} <= lane.diagnostics.CHECKS)
 
     def info_raw(self, reply):

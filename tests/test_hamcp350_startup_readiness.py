@@ -478,13 +478,28 @@ class SupervisorDeadlineOrderTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_reconcile_after_deadline_never_marks_ready(self):
         async def reconcile(order):
             order.append("reconcile")
-            await asyncio.sleep(0.05)
+            # Fail only once the supervisor has marked the deadline. A fixed sleep here raced
+            # the deadline timer: a stalled event loop let the failure arrive first, and the
+            # order below then read ["reconcile"].
+            while "deadline" not in order:
+                await asyncio.sleep(0.001)
             raise RuntimeError("synthetic reconciliation failure")
 
         order, supervised, task = await self.run_supervisor(reconcile)
         with self.assertRaisesRegex(RuntimeError, "synthetic reconciliation"):
             await asyncio.wait_for(task, 5)
         self.assertEqual(order, ["reconcile", "deadline"])
+        self.assertEqual(supervised, [])
+
+    async def test_failed_reconcile_within_deadline_never_marks_ready_or_deadline(self):
+        async def reconcile(order):
+            order.append("reconcile")
+            raise RuntimeError("synthetic reconciliation failure")
+
+        order, supervised, task = await self.run_supervisor(reconcile, deadline=60)
+        with self.assertRaisesRegex(RuntimeError, "synthetic reconciliation"):
+            await asyncio.wait_for(task, 5)
+        self.assertEqual(order, ["reconcile"])
         self.assertEqual(supervised, [])
 
     async def test_cancellation_cancels_the_pending_reconcile(self):

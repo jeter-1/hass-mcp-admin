@@ -197,14 +197,20 @@ Keep publication eligibility/scheduling changes separate from action updates.
    which one it chose and why:
 
    1. The base of the open pull request whose head is the current branch, from
-      `gh pr view <branch> --json number,state,baseRefName,headRefName,isCrossRepository`
-      (prompts disabled, 10-second limit). A base of `release/2.6.0` becomes
-      `origin/release/2.6.0`. It must already exist locally; the wrapper never
-      fetches, so fetch it or pass `-BaseRef`. An answer for another branch or
-      a fork, or with an unusable number, state or base name, fails the
-      preflight instead of being trusted or ignored.
-   2. If gh is not on PATH, is not authenticated, is offline, does not answer
-      in time, or finds no open pull request: the branch upstream, but only when
+      `gh pr view <branch> --repo github.com/<owner>/<repo> --json number,state,baseRefName,headRefName,isCrossRepository,url`
+      (prompts disabled, 10-second limit). The repository is the one this
+      worktree's `origin` URL names, and an inherited `GH_REPO` is not passed to
+      gh, so a same-named branch in another repository cannot supply the base.
+      A base of `release/2.6.0` becomes `origin/release/2.6.0`. It must already
+      exist locally; the wrapper never fetches, so fetch it or pass `-BaseRef`.
+      An answer for another repository, another branch or a fork, or with an
+      unusable number, state or base name, fails the preflight instead of being
+      trusted or ignored.
+   2. If gh is not on PATH, `origin` is not a github.com repository URL
+      (`https://github.com/<owner>/<repo>`, `git@github.com:<owner>/<repo>` or
+      `ssh://git@github.com/<owner>/<repo>`, with or without `.git`), or gh is
+      not authenticated, is offline, does not answer in time, or finds no open
+      pull request: the branch upstream, but only when
       it is `origin/main` or an `origin/release/*` branch other than the
       branch's own remote copy (`git push -u` changes the upstream to that copy).
    3. Otherwise `origin/main`, with a message naming each reason detection did

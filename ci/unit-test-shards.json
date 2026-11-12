@@ -216,6 +216,7 @@
   "test_module_isolation": 8,
   "test_prepare_ha_mcp_release_registry_update": 3,
   "test_prepare_ha_mcp_release_registry_workflow": 1,
+  "test_process_isolation": 97,
   "test_promotion_regression_manifest": 10,
   "test_publication_ci_event_context": 1,
   "test_publication_eligibility": 1,

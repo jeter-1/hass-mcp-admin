@@ -787,8 +787,8 @@ DEPENDENCY_YAML_PATHS = frozenset({
     "template", "script", "homeassistant.packages", "homeassistant",
 })
 
-# Each reader purpose fixes its own path set and audit event, so one purpose
-# can never read another's paths.
+# Each reader purpose fixes its own path set and audit event. The sets overlap
+# (both ``homeassistant`` paths, ``template``); a reader refuses paths outside its own.
 YAML_READER_PURPOSES = MappingProxyType({
     "recorder_settings": (YAML_CONFIG_PATHS, "recorder_settings_yaml_read"),
     "configuration_definitions": (DEFINITION_YAML_PATHS, "configuration_definitions_yaml_read"),

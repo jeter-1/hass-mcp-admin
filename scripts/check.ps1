@@ -56,6 +56,9 @@ if ($script:BaseRefExplicit -and -not $BaseRef) {
 }
 $GhPullRequestTimeoutMilliseconds = 10000
 $GhAnswerBound = 4096
+# HAMCP-358: the origin URL forms check.ps1 reads a github.com OWNER/NAME from.
+# A URL with embedded user information other than git@ is not accepted.
+$GitHubOriginPattern = '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)(?<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?<name>[A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$'
 # A branch name safe to pass to gh and to append to origin/.
 $SafeBranchNamePattern = '^(?!-)(?!.*\.\.)(?!.*//)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$'
 
@@ -432,11 +435,27 @@ function Invoke-GitProbe {
     return [string]$output[0]
 }
 
+function Get-OriginRepository {
+    # The github.com repository this worktree's origin names, as OWNER/NAME, or
+    # $null. The URL itself is never printed: it can carry a credential.
+    $url = Invoke-GitProbe -Arguments @("remote", "get-url", "origin")
+    if (-not $url -or $url -cnotmatch $GitHubOriginPattern) {
+        return $null
+    }
+    $owner = $Matches["owner"]
+    $name = $Matches["name"]
+    if ($name -cmatch '^\.{1,2}$') {
+        return $null
+    }
+    return "$owner/$name"
+}
+
 function Get-PullRequestBase {
-    # Ask gh for the open pull request whose head is this branch. Any reason gh
-    # cannot answer (absent, unauthenticated, offline, no pull request, or no
-    # answer within the timeout) returns $null with a note. An answer that is
-    # inconsistent with the request is refused instead of trusted or ignored.
+    # Ask gh for the open pull request whose head is this branch in the
+    # repository this worktree's origin names. Any reason gh cannot answer
+    # (absent, unauthenticated, offline, no pull request, or no answer within
+    # the timeout) returns $null with a note. An answer that is inconsistent
+    # with the request is refused instead of trusted or ignored.
     param(
         [string]$Branch,
         [System.Collections.Generic.List[string]]$Notes
@@ -446,9 +465,17 @@ function Get-PullRequestBase {
         $Notes.Add("gh is not on PATH")
         return $null
     }
+    # HAMCP-358: name the repository in the request. Without it gh asks the
+    # repository GH_REPO names, or the one it infers, and that repository's
+    # pull request for a branch of the same name would supply the base.
+    $repository = Get-OriginRepository
+    if (-not $repository) {
+        $Notes.Add("origin is not a github.com repository URL this script can name")
+        return $null
+    }
     $start = New-Object System.Diagnostics.ProcessStartInfo
     $start.FileName = $gh.Source
-    $start.Arguments = "pr view $Branch --json number,state,baseRefName,headRefName,isCrossRepository"
+    $start.Arguments = "pr view $Branch --repo github.com/$repository --json number,state,baseRefName,headRefName,isCrossRepository,url"
     $start.WorkingDirectory = $RepoRoot
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
@@ -458,6 +485,8 @@ function Get-PullRequestBase {
     $start.EnvironmentVariables["GH_PROMPT_DISABLED"] = "1"
     $start.EnvironmentVariables["GH_NO_UPDATE_NOTIFIER"] = "1"
     $start.EnvironmentVariables["NO_COLOR"] = "1"
+    # --repo already takes precedence; the inherited value is dropped as well.
+    $start.EnvironmentVariables.Remove("GH_REPO")
     try {
         $process = [System.Diagnostics.Process]::Start($start)
     }
@@ -495,7 +524,7 @@ function Get-PullRequestBase {
         throw "gh pr view returned output that is not JSON; refusing to choose a base. Pass -BaseRef."
     }
     $names = @(if ($answer -is [System.Management.Automation.PSCustomObject]) { $answer.PSObject.Properties | ForEach-Object { $_.Name } })
-    foreach ($name in @("number", "state", "baseRefName", "headRefName", "isCrossRepository")) {
+    foreach ($name in @("number", "state", "baseRefName", "headRefName", "isCrossRepository", "url")) {
         if ($names -notcontains $name) {
             throw "gh pr view did not report $name; refusing to choose a base. Pass -BaseRef."
         }
@@ -510,13 +539,18 @@ function Get-PullRequestBase {
     if (-not ($answer.number -is [int] -or $answer.number -is [long]) -or $answer.number -le 0) {
         throw "gh pr view reported an invalid pull-request number; refusing to choose a base. Pass -BaseRef."
     }
+    # The answer must be this repository's pull request, not only a same-named branch.
+    $expectedUrl = "https://github.com/$repository/pull/$($answer.number)"
+    if (-not ($answer.url -is [string]) -or -not [string]::Equals($answer.url, $expectedUrl, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "gh pr view reported pull request #$($answer.number), which is not a pull request of $repository; refusing to choose a base. Pass -BaseRef."
+    }
     if (-not ($answer.headRefName -is [string]) -or $answer.headRefName -cne $Branch -or -not ($answer.isCrossRepository -is [bool]) -or $answer.isCrossRepository) {
         throw "gh pr view reported pull request #$($answer.number), which is not this repository's branch $Branch; refusing to choose a base. Pass -BaseRef."
     }
     if (-not ($answer.baseRefName -is [string]) -or $answer.baseRefName -cnotmatch $SafeBranchNamePattern) {
         throw "gh pr view reported an unusable base branch for pull request #$($answer.number); refusing to choose a base. Pass -BaseRef."
     }
-    return [ordered]@{ ref = "origin/$($answer.baseRefName)"; source = "base of pull request #$($answer.number)" }
+    return [ordered]@{ ref = "origin/$($answer.baseRefName)"; source = "base of pull request #$($answer.number) in $repository" }
 }
 
 function Resolve-BaseReference {

@@ -38,10 +38,45 @@ class Contracts(unittest.TestCase):
         # Missing receipt (absent result) withholds; it never admits.
         self.assertEqual(passing_subset([ref], {"security_metadata": False}), [])
 
-    def test_groups_file_is_append_only_with_security_metadata_last(self):
+    def test_groups_file_keeps_what_release_evidence_relies_on(self):
+        """HAMCP-358: the invariant ``scripts/core_release_evidence.py`` relies on.
+
+        ``groups()`` needs every reference in exactly one group and the 19
+        general references; ``passing_subset()`` looks a group up by name
+        only. The position of a group in the file is not relied on.
+        """
         value = json.loads((ROOT / "ci/core-evidence-groups.json").read_text())
-        self.assertEqual(list(value)[-1], "security_metadata")
+        flat = [ref for refs in value.values() for ref in refs]
+        self.assertEqual(len(flat), len(set(flat)))
+        self.assertEqual(len(value["general"]), 19)
         self.assertIn("helper_value", value)
+        self.assertEqual(value["security_metadata"], [lane.CAPABILITY])
+        self.assertEqual(groups(), value)
+        # By name only: the same groups in the opposite order select the same profile.
+        ref = acceptance.reference()
+        reordered = dict(reversed(list(value.items())))
+        self.assertNotEqual(list(reordered), list(value))
+        with patch("core_release_evidence.read_json", return_value=reordered):
+            self.assertEqual(passing_subset([ref], {"security_metadata": True}), [ref])
+            self.assertEqual(passing_subset([ref], {"helper_value": True}), [])
+        # A reference in two groups is refused, wherever the groups sit.
+        duplicated = {**value, "synthetic_duplicate": [lane.CAPABILITY]}
+        with patch("core_release_evidence.read_json", return_value=duplicated):
+            with self.assertRaisesRegex(ValueError, "invalid evidence groups"):
+                groups()
+        # Any other number of general references is refused. Each mapping
+        # below is otherwise valid: every reference still in exactly one group.
+        extra = "core.synthetic_general_extra"
+        self.assertNotIn(extra, flat)
+        for general in (value["general"][:-1], [*value["general"], extra]):
+            with self.subTest(general_count=len(general)):
+                miscounted = {**value, "general": general}
+                refs = [ref for group in miscounted.values() for ref in group]
+                self.assertEqual(len(refs), len(set(refs)))
+                self.assertIn(len(general), (18, 20))
+                with patch("core_release_evidence.read_json", return_value=miscounted):
+                    with self.assertRaisesRegex(ValueError, "invalid evidence groups"):
+                        groups()
 
     def test_manifest_profile_matches_committed_source_hashes(self):
         proof = json.loads(lane.SOURCE_HASHES.read_text())
