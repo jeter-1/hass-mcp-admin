@@ -51,8 +51,16 @@ check before any container or run directory existed: the scene lane had ended
 on the same host port five seconds earlier and the port could not yet be
 bound. The second launch, a minute later, changed nothing else.
 
-The other five lanes ran once each on the same source commit. Their receipts
-are in the directories that already held them:
+The other five lanes ran on the same source commit. Security metadata,
+Marketplace, Thread/Matter A1 and device configuration were launched once
+each. Thread/Matter A2 was launched twice: the first launch, as unit
+`hamcp364-a2-lane-b6f81dcf` at 21:23:12, was refused by the runner's stub
+file-set check (`a2_stub_file_set_mismatch`) before any container started,
+because a local test run had left an ignored `__pycache__` directory in the
+stub directory; the second, as unit `hamcp364-a2-lane-b6f81dcf-r2` at
+21:24:19, passed and wrote the receipt, and removing that directory was the
+only change between them. Each lane has one passing run. The receipts are in
+the directories that already held them:
 [`../../hamcp134/lane/`](../../hamcp134/lane/README.md) (security metadata),
 [`../../hamcp290/lane/`](../../hamcp290/lane/README.md) (Marketplace),
 [`../../hamcp231/lane/`](../../hamcp231/lane/README.md) (Thread/Matter A1 and

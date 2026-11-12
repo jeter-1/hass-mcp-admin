@@ -10,12 +10,16 @@ separate owner action.
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
-faults. **A2 signing evidence is complete**: A2 success lane run 6 below (PASS,
-source commit `b6f81dcf`, on the HAMCP-364 branch after its merge with
-`release/2.6.0` at `aeb3b314`) produced the `thread_matter_topology_a2.json`
-in this directory. Its receipt records, as `lane_network`, the internal
-network the run created and inspected again before it handed Core to the
-harness. Runs 2, 3, 4 and 5 were earlier PASS runs whose receipts it replaced.
+faults. **The A2 success lane has a passing receipt on source commit
+`b6f81dcf`; nothing has been signed**: A2 success lane run 6 below (PASS, on
+the HAMCP-364 branch after its merge with `release/2.6.0` at `aeb3b314`)
+produced the `thread_matter_topology_a2.json` in this directory. That receipt
+is review evidence for that commit, not a signing receipt: every lane proposed
+for sequence 18, this one included, re-runs on the signing commit, and the
+signing receipt will bind that commit. The run 6 receipt records, as
+`lane_network`, the internal network the run created and inspected again
+before it handed Core to the harness. Runs 2, 3, 4 and 5 were earlier PASS
+runs whose receipts it replaced.
 The A2 lane uses the HAMCP-297 Matter Server stub. PR #428 merged that stub
 into `release/2.6.0`, and run 6 uses the committed copy.
 
