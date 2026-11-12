@@ -238,8 +238,8 @@ This run's receipt superseded run 1's. Run 3's receipt supersedes it.
 
 ### Run 3: PASS on the corrected lane (2026-11-10 17:07 CST)
 
-The committed `marketplace_read.json` is now this run's receipt. It supersedes
-run 2's receipt.
+This run's receipt superseded run 2's. Run 4's receipt supersedes it (the run 3
+receipt is in commit `7636cb4a`).
 
 - The lane ran under the host heavy-job gate as unit `hamcp290-lane3` (kind
   `lane`) at source commit `398ca8888b7abe324027b55668a1baa60606ac68`, with Core
@@ -273,3 +273,53 @@ run 2's receipt.
   back as clean.
 - The receipt names source commit `398ca888`, the commit the lane ran on. The
   commit that adds this receipt and this record changes only these two files.
+
+### Run 4: PASS (2026-11-11 21:22 CST)
+
+This run's receipt superseded run 3's. Run 5's receipt supersedes it (the run 4
+receipt is in commit `5ea622ec`).
+
+- The lane ran under the host heavy-job gate as unit
+  `hamcp364-marketplace-lane-b6f81dcf` (kind `lane`) at source commit
+  `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`, on the HAMCP-364 branch, with
+  Core at `--memory 2g` and the fixture writer at `128m`. HAMCP-364 changed
+  `scripts/marketplace_read_contract_acceptance.py` in one respect: its raw
+  WebSocket client opens its session through `scripts/lane_session.py`, which
+  refuses a redirect.
+- The receipt's SHA-256 is
+  `1eaa9ecc2eebc596335c9ad45d1aeb67749dcd854109623a70e59d4c5175b0a2`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` and
+  the manifest SHA-256
+  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` (527 paths,
+  75 in the profile).
+- The public store held 6,415 records at this run (6,417 at run 3), so
+  `store_records` and `store_sha256` differ from run 3.
+- Apart from those two fields, the source commit, the manifest hash, the times
+  and the host admission snapshot, every receipt field equals run 3: the
+  install fixture (`JuanMTech/google_light_theme`, id `234032927`, at `v1.13`),
+  the routed read, the redaction canary, the authority transition from 32 to
+  33 references, `fallback_count` 0 and clean cleanup.
+
+### Run 5: PASS (2026-11-12 03:31 CST)
+
+The committed `marketplace_read.json` is now this run's receipt. It supersedes
+run 4's receipt.
+
+- The lane ran under the host heavy-job gate as unit
+  `hamcp364-marketplace-lane-5fc40f93` (kind `lane`) at source commit
+  `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`, on the HAMCP-364 branch, with
+  Core at `--memory 2g` and the fixture writer at `128m`. After run 4 the
+  branch changed `scripts/real_ha_contract_tests.py`, which the lane runner
+  `scripts/core_marketplace_read_local.py` imports: the config flow id that
+  harness accepts is now the 26-character ULID Core issues (commit
+  `4a72ee8a`). `scripts/marketplace_read_contract_acceptance.py` did not
+  change.
+- The receipt's SHA-256 is
+  `381358d630ff9fc83ce7d2c87e4d33507aad3f9cdfd9872f8ecc3e2883ca7142`. It binds
+  the same `contract_fingerprint` and manifest SHA-256 as run 4.
+- `store_records` is 6,415, as at run 4. `store_sha256`, the hash of the store
+  baseline the lane read, differs from run 4: it is
+  `572162f00cb001faa4bcb188f1492fd00dd865f19e3db5ef67150392d7b874b0`.
+- Apart from that field, the source commit, the times and the host admission
+  snapshot, every receipt field equals run 4.
