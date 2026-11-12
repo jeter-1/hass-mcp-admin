@@ -122,9 +122,12 @@ def _environment_path(name: str) -> Path | None:
 # This harness onboards and drives one disposable Core on loopback, so the URL
 # it is started with is that bare origin: http, 127.0.0.1 or [::1], an optional
 # port, and no userinfo, path or query, nor a name that only resolves to
-# loopback. A flow id is what Core issues: the 32 hex digits of a random UUID.
+# loopback. A config flow id is what Core issues for a config entry flow: a
+# ULID, 26 characters of Crockford base32 with the first one 0 to 7
+# (ConfigEntriesFlowManager.async_init, ulid_util.ulid_now(); an options flow
+# id is a different thing, 32 hex digits, and this harness sends none).
 _LOOPBACK_CORE = re.compile(r"http://(?:127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?")
-_FLOW_ID = re.compile("[0-9a-f]{32}")
+_FLOW_ID = re.compile("[0-7][0-9A-HJKMNP-TV-Z]{25}")
 # Code-owned refusals: never the URL, a path, a token or a payload.
 CORE_URL_REFUSED, CORE_PATH_REFUSED = "real_ha_url_not_loopback", "real_ha_path_not_rooted"
 CORE_TARGET_REFUSED, FLOW_ID_REFUSED = "real_ha_target_not_configured_core", "real_ha_flow_id_not_listed"

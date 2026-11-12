@@ -2191,9 +2191,17 @@ class HarnessHandOver(HarnessCase):
 
 
 class HarnessFlow(HarnessCase):
-    """A config flow id is what Core issues, or it never reaches a request path."""
+    """A config flow id is what Core issues, or it never reaches a request path.
 
-    FLOW = "0123456789abcdef0123456789abcdef"
+    Core issues a ULID for a config entry flow (``ConfigEntriesFlowManager.async_init``,
+    ``ulid_util.ulid_now()``): 26 characters of Crockford base32, the first one 0 to 7.
+    The 32 hex digits of ``data_entry_flow.FlowManager`` are an options flow id,
+    which this harness never sends.
+    """
+
+    FLOW = "01KA8ZQ5W3T9XR7N2M4HVB6CDE"
+    HEX_FLOW = "0123456789abcdef0123456789abcdef"
+    ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
     OPEN = "/api/config/config_entries/flow"
 
     async def advance(self, *replies, inputs=({"slot": "a"},)):
@@ -2208,8 +2216,13 @@ class HarnessFlow(HarnessCase):
     async def test_a_flow_id_outside_the_closed_pattern_is_refused_before_it_is_sent(self):
         for flow_id in ("../../auth/token", "..", "a/b", self.FLOW + "/../../../auth/token", self.FLOW + "?x=1",
                         self.FLOW + "#x", self.FLOW + "\n", " " + self.FLOW, self.FLOW[:-1], self.FLOW + "0",
-                        self.FLOW.upper(), self.FLOW[:-1] + "g", "@" + ELSEWHERE + "/x", "%2e%2e%2f" + self.FLOW,
-                        "01JSYNTHETICFLOW0000000000", "synthetic-flow", Text(self.FLOW), Claims(self.FLOW)):
+                        self.FLOW.lower(), self.FLOW[:-1] + "g", "@" + ELSEWHERE + "/x", "%2e%2e%2f" + self.FLOW,
+                        # An options flow id, and its upper-case form: not what a config entry flow is given.
+                        self.HEX_FLOW, self.HEX_FLOW.upper(), self.HEX_FLOW[:26],
+                        # Letters the encoding never emits, and a first character past 7.
+                        "01JSYNTHETICFLOW0000000000", self.FLOW[:-1] + "I", self.FLOW[:-1] + "L",
+                        self.FLOW[:-1] + "O", self.FLOW[:-1] + "U", "8" + self.FLOW[1:], "Z" + self.FLOW[1:],
+                        "synthetic-flow", Text(self.FLOW), Claims(self.FLOW)):
             with self.subTest(flow_id=flow_id, kind=type(flow_id).__name__):
                 with self.assertRaises(ValueError) as caught:
                     await self.advance({"type": "form", "flow_id": flow_id})
@@ -2238,7 +2251,7 @@ class HarnessFlow(HarnessCase):
             ("POST", MAIN_CORE + self.OPEN + "/" + self.FLOW, {"json": {"slot": "a"}, "data": None,
                                                               "headers": headers, "allow_redirects": False})])
         # A menu step and then a form step, each on the id Core gave for it.
-        other = "f" * 32
+        other = "7" + "Z" * 25
         result, session = await self.advance({"type": "menu", "flow_id": self.FLOW},
                                              {"type": "form", "flow_id": other}, created,
                                              inputs=({"next_step_id": "tools"}, {}))
@@ -2247,10 +2260,44 @@ class HarnessFlow(HarnessCase):
                          [MAIN_CORE + self.OPEN, MAIN_CORE + self.OPEN + "/" + self.FLOW,
                           MAIN_CORE + self.OPEN + "/" + other])
 
-    def test_the_pattern_is_the_32_hex_digits_of_a_core_flow_id(self):
-        self.assertEqual(harness._FLOW_ID.pattern, "[0-9a-f]{32}")
+    def test_the_pattern_is_the_ulid_of_a_core_config_flow_id(self):
+        self.assertEqual(harness._FLOW_ID.pattern, "[0-7][0-9A-HJKMNP-TV-Z]{25}")
         self.assertEqual(harness._FLOW_ID.flags & ~32, 0)
+        # The seq15 lane's own pattern names an options flow id, which is 32 hex digits.
         self.assertEqual(seq15._FLOW_ID.pattern, r"/[0-9a-f]{32}\Z")
+
+    def test_the_pattern_admits_exactly_what_the_ulid_encoding_emits(self):
+        # 26 characters; the first carries the top three bits of the timestamp, the rest five bits each.
+        self.assertEqual((len(self.ALPHABET), len(set(self.ALPHABET)), len(self.FLOW)), (32, 32, 26))
+        printable = [chr(code) for code in range(32, 127)] + ["\n", "\x00", "\u00c5", "\uff10"]
+        for position in range(26):
+            allowed = self.ALPHABET[:8] if position == 0 else self.ALPHABET
+            admitted = {character for character in printable if harness._FLOW_ID.fullmatch(
+                self.FLOW[:position] + character + self.FLOW[position + 1:]) is not None}
+            self.assertEqual(admitted, set(allowed), position)
+        for length in (0, 1, 25, 27, 32, 52):
+            self.assertIsNone(harness._FLOW_ID.fullmatch("0" * length), length)
+        for flow_id in ("0" * 26, "7" + "Z" * 25, self.FLOW):
+            self.assertIsNotNone(harness._FLOW_ID.fullmatch(flow_id))
+
+    async def test_every_step_of_the_migration_fixture_flows_is_sent_on_a_ulid(self):
+        # The three flows prepare_migration_fixture walks, each id a ULID as Core 2026.7.2 gives it.
+        created = {"type": "create_entry", "result": {"entry_id": "synthetic-entry"}}
+        first, second = self.FLOW, "0" + self.ALPHABET[:25]
+        for handler, replies, inputs in (
+                (harness.FIXTURE_PLATFORM, [{"type": "form", "flow_id": first}], [{"slot": "a"}]),
+                (harness.FIXTURE_PLATFORM, [{"type": "form", "flow_id": second}], [{"slot": "b"}]),
+                ("ha_mcp_tools", [{"type": "menu", "flow_id": first}, {"type": "form", "flow_id": first}],
+                 [{"next_step_id": "tools"}, {}])):
+            with self.subTest(handler=handler, inputs=inputs):
+                session = Requests(*replies, created)
+                with patch.object(harness, "HA_URL", MAIN_CORE):
+                    result = await harness._advance_config_flow(session, TOKEN, handler, inputs)
+                self.assertEqual(result, created)
+                self.assertEqual([url for _method, url, _kwargs in session.calls],
+                                 [MAIN_CORE + self.OPEN] + [MAIN_CORE + self.OPEN + "/" + reply["flow_id"]
+                                                            for reply in replies])
+                self.assertEqual([kwargs["json"] for _method, _url, kwargs in session.calls[1:]], inputs)
 
 
 # The A2 stub's control origin, as its runner reads it: the stub's address on the same bridge.
