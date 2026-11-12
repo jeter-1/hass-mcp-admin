@@ -144,8 +144,6 @@ def classify_registry(receipt: dict) -> list[str]:
                         "of the published entry")
     if references[len(previous):] != list(RULED_ADDED) or writer["added"] != list(RULED_ADDED):
         failures.append("G3: the added references are not the ruled six in the ruled order")
-    if len(references) != PUBLISHED_REFERENCES + len(RULED_ADDED):
-        failures.append(f"G3: {len(references)} references, not 38")
     if reader["entry_references"] != references:
         failures.append("G3: the reader decoded a different reference list than the writer built")
     if not (writer["journal_sha256"] == reader["journal_sha256"]
@@ -262,10 +260,7 @@ def classify_tier_27a(tier: dict) -> list[str]:
 
     failures: list[str] = []
     if tier.get("exercised") is not True:
-        if tier.get("available") is not False or not tier.get("searched"):
-            failures.append("G9: 27a is neither exercised nor recorded as unavailable with "
-                            "what was searched")
-        return failures
+        return ["G9: 27a is recorded without exercised evidence"]
     steps = tier.get("steps") or {}
     crash, settle = steps.get("crash") or {}, steps.get("settle_release") or {}
     blocked, read = steps.get("blocked_before_recovery") or {}, steps.get(
@@ -441,6 +436,14 @@ def summarize(receipt: dict) -> list[str]:
                 f"{len(settle['release']['locks_after'])} lock records.")
             lines.append(device_sentence("Recovery 27a, after (rolled back again)",
                                          steps["previous_release_read"]))
+            before = device_words(steps["blocked_before_recovery"]["observed"])
+            after = device_words(steps["previous_release_read"]["observed"])
+            if ((before["behaviour"], before["governed"]) == ("block", "faulted")
+                    and (after["behaviour"], after["governed"]) == ("proceed", "ready")):
+                lines.append(
+                    "Recovery 27a, observed: on this store the previous release ran no governed "
+                    "control before the roll forward (execution not ready, control_power "
+                    "refused) and ran it after (execution ready, control_power verified).")
     if scenario == "12c":
         outcomes: dict[str, list[str]] = {}
         for mode in sorted(cases):
