@@ -300,12 +300,16 @@ class RawCore:
     async def command(self, payload, *, seconds=60):
         if not listed(payload, RAW_COMMANDS):
             raise ValueError(CORE_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects.
+        checked = copy.deepcopy(payload)
         async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES) as socket:
                 assert (await socket.receive_json())["type"] == "auth_required"
                 await socket.send_json({"type": "auth", "access_token": self.token})
                 assert (await socket.receive_json())["type"] == "auth_ok"
-                await socket.send_json({"id": 1, **payload})
+                await socket.send_json({"id": 1, **checked})
                 reply = await socket.receive_json()
                 assert reply.get("type") == "result" and reply.get("id") == 1
                 return reply
@@ -351,8 +355,11 @@ class RawRest:
     async def rest(self, method, path, body=None, *, seconds=60):
         if not listed({"method": method, "path": path, "body": body}, RAW_REST):
             raise ValueError(CORE_REST_REFUSED)
+        # Copied with the check, as RawCore.command copies: the body sent is the
+        # body that was checked. The method and the path are exact strings.
+        checked = copy.deepcopy(body)
         headers = {"Authorization": "Bearer " + self.token}
-        options = {} if body is None else {"json": body}
+        options = {} if checked is None else {"json": checked}
         async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.request(method, CORE_URL + path, headers=headers,
                                        allow_redirects=False, **options) as response:
@@ -383,7 +390,8 @@ class StubControl:
     async def post(self, body):
         if not listed(body, STUB_POSTS):
             raise ValueError(STUB_REQUEST_REFUSED)
-        return await self._request("POST", body)
+        # Copied with the check: the body posted is the body that was checked.
+        return await self._request("POST", copy.deepcopy(body))
 
 
 async def stub_ready(url, seconds=30):

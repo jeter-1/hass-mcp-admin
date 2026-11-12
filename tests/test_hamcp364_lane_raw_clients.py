@@ -2471,8 +2471,12 @@ DEVICE_REQUESTS = (
 )
 
 
-def device_session(events, status=200, value=None):
-    """Stand-in for aiohttp.ClientSession with a REST answer: records construction, dials and reads."""
+def device_session(events, status=200, value=None, during=lambda stage: None):
+    """Stand-in for aiohttp.ClientSession with a REST answer: records construction, dials and reads.
+
+    ``during`` is told each step before the request or the command frame, as
+    ``fake_session`` tells it.
+    """
     class Answer:
         def __init__(self):
             self.status = status
@@ -2487,7 +2491,7 @@ def device_session(events, status=200, value=None):
             events.append(("json", kwargs))
             return value
 
-    class Session(fake_session(events)):
+    class Session(fake_session(events, during=during)):
         def request(self, method, url, **kwargs):
             events.append(("request", method, url, kwargs))
             return Answer()
@@ -2650,6 +2654,113 @@ class DeviceConfigurationClients(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(caught.exception.args, (code,))
         # None of them opened a session, so nothing was dialled.
         self.assertEqual(events, [])
+
+
+# Every step a REST client takes between its check and its request.
+REST_STAGES = STAGES[:2]
+DEVICE_UPDATE = {"type": "config/entity_registry/update", "entity_id": "number.hamcp366_synthetic",
+                 "options_domain": "number", "options": {"unit_of_measurement": "\N{DEGREE SIGN}F"}}
+DEVICE_CHECKED_COMMANDS = (DEVICE_COMMAND, {"type": "config/entity_registry/get", "entity_id": "select.synthetic"},
+                           DEVICE_UPDATE)
+DEVICE_CHECKED_BODIES = ((DEVICE_FLOW, {"handler": "matter"}),
+                         (DEVICE_FLOW + "/01JSYNTHETICSYNTHETICSYNTH", {"url": device.MATTER_URL}))
+DEVICE_CHECKED_POSTS = ({"mode": "none"}, {"mode": "delay", "seconds": 5},
+                        {"action": "drift", "node_id": device.SELECT_NODE, "attribute_path": device.SELECT_PATH,
+                         "value": 1})
+
+
+class DeviceCheckedRequest(unittest.IsolatedAsyncioTestCase):
+    """What a device-configuration client sends is what it checked, whatever the caller does to it meanwhile."""
+
+    async def sent_while(self, stages, stage, change, held, send):
+        """One send, with ``change`` applied to what the caller handed over once the client reaches ``stage``."""
+        seen, events = [], []
+
+        def during(now):
+            seen.append(now)
+            if now == stage:
+                change(held)
+
+        with patch.object(aiohttp, "ClientSession", new=device_session(events, value=["answer"], during=during)):
+            await send(held)
+        self.assertEqual(tuple(seen), stages)
+        return events
+
+    def test_the_examples_are_listed_shapes(self):
+        for example in DEVICE_CHECKED_COMMANDS:
+            self.assertTrue(device.listed(example, device.RAW_COMMANDS), example)
+        for path, example in DEVICE_CHECKED_BODIES:
+            self.assertTrue(device.listed({"method": "POST", "path": path, "body": example}, device.RAW_REST), path)
+        for example in DEVICE_CHECKED_POSTS:
+            self.assertTrue(device.listed(example, device.STUB_POSTS), example)
+        # The update is the one command with a mapping inside it.
+        self.assertEqual([example for example in DEVICE_CHECKED_COMMANDS
+                          if any(type(value) is dict for value in example.values())], [DEVICE_UPDATE])
+
+    async def test_a_command_changed_while_the_socket_connects_is_not_the_frame_sent(self):
+        client = device.RawCore(device_settings())
+        for example in DEVICE_CHECKED_COMMANDS:
+            changes = (replaced, retyped, widened) + ((nested,) if example is DEVICE_UPDATE else ())
+            for stage in STAGES:
+                for change in changes:
+                    with self.subTest(payload=example["type"], stage=stage, change=change.__name__):
+                        payload = copy.deepcopy(example)
+                        events = await self.sent_while(STAGES, stage, change, payload, client.command)
+                        # The caller's payload really was changed, into something the list does not hold.
+                        self.assertNotEqual(payload, example)
+                        self.assertFalse(device.listed(payload, device.RAW_COMMANDS))
+                        self.assertEqual([event[1] for event in events if event[0] == "send"],
+                                         [{"type": "auth", "access_token": TOKEN}, {"id": 1, **example}])
+
+    async def test_a_body_changed_while_the_session_opens_is_not_the_body_sent_to_core(self):
+        client = device.RawRest(device_settings())
+        for path, example in DEVICE_CHECKED_BODIES:
+            for stage in REST_STAGES:
+                for change in (replaced, widened):
+                    with self.subTest(body=sorted(example), stage=stage, change=change.__name__):
+                        body = copy.deepcopy(example)
+                        events = await self.sent_while(REST_STAGES, stage, change, body,
+                                                       lambda held, path=path: client.rest("POST", path, held))
+                        self.assertNotEqual(body, example)
+                        self.assertFalse(device.listed({"method": "POST", "path": path, "body": body},
+                                                       device.RAW_REST))
+                        self.assertEqual([event for event in events if event[0] == "request"],
+                                         [("request", "POST", DEVICE_CORE + path,
+                                           {"headers": DEVICE_BEARER, "allow_redirects": False, "json": example})])
+
+    async def test_a_body_changed_while_the_session_opens_is_not_the_body_sent_to_the_stub(self):
+        client = device.StubControl(DEVICE_STUB)
+        for example in DEVICE_CHECKED_POSTS:
+            for stage in REST_STAGES:
+                for change in (replaced, widened):
+                    with self.subTest(body=sorted(example), stage=stage, change=change.__name__):
+                        body = copy.deepcopy(example)
+                        events = await self.sent_while(REST_STAGES, stage, change, body, client.post)
+                        self.assertNotEqual(body, example)
+                        self.assertFalse(device.listed(body, device.STUB_POSTS))
+                        self.assertEqual([event for event in events if event[0] == "request"],
+                                         [("request", "POST", DEVICE_STUB,
+                                           {"allow_redirects": False, "json": example})])
+
+    async def test_what_is_sent_shares_nothing_with_what_the_caller_handed_over(self):
+        # The copy is the client's own, and the caller's object is left as it was.
+        payload, events = copy.deepcopy(DEVICE_UPDATE), []
+        with patch.object(aiohttp, "ClientSession", new=device_session(events)):
+            await device.RawCore(device_settings()).command(payload)
+        frame = [event[1] for event in events if event[0] == "send"][1]
+        self.assertEqual((payload, frame), (DEVICE_UPDATE, {"id": 1, **DEVICE_UPDATE}))
+        self.assertIsNot(frame["options"], payload["options"])
+        core = device.RawRest(device_settings())
+        sends = ((lambda held: core.rest("POST", DEVICE_FLOW, held), {"handler": "matter"}),
+                 (device.StubControl(DEVICE_STUB).post, DEVICE_CHECKED_POSTS[2]))
+        for number, (send, example) in enumerate(sends):
+            with self.subTest(send=number):
+                body, events = copy.deepcopy(example), []
+                with patch.object(aiohttp, "ClientSession", new=device_session(events, value=["answer"])):
+                    await send(body)
+                request, = [event for event in events if event[0] == "request"]
+                self.assertEqual((body, request[3]["json"]), (example, example))
+                self.assertIsNot(request[3]["json"], body)
 
 
 if __name__ == "__main__":
