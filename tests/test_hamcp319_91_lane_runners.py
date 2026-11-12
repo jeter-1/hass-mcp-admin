@@ -609,7 +609,7 @@ class RollbackStageTests(unittest.TestCase):
         self.assertIn("rollback-identity", identity)
         for name, case in (("Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5",
                             "sbs_rollback_85_legacy_useful"),
-                           ("Case side-by-side previous release refuses 9.1 on the strict-full value",
+                           ("Case side-by-side previous release does not review 9.1.2 on the strict-full value",
                             "sbs_engineering_rollback_91_refused")):
             with self.subTest(case=case):
                 text = steps[name]
@@ -624,7 +624,7 @@ class RollbackStageTests(unittest.TestCase):
         for name, text in steps.items():
             if '--image "$ROLLBACK_ENGINEERING_IMAGE"' in text:
                 self.assertIn(name, ("Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5",
-                                     "Case side-by-side previous release refuses 9.1 on the strict-full value"))
+                                     "Case side-by-side previous release does not review 9.1.2 on the strict-full value"))
             elif "ROLLBACK_ENGINEERING_IMAGE" in text:
                 # Stage A again only names it as the outgoing writer it verifies; it never runs it.
                 self.assertEqual(name, "Case side-by-side stage A again, current build with 8.5 on the legacy value")
@@ -2006,7 +2006,7 @@ class PersistedTransitionWorkflowTests(unittest.TestCase):
         steps = workflow_job()["steps"]
         names = [step.get("name", "") for step in steps]
         again = next(i for i, name in enumerate(names) if "stage A again" in name)
-        refusal = next(i for i, name in enumerate(names) if "previous release refuses 9.1" in name)
+        refusal = next(i for i, name in enumerate(names) if "previous release does not review 9.1.2" in name)
         rollback = next(i for i, name in enumerate(names) if "side-by-side rollback" in name)
         self.assertEqual(again, refusal + 1, "no step may run between the beta.7 stage and stage A again")
         self.assertEqual(refusal, rollback + 1)

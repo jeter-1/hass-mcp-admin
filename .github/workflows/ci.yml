@@ -1480,7 +1480,7 @@ jobs:
             --persisted-snapshot "$RUNNER_TEMP/admission-persisted-current-release.json" \
             --persisted-restart "$RUNNER_TEMP/admission-persisted-rollback-restart.json" \
             --output "$RUNNER_TEMP/admission-cases/sbs_rollback_85_legacy_useful.json"
-      - name: Case side-by-side previous release refuses 9.1 on the strict-full value
+      - name: Case side-by-side previous release does not review 9.1.2 on the strict-full value
         if: matrix.state == 'active' && matrix.configuration == 'side_by_side'
         shell: bash
         run: |
