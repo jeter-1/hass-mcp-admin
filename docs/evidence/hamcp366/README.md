@@ -206,9 +206,9 @@ repository.
   it with the same registry `id`, `created_at` and `unique_id`. The design
   states this as the restored case. The lane requires it
   (`restored_reregistration`,
-  `scripts/device_configuration_contract_acceptance.py:562-571`) and asserts
+  `scripts/device_configuration_contract_acceptance.py:583-592`) and asserts
   one exact undo refusal, `device_configuration_undo_post_state_unproven`
-  (`REREGISTRATION_UNDO_REFUSAL`, `:125`, asserted at `:1033-1036`), with zero
+  (`REREGISTRATION_UNDO_REFUSAL`, `:126`, asserted at `:1054-1057`), with zero
   sends. A changed registry `id`, `created_at` or `unique_id` on that path
   fails the lane; no other refusal code is accepted in its place. The pending
   change that the same re-registration catches is refused with
@@ -242,7 +242,7 @@ the restored registry `id`, `created_at` and `unique_id`, a rewritten
 
 How the fingerprint is computed: the lane calls the runtime's own code, not a
 copy. `composite()` in `scripts/device_configuration_contract_acceptance.py`
-(`:492`) runs `DeviceConfigurationAdapter._read`
+(`:513`) runs `DeviceConfigurationAdapter._read`
 (`hass_mcp_engineering_beta/ha_mcp_engineering/device_configuration/adapter.py:148-160`)
 under the adapter's Core-authority read (`.../device_configuration/service.py:80-103`).
 The read window names its target as the mapping
@@ -399,15 +399,15 @@ pins the text.
 The node dumps create three entities of admitted kinds that the lane does not
 dispatch to (`observations.admitted_kind_entities_not_exercised`; each is one
 for which the lane's prediction of the runtime's refusal is "none",
-`scripts/device_configuration_contract_acceptance.py:939-954`). The runtime
+`scripts/device_configuration_contract_acceptance.py:960-975`). The runtime
 allowlist has one triple per domain, so the domain fixes the triple. Coverage
 is by operation shape:
 
 | Entity not dispatched to | Operation shape | Lane operations that exercise the shape (script line; receipt key under `operations`) | Exercised |
 |---|---|---|---|
-| `select.eve_energy_20ecn4101_power_on_behavior_bottom` | select option change, `(select, matter, startup_on_off)` | on `select.eve_energy_plug_power_on_behavior`: `select_forward` (L854), `select_undo` (L855), `select_delayed` (L880), `select_before_reregistration` (L1010) | yes |
+| `select.eve_energy_20ecn4101_power_on_behavior_bottom` | select option change, `(select, matter, startup_on_off)` | on `select.eve_energy_plug_power_on_behavior`: `select_forward` (L875), `select_undo` (L876), `select_delayed` (L901), `select_before_reregistration` (L1031) | yes |
 | `select.eve_energy_20ecn4101_power_on_behavior_top` | select option change, `(select, matter, startup_on_off)` | the same four | yes |
-| `switch.eve_energy_plug_child_lock` | config-switch toggle, `(switch, matter, child_lock)` | on `switch.eve_energy_20ecn4101_child_lock_top`: `switch_forward_on` and `switch_forward_off` (L861, L862), `switch_undo` (L864), `switch_before_drift` (L988), `switch_before_reload` (L1003) | yes |
+| `switch.eve_energy_plug_child_lock` | config-switch toggle, `(switch, matter, child_lock)` | on `switch.eve_energy_20ecn4101_child_lock_top`: `switch_forward_on` and `switch_forward_off` (L882, L883), `switch_undo` (L885), `switch_before_drift` (L1009), `switch_before_reload` (L1024) | yes |
 
 All nine receipt entries are `succeeded_verified`. The lane never sends to the
 three entities in the first column: its closed command list names one entity
