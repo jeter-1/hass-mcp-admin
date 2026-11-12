@@ -10,12 +10,14 @@ separate owner action.
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
-faults. **A2 signing evidence is complete**: A2 success lane run 5 below (PASS,
-source commit `69e1dfff`, after the merge with `release/2.6.0` at `ccaed9ef`)
-produced the `thread_matter_topology_a2.json` in this directory. Runs 2, 3 and
-4 were earlier PASS runs whose receipts it replaced. The A2 lane uses the
-HAMCP-297 Matter Server stub. PR #428 merged that stub into `release/2.6.0`,
-and run 5 uses the committed copy.
+faults. **A2 signing evidence is complete**: A2 success lane run 6 below (PASS,
+source commit `b6f81dcf`, on the HAMCP-364 branch after its merge with
+`release/2.6.0` at `aeb3b314`) produced the `thread_matter_topology_a2.json`
+in this directory. Its receipt records, as `lane_network`, the internal
+network the run created and inspected again before it handed Core to the
+harness. Runs 2, 3, 4 and 5 were earlier PASS runs whose receipts it replaced.
+The A2 lane uses the HAMCP-297 Matter Server stub. PR #428 merged that stub
+into `release/2.6.0`, and run 6 uses the committed copy.
 
 ## Exact authority and scope
 
@@ -237,7 +239,8 @@ Run 3 repeats the lane after the merge with `release/2.6.0` at `ccaed9ef`
 (HAMCP-329/298), under the host heavy-job gate as unit `hamcp231-a1-lane3`.
 That merge changed `scripts/alarmo_inspection_contract_acceptance.py`, which
 the acceptance script imports, the Engineering runtime package and the
-manifest. `thread_matter_topology.json` now records this run:
+manifest. `thread_matter_topology.json` recorded this run until run 4 replaced
+it (the run 3 receipt is in commit `4d68e4d8`):
 
 - source commit `69e1dfff48bcca26e3adeece90a6efddd60cefc0`;
 - manifest SHA-256
@@ -251,6 +254,25 @@ manifest. `thread_matter_topology.json` now records this run:
 Apart from the source commit, the manifest hash, the times and the host
 admission snapshot, every receipt field equals run 2, including the authority
 transition from 32 to 33 references.
+
+### Run 4: PASS (2026-11-11 21:22 CST)
+
+Run 4 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-a1-lane-b6f81dcf`. HAMCP-364 changed
+`scripts/thread_matter_topology_contract_acceptance.py`: its raw WebSocket
+client dials only the constant `RAW_CORE_URL`
+(`ws://127.0.0.1:18124/api/websocket`), sends only the shapes listed in
+`RAW_COMMANDS`, and opens its session through `scripts/lane_session.py`, which
+refuses a redirect. `thread_matter_topology.json` now records this run:
+
+- source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
+- the same manifest SHA-256 as run 3 (the manifest's bytes did not change);
+- the same image, memory limits and profile fingerprint as run 3;
+- receipt SHA-256
+  `cc216e400529e785a5dc79b2a029acc5583134464834559255d5120e17058800`.
+
+Apart from the source commit, the times and the host admission snapshot, every
+receipt field equals run 3.
 
 These runs cover A2 only for its fail-closed case. The A2 success lane below
 covers success.
@@ -402,7 +424,8 @@ Run 5 repeats the lane after the merge with `release/2.6.0` at `ccaed9ef`
 (HAMCP-329/298), under the host heavy-job gate as unit `hamcp231-a2-lane5`.
 That merge changed `scripts/alarmo_inspection_contract_acceptance.py`, which
 the acceptance script imports, the Engineering runtime package and the
-manifest. `thread_matter_topology_a2.json` now records this run:
+manifest. `thread_matter_topology_a2.json` recorded this run until run 6
+replaced it (the run 5 receipt is in commit `4d68e4d8`):
 
 - source commit `69e1dfff48bcca26e3adeece90a6efddd60cefc0`;
 - manifest SHA-256
@@ -416,6 +439,39 @@ manifest. `thread_matter_topology_a2.json` now records this run:
 
 Apart from the source commit, the manifest hash, the times and the host
 admission snapshot, every receipt field equals run 4.
+
+### Run 6: PASS (2026-11-11 21:24 CST)
+
+Run 6 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-a2-lane-b6f81dcf-r2`. HAMCP-364 changed the lane script and
+`scripts/thread_matter_topology_a2_acceptance.py`. Before the harness learns
+Core's address, the runner inspects the network again by the id
+`docker network create` printed in this run (`hand_over_core`), and refuses
+unless Docker still reports it under the lane's name and this run's label as
+an internal bridge with one subnet. The harness accepts only a bare
+`http://<IPv4>:8123` origin inside that subnet (`use_internal_lane_core`) and
+holds every later request to it. The harness socket sends only the two shapes
+in `A2_RAW_COMMANDS`, and every session is opened through
+`scripts/lane_session.py`, which refuses a redirect.
+`thread_matter_topology_a2.json` now records this run:
+
+- source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
+- the same profile, fingerprint and manifest SHA-256 as run 5;
+- stub at `committed`, with the same 7 files verified;
+- egress probe `blocked`;
+- a new `lane_network` block: name
+  `beta-rc2-contract-ha-2026-11-0-thread-matter-a2`, subnet `172.18.0.0/16`,
+  target address `172.18.0.3` (Core's address on that network);
+- receipt SHA-256
+  `7bd5993acd2a5403b5e9ca224f6a81047c9eda43010ad6fa98c5cb1ac822920e`.
+
+Apart from `lane_network`, the source commit, the times and the host admission
+snapshot, every receipt field equals run 5.
+
+The first launch, one minute earlier as unit `hamcp364-a2-lane-b6f81dcf`, was
+refused before any container started (`a2_stub_file_set_mismatch`), for the
+cause recorded under run 3: a local test run had left an ignored `__pycache__`
+directory in the stub directory. Removing it was the only change.
 
 **Residuals.**
 

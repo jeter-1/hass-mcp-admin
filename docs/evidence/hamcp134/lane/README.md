@@ -189,6 +189,30 @@ authority.
 - No never-sent command was sent, `fallback_count` was 0, the 7 before/after
   snapshots were unchanged, and cleanup read back as clean.
 
+### Run 2: PASS (2026-11-11 21:21 CST)
+
+Run 2 repeats the lane on the HAMCP-364 branch, under the host heavy-job gate
+as unit `hamcp364-security-lane-b6f81dcf`. HAMCP-364 changed
+`scripts/security_metadata_contract_acceptance.py`: its raw WebSocket client
+dials only the constant `RAW_CORE_URL` (`ws://127.0.0.1:18123/api/websocket`),
+sends only the shapes listed in `RAW_COMMANDS`, and opens its session through
+`scripts/lane_session.py`, which refuses a redirect. `security_metadata.json`
+now records this run (the run 1 receipt is in commit `32beeb20`):
+
+- source commit `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`;
+- manifest SHA-256
+  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` (527
+  paths, 33 in the profile). Run 1 bound the manifest as it was at its source
+  commit,
+  `07bc9034ebb66881bd91fe710174db7dfba67e43c598a53d960f4f81587b1f4d`;
+- the same image, memory limits and `contract_fingerprint` as run 1;
+- receipt SHA-256
+  `88a3dd1c41871bfb4814a6c6769d969148549f9d7eae075f10a2e7dd30182b8b`.
+
+Apart from the source commit, the manifest hash, the times and the host
+admission snapshot, every receipt field equals run 1. The limitation below
+applies to both runs.
+
 Limitation: the disposable Core has one owner (the onboarding user) and no
 non-admin user, no pending or trial HTTP configuration and no Supervisor
 identity, and creating them would add writes to the lane. The lane connects

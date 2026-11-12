@@ -238,8 +238,8 @@ This run's receipt superseded run 1's. Run 3's receipt supersedes it.
 
 ### Run 3: PASS on the corrected lane (2026-11-10 17:07 CST)
 
-The committed `marketplace_read.json` is now this run's receipt. It supersedes
-run 2's receipt.
+This run's receipt superseded run 2's. Run 4's receipt supersedes it (the run 3
+receipt is in commit `7636cb4a`).
 
 - The lane ran under the host heavy-job gate as unit `hamcp290-lane3` (kind
   `lane`) at source commit `398ca8888b7abe324027b55668a1baa60606ac68`, with Core
@@ -273,3 +273,30 @@ run 2's receipt.
   back as clean.
 - The receipt names source commit `398ca888`, the commit the lane ran on. The
   commit that adds this receipt and this record changes only these two files.
+
+### Run 4: PASS (2026-11-11 21:22 CST)
+
+The committed `marketplace_read.json` is now this run's receipt. It supersedes
+run 3's receipt.
+
+- The lane ran under the host heavy-job gate as unit
+  `hamcp364-marketplace-lane-b6f81dcf` (kind `lane`) at source commit
+  `b6f81dcf4c0edd9cb1819cf511a540194ab1c3e5`, on the HAMCP-364 branch, with
+  Core at `--memory 2g` and the fixture writer at `128m`. HAMCP-364 changed
+  `scripts/marketplace_read_contract_acceptance.py` in one respect: its raw
+  WebSocket client opens its session through `scripts/lane_session.py`, which
+  refuses a redirect.
+- The receipt's SHA-256 is
+  `1eaa9ecc2eebc596335c9ad45d1aeb67749dcd854109623a70e59d4c5175b0a2`. It binds
+  the same `contract_fingerprint`
+  `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` and
+  the manifest SHA-256
+  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` (527 paths,
+  75 in the profile).
+- The public store held 6,415 records at this run (6,417 at run 3), so
+  `store_records` and `store_sha256` differ from run 3.
+- Apart from those two fields, the source commit, the manifest hash, the times
+  and the host admission snapshot, every receipt field equals run 3: the
+  install fixture (`JuanMTech/google_light_theme`, id `234032927`, at `v1.13`),
+  the routed read, the redaction canary, the authority transition from 32 to
+  33 references, `fallback_count` 0 and clean cleanup.
