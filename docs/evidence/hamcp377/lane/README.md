@@ -11,8 +11,11 @@ and are re-checked by `tests/test_hamcp377_rollback_proof_classifier.py`.
 | `12c-source.json` | Scene-create and created-object rollback plans | PASS | `74b26509179b4edfe412e017f90503ecde3fc1aba56d006b68a569a46258d474` |
 
 Each receipt holds the observations, the words derived from them, and a
-`summary` computed from the observations. The receipt is the record; the
-sentences below repeat its `summary`.
+`summary` computed from the observations. The receipt is the record. Under
+"Results" each receipt's `summary` is repeated line for line; the table above,
+those blocks and every full-length identity in this file are compared with the
+committed receipts by `ReadmeTests` in the classifier test module. The remaining
+prose is explanation and is not compared.
 
 ## What ran
 
@@ -65,12 +68,15 @@ the three digests are equal for every store and are in each receipt under `data`
 
 ## Results
 
-12a. The previous release read a signed journal whose entry carries 38
-capability references: 33 admitted including `core.marketplace_read`, 5 not
-admitted (`core.created_helper_delete_operation`,
-`core.device_configuration_entity_operation`,
-`core.scene_create_delete_operation`, `core.security_metadata_read`,
-`core.thread_matter_topology_read`), 0 quarantined.
+### 12a
+
+Recorded `summary` of `12a-source.json`:
+
+```text
+The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined.
+The entry was built by scripts/prepare_core_release_registry.py extend-capabilities at commit aeb3b314dd180592874243c9ae370a63f0622c2b as sequence 18 on the published sequence 17 journal under the published public key, and test-signed by scripts/core_registry_one_tap.py dry-run-sign with a key generated in that dry run; the signed content equals the candidate and the published content.
+Comparison with the real sequence 18 candidate: not yet available: the real candidate does not exist.
+```
 
 The entry was produced by the route the real sequence 18 candidate takes. The
 writer derived the entry (the published 2026.11.0 entry with the six references
@@ -97,9 +103,9 @@ the entry's `evidence_sha256` and the candidate's `review_evidence_sha256`; and
 run also re-signs the 17 published envelopes with its own key. The candidate is
 not a published registry entry and neither tool was changed or copied.
 
-Comparison with the real sequence 18 candidate: not yet available: the real
-candidate does not exist. The receipt reserves `real_candidate_comparison` for
-it and records the digest of the 38 reference objects beta.7 read
+The real sequence 18 candidate does not exist yet. The receipt reserves
+`real_candidate_comparison` for it and records the digest of the 38 reference
+objects beta.7 read
 (`33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6`, sha256 over
 the canonical JSON of each object joined by newlines). When the real candidate
 exists:
@@ -117,28 +123,34 @@ gate fails if any object differs, if the file is not a sequence 18 candidate,
 or if the file is the lane's own test candidate. Without `--record` the receipt
 is left as it is. `run --real-candidate <file>` does the same during a run.
 
-12b. With a conflict hold left by a settled device-configuration task, and with
-a crashed device-configuration task whose lease is still live, beta.7 refuses
-`control_power` on the held switch with `lock_conflict` before any provider
-attempt, leaves the lock records unchanged, runs `control_power` on an unrelated
-switch, and reports governed execution ready. With the same crash after the
-lease expired, beta.7 refuses `control_power` on both switches with
-`lock_conflict`, reports governed execution not ready (`storage_read`) after
-three recovery passes, and refuses with `execution_task_storage_error`.
+### 12b
 
-Recovery 27a, on a second crash store: beta.7 was read first and showed the
-same block. beta.8 then settled the crashed task to `manual_review_required`
-with no further provider write, and its hold-release path returned
-`hold_released_state_differs` and left no lock record. beta.7 then ran
-`control_power` on both switches, verified, with governed execution ready.
+Recorded `summary` of `12b-source.json`:
 
-12c. beta.7 refuses the scene-create plans (pending, approved, applied), the
-scene rollback plan and the helper rollback plan on get, approve, apply and
-rollback with `policy_snapshot_mismatch`, and writes nothing to the provider.
-beta.7 applies the approved automation and script rollback plans as ordinary
-deletes, one provider `DELETE` each, and approves and then applies a pending
-automation rollback plan the same way. The beta.7 runtime source has 0
-references to `created_identity`; the beta.8 runtime source has 6.
+```text
+Conflict hold left by a settled device-configuration task: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.
+Crash during a device-configuration operation, lease still live: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.
+Crash during a device-configuration operation, lease expired: on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch is refused with lock_conflict as well; the governed runtime reports execution not ready (storage_read) after three recovery passes and refuses with execution_task_storage_error.
+Recovery 27a, before (the same crash, read before rolling forward): on the previous release control_power on the switch the device-configuration task holds is refused with lock_conflict before any provider attempt, and the lock records are unchanged; control_power on an unrelated switch is refused with lock_conflict as well; the governed runtime reports execution not ready (storage_read) after three recovery passes and refuses with execution_task_storage_error.
+Recovery 27a, roll forward: the current release settled the crashed task to manual_review_required with 0 further provider writes, and its hold-release path returned hold_released_state_differs leaving 0 lock records.
+Recovery 27a, after (rolled back again): on the previous release control_power on the previously held switch succeeds and is verified; control_power on an unrelated switch succeeds; the governed runtime reports execution ready.
+Recovery 27a, observed: on this store the previous release ran no governed control before the roll forward (execution not ready, control_power refused) and ran it after (execution ready, control_power verified).
+```
+
+"The previous release" is 2.4.2-beta.7 and "the current release" is
+2.4.2-beta.8. Recovery 27a ran on a second crash store, written for it.
+
+### 12c
+
+Recorded `summary` of `12c-source.json`:
+
+```text
+automation_rollback_pending: approved on the previous release and then applied as an ordinary delete: one provider DELETE.
+automation_rollback_approved, script_rollback_approved: applied by the previous release as an ordinary delete: one provider DELETE each.
+automation_created: no rollback plan in the store: nothing to execute, no provider write.
+helper_rollback_approved, scene_applied, scene_approved, scene_pending, scene_rollback_approved: refused on get, approve, apply and rollback with policy_snapshot_mismatch, no provider write.
+References to created_identity in the previous release's runtime source: 0; in the writer's: 6.
+```
 
 ## Limits of these receipts
 
@@ -176,10 +188,28 @@ references to `created_identity`; the beta.8 runtime source has 6.
 python scripts/rollback_proof_lane.py check docs/evidence/hamcp377/lane
 ```
 
-`check` re-derives every word and every summary sentence from the recorded
-observations and compares them with the pinned expectation. It accepts only
-receipts whose writer was a `git archive` of one commit, whose interpreters held
-the locked dependencies, and whose drivers were unmodified.
+`check` reads only the receipt files. It re-derives every word and every
+summary sentence from the recorded observations and compares them with the
+pinned expectation, including the exact limitation list of each scenario and,
+for recovery 27a, the crash point, the `manual_review_required` outcome and the
+presence of the review record. It compares recorded fields with each other and
+with the constants the lane pins, and it accepts only receipts that record a
+writer taken by `git archive` from one commit, interpreters holding the locked
+dependencies and unmodified drivers. It fails on a key the receipt schema or its
+`lane` record does not define, on more than one receipt for a subject and
+scenario, on a file whose name is not that of the receipt it holds, on an
+unknown subject or scenario, and on a `.json` file it cannot read as a receipt.
+
+`check` does not consult git, the files that ran, the clock or this README. In
+the classifier test module, `GitBoundReceiptTests` compares the committed
+receipts with the repository's objects: that the recorded checkout commit
+exists, that each recorded driver hash is the sha256 of that file at that
+commit, and that the recorded tool blobs and hashes are those of the tool files
+at the commit recorded with them. It is skipped where git or the recorded
+commits are unavailable. `RecordedTimeTests` compares that a run did not end
+before it started. The writer commit a receipt records is not compared with a
+pinned value.
 
 To regenerate all three receipts, run the one command under "What ran" into this
-directory, then update the table and the identities above.
+directory, then update the table, the identities above and the three recorded
+`summary` blocks.

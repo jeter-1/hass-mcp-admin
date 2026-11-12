@@ -1,9 +1,11 @@
 """HAMCP-377: the rollback proof lane end to end, source subject.
 
-The lane runs once for the module: this checkout writes the stores, the previous
-release extracted from its tagged commit reads them. Nothing here is a recorded
-receipt; the recorded ones are checked by the classifier test. No network, no
-container, no Home Assistant.
+The lane runs twice for the module, and each time the previous release extracted
+from its tagged commit reads the stores. In the first run this checkout writes
+them; in the second the writer is an archive of the checked-out commit and the
+receipts are classified in exact mode, as recorded receipts are. Nothing here is
+a recorded receipt; the recorded ones are checked by the classifier test. No
+network, no container, no Home Assistant.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -28,6 +31,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import rollback_proof_lane as lane  # noqa: E402
 
 RUN: dict[str, Any] = {}
+EXACT: dict[str, Any] = {}
+DRIVERS = {"rollback_proof_lane.py": "scripts/rollback_proof_lane.py",
+           "tip_writer.py": "tests/fixtures/hamcp377_rollback_proof/tip_writer.py",
+           "previous_reader.py": "tests/fixtures/hamcp377_rollback_proof/previous_reader.py"}
+DATA_SETS = {"12a": ["registry"], "12b": ["device_crash", "device_hold", "device_recovery_27a"],
+             "12c": ["plans"]}
 
 
 def run_lane(*arguments: str) -> tuple[int, str, str]:
@@ -35,6 +44,35 @@ def run_lane(*arguments: str) -> tuple[int, str, str]:
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = lane.main(list(arguments))
     return code, out.getvalue(), err.getvalue()
+
+
+def git_text(*arguments: str) -> str:
+    """This module's own question to git; the lane's `git` helper is not used for it."""
+
+    return subprocess.run(["git", "-C", str(ROOT), *arguments], check=True, capture_output=True,
+                          text=True).stdout
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def tree_digest(root: Path) -> tuple[int, str]:
+    """This module's own measurement of a data set: it walks the tree and hashes it itself."""
+
+    files = [Path(folder, name) for folder, _, names in os.walk(root) for name in names]
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda item: item.relative_to(root).parts):
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0"
+                      + sha256(path).encode() + b"\n")
+    return len(files), digest.hexdigest()
+
+
+def checkout_state() -> dict:
+    return {"head": git_text("rev-parse", "HEAD").strip(),
+            "status": git_text("status", "--porcelain"),
+            "drivers_modified": git_text("status", "--porcelain", "--",
+                                         *DRIVERS.values()).split("\n")[:-1]}
 
 
 def setUpModule() -> None:
@@ -46,12 +84,19 @@ def setUpModule() -> None:
     temp = Path(tempfile.mkdtemp(prefix="hamcp377-rollback-proof-"))
     unittest.addModuleCleanup(shutil.rmtree, temp)
     interpreter = os.environ.get("HAMCP377_PREVIOUS_PYTHON") or sys.executable
-    RUN.update(temp=temp, interpreter=interpreter, out=temp / "out")
+    RUN.update(temp=temp, interpreter=interpreter, out=temp / "out", before=checkout_state())
     RUN["code"], RUN["stdout"], RUN["stderr"] = run_lane(
         "run", "--out", str(temp / "out"), "--work", str(temp / "work"),
         "--reader-python", interpreter)
     RUN["receipts"] = {receipt["scenario"]: receipt
                        for receipt in lane.load_receipts(temp / "out")}
+    EXACT.update(out=temp / "exact-out", work=temp / "exact-work", before=checkout_state())
+    EXACT["code"], EXACT["stdout"], EXACT["stderr"] = run_lane(
+        "run", "--out", str(EXACT["out"]), "--work", str(EXACT["work"]),
+        "--reader-python", interpreter, "--writer-commit", "HEAD")
+    EXACT["after"] = checkout_state()
+    EXACT["receipts"] = {receipt["scenario"]: receipt
+                         for receipt in lane.load_receipts(EXACT["out"])}
 
 
 class SourceSubjectLaneTests(unittest.TestCase):
@@ -74,6 +119,10 @@ class SourceSubjectLaneTests(unittest.TestCase):
             self.assertEqual(writer["version"], lane.declared_version(ROOT))
             self.assertNotEqual(writer["version"], reader["version"])
             self.assertEqual(writer["source"], "worktree")
+            self.assertEqual((writer["commit"], writer["archive_commit"]),
+                             (RUN["before"]["head"], None))
+            self.assertEqual(RUN["before"], EXACT["before"], "the checkout changed during a run")
+            self.assertIs(writer["worktree_clean"], RUN["before"]["status"] == "")
             self.assertIs(receipt["trees_distinct"], True)
             self.assertTrue(all(run["package_in_own_tree"] for run in receipt["runs"]))
             self.assertEqual({run["side"] for run in receipt["runs"]}, {"reader", "writer"})
@@ -174,6 +223,12 @@ class SourceSubjectLaneTests(unittest.TestCase):
         self.assertEqual(settle["task_id"], steps["crash"]["task_id"])
         self.assertEqual((settle["settled"]["terminal"], settle["settled"]["provider_writes"]),
                          (True, 0))
+        self.assertEqual(steps["crash"]["died_in"], lane.CRASH_POINT_27A)
+        self.assertEqual((settle["settled"]["normalized_outcome"],
+                          settle["release"]["terminal_outcome"]),
+                         ("manual_review_required", "manual_review_required"))
+        self.assertTrue(settle["review"]["manual_review_reason"], settle["review"])
+        self.assertTrue(settle["review"]["hold_binding"], settle["review"])
         self.assertTrue(settle["release"]["status"].startswith("hold_released"))
         self.assertEqual((settle["release"]["dispatch"], settle["release"]["provider_writes"],
                           settle["release"]["locks_after"]), ("none", 0, []))
@@ -211,8 +266,128 @@ class SourceSubjectLaneTests(unittest.TestCase):
         code, out, err = run_lane("run", "--out", str(RUN["temp"] / "again"), "--work",
                                   str(RUN["temp"] / "work"), "--reader-python", RUN["interpreter"])
         self.assertEqual((code, out), (2, ""))
-        self.assertIn("no evidence produced", err)
+        self.assertEqual(err, "rollback proof lane: no evidence produced: work directory "
+                              f"{(RUN['temp'] / 'work').resolve()} is not empty\n")
         self.assertFalse((RUN["temp"] / "again").exists())
+
+
+class ExactRunTests(unittest.TestCase):
+    """The run from `--writer-commit HEAD`: what it recorded against what this module measures.
+
+    A recorded receipt is classified in exact mode, so this is the mode the committed
+    receipts were produced in. Every identity and digest below is measured here, with this
+    module's own git calls and hashes, and then compared with what the lane wrote down.
+    """
+
+    def expected(self, receipt: dict) -> list[str]:
+        failures = [f"G1: the {side} interpreter does not hold its tree's locked dependencies"
+                    for side in ("reader", "writer")
+                    if receipt[side]["dependencies"]["mismatches"] != []
+                    or not receipt[side]["dependencies"]["pins"]]
+        if EXACT["before"]["drivers_modified"]:
+            failures.append("G2: the drivers that ran are not the drivers of one exact commit")
+        return failures
+
+    def test_an_exact_run_passes_only_with_unmodified_drivers_and_locked_dependencies(
+            self) -> None:
+        self.assertEqual(EXACT["before"], EXACT["after"], "the checkout changed during the run")
+        self.assertEqual(sorted(path.name for path in EXACT["out"].iterdir()),
+                         ["12a-source.json", "12b-source.json", "12c-source.json"])
+        said, gate = [], []
+        for scenario in ("12a", "12b", "12c"):
+            receipt = EXACT["receipts"][scenario]
+            expected = self.expected(receipt)
+            self.assertEqual(receipt["failures"], expected, scenario)
+            self.assertEqual(receipt["result"], "FAIL" if expected else "PASS", scenario)
+            said += [f"{scenario}: {item}" for item in expected]
+            gate += [f"{scenario}: {item}" for item in expected]
+            gate += [f"G13: the {scenario} receipt does not record PASS"] if expected else []
+        self.assertEqual(lane.gate(list(EXACT["receipts"].values()), require_exact=True), gate)
+        verdict = f"rollback proof lane: {'FAIL' if gate else 'PASS'}\n"
+        self.assertEqual(EXACT["code"], 1 if gate else 0)
+        self.assertTrue(EXACT["stdout"].endswith(verdict), EXACT["stdout"])
+        self.assertEqual(EXACT["stderr"], "".join(item + "\n" for item in said))
+        self.assertEqual(run_lane("check", str(EXACT["out"])),
+                         (EXACT["code"], verdict, "".join(item + "\n" for item in gate)))
+
+    def test_the_writer_is_an_archive_of_the_checked_out_commit(self) -> None:
+        head = EXACT["before"]["head"]
+        self.assertEqual(len(head), 40)
+        for scenario, receipt in EXACT["receipts"].items():
+            with self.subTest(scenario=scenario):
+                writer = receipt["writer"]
+                self.assertEqual((writer["commit"], writer["archive_commit"], writer["source"]),
+                                 (head, head, "git-archive"))
+                self.assertNotIn("worktree_clean", writer)
+                self.assertEqual(receipt["lane"]["checkout_commit"], head)
+                self.assertIs(receipt["trees_distinct"], True)
+                self.assertTrue(all(run["package_in_own_tree"] for run in receipt["runs"]))
+                self.assertEqual({run["side"] for run in receipt["runs"]}, {"reader", "writer"})
+        for side, commit in (("writer", head), ("reader", lane.PREVIOUS_COMMIT)):
+            tree = EXACT["work"] / f"{side}-source"
+            for path in (lane.LOCK, "hass_mcp_engineering_beta/config.yaml", *DRIVERS.values(),
+                         lane.CANDIDATE_TOOL, lane.TEST_SIGNING_TOOL):
+                listed = git_text("ls-tree", commit, "--", path).split()
+                with self.subTest(side=side, path=path):
+                    self.assertEqual(tree.joinpath(path).is_file(), bool(listed))
+                    if listed:
+                        self.assertEqual(git_text("hash-object", "--no-filters",
+                                                  str(tree / path)).strip(), listed[2])
+        self.assertNotEqual(*(sha256(EXACT["work"] / f"{side}-source/hass_mcp_engineering_beta"
+                                     / "config.yaml") for side in ("reader", "writer")))
+
+    def test_the_recorded_drivers_are_the_files_that_ran(self) -> None:
+        measured = {name: sha256(ROOT / path) for name, path in DRIVERS.items()}
+        for scenario, receipt in EXACT["receipts"].items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(receipt["drivers"], measured)
+                self.assertEqual(receipt["lane"]["drivers_modified"],
+                                 EXACT["before"]["drivers_modified"])
+
+    def test_the_recorded_tools_are_the_files_in_the_writers_tree(self) -> None:
+        head, receipt = EXACT["before"]["head"], EXACT["receipts"]["12a"]
+        ran = receipt["cases"]["registry"]["observed"]["writer"]["tools"]
+        for key, step, path in (("candidate_tool", "candidate", lane.CANDIDATE_TOOL),
+                                ("test_signing_tool", "test_signing", lane.TEST_SIGNING_TOOL)):
+            with self.subTest(tool=key):
+                file = EXACT["work"] / "writer-source" / path
+                record = receipt[key]
+                self.assertEqual(
+                    {name: record[name] for name in ("path", "commit", "source", "sha256",
+                                                     "blob_run", "blob_at_commit")},
+                    {"path": path, "commit": head, "source": "git-archive",
+                     "sha256": sha256(file),
+                     "blob_run": git_text("hash-object", "--no-filters", str(file)).strip(),
+                     "blob_at_commit": git_text("rev-parse", "--verify",
+                                                f"{head}:{path}").strip()})
+                self.assertEqual((ran[step]["path"], ran[step]["sha256"]), (path, sha256(file)))
+
+    def test_the_recorded_store_digests_are_those_of_the_stores(self) -> None:
+        for scenario, receipt in EXACT["receipts"].items():
+            self.assertEqual(sorted(receipt["data"]), DATA_SETS[scenario])
+            for name, record in receipt["data"].items():
+                with self.subTest(data=name):
+                    files, digest = tree_digest(EXACT["work"] / "data" / name)
+                    self.assertGreater(files, 0)
+                    self.assertEqual(
+                        {key: record[key] for key in ("files", "after_write", "before_read",
+                                                      "after_read")},
+                        {"files": files, "after_write": digest, "before_read": digest,
+                         "after_read": digest})
+
+    def test_the_recorded_dependency_state_names_the_trees_own_lock(self) -> None:
+        interpreters = {"reader": RUN["interpreter"], "writer": sys.executable}
+        for side, interpreter in interpreters.items():
+            version = subprocess.run(
+                [interpreter, "-B", "-I", "-c", "import sys; print('%d.%d.%d' % sys.version_info"
+                 "[:3])"], check=True, capture_output=True, text=True).stdout.strip()
+            lock = sha256(EXACT["work"] / f"{side}-source" / lane.LOCK)
+            for scenario, receipt in EXACT["receipts"].items():
+                with self.subTest(side=side, scenario=scenario):
+                    recorded = receipt[side]["dependencies"]
+                    self.assertEqual((recorded["python"], recorded["lock_sha256"]),
+                                     (version, lock))
+                    self.assertEqual(receipt[side]["flags"], ["-B", "-I"])
 
 
 class PublishedJournalTests(unittest.TestCase):

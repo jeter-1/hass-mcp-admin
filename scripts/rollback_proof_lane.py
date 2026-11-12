@@ -91,6 +91,39 @@ SYNTHETIC_PROVIDER_LIMITATION = (
     "Core, add-on container, Supervisor, MCP transport or Ingress page took part, so this "
     "receipt shows what the previous release's code does with these records, not what a "
     "deployed add-on does end to end.")
+# What else each scenario's receipt must say about itself, word for word. A receipt states
+# exactly its scenario's list: one that drops or rewords a limitation is not a PASS.
+REGISTRY_LIMITATIONS = (
+    "The candidate's review evidence is a placeholder, and the tool stamps the time "
+    "it runs. Its evidence digests, generated_at and expires_at therefore differ "
+    "from those of any real candidate; its reference objects are what the "
+    "comparison covers.",
+    "The test signature comes from the release's own dry run, which re-signs the "
+    "published envelopes and the candidate with a key it generates and does not "
+    "keep. The previous release read that journal under that key, not under the "
+    "published key.",
+    "The lane identifies a supplied real candidate by its sha256 only. It does not "
+    "establish that the file is the candidate that was or will be signed.")
+PLAN_LIMITATIONS = (
+    "The objects the previous release deleted were placed in its synthetic "
+    "Core by the reader harness under the ids the writer's plans name. They "
+    "are not the objects the current release created.",)
+LIMITATIONS = {"12a": [SYNTHETIC_PROVIDER_LIMITATION, *REGISTRY_LIMITATIONS],
+               "12b": [SYNTHETIC_PROVIDER_LIMITATION],
+               "12c": [SYNTHETIC_PROVIDER_LIMITATION, *PLAN_LIMITATIONS]}
+# The receipt schema is closed at the top level and in its `lane` record: a key these sets do
+# not name is a statement nothing checks, so a receipt carrying one is not a PASS.
+SUBJECTS = ("source",)
+RECEIPT_KEYS = frozenset({
+    "schema", "row", "scenario", "title", "subject", "result", "failures", "summary",
+    "limitations", "started_at", "ended_at", "reader", "writer", "runs", "trees_distinct",
+    "drivers", "lane", "data", "cases"})
+SCENARIO_KEYS = {
+    "12a": frozenset({"candidate_tool", "test_signing_tool", "real_candidate_comparison"}),
+    "12b": frozenset({"recovery"}),
+    "12c": frozenset({"source_facts", "reader_harness"})}
+LANE_KEYS = frozenset({"checkout_commit", "commands", "containers", "drivers_modified",
+                       "network", "note"})
 
 # 12a. The candidate appends these to the 32 published references.
 RULED_ADDED = (
@@ -493,6 +526,13 @@ def classify_device_case(name: str, case: dict, expected: dict) -> list[str]:
     return failures
 
 
+# 27a. Where the writer's operation died, and how the current release must have settled it:
+# a task whose dispatch may have reached the provider is held for manual review, never
+# reported as a verified success.
+CRASH_POINT_27A = "provider call_service, after dispatch intent was recorded"
+SETTLED_OUTCOME_27A = "manual_review_required"
+
+
 def classify_tier_27a(tier: dict) -> list[str]:
     """Roll forward, let the current release settle the lock, release, roll back."""
 
@@ -505,6 +545,8 @@ def classify_tier_27a(tier: dict) -> list[str]:
         "previous_release_read") or {}
     if not (crash.get("died_in") and crash.get("locks") and crash.get("provider_writes") == 1):
         failures.append("G9: 27a has no crashed operation holding lock records to recover")
+    if crash.get("died_in") != CRASH_POINT_27A:
+        failures.append("G9: 27a's crash is not at the pinned crash point")
     if not blocked.get("observed") or blocked["observed"].get("task_id") != crash.get("task_id"):
         failures.append("G9: 27a does not show the previous release blocked on this store "
                         "before the recovery")
@@ -522,6 +564,13 @@ def classify_tier_27a(tier: dict) -> list[str]:
             and release.get("locks_after") == [] and "release_hold" in str(release.get("path"))):
         failures.append("G9: 27a does not show the hold released through the current release's "
                         "own hold-release path with no lock record left")
+    review = settle.get("review")
+    if not (settle.get("settled", {}).get("normalized_outcome") == SETTLED_OUTCOME_27A
+            and release.get("terminal_outcome") == SETTLED_OUTCOME_27A
+            and isinstance(review, dict) and review.get("manual_review_reason")
+            and review.get("hold_binding")):
+        failures.append(f"G9: 27a does not show the crashed task settled to {SETTLED_OUTCOME_27A} "
+                        "with its review record")
     if not read.get("observed"):
         failures.append("G9: 27a claims recovery without the previous release reading the result")
         return failures
@@ -802,6 +851,15 @@ def _classify(receipt: dict, require_exact: bool, recovery_tiers: tuple[str, ...
         failures.append("G2: the drivers that ran are not the drivers of one exact commit")
     if SYNTHETIC_PROVIDER_LIMITATION not in receipt.get("limitations", []):
         failures.append("G13: the receipt does not state the synthetic-provider limitation")
+    elif receipt.get("limitations") != LIMITATIONS[scenario]:
+        failures.append("G13: the receipt's limitations are not exactly the ones scenario "
+                        f"{scenario} must state")
+    for where, record, known in (("", receipt, RECEIPT_KEYS | SCENARIO_KEYS[scenario]),
+                                 ("'s lane record", lane, LANE_KEYS)):
+        unknown = sorted(str(key) for key in set(record) - known)
+        if unknown:
+            failures.append(f"G13: the receipt{where} carries keys its schema does not define: "
+                            + ", ".join(unknown))
     for name in REQUIRED_CASES[scenario]:
         if name not in receipt.get("cases", {}):
             failures.append(f"G13: case {name} is missing")
@@ -813,9 +871,24 @@ def _classify(receipt: dict, require_exact: bool, recovery_tiers: tuple[str, ...
 
 def gate(receipts: list[dict], *, subject: str = "source", require_exact: bool = True,
          recovery_tiers: tuple[str, ...] = DEFAULT_RECOVERY_TIERS) -> list[str]:
-    """The case manifest: every scenario present, recorded PASS, and PASS when re-classified."""
+    """The case manifest: every scenario present once, recorded PASS, PASS when re-classified.
+
+    A receipt of a subject or scenario this lane does not know, and a second receipt for one
+    scenario, are failures: neither may sit beside the receipts and go unread.
+    """
 
     failures: list[str] = []
+    seen: dict[tuple, int] = {}
+    for receipt in receipts:
+        named = (receipt.get("subject"), receipt.get("scenario"))
+        if named[0] not in SUBJECTS:
+            failures.append(f"G13: a receipt names the unknown subject {named[0]!r}")
+        elif named[1] not in CLASSIFIERS:
+            failures.append(f"G13: a receipt names the unknown scenario {named[1]!r}")
+        seen[named] = seen.get(named, 0) + 1
+    failures += [f"G13: more than one {named[0]} receipt for scenario {named[1]}"
+                 for named, count in seen.items()
+                 if count > 1 and named[0] in SUBJECTS and named[1] in CLASSIFIERS]
     found = {receipt.get("scenario"): receipt for receipt in receipts
              if receipt.get("subject") == subject}
     for scenario in CLASSIFIERS:
@@ -1103,6 +1176,7 @@ class Lane:
             raise LaneError(f"{side} step {step} printed no JSON result") from error
         version, package = output[f"{side}_version"], Path(output[f"{side}_package"])
         record = self.reader if side == "reader" else self.writer
+        record["flags"] = argv[1:argv.index(str(driver))]
         record["version"] = record["version"] or version
         self.runs.append({"side": side, "step": step, "version": version,
                           "package_in_own_tree": package.is_relative_to(
@@ -1189,17 +1263,7 @@ class Lane:
             "test_signing_tool": self.tool(TEST_SIGNING_TOOL, TEST_SIGNING_OPERATION),
             "real_candidate_comparison": compare_real_candidate(
                 writer["reference_objects"], self.real_candidate),
-            "limitations": [
-                "The candidate's review evidence is a placeholder, and the tool stamps the time "
-                "it runs. Its evidence digests, generated_at and expires_at therefore differ "
-                "from those of any real candidate; its reference objects are what the "
-                "comparison covers.",
-                "The test signature comes from the release's own dry run, which re-signs the "
-                "published envelopes and the candidate with a key it generates and does not "
-                "keep. The previous release read that journal under that key, not under the "
-                "published key.",
-                "The lane identifies a supplied real candidate by its sha256 only. It does not "
-                "establish that the file is the candidate that was or will be signed."]}
+            "limitations": list(REGISTRY_LIMITATIONS)}
 
     def device_case(self, record: dict, name: str, case: str, now: datetime, task: str) -> dict:
         reader = self.read(record, name, f"12b-read-{case}", "device", self.work / "data" / name,
@@ -1303,10 +1367,7 @@ class Lane:
             cases[mode] = {"data_set": "plans", "writer": writer["modes"][mode],
                            "observed": observed, "derived": {"outcome": plan_outcome(observed)}}
         return {"data": data, "cases": cases,
-                "limitations": [
-                    "The objects the previous release deleted were placed in its synthetic "
-                    "Core by the reader harness under the ids the writer's plans name. They "
-                    "are not the objects the current release created."],
+                "limitations": list(PLAN_LIMITATIONS),
                 "source_facts": {
                     "reader_created_identity_references":
                         self.created_identity_references("reader"),
@@ -1336,9 +1397,33 @@ def write_receipts(receipts: list[dict], out: Path) -> list[Path]:
     return paths
 
 
+def read_receipts(directory: Path) -> tuple[list[dict], list[str]]:
+    """Every JSON file in a receipt directory, and each reason a file is not one receipt.
+
+    A receipt's file name is fixed by its content (`<scenario>-<subject>.json`, as
+    `write_receipts` names it), so a second file cannot stand in for a receipt under
+    another name.
+    """
+
+    receipts, failures = [], []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            failures.append(f"G13: {path.name} cannot be read as a receipt "
+                            f"({type(error).__name__})")
+            continue
+        if not isinstance(receipt, dict):
+            failures.append(f"G13: {path.name} is not a receipt")
+            continue
+        if path.name != f"{receipt.get('scenario')}-{receipt.get('subject')}.json":
+            failures.append(f"G13: {path.name} is not the file name of the receipt it holds")
+        receipts.append(receipt)
+    return receipts, failures
+
+
 def load_receipts(directory: Path) -> list[dict]:
-    return [json.loads(path.read_text(encoding="utf-8"))
-            for path in sorted(directory.glob("*-*.json"))]
+    return read_receipts(directory)[0]
 
 
 def record_comparison(directory: Path, candidate: Path, record: bool,
@@ -1390,6 +1475,7 @@ def main(argv: list[str] | None = None) -> int:
     tiers = tuple(options.recovery_tier or DEFAULT_RECOVERY_TIERS)
     if options.command == "check":
         failures = gate(load_receipts(options.directory), recovery_tiers=tiers)
+        failures = read_receipts(options.directory)[1] + failures
     elif options.command == "compare-candidate":
         try:
             comparison, failures = record_comparison(
