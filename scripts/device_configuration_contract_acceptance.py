@@ -57,6 +57,7 @@ from ha_mcp_engineering.signed_registry import canonical_json
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 
 import lane_failure_diagnostics as diagnostics
+from lane_session import lane_session, refuse_redirect
 
 CAPABILITY = "core.device_configuration_entity_operation"
 GROUP = "device_configuration_entity"
@@ -84,7 +85,6 @@ CORE_REST_REFUSED = "core_rest_request_not_listed"
 STUB_URL_REFUSED = "stub_url_not_pinned"
 STUB_REQUEST_REFUSED = "stub_request_not_listed"
 UPSTREAM_URL_REFUSED = "upstream_url_not_pinned"
-REDIRECT_REFUSED = "redirect_refused"
 FRAME_BYTES = 8 * 1024 * 1024
 
 # The admitted lane entities Core 2026.11.0 creates from the three pinned dumps.
@@ -225,25 +225,6 @@ def pinned_upstream(configured):
     return replace(configured, upstream_dashboard_mcp_url=UPSTREAM_URL)
 
 
-class RedirectRefused(Exception):
-    """A lane session was answered with a redirect. ``code`` is the fixed refusal, never the target."""
-
-    code = REDIRECT_REFUSED
-
-
-async def _refuse_redirect(_session, _context, _params):
-    raise RedirectRefused(REDIRECT_REFUSED)
-
-
-def lane_session(seconds):
-    """Every lane session: no proxy from the environment, and a redirect ends the request unfollowed."""
-    # Local to this lane for now: HAMCP-364 replaces it with the shared lane-session helper.
-    trace = aiohttp.TraceConfig()
-    trace.on_request_redirect.append(_refuse_redirect)
-    return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), trust_env=False,
-                                 trace_configs=[trace])
-
-
 def reference():
     profile, = CORE_DEVICE_CONFIGURATION_PROFILES
     value = profile.to_mapping()
@@ -319,7 +300,7 @@ class RawCore:
     async def command(self, payload, *, seconds=60):
         if not listed(payload, RAW_COMMANDS):
             raise ValueError(CORE_COMMAND_REFUSED)
-        async with lane_session(seconds) as session:
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES) as socket:
                 assert (await socket.receive_json())["type"] == "auth_required"
                 await socket.send_json({"type": "auth", "access_token": self.token})
@@ -372,11 +353,10 @@ class RawRest:
             raise ValueError(CORE_REST_REFUSED)
         headers = {"Authorization": "Bearer " + self.token}
         options = {} if body is None else {"json": body}
-        async with lane_session(seconds) as session:
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.request(method, CORE_URL + path, headers=headers,
                                        allow_redirects=False, **options) as response:
-                if 300 <= response.status < 400:
-                    raise RedirectRefused(REDIRECT_REFUSED)
+                refuse_redirect(response.status)
                 value = await response.json(content_type=None) if response.status == 200 else None
                 return response.status, value
 
@@ -390,11 +370,10 @@ class StubControl:
 
     async def _request(self, method, body=None):
         options = {} if body is None else {"json": body}
-        async with lane_session(30) as session:
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
             async with session.request(method, STUB_CONTROL_URL, allow_redirects=False,
                                        **options) as response:
-                if 300 <= response.status < 400:
-                    raise RedirectRefused(REDIRECT_REFUSED)
+                refuse_redirect(response.status)
                 assert response.status == 200
                 return await response.json(content_type=None)
 
