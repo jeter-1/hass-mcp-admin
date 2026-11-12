@@ -119,6 +119,22 @@ ASSIGN = {"name": "HAMCP165 Assign"}
 ASSIGN_ID = "hamcp165_assign"
 ABSENT = "input_boolean.hamcp069b_absent"
 ASSISTANT = "conversation"
+# Every command the lanes' raw client sends over its websocket, one entry per
+# shape (the notation is RawWebSocket's). Nothing else is sent.
+RAW_COMMANDS = (
+    {"type": ENTITY_GET, "entity_id": str},
+    {"type": REGISTRY_LIST},
+    {"type": LABEL_LIST},
+    {"type": "input_boolean/list"},
+    {"type": "config_entries/get"},
+    {"type": "input_boolean/create", "name": re.compile("Seq13 Lane [0-9a-f]{8}")},
+    # Raw drift between a plan and its apply, and the config-entry entity's precondition.
+    {"type": LABEL_UPDATE, "label_id": CANARY_ID, "description": "Seq-13 raw drift"},
+    {"type": ENTITY_UPDATE, "entity_id": str, "name": "Seq13 Raw Drift"},
+    {"type": ENTITY_UPDATE, "entity_id": str, "disabled_by": "user"},
+    {"type": "input_boolean/delete", "input_boolean_id": str},
+    {"type": "config/label_registry/delete", "label_id": str},
+)
 
 
 def enabled():
@@ -267,6 +283,8 @@ class LaneRaw(RawWebSocket):
     Engineering never sends these. Only the flow, one flow step and one owned
     entry's deletion are reachable, and only on a loopback Core.
     """
+
+    commands = RAW_COMMANDS
 
     def __init__(self, configured):
         super().__init__(configured)

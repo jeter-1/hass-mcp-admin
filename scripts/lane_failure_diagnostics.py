@@ -42,6 +42,7 @@ SAFE_MESSAGES = frozenset((
     'A bounded disposable Docker operation timed out',
     'A bounded disposable Docker operation failed',
     'Exact upstream liveness did not become ready',
+    'lane_redirect_refused',  # lane_session's one refusal: a fixed code carrying no user data.
     # marketplace_read install fixture reasons (FIXTURE_REASONS); code-owned, no upstream text.
     'github_account_connected', 'disposable_core_not_fresh', 'install_candidate_missing',
     'warning_accept_failed', 'install_failed', 'installed_record_missing', 'more_than_one_installed',

@@ -32,6 +32,7 @@ from ha_mcp_engineering.security_metadata import (
 from ha_mcp_engineering.signed_registry import canonical_json
 
 import lane_failure_diagnostics as diagnostics
+from lane_session import lane_session
 
 CAPABILITY = "core.security_metadata_read"
 GROUP = "security_metadata"
@@ -47,6 +48,19 @@ FULL_LEDGER = [CURRENT_USER, AUTH_LIST, HTTP_CONFIG, GET_CONFIG, EXPOSE_NEW_GET,
 SNAPSHOTS = ({"type": "config/auth/list"}, {"type": "http/config"},
              {"type": "config/entity_registry/list"}, {"type": "assist_pipeline/pipeline/list"},
              *({"type": EXPOSE_NEW_GET, "assistant": a} for a in KNOWN_ASSISTANTS))
+# The lane's own raw client goes to one place: the disposable Core that
+# core_security_metadata_local publishes on loopback. The exact string, so no
+# other host, port, scheme, path, userinfo or query, and no name that only
+# resolves to loopback.
+RAW_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
+# Every command that client sends, with each field it carries and the values
+# that field takes. Each is a read. Nothing else is sent.
+RAW_COMMANDS = {
+    AUTH_LIST: {}, CURRENT_USER: {}, HTTP_CONFIG: {}, GET_CONFIG: {}, PIPELINE_LIST: {}, AGENT_LIST: {},
+    GET_PANELS: {}, "config/entity_registry/list": {}, EXPOSE_NEW_GET: {"assistant": KNOWN_ASSISTANTS},
+}
+# Code-owned refusals of that client: never the URL, the token or a payload.
+RAW_URL_REFUSED, RAW_COMMAND_REFUSED = "raw_core_url_not_pinned", "raw_core_command_not_listed"
 
 
 def reference():
@@ -77,20 +91,44 @@ class ObservedReader(SecurityMetadataReader):
                                   on_dispatch=dispatch, on_sent=sent)
 
 
+def raw_command_listed(payload):
+    """Whether the payload is exactly one of the RAW_COMMANDS shapes."""
+    if (type(payload) is not dict or not all(type(key) is str for key in payload)
+            or type(payload.get("type")) is not str):
+        return False
+    fields = RAW_COMMANDS.get(payload["type"])
+    return (fields is not None and payload.keys() == {"type", *fields}
+            and all(type(payload[key]) is str and payload[key] in allowed for key, allowed in fields.items()))
+
+
 class RawCore:
-    """Harness-side authenticated WebSocket; one read command per connection."""
+    """Harness-side authenticated WebSocket; one read command per connection.
+
+    Only RAW_CORE_URL is dialled and only a RAW_COMMANDS shape is sent. Anything
+    else is refused with a fixed code before a session exists.
+    """
 
     def __init__(self, configured):
-        self.url, self.token = configured.websocket_url, configured.ha_token
+        url = configured.websocket_url
+        if type(url) is not str or url != RAW_CORE_URL:
+            raise ValueError(RAW_URL_REFUSED)
+        self.token = configured.ha_token
 
     async def command(self, payload):
+        if not raw_command_listed(payload):
+            raise ValueError(RAW_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects. Every listed field is a
+        # string, so the items are the whole command.
+        checked = dict(payload)
         timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
-            async with session.ws_connect(self.url) as ws:
+        async with lane_session(timeout=timeout) as session:
+            async with session.ws_connect(RAW_CORE_URL) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 assert (await ws.receive_json())["type"] == "auth_ok"
-                await ws.send_json({"id": 1, **payload})
+                await ws.send_json({"id": 1, **checked})
                 reply = await ws.receive_json()
                 assert reply.get("type") == "result" and reply.get("id") == 1
                 return reply

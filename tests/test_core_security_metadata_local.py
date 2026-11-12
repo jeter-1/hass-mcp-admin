@@ -440,12 +440,14 @@ def admin_current_user():
 class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     """Exercise the script with synthetic Core/transport; never Core evidence."""
 
-    async def run_acceptance(self, *, predecessor_available=False, extra_command=None, mutate=False):
+    async def run_acceptance(self, *, predecessor_available=False, extra_command=None, mutate=False,
+                             socket=False):
         from copy import deepcopy
         from tests import test_hamcp134_security_metadata as fixtures
         data = fixtures.results(supervisor=False)
         data[sm.CURRENT_USER] = admin_current_user()
         created, sent_frames, raw_calls = [], [], []
+        self.socket_events = events = []
 
         class Runtime:
             def __init__(self):
@@ -504,8 +506,46 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                         "result": [{"entity_id": "input_boolean.synthetic"}] if changed else []}
             return {"type": "result", "id": 1, "success": True, "result": deepcopy(data[kind])}
 
+        class Socket:
+            def __init__(self):
+                self.replies = [{"type": "auth_required"}]
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def receive_json(self):
+                return self.replies.pop(0)
+
+            async def send_json(self, payload):
+                events.append(("send", payload))
+                if payload["type"] == "auth":
+                    self.replies.append({"type": "auth_ok"})
+                else:
+                    self.replies.append({**await raw(None, payload), "id": payload["id"]})
+
+        class Session:
+            def __init__(self, **kwargs):
+                events.append(("session", kwargs))
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def ws_connect(self, url, **kwargs):
+                events.append(("ws_connect", url, kwargs))
+                return Socket()
+
+        # Either the client's one send method is replaced, or the real client
+        # runs over a stand-in session that answers from the same synthetic data.
+        transport = (patch.object(acceptance.aiohttp, "ClientSession", new=Session) if socket
+                     else patch.object(acceptance.RawCore, "command", new=raw))
         registry = SimpleNamespace(refresh=AsyncMock(return_value=True))
-        configured = SimpleNamespace(websocket_url="ws://synthetic", ha_token=fixtures.HA_TOKEN,
+        configured = SimpleNamespace(websocket_url=acceptance.RAW_CORE_URL, ha_token=fixtures.HA_TOKEN,
                                      access_secret=fixtures.ACCESS_SECRET)
         refs = [{"capability_id": f"core.synthetic_{i}"} for i in range(32)]
         with tempfile.TemporaryDirectory() as directory, \
@@ -515,7 +555,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance, "sign_candidate", return_value=b"{}"), \
                 patch.object(acceptance, "canonical_json", return_value=b"{}"), \
                 patch.object(acceptance.SecurityMetadataReader, "read", new=read), \
-                patch.object(acceptance.RawCore, "command", new=raw), \
+                transport, \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
                                           Path(directory))
@@ -542,6 +582,58 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(result["output_bytes"], sm.OUTPUT_BYTES)
         self.assertEqual(result["profile"], acceptance.reference())
         self.assertFalse(result["production_authority"])
+
+    async def test_the_lane_passes_over_its_own_pinned_socket(self):
+        # HAMCP-364: the same scenario with the real RawCore. Every raw command
+        # the lane sends is on its closed list, and each goes to the pinned URL.
+        from tests import test_hamcp134_security_metadata as fixtures
+        result, _sent = await self.run_acceptance(socket=True)
+        self.assertEqual(result["result"], "PASS")
+        events = self.socket_events
+        sessions = [event[1] for event in events if event[0] == "session"]
+        dialled = [event for event in events if event[0] == "ws_connect"]
+        frames = [event[1] for event in events if event[0] == "send"]
+        self.assertTrue(dialled)
+        self.assertEqual((len(sessions), len(frames)), (len(dialled), 2 * len(dialled)))
+        for kwargs in sessions:
+            self.assertEqual(set(kwargs), {"timeout", "trust_env", "trace_configs"})
+            self.assertIs(kwargs["trust_env"], False)
+            self.assertEqual(kwargs["timeout"].total, 60)
+        for _kind, url, kwargs in dialled:
+            self.assertIs(url, acceptance.RAW_CORE_URL)
+            self.assertEqual(kwargs, {})
+        self.assertEqual(acceptance.RAW_CORE_URL, f"ws://127.0.0.1:{lane.PORTS[0]}/api/websocket")
+        self.assertEqual(frames[0::2], [{"type": "auth", "access_token": fixtures.HA_TOKEN}] * len(dialled))
+        commands = frames[1::2]
+        for frame in commands:
+            self.assertEqual(frame["id"], 1)
+            self.assertTrue(acceptance.raw_command_listed({k: v for k, v in frame.items() if k != "id"}), frame)
+        # The list holds nothing the lane does not send in this run.
+        self.assertEqual({(frame["type"], frame.get("assistant")) for frame in commands},
+                         {(kind, None) for kind, fields in acceptance.RAW_COMMANDS.items() if not fields}
+                         | {(acceptance.EXPOSE_NEW_GET, name) for name in acceptance.KNOWN_ASSISTANTS})
+
+    async def test_an_unpinned_core_url_stops_the_lane_before_any_session(self):
+        from tests import test_hamcp134_security_metadata as fixtures
+        events, refs = [], [{"capability_id": f"core.synthetic_{i}"} for i in range(32)]
+
+        class Session:
+            def __init__(self, **kwargs):
+                events.append(kwargs)
+
+        for url in ("ws://synthetic", "ws://127.0.0.1:8123/api/websocket", "ws://198.51.100.7:18123/api/websocket",
+                    "ws://127.0.0.1:18123@core.example.invalid/api/websocket"):
+            configured = SimpleNamespace(websocket_url=url, ha_token=fixtures.HA_TOKEN,
+                                         access_secret=fixtures.ACCESS_SECRET)
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(acceptance.aiohttp, "ClientSession", new=Session), \
+                    patch.object(acceptance, "CoreRuntime") as runtime, \
+                    patch.object(acceptance.SecurityMetadataReader, "read", new=AsyncMock()) as read:
+                with self.assertRaises(ValueError) as caught:
+                    await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
+                                         Path(directory))
+                self.assertEqual(caught.exception.args, ("raw_core_url_not_pinned",))
+                self.assertEqual((events, read.await_count, runtime.call_count), ([], 0, 0))
 
     async def test_predecessor_admission_fails_the_lane(self):
         with self.assertRaises(AssertionError):
