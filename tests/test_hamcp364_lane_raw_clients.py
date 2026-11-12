@@ -2213,16 +2213,19 @@ class HarnessFlow(HarnessCase):
                 error.session = session
                 raise
 
+    def outside(self):
+        return ("../../auth/token", "..", "a/b", self.FLOW + "/../../../auth/token", self.FLOW + "?x=1",
+                self.FLOW + "#x", self.FLOW + "\n", " " + self.FLOW, self.FLOW[:-1], self.FLOW + "0",
+                self.FLOW.lower(), self.FLOW[:-1] + "g", "@" + ELSEWHERE + "/x", "%2e%2e%2f" + self.FLOW,
+                # An options flow id, and its upper-case form: not what a config entry flow is given.
+                self.HEX_FLOW, self.HEX_FLOW.upper(), self.HEX_FLOW[:26],
+                # Letters the encoding never emits, and a first character past 7.
+                "01JSYNTHETICFLOW0000000000", self.FLOW[:-1] + "I", self.FLOW[:-1] + "L",
+                self.FLOW[:-1] + "O", self.FLOW[:-1] + "U", "8" + self.FLOW[1:], "Z" + self.FLOW[1:],
+                "synthetic-flow", Text(self.FLOW), Claims(self.FLOW))
+
     async def test_a_flow_id_outside_the_closed_pattern_is_refused_before_it_is_sent(self):
-        for flow_id in ("../../auth/token", "..", "a/b", self.FLOW + "/../../../auth/token", self.FLOW + "?x=1",
-                        self.FLOW + "#x", self.FLOW + "\n", " " + self.FLOW, self.FLOW[:-1], self.FLOW + "0",
-                        self.FLOW.lower(), self.FLOW[:-1] + "g", "@" + ELSEWHERE + "/x", "%2e%2e%2f" + self.FLOW,
-                        # An options flow id, and its upper-case form: not what a config entry flow is given.
-                        self.HEX_FLOW, self.HEX_FLOW.upper(), self.HEX_FLOW[:26],
-                        # Letters the encoding never emits, and a first character past 7.
-                        "01JSYNTHETICFLOW0000000000", self.FLOW[:-1] + "I", self.FLOW[:-1] + "L",
-                        self.FLOW[:-1] + "O", self.FLOW[:-1] + "U", "8" + self.FLOW[1:], "Z" + self.FLOW[1:],
-                        "synthetic-flow", Text(self.FLOW), Claims(self.FLOW)):
+        for flow_id in self.outside():
             with self.subTest(flow_id=flow_id, kind=type(flow_id).__name__):
                 with self.assertRaises(ValueError) as caught:
                     await self.advance({"type": "form", "flow_id": flow_id})
@@ -2232,6 +2235,28 @@ class HarnessFlow(HarnessCase):
                 # Only the opening request was made; the id never entered a path.
                 self.assertEqual([(method, url) for method, url, _kwargs in session.calls],
                                  [("POST", MAIN_CORE + self.OPEN)])
+
+    async def test_a_later_step_flow_id_outside_the_closed_pattern_is_refused_before_it_is_sent(self):
+        # The check is made on every step's id, not only on the reply to the opening request.
+        created = {"type": "create_entry", "result": {"entry_id": "synthetic-entry"}}
+        listed = ({"type": "menu", "flow_id": self.FLOW}, {"type": "form", "flow_id": "7" + "Z" * 25})
+        inputs = ({"next_step_id": "tools"}, {}, {})
+        for flow_id in self.outside():
+            for sent in (1, 2):
+                with self.subTest(flow_id=flow_id, kind=type(flow_id).__name__, steps_sent=sent):
+                    with self.assertRaises(ValueError) as caught:
+                        await self.advance(*listed[:sent], {"type": "form", "flow_id": flow_id}, created, created,
+                                           inputs=inputs)
+                    session = caught.exception.__dict__.pop("session")
+                    self.assert_fixed_code(caught.exception, "real_ha_flow_id_not_listed")
+                    self.assertNotIn(str(flow_id), str(caught.exception))
+                    # The steps before it were sent, each on its own listed id; this one never was.
+                    self.assertEqual(
+                        [(method, url, kwargs["json"]) for method, url, kwargs in session.calls],
+                        [("POST", MAIN_CORE + self.OPEN, {"handler": "synthetic_fixture",
+                                                         "show_advanced_options": False})]
+                        + [("POST", MAIN_CORE + self.OPEN + "/" + reply["flow_id"], step)
+                           for reply, step in zip(listed[:sent], inputs)])
 
     async def test_a_missing_flow_id_is_still_the_harness_failure(self):
         for flow_id in (None, "", 7, [self.FLOW]):
