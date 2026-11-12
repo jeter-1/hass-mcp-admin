@@ -104,6 +104,38 @@ class ExportScanTests(unittest.TestCase):
         self.assertEqual(found["component_manifests_in_image"],
                          ["/config/custom_components/ha_mcp_tools/manifest.json"])
 
+    def test_a_hard_link_member_counts_and_is_reported_as_one(self):
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as archive:
+            first = tarfile.TarInfo("opt/synthetic/METADATA")
+            first.size = 9
+            archive.addfile(first, io.BytesIO(b"synthetic"))
+            link = tarfile.TarInfo(SITE + "fastmcp-4.1.6.dist-info/METADATA")
+            link.type, link.linkname = tarfile.LNKTYPE, "opt/synthetic/METADATA"
+            archive.addfile(link)
+        raw.seek(0)
+        found = lane.scan_export(raw)
+        self.assertEqual(found["distributions"], {"fastmcp": "4.1.6"})
+        self.assertEqual(found["metadata_members"], {"regular": 0, "hard_link": 1})
+        self.assertEqual(found["dist_info_without_metadata_file"], [])
+
+    def test_a_dist_info_directory_without_a_metadata_file_is_listed_not_counted(self):
+        found = lane.scan_export(export_stream({
+            SITE + "ruamel_yaml-0.19.1.dist-info/": None,
+            SITE + "ruamel_yaml-0.19.1.dist-info/RECORD": b"synthetic",
+            SITE + "mcp-2.3.0.dist-info/METADATA": b"synthetic"}))
+        self.assertEqual(found["distributions"], {"mcp": "2.3.0"})
+        self.assertEqual(found["dist_info_without_metadata_file"], ["ruamel-yaml"])
+        with self.assertRaises(lane.Refusal) as raised:
+            lane.require_scan_complete({"core": found})
+        self.assertEqual(str(raised.exception), "distribution_scan_incomplete")
+
+    def test_an_uncounted_distribution_nobody_asked_about_does_not_refuse(self):
+        found = lane.scan_export(export_stream({
+            SITE + "synthetic_other-1.0.dist-info/RECORD": b"synthetic"}))
+        self.assertEqual(found["dist_info_without_metadata_file"], ["synthetic-other"])
+        lane.require_scan_complete({"core": found})
+
     def test_nothing_is_extracted(self):
         # A member that points outside the stream is read as a name, never written.
         raw = io.BytesIO()
@@ -112,7 +144,9 @@ class ExportScanTests(unittest.TestCase):
             link.type, link.linkname = tarfile.SYMTYPE, "/etc/synthetic"
             archive.addfile(link)
         raw.seek(0)
-        self.assertEqual(lane.scan_export(raw)["distributions"], {})
+        found = lane.scan_export(raw)
+        self.assertEqual(found["distributions"], {})
+        self.assertEqual(found["dist_info_without_metadata_file"], ["evil"])
 
 
 class BindingTests(unittest.TestCase):

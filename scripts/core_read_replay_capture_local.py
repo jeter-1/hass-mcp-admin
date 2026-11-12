@@ -70,8 +70,11 @@ COMPONENT_PATH = "custom_components/ha_mcp_tools"
 PACKAGE_SOURCE = "/app/src/ha_mcp/"
 DISTRIBUTION = re.compile(
     r"/lib/python(3\.[0-9]+)/site-packages/([A-Za-z0-9_.]+)-([0-9][A-Za-z0-9_.+!]*)\.dist-info/METADATA$")
+DIST_INFO = re.compile(
+    r"/site-packages/([A-Za-z0-9_.]+)-([0-9][A-Za-z0-9_.+!]*)\.dist-info(?:/|$)")
 REQUIREMENT = re.compile(r"([A-Za-z0-9_.\-]+)(>=|==)([0-9]+(?:\.[0-9]+)*)")
 EXPORT_SECONDS = 900
+UPSTREAM_DISTRIBUTIONS = ("ha-mcp", "fastmcp", "mcp")
 
 
 def normalized(name):
@@ -138,26 +141,46 @@ def scan_export(stream):
     """Names and versions only, from a container export stream.
 
     Members are read from the stream; nothing is extracted to disk or executed.
+    A distribution counts when its METADATA member is a regular file or a hard
+    link (an export stream writes the second name of one inode as a link).  A
+    dist-info directory seen without such a member is listed, not counted.
     """
-    pythons, distributions, manifests = set(), {}, []
+    pythons, distributions, manifests, seen = set(), {}, [], set()
+    kinds = {"regular": 0, "hard_link": 0}
     package_files = package_bytes = 0
     with tarfile.open(fileobj=stream, mode="r|") as archive:
         for member in archive:
             path = "/" + member.name.lstrip("./")
+            named = DIST_INFO.search(path)
+            if named:
+                seen.add(normalized(named.group(1)))
             match = DISTRIBUTION.search(path)
-            if match and member.isreg():
+            if match and (member.isreg() or member.islnk()):
+                kinds["regular" if member.isreg() else "hard_link"] += 1
                 pythons.add(match.group(1))
                 distributions[normalized(match.group(2))] = match.group(3)
             if path.endswith("/" + COMPONENT_PATH + "/manifest.json"):
                 manifests.append(path)
-            if path.startswith(PACKAGE_SOURCE) and member.isreg():
+            if path.startswith(PACKAGE_SOURCE) and (member.isreg() or member.islnk()):
                 package_files += 1
                 package_bytes += member.size
     return {"python": sorted(pythons), "distribution_count": len(distributions),
             "distributions": dict(sorted(distributions.items())),
+            "metadata_members": kinds,
+            "dist_info_without_metadata_file": sorted(seen - set(distributions)),
             "component_manifests_in_image": sorted(manifests),
             "package_source": {"path": PACKAGE_SOURCE, "files": package_files,
                                "bytes": package_bytes}}
+
+
+def require_scan_complete(scans):
+    """Refuse a requirement answer that rests on a distribution the scan could not count."""
+    relevant = {normalized(parse_requirement(text)[0])
+                for version in VERSIONS for text in COMPONENT_REQUIREMENTS[version]}
+    relevant |= set(UPSTREAM_DISTRIBUTIONS)
+    for found in scans.values():
+        if relevant & set(found["dist_info_without_metadata_file"]):
+            raise Refusal("distribution_scan_incomplete")
 
 
 def labels_argv(run_id):
@@ -231,6 +254,7 @@ def inventory(args, launch):
     try:
         scans = {key: export_scan(wanted[key], run_id, images[key]) for key in images}
         (run_dir / "inventory.json").write_bytes(canonical(scans))
+        require_scan_complete(scans)
         core_distributions = scans["core"]["distributions"]
         result["core_python"] = scans["core"]["python"]
         result["profile_b"] = {version: requirement_report(version, core_distributions)
@@ -241,6 +265,13 @@ def inventory(args, launch):
             version: scans[version]["package_source"] for version in VERSIONS}
         result["package_distribution_in_image"] = {
             version: scans[version]["distributions"].get("ha-mcp") for version in VERSIONS}
+        result["upstream_distributions"] = {
+            version: {name: scans[version]["distributions"].get(name)
+                      for name in UPSTREAM_DISTRIBUTIONS} for version in VERSIONS}
+        result["scan"] = {key: {"metadata_members": scans[key]["metadata_members"],
+                                "dist_info_without_metadata_file":
+                                    scans[key]["dist_info_without_metadata_file"]}
+                          for key in scans}
         result["upstream_python"] = {version: scans[version]["python"] for version in VERSIONS}
         result["result"] = "PASS"
     except BaseException as exc:  # WITHHELD, with a fixed token only.
