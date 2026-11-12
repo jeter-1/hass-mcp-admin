@@ -937,6 +937,36 @@ class ContainmentContract:
         return process, request
 
     @virtual
+    async def test_an_ordinary_recovery_pass_records_all_five_events(self):
+        """U3: containment suppresses no event of an ordinary pass.
+
+        The first pass after the dead owner's claim expires claims, transfers
+        the locks, observes, verifies (not yet verified) and yields, and each
+        of the five is recorded once. The next pass, after that completed
+        observation, records all five again.
+        """
+        five = ["recovery_claimed", "recovery_locks_transferred", "observation_recorded",
+                "verification_recorded", "execution_claim_yielded"]
+        request = await self.crash_after_dispatch_intent()
+        task_id = request.task_id
+        await asyncio.sleep(121)  # the dead owner's claim has expired
+        process = self.process()
+        for _ in range(2):
+            before = process.record(task_id)
+            await process.service.recover_once()
+            record = process.record(task_id)
+            self.assertEqual(record.events[:len(before.events)], before.events)
+            self.assertEqual(event_types(record)[len(before.events):], five)
+            # The completed observation after the claim resets the count.
+            self.assertEqual(counted_claims(record.events), 0)
+            self.assertFalse(record.terminal)
+            self.assertEqual((process.writes(), process.dispatches, record.dispatch_count),
+                             (0, 0, 1))
+            held = process.lock_rows(task_id)
+            self.assertEqual((len(held), any(row[4] for row in held)), (3, False))
+            await asyncio.sleep(SWEEP_SECONDS)
+
+    @virtual
     async def test_8_identical_control_calls_in_one_window_do_not_settle_a_healthy_task(self):
         await self.repeated_control_calls(8)
 
