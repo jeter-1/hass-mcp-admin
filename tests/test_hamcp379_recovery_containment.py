@@ -1676,6 +1676,55 @@ class ContainmentContract:
         self.assertEqual((other.record(free.task_id).normalized_outcome, other.writes()),
                          ("succeeded_verified", 1))
 
+    # F11, known limit (architect ruling 2026-11-12, "contiguity required"):
+    # the unchanged models load only events numbered 1..n, so the trim
+    # renumbers and the two events appended after it reuse the two newest
+    # numbers, which the audit trail already holds for the dropped events.
+
+    @virtual
+    async def test_a_trimmed_old_writer_record_reuses_its_two_newest_audit_sequences(self):
+        collector, make = AuditCollector(), self.process
+
+        def audited(*args, **kwargs):
+            process = make(*args, **kwargs)
+            process.service.executions.audit = collector
+            return process
+        self.process = audited
+        self.addCleanup(vars(self).pop, "process", None)
+        old, task_id = await self.old_writer_record(MAX_EXECUTION_EVENTS)
+        before = old.record(task_id)
+        self.assertEqual(event_types(before)[-2:], ["execution_claim_yielded", "recovery_claimed"])
+        process = self.process()
+        await self.sweep(process, task_id, limit=600)
+        record = self.assert_bound_settlement(process, task_id, dropped=2)
+        # The record is numbered 1..n, as the models require: the next unused
+        # number (129) after the trim would not load.
+        self.assertEqual([event["sequence"] for event in record.events],
+                         list(range(1, MAX_EXECUTION_EVENTS + 1)))
+        self.assertEqual(record.events[:-2], before.events[:-2])
+        self.assertEqual((record.events[-2]["event_type"], sorted(record.events[-2]["diagnostic_codes"])),
+                         ("recovery_claimed", sorted(["redispatch_prohibited",
+                                                      "recovery_bookkeeping_dropped_2"])))
+        gapped = record.to_dict()
+        gapped["events"][-2]["sequence"], gapped["events"][-1]["sequence"] = 129, 130
+        with self.assertRaisesRegex(ValueError, "execution event sequence is invalid"):
+            ExecutionRecord.from_dict(gapped)
+        # The audit trail: sequences 127 and 128 each name the dropped event
+        # and the event that replaced it; every other number names one event.
+        kind = process.service.executions.kind
+        named = {}
+        for batch in collector.batches:
+            for entry in batch:
+                if entry["task_id"] == task_id and entry["event"] != kind + "_execution_snapshot":
+                    named.setdefault(entry["event_sequence"], {})[entry["audit_event_id"]] = entry["event"]
+        self.assertEqual(sorted(named), list(range(1, MAX_EXECUTION_EVENTS + 1)))
+        repeated = {sequence: sorted(events.values()) for sequence, events in named.items()
+                    if len(events) > 1}
+        self.assertEqual(repeated, {
+            127: sorted([kind + "_execution_claim_yielded", kind + "_recovery_claimed"]),
+            128: sorted([kind + "_recovery_claimed", kind + "_verification_recorded"])})
+        self.assertEqual((old.writes(), process.writes(), process.dispatches), (0, 0, 0))
+
 
 class FanContainment(ContainmentContract, Scenario):
     family = "fan"
