@@ -32,6 +32,7 @@ class ProviderCapability(str, Enum):
     SCRIPT_TRACE = "script_trace"
     MARKETPLACE_INVENTORY = "marketplace_inventory"
     SECURITY_METADATA = "security_metadata"
+    THREAD_MATTER_TOPOLOGY = "thread_matter_topology"
     UNREGISTERED_ENTITIES = "unregistered_entities"
     CONFIGURATION_DEFINITIONS = "configuration_definitions"
     AUTOMATION_BASELINE_CAPTURE = "automation_baseline_capture"

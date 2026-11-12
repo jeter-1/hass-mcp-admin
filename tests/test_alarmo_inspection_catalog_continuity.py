@@ -96,7 +96,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "automation_reliability_batch_analysis",  # + HAMCP-229
                                                           "inspect_governance_record",
                                                           "get_marketplace_inventory",  # + HAMCP-290
-                                                          "get_security_metadata"})  # + HAMCP-134
+                                                          "get_security_metadata",  # + HAMCP-134
+                                                          "get_thread_matter_topology"})  # + HAMCP-231
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         actual["get_server_health"] = _without_hamcp242_health_disclosure(self, actual["get_server_health"])
@@ -114,7 +115,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp298_descriptor_changes(self, actual)
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 85)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

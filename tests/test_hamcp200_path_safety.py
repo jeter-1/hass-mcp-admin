@@ -1313,11 +1313,16 @@ HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
 # (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``),
 # and the seq-15 lane's setup, raw drift, readback and cleanup (HAMCP-232),
 # which ``LaneRaw.status`` closes to ``RAW_ROUTE`` on a loopback Core
-# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``).
+# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``),
+# and the device-configuration lane's config-entry flow start, flow continue
+# and entry reload (HAMCP-366), which ``RawRest.rest`` closes to ``RAW_REST``
+# on the pinned loopback Core (pinned in
+# tests/test_core_device_configuration_local.py ``LaneRawRouteTests``).
 HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
     ("seq13_contract_acceptance.py", "self.api_url + path"),
     ("seq15_contract_acceptance.py", "self.api_url + path"),
+    ("device_configuration_contract_acceptance.py", "CORE_URL + path"),
 })
 
 

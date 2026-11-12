@@ -308,6 +308,8 @@ def capability_evidence_for_probes(
                 # HAMCP-329/298 Release 2.6.0 (dormant until signed).
                 "core.scene_create_delete_operation",
                 "core.created_helper_delete_operation",
+                # HAMCP-231 Release 2.6.0 (dormant until signed).
+                "core.thread_matter_topology_read",
             ):
                 add(capability_id, rest_ok and websocket_ok, semantic=True)
     return evidence

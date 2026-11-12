@@ -60,11 +60,17 @@
   "marketplace_read": [
     "core.marketplace_read"
   ],
+  "thread_matter_topology": [
+    "core.thread_matter_topology_read"
+  ],
   "scene_create_delete": [
     "core.scene_create_delete_operation"
   ],
   "created_helper_delete": [
     "core.created_helper_delete_operation"
+  ],
+  "device_configuration_entity": [
+    "core.device_configuration_entity_operation"
   ],
   "security_metadata": [
     "core.security_metadata_read"

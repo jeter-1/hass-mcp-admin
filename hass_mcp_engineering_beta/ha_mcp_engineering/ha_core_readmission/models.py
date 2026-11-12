@@ -78,6 +78,7 @@ class CoreCapabilityClass(str, Enum):
     SECURITY_METADATA_READ = "security_metadata_read"
     SCENE_CREATE_DELETE_OPERATION = "scene_create_delete_operation"
     CREATED_HELPER_DELETE_OPERATION = "created_helper_delete_operation"
+    THREAD_MATTER_TOPOLOGY_READ = "thread_matter_topology_read"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -130,6 +131,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.SECURITY_METADATA_READ,
             CoreCapabilityClass.SCENE_CREATE_DELETE_OPERATION,
             CoreCapabilityClass.CREATED_HELPER_DELETE_OPERATION,
+            CoreCapabilityClass.THREAD_MATTER_TOPOLOGY_READ,
         }
 
 

@@ -88,6 +88,7 @@ NOT_F3 = {
     "core.script_trace_read": "read",
     "core.marketplace_read": "read",  # HAMCP-290: direct typed read, never an F3 plan
     "core.security_metadata_read": "read",  # HAMCP-134: direct read, never an F3 plan
+    "core.thread_matter_topology_read": "read",  # HAMCP-231: direct typed read, never an F3 plan
     "core.template_semantics": "planning",
     "core.configuration_validation": "planning",
     "core.dependency_helper_planning": "planning",
@@ -650,7 +651,9 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
                     "core.marketplace_read", "core.security_metadata_read",
                     # HAMCP-297: the direct typed device-configuration tool.
-                    "core.device_configuration_entity_operation"}
+                    "core.device_configuration_entity_operation",
+                    # HAMCP-231: and the dormant Thread/Matter topology read.
+                    "core.thread_matter_topology_read"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
         # HAMCP-329/298: gate F3 entries, but no signed entry binds them yet.
         dormant = {"core.scene_create_delete_operation",

@@ -482,17 +482,17 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         static = registered_tools(get_registered_server())
         McpSdkToolRegistry(server).replace({name: static[name]
                                             for name in ENGINEERING_STATIC_TOOL_NAMES})
-        self.assertEqual(len(registered_tools(server)), 85)  # HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration
+        self.assertEqual(len(registered_tools(server)), 86)  # HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 112)  # HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration
+        self.assertEqual(len(baseline), 113)  # HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
 
         self.network.records[0]["name"] = False
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(registered_tools(server)), 107)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration
+        self.assertEqual(len(registered_tools(server)), 108)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
-        # throughout beside the device-dependent reads (84 + 28 - 6 = 106; HAMCP-297).
+        # throughout beside the device-dependent reads (86 + 28 - 6 = 108; HAMCP-297, HAMCP-231).
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
                          set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS) | {"ha_get_hacs_info"})
         result = json.loads(await registered_tools(server)["ha_get_state"].run(
