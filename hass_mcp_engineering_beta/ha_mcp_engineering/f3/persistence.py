@@ -17,6 +17,7 @@ from typing import Any, Callable, TypeVar
 from .models import (
     EXECUTION_RECORD_SCHEMA_VERSION,
     F3_ADAPTER_CONTRACT_MODEL,
+    MAX_EXECUTION_EVENTS,
     NORMALIZED_OUTCOME_TO_TASK_STATE,
     ExecutionIdentity,
     ExecutionRecord,
@@ -37,6 +38,76 @@ EXECUTION_NAMESPACE = "f3-operation-executions-v1"
 EXECUTION_TRANSACTION_FILE = ".transaction.lock"
 EXECUTION_TEMP_PREFIX = ".execution.tmp-"
 EXECUTION_RETENTION_DAYS = 90
+
+
+# HAMCP-379 recovery containment (opt-in; see SharedOperationExecutor).
+#
+# Completed observation: an ``observation_recorded`` event without the
+# ``observation_failed`` code. It is written only after the adapter's read
+# returned. A read that raised, a pass cancelled during its read and a pass
+# that yielded without reading complete no observation.
+#
+# Consecutive recovery claims: the ``recovery_claimed`` events after the most
+# recent completed observation, or in the whole record when there is none.
+#
+# The recovery pass whose claim brings that count to RECOVERY_CLAIM_BOUND
+# settles the task to manual review without another read.
+RECOVERY_CLAIM_BOUND = 8
+# Backstop: a recovery claim that finds this many events settles the task too.
+RECOVERY_SETTLE_BOUND = MAX_EXECUTION_EVENTS - 8
+# Recovery bookkeeping: these events carry no readback or dispatch evidence.
+RECOVERY_BOOKKEEPING_EVENT_TYPES = frozenset(
+    {"recovery_claimed", "recovery_locks_transferred", "execution_claim_yielded"}
+)
+# Room a record already at the event bound needs before it can settle: one
+# claim event that names the number of dropped events, and the settlement.
+_SETTLEMENT_EVENTS = 2
+# Diagnostic code prefix; the suffix is the number of dropped events.
+RECOVERY_DROPPED_CODE_PREFIX = "recovery_bookkeeping_dropped_"
+
+
+def consecutive_recovery_claims(events: list[dict[str, Any]]) -> int:
+    """Recovery claims since the last completed observation (see above)."""
+    count = 0
+    for event in reversed(events):
+        if (
+            event["event_type"] == "observation_recorded"
+            and "observation_failed" not in event["diagnostic_codes"]
+        ):
+            break
+        if event["event_type"] == "recovery_claimed":
+            count += 1
+    return count
+
+
+def recovery_bound_reached(record: ExecutionRecord) -> bool:
+    return (
+        consecutive_recovery_claims(record.events) >= RECOVERY_CLAIM_BOUND
+        or len(record.events) >= RECOVERY_SETTLE_BOUND
+    )
+
+
+def _append_recovery_bookkeeping(
+    record: ExecutionRecord,
+    *,
+    containment: bool,
+    event_type: str,
+    occurred_at: str,
+    diagnostic_codes: tuple[str, ...],
+) -> None:
+    """Append one bookkeeping event; under containment, not at the bound.
+
+    A task at the recovery bound only waits to settle. Its waiting passes
+    append nothing, so the settlement event always fits.
+    """
+    if containment and recovery_bound_reached(record):
+        return
+    append_execution_event(
+        record,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        diagnostic_codes=diagnostic_codes,
+    )
 
 
 class ExecutionStorageError(RuntimeError):
@@ -236,6 +307,7 @@ class DurableExecutionRepository:
         prepared: object,
         timing: ExecutorTiming,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionClaim:
         identity.validate()
         timing.validate()
@@ -297,12 +369,30 @@ class DurableExecutionRepository:
                 record.identity["request_id"] = identity.request_id
                 record.claim_generation += 1
                 record.claim_expires_at = claim_expiry
-                append_execution_event(
-                    record,
-                    event_type="recovery_claimed",
-                    occurred_at=now_text,
-                    diagnostic_codes=("redispatch_prohibited",),
+                dropped = (
+                    self._reserve_settlement_events(record)
+                    if recovery_containment
+                    else 0
                 )
+                if dropped:
+                    # The one event a trimmed record gains before it settles.
+                    append_execution_event(
+                        record,
+                        event_type="recovery_claimed",
+                        occurred_at=now_text,
+                        diagnostic_codes=(
+                            "redispatch_prohibited",
+                            f"{RECOVERY_DROPPED_CODE_PREFIX}{dropped}",
+                        ),
+                    )
+                else:
+                    _append_recovery_bookkeeping(
+                        record,
+                        containment=recovery_containment,
+                        event_type="recovery_claimed",
+                        occurred_at=now_text,
+                        diagnostic_codes=("redispatch_prohibited",),
+                    )
                 self._write_unlocked(record)
                 return ExecutionClaim(record, record.claim_generation, False)
             record.identity["owner_id"] = identity.owner_id
@@ -317,6 +407,36 @@ class DurableExecutionRepository:
             )
             self._write_unlocked(record)
             return ExecutionClaim(record, record.claim_generation, False)
+
+    @staticmethod
+    def _reserve_settlement_events(record: ExecutionRecord) -> int:
+        """Make room to settle a record written at the event bound.
+
+        HAMCP-379: releases before containment could fill a record with
+        recovery bookkeeping, after which no terminal event fits. Only then,
+        drop the newest bookkeeping events (never another event type, never an
+        attempt counter) and return how many were dropped. A record that grew
+        under containment settles before it can get here.
+        """
+        if len(record.events) < MAX_EXECUTION_EVENTS:
+            return 0
+        kept: list[dict[str, Any]] = []
+        dropped = 0
+        for event in reversed(record.events):
+            if (
+                dropped < _SETTLEMENT_EVENTS
+                and event["event_type"] in RECOVERY_BOOKKEEPING_EVENT_TYPES
+            ):
+                dropped += 1
+                continue
+            kept.append(event)
+        if dropped < _SETTLEMENT_EVENTS:
+            return 0
+        record.events = [
+            {**event, "sequence": sequence}
+            for sequence, event in enumerate(reversed(kept), start=1)
+        ]
+        return dropped
 
     @staticmethod
     def _require_claim(
@@ -468,6 +588,7 @@ class DurableExecutionRepository:
         claim_generation: int,
         handle: LockHandle,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionRecord:
         now_text = timestamp(now or utc_now())
         handle.validate()
@@ -489,8 +610,9 @@ class DurableExecutionRepository:
             record.dispatch_intent["lock_tokens"] = [
                 dict(item) for item in record.lock_tokens
             ]
-            append_execution_event(
+            _append_recovery_bookkeeping(
                 record,
+                containment=recovery_containment,
                 event_type="recovery_locks_transferred",
                 occurred_at=now_text,
                 diagnostic_codes=("observation_only",),
@@ -732,6 +854,7 @@ class DurableExecutionRepository:
         owner_id: str,
         claim_generation: int,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionRecord:
         """End an in-process single-flight claim while work remains observable."""
         now_text = timestamp(now or utc_now())
@@ -740,8 +863,9 @@ class DurableExecutionRepository:
             if record.terminal:
                 raise ExecutionStorageError("terminal execution cannot yield a claim")
             record.claim_expires_at = now_text
-            append_execution_event(
+            _append_recovery_bookkeeping(
                 record,
+                containment=recovery_containment,
                 event_type="execution_claim_yielded",
                 occurred_at=now_text,
                 diagnostic_codes=("observation_resume_allowed",),
