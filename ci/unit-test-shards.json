@@ -205,6 +205,7 @@
   "test_hamcp319_used_tool_exact_admission": 45,
   "test_hamcp319_yaml": 12,
   "test_hamcp377_rollback_proof_source": 125,
+  "test_hamcp379_recovery_containment": 286,
   "test_handoff_generation": 1,
   "test_held_read_canary": 14,
   "test_inbound_topology_observer": 1,

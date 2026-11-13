@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
 import lane_failure_diagnostics as diagnostics  # noqa: E402
+from lane_session import refuse_redirect  # noqa: E402
 
 MODEL = "hamcp329-298-created-object-lane-v1"
 CORE_VERSION = "2026.11.0"
@@ -200,6 +201,24 @@ def state_route(entity_id):
     return rest_path("/states/{}", _owned(LANE_ENTITY, entity_id), kinds=("entity_id",))
 
 
+# The one WebSocket the lane's own client dials: the disposable Core that
+# core_created_object_local.py publishes on loopback port 18123. The exact
+# string, as for every other lane's raw client (HAMCP-364).
+RAW_CORE_URL = "ws://127.0.0.1:18123/api/websocket"
+# Every WebSocket command that client sends, one entry per shape (the notation
+# is RawWebSocket's). One closed list per lane, each exactly what that lane
+# sends; neither lane is given a command only the other sends.
+# The scene lane reads the entity registry and sends nothing else.
+SCENE_RAW_COMMANDS = ({"type": REGISTRY_LIST},)
+# The helper lane reads the registry and each helper domain's list, and deletes
+# a lane-owned helper.
+HELPER_RAW_COMMANDS = (
+    {"type": REGISTRY_LIST},
+    *({"type": domain + "/list"} for domain in HELPER_DOMAINS),
+    *({"type": domain + "/delete", domain + "_id": LANE_ID} for domain in HELPER_DOMAINS),
+)
+
+
 class LaneRaw(RawWebSocket):
     """The lane's own loopback client: fixture setup, independent read-back and clean-up.
 
@@ -207,7 +226,13 @@ class LaneRaw(RawWebSocket):
     Engineering's gateways hold, so every path is a bound runtime route
     (HAMCP-200) and none of its requests is counted as Engineering's. Only the
     ``LANE_REQUESTS`` pairs are sent, only for a lane-owned id.
+
+    This class lists no WebSocket command: each lane runs its own subclass,
+    which names that lane's list.
     """
+
+    core_url = RAW_CORE_URL
+    commands = ()
 
     def __init__(self, configured):
         from ha_mcp_engineering.clients import HomeAssistantRestClient
@@ -235,10 +260,28 @@ class LaneRaw(RawWebSocket):
             status = (exc.details if isinstance(exc.details, dict) else {}).get("status")
             if type(status) is not int:
                 raise
+            # A redirect is no answer about a fixture. The guarded client does not
+            # follow one, and the lane refuses it at once, as every lane session does.
+            refuse_redirect(status)
             return status, None
         if isinstance(payload, ExpectedHttpStatus):
             return payload.status, None
         return 200, payload
+
+
+class SceneLaneRaw(LaneRaw):
+    """The scene lane's client."""
+
+    commands = SCENE_RAW_COMMANDS
+
+
+class HelperLaneRaw(LaneRaw):
+    """The helper lane's client."""
+
+    commands = HELPER_RAW_COMMANDS
+
+
+LANE_CLIENTS = {"scene_create_delete": SceneLaneRaw, "created_helper_delete": HelperLaneRaw}
 
 
 class Reader:
@@ -782,7 +825,7 @@ async def run(lane, configured, entry, directory):
     log = RequestLog()
     engineering_rest = ObservedRest(HomeAssistantRestClient(configured), log)
     engineering_ws = ObservedWebSocket(HomeAssistantWebSocketClient(configured), log)
-    raw = LaneRaw(configured)
+    raw = LANE_CLIENTS[lane](configured)
     reader = Reader(raw.status, raw.ok)
 
     @diagnostics.checked("helper_setup", "authority_setup")

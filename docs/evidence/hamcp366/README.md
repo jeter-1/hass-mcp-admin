@@ -14,21 +14,21 @@ byte for byte; it is never edited by hand.
 
 | Field | Value |
 |---|---|
-| Receipt source commit | `46c68166ff9303573eb73af7396c2164c387a205` (clean committed checkout; the merge of `release/2.6.0` at `a860671f2593ae9a39a97fff8c30effe0c79016b` into this branch) |
-| Receipt SHA-256 | `b4c1463fb2126de33fa399589dfa909a4553131ce1107cf6d944af5f63075e15` (35,801 bytes) |
+| Receipt source commit | `5fc40f939756ee4ed5b004f88e53c00fd7d939c8` (clean committed checkout of the HAMCP-364 branch, which contains `release/2.6.0` at `aeb3b314dd180592874243c9ae370a63f0622c2b`) |
+| Receipt SHA-256 | `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0` (35,796 bytes) |
 | Result | `PASS`, `cleanup.clean: true` |
-| Run | user unit `hamcp366-lane-run9`, scriptbox (amd64), 2026-11-11 16:29:51 to 16:34:19 Central (4 min 28 s) |
+| Run | user unit `hamcp364-devcfg-lane-5fc40f93`, scriptbox (amd64), 2026-11-12 03:32:52 to 03:37:26 Central (4 min 34 s; the receipt's `started_utc` and `ended_utc`) |
 | Core | 2026.11.0, `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e` |
 | ha-mcp child | 8.5.0, `ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c` |
 | Predecessor journal | sequence 17, SHA-256 `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`, 32 Core references |
 
-The commit that adds this receipt changes this directory only. No lane script,
-acceptance module, fixture, test or runtime file changes after the receipt's
-source commit. A later change
+The commit that adds this receipt changes files under `docs/evidence/` only.
+No lane script, acceptance module, fixture, test or runtime file changes after
+the receipt's source commit. A later change
 to the lane script makes this receipt stale by the same rule; the lane then
 re-runs.
 
-The source commit includes the one runtime change on this branch: the text of
+The source commit includes the one runtime change HAMCP-366 made: the text of
 the undo `rule` field (see "Runtime text change" below). The profile
 fingerprint is the same with and without it.
 
@@ -120,14 +120,16 @@ before a session exists (`LaneRawRouteTests` in
 `tests/test_core_device_configuration_local.py`).
 
 The lane opens every aiohttp session through one function, `lane_session` in
-`scripts/device_configuration_contract_acceptance.py`. It sets
-`trust_env=False` and a trace whose redirect callback raises `RedirectRefused`
-(code `redirect_refused`), so a 3xx answer ends the request before a second
-connection is made; that covers the WebSocket handshake, which has no redirect
-setting of its own in aiohttp 3.14.4. The two REST senders also pass
-`allow_redirects=False` and refuse any 3xx answer with the same code. The
-function is local to this lane; HAMCP-364 is to replace it with a shared
-lane-session helper. In this run no redirect was answered. The stub's
+`scripts/lane_session.py`, the shared lane-session helper. It sets
+`trust_env=False` and a trace whose redirect callback raises
+`LaneRedirectRefused` (code `lane_redirect_refused`), so a 3xx answer ends the
+request before a second connection is made; that covers the WebSocket
+handshake, which has no redirect setting of its own in aiohttp 3.14.4. The two
+REST senders also pass `allow_redirects=False` and hand the answer's status to
+the helper's `refuse_redirect`, which refuses any 3xx answer with the same
+code. Until HAMCP-364 the function was local to
+`scripts/device_configuration_contract_acceptance.py` and its code was
+`redirect_refused`. In this run no redirect was answered. The stub's
 lane entry (`tests/fixtures/hamcp366_device_configuration_lane/stub_entry.py`)
 replaces the stub's open control route with one closed route and refuses any
 other body with `lane_control_request_not_listed`.
@@ -206,9 +208,9 @@ repository.
   it with the same registry `id`, `created_at` and `unique_id`. The design
   states this as the restored case. The lane requires it
   (`restored_reregistration`,
-  `scripts/device_configuration_contract_acceptance.py:583-592`) and asserts
+  `scripts/device_configuration_contract_acceptance.py:574-583`) and asserts
   one exact undo refusal, `device_configuration_undo_post_state_unproven`
-  (`REREGISTRATION_UNDO_REFUSAL`, `:126`, asserted at `:1054-1057`), with zero
+  (`REREGISTRATION_UNDO_REFUSAL`, `:126`, asserted at `:1045-1048`), with zero
   sends. A changed registry `id`, `created_at` or `unique_id` on that path
   fails the lane; no other refusal code is accepted in its place. The pending
   change that the same re-registration catches is refused with
@@ -242,7 +244,7 @@ the restored registry `id`, `created_at` and `unique_id`, a rewritten
 
 How the fingerprint is computed: the lane calls the runtime's own code, not a
 copy. `composite()` in `scripts/device_configuration_contract_acceptance.py`
-(`:513`) runs `DeviceConfigurationAdapter._read`
+(`:504`) runs `DeviceConfigurationAdapter._read`
 (`hass_mcp_engineering_beta/ha_mcp_engineering/device_configuration/adapter.py:148-160`)
 under the adapter's Core-authority read (`.../device_configuration/service.py:80-103`).
 The read window names its target as the mapping
@@ -276,8 +278,8 @@ has for those two kinds. Their restored case is covered at unit level.
 
 ### `remove_then_reload`: `select.eve_energy_plug_power_on_behavior`
 
-Fingerprint `cc790fc4e1994bac359cb8a8ea04beedc6efb3afae0147d85d3e07e86b168ecc`
-before, `bdd1ac485a8105a0bd61c6616c33e089d3b534e65d7c8222dc850b01a33434ab`
+Fingerprint `fa3034dbb74e124287e64609e48daf15d8639b1d71f17c0e4e57f5249af7a725`
+before, `76b98e799f10630d8f7c7e8edee1c141d9e4aec66cb338ea7278f8ecc8868d79`
 after: **changed**. The "before" fingerprint equals the one the forward task
 recorded (`before_is_recorded_post_fingerprint: true`). `identity()` is
 unchanged (`identity_restored: true`). The undo refused with
@@ -286,17 +288,17 @@ zero sends and zero stub writes (`refusals.undo_after_reregistration`).
 
 | Level | Field | Before | After | Changed |
 |---|---|---|---|---|
-| Core registry answer | `id` | `b87b2c0a655c70d89e81d81fd979ae93` | same | no |
-| Core registry answer | `created_at` | `1794436210.557413` | same | no |
-| Core registry answer | `modified_at` | `1794436210.557572` | `1794436227.630961` | yes |
-| Core registry answer | `device_id` | `ec2e53ba72f01b0c543912f5eb191f70` | same | no |
+| Core registry answer | `id` | `5dfbd3e5d79d65c48f46c0233308bb08` | same | no |
+| Core registry answer | `created_at` | `1794475991.85124` | same | no |
+| Core registry answer | `modified_at` | `1794475991.851461` | `1794476011.629252` | yes |
+| Core registry answer | `device_id` | `065e22408cd782a7dd7a840656ea256f` | same | no |
 | Core registry answer | `entity_id` | `select.eve_energy_plug_power_on_behavior` | same | no |
 | Core registry answer | `unique_id` | `123456789ABCDEF0-000000000000003D-MatterNodeDevice-1-MatterStartUpOnOff-6-16387` | same | no |
-| Core registry answer | `platform`, `config_entry_id` | `matter`, `01M76BQ7TA83T4X95S4SACHQ3C` | same | no |
-| composite observation | `registry.modified_at` | `1794436210.557572` | `1794436227.630961` | yes |
-| composite observation | `context_id` | `01M76BQQFJY6JJJ82Y8S6QFKG2` | `01M76BQRHFHR54QP8J3ZCR3ZEV` | yes |
-| composite observation | `last_changed` | `2026-11-11T22:30:26.548216+00:00` | `2026-11-11T22:30:27.631049+00:00` | yes |
-| composite observation | `last_updated` | `2026-11-11T22:30:26.548216+00:00` | `2026-11-11T22:30:27.631049+00:00` | yes |
+| Core registry answer | `platform`, `config_entry_id` | `matter`, `01M77HN8QG4CRYF6MC01K1RMPC` | same | no |
+| composite observation | `registry.modified_at` | `1794475991.851461` | `1794476011.629252` | yes |
+| composite observation | `context_id` | `01M77HNTXV40WCW816AX7N8AKB` | `01M77HNW3DSMV330NEVBMXZPTK` | yes |
+| composite observation | `last_changed` | `2026-11-12T09:33:30.429107+00:00` | `2026-11-12T09:33:31.629374+00:00` | yes |
+| composite observation | `last_updated` | `2026-11-12T09:33:30.429107+00:00` | `2026-11-12T09:33:31.629374+00:00` | yes |
 | composite observation | `state` | `on` | same | no |
 | composite observation | `assumed_state` | `false` | same | no |
 | composite observation | `attributes.options` | sha256 `f157c574849d11b9...` | same | no |
@@ -304,7 +306,7 @@ zero sends and zero stub writes (`refusals.undo_after_reregistration`).
 | composite observation | `registry.id`, `registry.created_at`, `registry.device_id`, `registry.unique_id`, `registry.platform`, `registry.config_entry_id` | as the registry rows above | same | no |
 | composite observation | `registry.entity_category`, `registry.translation_key` | `config`, `startup_on_off` | same | no |
 | composite observation | `registry.disabled_by`, `registry.options_number`, `registry.original_device_class` | `null` | same | no |
-| composite observation | `device.id`, `device.created_at`, `device.primary_config_entry` | `ec2e53ba72f01b0c543912f5eb191f70`, `1794436210.551901`, `01M76BQ7TA83T4X95S4SACHQ3C` | same | no |
+| composite observation | `device.id`, `device.created_at`, `device.primary_config_entry` | `065e22408cd782a7dd7a840656ea256f`, `1794475991.843122`, `01M77HN8QG4CRYF6MC01K1RMPC` | same | no |
 | composite observation | `device.identifiers`, `device.disabled_by` | sha256 `f968b0b055b7e324...`, `null` | same | no |
 
 Of the four changed fingerprint fields, only `registry.modified_at` comes from
@@ -319,23 +321,23 @@ included, is unchanged. The fingerprint still changed, through the state's
 
 | Target | Level | Field | Before | After | Changed |
 |---|---|---|---|---|---|
-| `switch.eve_energy_20ecn4101_child_lock_top` | fingerprint | | `4c133f41c56fd456d51d5317f6561adf1b9d3b58f24078358247bb67d48a21e4` | `53b90043af93746f0c43fb961e2f579a2288f6c8434bbcf7eb67c0bb3d4d1012` | yes |
-| | Core registry answer | `id` | `ca5a6b174c0730ba90dae697845bfd23` | same | no |
-| | Core registry answer | `created_at` | `1794436210.548261` | same | no |
-| | Core registry answer | `modified_at` | `1794436210.548408` | same | no |
-| | Core registry answer | `device_id` | `ee005cdf9eda99d92971f922523c42e8` | same | no |
+| `switch.eve_energy_20ecn4101_child_lock_top` | fingerprint | | `5506c41386c0fa789c37080bfe40a57c12d05728d3107addd15f7ebb8d7f30b3` | `c069f835ab0af41f17e383b8dc572cb34eedf91025e2ea835f6dbfcfc8fcb1fc` | yes |
+| | Core registry answer | `id` | `2fbf3d0f84d611dd3ede9ec5da2eb77d` | same | no |
+| | Core registry answer | `created_at` | `1794475991.840302` | same | no |
+| | Core registry answer | `modified_at` | `1794475991.840506` | same | no |
+| | Core registry answer | `device_id` | `1f9598bb58bbf5cd87991fce9da76b07` | same | no |
 | | Core registry answer | `entity_id`, `unique_id`, `platform`, `config_entry_id` | (in the receipt) | same | no |
-| | composite observation | `context_id` | `01M76BQPS827B8EBQVQECAAQZF` | `01M76BQRH9B3J5ZSNENPHZ90C6` | yes |
-| | composite observation | `last_changed`, `last_updated` | `2026-11-11T22:30:25.833675+00:00` | `2026-11-11T22:30:27.625126+00:00` | yes |
+| | composite observation | `context_id` | `01M77HNT2PWEH92E7SYY4KC8NX` | `01M77HNW35VC0HRYC01XV9PQSD` | yes |
+| | composite observation | `last_changed`, `last_updated` | `2026-11-12T09:33:29.559988+00:00` | `2026-11-12T09:33:31.621822+00:00` | yes |
 | | composite observation | every other field (`state` `off`, `attributes` empty, all `registry.*`, all `device.*`) | (in the receipt) | same | no |
-| `number.aqara_door_and_window_sensor_p2_sensitivity` | fingerprint | | `4987528b9153bb5f3311e5b75f648ccbde76184fa983446351b00e02e45c642b` | `749c9a163059d430bb40356aede29453b6cb2c37ed35916bfbebf85e9db9f2a3` | yes |
-| | Core registry answer | `id` | `c3b0530f76aeb679aa560d919dbeee5d` | same | no |
-| | Core registry answer | `created_at` | `1794436210.569267` | same | no |
-| | Core registry answer | `modified_at` | `1794436210.569415` | same | no |
-| | Core registry answer | `device_id` | `1a37f4a0abb3d7351ed67c423d35c54c` | same | no |
+| `number.aqara_door_and_window_sensor_p2_sensitivity` | fingerprint | | `ecc75be45699a4ebda44389631d2ab5909151809ded1cef959b13f02a68798bc` | `19f13521dc0e6253a33b1d87cb4a3ac828218742f6c47ffad2e33090c64b6ba8` | yes |
+| | Core registry answer | `id` | `9197d5ed315e31df5ce5df718c65cce8` | same | no |
+| | Core registry answer | `created_at` | `1794475991.866766` | same | no |
+| | Core registry answer | `modified_at` | `1794475991.866951` | same | no |
+| | Core registry answer | `device_id` | `b5e92e460a286cc909fa8d5ccfe8aeeb` | same | no |
 | | Core registry answer | `entity_id`, `unique_id`, `platform`, `config_entry_id` | (in the receipt) | same | no |
-| | composite observation | `context_id` | `01M76BQDPZ597AA78GCKWHP44A` | `01M76BQRHMG124QQ7D4NXTATE5` | yes |
-| | composite observation | `last_changed`, `last_updated` | `2026-11-11T22:30:16.544827+00:00` | `2026-11-11T22:30:27.636308+00:00` | yes |
+| | composite observation | `context_id` | `01M77HNFYX8RGQCR0J2NWYQP5X` | `01M77HNW3M2Q00DBNYBBQD2EGF` | yes |
+| | composite observation | `last_changed`, `last_updated` | `2026-11-12T09:33:19.198830+00:00` | `2026-11-12T09:33:31.636263+00:00` | yes |
 | | composite observation | every other field (`state` `3`, `attributes.min/max/step/mode`, all `registry.*`, all `device.*`) | (in the receipt) | same | no |
 
 Every field of every target, with both values, is in the receipt; lists and
@@ -376,7 +378,7 @@ undo decision with an offline fake Core:
 
 ## Runtime text change
 
-One protected runtime file changes on this branch, under a product-owner
+One protected runtime file changed on the HAMCP-366 branch, under a product-owner
 authorization of 2026-11-11 for that file and that string only:
 `hass_mcp_engineering_beta/ha_mcp_engineering/device_configuration/service.py`
 (3 lines added, 1 removed). The `rule` text of an available undo was
@@ -399,21 +401,24 @@ pins the text.
 The node dumps create three entities of admitted kinds that the lane does not
 dispatch to (`observations.admitted_kind_entities_not_exercised`; each is one
 for which the lane's prediction of the runtime's refusal is "none",
-`scripts/device_configuration_contract_acceptance.py:960-975`). The runtime
+`scripts/device_configuration_contract_acceptance.py:951-966`). The runtime
 allowlist has one triple per domain, so the domain fixes the triple. Coverage
 is by operation shape:
 
 | Entity not dispatched to | Operation shape | Lane operations that exercise the shape (script line; receipt key under `operations`) | Exercised |
 |---|---|---|---|
-| `select.eve_energy_20ecn4101_power_on_behavior_bottom` | select option change, `(select, matter, startup_on_off)` | on `select.eve_energy_plug_power_on_behavior`: `select_forward` (L875), `select_undo` (L876), `select_delayed` (L901), `select_before_reregistration` (L1031) | yes |
+| `select.eve_energy_20ecn4101_power_on_behavior_bottom` | select option change, `(select, matter, startup_on_off)` | on `select.eve_energy_plug_power_on_behavior`: `select_forward` (L866), `select_undo` (L867), `select_delayed` (L892), `select_before_reregistration` (L1022) | yes |
 | `select.eve_energy_20ecn4101_power_on_behavior_top` | select option change, `(select, matter, startup_on_off)` | the same four | yes |
-| `switch.eve_energy_plug_child_lock` | config-switch toggle, `(switch, matter, child_lock)` | on `switch.eve_energy_20ecn4101_child_lock_top`: `switch_forward_on` and `switch_forward_off` (L882, L883), `switch_undo` (L885), `switch_before_drift` (L1009), `switch_before_reload` (L1024) | yes |
+| `switch.eve_energy_plug_child_lock` | config-switch toggle, `(switch, matter, child_lock)` | on `switch.eve_energy_20ecn4101_child_lock_top`: `switch_forward_on` and `switch_forward_off` (L873, L874), `switch_undo` (L876), `switch_before_drift` (L1000), `switch_before_reload` (L1015) | yes |
 
 All nine receipt entries are `succeeded_verified`. The lane never sends to the
 three entities in the first column: its closed command list names one entity
 per kind.
 
-## Earlier runs on this branch (not evidence)
+## Earlier runs on the HAMCP-366 and HAMCP-364 branches (not evidence)
+
+In each entry "this receipt" is the receipt of the next run in the list; in the
+last entry it is the committed receipt.
 
 - `hamcp366-lane-run1` at `fd5b72ac`: WITHHELD after 19 s (Matter config flow
   `cannot_connect`, the name-resolution observation above); cleanup clean.
@@ -455,13 +460,13 @@ per kind.
 - `hamcp366-lane-run7` at `aabec6d8`: PASS, cleanup clean (receipt SHA-256
   `dfcaa73a7722bfc4b32e439b389f4bd6a8e5250962de4b1ebcb29ddd52452c9c`). Superseded
   by this receipt because the acceptance module changed afterwards: its three
-  aiohttp sessions are now opened through `lane_session`, which refuses a
-  redirect (commit `fb745110`). The runner, the stub, the fixtures and the
-  runtime's `device_configuration` package do not differ between the two source
-  commits. Operations, refusals, undo codes and totals are the same in both
-  receipts; the differences are `source_commit`, times, host load and memory,
-  and the identifiers, timestamps and hashes Core and the runtime issue per
-  run.
+  aiohttp sessions were then opened through a `lane_session` function local to
+  the module, which refused a redirect (commit `fb745110`). The runner, the
+  stub, the fixtures and the runtime's `device_configuration` package do not
+  differ between the two source commits. Operations, refusals, undo codes and
+  totals are the same in both receipts; the differences are `source_commit`,
+  times, host load and memory, and the identifiers, timestamps and hashes Core
+  and the runtime issue per run.
 - `hamcp366-lane-run8` at `24ef9a68`: PASS, cleanup clean (receipt SHA-256
   `ad1873f12ae69bde0933403b288350494a0046b87918ff8b0c374e4aa6731dd4`). Superseded
   by this receipt because the branch then merged `release/2.6.0` at `a860671f`,
@@ -477,6 +482,40 @@ per kind.
   both receipts; the differences are `source_commit`, `manifest_sha256`, times,
   host load and memory, and the identifiers, timestamps and hashes Core and the
   runtime issue per run.
+- `hamcp366-lane-run9` at `46c68166`: PASS, cleanup clean (receipt SHA-256
+  `b4c1463fb2126de33fa399589dfa909a4553131ce1107cf6d944af5f63075e15`; the
+  receipt is in commit `fa2dbc44`). Superseded by this receipt because the
+  acceptance module changed afterwards (HAMCP-364, commit `8bb4ae19`): its
+  local `lane_session` function, `RedirectRefused` and the code
+  `redirect_refused` were removed, and its three aiohttp sessions are now
+  opened through the shared `scripts/lane_session.py` (`LaneRedirectRefused`,
+  code `lane_redirect_refused`). `scripts/lane_failure_diagnostics.py`, which
+  both lane scripts import, also differs: it lists that code and the fixed
+  refusal codes of other lanes' clients among the messages a failure receipt
+  may name. Two runtime files differ in comment and docstring text only
+  (`providers/upstream_read_gateway.py`, `tools/security_metadata.py`). The
+  runner, the stub, the fixtures, the runtime's `device_configuration` and
+  `power` packages and `ci/core-contract-read-files.json` do not differ between
+  the two source commits. Operations, refusals, undo codes and totals are the
+  same in both receipts; the differences are `source_commit`, times, host load
+  and memory, and the identifiers, timestamps and hashes Core and the runtime
+  issue per run.
+- `hamcp364-devcfg-lane-b6f81dcf` at `b6f81dcf`: PASS, cleanup clean (receipt
+  SHA-256 `39a96cc1cfc9b62eab64ba1658b8e10cd715ad0e1fd59dd43d5de1695a77d884`;
+  the receipt is in commit `5ea622ec`). Superseded by this receipt because the
+  acceptance module changed afterwards (HAMCP-364, commits `58bdab1c` and
+  `5fc40f93`): `RawCore.command`, `RawRest.rest`, `StubControl.post` and
+  `LaneWebSocket.command` now take a deep copy of the command or body in the
+  same step as the listed-shape check, and send, record and forward that copy
+  instead of the caller's object. `scripts/real_ha_contract_tests.py`, which
+  the runner imports, also differs (commit `4a72ee8a`): the config flow id it
+  accepts is the 26-character ULID Core issues, where it was 32 hexadecimal
+  digits. Two test modules differ. The runner, the stub, the fixtures, the
+  runtime package and `ci/core-contract-read-files.json` do not differ between
+  the two source commits. Operations, refusals, undo codes and totals are the
+  same in both receipts; the differences are `source_commit`, times, host load
+  and memory, and the identifiers, timestamps and hashes Core and the runtime
+  issue per run.
 
 ## Not done here
 

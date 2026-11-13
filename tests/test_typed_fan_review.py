@@ -200,14 +200,55 @@ class HoldRecoveryTests(RecoveryFixture, unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.core.leases or self.core.commits)
 
     async def test_failed_promotion_rejects_changed_owner_without_clearing(self):
+        # HAMCP-379 ruling on Stop B: the settled hold is bound to the one
+        # owner the record's lock_tokens name, not to the claim's owner.
+        from copy import deepcopy
         from ha_mcp_engineering.f3.locks import LockOwnershipError
+        from ha_mcp_engineering.f3.models import LockRecord
         request = await self.unresolved()
-        record = self.service.executions.get(request.task_id)
-        record.identity['owner_id'] = 'synthetic-other-owner'
-        before = self.service.locks.records()
-        with self.assertRaises(LockOwnershipError):
-            self.service.locks.reconcile_terminal_hold(record)
-        self.assertEqual(self.service.locks.records(), before)
+        task_id = request.task_id
+        service, store = self.service, self.service.locks
+        stored = service.executions.get
+        record = stored(task_id)
+        before = store.records()
+        self.assertEqual([(x.key, x.conflict_hold) for x in before], [('entity:fan.synthetic', True)])
+        self.assertIsNotNone(service.hold_release_item(task_id))
+
+        def serving(altered):
+            return patch.object(service.executions, 'get',
+                                lambda key: altered if key == task_id else stored(key))
+        with self.subTest('(i) only the claim owner changed'):
+            altered = deepcopy(record)
+            altered.identity['owner_id'] = 'synthetic-other-owner'
+            self.assertTrue(store.hold_settled(altered, before))
+            with patch.object(store, 'promote_to_conflict_hold') as promote:
+                self.assertIsNone(store.reconcile_terminal_hold(altered))
+            promote.assert_not_called()
+            self.assertEqual(store.records(), before)
+        with self.subTest('(ii) the lock_tokens owner changed'):
+            altered = deepcopy(record)
+            altered.lock_tokens = [{**item, 'owner_id': 'synthetic-other-owner'}
+                                   for item in record.lock_tokens]
+            with self.assertRaisesRegex(LockOwnershipError, 'fan hold owner changed'):
+                store.reconcile_terminal_hold(altered)
+            self.assertEqual(store.records(), before)
+            with serving(altered):
+                self.assertIsNone(service.hold_release_item(task_id))
+        with self.subTest('(ii) the hold row owner changed'):
+            def reown(state):
+                state['records'] = [LockRecord.from_dict({**item.to_dict(),
+                                                          'owner_id': 'synthetic-other-owner'})
+                                    for item in state['records']]
+                return None, True
+            store._transact(reown)
+            reowned = store.records()
+            self.assertEqual({x.owner_id for x in reowned}, {'synthetic-other-owner'})
+            self.assertEqual([(x.key, x.conflict_hold) for x in reowned],
+                             [('entity:fan.synthetic', True)])
+            with self.assertRaisesRegex(LockOwnershipError, 'fan hold owner changed'):
+                store.reconcile_terminal_hold(record)
+            self.assertEqual(store.records(), reowned)
+            self.assertIsNone(service.hold_release_item(task_id))
         self.assertEqual(self.transport.writes, 1)
 
     async def test_settled_hold_does_not_consume_background_budget(self):
