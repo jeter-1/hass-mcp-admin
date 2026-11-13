@@ -200,9 +200,10 @@ BETA6_STATIC_TOOL_NAMES = frozenset(
 BETA6_RETIRED_DELEGATED_READS: frozenset[str] = frozenset()
 # The beta.6 tree's own reviewed 8.5.0 delegated read routes (same derivation:
 # that tree's load_reviewed_upstream_release_registry().by_version["8.5.0"]).
-# The rollback stage runs beta.6 only against 8.5.0; any other upstream version
-# has no reviewed beta.6 expectation and fails closed. With nothing retired,
-# beta.6's expected core_withheld_read_count is len(retired) == 0.
+# Before HAMCP-377 the rollback stage ran beta.6, against 8.5.0 only. A beta.6
+# image against any other upstream version has no reviewed expectation and fails
+# closed. With nothing retired, beta.6's expected core_withheld_read_count is
+# len(retired) == 0.
 BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
     MappingProxyType(
         {

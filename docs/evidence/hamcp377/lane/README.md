@@ -360,7 +360,7 @@ what `check` cannot see, and none changes a recorded result:
 - R1 (architect's ruling of 2026-11-12 11:19 Central): `closed_records`
   (`scripts/rollback_proof_lane.py:845-897`) does not close every record a
   receipt holds, so "a key the receipt schema does not define" fails only in the
-  records it walks. Three gaps remain:
+  records it walks. These gaps remain (HAMCP377-R1-WIDER):
   - the names of the data sets are not closed: each record under `data` is
     closed by its name (`:877-879`), but an added name is not refused;
   - the `writer` record of a 12b or 12c case (`cases.<name>.writer`, allowed by
@@ -369,7 +369,17 @@ what `check` cannot see, and none changes a recorded result:
     (`:874-876`). A key added deeper, for example in `writer.candidate`,
     `writer.test_signed`, `writer.tools`, `lane.candidate` or `lane.journal`,
     fails only where a classifier compares the whole record, as G5 does for
-    `reader.authority`.
+    `reader.authority`;
+  - the top-level `drivers` record is not walked;
+  - in 12b and 12c, each case's `observed` record is closed (`:873`), but the
+    records nested in it are not: for example 12b `cases.hold.observed.power`
+    and `cases.hold.observed.governed`, and 12c
+    `cases.scene_pending.observed.plans`;
+  - in 12b, each exercised 27a step is closed (`:895-897`), but the records
+    nested in it are not: for example
+    `recovery.27a.steps.settle_release.settled`,
+    `recovery.27a.steps.settle_release.review` and
+    `recovery.27a.steps.blocked_before_recovery.observed`.
 - `check` cannot re-measure what a receipt records as constants or digests: the
   commands and flags (B11, B12), the store digests (B17), the dependency pins
   (B20) and the lock file hashes (B21). For B21, `WriterCommitGitTests`
