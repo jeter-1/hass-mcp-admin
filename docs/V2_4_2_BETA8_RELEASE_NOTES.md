@@ -192,6 +192,18 @@ supported.
   2. clean them up through 2.4.2-beta.8 if it is functional; otherwise
      record them for manual cleanup.
 
+Rehearsed on 2026-11-13, at the same version only: a partial backup of
+only the Engineering add-on on 2.4.2-beta.7 was restored over
+2.4.2-beta.7. Engineering came back with the same version, Core
+connection, 110-tool catalog, upstream admission, registry state, trace
+watches and receipts, and no plan, task, lock or hold in flight. Plan and
+task totals fell by 8 records, as expected from the startup cleanup of
+terminal records older than 90 days (the cleanup is verified in code at
+`hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py:885-887`,
+`:873-875` at 2.4.2-beta.7; the 8 records were not identified). Restoring
+a 2.4.2-beta.7 backup over an installed 2.4.2-beta.8, the actual
+downgrade, has not been rehearsed.
+
 **Before either restore**, export the 2.4.2-beta.8 audit
 (`get_audit_log`). Every Engineering record written since deploy is lost
 on restore: plans, receipts, audit and trace watches. See
