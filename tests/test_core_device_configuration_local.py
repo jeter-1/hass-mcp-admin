@@ -39,7 +39,8 @@ import device_configuration_contract_acceptance as acceptance  # noqa: E402
 import lane_failure_diagnostics as diagnostics  # noqa: E402
 import lane_session as shared  # noqa: E402
 import test_hamcp297_device_configuration as offline  # noqa: E402
-from core_release_evidence import groups, passing_subset  # noqa: E402
+import core_release_evidence  # noqa: E402
+from core_release_evidence import groups, manifest, passing_subset  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
@@ -55,6 +56,62 @@ from ha_mcp_engineering.ha_core_readmission import profiles as profiles_module  
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 
 ARCHIVE = ROOT / ".artifacts/inputs/core-2026.11.0.tar.gz"
+ARCHIVES = {"2026.10.3": ROOT / ".artifacts/inputs/core-2026.10.3.tar.gz", "2026.11.0": ARCHIVE}
+GENERATOR = ROOT / "docs/evidence/hamcp297/lane/generate_source_records.py"
+PROVENANCE = json.loads(lane.CORE_PROVENANCE.read_text())
+# HAMCP-297 G5: the ruled RELIED Core files the contract depends on at runtime.
+RELIED = [
+    "homeassistant/components/api/__init__.py",
+    "homeassistant/components/config/__init__.py",
+    "homeassistant/components/config/device_registry.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/components/matter/__init__.py",
+    "homeassistant/components/matter/adapter.py",
+    "homeassistant/components/matter/discovery.py",
+    "homeassistant/components/matter/entity.py",
+    "homeassistant/components/matter/models.py",
+    "homeassistant/components/matter/number.py",
+    "homeassistant/components/matter/select.py",
+    "homeassistant/components/matter/switch.py",
+    "homeassistant/components/number/__init__.py",
+    "homeassistant/components/number/const.py",
+    "homeassistant/components/number/entity.py",
+    "homeassistant/components/number/services.py",
+    "homeassistant/components/select/__init__.py",
+    "homeassistant/components/select/const.py",
+    "homeassistant/components/select/entity.py",
+    "homeassistant/components/select/services.py",
+    "homeassistant/components/switch/__init__.py",
+    "homeassistant/components/switch/const.py",
+    "homeassistant/components/switch/entity.py",
+    "homeassistant/components/switch/services.py",
+    "homeassistant/components/websocket_api/__init__.py",
+    "homeassistant/components/websocket_api/commands.py",
+    "homeassistant/components/websocket_api/connection.py",
+    "homeassistant/components/websocket_api/const.py",
+    "homeassistant/components/websocket_api/decorators.py",
+    "homeassistant/components/websocket_api/http.py",
+    "homeassistant/components/websocket_api/messages.py",
+    "homeassistant/const.py",
+    "homeassistant/core.py",
+    "homeassistant/helpers/device_registry.py",
+    "homeassistant/helpers/entity.py",
+    "homeassistant/helpers/entity_component.py",
+    "homeassistant/helpers/entity_platform.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/helpers/json.py",
+    "homeassistant/helpers/registry.py",
+    "homeassistant/helpers/service.py",
+    "homeassistant/helpers/target.py",
+]
+# The RELIED paths HAMCP-297 added to the manifest (527 -> 535 paths).
+RELIED_ADDED = [
+    "homeassistant/components/matter/discovery.py", "homeassistant/components/matter/entity.py",
+    "homeassistant/components/matter/models.py", "homeassistant/components/matter/number.py",
+    "homeassistant/components/matter/select.py", "homeassistant/components/matter/switch.py",
+    "homeassistant/components/switch/entity.py", "homeassistant/helpers/target.py",
+]
+SOURCES = {"manifest_sha256": "d" * 64, "source_hashes_sha256": "e" * 64, "profile_paths": 42}
 ENTRY_PATH = lane.LANE_ASSET / "stub_entry.py"
 TOKEN = "synthetic-token-7f3a"
 CAPABILITY = "core.device_configuration_entity_operation"
@@ -489,6 +546,148 @@ class LaneInputs(unittest.TestCase):
                          result.stderr[-500:])
 
 
+class SourceManifest(unittest.TestCase):
+    """HAMCP-297 G5: the lane's own manifest profile entry and committed source hashes."""
+
+    def test_manifest_profile_is_the_ruled_relied_set_and_matches_committed_source_hashes(self):
+        value = manifest()  # valid manifest and full coverage: every path has a bound hash record
+        profile = value["profiles"][lane.CAPABILITY]
+        self.assertEqual(profile, RELIED)
+        self.assertEqual(len(profile), 42)
+        self.assertEqual(len(value["paths"]), 535)
+        self.assertTrue(set(profile) <= set(value["paths"]))
+        self.assertTrue(set(RELIED_ADDED) <= set(profile))
+        proof = json.loads(lane.SOURCE_HASHES.read_text())
+        self.assertEqual([row["path"] for row in proof["files"]], profile)
+        self.assertEqual((proof["core_version"], proof["source_commit"], proof["source_archive_sha256"]),
+                         (lane.VERSION, PROVENANCE["source_commit"], PROVENANCE["source_archive_sha256"]))
+        # The lane record and the O3 source record are the same exact bytes' hashes.
+        record = json.loads((ROOT / "docs/evidence/hamcp315/core-sources/2026.11.0.json").read_text())
+        for row in proof["files"]:
+            self.assertEqual(record["hashes"][row["path"]], row["sha256"])
+
+    def test_coverage_fails_when_a_relied_path_has_no_hash_record(self):
+        real = core_release_evidence.read_json
+        for path in ("homeassistant/components/switch/entity.py", "homeassistant/helpers/target.py"):
+            def without(source, path=path):
+                value = real(source)
+                if Path(source).parent.name == "core-sources":
+                    value = {**value, "hashes": {k: v for k, v in value["hashes"].items() if k != path}}
+                return value
+            with self.subTest(path=path), patch.object(core_release_evidence, "read_json", side_effect=without):
+                with self.assertRaisesRegex(ValueError, "absent from every bound source record: " + re.escape(path)):
+                    manifest()
+
+    @unittest.skipUnless(all(p.is_file() for p in ARCHIVES.values()), "exact Core archives not staged")
+    def test_generator_reproduces_committed_records(self):
+        args = [arg for v, p in ARCHIVES.items() for arg in ("--archive", f"{v}={p}")]
+        result = subprocess.run([sys.executable, "-I", str(GENERATOR), *args, "--check"],
+                                capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(ARCHIVE.is_file(), "exact Core 2026.11.0 archive not staged")
+    def test_exact_archive_accepts_the_committed_entry(self):
+        with diagnostics.lane(lane.GROUP):
+            sources = lane.source_manifest(ARCHIVE, PROVENANCE)
+        self.assertEqual(sources, {"manifest_sha256": lane.sha256(lane.MANIFEST),
+                                   "source_hashes_sha256": lane.sha256(lane.SOURCE_HASHES), "profile_paths": 42})
+
+
+class SourceManifestRefusals(unittest.TestCase):
+    """Synthetic archive and records: the lane fails closed on every source-binding gap."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.profile = ["homeassistant/a.py", "homeassistant/b.py"]
+        self.content = {p: ("synthetic " + p).encode() for p in self.profile}
+        self.archive = self.root / "archive.tar.gz"
+        prefix = "core-" + PROVENANCE["source_commit"]
+        with tarfile.open(self.archive, "w:gz") as tar:
+            for path, data in self.content.items():
+                info = tarfile.TarInfo(prefix + "/" + path)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        self.manifest = self.root / "manifest.json"
+        self.hashes = self.root / "hashes.json"
+        self.write(self.profile, self.exact())
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def exact(self):
+        return {p: hashlib.sha256(d).hexdigest() for p, d in self.content.items()}
+
+    def write(self, profile, hashes, **overrides):
+        profiles = {} if profile is None else {lane.CAPABILITY: profile}
+        self.manifest.write_text(json.dumps({"paths": self.profile, "profiles": profiles}))
+        record = {"core_version": lane.VERSION, "source_commit": PROVENANCE["source_commit"],
+                  "source_archive_sha256": PROVENANCE["source_archive_sha256"],
+                  "files": [{"path": p, "sha256": h} for p, h in hashes.items()], **overrides}
+        self.hashes.write_text(json.dumps(record))
+
+    def source(self):
+        with diagnostics.lane(lane.GROUP), patch.object(lane, "MANIFEST", self.manifest), \
+                patch.object(lane, "SOURCE_HASHES", self.hashes):
+            return lane.source_manifest(self.archive, PROVENANCE)
+
+    def refused(self, code):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.source()
+        self.assertEqual(caught.exception.args, (code,))
+
+    def test_exact_source_hashes_pass(self):
+        sources = self.source()
+        self.assertEqual(sources["profile_paths"], 2)
+        self.assertEqual(sorted(sources), ["manifest_sha256", "profile_paths", "source_hashes_sha256"])
+
+    def test_missing_or_empty_profile_entry_refuses(self):
+        for profile in (None, []):
+            with self.subTest(profile=profile):
+                self.write(profile, self.exact())
+                self.refused("device_configuration_manifest_missing")
+
+    def test_missing_source_hash_record_refuses(self):
+        self.hashes.unlink()
+        self.refused("device_configuration_manifest_missing")
+
+    def test_record_for_another_core_or_archive_refuses(self):
+        for override in ({"core_version": "2026.10.3"}, {"source_commit": "0" * 40},
+                         {"source_archive_sha256": "0" * 64}):
+            with self.subTest(override=sorted(override)):
+                self.write(self.profile, self.exact(), **override)
+                self.refused("device_configuration_source_provenance_mismatch")
+
+    def test_profile_and_record_must_list_identical_paths(self):
+        for profile, hashes in ((self.profile[:1], self.exact()), (self.profile, {self.profile[0]: "0" * 64}),
+                                (self.profile[::-1], self.exact())):
+            with self.subTest(profile=profile, hashes=sorted(hashes)):
+                self.write(profile, hashes)
+                self.refused("device_configuration_manifest_mismatch")
+
+    def test_hash_mismatch_or_absent_member_refuses(self):
+        changed = {**self.exact(), self.profile[0]: "0" * 64}
+        self.write(self.profile, changed)
+        self.refused("device_configuration_source_hash_mismatch")
+        extra = ["homeassistant/a.py", "homeassistant/b.py", "homeassistant/c.py"]
+        self.write(extra, {**self.exact(), "homeassistant/c.py": "0" * 64})
+        self.refused("device_configuration_source_hash_mismatch")
+
+    def test_inputs_refuse_a_missing_profile_entry_before_the_journal_is_parsed(self):
+        import core_registry_one_tap
+        self.write(None, self.exact())
+        journal = self.root / "journal.json"
+        journal.write_bytes(b"synthetic journal")
+        digests = {journal: lane.JOURNAL_SHA256, self.archive: PROVENANCE["source_archive_sha256"]}
+        with diagnostics.lane(lane.GROUP), patch.object(lane, "MANIFEST", self.manifest), \
+                patch.object(lane, "SOURCE_HASHES", self.hashes), \
+                patch.object(lane, "sha256", side_effect=lambda path: digests[Path(path)]), \
+                patch.object(core_registry_one_tap, "load_public_key", side_effect=AssertionError("journal_parsed")):
+            with self.assertRaises(lane.Refusal) as caught:
+                lane.inputs(journal, self.archive)
+        self.assertEqual(caught.exception.args, ("device_configuration_manifest_missing",))
+
+
 class StubAssets(unittest.TestCase):
     """The stub, its entry and the three dumps are hash-bound before any container."""
 
@@ -621,7 +820,7 @@ class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
                  admission_error=None, memory_args=(), network_override=None, ports_override=None,
                  outcome=None, profile_error=False, assets_error=None, refusal=None,
-                 stub_networks=None, ipam=None, changed=None, run_dir=None):
+                 stub_networks=None, ipam=None, changed=None, run_dir=None, inputs_error=None):
         calls, resources, admitted = [], {}, []
         lane_network = {"Driver": "bridge", "Internal": False,
                         "IPAM": {"Config": [dict(LANE_SUBNET)] if ipam is None else ipam}}
@@ -682,7 +881,8 @@ class Orchestration(unittest.TestCase):
                     "--source-archive", "archive", "--run-dir", str(out), *memory_args]
             with patch.dict(os.environ, {}, clear=True), patch.object(lane, "ROOT", root), \
                     patch.object(lane, "command", side_effect=command), profile_patch, \
-                    patch.object(lane, "inputs", return_value={}) as inputs, \
+                    patch.object(lane, "inputs", side_effect=inputs_error,
+                                 return_value=({}, SOURCES)) as inputs, \
                     patch.object(lane, "stub_assets", side_effect=assets_error,
                                  return_value=json.loads(json.dumps(STUB_HASHES))) as assets, \
                     patch.object(lane, "images", return_value=("core@sha256:a", "up@sha256:b", lane.host.FIXTURE_IMAGE)), \
@@ -752,6 +952,8 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(result["profile"], lane.PROFILE)
         self.assertEqual(result["stub_assets"], STUB_HASHES)
         self.assertEqual(result["source_commit"], "a" * 40)
+        # HAMCP-297 G5: the receipt binds the manifest, its profile entry and the committed source hashes.
+        self.assertEqual({key: result[key] for key in SOURCES}, SOURCES)
         self.assertEqual(result["network_posture"],
                          {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress_allowed": True})
         self.assertEqual(result["container_memory"], {"core": "2g", "upstream": "768m", "stub": "256m", "fixture": "128m"})
@@ -895,6 +1097,16 @@ class Orchestration(unittest.TestCase):
             calls, inputs, _assets = self.run_lane(refusal="profile_fingerprint_mismatch")
         inputs.assert_not_called()
         self.assertTrue(all(call[0] == "git" for call in calls), calls)
+
+    def test_source_manifest_refusal_stops_before_stub_assets_images_or_containers(self):
+        # HAMCP-297 G5: a missing or mismatched manifest profile entry fails closed inside inputs().
+        for code in ("device_configuration_manifest_missing", "device_configuration_source_provenance_mismatch",
+                     "device_configuration_manifest_mismatch", "device_configuration_source_hash_mismatch"):
+            with self.subTest(code=code):
+                calls, inputs, assets = self.run_lane(inputs_error=lane.Refusal(code), refusal=code)
+                inputs.assert_called_once()
+                assets.assert_not_called()
+                self.assertTrue(all(call[0] == "git" for call in calls), calls)
 
     def test_stub_asset_mismatch_refuses_before_images_or_containers(self):
         for code in ("stub_asset_hash_mismatch", "stub_dump_source_mismatch"):
