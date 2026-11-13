@@ -52,6 +52,21 @@ signed, prepared, pushed or dispatched, and no lane was run.
   entry for `core.device_configuration_entity_operation`, which G5 as this
   plan words it asks for (§5A.4). Recorded as open; not resolved here.
 
+## What changed later on 2026-11-13 (sheet A items ruling SA-1 and SA-2)
+
+Basis: the architect's ruling on the sheet A items, relayed verbatim by
+Josh on 2026-11-13 and quoted in §9D as SA-1 and SA-2. Only this file
+changed; no value was recomputed.
+
+- **G5 for M3 (SA-1):** open for `core.device_configuration_entity_operation`
+  only, not ruled unnecessary; that profile is not signable until G5 is
+  closed. `ci/core-contract-read-files.json` is not changed in the release
+  pull request. Josh decides before signing (§5A.4, §5A.5 M3 row).
+- **Stop 10 (SA-2):** reworded to match R-a (§5A.11 item 10). R3's
+  recorded text (§9B) says only "If G4 can't pass before the 2027-01-22
+  signing cutoff, stop and report"; it does not say it overrides R-a, so
+  the reword applies.
+
 ## What changed in the second revision of 2026-11-10 (Josh's rulings)
 
 Basis: seven rulings Josh gave in session on 2026-11-10, in two blocks,
@@ -880,9 +895,12 @@ read paths in `ci/core-contract-read-files.json`, before signing", and the
 HAMCP-297 design asks for "the read-file mapping in
 `ci/core-contract-read-files.json` before signing"
 (`docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1440-1442`).
-Whether M3 meets G5 without an entry is **open**; this refresh does not
-decide it. Closing it needs either a reviewed change that adds the entry
-or a reviewer's finding that G5 does not need one for this profile.
+G5 is **open** for M3 only; it is not ruled unnecessary (SA-1, §9D). M3
+is not signable until G5 is closed. The release pull request does not
+change `ci/core-contract-read-files.json`, and the 2.6 release does not
+depend on it. Before signing, Josh decides between a scoped follow-up that
+adds the entry and re-runs the affected lanes, and dropping M3 from
+sequence 18 under R-a (SA-1 item d).
 
 ### 5A.5 Draft candidate
 
@@ -929,7 +947,7 @@ on the signing commit. A profile whose lane fails is dropped from sequence
 | --- | --- | --- |
 | M1 `core.marketplace_read` | Yes (R-a; R6) | Its lane passes on the signing commit (R8). If it fails, M1 is dropped from sequence 18 and the others proceed (R-a); R6 names sequence 19 for it |
 | M2 `core.security_metadata_read` | Yes (R-a; R1, R4) | Its lane re-runs and passes on the signing commit (R8). If it fails, it is dropped (R-a) |
-| M3 `core.device_configuration_entity_operation` | Yes (R-a; R7) | Its HAMCP-366 lane (merged by #434) passes on the signing commit (R8). If it fails, it is dropped (R-a). The recorded stop if that lane cannot pass before 2027-01-22 stays (R3, §9B). The G5 profile-map question of §5A.4 is open |
+| M3 `core.device_configuration_entity_operation` | Yes (R-a; R7) | Its HAMCP-366 lane (merged by #434) passes on the signing commit (R8). If it fails, it is dropped (R-a). G5 is open for this profile only, and it is not signable until G5 is closed (SA-1, §9D; §5A.4). If its G4 lane or its G5 gate cannot pass before 2027-01-22, it is dropped from sequence 18 and the others proceed; Josh is told before signing (§5A.11 item 10, SA-2) |
 | M4 `core.scene_create_delete_operation` | Yes (R-a) | Its lane passes on the signing commit (R8). If it fails, it is dropped (R-a) |
 | M5 `core.created_helper_delete_operation` | Yes (R-a) | As M4 |
 | M6 `core.thread_matter_topology_read` | Yes (R-a) | Both of its lanes, A1 and A2, pass on the signing commit (R8). If either fails, it is dropped (R-a) |
@@ -1205,8 +1223,10 @@ Stop and report to Josh, without working around it, if any of these occurs:
    drop or alter one of the 32 signed references.
 9. The 2027-01-22 cutoff arrives with a row not ready (§8 late-row rule), or
    the predecessor has expired (§5.4).
-10. HAMCP-297's G4 lane cannot pass before the cutoff (recorded ruling,
-    §9B).
+10. If HAMCP-297's G4 lane or its G5 gate cannot pass before the cutoff,
+    core.device_configuration_entity_operation is dropped from sequence 18
+    and the other profiles proceed (ruling R-a); Josh is told before
+    signing. (Ruling SA-2, §9D. R3, §9B, does not say it overrides R-a.)
 11. A step would need a secret, the signing seed, live Home Assistant, a
     workflow or protected-path change, or an authorization that Josh has
     not given.
@@ -1787,6 +1807,8 @@ is attributed to Josh; the computed values are this author's, at
 | R-e | "every reference in the seq 18 candidate uses exactly the closed field set that beta.7 accepts (registry_models.py at tag v2.4.2-beta.7). beta.7 rejects a whole entry for a single unknown field, which on rollback would fall back to the cached sequence 17 or, with an empty cache, lose every Core-native capability." | In force | §5A.7 PC10; §5A.10; §5A.11 item 14; §5A.15 B |
 | R-f | "Signing seq 18 is one-way. There is no per-capability removal; the only undo is revoking the whole 2026.11.0 entry, which withdraws all its capabilities and cannot be re-added; recovery is then a new Core-version binding (HAMCP-367). State this plainly in the release notes and on #395. Josh signs only after: the architect recomputes all 38 fingerprints on the signing commit; every included lane passes on that commit; and the candidate is checked against item 3." Item 3 is R-b, as relayed | In force. Stated in §5A.10. The release notes are outside this change | §5A.7 PC8; §5A.10 |
 | R-g | #425 (HAMCP-295, entity rename) stays out of 2.6. Its exclusion row stays. (Relayed as a ruling, not as a quotation.) | In force | §5A.5 Exclusions; §5A.12; §5A.15 A |
+| SA-1 | Architect ruling, relayed by Josh, 2026-11-13, item 1: "G5, the missing core.device_configuration_entity_operation entry in ci/core-contract-read-files.json (architect-verified at 7d2989ad: 38 profiles, this one absent): a) NOT ruled unnecessary. No change to ci/core-contract-read-files.json in the release PR; the 2.6 release does not depend on it. b) The plan records G5 as OPEN for this profile only. It is not signable until G5 is closed. c) Report to the architect, read-only, from the code and the plan: the Core source files the device-configuration contract actually reads, with the code locations; whether every one of them is already in the manifest's paths list; which receipts record manifest_sha256; whether the signing plan already requires the lanes to re-run on the signing commit. d) Josh decides before signing, on that report: a scoped follow-up adding the entry and re-running the affected lanes, or dropping the profile from seq 18 under R-a." | In force; item c reported 2026-11-13; Josh decides item d before signing | §5A.4; §5A.5 M3 row |
+| SA-2 | Architect ruling, relayed by Josh, 2026-11-13, item 2: "Stop condition 10 (§5A.11): reword it to match R-a: 'If HAMCP-297's G4 lane or its G5 gate cannot pass before the cutoff, core.device_configuration_entity_operation is dropped from sequence 18 and the other profiles proceed (ruling R-a); Josh is told before signing.' Exception: if R3's recorded text explicitly says it overrides R-a for HAMCP-297, do not reword. Quote R3 and report instead. Apply it in a commit that changes only the plan file." | Applied (R3 does not override R-a) | §5A.11 item 10; §5A.5 M3 row |
 
 ## 10. Superseded (historical)
 
