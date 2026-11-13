@@ -10,13 +10,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import sys
 import tempfile
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 from mcp import ClientSession
@@ -36,6 +39,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
 import lane_failure_diagnostics as lane_diagnostics  # noqa: E402
+from lane_session import lane_session, refuse_redirect  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -115,8 +119,78 @@ def _environment_path(name: str) -> Path | None:
     return Path(value) if value else None
 
 
-HA_URL = os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123").rstrip("/")
+# This harness onboards and drives one disposable Core on loopback, so the URL
+# it is started with is that bare origin: http, 127.0.0.1 or [::1], an optional
+# port, and no userinfo, path or query, nor a name that only resolves to
+# loopback. A config flow id is what Core issues for a config entry flow: a
+# ULID, 26 characters of Crockford base32 with the first one 0 to 7
+# (ConfigEntriesFlowManager.async_init, ulid_util.ulid_now(); an options flow
+# id is a different thing, 32 hex digits, and this harness sends none).
+_LOOPBACK_CORE = re.compile(r"http://(?:127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?")
+_FLOW_ID = re.compile("[0-7][0-9A-HJKMNP-TV-Z]{25}")
+# Code-owned refusals: never the URL, a path, a token or a payload.
+CORE_URL_REFUSED, CORE_PATH_REFUSED = "real_ha_url_not_loopback", "real_ha_path_not_rooted"
+CORE_TARGET_REFUSED, FLOW_ID_REFUSED = "real_ha_target_not_configured_core", "real_ha_flow_id_not_listed"
+
+
+def loopback_core_url(value):
+    """The Core URL this harness may start against; anything else is refused."""
+    url = value.rstrip("/") if type(value) is str else ""
+    if _LOOPBACK_CORE.fullmatch(url) is None:
+        raise ValueError(CORE_URL_REFUSED)
+    return url
+
+
+HA_URL = loopback_core_url(os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123"))
 CLIENT_ID = f"{HA_URL}/"
+
+# The one lane whose Core is not on loopback (the Thread/Matter A2 lane) starts it
+# on an internal Docker network it created itself. REAL_HA_URL above stays
+# loopback-only; that Core arrives only through use_internal_lane_core, as a bare
+# http://<IPv4>:8123 origin inside the subnet the runner read from its own network.
+_LANE_CORE = re.compile(r"http://((?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}):8123")
+LANE_CORE_REFUSED, LANE_SUBNET_REFUSED = "real_ha_lane_core_not_bare_ipv4", "real_ha_lane_subnet_not_usable"
+LANE_CORE_OUTSIDE, LANE_CORE_ALREADY_SET = "real_ha_lane_core_outside_subnet", "real_ha_lane_core_already_set"
+_lane_core = None
+
+
+def use_internal_lane_core(origin, subnet):
+    """Bind this process to the A2 runner's Core; anything else is refused before any send.
+
+    ``origin`` is the bare ``http://<IPv4>:8123`` of that Core and ``subnet`` the
+    IPv4 subnet of the internal network the runner created and inspected in this
+    process. The address must be a host address inside that subnet. The accepted
+    origin is bound once, and every later request is held to it.
+    """
+    global HA_URL, CLIENT_ID, _lane_core
+    if _lane_core is not None:
+        raise ValueError(LANE_CORE_ALREADY_SET)
+    found = _LANE_CORE.fullmatch(origin) if type(origin) is str else None
+    try:
+        address = ipaddress.IPv4Address(found[1]) if found else None
+    except ValueError:
+        address = None
+    if address is None:
+        raise ValueError(LANE_CORE_REFUSED)
+    try:
+        network = ipaddress.IPv4Network(subnet) if type(subnet) is str else None
+    except ValueError:
+        network = None
+    # The subnet as Docker reports one: canonical text, never wider than a /16, and never
+    # loopback, where the other lanes' Cores are.
+    if network is None or str(network) != subnet or not 16 <= network.prefixlen <= 30 or network.is_loopback:
+        raise ValueError(LANE_SUBNET_REFUSED)
+    if address not in network or address in (network.network_address, network.broadcast_address):
+        raise ValueError(LANE_CORE_OUTSIDE)
+    HA_URL, CLIENT_ID, _lane_core = origin, f"{origin}/", origin
+    return origin
+
+
+def accepted_lane_core():
+    """The origin use_internal_lane_core accepted in this process, or None; read-only."""
+    return _lane_core
+
+
 EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
 TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")
@@ -681,8 +755,29 @@ def _attach_cleanup_evidence(
     setattr(error, "contract_diagnostic", updated)
 
 
+def _refuse_unless_configured_core(path):
+    """Refuse a path that would not be a rooted path on the configured Core.
+
+    The path is appended to the configured URL as text, so it is rooted, and
+    the host the joined URL names is still the configured one.
+    """
+    if type(path) is not str or not path.startswith("/"):
+        raise ValueError(CORE_PATH_REFUSED)
+    if _lane_core is not None and HA_URL != _lane_core:
+        # A Core handed over by use_internal_lane_core stays the one this process sends to.
+        raise ValueError(CORE_TARGET_REFUSED)
+    try:
+        target = urlsplit(f"{HA_URL}{path}").hostname
+        same = bool(target) and target == urlsplit(HA_URL).hostname
+    except (TypeError, ValueError):
+        same = False
+    if not same:
+        raise ValueError(CORE_TARGET_REFUSED)
+
+
 @lane_diagnostics.checked("auth", "bootstrap_http")
 async def _json_request(session, method, path, *, json_body=None, data=None, token=""):
+    _refuse_unless_configured_core(path)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     async with session.request(
         method,
@@ -690,7 +785,9 @@ async def _json_request(session, method, path, *, json_body=None, data=None, tok
         json=json_body,
         data=data,
         headers=headers,
+        allow_redirects=False,
     ) as response:
+        refuse_redirect(response.status)
         if response.status >= 400:
             raise RuntimeError(f"Disposable Home Assistant bootstrap failed at {path} ({response.status})")
         return await response.json(content_type=None)
@@ -703,11 +800,13 @@ async def bootstrap_disposable_admin() -> str:
     username = f"contract_{secrets.token_hex(6)}"
     password = secrets.token_urlsafe(32)
     timeout = aiohttp.ClientTimeout(total=30)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    _refuse_unless_configured_core("/api/onboarding")
+    async with lane_session(timeout=timeout) as session:
         with lane_diagnostics.check("core_boot", "onboarding_ready"):
             for _ in range(120):
                 try:
-                    async with session.get(f"{HA_URL}/api/onboarding") as response:
+                    async with session.get(f"{HA_URL}/api/onboarding", allow_redirects=False) as response:
+                        refuse_redirect(response.status)
                         if response.status == 200:
                             break
                 except (aiohttp.ClientError, asyncio.TimeoutError):
@@ -848,6 +947,8 @@ async def _advance_config_flow(
         flow_id = result.get("flow_id")
         if not isinstance(flow_id, str) or not flow_id:
             raise RuntimeError("Disposable Home Assistant config flow omitted its id")
+        if type(flow_id) is not str or _FLOW_ID.fullmatch(flow_id) is None:
+            raise ValueError(FLOW_ID_REFUSED)
         result = await _json_request(
             session,
             "POST",
@@ -901,7 +1002,7 @@ async def prepare_migration_fixture() -> None:
     await wait_for_runtime_ready(rest)
 
     timeout = aiohttp.ClientTimeout(total=30)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with lane_session(timeout=timeout) as session:
         for slot in ("a", "b"):
             await _advance_config_flow(
                 session,
@@ -2572,10 +2673,12 @@ async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), envi
     timeout = aiohttp.ClientTimeout(total=2)
     for _ in range(60):
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with lane_session(timeout=timeout) as session:
                 async with session.get(
-                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz"
+                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz",
+                    allow_redirects=False,
                 ) as response:
+                    refuse_redirect(response.status)
                     body = await response.content.read(257)
                     if (
                         response.status == 200

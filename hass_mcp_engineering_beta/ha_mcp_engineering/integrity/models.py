@@ -172,6 +172,10 @@ class IntegrityEvidenceBundle:
     orphan_scope_complete: bool = False
     screened_text_count: int = 0
     bounded_sources: Any = None
+    # HAMCP-267: the visible diagnostic partition's identity (pagination
+    # binding) and the in-scope partition sources whose rows are incomplete.
+    diagnostic_fingerprint: str = ""
+    incomplete_inbound_sources: tuple[str, ...] = ()
 
     @property
     def required_coverage_complete(self) -> bool:

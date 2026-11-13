@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.2-beta.8 - 2.6.0 build, in progress (HAMCP-354)
+
+Builds on 2.4.2-beta.7 (HAMCP-331, #383). In progress: items land through
+reviewed pull requests into `release/2.6.0`, and the final release pull
+request completes this entry.
+
+- Version materialized on `release/2.6.0` in the catch-up with `main`
+  through #413, so item pull requests carry no version change. From
+  2.4.2-beta.7 the release transition refuses `2.6.0-beta.1`; Josh chose
+  2.4.2-beta.8.
+- Landed: HAMCP-149 (#396), HAMCP-104 Slice A (#398), HAMCP-294 (#397),
+  HAMCP-267 (#400), HAMCP-296 (#401), HAMCP-229 (#402), HAMCP-143 (#412),
+  HAMCP-337/HAMCP-338 (#411).
+- New in-progress `V2_4_2_BETA8` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.7 - 2.5.0 build: ha-mcp 9.1.0, no redirects, secret-path containment, Marketplace read (HAMCP-331)
 
 Builds on 2.4.2-beta.6 (HAMCP-304, #373). Every item landed through its own
@@ -44,8 +60,12 @@ verify, and only then update the app to 9.1 (release notes, Deploy order).
 - HAMCP-278 done; HAMCP-279 is CI-only and pending live proof.
 - Tool counts: 82 Engineering tools (81 before); 109 with 9.1.0 as the
   newest reviewed release, 110 on the 8.5.0 capture with the YAML reader on.
-- No storage format, approval, write or fallback change. Rollback to
-  2.4.2-beta.6 is safe after returning the app to 8.5.0 without
+- No storage format, approval or write change, and no unreviewed provider
+  fallback. The one reviewed fallback is HAMCP-290's dormant
+  Marketplace-to-HACS protocol fallback: only on an exact `unknown_command`,
+  `hacs/repositories/list` on the same connection, reported as
+  `fallback_occurred`, unused until `core.marketplace_read` is signed.
+  Rollback to 2.4.2-beta.6 is safe after returning the app to 8.5.0 without
   `/catalog/full`; it loses HAMCP-288 containment and restores
   `ha_get_hacs_info`.
 

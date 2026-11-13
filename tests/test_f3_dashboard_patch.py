@@ -20,18 +20,33 @@ from ha_mcp_engineering.f3_dashboard.constants import (  # noqa: E402
     MAX_PATCH_OPERATIONS,
     MAX_POINTER_DEPTH,
 )
-from ha_mcp_engineering.f3_dashboard.errors import PatchCompilationError, PatchValidationError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import (  # noqa: E402
+    COMPILER_LIMIT_DIAGNOSTICS,
+    ApprovalProjectionError,
+    DashboardFoundationError,
+    PatchCompilationError,
+    PatchValidationError,
+    RawEvidenceError,
+    is_compiler_limit_refusal,
+    json_bound_error,
+    json_bound_of,
+)
 from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
     canonical_json_bytes,
     engineering_sha256,
     strict_json_equal,
+    validate_json_value,
 )
 from ha_mcp_engineering.f3_dashboard.patch import (  # noqa: E402
+    _leaf_weight,
     compile_dashboard_patch,
     parse_pointer,
     semantic_leaf_difference,
 )
 from f3_dashboard_support import (  # noqa: E402
+    PRIVATE_KEY,
+    PRIVATE_TEXT,
+    compiler_limit_cases,
     home_dashboard_patch_operations,
     load_dashboard,
     load_home_dashboard,
@@ -466,6 +481,162 @@ class DashboardPatchCompilerTests(unittest.TestCase):
         self.assertRegex(first.preread_sha256, r"^[0-9a-f]{64}$")
         self.assertRegex(first.resulting_sha256, r"^[0-9a-f]{64}$")
         self.assertRegex(first.resulting_upstream_config_hash, r"^[0-9a-f]{16}$")
+
+
+class CompilerLimitDiagnosticTests(unittest.TestCase):
+    """HAMCP-143: each compiler limit names itself with bounded numbers only."""
+
+    def test_every_limit_refusal_names_its_constraint_at_limit_plus_one(self):
+        cases = compiler_limit_cases()
+        self.assertEqual(
+            {(case.constraint, case.stage) for case in cases}
+            | {("semantic_leaf_changes", "compilation"), ("traversal_depth", "compilation")},
+            set(COMPILER_LIMIT_DIAGNOSTICS),
+        )
+        for case in cases:
+            with self.subTest(constraint=case.constraint):
+                configuration = deepcopy(case.configuration)
+                operations = deepcopy(case.over_operations)
+                error_class = (
+                    PatchValidationError
+                    if case.code == "invalid_dashboard_patch"
+                    else PatchCompilationError
+                )
+                with self.assertRaises(error_class) as caught:
+                    compile_dashboard_patch(configuration, operations)
+                self.assertIs(type(caught.exception), error_class)
+                self.assertEqual(caught.exception.code, case.code)
+                details = caught.exception.diagnostic_details()
+                self.assertEqual(details, case.expected_details())
+                self.assertTrue(is_compiler_limit_refusal(caught.exception))
+                self.assertTrue(
+                    all(
+                        isinstance(item, int) and not isinstance(item, bool)
+                        for key, item in details.items()
+                        if key in {"observed", "limit"}
+                    )
+                )
+                rendered = json.dumps(details)
+                self.assertNotIn(PRIVATE_KEY, rendered)
+                self.assertNotIn(PRIVATE_TEXT, rendered)
+                self.assertNotIn("synthetic", rendered)
+                self.assertNotIn("/", rendered)
+                self.assertEqual(configuration, case.configuration)
+                self.assertEqual(operations, case.over_operations)
+
+    def test_every_limit_accepts_its_boundary_value(self):
+        for case in compiler_limit_cases():
+            with self.subTest(constraint=case.constraint):
+                if case.at_limit_refusal is None:
+                    compiled = compile_dashboard_patch(
+                        deepcopy(case.at_limit_config), deepcopy(case.at_limit_operations)
+                    )
+                    self.assertLessEqual(compiled.semantic_leaf_change_count, 256)
+                    continue
+                with self.assertRaises(DashboardFoundationError) as caught:
+                    compile_dashboard_patch(
+                        deepcopy(case.at_limit_config), deepcopy(case.at_limit_operations)
+                    )
+                # At its own limit the tested bound holds; only another
+                # reviewed bound that the shape necessarily crosses refuses.
+                self.assertEqual(caught.exception.constraint, case.at_limit_refusal)
+                self.assertNotEqual(caught.exception.constraint, case.constraint)
+                self.assertTrue(is_compiler_limit_refusal(caught.exception))
+
+    def test_traversal_depth_bound_is_named_without_an_untruthful_count(self):
+        # Shared JSON validation refuses deeper public input first, so the
+        # traversal depth bound is defence in depth and proven directly.
+        self.assertEqual(semantic_leaf_difference(0, 1, depth=48), 1)
+        self.assertEqual(_leaf_weight(0, depth=48), 1)
+        for call in (
+            lambda: semantic_leaf_difference(0, 1, depth=49),
+            lambda: _leaf_weight(0, depth=49),
+        ):
+            with self.assertRaises(PatchCompilationError) as caught:
+                call()
+            self.assertEqual(caught.exception.diagnostic_details(), {
+                "reason": "dashboard_patch_compilation_failed",
+                "dashboard_error_code": "dashboard_patch_compilation_failed",
+                "constraint": "traversal_depth",
+                "stage": "compilation",
+                "limit": 48,
+            })
+            self.assertTrue(is_compiler_limit_refusal(caught.exception))
+
+    def test_non_limit_failures_keep_legacy_details(self):
+        cases = (
+            ({}, []),
+            ({}, [operation("add", "/x", 1, "dup"), operation("add", "/y", 1, "dup")]),
+            ({}, [{"operation_id": "x", "operation": "add", "path": "/x", "value": 1, "extra": 1}]),
+            ({}, [operation("replace", "/missing", 1)]),
+            ({}, [operation("add", "/x", math.nan)]),
+            ({"items": [1]}, [operation("add", "/items/9", 1)]),
+        )
+        for configuration, operations in cases:
+            with self.subTest(operations=operations), self.assertRaises(
+                DashboardFoundationError
+            ) as caught:
+                compile_dashboard_patch(configuration, operations)
+            self.assertIsNone(caught.exception.constraint)
+            self.assertFalse(is_compiler_limit_refusal(caught.exception))
+            self.assertEqual(
+                caught.exception.diagnostic_details(),
+                {
+                    "reason": caught.exception.code,
+                    "dashboard_error_code": caught.exception.code,
+                },
+            )
+
+    def test_shared_json_bounds_outside_the_compiler_stay_legacy(self):
+        for value in ([0] * 10_000, json.loads("[" * 49 + "0" + "]" * 49)):
+            with self.subTest(size=len(json.dumps(value))), self.assertRaises(
+                PatchValidationError
+            ) as caught:
+                validate_json_value(value)
+            # Class identity is persisted as a failure category elsewhere.
+            self.assertIs(type(caught.exception), PatchValidationError)
+            self.assertIsNotNone(json_bound_of(caught.exception))
+            self.assertIsNone(caught.exception.constraint)
+            self.assertFalse(is_compiler_limit_refusal(caught.exception))
+            self.assertEqual(caught.exception.diagnostic_details(), {
+                "reason": "invalid_dashboard_patch",
+                "dashboard_error_code": "invalid_dashboard_patch",
+            })
+
+    def test_json_bound_tag_is_closed_and_bounded(self):
+        self.assertEqual(
+            json_bound_of(json_bound_error("JSON node limit exceeded", bound="nodes", limit=5)),
+            ("nodes", 5),
+        )
+        for bound, limit in (("width", 1), ("nodes", -1), ("depth", True), ("depth", "1")):
+            with self.subTest(bound=bound, limit=limit), self.assertRaises(ValueError):
+                json_bound_error("bounded", bound=bound, limit=limit)
+        forged = PatchValidationError("forged")
+        for tag in (("width", 1), ("nodes", "1"), ("nodes",), ["nodes", 1], None):
+            forged.json_bound = tag
+            with self.subTest(tag=tag):
+                self.assertIsNone(json_bound_of(forged))
+        compiled_error = PatchCompilationError("other")
+        compiled_error.json_bound = ("nodes", 1)
+        self.assertIsNone(json_bound_of(compiled_error))
+        self.assertIsNone(json_bound_of(ValueError("plain")))
+
+    def test_only_reviewed_compiler_limit_pairs_are_public(self):
+        refused = (
+            PatchCompilationError(constraint="semantic_leaf_changes", stage="validation", limit=1),
+            PatchValidationError(constraint="operation_count", stage="compilation", limit=1),
+            PatchValidationError(constraint="operation_count", stage="validation"),
+            PatchValidationError(constraint="unreviewed_bound", stage="validation", limit=1),
+            RawEvidenceError(constraint="result_config_bytes", stage="compilation", limit=1),
+            ApprovalProjectionError(constraint="operation_count", stage="validation", limit=1),
+            ValueError("plain"),
+        )
+        for exc in refused:
+            with self.subTest(exc=type(exc).__name__):
+                self.assertFalse(is_compiler_limit_refusal(exc))
+        self.assertTrue(is_compiler_limit_refusal(
+            PatchCompilationError(constraint="semantic_leaf_changes", stage="compilation", limit=256)
+        ))
 
 
 if __name__ == "__main__":

@@ -120,10 +120,22 @@ No fallback or write authority is introduced during this interval.
 
 When upstream is configured, the initial catalog is a readiness boundary:
 authenticated MCP traffic returns HTTP 503 until the first stable or terminal
-`reconcile_until_initialized` result. `/ready` exposes only bounded booleans and
+`reconcile_until_initialized` result, for at most 20 seconds after the MCP
+listener starts (HAMCP-350). `/ready` exposes only bounded booleans and
 `status=ready|initial_reconciliation_pending`; `/health` remains liveness. This
 prevents a schema-caching client from treating the transient static-only catalog
-as the initialized capability set.
+as the initialized capability set during a normal start.
+
+If the 20-second limit passes first, Engineering accepts authenticated MCP
+traffic for `initialize`, `tools/list` and Engineering-native tools while the
+first reconcile keeps retrying. This adds no write, fallback or upstream
+dispatch path. Delegated tools stay unregistered until the existing admission
+checks pass, so a delegated call is refused before any upstream request.
+`/ready` stays 503 `initial_reconciliation_pending` until the first reconcile
+returns. `server_info` and `get_server_health` report
+`delegated_tools.admitted=false` with fixed notice text that carries no URL,
+host, path or upstream detail. The authentication, secret-path 404, rate limit
+and F3 request-readiness 503 checks run before this gate and are unchanged.
 
 ## RC2dev13 reviewed read-gateway recovery
 
@@ -392,6 +404,15 @@ The policy grants no write, service-call, trigger, change-plan, approval, reload
 restart, deletion, physical-action, or destructive permission. The handler cannot call
 transport clients directly. Audit records contain input bounds and the automation ID,
 not configuration, trace, log, finding, or evidence payloads.
+
+HAMCP-229 `automation_reliability_batch_analysis` uses the engineering-native
+`bounded_automation_set_reliability_read` policy: at most 20 explicit automation IDs,
+each read under the `single_automation_reliability_read` bounds through the same
+provider, within one 45-second budget. It grants the same nothing: no write, service
+call, trigger, reload, restart, deletion, fallback, or direct transport access. The
+final response is screened as a whole, and any withheld value makes the batch partial.
+Its raw arguments pass a closed, non-echoing check before MCP SDK validation or
+coercion, so an invalid value or unknown argument name is refused without reflection.
 
 ## Standard Home Assistant MCP
 
@@ -859,9 +880,30 @@ delegated provider or fallback.
   `O_NOFOLLOW`, `0600`, atomic rename, digest-checked loads, at most 20
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
   bounded size, count and age. Manual
-  captures are refused at capacity; a watch evicts only its own snapshots.
-- **Watch poller.** The only periodic Core read: bounded to 10 watches every
-  30 seconds, under its own Core authority lease, paused while authority is
+  captures are refused at capacity; a watch evicts only its own snapshots
+  (at most 20 each), and watch captures together stay inside a
+  400-snapshot, 100 MiB reservation (HAMCP-296) that is refused, never
+  evicted, when full. The store holds at most 500 snapshots and 128 MiB
+  since HAMCP-296, so at least 100 snapshots and 28 MiB always remain for
+  manual captures. `index.json` keeps the shipped v1 bounds (10 watches,
+  200 snapshot entries, 32 MiB of entry bytes; manual captures first, then
+  the newest watch captures). Everything past those bounds (further
+  snapshot entries, watches 11-20, priority and renewal rows, at most 20
+  lapsed records for 7 days) is one closed-schema sidecar state (4 MiB
+  bound) written to one of two slot files, `watch-sidecar-a.json` and
+  `watch-sidecar-b.json`, each bound to the sha256 of the exact `index.json`
+  bytes it pairs with. A write goes to the slot not currently committed,
+  then the index; the index rename (or, when the index bytes do not change,
+  the slot rename) is the single commit point, and a load uses only a slot
+  bound to the index on disk, so a failed write leaves the prior pair and
+  the two are never mixed across transactions. The slots use the same
+  lock, `O_NOFOLLOW`, `0600`, fsync and rename; a damaged or unbound
+  sidecar resets to empty (`lifecycle_store: "reset"`) and never blocks
+  the store. A shipped (v1) server ignores the slots and deletes the record
+  files of entries the index does not name, so a downgrade loses every
+  overflow snapshot and watches 11-20.
+- **Watch poller.** The only periodic Core read: bounded to 20 watches
+  (HAMCP-296; 10 before) every 30 seconds, high-priority watches first, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each
   watch's reads are stored and again under the store lock, immediately
   before the first write. Watch changes need no approval but write a

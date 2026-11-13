@@ -16,10 +16,33 @@ RECORD_MODEL = "automation-trace-snapshot-v1"
 CAPABILITY = "core.automation_trace_read"
 REQUIREMENTS = (CAPABILITY,)
 
-# Decision B (Josh, 2026-10-26): the design note section 2.4 bounds.
-MAX_SNAPSHOTS = 200
+# Decision B (Josh, 2026-10-26): the design note section 2.4 bounds, with
+# the overall caps raised by HAMCP-296 (below).
 SNAPSHOT_BYTES = 262_144
-STORE_BYTES = 32 * 1024 * 1024
+# HAMCP-296 overall caps (orchestrator default, pending Codex/Josh): above the
+# 400-snapshot, 100 MiB watch reservation, so manual captures keep at least
+# 500 - 400 = 100 snapshots and 128 - 100 = 28 MiB (>= 100 full-size
+# 256 KiB snapshots). Before HAMCP-296 they were 200 and 32 MiB.
+MAX_SNAPSHOTS = 500
+STORE_BYTES = 128 * 1024 * 1024
+# The shipped (2.4.x/2.5.0) v1 index reader marks the whole store
+# ``store_invalid`` when ``index.json`` names more than 200 snapshots or more
+# than 32 MiB of summed entry bytes (shipped ``store.validate_index``; the
+# HAMCP-296 beta.6 fixture provenance records both verdicts). ``index.json``
+# therefore never exceeds the shipped bounds: manual captures first, then
+# the newest watch captures, stay in it and the rest live in the
+# watch sidecar, which shipped code ignores.
+V1_INDEX_MAX_SNAPSHOTS = 200
+V1_INDEX_MAX_BYTES = 32 * 1024 * 1024
+# ``index.json`` size bound (unchanged; the shipped reader uses the same).
+# A worst-case snapshot entry is 6,575 canonical bytes (256-character
+# automation ID, 128-character run ID, three 160-character text fields of
+# astral characters at 12 escaped bytes each), so the 200 v1 entries take
+# about 1.32 MB; with 10 worst-case watch rows (15,346 bytes each) and 20
+# quarantine stubs (648 bytes each) the index stays under 1.49 MB of the
+# 2,097,152 (test ``WorstCaseSizeTests``). A single 500-entry index could
+# need about 3.29 MB, one more reason the entries past the v1 bounds live in
+# the sidecar.
 INDEX_BYTES = 2 * 1024 * 1024
 RETENTION_SECONDS = 90 * 24 * 3600
 MAX_CAPTURES = 5
@@ -31,9 +54,26 @@ PAGE_BYTES = 40_000
 # retention rule. The oldest stub goes first and is counted as dropped.
 QUARANTINE_MAX = 20
 
-# Decisions W1 and E2: at most 10 watches, a 30 s poll, 20 snapshots a watch.
-MAX_WATCHES = 10
+# Decision W1 (30 s poll, 168 h term) and HAMCP-296 Q1 (Josh, 2026-11-07:
+# raise the cap with a stated bound and add priority). The bound is 20
+# watches: at a 30 s poll that is at most 40 ``trace/list`` reads a minute
+# (20 at the old cap of 10) and each watch's share of a tick's 16 s read time
+# falls from 1.6 s to 0.8 s.
+MAX_WATCHES = 20
+# The shipped (2.4.x/2.5.0) v1 index reader rejects more than 10 watches and
+# would mark the whole store ``store_invalid``. ``index.json`` therefore
+# never holds more than 10: the rest live in the watch sidecar, which
+# shipped code ignores, so a downgrade keeps the 10 highest-priority watches.
+V1_INDEX_MAX_WATCHES = 10
+# Decision E2 (Josh, 2026-10-26), kept by Josh on 2026-11-07: each watch
+# holds at most 20 snapshots and evicts only its own oldest past that.
 WATCH_QUOTA = 20
+# The watch-origin reservation (Josh, 2026-11-07: grow it to 20 x 20 = 400
+# snapshots, 400 x 256 KiB = 100 MiB): watch captures together (active,
+# ended or lapsed watches) never exceed it; a watch capture past it is
+# ``store_full`` and nothing is evicted for it (refuse, not evict).
+WATCH_STORE_SNAPSHOTS = MAX_WATCHES * WATCH_QUOTA
+WATCH_STORE_BYTES = WATCH_STORE_SNAPSHOTS * SNAPSHOT_BYTES
 WATCH_MAX_HOURS = 168
 POLL_SECONDS = 30.0
 TICK_SECONDS = 20.0
@@ -41,7 +81,30 @@ MAX_SEEN_RUNS = 100
 # Share of a tick spent on Core reads; the rest is the local commit reserve.
 READ_SHARE = 0.8
 WATCH_MODES = ("failures", "executed")
-WATCH_ACTIONS = ("add", "remove", "list")
+WATCH_ACTIONS = ("add", "remove", "list", "renew")
+WATCH_PRIORITIES = ("high", "normal")
+
+# HAMCP-296 lifecycle (implementation defaults pending Josh, Q2): a watch
+# warns when its time left is at most min(24 h, half its current term);
+# at most 20 lapsed records are kept, each for at most 7 days.
+#
+# HAMCP-296 watch sidecar: everything past the v1 index bounds (watches
+# 11-20, priority and renewal rows, lapsed records and the snapshot entries
+# index.json does not keep) is ONE state, written to one of two slot files
+# (``watch-sidecar-a.json`` / ``-b.json``) and bound to the exact index.json
+# bytes it was written with (sha256) and a generation. A load uses only the
+# slot bound to the index on disk, so a sidecar and an index from different
+# transactions are never combined (Codex review F2). Worst case: 500 entries
+# of 6,575 bytes plus 20 watch rows of 15,346 bytes, 20 metadata rows and 20
+# lapsed records is about 3.61 MB of the 4,194,304 (``WorstCaseSizeTests``).
+SIDECAR_MODEL = "trace-watch-sidecar-v1"
+SIDECAR_BYTES = 4 * 1024 * 1024
+EXPIRY_WARNING_HOURS = 24
+LAPSED_MAX = 20
+LAPSED_RETENTION_SECONDS = 7 * 24 * 3600
+LAPSE_REASONS = ("expired", "identifier_unavailable", "displaced", "store_recovery")
+HEALTH_LIST = 10
+RENEW_OUTCOMES = ("renewed", "unchanged", "reinstated", "watch_limit", "identifier_unavailable")
 
 # Core 2026.10 script/automation stop reasons a failure watch captures.
 FAILURE_EXECUTIONS = frozenset({
@@ -74,7 +137,7 @@ REASONS = frozenset({
 class TraceSnapshotError(GovernanceError):
     """Fixed reason only; never a stored payload or an exception's text."""
 
-    def __init__(self, reason, *, watches=None):
+    def __init__(self, reason, *, watches=None, lifecycle=None):
         if reason not in REASONS:
             reason = "store_unavailable"
         code = (ErrorCode.INVALID_REQUEST if reason == "invalid_arguments" else
@@ -85,6 +148,8 @@ class TraceSnapshotError(GovernanceError):
         details = {"reason": reason}
         if watches is not None:
             details["watches"] = watches
+        if lifecycle is not None:
+            details["lifecycle"] = lifecycle
         super().__init__(code, details=details)
         self.reason = reason
 
@@ -150,23 +215,43 @@ def validate_get(arguments):
 
 
 def validate_watch(arguments):
-    _closed(arguments, {"action", "automation_id", "mode", "duration_hours"})
+    _closed(arguments, {"action", "automation_id", "mode", "duration_hours", "priority",
+                        "displace", "include_lapsed"})
     action = arguments.get("action")
-    if action not in WATCH_ACTIONS:
+    if type(action) is not str or action not in WATCH_ACTIONS:
         raise TraceSnapshotError("invalid_arguments")
     automation_id = arguments.get("automation_id", "")
     mode = arguments.get("mode", "failures")
     hours = arguments.get("duration_hours", 24)
+    priority = arguments.get("priority")
     if type(mode) is not str or mode not in WATCH_MODES:
         raise TraceSnapshotError("invalid_arguments")
     if type(hours) is not int or not 1 <= hours <= WATCH_MAX_HOURS:
         raise TraceSnapshotError("invalid_arguments")
+    if priority is not None and (type(priority) is not str or priority not in WATCH_PRIORITIES):
+        raise TraceSnapshotError("invalid_arguments")
+    _strict_bool(arguments.get("displace", False))
+    include_lapsed = _strict_bool(arguments.get("include_lapsed", False))
+    present = set(arguments) - {"action"}
     if action == "list":
-        if automation_id != "" or set(arguments) - {"action"}:
+        if automation_id != "" or present:
             raise TraceSnapshotError("invalid_arguments")
         return
+    if action == "renew":
+        # ``""`` renews every active watch; include_lapsed only then (Q3 default).
+        if present - {"automation_id", "duration_hours", "include_lapsed"}:
+            raise TraceSnapshotError("invalid_arguments")
+        if type(automation_id) is not str:
+            raise TraceSnapshotError("invalid_arguments")
+        if automation_id:
+            _automation_id(automation_id)
+            if include_lapsed:
+                raise TraceSnapshotError("invalid_arguments")
+        return
     _automation_id(automation_id)
-    if action == "remove" and set(arguments) - {"action", "automation_id"}:
+    if action == "remove" and present - {"automation_id"}:
+        raise TraceSnapshotError("invalid_arguments")
+    if action == "add" and "include_lapsed" in present:
         raise TraceSnapshotError("invalid_arguments")
 
 

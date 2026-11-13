@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient
 from tests.support.process_isolation import restore_after_class
+from tests.test_beta_observability import preserve_create_application_state
 import yaml
 
 
@@ -586,7 +587,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(self.beta_tools), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -639,15 +640,19 @@ class ToolParityTests(unittest.TestCase):
                 "rollback_change",
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
+                "automation_reliability_batch_analysis",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
                 "handoff_generation",
                 "control_power",
                 "control_helper",
+                "control_device_configuration",  # + HAMCP-297
                 "control_fan",
                 "run_held_read_canary",
                 "get_marketplace_inventory",  # HAMCP-290: Engineering-native read
+                "get_security_metadata",  # HAMCP-134: Engineering-native read
+                "get_thread_matter_topology",  # HAMCP-231: Engineering-native read
             },
         )
 
@@ -671,6 +676,10 @@ class ToolParityTests(unittest.TestCase):
             )
             self.assertNotIn(name, listing.get("required", []))
         beta_schemas["list_capabilities"] = listing
+        # HAMCP-294 adds exactly four optional get_logbook inputs; hours keeps
+        # its v1.1.2 default and type (asserted by the helper).
+        from tests.hamcp294_descriptor_changes import without_hamcp294_inputs
+        beta_schemas["get_logbook"] = without_hamcp294_inputs(self, beta_schemas["get_logbook"])
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_preserves_phase3c_provider_truth(self):
@@ -718,7 +727,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(result["data"]["tool_count"], 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -728,7 +737,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(catalog["registered_count"], 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -751,6 +760,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_history_slices",
                 "control_power",
                 "control_helper",
+                "control_device_configuration",  # + HAMCP-297
                 "control_fan",
                 "run_held_read_canary",
                 "create_backup_plan",
@@ -768,6 +778,8 @@ class ToolParityTests(unittest.TestCase):
                 "list_script_traces",
                 "get_script_trace",
                 "get_marketplace_inventory",  # HAMCP-290
+                "get_security_metadata",  # HAMCP-134
+                "get_thread_matter_topology",  # HAMCP-231
                 "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
@@ -786,6 +798,7 @@ class ToolParityTests(unittest.TestCase):
                 "rollback_change",
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
+                "automation_reliability_batch_analysis",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
@@ -805,11 +818,12 @@ class ToolParityTests(unittest.TestCase):
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
         provider_matrix = section("provider_matrix")
-        self.assertEqual(len(provider_matrix), 34)  # + HAMCP-311 control_helper
+        self.assertEqual(len(provider_matrix), 35)  # + HAMCP-311 control_helper, HAMCP-297 control_device_configuration
         self.assertEqual(
             {item["selected_provider"] for item in provider_matrix},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power",
              "upstream_typed_helper_value",  # + HAMCP-311
+             "direct_home_assistant_device_configuration",  # + HAMCP-297
              "upstream_platform_reads", "ha_mcp_delegated"},
         )
 
@@ -818,6 +832,12 @@ class BetaApplicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return core_snapshot(
@@ -924,7 +944,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(names), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
@@ -1023,6 +1043,7 @@ class BetaApplicationTests(unittest.TestCase):
             "rollback_change",
             "entity_dependency_analysis",
             "automation_reliability_analysis",
+            "automation_reliability_batch_analysis",
             "change_impact_analysis",
             "configuration_integrity_analysis",
             "incident_correlation",
@@ -1490,10 +1511,13 @@ class BetaApplicationTests(unittest.TestCase):
         service.gateway = synthetic_gateway
         previous_f3_gateways = []
         for adapter in service.f3_runtime._configuration_adapters.values():
-            previous_f3_gateways.append(
-                (adapter, adapter.gateway.delegate._gateway)
-            )
-            adapter.gateway.delegate._gateway = synthetic_gateway
+            # HAMCP-298: a created-object delete adapter reaches the same
+            # audited gateway through its closed five-call view.
+            audited = adapter.gateway
+            if not hasattr(audited, "delegate"):
+                audited = audited._gateway
+            previous_f3_gateways.append((audited, audited.delegate._gateway))
+            audited.delegate._gateway = synthetic_gateway
         try:
             proposed = {
                 "alias": "Governance fixture",
@@ -1612,8 +1636,8 @@ class BetaApplicationTests(unittest.TestCase):
             )
             self.assertTrue(json.loads(rollback_call["result"]["content"][0]["text"])["success"])
         finally:
-            for adapter, gateway in previous_f3_gateways:
-                adapter.gateway.delegate._gateway = gateway
+            for audited, gateway in previous_f3_gateways:
+                audited.delegate._gateway = gateway
             service.gateway = previous_gateway
 
     def test_governance_input_schemas_are_intentional(self):

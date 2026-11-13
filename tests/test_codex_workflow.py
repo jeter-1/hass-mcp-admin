@@ -20,6 +20,8 @@ CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
 SHARD_SCRIPT = ROOT / "scripts" / "unit_test_shards.py"
 LOCAL_SHARD_SCRIPT = ROOT / "scripts" / "local_unit_test_shards.py"
 REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
+# A field a fake answer leaves out, as distinct from one it reports as null.
+ABSENT = object()
 
 
 def run(
@@ -222,9 +224,18 @@ class CheckScriptRepositoryFixture:
         self.write("scripts/pr-evidence.py", EVIDENCE_SCRIPT.read_text(encoding="utf-8"))
         self.write(
             "scripts/validate_addon_metadata.py",
-            f"""from pathlib import Path
+            f"""import json
+from pathlib import Path
+import subprocess
+import sys
 
 print({REPOSITORY_CODE_SENTINEL!r})
+# HAMCP-356: record the arguments, and move a reference mid-run on request.
+Path('.artifacts').mkdir(exist_ok=True)
+Path('.artifacts/fixture-metadata-argv.json').write_text(json.dumps(sys.argv[1:]))
+if Path('.fixture-move-ref').exists():
+    moved_ref = Path('.fixture-move-ref').read_text().strip()
+    subprocess.run(['git', 'update-ref', moved_ref, 'HEAD'], check=True)
 if Path('.fixture-native-failure').exists():
     raise SystemExit(19)
 if Path('.fixture-mutate-worktree').exists():
@@ -332,10 +343,15 @@ __pycache__/
         executable: str,
         tier: str,
         *,
-        base_ref: str = "origin/main",
+        base_ref: str | None = "origin/main",
+        python_executable: str | None = sys.executable,
         authorized_paths: tuple[str, ...] = (),
         parallel: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        # None omits -PythonExecutable or -BaseRef so check.ps1 uses its
+        # defaults. Only tests with a controlled PATH (no real gh) may omit
+        # -BaseRef.
         arguments = [executable, "-NoProfile", "-NonInteractive"]
         if os.name == "nt":
             arguments.extend(("-ExecutionPolicy", "Bypass"))
@@ -344,11 +360,11 @@ __pycache__/
             self.powershell_literal(str(self.root / "scripts" / "check.ps1")),
             "-Tier",
             self.powershell_literal(tier),
-            "-PythonExecutable",
-            self.powershell_literal(sys.executable),
-            "-BaseRef",
-            self.powershell_literal(base_ref),
         ]
+        if python_executable is not None:
+            invocation.extend(("-PythonExecutable", self.powershell_literal(python_executable)))
+        if base_ref is not None:
+            invocation.extend(("-BaseRef", self.powershell_literal(base_ref)))
         if tier == "Fast":
             invocation.extend(("-TestTarget", "'tests.test_smoke'"))
         if authorized_paths:
@@ -359,7 +375,7 @@ __pycache__/
         if parallel is not None:
             invocation.extend(("-Parallel", parallel))
         arguments.extend(("-Command", " ".join(invocation)))
-        return run(arguments, cwd=self.root, check=False)
+        return run(arguments, cwd=self.root, env=env, check=False)
 
 
 class ContextToolTests(unittest.TestCase):
@@ -1953,6 +1969,472 @@ class CheckScriptExecutionTests(unittest.TestCase):
                 self.assertIn(message, output)
                 self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
                 self.assertNotIn("validation passed", output)
+
+
+@unittest.skipIf(os.name == "nt", "the fake gh and python helpers are POSIX shell scripts")
+class CheckScriptDefaultsTests(unittest.TestCase):
+    """HAMCP-356: base-reference detection and the worktree venv default.
+
+    Every run uses a PATH that holds only git and the fakes a test writes, so
+    the real gh and any real python on PATH are never consulted.
+
+    HAMCP-358: the pull-request lookup names the repository of the fixture's
+    ``origin``, which is a github.com URL nothing ever contacts.
+    """
+
+    BRANCH = "agent/HAMCP-1-fixture"
+    REPOSITORY = "fixture-owner/fixture-repo"
+    GH_FIELDS = "--json number,state,baseRefName,headRefName,isCrossRepository,url"
+    GH_CALL = f"pr view {BRANCH} --repo github.com/{REPOSITORY} {GH_FIELDS}"
+    NOT_GITHUB = "origin is not a github.com repository URL this script can name"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.powershell = shutil.which("pwsh") or shutil.which("powershell")
+        cls.git = shutil.which("git")
+        cls.sleep = shutil.which("sleep")
+
+    def setUp(self) -> None:
+        if not self.powershell or not self.git:
+            self.skipTest("PowerShell or git is unavailable")
+        self.fixture = CheckScriptRepositoryFixture()
+        self.bin = self.fixture.root.parent / (self.fixture.root.name + "-bin")
+        self.bin.mkdir()
+        self.addCleanup(shutil.rmtree, self.bin, True)
+        (self.bin / "git").symlink_to(self.git)
+        self.gh_log = self.bin / "gh.log"
+        self.gh_environment_log = self.bin / "gh-environment.log"
+        self.set_origin(f"https://github.com/{self.REPOSITORY}.git")
+        # A release base that already carries a protected change. Compared
+        # with origin/main the branch changes a protected path; compared with
+        # its release base it does not.
+        self.fixture.write("hass_mcp_admin/example.py", "VALUE = 2\n")
+        self.fixture.commit("fixture release change")
+        git(self.fixture.root, "update-ref", "refs/remotes/origin/release/9.9.0", "HEAD")
+        git(self.fixture.root, "checkout", "-q", "-b", self.BRANCH)
+        self.fixture.write("docs.md", "branch change\n")
+        self.fixture.commit("fixture branch change")
+
+    def tearDown(self) -> None:
+        if hasattr(self, "fixture"):
+            self.fixture.close()
+
+    def environment(self) -> dict[str, str]:
+        env = dict(os.environ)
+        env["PATH"] = str(self.bin)
+        return env
+
+    def write_executable(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+        path.chmod(0o755)
+
+    def write_gh(self, *, stdout: str = "", exit_code: int = 0, stderr: str = "", sleep: bool = False) -> None:
+        script = "#!/bin/sh\n" + f"printf '%s\\n' \"$*\" >> '{self.gh_log}'\n"
+        script += f"printf '%s\\n' \"${{GH_REPO:-unset}}\" >> '{self.gh_environment_log}'\n"
+        if sleep:
+            script += f"exec '{self.sleep}' 30\n"
+        script += f"printf '%s' '{stdout}'\n"
+        if stderr:
+            script += f"printf '%s\\n' '{stderr}' >&2\n"
+        script += f"exit {exit_code}\n"
+        self.write_executable(self.bin / "gh", script)
+
+    def write_pull_request(self, **overrides) -> None:
+        answer = {"number": 42, "state": "OPEN", "baseRefName": "release/9.9.0",
+                  "headRefName": self.BRANCH, "isCrossRepository": False,
+                  "url": f"https://github.com/{self.REPOSITORY}/pull/42"}
+        answer.update(overrides)
+        self.write_gh(stdout=json.dumps({name: value for name, value in answer.items() if value is not ABSENT}))
+
+    def set_origin(self, url: str | None) -> None:
+        # Only the configured URL is read; no test contacts it.
+        if url is None:
+            run(["git", "config", "--unset-all", "remote.origin.url"], cwd=self.fixture.root, check=False)
+        else:
+            git(self.fixture.root, "config", "remote.origin.url", url)
+
+    def gh_calls(self) -> list[str]:
+        if not self.gh_log.exists():
+            return []
+        return self.gh_log.read_text(encoding="utf-8").splitlines()
+
+    def check(self, tier: str = "Fast", **arguments) -> tuple[int, str]:
+        arguments.setdefault("base_ref", None)
+        result = self.fixture.run_check(self.powershell, tier, env=self.environment(), **arguments)
+        return result.returncode, result.stdout + result.stderr
+
+    def assert_compared_with_main(self, code: int, output: str) -> None:
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("hass_mcp_admin/example.py", output)
+        self.assertIn("AuthorizedProtectedPath", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def assert_default_message(self, output: str, reason: str) -> None:
+        self.assertIn("Base reference origin/main (default: no pull-request base was detected because", output)
+        self.assertIn(reason, output)
+        self.assertIn("Pass -BaseRef", output)
+
+    def test_explicit_base_ref_wins_and_gh_is_not_consulted(self):
+        self.write_pull_request(baseRefName="main")
+        code, output = self.check(base_ref="origin/release/9.9.0")
+        self.assertEqual(code, 0, output)
+        self.assertIn("Base reference origin/release/9.9.0 (explicit -BaseRef).", output)
+        self.assertEqual(self.gh_calls(), [])
+        code, output = self.check(base_ref="origin/main")
+        self.assert_compared_with_main(code, output)
+        self.assertEqual(self.gh_calls(), [])
+
+    def test_empty_explicit_base_ref_is_refused(self):
+        code, output = self.check(base_ref="")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("-BaseRef must name a Git reference", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+        self.assertEqual(self.gh_calls(), [])
+
+    def test_pull_request_release_base_is_detected_for_the_protected_path_preflight(self):
+        self.write_pull_request()
+        code, output = self.check()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Base reference origin/release/9.9.0 (detected: base of pull request #42 in {self.REPOSITORY}; "
+                      "pass -BaseRef to override).", output)
+        self.assertIn("Fast validation passed", output)
+        self.assertEqual(self.gh_calls(), [self.GH_CALL])
+
+    def test_pull_request_lookup_ignores_an_inherited_gh_repo(self):
+        # HAMCP-358: GH_REPO would point gh at another repository, whose pull
+        # request for a branch of this name would supply the base.
+        self.write_pull_request()
+        env = self.environment()
+        env["GH_REPO"] = "other-owner/other-repo"
+        result = self.fixture.run_check(self.powershell, "Fast", env=env, base_ref=None)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(f"detected: base of pull request #42 in {self.REPOSITORY};", output)
+        self.assertEqual(self.gh_calls(), [self.GH_CALL])
+        self.assertEqual(self.gh_environment_log.read_text(encoding="utf-8").splitlines(), ["unset"])
+        self.assertNotIn("other-owner", output)
+
+    def test_answer_for_another_repository_fails_closed(self):
+        ours = f"https://github.com/{self.REPOSITORY}/pull/42"
+        cases = (
+            ("https://github.com/other-owner/other-repo/pull/42", "which is not a pull request of"),
+            (f"https://github.com/{self.REPOSITORY}-fork/pull/42", "which is not a pull request of"),
+            (f"https://github.com/{self.REPOSITORY}/pull/43", "which is not a pull request of"),
+            (ours + "/files", "which is not a pull request of"),
+            (ours.replace("github.com", "github.com.example.invalid"), "which is not a pull request of"),
+            (ours.replace("https://", "http://"), "which is not a pull request of"),
+            ("", "which is not a pull request of"),
+            (7, "which is not a pull request of"),
+            (None, "which is not a pull request of"),
+            ([ours], "which is not a pull request of"),
+            (ABSENT, "did not report url"),
+        )
+        for url, message in cases:
+            with self.subTest(url=url):
+                self.write_pull_request(url=url)
+                code, output = self.check()
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(message, output)
+                self.assertIn("refusing to choose a base. Pass -BaseRef.", output)
+                self.assertIn("Validation stopped during safe preflight", output)
+                self.assertNotIn("Base reference origin/release/9.9.0", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_github_origin_forms_name_the_same_repository(self):
+        for url in (f"https://github.com/{self.REPOSITORY}",
+                    f"https://github.com/{self.REPOSITORY}/",
+                    f"git@github.com:{self.REPOSITORY}.git",
+                    f"ssh://git@github.com/{self.REPOSITORY}.git"):
+            with self.subTest(url=url):
+                self.gh_log.unlink(missing_ok=True)
+                self.set_origin(url)
+                self.write_pull_request()
+                code, output = self.check()
+                self.assertEqual(code, 0, output)
+                self.assertIn(f"detected: base of pull request #42 in {self.REPOSITORY};", output)
+                self.assertEqual(self.gh_calls(), [self.GH_CALL])
+
+    def test_origin_that_is_not_a_github_repository_skips_gh(self):
+        marker = "fixture-origin-userinfo"
+        for url in (None,
+                    str(self.bin / "no-such-remote"),
+                    f"https://gitlab.com/{self.REPOSITORY}.git",
+                    f"https://github.com.example.invalid/{self.REPOSITORY}.git",
+                    f"https://{marker}@github.com/{self.REPOSITORY}.git",
+                    f"https://github.com/{self.REPOSITORY}/extra",
+                    "https://github.com/fixture-owner/..",
+                    "https://github.com/fixture-owner/fixture repo",
+                    f"https://github.com/{self.REPOSITORY}.git --repo other-owner/other-repo"):
+            with self.subTest(url=url):
+                self.set_origin(url)
+                self.write_pull_request()
+                code, output = self.check()
+                self.assert_default_message(output, f"{self.NOT_GITHUB}; the branch has no upstream")
+                self.assert_compared_with_main(code, output)
+                self.assertEqual(self.gh_calls(), [])
+                self.assertNotIn(marker, output)
+
+    def test_detected_base_is_the_recorded_evidence_base(self):
+        self.write_pull_request()
+        code, output = self.check("Evidence")
+        self.assertEqual(code, 0, output)
+        payload = json.loads((self.fixture.root / ".artifacts" / "validation.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["base_ref"], "origin/release/9.9.0")
+        self.assertEqual(payload["base_sha"], git(self.fixture.root, "rev-parse", "origin/release/9.9.0"))
+        self.assertEqual(payload["overall_status"], "passed")
+
+    def test_missing_gh_falls_back_to_origin_main_with_a_message(self):
+        code, output = self.check()
+        self.assert_default_message(output, "gh is not on PATH; the branch has no upstream")
+        self.assert_compared_with_main(code, output)
+
+    def test_unauthenticated_gh_falls_back_without_printing_gh_output(self):
+        self.write_gh(exit_code=4, stdout="fixture-gh-stdout", stderr="fixture-gh-stderr-detail")
+        code, output = self.check()
+        self.assert_default_message(output, f"gh pr view {self.BRANCH} failed with exit code 4")
+        self.assert_compared_with_main(code, output)
+        self.assertNotIn("fixture-gh-stderr-detail", output)
+        self.assertNotIn("fixture-gh-stdout", output)
+        self.assertEqual(len(self.gh_calls()), 1)
+
+    def test_gh_that_does_not_answer_is_abandoned_and_falls_back(self):
+        if not self.sleep:
+            self.skipTest("sleep is unavailable")
+        self.write_gh(sleep=True)
+        code, output = self.check()
+        self.assert_default_message(output, "gh pr view did not answer within 10 s")
+        self.assert_compared_with_main(code, output)
+
+    def test_closed_or_merged_pull_request_is_not_used(self):
+        for state in ("MERGED", "CLOSED"):
+            with self.subTest(state=state):
+                self.write_pull_request(state=state)
+                code, output = self.check()
+                self.assert_default_message(output, f"the pull request for {self.BRANCH} is not open")
+                self.assert_compared_with_main(code, output)
+
+    def test_pull_request_base_that_is_not_fetched_fails_closed(self):
+        self.write_pull_request(baseRefName="release/8.0.0")
+        code, output = self.check()
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(f"The base of pull request #42 in {self.REPOSITORY} is origin/release/8.0.0, "
+                      "which is not available locally. "
+                      "Fetch it (git fetch origin) or pass -BaseRef.", output)
+        self.assertIn("Validation stopped during safe preflight", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_inconsistent_or_malformed_gh_answers_fail_closed(self):
+        cases = (
+            ({"headRefName": "agent/other"}, "which is not this repository's branch"),
+            ({"isCrossRepository": True}, "which is not this repository's branch"),
+            ({"isCrossRepository": "false"}, "which is not this repository's branch"),
+            ({"baseRefName": "-release"}, "unusable base branch"),
+            ({"baseRefName": "release/../main"}, "unusable base branch"),
+            ({"baseRefName": "main;x"}, "unusable base branch"),
+            ({"baseRefName": 7}, "unusable base branch"),
+            ({"number": "42"}, "invalid pull-request number"),
+            ({"number": 0}, "invalid pull-request number"),
+            ({"state": 1}, "unusable pull-request state"),
+        )
+        for override, message in cases:
+            with self.subTest(override=override):
+                self.write_pull_request(**override)
+                code, output = self.check()
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(message, output)
+                self.assertIn("refusing to choose a base. Pass -BaseRef.", output)
+                self.assertIn("Validation stopped during safe preflight", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+        for stdout, message in (("not json", "not JSON"), ("{}", "did not report number"),
+                                ("[]", "did not report number"), ("{" + " " * 5000 + "}", "more than 4096")):
+            with self.subTest(stdout=stdout[:12]):
+                self.write_gh(stdout=stdout)
+                code, output = self.check()
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(message, output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def set_upstream(self, upstream: str) -> None:
+        # A local remote definition so git can record tracking; nothing is fetched.
+        self.set_origin(str(self.bin / "no-such-remote"))
+        git(self.fixture.root, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.fixture.root, "branch", "--set-upstream-to", upstream)
+
+    def test_release_upstream_is_the_offline_fallback(self):
+        self.set_upstream("origin/release/9.9.0")
+        code, output = self.check()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Base reference origin/release/9.9.0 (detected: upstream of branch {self.BRANCH}; "
+                      "pass -BaseRef to override).", output)
+
+    def test_own_or_unrelated_upstream_is_ignored(self):
+        own = f"refs/remotes/origin/{self.BRANCH}"
+        git(self.fixture.root, "update-ref", own, "HEAD")
+        self.set_upstream(f"origin/{self.BRANCH}")
+        code, output = self.check()
+        self.assert_default_message(output, f"the branch upstream origin/{self.BRANCH} is not origin/main "
+                                            "or an origin/release/* branch")
+        self.assert_compared_with_main(code, output)
+        git(self.fixture.root, "checkout", "-q", "-b", "release/9.9.0")
+        self.set_upstream("origin/release/9.9.0")
+        code, output = self.check()
+        self.assert_default_message(output, "gh is not on PATH; the branch upstream origin/release/9.9.0 "
+                                            "is the branch's own remote copy")
+        self.assert_compared_with_main(code, output)
+
+    def test_detached_head_falls_back_without_consulting_gh(self):
+        self.write_pull_request()
+        git(self.fixture.root, "checkout", "-q", "--detach")
+        code, output = self.check()
+        self.assert_default_message(output, "HEAD is detached")
+        self.assert_compared_with_main(code, output)
+        self.assertEqual(self.gh_calls(), [])
+
+    def venv_python(self) -> Path:
+        return self.fixture.root / ".artifacts" / "venv" / "bin" / "python"
+
+    @unittest.skipUnless(sys.version_info[:2] == (3, 12), "the venv default requires Python 3.12")
+    def test_worktree_venv_python_is_used_when_python_is_absent(self):
+        self.write_executable(self.venv_python(), f"#!/bin/sh\nexec '{sys.executable}' \"$@\"\n")
+        code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
+        self.assertEqual(code, 0, output)
+        self.assertIn("No -PythonExecutable and no python on PATH: using the worktree venv Python 3.12 at "
+                      f"{self.venv_python()}.", output)
+        self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+        self.assertIn("Fast validation passed", output)
+
+    def test_worktree_venv_with_another_python_version_is_refused(self):
+        for answer, observed in (("3.11", "is Python 3.11, not Python 3.12"),
+                                 ("3.12.1", "did not report its version"),
+                                 ("", "did not report its version")):
+            with self.subTest(answer=answer):
+                self.write_executable(self.venv_python(), f"#!/bin/sh\nprintf '%s\\n' '{answer}'\n")
+                code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(observed, output)
+                self.assertIn("Rebuild .artifacts/venv with Python 3.12 or provide -PythonExecutable.", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+        self.write_executable(self.venv_python(), "#!/bin/sh\nexit 3\n")
+        code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("did not report its version", output)
+
+    def test_missing_worktree_venv_is_reported(self):
+        code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("Python was not found on PATH and the worktree venv", output)
+        self.assertIn("Provide -PythonExecutable", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_explicit_or_path_python_wins_over_the_venv(self):
+        self.write_executable(self.venv_python(), "#!/bin/sh\nprintf '%s\\n' 3.11\n")
+        code, output = self.check(base_ref="origin/release/9.9.0")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("worktree venv", output)
+        self.write_executable(self.bin / "python", f"#!/bin/sh\nexec '{sys.executable}' \"$@\"\n")
+        code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("worktree venv", output)
+
+
+class CheckScriptPinnedBaseTests(unittest.TestCase):
+    """HAMCP-356: one pinned base commit, and a separate version-check base.
+
+    The pull-request base is resolved to a commit once, at the start, and
+    every comparison in the run uses that commit, so a fetch elsewhere that
+    moves the reference cannot change the result. The deployment-metadata
+    version check compares against origin/main, as CI does, never against a
+    release base where item pull requests share the declared version.
+    """
+
+    BRANCH = "agent/HAMCP-1-fixture"
+    RELEASE = "origin/release/9.9.0"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.powershell = shutil.which("pwsh") or shutil.which("powershell")
+
+    def setUp(self) -> None:
+        if not self.powershell:
+            self.skipTest("PowerShell is unavailable")
+        self.fixture = CheckScriptRepositoryFixture()
+        self.main_sha = git(self.fixture.root, "rev-parse", "origin/main^{commit}")
+        self.fixture.write("release.md", "release change\n")
+        self.fixture.commit("fixture release change")
+        git(self.fixture.root, "update-ref", "refs/remotes/" + self.RELEASE, "HEAD")
+        self.release_sha = git(self.fixture.root, "rev-parse", "HEAD^{commit}")
+        git(self.fixture.root, "checkout", "-q", "-b", self.BRANCH)
+        self.fixture.write("docs.md", "branch change\n")
+
+    def tearDown(self) -> None:
+        if hasattr(self, "fixture"):
+            self.fixture.close()
+
+    def check(self, tier: str, base_ref: str = RELEASE) -> tuple[int, str]:
+        result = self.fixture.run_check(self.powershell, tier, base_ref=base_ref)
+        return result.returncode, result.stdout + result.stderr
+
+    def metadata_arguments(self) -> list[str]:
+        path = self.fixture.root / ".artifacts" / "fixture-metadata-argv.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def validation(self) -> dict:
+        path = self.fixture.root / ".artifacts" / "validation.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_version_check_uses_origin_main_when_the_preflight_base_is_a_release(self):
+        self.fixture.commit("fixture branch change")
+        code, output = self.check("Evidence")
+        self.assertEqual(code, 0, output)
+        self.assertNotEqual(self.main_sha, self.release_sha)
+        arguments = self.metadata_arguments()
+        self.assertEqual(arguments[arguments.index("--base-ref") + 1], self.main_sha)
+        self.assertIn(f"Verified base commit {self.RELEASE} at {self.release_sha}.", output)
+        self.assertIn(f"Version-check base origin/main at {self.main_sha}", output)
+        payload = self.validation()
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(payload["base_ref"], self.RELEASE)
+        self.assertEqual(payload["base_sha"], self.release_sha)
+        self.assertEqual(payload["version_check_base_ref"], "origin/main")
+        self.assertEqual(payload["version_check_base_sha"], self.main_sha)
+
+    def test_version_check_base_stays_origin_main_with_an_explicit_main_base(self):
+        self.fixture.commit("fixture branch change")
+        code, output = self.check("Full", base_ref="origin/main")
+        self.assertEqual(code, 0, output)
+        arguments = self.metadata_arguments()
+        self.assertEqual(arguments[arguments.index("--base-ref") + 1], self.main_sha)
+
+    def test_base_commit_is_pinned_when_the_reference_moves_mid_run(self):
+        # The metadata step moves the release reference to HEAD while the run
+        # is in progress, as a fetch in another worktree would.
+        self.fixture.write(".fixture-move-ref", "refs/remotes/" + self.RELEASE + "\n")
+        self.fixture.commit("fixture branch change that moves the base mid-run")
+        head_sha = git(self.fixture.root, "rev-parse", "HEAD^{commit}")
+        code, output = self.check("Evidence")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(git(self.fixture.root, "rev-parse", self.RELEASE + "^{commit}"), head_sha)
+        self.assertIn(f"{self.RELEASE} moved to {head_sha} during the run", output)
+        self.assertIn(f"used the pinned base {self.release_sha}", output)
+        self.assertNotIn("The Evidence base moved during validation", output)
+        payload = self.validation()
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(payload["base_sha"], self.release_sha)
+        steps = {step["name"]: step for step in payload["steps"]}
+        self.assertEqual(steps["Recheck Evidence snapshot"]["status"], "passed")
+        self.assertIn(self.release_sha, steps["Check committed Git whitespace"]["command"])
+
+    def test_unresolvable_origin_main_is_refused_before_repository_code(self):
+        self.fixture.commit("fixture branch change")
+        git(self.fixture.root, "update-ref", "-d", "refs/remotes/origin/main")
+        for tier in ("Fast", "Full", "Evidence"):
+            with self.subTest(tier=tier):
+                code, output = self.check(tier)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("The version-check base origin/main does not resolve to a commit", output)
+                self.assertIn("refusing to validate deployment metadata against another base", output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
 
 
 class InstructionFileTests(unittest.TestCase):

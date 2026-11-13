@@ -99,7 +99,9 @@ EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 # HAMCP-319: the Engineering expectation is bound to the image under test,
 # selected by the image's self-reported get_server_health server.version. The
 # current source's expectation applies only to SERVER_VERSION. The side_by_side
-# rollback stage runs the previous published release, which predates HAMCP-290
+# rollback stage runs the previous published release (2.4.2-beta.7 since
+# HAMCP-377; PREVIOUS_RELEASE_* below). The 2.4.2-beta.6 expectation, which the
+# stage ran before HAMCP-377, stays reviewed: that release predates HAMCP-290
 # (no get_marketplace_inventory; ha_get_hacs_info still delegated, nothing
 # retired, core_withheld_read_count 0). Any other version fails closed.
 BETA6_ENGINEERING_VERSION = "2.4.2-beta.6"
@@ -198,9 +200,10 @@ BETA6_STATIC_TOOL_NAMES = frozenset(
 BETA6_RETIRED_DELEGATED_READS: frozenset[str] = frozenset()
 # The beta.6 tree's own reviewed 8.5.0 delegated read routes (same derivation:
 # that tree's load_reviewed_upstream_release_registry().by_version["8.5.0"]).
-# The rollback stage runs beta.6 only against 8.5.0; any other upstream version
-# has no reviewed beta.6 expectation and fails closed. With nothing retired,
-# beta.6's expected core_withheld_read_count is len(retired) == 0.
+# Before HAMCP-377 the rollback stage ran beta.6, against 8.5.0 only. A beta.6
+# image against any other upstream version has no reviewed expectation and fails
+# closed. With nothing retired, beta.6's expected core_withheld_read_count is
+# len(retired) == 0.
 BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
     MappingProxyType(
         {
@@ -223,6 +226,144 @@ BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
                 "ha_get_entity",
                 "ha_get_entity_exposure",
                 "ha_get_hacs_info",
+                "ha_get_history",
+                "ha_get_integration",
+                "ha_get_overview",
+                "ha_get_skill_guide",
+                "ha_get_state",
+                "ha_get_system_health",
+                "ha_get_todo",
+                "ha_get_zone",
+                "ha_list_floors_areas",
+                "ha_list_services",
+                "ha_search",
+                }
+            ),
+        }
+    )
+)
+
+# HAMCP-377: the release the rollback stage runs. The workflow's
+# ROLLBACK_ENGINEERING_VERSION is 2.4.2-beta.7 (ruling 32; it was 2.4.2-beta.6).
+# Provenance: tag v2.4.2-beta.7, commit b614be43f8c56ae06fdec0ac0bcb479b9da39715.
+# Derived the same way, from `git archive b614be43 hass_mcp_engineering_beta`:
+# 82 registered names (its ENGINEERING_STATIC_TOOL_COUNT is 82, with
+# get_marketplace_inventory) and RETIRED_DELEGATED_READS {"ha_get_hacs_info"}
+# (HAMCP-290), so its expected core_withheld_read_count is len(retired) == 1.
+PREVIOUS_RELEASE_ENGINEERING_VERSION = "2.4.2-beta.7"
+PREVIOUS_RELEASE_STATIC_TOOL_NAMES = frozenset(
+    {
+        "apply_change_plan",
+        "approve_change_plan",
+        "automation_reliability_analysis",
+        "call_service",
+        "cancel_execution_task",
+        "capture_automation_baseline",
+        "capture_automation_trace",
+        "change_impact_analysis",
+        "check_config",
+        "compare_automation_baselines",
+        "configuration_integrity_analysis",
+        "control_fan",
+        "control_helper",
+        "control_power",
+        "create_addon_restart_plan",
+        "create_backup_plan",
+        "create_change_plan",
+        "create_configuration_delete_plan",
+        "create_configuration_plan",
+        "create_dashboard_metadata_plan",
+        "create_dashboard_update_plan",
+        "create_entity_availability_exposure_plan",
+        "create_entity_metadata_plan",
+        "create_helper_options_plan",
+        "create_helper_state_plan",
+        "create_home_assistant_restart_plan",
+        "create_input_select_option_plan",
+        "create_label_plan",
+        "create_reload_plan",
+        "create_scene_configuration_plan",
+        "dashboard_integrity_analysis",
+        "delete_automation",
+        "entity_dependency_analysis",
+        "get_audit_log",
+        "get_automation_config",
+        "get_automation_trace",
+        "get_backup_inventory",
+        "get_blueprint",
+        "get_change_plan",
+        "get_configuration_definitions",
+        "get_core_log_history",
+        "get_dashboard_config",
+        "get_entity",
+        "get_error_log",
+        "get_execution_task",
+        "get_history",
+        "get_history_slices",
+        "get_incident_logs",
+        "get_integration_inspection",
+        "get_logbook",
+        "get_marketplace_inventory",
+        "get_recorder_settings",
+        "get_script_trace",
+        "get_server_health",
+        "get_trace_snapshot",
+        "get_unregistered_entities",
+        "handoff_generation",
+        "incident_correlation",
+        "inspect_governance_record",
+        "list_areas",
+        "list_automation_traces",
+        "list_automations",
+        "list_blueprints",
+        "list_capabilities",
+        "list_change_plans",
+        "list_dashboards",
+        "list_devices",
+        "list_entity_registry",
+        "list_execution_tasks",
+        "list_script_traces",
+        "list_services",
+        "list_trace_snapshots",
+        "reload_domain",
+        "render_template",
+        "reverify_configuration_task",
+        "rollback_change",
+        "run_held_read_canary",
+        "search_entities",
+        "search_services",
+        "server_info",
+        "set_automation_trace_watch",
+        "upsert_automation",
+    }
+)
+PREVIOUS_RELEASE_RETIRED_DELEGATED_READS: frozenset[str] = frozenset(
+    {"ha_get_hacs_info"}
+)
+# The reads that tree delegates for 8.5.0: its reviewed read routes less the
+# retired one (27). Any other upstream version has no reviewed expectation for
+# this release and fails closed.
+PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
+    MappingProxyType(
+        {
+            "8.5.0": frozenset(
+                {
+                "ha_config_get_automation",
+                "ha_config_get_calendar_events",
+                "ha_config_get_category",
+                "ha_config_get_label",
+                "ha_config_get_scene",
+                "ha_config_get_script",
+                "ha_config_list_dashboard_resources",
+                "ha_config_list_groups",
+                "ha_config_list_helpers",
+                "ha_eval_template",
+                "ha_get_app",
+                "ha_get_automation_traces",
+                "ha_get_blueprint",
+                "ha_get_device",
+                "ha_get_entity",
+                "ha_get_entity_exposure",
                 "ha_get_history",
                 "ha_get_integration",
                 "ha_get_overview",
@@ -278,6 +419,16 @@ def engineering_expectation(
             BETA6_RETIRED_DELEGATED_READS,
             BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION,
         )
+    if (
+        isinstance(reported_version, str)
+        and reported_version == PREVIOUS_RELEASE_ENGINEERING_VERSION
+    ):
+        return EngineeringExpectation(
+            PREVIOUS_RELEASE_ENGINEERING_VERSION,
+            PREVIOUS_RELEASE_STATIC_TOOL_NAMES,
+            PREVIOUS_RELEASE_RETIRED_DELEGATED_READS,
+            PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION,
+        )
     raise AcceptanceFailure(
         "The Engineering image reported an unreviewed Engineering version.",
         diagnostics={
@@ -287,7 +438,11 @@ def engineering_expectation(
                 else type(reported_version).__name__
             ),
             "reviewed_engineering_versions": sorted(
-                {SERVER_VERSION, BETA6_ENGINEERING_VERSION}
+                {
+                    SERVER_VERSION,
+                    BETA6_ENGINEERING_VERSION,
+                    PREVIOUS_RELEASE_ENGINEERING_VERSION,
+                }
             ),
         },
     )
@@ -303,7 +458,7 @@ def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[
     }
 # Releases whose exact evidence carries the app-tool transition (no
 # ha_get_addon) and held operational backup/lifecycle providers.
-APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0"})
+APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"})
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -395,6 +550,16 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
     # HAMCP-319: the reviewed 9.1.0 policy reclassifies ha_get_hacs_info from
     # automatic_read to unsupported; every other count equals 8.5.0.
     "9.1.0": {
+        "automatic_read": 27,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 10,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 2,
+    },
+    # HAMCP-351: the reviewed 9.1.2 policy keeps every 9.1.0 disposition.
+    "9.1.2": {
         "automatic_read": 27,
         "held_for_canary": 1,
         "mixed_or_requires_wrapper": 10,
@@ -657,6 +822,13 @@ DELEGATED_READ_CALL_OVERRIDES_BY_VERSION: dict[str, dict[str, dict[str, Any]]] =
             "file": "SKILL.md",
         },
     },
+    # HAMCP-351: 9.1.2 keeps the 9.1.0 skill-guide tiers.
+    "9.1.2": {
+        "ha_get_skill_guide": {
+            "skill": "home-assistant-best-practices",
+            "file": "SKILL.md",
+        },
+    },
 }
 UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "source": "installed",
@@ -748,6 +920,8 @@ EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
     "invalid_search": {
         # HAMCP-319: reviewed capture ha-mcp-9.1.0.json error_shapes.
         "9.1.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+        # HAMCP-351: reviewed capture ha-mcp-9.1.2.json error_shapes.
+        "9.1.2": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.6.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
@@ -823,13 +997,13 @@ def upstream_wire_arguments(
 ) -> dict[str, Any]:
     """Direct-upstream arguments for one exact release.
 
-    Engineering keeps the shipped 8.5 public schema for 9.1.0 and rebuilds the
-    exact 9.1 wire arguments through the compiled adapter (HAMCP-319 section
-    7). A direct upstream probe of 9.1.0 sends those same wire arguments; every
+    Engineering keeps the shipped 8.5 public schema for 9.1.0 and 9.1.2 and
+    rebuilds the exact 9.1 wire arguments through the compiled adapter (HAMCP-319
+    section 7; HAMCP-351). A direct upstream probe of a 9.1 release sends those same wire arguments; every
     other release takes the public arguments unchanged.
     """
 
-    if version != upstream_reads_9_1.VERSION:
+    if version not in upstream_reads_9_1.RELEASES:
         return dict(arguments)
     release = load_reviewed_upstream_release_registry().by_version[version]
     return upstream_reads_9_1.read_arguments(release.policy.by_name[tool], arguments)
@@ -1562,7 +1736,8 @@ async def inspect_engineering(
             # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
             # the gateway withholds them on every release, never aliased, delegated
             # or dispatched, whether or not a native route is registered. The retired
-            # set is the one of the image under test (empty for 2.4.2-beta.6).
+            # set is the one of the image under test (empty for 2.4.2-beta.6,
+            # the HAMCP-290 set for 2.4.2-beta.7).
             retired = retired_exposed_names(policy, expectation.retired_upstream)
             automatic -= retired
             if expectation.delegated_reads_by_upstream_version is not None:
@@ -1718,7 +1893,7 @@ async def inspect_engineering(
                         in (value.get("warnings") or [])
                     )
                     visible_scope_only = (
-                        expected_upstream_version == upstream_reads_9_1.VERSION
+                        expected_upstream_version in upstream_reads_9_1.RELEASES
                     )
                     if visible_scope_only:
                         # HAMCP-319 design F3: 9.1.0 hides filtered entities
@@ -2075,7 +2250,7 @@ async def inspect_engineering(
                         for item in calls.values()
                         if item.get("completeness") == "partial"
                     )
-                    if expected_upstream_version == upstream_reads_9_1.VERSION
+                    if expected_upstream_version in upstream_reads_9_1.RELEASES
                     else int(partial_search_enabled)
                 ),
                 "partial delegated-read accounting mismatch",

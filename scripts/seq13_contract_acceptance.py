@@ -52,8 +52,17 @@ NOVEMBER_DORMANT = frozenset({"core.config_entry_helper_options_operation",
                               # HAMCP-071 scene configuration (seq 16 signing batch).
                               "core.scene_configuration_operation"})
 # HAMCP-311: compiled and signed-only, in no predecessor and no signing batch yet.
-# HAMCP-311 helper value; HAMCP-290 Marketplace read (signed after 2.5).
-SIGNED_ONLY_DORMANT = frozenset({"core.typed_helper_value_operation", "core.marketplace_read"})
+# HAMCP-311 helper value; HAMCP-290 Marketplace read; HAMCP-134 security
+# metadata read (signed after 2.5).
+# HAMCP-297 signed-only device configuration (no signing batch yet).
+# HAMCP-329/298: the created-object profiles join the seq-18 signing (design #395).
+# HAMCP-231 Thread/Matter topology read (no signing batch yet).
+SIGNED_ONLY_DORMANT = frozenset({"core.typed_helper_value_operation", "core.marketplace_read",
+                                 "core.security_metadata_read",
+                                 "core.device_configuration_entity_operation",
+                                 "core.scene_create_delete_operation",
+                                 "core.created_helper_delete_operation",
+                                 "core.thread_matter_topology_read"})
 ENTITY_GET, ENTITY_UPDATE = "config/entity_registry/get", "config/entity_registry/update"
 LABEL_LIST = "config/label_registry/list"
 LABEL_CREATE, LABEL_UPDATE = "config/label_registry/create", "config/label_registry/update"
@@ -110,6 +119,22 @@ ASSIGN = {"name": "HAMCP165 Assign"}
 ASSIGN_ID = "hamcp165_assign"
 ABSENT = "input_boolean.hamcp069b_absent"
 ASSISTANT = "conversation"
+# Every command the lanes' raw client sends over its websocket, one entry per
+# shape (the notation is RawWebSocket's). Nothing else is sent.
+RAW_COMMANDS = (
+    {"type": ENTITY_GET, "entity_id": str},
+    {"type": REGISTRY_LIST},
+    {"type": LABEL_LIST},
+    {"type": "input_boolean/list"},
+    {"type": "config_entries/get"},
+    {"type": "input_boolean/create", "name": re.compile("Seq13 Lane [0-9a-f]{8}")},
+    # Raw drift between a plan and its apply, and the config-entry entity's precondition.
+    {"type": LABEL_UPDATE, "label_id": CANARY_ID, "description": "Seq-13 raw drift"},
+    {"type": ENTITY_UPDATE, "entity_id": str, "name": "Seq13 Raw Drift"},
+    {"type": ENTITY_UPDATE, "entity_id": str, "disabled_by": "user"},
+    {"type": "input_boolean/delete", "input_boolean_id": str},
+    {"type": "config/label_registry/delete", "label_id": str},
+)
 
 
 def enabled():
@@ -258,6 +283,8 @@ class LaneRaw(RawWebSocket):
     Engineering never sends these. Only the flow, one flow step and one owned
     entry's deletion are reachable, and only on a loopback Core.
     """
+
+    commands = RAW_COMMANDS
 
     def __init__(self, configured):
         super().__init__(configured)

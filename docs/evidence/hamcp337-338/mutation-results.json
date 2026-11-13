@@ -1,0 +1,221 @@
+{
+  "head": "e26e6ae8c9cf21cad4b75682f9d55bb3137a7b0a",
+  "reviewed_head": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+  "python": "3.13.5",
+  "regressions": [
+    {
+      "id": 1,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "TypedNativeRowPlanningTests.test_typed_lock_and_cover_rows_plan_elevated_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_typed_row_matrix_for_the_owner_directed_domains",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_conditional_and_entity_filter_rows_are_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_buttons_header_and_footer_toggle_every_chip",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_toggle_group_card_targets_each_entity",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_area_controls_feature_is_classified_from_its_domains",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_alarm_panel_card_renders_arm_and_disarm_controls",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_service_rows_and_elements_are_classified_by_service",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "F1",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "NativeControlShapeTests.test_tile_icon_gestures_are_action_keys",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "F2",
+      "revision": "fc88e858ad2b1b243fb15a23774887bd219d2fc8",
+      "test": "RiskAnalysisRefusalTests.test_digit_only_mapping_key_is_not_echoed_as_an_index",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "mutants": [
+    {
+      "id": 1,
+      "finding": "F1",
+      "name": "typed rows are skipped again (the reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "TypedNativeRowPlanningTests.test_typed_lock_and_cover_rows_plan_elevated_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 2,
+      "finding": "F1",
+      "name": "lock-entity and cover-entity rows are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "TypedNativeRowPlanningTests.test_typed_lock_and_cover_rows_plan_elevated_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 3,
+      "finding": "F1",
+      "name": "toggle-entity rows are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "TypedNativeRowPlanningTests.test_typed_lock_and_cover_rows_plan_elevated_review",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 4,
+      "finding": "F1",
+      "name": "a conditional row's wrapped row is not unwrapped",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_conditional_and_entity_filter_rows_are_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 5,
+      "finding": "F1",
+      "name": "entity-filter rows are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_conditional_and_entity_filter_rows_are_classified",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 6,
+      "finding": "F1",
+      "name": "buttons header/footer chips are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_buttons_header_and_footer_toggle_every_chip",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 7,
+      "finding": "F1",
+      "name": "toggle-group cards are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_toggle_group_card_targets_each_entity",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 8,
+      "finding": "F1",
+      "name": "area-controls defaults omit the cover classes",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_area_controls_feature_is_classified_from_its_domains",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 9,
+      "finding": "F1",
+      "name": "the alarm-panel card is display-only again",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_alarm_panel_card_renders_arm_and_disarm_controls",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 10,
+      "finding": "F1",
+      "name": "service rows and elements are not classified",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_service_rows_and_elements_are_classified_by_service",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 11,
+      "finding": "F1",
+      "name": "tile icon gestures are not action keys",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "NativeControlShapeTests.test_tile_icon_gestures_are_action_keys",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 12,
+      "finding": "F2",
+      "name": "the walk trusts token spelling instead of the document (reviewed behavior)",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "RiskAnalysisRefusalTests.test_digit_only_mapping_key_is_not_echoed_as_an_index",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 13,
+      "finding": "F2",
+      "name": "non-canonical index spellings are kept",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StructuralCardPathTests.test_card_path_keeps_only_proven_list_positions",
+      "classification": "assertion",
+      "exit_code": 1
+    },
+    {
+      "id": 14,
+      "finding": "F2",
+      "name": "wrapper tokens are kept for non-object values",
+      "file": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py",
+      "test": "StructuralCardPathTests.test_wrappers_are_kept_only_for_object_values",
+      "classification": "assertion",
+      "exit_code": 1
+    }
+  ],
+  "control": {
+    "name": "control (unmutated corrected copy, whole module)",
+    "classification": "pass",
+    "exit_code": 0,
+    "ran": "Ran 45 tests in 24.428s"
+  }
+}

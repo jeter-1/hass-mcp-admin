@@ -404,8 +404,8 @@ class BindingNegativeTests(Harness):
 
     def test_typed_wrong_provider_contract_duplicate_or_extra_dispatch_fails(self):
         breaks = {
-            "provider": ("upstream_read_gateway", "reviewed 9.1.0 provider"),
-            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.1.0 provider"),
+            "provider": ("upstream_read_gateway", "reviewed 9.1.2 provider"),
+            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.1.2 provider"),
             "provider_attempt_count": (2, "single recorded attempt"),
             "upstream_dispatches": (2, "exactly one ha_call_service"),
             "duplicate_dispatches": (1, "duplicate request"),
@@ -696,7 +696,7 @@ ROLLBACK_CASES = STAGE["rollback"].cases
 
 
 class SideBySideStageTests(Harness):
-    """Stage A, the beta.6 rollback and stage A again, each on the 8.5.0 peer's legacy value."""
+    """Stage A, the beta.7 rollback and stage A again, each on the 8.5.0 peer's legacy value."""
 
     def sbs(self, **changes) -> dict:
         return self.pipeline(self.good(SBS, **changes), configuration=SBS)
@@ -723,12 +723,12 @@ class SideBySideStageTests(Harness):
         self.assertEqual(result["gate"]["errors"], [])
         self.assertEqual(set(result["gate"]["acceptance"].values()), {"ACCEPTED"})
 
-    def test_stage_table_covers_stage_a_beta6_rollback_and_stage_a_again(self):
+    def test_stage_table_covers_stage_a_previous_release_rollback_and_stage_a_again(self):
         stages = governed.STAGES_BY_CONFIGURATION[SBS]
         self.assertEqual([s.key for s in stages], ["stage_a", "rollback", "stage_a_again"])
         self.assertEqual([s.rollback for s in stages], [False, True, False])
         self.assertTrue(all(s.upstream_version == "8.5.0" and s.endpoint_form == "legacy" for s in stages))
-        self.assertEqual(governed.ROLLBACK_VERSION, "2.4.2-beta.6")
+        self.assertEqual(governed.ROLLBACK_VERSION, "2.4.2-beta.7")
         plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, "x", self.base, "governed91-1-amd64",
                              configuration=SBS)
         self.assertEqual(governed.stage_image(plan, STAGE["rollback"]), governed.runners.ROLLBACK_ENGINEERING_IMAGE)
@@ -782,14 +782,14 @@ class SideBySideStageTests(Harness):
                 try:
                     result = self.sbs_break(stage.dashboard_case,
                                             no_guide(self.core_version, stage.dashboard_case,
-                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"]))
+                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.2"]))
                     self.assert_rejected(result, stage.dashboard_case, "guide read arguments")
                 finally:
                     self.tearDown()
             with self.subTest(stage=stage.key, kind="contract"):
                 self.setUp()
                 try:
-                    specs = ev.typed_specs(self.core_version, "9.1.0")
+                    specs = ev.typed_specs(self.core_version, "9.1.2")
                     result = self.sbs_break(stage.typed_case, rebuild(stage.typed_case, specs, self.core_version))
                     self.assert_rejected(result, stage.typed_case, "reviewed 8.5.0 provider")
                 finally:
@@ -803,7 +803,7 @@ class SideBySideStageTests(Harness):
         self.setUp()
         result = self.pipeline(self.good(typed=rebuild(TYPED, ev.typed_specs(self.core_version, "8.5.0"),
                                                        self.core_version)))
-        self.assert_rejected(result, TYPED, "reviewed 9.1.0 provider")
+        self.assert_rejected(result, TYPED, "reviewed 9.1.2 provider")
 
     def test_a_release_without_a_reviewed_guide_read_is_not_accepted(self):
         # Neither an unknown release nor an empty compiled read falls back to another release's guide read.
@@ -827,12 +827,12 @@ class SideBySideStageTests(Harness):
         ident = mutate(ident)
         return self.sbs(identities={stage: ident})
 
-    def test_rollback_stage_must_run_the_pinned_beta6_release_with_verified_identity(self):
+    def test_rollback_stage_must_run_the_pinned_previous_release_with_verified_identity(self):
         breaks = {
             "lane image instead": (lambda i: dict(i, engineering_image=governed.LANE_IMAGE),
-                                   "did not run the pinned 2.4.2-beta.6"),
+                                   "did not run the pinned 2.4.2-beta.7"),
             "lane version instead": (lambda i: dict(i, engineering_version=ev.ENGINEERING_VERSION),
-                                     "did not run the pinned 2.4.2-beta.6"),
+                                     "did not run the pinned 2.4.2-beta.7"),
             "identity missing": (lambda i: {k: v for k, v in i.items() if k != "rollback_identity"},
                                  "rollback identity: rollback_identity_not_verified"),
             "identity not passed": (lambda i: dict(i, rollback_identity=dict(i["rollback_identity"],
@@ -855,9 +855,9 @@ class SideBySideStageTests(Harness):
     def test_current_build_stages_must_run_the_lane_image_at_the_expected_version(self):
         for stage in ("stage_a", "stage_a_again"):
             breaks = {
-                "beta6 image": (lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE),
+                "previous release image": (lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE),
                                 "did not run the lane-built Engineering image"),
-                "beta6 version": (lambda i: dict(i, engineering_version=governed.ROLLBACK_VERSION),
+                "previous release version": (lambda i: dict(i, engineering_version=governed.ROLLBACK_VERSION),
                                   "not the lane build's expected version"),
                 "other version": (lambda i: dict(i, engineering_version="2.4.2-beta.5"),
                                   "not the lane build's expected version"),
@@ -877,7 +877,7 @@ class SideBySideStageTests(Harness):
             "missing": (lambda i: None, "stage identity was not recorded"),
             "other stage": (lambda i: dict(i, key="91_only" if i["key"] != "91_only" else "stage_a"),
                             "evidence belongs to another stage"),
-            "9.1 peer": (lambda i: dict(i, upstream_version="9.1.0"), "stage peer is not ha-mcp 8.5.0"),
+            "9.1 peer": (lambda i: dict(i, upstream_version="9.1.2"), "stage peer is not ha-mcp 8.5.0"),
             "strict endpoint": (lambda i: dict(i, endpoint_path=governed.STRICT_PATH),
                                 "stage endpoint is not the legacy value"),
             "other architecture": (lambda i: dict(i, architecture="arm64"), "stage architecture"),
@@ -894,7 +894,7 @@ class SideBySideStageTests(Harness):
     def test_91_only_identity_must_name_the_strict_9_1_stage(self):
         for label, mutate, fragment in (
                 ("legacy endpoint", lambda i: dict(i, endpoint_path=governed.SECRET_PATH), "strict_full value"),
-                ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.1.0"),
+                ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.1.2"),
                 ("rollback image", lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE), "lane-built")):
             with self.subTest(case=label):
                 self.setUp()
@@ -994,7 +994,7 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         sw = support_window()
         matrix = sw.admission_matrix(sw.load(ROOT), registry_matrix())
         typed = __import__("exact_image_admission_91_typed")
-        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.1.0")):
+        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.1.2")):
             row = next(r for r in matrix["include"] if r["configuration"] == configuration)
             peer = governed.select_peer(row["peers"], configuration, "amd64", typed.reviewed_release)
             self.assertEqual((peer["role"], peer["version"]), (role, version))
@@ -1014,9 +1014,9 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         from ha_mcp_engineering.power.contracts import POWER_SEMANTIC_CONTRACTS
         self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"], dict(client.BEST_PRACTICES_GUIDE_ARGUMENTS))
         self.assertNotIn(("8.5.0", governed.GUIDE_TOOL), client._BEST_PRACTICES_ARGUMENT_REWRITES)
-        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.0"],
-                         dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.1.0", governed.GUIDE_TOOL)]))
-        for version in ("8.5.0", "9.1.0"):
+        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.1.2"],
+                         dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.1.2", governed.GUIDE_TOOL)]))
+        for version in ("8.5.0", "9.1.2"):
             self.assertEqual(governed.PROVIDER_CONTRACTS[version], {
                 "control_power": POWER_SEMANTIC_CONTRACTS[version], "control_fan": FAN_SEMANTIC_CONTRACTS[version],
                 "control_helper": HELPER_SEMANTIC_CONTRACTS[version]})
@@ -1037,7 +1037,7 @@ class SideBySideSourceBindingTests(unittest.TestCase):
             "jobs"]["exact-image-admission-lanes"]["steps"]
         names = [str(s.get("name", "")) for s in steps]
         index = names.index("Cases side-by-side governed dashboard and public typed controls "
-                            "(stage A, beta.6 rollback, stage A again)")
+                            "(stage A, beta.7 rollback, stage A again)")
         step = steps[index]
         self.assertGreater(index, names.index("Case side-by-side stage A again, current build with 8.5 on the "
                                               "legacy value"))
@@ -1601,7 +1601,7 @@ class ContradictoryEnvelopeFlowTests(FlowHarness):
                         self.tearDown()
 
     # Codex's ten error-bearing variants: {task, config, both, plan_status} dashboard and the typed
-    # duplicate, each on 9.1 and the beta.6 rollback, with every contradictory field.
+    # duplicate, each on 9.1 and the beta.7 rollback, with every contradictory field.
     def test_contradictory_dashboard_task_read_not_accepted(self):
         self.dashboard_variant("task")
 
@@ -1841,7 +1841,7 @@ class StageHealthTests(Harness):
     def test_errored_health_read_on_the_current_9_1_stage_is_not_accepted(self):
         self.assert_health_refused("91_only", "91_only")
 
-    def test_errored_health_read_on_the_beta6_rollback_stage_is_not_accepted(self):
+    def test_errored_health_read_on_the_previous_release_rollback_stage_is_not_accepted(self):
         self.assert_health_refused(SBS, "rollback")
 
     def test_errored_health_read_on_stage_a_fails_only_stage_a(self):

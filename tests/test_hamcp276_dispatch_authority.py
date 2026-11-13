@@ -87,6 +87,8 @@ NOT_F3 = {
     "core.automation_baseline_metadata_read": "read",
     "core.script_trace_read": "read",
     "core.marketplace_read": "read",  # HAMCP-290: direct typed read, never an F3 plan
+    "core.security_metadata_read": "read",  # HAMCP-134: direct read, never an F3 plan
+    "core.thread_matter_topology_read": "read",  # HAMCP-231: direct typed read, never an F3 plan
     "core.template_semantics": "planning",
     "core.configuration_validation": "planning",
     "core.dependency_helper_planning": "planning",
@@ -96,6 +98,8 @@ NOT_F3 = {
     "core.typed_fan_operation": "direct_typed_tool",
     "core.typed_power_operation": "direct_typed_tool",
     "core.typed_helper_value_operation": "direct_typed_tool",
+    # HAMCP-297: control_device_configuration is a direct typed tool.
+    "core.device_configuration_entity_operation": "direct_typed_tool",
 }
 
 
@@ -622,10 +626,11 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
     def test_activated_identities_and_counts(self):
         health = self.runtime.registry.health()
         self.assertEqual(health["activated_capability_count"], len(self.entries))
-        self.assertEqual(len(self.entries), 25)
-        # 18 configuration adapters, one shared operational adapter, one
+        self.assertEqual(len(self.entries), 29)
+        # 22 configuration adapters (HAMCP-329/298 adds scene create and the
+        # three created-object deletes), one shared operational adapter, one
         # dashboard adapter.
-        self.assertEqual(health["registered_adapter_count"], 20)
+        self.assertEqual(health["registered_adapter_count"], 24)
 
     def test_activated_set_matches_compiled_profiles_with_justified_gaps(self):
         required = set()
@@ -641,12 +646,24 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         # Every runtime-only write profile that gates an F3 entry is activated.
         # The script trace read and the direct typed helper value tool
         # (HAMCP-311) are listed there only to keep it "compiled minus shipped".
-        # HAMCP-290: and the dormant Marketplace read.
+        # HAMCP-290: and the dormant Marketplace read.  HAMCP-134: and the
+        # dormant security metadata read.
         never_f3 = {"core.script_trace_read", "core.typed_helper_value_operation",
-                    "core.marketplace_read"}
+                    "core.marketplace_read", "core.security_metadata_read",
+                    # HAMCP-297: the direct typed device-configuration tool.
+                    "core.device_configuration_entity_operation",
+                    # HAMCP-231: and the dormant Thread/Matter topology read.
+                    "core.thread_matter_topology_read"}
         self.assertLessEqual(never_f3, F3_ENTRY_ADMISSION_PROFILES)
+        # HAMCP-329/298: gate F3 entries, but no signed entry binds them yet.
+        dormant = {"core.scene_create_delete_operation",
+                   "core.created_helper_delete_operation"}
+        self.assertLessEqual(dormant, F3_ENTRY_ADMISSION_PROFILES)
         self.assertLessEqual(F3_ENTRY_ADMISSION_PROFILES - never_f3, required)
         self.assertFalse(never_f3 & required)
+        # Their four F3 identities are registered and require them, so an
+        # unsigned profile refuses each one at the Core lease boundary.
+        self.assertLessEqual(dormant, required)
 
     async def test_admitted_identity_is_authorized_once(self):
         for entry in self.entries:

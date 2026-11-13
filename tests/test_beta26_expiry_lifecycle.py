@@ -486,6 +486,8 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             if tool.name
             not in {
                 "get_marketplace_inventory",  # HAMCP-290: additive native read
+                "get_security_metadata",  # HAMCP-134: additive native read
+                "get_thread_matter_topology",  # HAMCP-231: additive native read
                 "get_integration_inspection",
                 "get_backup_inventory",
                 "get_recorder_settings",
@@ -528,7 +530,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "run_held_read_canary",
                 "control_power",
                 "control_helper",
+                "control_device_configuration",  # + HAMCP-297
                 "control_fan",
+                "automation_reliability_batch_analysis",
             }
         }
         from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
@@ -537,11 +541,13 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
         schemas["list_capabilities"] = without_hamcp247_detail_section(
             self, schemas["list_capabilities"])
+        from hamcp294_descriptor_changes import without_hamcp294_inputs  # + HAMCP-294
+        schemas["get_logbook"] = without_hamcp294_inputs(self, schemas["get_logbook"])
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

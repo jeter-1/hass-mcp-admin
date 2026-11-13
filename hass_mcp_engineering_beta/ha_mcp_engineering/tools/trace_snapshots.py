@@ -58,8 +58,8 @@ async def capture_automation_trace(
     captured. Each run reports captured, already_captured, trace_not_retained,
     run_in_progress, over_size_bound, store_full or read_failed. Reads only
     trace/list and trace/get for the automation domain; writes only the
-    Engineering-local store (200 snapshots, 256 KiB each, 90 days; refused when
-    full). Values are sanitized before storage; a resolved !secret in a field
+    Engineering-local store (500 snapshots and 128 MiB, 256 KiB each, 90 days;
+    refused when full). Values are sanitized before storage; a resolved !secret in a field
     that is neither credential-named nor credential-shaped is not detectable.
     """
     return await _respond(
@@ -104,29 +104,44 @@ async def get_trace_snapshot(
 
 
 async def set_automation_trace_watch(
-    action: Literal["add", "remove", "list"],
+    action: Literal["add", "remove", "list", "renew"],
     automation_id: Annotated[str, Field(max_length=256)] = "",
     mode: Literal["failures", "executed"] = "failures",
     duration_hours: Annotated[int, Field(strict=True, ge=1, le=c.WATCH_MAX_HOURS)] = 24,
+    priority: Literal["high", "normal"] | None = None,
+    displace: Annotated[bool, Field(strict=True)] = False,
+    include_lapsed: Annotated[bool, Field(strict=True)] = False,
 ) -> str:
-    """Add, remove or list watched automations whose new runs are captured automatically.
+    """Add, remove, renew or list watched automations whose new runs are captured automatically.
 
-    Read-only toward Home Assistant, so no change plan or approval; every add
-    and remove is audited with the caller and every response returns the
-    current watch list. At most 10 watches, each expiring within 168 hours;
-    add on a watched automation replaces its mode and expiry. Every 30 s
-    Engineering lists each watched automation's traces and captures new
+    Read-only toward Home Assistant, so no change plan or approval; every
+    change is audited with the caller and every response returns the current
+    watch list, a lifecycle summary and the lapsed watches (expired, ended or
+    displaced in the last 7 days, at most 20). At most 20 watches, each
+    expiring within 168 hours; a watch is expiring_soon when its time left is
+    at most min(24 h, half its term). add on a watched automation replaces
+    its mode and expiry (and priority when given; new watches are normal).
+    add at the limit is refused, unless displace is true: then the normal
+    watch that expires soonest is ended and recorded as displaced; a high
+    watch is never displaced. renew extends a watch (automation_id "" renews
+    every watch) to at least now + duration_hours, never shortening it; a
+    named lapsed watch is reinstated with its watch_id, mode and priority and
+    a fresh baseline, and include_lapsed (only with "") reinstates lapsed
+    watches newest first while slots are free. Every 30 s Engineering lists
+    each watched automation's traces (high priority first) and captures new
     stopped runs matching the mode (failures: error, aborted, cancelled,
     failed_single, failed_max_runs, disallowed_recursion_detected or an error
     field; executed: every run except failed_conditions and not_triggered).
     Each watch keeps at most 20 snapshots and evicts only its own oldest;
-    manual snapshots are never evicted. Polling pauses while Core authority is
-    unavailable; missed runs are counted, never backfilled.
+    watch snapshots together never exceed 400 (100 MiB), and manual snapshots
+    are never evicted. Polling pauses while Core authority is unavailable; missed runs
+    are counted, never backfilled.
     """
     return await _respond(
         "set_automation_trace_watch", "Returned the automation trace watch list.",
         lambda service: service.watch(action=action, automation_id=automation_id, mode=mode,
-                                      duration_hours=duration_hours),
+                                      duration_hours=duration_hours, priority=priority,
+                                      displace=displace, include_lapsed=include_lapsed),
         [], _PARTIAL_LIST)
 
 

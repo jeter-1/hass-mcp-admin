@@ -41,6 +41,9 @@ sys.path.insert(0, str(BETA_DIR))
 from tests import test_beta_v2 as beta  # noqa: E402
 from tests.same_thread_asgi_client import SameThreadAsgiTestClient  # noqa: E402
 from tests.support.process_isolation import restore_after_class  # noqa: E402
+from tests.test_beta_observability import (  # noqa: E402
+    preserve_create_application_state,
+)
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
 from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
@@ -765,6 +768,12 @@ class ToolRefusalTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         restore_after_class(cls)
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        preserve_create_application_state(cls)
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):
                 return beta.core_snapshot(
@@ -1304,11 +1313,16 @@ HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
 # (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``),
 # and the seq-15 lane's setup, raw drift, readback and cleanup (HAMCP-232),
 # which ``LaneRaw.status`` closes to ``RAW_ROUTE`` on a loopback Core
-# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``).
+# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``),
+# and the device-configuration lane's config-entry flow start, flow continue
+# and entry reload (HAMCP-366), which ``RawRest.rest`` closes to ``RAW_REST``
+# on the pinned loopback Core (pinned in
+# tests/test_core_device_configuration_local.py ``LaneRawRouteTests``).
 HARNESS_EXEMPTIONS = frozenset({
     ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
     ("seq13_contract_acceptance.py", "self.api_url + path"),
     ("seq15_contract_acceptance.py", "self.api_url + path"),
+    ("device_configuration_contract_acceptance.py", "CORE_URL + path"),
 })
 
 

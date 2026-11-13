@@ -1521,7 +1521,7 @@ class ServeLaunchTests(unittest.IsolatedAsyncioTestCase):
         async def recovery(trigger, *, strict=False):
             events.append(f"recovery:{trigger}:{strict}")
 
-        async def upstream(_gateway):
+        async def upstream(_gateway, *, listener_started=None):
             await asyncio.Event().wait()
 
         class FakeConfig:

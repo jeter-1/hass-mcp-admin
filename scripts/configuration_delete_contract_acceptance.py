@@ -67,10 +67,21 @@ DORMANT = frozenset({CAPABILITY, "core.entity_registry_availability_operation",
                      # HAMCP-311 signed-only helper value (no signing batch yet).
                      "core.typed_helper_value_operation",
                      # HAMCP-290 dormant Marketplace read (signed after 2.5).
-                     "core.marketplace_read"})
+                     "core.marketplace_read",
+                     # HAMCP-134 dormant security metadata read (signed after 2.5).
+                     "core.security_metadata_read",
+                     # HAMCP-297 signed-only device configuration (no signing batch yet).
+                     "core.device_configuration_entity_operation",
+                     # HAMCP-329/298 dormant created-object profiles (seq 18).
+                     "core.scene_create_delete_operation", "core.created_helper_delete_operation",
+                     # HAMCP-231 dormant Thread/Matter topology read (no signing batch yet).
+                     "core.thread_matter_topology_read"})
 SHIPPED_SIGNED_COUNT = 22
 AUTHORITY_TRANSITION = [SHIPPED_SIGNED_COUNT, SHIPPED_SIGNED_COUNT + 1]
 REGISTRY_LIST = "config/entity_registry/list"
+# The one command this lane's raw websocket client sends (the notation is
+# RawWebSocket's). Nothing else is sent.
+RAW_COMMANDS = ({"type": REGISTRY_LIST},)
 SCENARIOS = ("delete_automation", "recreate_automation", "delete_script", "recreate_script",
              "protected_effect", "not_found", "stale_state")
 NOT_FOUND = "configuration_delete_target_not_found"
@@ -338,6 +349,12 @@ def state_route(entity_id):
     return rest_path("/states/{}", entity_id, kinds=("entity_id",))
 
 
+class LaneRaw(RawWebSocket):
+    """The raw websocket client, closed to this lane's one registry read."""
+
+    commands = RAW_COMMANDS
+
+
 class RawRest:
     """Lane-owned REST client for setup and independent readback.
 
@@ -560,7 +577,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
         engineering_rest = ObservedRest(HomeAssistantRestClient(configured))
         engineering_ws = HomeAssistantWebSocketClient(configured)
         rest = RawRest(configured)
-        raw = RawWebSocket(configured)
+        raw = LaneRaw(configured)
 
         def compose(runtime, name):
             """The production composition (governance/runtime.py), one service per authority."""

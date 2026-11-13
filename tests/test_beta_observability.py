@@ -74,6 +74,10 @@ def preserve_create_application_state(test):
     of each singleton it configures (container contents included), the
     capability catalog's published gateway snapshot, the FastMCP server's
     session manager, and the root logger's SDK diagnostic filter.
+
+    HAMCP-362: pass the test from ``setUp`` when a test builds the
+    application, or the class from ``setUpClass`` when the class builds it
+    once; the restore then runs as a class cleanup, after ``tearDownClass``.
     """
 
     import logging
@@ -115,6 +119,7 @@ def preserve_create_application_state(test):
         application.FAN_OPERATIONS,
         application.POWER_OPERATIONS,
         application.HELPER_VALUE_OPERATIONS,  # + HAMCP-311
+        application.DEVICE_CONFIGURATION_OPERATIONS,  # + HAMCP-297
         application.TRACE_SNAPSHOTS,
         AUTOMATION_BASELINE_CAPTURE,
         BACKUP_INVENTORY,
@@ -163,7 +168,10 @@ def preserve_create_application_state(test):
         refill(published[1], published[2])
         root.filters[:] = root_filters
 
-    test.addCleanup(restore)
+    if isinstance(test, type):
+        test.addClassCleanup(restore)
+    else:
+        test.addCleanup(restore)
 
 
 class _RestResponse:
@@ -863,7 +871,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(health["registered_tool_count"], 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]

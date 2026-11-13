@@ -145,6 +145,14 @@ _P3_TARGET_TYPES = frozenset(
         "scene_configuration",
     }
 )
+# P4 (HAMCP-329/298): a created-object delete Core refused without writing.
+# The delete adapter records ``configuration_delete_rejected`` only for a
+# received 4xx or WS ``not_found``: the scene DELETE answers 400 "Resource not
+# found" before any write (Core 2026.11 config/view.py ``delete``), and
+# ``<type>/delete`` raises ``ItemNotFound`` before the pop
+# (helpers/collection.py ``ws_delete_item``).
+CREATED_OBJECT_DELETE_REJECTED = "configuration_delete_rejected"
+_P4_TARGET_TYPES = frozenset({"scene_configuration", "input_boolean", "input_number"})
 # V9 applies to every code-owned entity registry write identity.
 ALREADY_PRESENT_CAPABILITY_IDENTITIES = frozenset(
     {
@@ -452,6 +460,10 @@ def child_facts(
                 or (
                     target_type in _P3_TARGET_TYPES
                     and PROVIDER_PERMISSION_DENIED in codes
+                )
+                or (
+                    target_type in _P4_TARGET_TYPES
+                    and CREATED_OBJECT_DELETE_REJECTED in codes
                 )
             )
         )

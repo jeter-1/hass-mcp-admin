@@ -73,6 +73,8 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
     # HAMCP-319: wire order of the exact 9.1 standalone and app captures.
     "9.1.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
+    # HAMCP-351: exact 9.1.2 advertises the same 77 names in the same order.
+    "9.1.2": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
@@ -85,8 +87,8 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
 # and the CI exact-image lanes keep the strict full-catalog comparison.
 # 9.1.0 only: the pre-existing order gate of every other release, 8.5.0
 # included, is deliberately unchanged (architect ruling 2026-11-08: outside
-# #406 scope).
-USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0"})
+# #406 scope). HAMCP-351 adds exact 9.1.2 under the same used-tool rule.
+USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0", "9.1.2"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
@@ -1400,10 +1402,11 @@ def load_upstream_tool_policy(
             or expected_source_commit != READ_SOURCE
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
-        if reads_9_1.ADAPTER in entry.argument_restrictions and (
-            not reads_9_1.is_adapter(entry)
-            or expected_version != reads_9_1.VERSION
-            or expected_source_commit != reads_9_1.SOURCE
+        named_9_1 = reads_9_1.names_adapter(entry)
+        if named_9_1 is not None and (
+            reads_9_1.adapter_release(entry) != named_9_1
+            or expected_version != named_9_1
+            or expected_source_commit != reads_9_1.RELEASES[named_9_1][1]
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
     if len(entries) != stock_tool_count:
@@ -2464,9 +2467,10 @@ def _reviewed_artifact_evidence(
     )
     addon_tools = json.loads(canonical_json(standalone_tools))
     policy_differences = []
-    # 8.6.0 and 9.1.0 publish no private ``_meta.ha_mcp.policy`` block; their
-    # exact standalone and app catalogs are byte-identical (HAMCP-319 capture).
-    if release.version not in {"8.6.0", "9.1.0"}:
+    # 8.6.0, 9.1.0 and 9.1.2 publish no private ``_meta.ha_mcp.policy`` block;
+    # their exact standalone and app catalogs are byte-identical (HAMCP-319 and
+    # HAMCP-351 captures).
+    if release.version not in {"8.6.0", "9.1.0", "9.1.2"}:
         for tool in addon_tools:
             policy_state = tool["_meta"]["ha_mcp"]["policy"]
             policy_state.update(

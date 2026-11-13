@@ -1,0 +1,21 @@
+{
+  "base": "50e127e5fd3fef0e22036082f440d29c50e91ffc",
+  "head": "005e06c089c36fea8b5b7ec8ce20809c7dbab93a",
+  "python": "3.13.5",
+  "cards": 13,
+  "variants": 884,
+  "plans_per_revision": 1768,
+  "transitions": {
+    "existing: planned -> planned": 856,
+    "existing: refused -> planned": 28,
+    "inserted: planned -> planned": 856,
+    "inserted: planned with changed classification": 221,
+    "inserted: refused -> planned": 28
+  },
+  "non_planned_reasons": {
+    "existing: base=dashboard_provider_identity_unavailable": 28,
+    "inserted: base=dashboard_provider_identity_unavailable": 28
+  },
+  "newly_refused": 0,
+  "newly_refused_examples": []
+}

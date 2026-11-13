@@ -36,5 +36,15 @@ class TraceSnapshotRuntime:
         return {"configured": True, "paused": self.service.paused,
                 "ticks": self.poller.ticks, "failed_ticks": self.poller.failed_ticks}
 
+    def watch_health(self):
+        """HAMCP-296 ``get_server_health`` block; a failure degrades only this block."""
+
+        try:
+            if self.service is None:
+                return {"configured": False, "status": "not_configured"}
+            return {**self.health(), **self.service.watch_health()}
+        except Exception:
+            return {"configured": True, "status": "unavailable"}
+
 
 TRACE_SNAPSHOTS = TraceSnapshotRuntime()

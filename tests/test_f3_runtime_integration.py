@@ -34,6 +34,8 @@ from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     LABEL_REGISTRATIONS,
     OPERATIONAL_REGISTRATIONS,
     SCENE_CONFIGURATION_REGISTRATION,
+    SCENE_CREATE_REGISTRATION,
+    CREATED_OBJECT_DELETE_REGISTRATIONS,
 )
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
     CHILD_EXECUTION_NAMESPACE,
@@ -96,6 +98,7 @@ from tests.test_2_1a_operational_backup import (  # noqa: E402
 from ha_mcp_engineering import application
 from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from tests import test_beta24_pre_rc_hardening as gateway_fixtures
+from tests.test_beta_observability import preserve_create_application_state
 from tests.test_catalog_readiness import application_gateway
 
 
@@ -1055,6 +1058,10 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     DASHBOARD_METADATA_REGISTRATION,
                     # HAMCP-071: the dormant scene configuration identity.
                     SCENE_CONFIGURATION_REGISTRATION,
+                    # HAMCP-329/298: the dormant scene create identity and the
+                    # three dormant created-object delete identities.
+                    SCENE_CREATE_REGISTRATION,
+                    *CREATED_OBJECT_DELETE_REGISTRATIONS,
                 )
             },
         )
@@ -1062,8 +1069,9 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         # refuses until a signed registry admits the delete profile.
         # +2 HAMCP-165 label identities, +2 HAMCP-232/145 dormant identities,
         # +1 HAMCP-106 dormant dashboard metadata identity,
-        # +1 HAMCP-071 dormant scene configuration identity
-        self.assertEqual(len(identities), 25)
+        # +1 HAMCP-071 dormant scene configuration identity,
+        # +4 HAMCP-329/298 dormant scene create and created-object deletes
+        self.assertEqual(len(identities), 29)
         # One full dashboard update; HAMCP-106 adds only the metadata update.
         self.assertEqual(
             sorted(item for item in identities if "dashboard" in item),
@@ -1075,8 +1083,8 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
         # +2 HAMCP-165, +2 HAMCP-155, +2 HAMCP-232/145, +1 HAMCP-106,
-        # +1 HAMCP-071
-        self.assertEqual(health["activated_capability_count"], 25)
+        # +1 HAMCP-071, +4 HAMCP-329/298 (registered, dormant until admitted)
+        self.assertEqual(health["activated_capability_count"], 29)
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)
@@ -1461,6 +1469,12 @@ class F3BackupActivationTests(_OperationalActivationBase):
 
 class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # HAMCP-362: application_gateway() runs create_application() with
+        # most singletons replaced, but the real TRACE_SNAPSHOTS, the
+        # read-only inventory and analysis services and the root logger's SDK
+        # filter are configured in place and outlived this module. No later
+        # test is known to fail on that residue; the restore keeps it so.
+        preserve_create_application_state(self)
         from tests import test_f3_orphan_child_recovery as history_fixtures
         self.fixture = history_fixtures.OrphanChildRecoveryTests()
         await self.fixture.asyncSetUp()
@@ -1470,8 +1484,9 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.fixture.asyncTearDown()
 
-    async def _request(self, path='/ready', *, reconciled=True):
-        gateway, app = application_gateway(self.runtime, reconciled=reconciled)
+    async def _request(self, path='/ready', *, reconciled=True, deadline_elapsed=False):
+        gateway, app = application_gateway(
+            self.runtime, reconciled=reconciled, deadline_elapsed=deadline_elapsed)
         with patch.object(application, 'GOVERNANCE', gateway._test_governance):
             status, body = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, path)
         return status, json.loads(body), app.calls
@@ -1739,6 +1754,18 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         status, state, calls = await self._request(reconciled=False)
         self.assertEqual((status, calls), (503, 0))
         self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertFalse(state['accepting_mcp_requests'])
+        # HAMCP-350 (inverted): once the bounded startup wait has elapsed the
+        # authenticated endpoint serves the native catalog while /ready stays
+        # pending until the first ha-mcp reconcile returns.
+        status, state, calls = await self._request(reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (503, 0))
+        self.assertEqual(state['status'], 'initial_reconciliation_pending')
+        self.assertTrue(state['initial_reconciliation_deadline_elapsed'])
+        self.assertTrue(state['accepting_mcp_requests'])
+        status, _, calls = await self._request(
+            f'/{gateway_fixtures.SECRET}/mcp', reconciled=False, deadline_elapsed=True)
+        self.assertEqual((status, calls), (200, 1))
 
 
     async def test_projection_failure_requires_that_projection_to_succeed(self):

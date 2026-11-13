@@ -26,6 +26,7 @@ from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
 from .helper_value.service import request_summary as _helper_value_request_summary
+from .device_configuration.service import request_summary as _device_configuration_request_summary
 from .ha_core_readmission.routes import (
     CORE_REQUIREMENT_UNMAPPED,
     CORE_ROUTE_DELEGATED,
@@ -34,6 +35,7 @@ from .ha_core_readmission.routes import (
     AVAILABILITY_EXPOSURE_OPERATIONS,
     AVAILABILITY_EXPOSURE_TOOL,
     PENDING_ADMISSION_TOOLS,
+    pending_admission_selection,
     StaticToolTargetRefused,
     static_tool_core_route,
     static_tool_target,
@@ -202,11 +204,18 @@ def _trace_snapshot_audit_parameters(tool_name, parameters, known_secrets=()):
                      cursor_present=bool(parameters.get("cursor")))
     else:
         action, mode = parameters.get("action"), parameters.get("mode", "failures")
+        priority = parameters.get("priority")
+        displace = parameters.get("displace", False)
+        include_lapsed = parameters.get("include_lapsed", False)
         audit.update(
             action=action if type(action) is str and action in trace_contracts.WATCH_ACTIONS else None,
             automation_id=matched("automation_id", AUTOMATION_CONFIG_ID_PATTERN),
             mode=mode if type(mode) is str and mode in trace_contracts.WATCH_MODES else None,
             duration_hours=bounded_int("duration_hours", 24, 1, trace_contracts.WATCH_MAX_HOURS),
+            priority=(priority if type(priority) is str
+                      and priority in trace_contracts.WATCH_PRIORITIES else None),
+            displace=displace if type(displace) is bool else None,
+            include_lapsed=include_lapsed if type(include_lapsed) is bool else None,
         )
     audit["identifiers_withheld"] = withheld
     audit["argument_fields"] = sorted(str(key)[:64] for key in parameters
@@ -219,7 +228,8 @@ _TRACE_SNAPSHOT_FIELDS = {
     "capture_automation_trace": frozenset({"automation_id", "run_id", "include_condition_failures", "note"}),
     "list_trace_snapshots": frozenset({"automation_id", "limit", "cursor"}),
     "get_trace_snapshot": frozenset({"snapshot_id", "cursor"}),
-    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours"}),
+    "set_automation_trace_watch": frozenset({"action", "automation_id", "mode", "duration_hours",
+                                             "priority", "displace", "include_lapsed"}),
 }
 
 
@@ -371,6 +381,10 @@ class AuthenticatedMcpGateway:
         self._initial_catalog_reconciliation_complete = not (
             self._initial_catalog_reconciliation_required
         )
+        # HAMCP-350: set once the bounded startup wait for the first ha-mcp
+        # reconcile has elapsed. It admits authenticated MCP requests (the
+        # Engineering-native catalog) but never marks the catalog reconciled.
+        self._initial_catalog_deadline_elapsed = False
         self._catalog_readiness_lock = threading.Lock()
         self._execution_readiness = execution_readiness
         self._core_runtime = core_runtime
@@ -397,9 +411,22 @@ class AuthenticatedMcpGateway:
         with self._catalog_readiness_lock:
             self._initial_catalog_reconciliation_complete = True
 
+    def mark_initial_catalog_deadline_elapsed(self) -> None:
+        """Accept MCP requests while the first reconcile keeps retrying.
+
+        HAMCP-350: the delegated catalog stays unregistered until a later
+        reconcile admits it, so a session opened now sees only the
+        Engineering-native catalog. ``/ready`` stays pending until
+        :meth:`mark_initial_catalog_reconciled`.
+        """
+
+        with self._catalog_readiness_lock:
+            self._initial_catalog_deadline_elapsed = True
+
     def catalog_readiness_state(self) -> dict[str, bool | str]:
         with self._catalog_readiness_lock:
             complete = self._initial_catalog_reconciliation_complete
+            deadline_elapsed = self._initial_catalog_deadline_elapsed
         request_ready = execution_ready = self._execution_readiness is None
         f3_status = "unavailable"
         if self._execution_readiness is not None:
@@ -416,10 +443,14 @@ class AuthenticatedMcpGateway:
         ready = complete and request_ready
         state: dict[str, bool | str] = {
             "ready": ready,
+            "accepting_mcp_requests": (
+                (complete or deadline_elapsed) and request_ready
+            ),
             "initial_reconciliation_required": (
                 self._initial_catalog_reconciliation_required
             ),
             "initial_reconciliation_complete": complete,
+            "initial_reconciliation_deadline_elapsed": deadline_elapsed,
             "status": (
                 "ready" if ready and execution_ready
                 else "ready_f3_execution_unavailable" if ready
@@ -474,7 +505,8 @@ class AuthenticatedMcpGateway:
         if self._core_runtime is None:
             return {}
         if tool_name in PENDING_ADMISSION_TOOLS:
-            selected = PENDING_ADMISSION_TOOLS[tool_name]
+            # HAMCP-329: a scene create reports its own create/delete profile.
+            selected = pending_admission_selection(tool_name, parameters)
         elif tool_name != AVAILABILITY_EXPOSURE_TOOL or not isinstance(
             parameters, dict
         ):
@@ -686,7 +718,7 @@ class AuthenticatedMcpGateway:
                 return await self._respond(send, status, body, request_id)
 
             readiness = self.catalog_readiness_state()
-            if not readiness["ready"]:
+            if not readiness["accepting_mcp_requests"]:
                 telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
@@ -777,6 +809,14 @@ class AuthenticatedMcpGateway:
                                 telemetry.ordinary_helper_value_binding = digest(helper_request.model_dump())
                             except ValueError:
                                 pass
+                        if tool_name == "control_device_configuration" and isinstance(raw_parameters, dict):
+                            from .device_configuration.contracts import DeviceConfigurationRequest, digest
+                            try:
+                                device_configuration_request = DeviceConfigurationRequest.parse(raw_parameters)
+                                telemetry.ordinary_device_configuration_binding = digest(
+                                    device_configuration_request.model_dump())
+                            except ValueError:
+                                pass
                         telemetry.tool_name = tool_name
                         telemetry.tool_started = time.perf_counter()
                         METRICS.record_tool_call()
@@ -819,6 +859,20 @@ class AuthenticatedMcpGateway:
                     operation="control_helper", error="InvalidHelperValueRequest",
                     error_code=telemetry.error_code,
                     message="The helper value request is invalid or not allowlisted.",
+                    retryable=False, request_id=request_id,
+                )
+                return await self._respond(
+                    send, 400, failure.to_json(self.settings.response_size_limit).encode(),
+                    request_id, b"application/json",
+                )
+
+            if (tool_name == "control_device_configuration"
+                    and telemetry.ordinary_device_configuration_binding is None):
+                telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                failure = FailureResponse(
+                    operation="control_device_configuration", error="InvalidDeviceConfigurationRequest",
+                    error_code=telemetry.error_code,
+                    message="The device-configuration request is invalid or not admitted.",
                     retryable=False, request_id=request_id,
                 )
                 return await self._respond(
@@ -1211,6 +1265,7 @@ class AuthenticatedMcpGateway:
             telemetry.ordinary_fan_binding = None
             telemetry.ordinary_power_binding = None
             telemetry.ordinary_helper_value_binding = None
+            telemetry.ordinary_device_configuration_binding = None
             if core_authority is not None:
                 # A task that escaped the request lifetime must not inherit a
                 # callback that can authorize another provider interaction.
@@ -1632,6 +1687,8 @@ class AuthenticatedMcpGateway:
                         if tool_name == "control_power"
                         else _helper_value_request_summary(telemetry)
                         if tool_name == "control_helper"
+                        else _device_configuration_request_summary(telemetry)
+                        if tool_name == "control_device_configuration"
                         else
                         {
                             **dict(telemetry.audit_context),
@@ -1664,6 +1721,7 @@ class AuthenticatedMcpGateway:
                             "capture_automation_baseline",
                             "compare_automation_baselines",
                             "dashboard_integrity_analysis",
+                            "get_security_metadata",
                             *TRACE_SNAPSHOT_TOOLS,
                         }
                         else {

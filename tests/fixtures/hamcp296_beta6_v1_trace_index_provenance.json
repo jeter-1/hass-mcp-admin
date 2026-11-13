@@ -1,0 +1,68 @@
+{
+  "boundary": "Bytes are copied verbatim from the exact beta.6 writer and must not be edited.  Current code must read this v1 store unchanged; the shipped verdicts define the HAMCP-296 downgrade boundary: index.json must never hold more than ten watches, 200 snapshot entries or 32 MiB of summed entry bytes, and lifecycle state and snapshot entries past those bounds must live in separate namespace files the shipped reader ignores.  The shipped list deletes the record files of entries the index does not name, so a downgrade loses every overflow snapshot.",
+  "compatibility_model": "hamcp296-beta6-v1-trace-index-v1",
+  "generated_at": "2026-11-07T00:00:00Z",
+  "generator": "scripts/generate_hamcp296_beta6_v1_trace_index_fixture.py",
+  "generator_command": "python scripts/generate_hamcp296_beta6_v1_trace_index_fixture.py --source-root <exact-beta6-clone> --output-dir tests/fixtures --generated-at 2026-11-07T00:00:00Z",
+  "generator_sha256": "1627a7e46880a218e48bed50cfe1678555ca34b3acaf7411360f97d31f988175",
+  "record": {
+    "automation_ids": [
+      "fixture_watch_0",
+      "fixture_watch_1",
+      "fixture_watch_2",
+      "fixture_watch_3",
+      "fixture_watch_4",
+      "fixture_watch_5",
+      "fixture_watch_6",
+      "fixture_watch_7",
+      "fixture_watch_8",
+      "fixture_watch_9"
+    ],
+    "files": {
+      "trace-snapshots-v1/.transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trace-snapshots-v1/index.json": "708fdda2ed2e16c8f32f6146aa62b26ad31a6fa50d93afbdf0a9cfe7f3cc538d",
+      "trace-snapshots-v1/records/10fdc7494da023998e37614f3cb477b8.json": "9149ba240b389915dcd539903a3ffde89f8a6170ea5a4e8648be5b0a253d4b97",
+      "trace-snapshots-v1/records/a34a5578d04d2e686cb1738e7e3a00e1.json": "ee8e6e98a6dcce03a73545db4e80e6ea2057a090b320519230ef772ae0daa365"
+    },
+    "snapshot_count": 2,
+    "watch_count": 10,
+    "watch_ids": [
+      "8dc97376ffc6bf28e43d78c9dbad4eeb",
+      "7c0741848e917f1b2eae2437aebe6d8b",
+      "79ba8088c408fb25cc252cbd7aa0abbf",
+      "292e2d5736153183f6d8aa012daf27d1",
+      "5ff91ee9d179789bfde05e66a82648f6",
+      "f9e9f16da746a8bbc59994aad500d9e2",
+      "da7d722964a28e68a54a7a122b0eb0ef",
+      "20bef7d2853a06c709d0563433416405",
+      "2b1090df1d49bbda0492144c3ec21590",
+      "1c43c35f47c1ebd84fc88f8534d798cb"
+    ]
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "af5ec8375401276f910804843c2ddb9180533c77",
+    "contracts_source_sha256": "6d097839291c68f64f827e9ca8734f11ce04a757a441bcf519d6e6fcad0ab8ff",
+    "service_source_sha256": "e275fc9e816efa8b5e5213df01cd80b3d65c2e1169ff744b19e827e63780721b",
+    "store_source_sha256": "68852b5b3a048dd0f69498c0ff943f0bba24de59ffcde990cd17cec797edbc17",
+    "tag": "v2.4.2-beta.6",
+    "writer": "tests.test_hamcp225_trace_snapshots.ServiceCase: capture(a1) then ten watch(action='add') calls on the exact source revision"
+  },
+  "verdicts": {
+    "shipped_index_bytes": 2097152,
+    "shipped_list_deletes_unnamed_record_file": true,
+    "shipped_list_ignores_unknown_namespace_files": true,
+    "shipped_list_keeps_named_record_files": true,
+    "shipped_list_leaves_sidecars_untouched": true,
+    "shipped_load_index_ignores_unknown_namespace_file": true,
+    "shipped_max_snapshots": 200,
+    "shipped_max_watches": 10,
+    "shipped_store_bytes": 33554432,
+    "shipped_validate_index_accepts_max_snapshots": true,
+    "shipped_validate_index_accepts_store_bytes": true,
+    "shipped_validate_index_accepts_ten_watches": true,
+    "shipped_validate_index_rejects_eleven_watches": "store_invalid",
+    "shipped_validate_index_rejects_max_snapshots_plus_one": "store_invalid",
+    "shipped_validate_index_rejects_store_bytes_plus_one": "store_invalid"
+  }
+}

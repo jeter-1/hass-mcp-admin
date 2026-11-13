@@ -570,7 +570,10 @@ SANITIZER_SITES = {
     ("audit_baseline/capture_provider.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("backup_inventory/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("backup_inventory/projection.py", "Projector.text", "sanitize_untrusted_data"): (1, "analysis"),
-    ("clients/logbook.py", "project", "sanitize_untrusted_data"): (1, "logbook"),
+    # HAMCP-294: record sanitization moved from project into the shared
+    # _fit used by project and project_window; read echoes a sanitized name.
+    ("clients/logbook.py", "LogbookReader.read", "sanitize_untrusted_data"): (1, "logbook"),
+    ("clients/logbook.py", "_fit", "sanitize_untrusted_data"): (1, "logbook"),
     ("dashboard_analysis/models.py", "_scalar", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/models.py", "validate_projection", "sanitize_untrusted_data"): (1, "identifier"),
     ("dashboard_analysis/provider.py", "safe_entity", "sanitize_untrusted_data"): (1, "identifier"),
@@ -623,7 +626,9 @@ SANITIZER_SITES = {
     ("integration_inspection/projection.py", "Projector.identifier", "sanitize_untrusted_data"): (1, "identifier"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._current_states", "sanitize_untrusted_data"): (1, "analysis"),
     ("integrity/provider.py", "DirectHaIntegrityProvider._entity_registry", "sanitize_untrusted_data"): (1, "analysis"),
-    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
+    # HAMCP-267: the third collect site sanitizes partition (scene, group,
+    # dashboard) references with the same keys, secrets, bound and registry.
+    ("integrity/provider.py", "DirectHaIntegrityProvider.collect", "sanitize_untrusted_data"): (3, "analysis"),
     ("logging_config.py", "JsonFormatter.format", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "log_event", "sanitize_untrusted_data"): (1, "audit"),
     ("logging_config.py", "redact_data", "sanitize_untrusted_data"): (1, "audit"),
@@ -649,6 +654,10 @@ SANITIZER_SITES = {
     ("reliability/provider.py", "DirectHaReliabilityProvider._collect_traces.fetch", "sanitize_untrusted_data"): (1, "analysis"),
     ("reliability/provider.py", "DirectHaReliabilityProvider.collect", "sanitize_untrusted_data"): (2, "analysis"),
     ("request_context.py", "request_id_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
+    # HAMCP-134: the native get_security_metadata read (direct Core metadata).
+    ("security_metadata.py", "sanitize_sections", "sanitize_untrusted_data"): (1, "analysis"),
+    # HAMCP-231: the native get_thread_matter_topology free-text screen.
+    ("thread_matter_topology.py", "_Screen.apply", "sanitize_untrusted_data"): (1, "identifier"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
     ("tools/governance.py", "_identifier_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     ("trace_normalization.py", "fetch_normalized_trace_list", "sanitize_untrusted_data"): (1, "analysis"),

@@ -459,7 +459,13 @@ class FixtureTests(unittest.TestCase):
                                          'core.dashboard_metadata_operation',
                                          'core.scene_configuration_operation',
                                          'core.typed_helper_value_operation',  # + HAMCP-311 (signed-only)
-                                         'core.marketplace_read'}]  # HAMCP-290: runtime-only, signed-only
+                                         'core.marketplace_read',  # HAMCP-290: runtime-only, signed-only
+                                         'core.security_metadata_read',  # HAMCP-134: runtime-only, signed-only
+                                         'core.device_configuration_entity_operation',  # HAMCP-297: runtime-only, signed-only
+                                         # HAMCP-329/298: dormant created-object profiles.
+                                         'core.scene_create_delete_operation',
+                                         'core.created_helper_delete_operation',
+                                         'core.thread_matter_topology_read'}]  # HAMCP-231: runtime-only, dormant
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)
 

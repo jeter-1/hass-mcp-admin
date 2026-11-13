@@ -24,7 +24,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 PROTOCOL_VERSION = "2025-03-26"
 SUPPORTED_UPSTREAM_VERSIONS = frozenset(
     {"7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0",
-     "9.1.0"}
+     "9.1.0", "9.1.2"}
 )
 
 # The current Engineering dashboard provider defaults to a 60,000-byte MCP
@@ -61,7 +61,14 @@ MAX_JSON_DEPTH = 48
 MAX_JSON_NODES = 10_000
 MAX_DIFF_PREVIEW_CHARS = 192
 MAX_DIFF_MISMATCH_PATHS = 32
+# HAMCP-337: the complete-review bound applies to introduced or changed
+# findings, the ones a reviewer must assess.  Unchanged findings elsewhere in
+# the dashboard are context and have their own larger evidence bound, so an
+# existing dashboard with many actions no longer refuses a small change.  At
+# about 0.35 KiB per private finding, 256 findings stay well inside the
+# 256 KiB artifact bound beside two 40,000-byte configurations.
 MAX_RISK_FINDINGS = 64
+MAX_RISK_EVIDENCE_FINDINGS = 256
 MAX_OBSERVABILITY_EVENTS = 128
 MAX_EVENT_CODES = 16
 MAX_TITLE_CHARS = 160

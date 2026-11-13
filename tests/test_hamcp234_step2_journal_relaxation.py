@@ -429,8 +429,20 @@ class ServedSchemaTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from support.process_isolation import restore_after_class
+
+        # HAMCP-362: taken before the import below. Importing test_beta_v2
+        # here puts hass_mcp_admin on sys.path, and a snapshot taken after it
+        # kept it there past this class.
+        restore_after_class(cls)
         import test_beta_v2 as beta
-        beta.restore_after_class(cls)
+
+        # HAMCP-362: create_application() configures the process-wide
+        # singletons in place. Unrestored, HEALTH kept this class's governance
+        # runtime after tearDownClass removed its storage directory, and a
+        # later module's get_server_health failed with
+        # change_plan_storage_error.
+        beta.preserve_create_application_state(cls)
 
         class SyntheticCoreSource:
             async def capture_core_snapshot(self):

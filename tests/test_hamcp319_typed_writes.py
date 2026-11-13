@@ -734,6 +734,14 @@ class CancellationMatrix(Harness):
         if not data['terminal'] and not_before:
             # Read-only recovery after the claim and lease expire.
             self.clock.value = datetime.fromisoformat(not_before) + timedelta(seconds=1)
+            # HAMCP-379 design ruling 2: get_execution_task is a pure read, so
+            # a read before the sweep leaves the task as it was; the 30 s
+            # sweep (recover_once) does the recovery.
+            record = service.executions.get(request.task_id)
+            await self.read_task(peer, service, request.task_id)
+            self.assertEqual(service.executions.get(request.task_id), record)
+            with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
+                await service.recover_once()
         read = await self.read_task(peer, service, request.task_id)
         replay = await self.public_call(peer, service, request)
         self.assertEqual(replay['metadata']['task_id'], request.task_id, replay)
@@ -747,6 +755,8 @@ class CancellationMatrix(Harness):
             # success, a confirmed non-send, or a pre-dispatch failure.
             self.clock.value = datetime.fromisoformat(read['data']['observation_status']['evidence_deadline']) \
                 + timedelta(seconds=1)
+            with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
+                await service.recover_once()
             read = await self.read_task(peer, service, request.task_id)
             data = read['data']
             self.assertNotEqual(data['state'], 'succeeded_verified', read)

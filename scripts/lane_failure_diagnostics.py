@@ -18,6 +18,9 @@ import traceback
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIRECTORY = Path.home() / '.local/state/hamcp-lane-failures'
 MAX_CHAIN, MAX_FRAMES, MAX_MESSAGE = 4, 8, 160
+# Explicitly integrated local lanes; any other name is recorded as 'unknown'.
+LANES = frozenset(('helper_value', 'marketplace_read', 'thread_matter_topology',
+                   'security_metadata', 'device_configuration_entity'))
 STAGES = frozenset(('image_verify', 'container_start', 'core_boot', 'auth',
                     'helper_setup', 'operation', 'readback', 'cleanup', 'admission'))
 # Code-owned identifiers only: callers cannot echo arbitrary exception metadata.
@@ -27,7 +30,7 @@ CHECKS = frozenset(('preflight', 'journal_inputs', 'cached_image_digest', 'host_
     'authority_setup', 'provider_setup', 'operation_dispatch', 'duplicate_suppression',
     'state_readback', 'value_assertions', 'recovery', 'negative_controls',
     'service_close', 'container_remove', 'network_remove', 'configuration_remove',
-    'cleanup_absence'))
+    'cleanup_absence', 'install_fixture', 'redaction_canary'))
 SAFE_MESSAGES = frozenset((
     'Local container loopback port mapping is missing or unsafe',
     'Local lane requires a dedicated non-internal bridge',
@@ -39,18 +42,32 @@ SAFE_MESSAGES = frozenset((
     'A bounded disposable Docker operation timed out',
     'A bounded disposable Docker operation failed',
     'Exact upstream liveness did not become ready',
+    'lane_redirect_refused',  # lane_session's one refusal: a fixed code carrying no user data.
+    # marketplace_read install fixture reasons (FIXTURE_REASONS); code-owned, no upstream text.
+    'github_account_connected', 'disposable_core_not_fresh', 'install_candidate_missing',
+    'warning_accept_failed', 'install_failed', 'installed_record_missing', 'more_than_one_installed',
+    'installed_record_duplicated', 'installed_record_unprojected', 'installed_record_identity_changed',
+    'installed_record_flags_changed', 'installed_record_not_default_catalog', 'installed_version_missing',
+    'installed_record_unbounded', 'installed_record_text_changed', 'secret_in_page',
+    'redaction_canary_unavailable', 'redaction_canary_leaked', 'redaction_canary_undisclosed',
+    'redaction_canary_changed_records',
+    # Fixed refusals of the lanes' own loopback clients (marketplace_read RawCore; created-object
+    # LaneRaw): code-owned, never a URL, token, id, route or payload.
+    'raw_core_url_not_pinned', 'raw_core_command_not_listed', 'lane_raw_url_not_loopback',
+    'lane_raw_request_not_listed', 'lane_fixture_not_owned',
 ))
 SAFE_TYPES = frozenset(('Exception', 'BaseException', 'RuntimeError', 'AssertionError',
     'ValueError', 'TypeError', 'KeyError', 'OSError', 'PermissionError', 'FileNotFoundError',
     'TimeoutError', 'TimeoutExpired', 'CancelledError', 'Refusal', 'HelperRefusal',
-    'ClientError', 'ClientConnectorError', 'ClientResponseError', 'ConnectionRefusedError'))
+    'ClientError', 'ClientConnectorError', 'ClientResponseError', 'ConnectionRefusedError',
+    'FixtureError'))
 _active = ContextVar('local_lane_diagnostics', default=None)
 
 
 @contextmanager
 def lane(name):
-    # Only this explicitly integrated lane is currently supported.
-    token = _active.set('helper_value' if name == 'helper_value' else 'unknown')
+    # Only explicitly integrated lanes are supported.
+    token = _active.set(name if name in LANES else 'unknown')
     try:
         yield
     finally:

@@ -1780,7 +1780,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1832,7 +1832,11 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "control_power",
                 "control_helper",
                 "control_fan",
+                "automation_reliability_batch_analysis",
                 "get_marketplace_inventory",  # HAMCP-290: additive native read
+                "get_security_metadata",  # HAMCP-134: additive native read
+                "control_device_configuration",  # HAMCP-297: additive typed control
+                "get_thread_matter_topology",  # HAMCP-231: additive native read
             },
         )
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
@@ -1840,6 +1844,9 @@ class ToolCompatibilityTests(unittest.TestCase):
             parameters = current[name].parameters
             if name == "list_capabilities":
                 parameters = without_hamcp247_detail_section(self, parameters)
+            if name == "get_logbook":  # + HAMCP-294
+                from hamcp294_descriptor_changes import without_hamcp294_inputs
+                parameters = without_hamcp294_inputs(self, parameters)
             digest = hashlib.sha256(
                 json.dumps(
                     parameters,

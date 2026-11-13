@@ -165,8 +165,12 @@ def complete_receipt(lane_key, core_version=CORE):
         "authority_transition": list(lane["authority_transition"]),
         "authority_instances": "separate_ephemeral_registries", "production_authority": False,
         "provider_identity": "synthetic_disposable_lane",
-        # HAMCP-290: core.marketplace_read is a second signed-only dormant profile.
-        "batch_health": {"compatible_count": 31, "withheld_count": 2},
+        # HAMCP-290: core.marketplace_read is a second signed-only dormant profile;
+        # HAMCP-134: core.security_metadata_read is a third;
+        # HAMCP-297: core.device_configuration_entity_operation is a fourth;
+        # HAMCP-231: core.thread_matter_topology_read is a fifth.
+        # HAMCP-329/298: + 2 dormant created-object profiles (signed-only set).
+        "batch_health": {"compatible_count": 31, "withheld_count": len(seq15.SIGNED_ONLY_DORMANT)},
         "predecessor_admission": {"route_acquired": False, "route_available": False,
                                   "service_reason_code": lane["predecessor_reason"],
                                   "ha_requests": 0, "ha_writes": 0, "control_capability_acquired": True},
@@ -438,8 +442,8 @@ class ReceiptTests(unittest.TestCase):
             lambda v: v["fixture_absence"].update(unverified=True),
             lambda v: v.update(provider_identity="supervisor"),
             lambda v: v["batch_health"].update(withheld_count=0),
-            lambda v: v["batch_health"].update(withheld_count=1),
-            lambda v: v["batch_health"].update(withheld_count=3),
+            lambda v: v["batch_health"].update(withheld_count=4),  # HAMCP-231: + thread/matter topology
+            lambda v: v["batch_health"].update(withheld_count=6),  # HAMCP-231: + thread/matter topology
             lambda v: v["batch_health"].update(compatible_count=30),
             lambda v: v.update(predecessor_capabilities_sha256="2" * 64),
             lambda v: v["predecessor_admission"].update(route_acquired=True),
@@ -862,7 +866,8 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
     """The lane's raw REST routes are closed and loopback-only."""
 
     def configured(self, host="127.0.0.1"):
-        return SimpleNamespace(websocket_url="ws://" + host + ":8123/api/websocket",
+        # The websocket URL stays pinned so that only the REST host is under test here.
+        return SimpleNamespace(websocket_url="ws://127.0.0.1:8123/api/websocket",
                                api_url="http://" + host + ":8123/api", ha_token="synthetic")
 
     def test_only_a_loopback_core_is_accepted(self):

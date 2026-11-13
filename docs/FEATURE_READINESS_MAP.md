@@ -60,27 +60,45 @@ These apply to every row and are not repeated:
 
 - **Data it must read:** stored scene configuration by config id, scene states
   and the entity registry, for an absence check on the new id and for exact
-  readback. These reads exist under `core.scene_configuration_operation`.
+  readback. The create path makes these reads under its own profile,
+  `core.scene_create_delete_operation`.
   Consumer disclosure has membership only (RCG-006).
 - **Write commands:** create a new config id with
   `POST /api/config/scene/config/<id>` (the endpoint that edits use), and
   recovery by deleting exactly that scene with
-  `DELETE /api/config/scene/config/<id>`. The scene profile covers edit
-  only. `core.configuration_delete_operation` covers automation and script
-  only (RCG-004, RCG-005). `scene.create`, `scene.apply` and activation stay
-  never-sent.
+  `DELETE /api/config/scene/config/<id>`. Both are implemented (HAMCP-329,
+  HAMCP-298) under a separate additive profile,
+  `core.scene_create_delete_operation`; the delete is reachable only as the
+  separately approved rollback of a scene Engineering created.
+  `core.scene_configuration_operation` still covers edit only and
+  `core.configuration_delete_operation` still covers automation and script
+  only. The new profile is dormant: no signed registry admits it (RCG-004,
+  RCG-005). `scene.create`, `scene.apply` and activation stay never-sent.
 - **Readback:** exact stored configuration plus registry identity. Loaded
   (runtime) state cannot be verified today (RCG-007). The disclosure
-  `scene_loaded_state_not_verified_disclosed` must carry over, the lesson
-  from Part 2's option C.
-- **Blockers:** the register records "a signed delete-profile decision"
-  pending for Josh. The create and delete contracts do not exist yet: they
-  need approved scope, implementation, independent review and merge before
-  their fingerprints can be signed in a sequence after 16. Scene edit is one
-  of the configuration families that HAMCP-271 covers.
-- **Effort:** M.
-- **Verdict:** **needs decision**, then implementation, then **needs signing**
-  in a later sequence.
+  `scene_loaded_state_not_verified_disclosed` is carried over as a required
+  check of the new profile, the lesson from Part 2's option C.
+- **Blockers:** signing only. The profile decision is recorded in
+  `docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md` (section
+  0.1, item 12: two additive profiles for Core 2026.11.0), and both contracts
+  are implemented as runtime profiles in `CORE_CREATED_OBJECT_PROFILES`
+  (`ha_core_readmission/profiles.py`), which is the authority for these
+  values:
+  - `core.scene_create_delete_operation`: profile
+    `core_scene_create_delete_operation_v1`, version 1, fingerprint
+    `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`.
+  - `core.created_helper_delete_operation` (rollback of a governed
+    `input_boolean` or `input_number` create): profile
+    `core_created_helper_delete_operation_v1`, version 1, fingerprint
+    `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4`.
+
+  Neither is admitted until its fingerprint is signed for Core 2026.11.0 in
+  registry sequence 18 (the combined 2.6 signing). Until then scene create
+  and the scene and created-helper rollback deletes are refused with
+  `pending_signed_registry_admission`.
+  Scene edit is one of the configuration families that HAMCP-271 covers.
+- **Effort:** M (implemented).
+- **Verdict:** implemented and dormant; **needs signing** in sequence 18.
 
 ### HAMCP-253: inspect, then acknowledge integrity-failed plans and manual-review tasks
 
@@ -199,6 +217,9 @@ These apply to every row and are not repeated:
 - **Effort:** S.
 - **Verdict:** **ready** for the store-consumer work, with truthful partial
   reporting.
+- **Status:** implemented in source on `release/2.6.0` (draft PR, review
+  pending). Not released or deployed. Live dashboard coverage is still not
+  promised until HAMCP-277's acceptance.
 
 ### HAMCP-270: governed plans disclose scene, group and dashboard references
 
@@ -378,8 +399,11 @@ matrix's largest helper gap is here.
     for the other config-entry helpers (RCG-042).
   - Recovery of a create is a delete: `{type}/delete` for storage
     collections (RCG-023, RCG-029, RCG-033), or config-entry removal
-    (RCG-038). This is the same signed delete-profile decision as 071
-    Part 3.
+    (RCG-038). No implemented profile covers these types: the dormant
+    `core.created_helper_delete_operation` covers only `input_boolean` and
+    `input_number`, and it is separate from the scene profile of 071
+    Part 3. A delete profile for the types above is still an owner
+    decision.
 - **Readback:** exact stored-definition readback is possible for storage
   collections. For config-flow helpers, per-type evidence must first show
   what the delegated list returns; OD-1 still restricts the options-flow
@@ -453,16 +477,19 @@ profile is omitted, every tool that depends on it becomes unavailable on
 
 ### Future sequences: new profiles, each after its feature is merged
 
-The six entries below are future candidates, not sequence-16 additions. A
-new or revised profile first needs approved scope, implemented and
-independently reviewed code, merge and build provenance, and exact contract
-evidence. Its fingerprint comes from the merged code, and it is signed in
-a later applicable sequence. Each entry stays conditional on its gate.
+None of the six entries below is a sequence-16 addition. Entries 1 and 2
+are implemented and dormant: two separate profiles whose fingerprints are
+not signed yet (registry sequence 18). Entries 3 to 6 are future
+candidates. A new or revised profile first needs approved scope,
+implemented and independently reviewed code, merge and build provenance,
+and exact contract evidence. Its fingerprint comes from the merged code,
+and it is signed in a later applicable sequence. Each entry stays
+conditional on its gate.
 
 | # | Profile (candidate) | For | Commands | Constraints | Gate before implementation |
 |---|---|---|---|---|---|
-| 1 | Scene create and delete: a new version of `core.scene_configuration_operation`, or a separate create/delete profile | 071 Part 3 | `GET` and `POST /api/config/scene/config/<id>` for a new id; `DELETE /api/config/scene/config/<id>` for recovery; entity registry list and get; state get | absence check before create; delete only of exactly the created id; `scene.create`, `scene.apply` and `scene.turn_on` never sent; stored and registry readback exact; loaded state not verified, and disclosed | Josh's delete-profile decision (register 071) |
-| 2 | Helper delete: a new version of `core.configuration_delete_operation` | helper-create recovery; 071 Part 3, if it shares the profile | `{type}/delete` for each approved storage helper type; `{type}/list` absence readback | pre-image capture; consumer disclosure; recreate rollback | owner scope (types) |
+| 1 | Scene create and delete: **implemented and dormant** (HAMCP-329, HAMCP-298), no longer a candidate. A separate profile, `core.scene_create_delete_operation` (`core_scene_create_delete_operation_v1`, version 1, fingerprint `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`); `core.scene_configuration_operation` is unchanged | 071 Part 3 | `GET` and `POST /api/config/scene/config/<id>` for a new id; `DELETE /api/config/scene/config/<id>` for recovery; entity registry list; state get | absence check before create; delete only of exactly the created id, and only as the rollback of that create; `scene.create`, `scene.apply` and `scene.turn_on` never sent; stored and registry readback exact; loaded state not verified, and disclosed | none remains before implementation. Not admitted until the fingerprint is signed for Core 2026.11.0 in registry sequence 18 |
+| 2 | Created-helper delete: **implemented and dormant** (HAMCP-298) for `input_boolean` and `input_number`, no longer a candidate for those two types. A separate profile, `core.created_helper_delete_operation` (`core_created_helper_delete_operation_v1`, version 1, fingerprint `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4`); `core.configuration_delete_operation` is unchanged and the scene profile is not shared | rollback of a governed `input_boolean` or `input_number` create | `input_boolean/delete` and `input_number/delete`; `input_boolean/list` and `input_number/list` absence readback; entity registry list; state get | only a helper Engineering created, matched to its creation-time identity; reachable only as the separately approved rollback of that create; every other type's delete never sent; absence readback of storage, registry and state | none remains before implementation for these two types. Not admitted until the fingerprint is signed for Core 2026.11.0 in registry sequence 18. Delete of any other helper type, or of a helper Engineering did not create, stays a future candidate: owner scope (types) |
 | 3 | Storage-helper create and update: a new version of `core.governed_configuration_operation` | helper-create candidate | `{type}/create` and `{type}/update` for each approved type (input_select, input_text, input_datetime, input_button, counter, timer, schedule) | exact definition readback through `{type}/list`; no state writes; input_select `set_options` stays never-sent | owner scope (types) |
 | 4 | Config-flow helper create | helper-create candidate (template, filter, statistics) | `config_entries/flow` start and single-step submit for the approved helper domains; config-entry removal for recovery | single exact domain per plan; no options reads beyond OD-1 | owner scope; OD-1 position; HAMCP-276 landed |
 | 5 | Read-only options-flow read | helper readability, only for fields the delegated helper list does not return (RCG-034, RCG-040, RCG-044) | `config_entries/options/flow` start and abort for one exact entry; no submit reachable | separate audit event; bounded redaction; negative tests proving submit is unreachable | per-type evidence that the delegated list is insufficient; reversal of HAMCP-232 OD-1 (owner decision). Not HAMCP-264 scope. |
@@ -504,11 +531,17 @@ This is a recommendation for the architect and Josh, not a decision.
 6. **HAMCP-253** (M, ready). It is Engineering-local, with no upstream
    dependency, and it removes manual triage of refused records. Its
    persistence boundary needs a security section.
-7. **Owner decisions for future profiles.** Josh decides on the
-   delete-profile question (071 Part 3) and the helper-create scope.
-8. **HAMCP-071 Part 3**, then the **helper-create candidate**: implement,
-   review and merge, then sign their new profiles in a sequence after 16.
-   They share the delete profile.
+7. **Owner decisions for future profiles.** Scene create and delete (071
+   Part 3) and delete of a created `input_boolean` or `input_number` are
+   implemented and dormant as two separate profiles (entries 1 and 2 of the
+   table above), so no delete-profile decision remains for them. Josh still
+   decides the helper-create scope, including a delete profile for the
+   helper types those two profiles do not cover.
+8. **HAMCP-071 Part 3** is implemented and dormant: its profile and the
+   created-helper delete profile wait for signing in registry sequence 18.
+   Then the **helper-create candidate**: implement, review and merge, then
+   sign its new profiles in a later sequence. It shares neither dormant
+   profile.
 9. **HAMCP-149** fixture (S), whenever a slot is free. It is
    non-executing.
 10. Hold for owner decisions or feasibility: 262, 109, 134, 231 and 156.

@@ -780,11 +780,19 @@ DEFINITION_YAML_PATHS = frozenset({
     "homeassistant.packages", "homeassistant",
 })
 
-# Each reader purpose fixes its own path set and audit event, so one purpose
-# can never read another's paths.
+# HAMCP-264: the only configuration.yaml paths the dependency index reader
+# may request: the ``template:`` and ``script:`` definitions; the two
+# ``homeassistant`` paths only classify and read inline packages.
+DEPENDENCY_YAML_PATHS = frozenset({
+    "template", "script", "homeassistant.packages", "homeassistant",
+})
+
+# Each reader purpose fixes its own path set and audit event. The sets overlap
+# (both ``homeassistant`` paths, ``template``); a reader refuses paths outside its own.
 YAML_READER_PURPOSES = MappingProxyType({
     "recorder_settings": (YAML_CONFIG_PATHS, "recorder_settings_yaml_read"),
     "configuration_definitions": (DEFINITION_YAML_PATHS, "configuration_definitions_yaml_read"),
+    "dependency_index": (DEPENDENCY_YAML_PATHS, "dependency_index_yaml_read"),
 })
 
 
@@ -795,6 +803,9 @@ class YamlConfigReader:
     read: Callable[[str], Awaitable[dict[str, Any]]]
     current: Callable[[], bool]
     provenance: str
+    # HAMCP-264: the purpose this reader was captured for, so a consumer can
+    # refuse a reader captured for another purpose before any read.
+    purpose: str | None = None
 
 
 # HAMCP-131: the only argument shape the history-slice reader sends. One
@@ -3959,6 +3970,7 @@ class UpstreamReadGateway:
             read=read, current=current,
             provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
                         "configuration.yaml only; includes not followed; no fallback"),
+            purpose=purpose,
         ) if current() else None
 
     def history_reader(self, *, audit=None) -> HistoryReader | None:
@@ -6241,7 +6253,7 @@ def _compare_tool_contract(
         entry.argument_restrictions[0]
         if is_blueprint_adapter(entry) or is_platform_adapter(entry)
         else READ_ADAPTER_8_6
-        if is_8_6_read_adapter(entry) else reads_9_1.ADAPTER
+        if is_8_6_read_adapter(entry) else reads_9_1.adapter_token(entry)
         if reads_9_1.is_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"

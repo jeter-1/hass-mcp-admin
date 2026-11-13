@@ -187,6 +187,22 @@ _REASONS: tuple[tuple[str, str], ...] = (
     ("adapter_failed_before_irreversible_boundary", "adapter_pre_dispatch"),
     ("preflight_failed", "preflight_exception"),
     ("operator_cancel_requested", "operator_cancel"),
+    # HAMCP-104: stale-state and baseline codes adapters already store that
+    # read as unclassified before.  Appended last, so every code set an
+    # earlier code names keeps that reason; only the unclassified fallback
+    # becomes precise.
+    ("delete_target_missing", "target_state"),
+    ("config_entry_missing", "target_state"),
+    ("config_entry_not_loaded", "target_state"),
+    ("entry_entities_changed", "target_state"),
+    ("options_schema_changed", "target_state"),
+    ("option_not_available", "target_state"),
+    ("stale_dashboard_state", "target_state"),
+    ("stale_baseline", "target_state"),
+    ("dependency_risk_drift", "target_state"),
+    ("current_state_binding_mismatch", "plan_binding"),
+    ("label_namespace_unavailable", "provider_read"),
+    ("dashboard_provider_contract_changed", "provider_admission"),
 )
 REASON_CHECKS: dict[str, str] = dict(_REASONS)
 

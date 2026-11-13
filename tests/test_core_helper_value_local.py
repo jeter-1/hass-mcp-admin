@@ -268,7 +268,7 @@ class UpstreamStartup(unittest.IsolatedAsyncioTestCase):
         request = MagicMock()
         request.__aenter__ = AsyncMock(return_value=response)
         session = MagicMock()
-        session.get.side_effect = lambda *a: (events.append('healthz') or request)
+        session.get.side_effect = lambda *a, **k: (events.append('healthz') or request)
         session.__aenter__ = AsyncMock(return_value=session)
         def verify():
             events.append('mapping')

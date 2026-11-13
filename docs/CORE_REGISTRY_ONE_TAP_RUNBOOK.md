@@ -267,6 +267,23 @@ For the helper-value extension, see
 Its prerequisite PR must merge before the lane is executed. A failed group or
 cleanup without `clean: true` withholds seq 17; neither permits a substitute lane.
 
+For the Marketplace extension, see
+[HAMCP-290 marketplace_read local lane](evidence/hamcp290/lane/README.md).
+A failed group or cleanup without `clean: true` withholds `core.marketplace_read`
+from seq 18; neither permits a substitute lane.
+
+For the Thread/Matter topology extension, see
+[HAMCP-231 thread_matter_topology local lane](evidence/hamcp231/lane/README.md).
+A failed group or cleanup without `clean: true` withholds
+`core.thread_matter_topology_read`; neither permits a substitute lane. That lane
+proves the Thread dataset read (A1) and the Matter-absent refusal only. The A2
+success lane in the same README proves the Matter topology read (A2).
+
+For the security metadata extension, see
+[HAMCP-134 security_metadata local lane](evidence/hamcp134/lane/README.md).
+A failed group or cleanup without `clean: true` withholds
+`core.security_metadata_read` from seq 18; neither permits a substitute lane.
+
 ### O3 refusal notification and recovery
 
 A differing or missing contract-read file produces no candidate. The preparation

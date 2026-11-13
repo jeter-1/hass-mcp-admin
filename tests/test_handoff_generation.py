@@ -534,7 +534,7 @@ class PublicContractTests(unittest.TestCase):
 
     def test_tools_list_has_49_and_schema_is_bounded(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 82)  # HAMCP-290: + get_marketplace_inventory
+        self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         tool = next(item for item in tools if item.name == "handoff_generation")
         props = tool.parameters["properties"]
         self.assertEqual(props["handoff_type"]["default"], "system_status")

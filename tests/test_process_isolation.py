@@ -652,6 +652,31 @@ class RecordedOrderRegressionTests(unittest.TestCase):
     object by reference, so the next lifespan raised "StreamableHTTPSessionManager
     .run() can only be called once" in setUpClass. Installing the guard on
     import resets the attribute after the leaking test.
+
+    Health registry (HAMCP-361): ``ProductionCompositionTests`` built the
+    production application with governance storage in a temporary directory
+    and left the process-wide ``HEALTH`` registry configured with that
+    governance runtime after the directory was removed. Module 350 then called
+    ``get_server_health`` and failed twice with ``change_plan_storage_error``
+    ("Governance storage is unavailable."). The order is named explicitly, so
+    this does not depend on shard assignment or discovery order.
+
+    Health registry, remaining builders (HAMCP-362): seven more modules built
+    the production application without restoring that state, and each one
+    followed by module 350 failed the same two tests the same way. Each has
+    its own subtest, so a module that starts leaking again is named.
+
+    Module 229 ``sys.path`` leak (HAMCP-358): ``RawArgumentGatewayTests``
+    imported ``tests.test_beta_v2`` in ``setUpClass`` before
+    ``restore_after_class``, so the class snapshot kept ``hass_mcp_admin`` on
+    ``sys.path`` and the guard reported it at ``tearDownModule``. The guard
+    checks a module only when its hook was installed before that module
+    started, and module 229 imports the guard inside ``setUpClass``, so 229
+    alone passed. It failed after any module that imports the guard at load
+    time. ``test_git_identity_guard`` first is the recorded order (Ran 43,
+    errors=1 at ``fcd6973f``); 229 then 350 showed the same leak there, mixed
+    with the two health errors. This order has no health consumer, so a
+    failure names this leak alone.
     """
 
     PAIR = ("tests.test_beta_v2.BetaApplicationTests", "tests.test_hamcp200_path_safety.ToolRefusalTests")
@@ -660,6 +685,25 @@ class RecordedOrderRegressionTests(unittest.TestCase):
         "tests.test_hamcp200_path_safety.ToolRefusalTests",
         "tests.test_hamcp200_path_safety.SourceScanTests",
         "tests.test_hamcp200_path_safety.ToolRefusalTests",
+    )
+    HEALTH_REGISTRY_ORDER = (
+        "tests.test_hamcp164_core_gate_fail_closed",
+        "tests.test_hamcp350_startup_readiness",
+    )
+    HEALTH_REGISTRY_CONSUMER = "tests.test_hamcp350_startup_readiness"
+    HEALTH_REGISTRY_BUILDERS = (
+        "tests.test_beta_v2",
+        "tests.test_hamcp200_path_safety",
+        "tests.test_hamcp215_core_authority_recovery",
+        "tests.test_hamcp229_reliability_batch",
+        "tests.test_hamcp234_step2_journal_relaxation",
+        "tests.test_inbound_topology_observer",
+        "tests.test_mcp_inbound_security",
+    )
+
+    PATH_LEAK_ORDER = (
+        "tests.test_git_identity_guard",
+        "tests.test_hamcp229_reliability_batch",
     )
 
     def run_order(self, names):
@@ -679,6 +723,20 @@ class RecordedOrderRegressionTests(unittest.TestCase):
     def test_core_latch_pair_passes_in_one_process(self):
         result = self.run_order(self.PAIR)
         self.assertNotIn("CoreCapabilityUnavailable", result.stderr)
+
+    def test_health_registry_order_passes_in_one_process(self):
+        result = self.run_order(self.HEALTH_REGISTRY_ORDER)
+        self.assertNotIn("change_plan_storage_error", result.stderr)
+
+    def test_identity_guard_then_reliability_batch_passes_in_one_process(self):
+        result = self.run_order(self.PATH_LEAK_ORDER)
+        self.assertNotIn("sys.path: added", result.stderr)
+
+    def test_each_application_builder_then_health_consumer_passes_in_one_process(self):
+        for builder in self.HEALTH_REGISTRY_BUILDERS:
+            with self.subTest(builder=builder):
+                result = self.run_order((builder, self.HEALTH_REGISTRY_CONSUMER))
+                self.assertNotIn("change_plan_storage_error", result.stderr)
 
 
 if __name__ == "__main__":

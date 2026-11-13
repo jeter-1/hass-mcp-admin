@@ -53,8 +53,15 @@ assert acceptance_spec.loader is not None
 acceptance_spec.loader.exec_module(acceptance)
 
 
-def application_gateway(runtime, *, reconciled=True):
-    """Exercise the real composition callback without configuring live clients."""
+def application_gateway(runtime, *, reconciled=True, deadline_elapsed=False):
+    """Exercise the real composition callback without configuring live clients.
+
+    HAMCP-358 (11): ``create_application`` configures process-wide state and
+    this helper does not restore it. No test in this module calls the
+    helper, so the module has no restore of its own; each caller restores
+    first with ``preserve_create_application_state`` (HAMCP-362), as
+    ``tests/test_f3_readiness.py`` and ``tests/test_f3_runtime_integration.py`` do.
+    """
     app = gateway_fixtures.RecordingApp()
     with ExitStack() as stack:
         for name in (
@@ -64,6 +71,7 @@ def application_gateway(runtime, *, reconciled=True):
             'CONFIGURATION_INTEGRITY_ANALYSIS', 'INCIDENT_CORRELATION',
             'HANDOFF_GENERATION', 'UPSTREAM_READ_GATEWAY', 'FAN_OPERATIONS',
             'POWER_OPERATIONS', 'HELPER_VALUE_OPERATIONS', 'HEALTH',  # + HAMCP-311
+            'DEVICE_CONFIGURATION_OPERATIONS',  # + HAMCP-297
         ):
             stack.enter_context(patch.object(application, name))
         stack.enter_context(patch('ha_mcp_engineering.audit_baseline.capture_runtime.AUTOMATION_BASELINE_CAPTURE'))
@@ -78,6 +86,8 @@ def application_gateway(runtime, *, reconciled=True):
         ))
     # The composition's late-bound facade remains replaced only for each call.
     gateway._test_governance = governance
+    if deadline_elapsed:
+        gateway.mark_initial_catalog_deadline_elapsed()
     if reconciled:
         gateway.mark_initial_catalog_reconciled()
     return gateway, app

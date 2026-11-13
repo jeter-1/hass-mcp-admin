@@ -889,6 +889,104 @@ CORE_NOVEMBER_BATCH_PROFILES = (
                      "session_fingerprint", "generation"),
     ),
 )
+# HAMCP-231 (Release 2.6.0): Thread dataset and Matter topology read, A1 + A2
+# only (docs/HAMCP_231_THREAD_MATTER_TOPOLOGY_INVESTIGATION.md, sections 5.1
+# and 7).  Core 2026.11.0 (74cf5a49) registers ``thread/list_datasets`` in
+# ``components/thread/websocket_api.py:152-182`` from ``async_setup`` and
+# ``matter/network_topology`` in ``components/matter/api.py:384-404`` from
+# ``async_setup_entry``; both are ``require_admin``.  ``refresh`` is the
+# literal ``false`` and never a caller value.  Runtime-only and dormant until
+# the owner-signed registry admits it; nothing here is signed.
+CORE_THREAD_MATTER_TOPOLOGY_PROFILES = (
+    _contract(
+        "core.thread_matter_topology_read",
+        CoreCapabilityClass.THREAD_MATTER_TOPOLOGY_READ,
+        "compiled-core-thread-matter-topology-read-v1",
+        (
+            "thread_list_datasets_command_contract",
+            "matter_network_topology_command_contract",
+            "matter_network_topology_refresh_false_contract",
+            "matter_network_topology_schema_13_not_supported_contract",
+            "unknown_command_error_code_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": ["thread/list_datasets", "matter/network_topology"],
+            "payloads": {
+                "thread/list_datasets": {"type": "thread/list_datasets"},
+                "matter/network_topology": {"type": "matter/network_topology", "refresh": False},
+            },
+            "refresh": "literal_false_never_caller_supplied",
+            "max_commands": 2,
+            "connection": "one_authenticated_websocket_no_retry_no_redirect_no_subscription",
+            "principal_origin": "existing_configured_authenticated_origin_only",
+            "projection": {
+                "datasets": ["dataset_id", "network_name", "extended_pan_id", "pan_id", "channel",
+                             "preferred", "source", "created",
+                             "preferred_border_agent_ref", "preferred_extended_address_ref"],
+                "nodes": ["id", "kind", "network_type", "role", "available", "is_bridge", "rloc16",
+                          "ext_pan_id", "network_name_thread_only", "vendor_name", "model_name",
+                          "node_id", "ha_device_id_nullable", "identity",
+                          "border_router_mdns_last_seen"],
+                "connections": ["source", "target", "network", "strength", "source_to_target",
+                                "target_to_source", "via_route_table", "path_cost"],
+                "topology": ["graph_assembled_at", "observation_age_unknown", "coverage"],
+                "unknown_fields": "dropped_positive_allowlist",
+            },
+            "identifier_policy": {
+                "id": "opaque_per_response_v1",
+                "graph_ids": "counter_g_k_upstream_order_before_truncation",
+                "unresolved_connection": "dropped_and_counted",
+                "extended_address": "shared_alias_g_k_or_x_k_never_raw",
+                "border_agent_id": "alias_b_k_never_raw",
+                "bssid_ssid_host_name_ext_address": "dropped",
+                "network_name": "thread_nodes_only_else_withheld",
+                "aliases": "counters_not_hashes_not_stable_across_calls",
+                "scope": "output_audit_logs_errors",
+                "kept_network_level": ["ext_pan_id", "extended_pan_id", "pan_id", "channel",
+                                       "thread_network_name", "rloc16", "node_id", "ha_device_id"],
+            },
+            "secret_keys": {"match": ["tlv", "networkkey", "pskc", "pskd"],
+                            "normalization": "lowercase_alphanumeric_any_depth",
+                            "action": "whole_section_refused"},
+            "upstream_activity": {"datasets": ["cached_graph"],
+                                  "topology": ["cached_graph", "may_start_br_discovery"]},
+            "caps": {"datasets": 16, "nodes": 200, "connections": 800},
+            "bounds": {"frame_bytes": 8388608, "auth_bytes": 65536, "max_frames": 4,
+                       "max_upstream_datasets": 256, "max_upstream_nodes": 4096,
+                       "max_upstream_connections": 16384, "max_seconds": 30},
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "reasons": ["thread_not_loaded", "matter_not_loaded", "matter_server_schema_below_13",
+                        "core_authority_refused", "malformed_upstream_response",
+                        "upstream_response_too_large", "upstream_command_failed",
+                        "transport_unavailable", "timeout"],
+            "partial": "per_section_status_no_fallback_upstream_text_never_echoed",
+            "never_sent": [
+                "matter/commission",
+                "matter/commission_on_network",
+                "matter/interview_node",
+                "matter/node_diagnostics",
+                "matter/open_commissioning_window",
+                "matter/ping_node",
+                "matter/remove_matter_fabric",
+                "matter/set_thread",
+                "matter/set_wifi_credentials",
+                "matter/subscribe_network_topology",
+                "otbr/create_network",
+                "otbr/info",
+                "otbr/set_channel",
+                "otbr/set_network",
+                "thread/add_dataset_tlv",
+                "thread/delete_dataset",
+                "thread/discover_routers",
+                "thread/get_dataset_tlv",
+                "thread/set_preferred_border_agent",
+                "thread/set_preferred_dataset",
+            ],
+            "write": "none",
+        },
+    ),
+)
 # HAMCP-290 (Release 2.5.0): installed-only Marketplace inventory read.
 # Core 2026.11.0 (74cf5a49) registers ``marketplace/repositories/list`` in
 # ``components/marketplace/websocket/repositories.py:62-89`` (admin, optional
@@ -946,6 +1044,308 @@ CORE_MARKETPLACE_PROFILES = (
         fallback="hacs_repositories_list_on_exact_unknown_command",
     ),
 )
+# HAMCP-134 (design docs/HAMCP_134_SECURITY_METADATA_FEASIBILITY.md, #392):
+# one read-only security and effective-permission metadata read.  Each
+# admitted command is sent at most once with a constant payload; the
+# ``assistant`` value is fixed to Core's KNOWN_ASSISTANTS.  The section 6
+# list is ``never_sent``.  Runtime-only and Core 2026.11.0 only; dormant until
+# the owner-signed registry selects it.  Nothing here is signed.
+CORE_SECURITY_METADATA_PROFILES = (
+    _contract(
+        "core.security_metadata_read",
+        CoreCapabilityClass.SECURITY_METADATA_READ,
+        "compiled-core-security-metadata-read-v1",
+        (
+            "auth_current_user_identity_and_mfa_catalog_contract",
+            "config_auth_list_bounded_user_projection_contract",
+            "http_config_active_slot_projection_contract",
+            "get_config_url_posture_contract",
+            "expose_new_entities_get_known_assistants_contract",
+            "assist_pipeline_list_projection_contract",
+            "conversation_agent_list_projection_contract",
+            "get_panels_listing_projection_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "commands": [
+                "auth/current_user",
+                "config/auth/list",
+                "http/config",
+                "get_config",
+                "homeassistant/expose_new_entities/get",
+                "assist_pipeline/pipeline/list",
+                "conversation/agent/list",
+                "get_panels",
+            ],
+            "payloads": "constant_no_caller_argument_ever_forwarded",
+            "expose_new_entities_assistants": [
+                "cloud.alexa", "cloud.google_assistant", "conversation",
+            ],
+            "conversation_agent_list_arguments": "none_no_language_no_country",
+            "max_commands": 10,
+            "sections": ["users", "mfa", "http_boundary", "urls", "assist", "panels"],
+            "always_sent": ["auth/current_user"],
+            "users_only": ["config/auth/list"],
+            "projection": "positive_per_section_privacy_table_unknown_fields_dropped",
+            "identity": "supervisor_topology_plus_core_corroboration_else_other_or_unknown",
+            "http_active_slot": "active_config_type_only_never_substituted",
+            "missing_field": "not_provided_never_inferred",
+            "errors": "core_error_code_to_fixed_reason_code_text_never_echoed",
+            "sanitization": "shared_untrusted_data_sanitizer_truncation_last",
+            "output": "fixed_byte_cap_whole_item_removal_lowest_priority_first",
+            "bounds": {"frame_bytes": 2097152, "auth_bytes": 65536, "max_frames": 12,
+                       "max_users": 1000, "max_list_items": 500,
+                       "output_bytes": 40000, "max_seconds": 30},
+            "never_sent": [
+                "auth/long_lived_access_token",
+                "auth/sign_path",
+                "auth/refresh_tokens",
+                "auth/delete_refresh_token",
+                "auth/delete_all_refresh_tokens",
+                "auth/refresh_token_set_expiry",
+                "auth/setup_mfa",
+                "auth/depose_mfa",
+                "config/auth/create",
+                "config/auth/update",
+                "config/auth/delete",
+                "http/config/configure",
+                "http/config/promote",
+                "cloud/status",
+                "homeassistant/expose_entity",
+                "homeassistant/expose_new_entities/set",
+                "homeassistant/expose_entity/list",
+                "assist_satellite/get_configuration",
+                "assist_pipeline/pipeline/create",
+                "assist_pipeline/pipeline/update",
+                "assist_pipeline/pipeline/delete",
+                "assist_pipeline/pipeline/set_preferred",
+                "frontend/update_panel",
+                "config_entries/options/flow",
+                "person/list",
+                "supervisor/*",
+                "hassio/*",
+            ],
+            "never_called": ["async_should_expose"],
+            "supervisor_requests": "none",
+            "write": "none",
+        },
+    ),
+)
+# HAMCP-297: one exact configuration-category device entity per call through
+# the direct Home Assistant API. Signed-only: dormant until an owner-signed
+# registry sequence names this profile for Core 2026.11.0.
+from ..device_configuration import contracts as _device_configuration
+
+CORE_DEVICE_CONFIGURATION_PROFILES = (
+    _contract(
+        _device_configuration.CAPABILITY_ID,
+        CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
+        _device_configuration.ADAPTER_ID,
+        ("rest_state_entity_shape", "entity_registry_get_contract",
+         "device_registry_list_contract", "service_domain_mapping"),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "provider_contract": _device_configuration.PROVIDER_CONTRACT,
+            "core_version": _device_configuration.CORE_VERSION,
+            "domains": sorted(_device_configuration.DOMAIN_ACTIONS),
+            "actions": list(_device_configuration.ACTIONS),
+            "target": "one_exact_registered_config_category_device_entity",
+            "target_kinds": [list(item) for item in _device_configuration.ALLOWLIST],
+            "null_translation_key": "never_admitted",
+            "rest_reads": list(_device_configuration.REST_READS),
+            "websocket_reads": list(_device_configuration.READ_COMMANDS),
+            "services": {domain: {service: list(keys) for service, keys in services.items()}
+                         for domain, services in sorted(_device_configuration.SERVICES.items())},
+            "never_sent": list(_device_configuration.NEVER_SENT),
+            "numeric": list(_device_configuration.NUMERIC_RULES),
+            "unit_converters": list(_device_configuration.UNIT_CONVERTERS),
+            "undo": list(_device_configuration.UNDO_RULES),
+            "locks": list(_device_configuration.LOCK_IDENTITY),
+            "dispatch": "at_most_once_composite_recheck_before_intent_return_response_false",
+            "recovery": "read_only_same_core_version_no_redispatch",
+            "plan_identity": "none",
+            "approval": "none_chat_confirmation_only_when_safety_critical",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation")
+        + _device_configuration.PREDISPATCH_CHECKS,
+    ),
+)
+# HAMCP-329/298 (Release 2.6.0): two additive runtime-only contracts for
+# Core 2026.11.0, dormant until the one combined 2.6 owner-signed
+# ``extend-capabilities`` extension references them exactly.  Like every
+# runtime-only contract they are never part of CORE_CAPABILITY_PROFILES, so
+# no probe fingerprint moves, and no existing contract changes: scene update
+# keeps DELETE never-sent, automation/script delete keeps its v1 contract.
+# Scene and helper deletion is reachable only as the separately approved
+# undo of a verified Engineering create whose identity was captured at
+# creation (design ``HAMCP_329_298`` §3.2-§3.5).
+SCENE_CREATE_DELETE_REQUESTS: tuple[str, ...] = (
+    "DELETE /api/config/scene/config/{config_id}",
+    "GET /api/config/scene/config/{config_id}",
+    "GET /api/states/{entity_id}",
+    "POST /api/config/scene/config/{config_id}",
+    "websocket config/entity_registry/list",
+)
+CREATED_HELPER_DELETE_REQUESTS: tuple[str, ...] = (
+    "GET /api/states/{entity_id}",
+    "websocket config/entity_registry/list",
+    "websocket input_boolean/delete",
+    "websocket input_boolean/list",
+    "websocket input_number/delete",
+    "websocket input_number/list",
+)
+CORE_CREATED_OBJECT_PROFILES = (
+    _contract(
+        "core.scene_create_delete_operation",
+        CoreCapabilityClass.SCENE_CREATE_DELETE_OPERATION,
+        "compiled-core-scene-create-delete-operation-v1",
+        (
+            "rest_scene_config_get_by_config_id",
+            "rest_scene_config_post_to_absent_config_id",
+            "rest_scene_config_delete_no_body",
+            "rest_state_get_by_entity_id",
+            "websocket_entity_registry_list",
+            "scene_config_and_registry_identity_polled_readback",
+            "scene_config_registry_state_absence_polled_readback",
+            "scene_loaded_state_not_verified_disclosed",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "requests": list(SCENE_CREATE_DELETE_REQUESTS),
+            "resource_types": ["scene"],
+            "registry_platform": "homeassistant",
+            "create": {
+                "target": (
+                    "one_exact_absent_ui_scene_config_id_with_no_scene_"
+                    "registry_entry"
+                ),
+                "route": "POST /api/config/scene/config/{config_id}",
+                "arguments": {
+                    "config_id": "exact_config_id_becomes_registry_unique_id",
+                    "fields": ["entities", "icon", "name"],
+                    "name": "required_non_empty_string_max_255_exact_no_trim",
+                    "icon": "optional_prefix_colon_name_max_64_null_refused",
+                    "entities": (
+                        "required_1_to_64_entity_ids_to_bounded_snapshots_"
+                        "with_state_null_refused"
+                    ),
+                    "entity_id": "refused_assigned_by_home_assistant",
+                    "body": "full_proposed_configuration_without_id",
+                },
+                "dispatch": (
+                    "at_most_once_scene_config_post_under_one_f3_create_permit_"
+                    "bound_to_plan_target_command_and_dispatch_intent"
+                ),
+                "readback": (
+                    "config_exact_and_registry_identity_polled_loaded_state_"
+                    "not_verified"
+                ),
+                "registry_unverified": (
+                    "scene_config_stored_registry_unverified_not_success_not_"
+                    "rollback_eligible"
+                ),
+                "concurrency": (
+                    "upsert_concurrent_create_of_same_id_overwritten_"
+                    "undetected_disclosed"
+                ),
+            },
+            "delete": {
+                "target": (
+                    "one_exact_engineering_created_scene_with_creation_"
+                    "identity"
+                ),
+                "route": "DELETE /api/config/scene/config/{config_id}",
+                "dispatch": (
+                    "at_most_once_scene_config_delete_no_body_under_one_f3_"
+                    "delete_permit_bound_to_plan_target_command_and_dispatch_"
+                    "intent"
+                ),
+                "absent_target": "400_resource_not_found_no_write",
+                "readback": "config_404_registry_absent_state_absent_polled",
+            },
+            "creation_identity": (
+                "captured_under_forward_locks_registry_id_created_at_"
+                "modified_at_entity_id_bound_into_plan"
+            ),
+            "reachability": {
+                "create": "create_scene_configuration_plan_action_create",
+                "delete": "created_object_rollback_only",
+            },
+            "never_sent": [
+                "scene.apply",
+                "scene.create",
+                "scene.delete",
+                "scene.reload",
+                "scene.turn_on",
+            ],
+            "side_effect": "core_post_write_hook_reloads_all_ui_scenes",
+            "loaded_state": "not_verified",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+    _contract(
+        "core.created_helper_delete_operation",
+        CoreCapabilityClass.CREATED_HELPER_DELETE_OPERATION,
+        "compiled-core-created-helper-delete-operation-v1",
+        (
+            "websocket_helper_storage_list",
+            "websocket_helper_delete_by_object_id",
+            "websocket_entity_registry_list",
+            "rest_state_get_by_entity_id",
+            "helper_storage_registry_state_absence_polled_readback",
+            "helper_absence_runtime_not_disk_durable_disclosed",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "requests": list(CREATED_HELPER_DELETE_REQUESTS),
+            "target": (
+                "one_exact_engineering_created_storage_helper_with_creation_"
+                "identity"
+            ),
+            "resource_types": ["input_boolean", "input_number"],
+            "identity_correspondence": {
+                "resource_target_domain": "equals_resource_type",
+                "object_id": (
+                    "equals_storage_id_registry_unique_id_and_delete_argument"
+                ),
+                "registry_platform": "equals_resource_type",
+                "state_read": "by_actual_registry_entity_id",
+            },
+            "creation_identity": (
+                "captured_read_only_under_forward_locks_registry_id_created_at_"
+                "modified_at_entity_id_bound_into_plan"
+            ),
+            "commands": {
+                "input_boolean": {"type": "input_boolean/delete",
+                                  "argument": "input_boolean_id"},
+                "input_number": {"type": "input_number/delete",
+                                 "argument": "input_number_id"},
+            },
+            "dispatch": "at_most_once_ws_helper_delete_by_object_id",
+            "absent_target": (
+                "ws_not_found_no_write_duplicate_result_frame_ignored"
+            ),
+            "readback": (
+                "storage_list_absent_registry_absent_state_absent_polled_"
+                "runtime_not_disk_durable"
+            ),
+            "reachability": "created_object_rollback_only",
+            "never_sent": [
+                "input_boolean/create",
+                "input_boolean/update",
+                "input_number/create",
+                "input_number/update",
+                "every_other_type_delete",
+            ],
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
     + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
@@ -954,6 +1354,10 @@ CORE_RUNTIME_CAPABILITY_PROFILES = (
     + CORE_CONFIGURATION_DELETE_PROFILES
     + CORE_NOVEMBER_BATCH_PROFILES
     + CORE_MARKETPLACE_PROFILES
+    + CORE_SECURITY_METADATA_PROFILES
+    + CORE_DEVICE_CONFIGURATION_PROFILES
+    + CORE_CREATED_OBJECT_PROFILES
+    + CORE_THREAD_MATTER_TOPOLOGY_PROFILES
 )
 
 
@@ -1019,6 +1423,10 @@ __all__ = [
     "CORE_CONFIGURATION_DELETE_PROFILES",
     "CORE_NOVEMBER_BATCH_PROFILES",
     "CORE_MARKETPLACE_PROFILES",
+    "CORE_SECURITY_METADATA_PROFILES",
+    "CORE_DEVICE_CONFIGURATION_PROFILES",
+    "CORE_CREATED_OBJECT_PROFILES",
+    "CORE_THREAD_MATTER_TOPOLOGY_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

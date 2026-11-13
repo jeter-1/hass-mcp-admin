@@ -328,12 +328,12 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         gateway, transport, snapshot = await self._initialize()
         registered = set(gateway._registered_tool_registry.snapshot())
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
-        # 2026-11-08), so 25 matched reads expose 24 (82 + 24 = 106).
+        # 2026-11-08), so 25 matched reads expose 24 (HAMCP-297: 84 + 24 = 108).
         self.assertEqual(registered, EXACT_8_4_1_READS - RETIRED_DELEGATED_READS)
         self.assertEqual(snapshot["dynamically_exposed_count"], 24)
         self.assertEqual(snapshot["core_withheld_read_count"], 1)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 82)  # HAMCP-290: + get_marketplace_inventory
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 106)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 110)  # HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         for unreachable in (
             "ha_get_operation_status",
             "ha_get_app",

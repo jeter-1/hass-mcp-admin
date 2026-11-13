@@ -104,7 +104,7 @@ refused by the prevalidation fence). Pinned by
 | 30 | `get_dashboard_config` | Mapped | `core.dashboard_configuration_read` | Unchanged. |
 | 31 | `get_entity` | Mapped | `core.direct_entity_state_read` | Unchanged. |
 | 32 | `get_error_log` | Mapped | `core.basic_websocket_read` | Unchanged. |
-| 33 | `get_execution_task` | Core-independent (allowlist) | `engineering_local_state` | Reads one persisted Engineering execution task; a typed fan or power task reconciles through its own typed Core authority, and no other path makes a Home Assistant call. |
+| 33 | `get_execution_task` | Core-independent (allowlist) | `engineering_local_state` | Reads one persisted Engineering execution task; it makes no Home Assistant call. |
 | 34 | `get_history` | Mapped | `core.basic_rest_read` | Unchanged. |
 | 35 | `get_integration_inspection` | Mapped | `core.basic_websocket_read`, `core.integration_inspection_metadata_read` | Unchanged. |
 | 36 | `get_logbook` | Mapped | `core.basic_rest_read` | Unchanged. |

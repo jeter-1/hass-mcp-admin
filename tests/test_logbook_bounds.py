@@ -320,8 +320,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.release = asyncio.Event()
         self.arrived = asyncio.Event()
         app = web.Application()
+        self.queries = []
         async def serve(request):
             self.calls += 1
+            self.queries.append(parse_qs(request.query_string))
             self.arrived.set()
             if self.mode == "disconnect":
                 request.transport.close()
@@ -530,3 +532,536 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(telemetry.ha_request_count, 0)
         finally:
             end_request(token)
+
+
+    async def test_hamcp294_windowed_filter_uses_one_guarded_logbook_get(self):
+        start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        result = json.loads(await logbook.LogbookReader().read(
+            self.client, hours=None, entity_id="", response_limit=60000,
+            start_time=start, entity_ids=["sensor.synthetic_a", "light.synthetic_b"]))
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(self.queries[0]["entity"], ["sensor.synthetic_a,light.synthetic_b"])
+        self.assertEqual(result["entries"], [])
+        self.assertFalse(result["truncated"])
+
+    async def test_hamcp294_guard_still_refuses_non_logbook_shapes(self):
+        start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        for method, path, kwargs in (
+                ("GET", rest_path("/states"), {"raw": True}),
+                ("GET", rest_path("/logbook/{}", start, kinds=("timestamp",)), {"raw": False}),
+                ("POST", rest_path("/logbook/{}", start, kinds=("timestamp",)), {"raw": True})):
+            with self.subTest(method=method, path=path), self.assertRaises(ValueError):
+                await self.client.request(method, path, logbook_read=True, **kwargs)
+        self.assertEqual(self.calls, 0)
+
+
+# HAMCP-294: bounded window, entity/name filter and continuation.
+class Clock(datetime):
+    """A fixed ``now``; ``fromisoformat`` and arithmetic stay real."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return NOW
+
+
+def at(**delta):
+    return (NOW - timedelta(**delta)).isoformat()
+
+
+def none_filter():
+    return {"kind": "none", "entity_ids": [], "name": None, "match_basis": None, "matched_count": None}
+
+
+def window_context(start="2026-09-29T00:00:00Z", end="2026-09-29T12:00:00Z"):
+    window = logbook.resolve_window(NOW, None, start, end)
+    return {"window": window, "requested_interval": window["requested_interval"],
+            "effective_interval": window["effective_interval"], "filter": none_filter(),
+            "completeness_notes": list(logbook.BASE_NOTES)}
+
+
+def state(entity_id, **attributes):
+    return {"entity_id": entity_id, "state": "on", "attributes": attributes}
+
+
+class StatesClient:
+    """States inventory for non-logbook GETs; a raw logbook body otherwise."""
+
+    def __init__(self, states=(), value=None):
+        self.states = list(states) if isinstance(states, (list, tuple)) else states
+        self.value = [] if value is None else value
+        self.calls = []
+
+    async def request(self, method, path, body=None, raw=False, expected_statuses=frozenset(), *, logbook_read=False):
+        self.calls.append((method, path, raw, logbook_read))
+        if logbook_read:
+            return json.dumps(self.value)
+        return self.states
+
+
+class WindowRefusalTests(unittest.IsolatedAsyncioTestCase):
+    async def refuse(self, **kwargs):
+        client, reader = StatesClient([state("light.synthetic")]), logbook.LogbookReader()
+        arguments = {"hours": None, "entity_id": "", "response_limit": 60000, **kwargs}
+        with patch.object(logbook, "datetime", Clock), self.assertRaises(InvalidRequestError):
+            await reader.read(client, **arguments)
+        self.assertEqual(client.calls, [])
+        self.assertFalse(reader._active)
+
+    async def test_timestamps_are_strict_aware_and_ascii(self):
+        for value in ("2026-09-29T10:00:00", "2026-09-29", "2026-09-29T10:00Z", "yesterday", "",
+                      "2026-09-29T10:00:00+0000", "2026-13-29T10:00:00Z", "2026-09-29T25:00:00Z",
+                      "２０２６-09-29T10:00:00Z", "2026-09-29T10:00:00.1234567Z",
+                      "2026-09-29T10:00:00Z ", 1759140000, ["2026-09-29T10:00:00Z"]):
+            for field in ("start_time", "end_time"):
+                with self.subTest(field=field, value=value):
+                    await self.refuse(**{field: value})
+
+    async def test_interval_order_span_and_future_start(self):
+        cases = (
+            {"start_time": at(hours=1), "end_time": at(hours=1)},
+            {"start_time": at(hours=1), "end_time": at(hours=2)},
+            {"start_time": at(hours=168, microseconds=1), "end_time": NOW.isoformat()},
+            {"start_time": at(hours=200)},
+            {"start_time": NOW.isoformat()},
+            {"start_time": (NOW + timedelta(hours=1)).isoformat(), "end_time": (NOW + timedelta(hours=2)).isoformat()},
+            {"hours": 24, "start_time": at(hours=1)},
+            {"hours": 1, "start_time": at(hours=1)},
+            {"hours": 0, "start_time": at(hours=1)},
+            {"hours": 10**1000, "start_time": at(hours=1)},
+            {"hours": 0, "end_time": at(hours=1)},
+            {"hours": 169, "end_time": at(hours=1)},
+            {"hours": 10**1000, "end_time": at(hours=1)},
+            {"hours": float("nan"), "entity_ids": ["light.synthetic"]},
+            {"hours": True, "entity_ids": ["light.synthetic"]},
+            {"hours": "12", "entity_ids": ["light.synthetic"]},
+            {"end_time": "0001-01-01T00:00:00+00:00"},
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                await self.refuse(**case)
+
+    async def test_exactly_168_hours_and_now_end_are_allowed(self):
+        client = StatesClient()
+        with patch.object(logbook, "datetime", Clock):
+            result = json.loads(await logbook.LogbookReader().read(
+                client, hours=None, entity_id="", response_limit=60000,
+                start_time=at(hours=168), end_time=NOW.isoformat()))
+        self.assertFalse(result["effective_interval"]["end_clamped"])
+        self.assertEqual(len(client.calls), 1)
+
+    async def test_default_hours_with_start_time_is_ignored_not_refused(self):
+        # The public hours default stays 12 (v1.1.2 parity); start_time wins.
+        for hours in (12, 12.0, None):
+            client = StatesClient()
+            with patch.object(logbook, "datetime", Clock):
+                result = json.loads(await logbook.LogbookReader().read(
+                    client, hours=hours, entity_id="", response_limit=60000,
+                    start_time=at(hours=30), end_time=at(hours=1)))
+            with self.subTest(hours=hours):
+                self.assertEqual(result["requested_interval"], {"start": at(hours=30), "end": at(hours=1)})
+                self.assertEqual(unquote(urlsplit(client.calls[0][1]).path), "/logbook/" + at(hours=30))
+
+    async def test_one_filter_and_filter_bounds(self):
+        long_ids = [f"sensor.{c}" + "x"*200 for c in "abc"]
+        cases = (
+            {"entity_id": "light.synthetic", "entity_ids": ["light.other"]},
+            {"entity_id": "light.synthetic", "name": "kitchen"},
+            {"entity_ids": ["light.synthetic"], "name": "kitchen"},
+            {"entity_ids": []},
+            {"entity_ids": [f"light.synthetic_{i}" for i in range(11)]},
+            {"entity_ids": ["light.synthetic", "light.synthetic"]},
+            {"entity_ids": ["light.synthetic", "light.x&end_time=secret"]},
+            {"entity_ids": ["a.b,c.d"]},
+            {"entity_ids": ["light.雪"]},
+            {"entity_ids": [None]},
+            {"entity_ids": "light.synthetic"},
+            {"entity_ids": {"light.synthetic": 1}},
+            {"entity_ids": long_ids},
+            {"name": ""},
+            {"name": "   "},
+            {"name": "x"*101},
+            {"name": 123},
+            {"name": ["kitchen"]},
+            {"entity_id": None, "start_time": at(hours=1)},
+            {"entity_id": "a.b,c.d", "start_time": at(hours=1)},
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                await self.refuse(**case)
+
+    async def test_ten_ids_and_512_joined_characters_are_allowed(self):
+        ids = [f"sensor.{chr(97+i)}" + "x"*(42 + 3*(i == 9)) for i in range(10)]
+        self.assertEqual(len(",".join(ids)), 512)
+        self.assertEqual(logbook.resolve_filter("", ids, None)["entity_ids"], ids)
+        self.assertEqual(logbook.resolve_filter("", None, "x"*100)["kind"], "name")
+        for over in (ids[:-1] + [ids[-1] + "x"], ids + ["sensor.k"]):
+            with self.assertRaises(InvalidRequestError):
+                logbook.resolve_filter("", over, None)
+
+
+class WindowReadTests(unittest.IsolatedAsyncioTestCase):
+    async def read(self, client, **kwargs):
+        arguments = {"hours": None, "entity_id": "", "response_limit": 60000, **kwargs}
+        reader = logbook.LogbookReader()
+        with patch.object(logbook, "datetime", Clock):
+            raw = await reader.read(client, **arguments)
+        self.assertFalse(reader._active)
+        return raw
+
+    def logbook_call(self, client):
+        method, path, raw, logbook_read = client.calls[-1]
+        self.assertEqual((method, raw, logbook_read), ("GET", True, True))
+        split = urlsplit(path)
+        return unquote(split.path), parse_qs(split.query)
+
+    async def test_windowed_entity_ids_exact_request_and_object(self):
+        client = StatesClient(value=entries(2))
+        start = "2026-09-29T08:30:00+02:00"
+        result = json.loads(await self.read(client, start_time=start,
+                                            entity_ids=["sensor.synthetic_0", "light.synthetic_1"]))
+        self.assertEqual(len(client.calls), 1)
+        path, query = self.logbook_call(client)
+        self.assertEqual(path, "/logbook/2026-09-29T06:30:00+00:00")
+        self.assertEqual(query, {"end_time": [NOW.isoformat()],
+                                 "entity": ["sensor.synthetic_0,light.synthetic_1"]})
+        self.assertEqual(result, {
+            "entries": entries(2), "truncated": False, "returned": 2, "omitted": 0,
+            "requested_interval": {"start": "2026-09-29T06:30:00+00:00", "end": NOW.isoformat()},
+            "effective_interval": {"start": "2026-09-29T06:30:00+00:00", "end": NOW.isoformat(),
+                                   "end_clamped": False},
+            "interval_bounds": "exclusive", "ordering": "source_order",
+            "filter": {"kind": "entity_ids", "entity_ids": ["sensor.synthetic_0", "light.synthetic_1"],
+                       "name": None, "match_basis": None, "matched_count": None},
+            "continuation": None, "completeness_notes": list(logbook.BASE_NOTES),
+            "required_action": None})
+
+    async def test_default_hours_end_time_only_and_unfiltered(self):
+        client = StatesClient()
+        result = json.loads(await self.read(client, end_time=at(hours=1)))
+        path, query = self.logbook_call(client)
+        self.assertEqual(path, "/logbook/" + at(hours=13))
+        self.assertEqual(query, {"end_time": [at(hours=1)]})
+        self.assertEqual(result["filter"]["kind"], "none")
+        client = StatesClient()
+        result = json.loads(await self.read(client, hours=24, entity_id="light.synthetic", end_time=at(hours=1)))
+        path, query = self.logbook_call(client)
+        self.assertEqual(path, "/logbook/" + at(hours=25))
+        self.assertEqual(query["entity"], ["light.synthetic"])
+        self.assertEqual(result["filter"]["kind"], "entity_id")
+
+    async def test_future_end_is_clamped_and_reported(self):
+        client = StatesClient()
+        future = (NOW + timedelta(hours=3)).isoformat()
+        result = json.loads(await self.read(client, start_time=at(hours=2), end_time=future))
+        _, query = self.logbook_call(client)
+        self.assertEqual(query["end_time"], [NOW.isoformat()])
+        self.assertEqual(result["requested_interval"], {"start": at(hours=2), "end": future})
+        self.assertEqual(result["effective_interval"], {"start": at(hours=2), "end": NOW.isoformat(),
+                                                        "end_clamped": True})
+
+    async def test_continuous_entities_are_disclosed(self):
+        for kwargs, states in (
+                ({"entity_ids": ["counter.synthetic"]}, ()),
+                ({"name": "power"}, [state("sensor.synthetic_power", unit_of_measurement="W")]),
+                ({"name": "energy"}, [state("sensor.synthetic_energy", state_class="total")])):
+            with self.subTest(kwargs=kwargs):
+                result = json.loads(await self.read(StatesClient(states), **kwargs))
+                self.assertIn("continuous_entities_produce_no_rows", result["completeness_notes"])
+        result = json.loads(await self.read(StatesClient(), entity_ids=["light.synthetic"]))
+        self.assertEqual(result["completeness_notes"], list(logbook.BASE_NOTES))
+
+    async def test_name_matches_casefold_id_or_friendly_name_sorted(self):
+        states = [state("light.synthetic_b", friendly_name="Kitchen Lamp"),
+                  state("switch.kitchen_fan"), state("light.synthetic_a", friendly_name="KITCHEN ceiling"),
+                  state("light.hall", friendly_name="Hall"), "not-a-dict", {"entity_id": "Bad.ID"},
+                  {"entity_id": "light.kitchen_odd", "attributes": "malformed"}, {"attributes": {}}]
+        client = StatesClient(states, entries(1))
+        result = json.loads(await self.read(client, name=" kitchen "))
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0][:2], ("GET", rest_path("/states")))
+        self.assertEqual(client.calls[0][3], False)
+        ids = ["light.kitchen_odd", "light.synthetic_a", "light.synthetic_b", "switch.kitchen_fan"]
+        _, query = self.logbook_call(client)
+        self.assertEqual(query["entity"], [",".join(ids)])
+        self.assertEqual(result["filter"], {"kind": "name", "entity_ids": ids, "name": " kitchen ",
+                                            "match_basis": logbook.NAME_MATCH_BASIS, "matched_count": 4})
+        self.assertIn("name_resolved_from_current_states", result["completeness_notes"])
+
+    async def test_exactly_ten_matches_send_one_logbook_get(self):
+        states = [state(f"light.synthetic_{i}") for i in range(10)]
+        client = StatesClient(states)
+        result = json.loads(await self.read(client, name="synthetic"))
+        self.assertEqual(len(client.calls), 2)
+        _, query = self.logbook_call(client)
+        self.assertEqual(query["entity"][0].split(","), sorted(s["entity_id"] for s in states))
+        self.assertEqual(result["filter"]["matched_count"], 10)
+
+    async def assert_name_refusal(self, states, reason, count):
+        client, reader = StatesClient(states), logbook.LogbookReader()
+        with patch.object(logbook, "datetime", Clock), self.assertRaises(InvalidRequestError) as error:
+            await reader.read(client, hours=None, entity_id="", response_limit=60000, name="synthetic")
+        self.assertEqual(len(client.calls), 1)  # The states read only; no logbook GET.
+        self.assertFalse(client.calls[0][3])
+        self.assertFalse(reader._active)
+        self.assertEqual(error.exception.details["reason"], reason)
+        self.assertEqual(error.exception.details["match_count"], count)
+        return error.exception.details
+
+    async def test_zero_too_many_and_over_bound_matches_refuse_before_logbook(self):
+        await self.assert_name_refusal([state("light.other")], "name_matched_no_entity", 0)
+        await self.assert_name_refusal([], "name_matched_no_entity", 0)
+        states = [state(f"light.synthetic_{i:02}") for i in range(11)]
+        details = await self.assert_name_refusal(states, "name_matched_too_many", 11)
+        self.assertEqual(details["matched_entity_ids"], sorted(s["entity_id"] for s in states)[:10])
+        states = [state(f"sensor.synthetic_{c}" + "x"*200) for c in "abc"]
+        details = await self.assert_name_refusal(states, "name_matches_exceed_filter_bound", 3)
+        self.assertEqual(len(details["matched_entity_ids"]), 3)
+
+    async def test_malformed_states_body_fails_closed(self):
+        for body in ({"entity_id": "light.synthetic"}, None, "[]", 7):
+            client, reader = StatesClient(body), logbook.LogbookReader()
+            with self.subTest(body=body), patch.object(logbook, "datetime", Clock), \
+                    self.assertRaises(HomeAssistantApiError) as error:
+                await reader.read(client, hours=None, entity_id="", response_limit=60000, name="synthetic")
+            self.assertEqual(error.exception.details["endpoint_category"], "states_inventory")
+            self.assertEqual(len(client.calls), 1)
+            self.assertFalse(reader._active)
+
+    async def test_secret_in_name_is_redacted_not_echoed(self):
+        states = [state("light.synthetic", friendly_name="synthetic-password lamp")]
+        client = StatesClient(states)
+        with patch.object(logbook, "datetime", Clock):
+            raw = await logbook.LogbookReader().read(
+                client, hours=None, entity_id="", response_limit=60000,
+                name="synthetic-password", secrets=("synthetic-password",))
+        self.assertNotIn("synthetic-password", raw)
+        self.assertEqual(json.loads(raw)["filter"]["entity_ids"], ["light.synthetic"])
+
+    async def test_states_failure_releases_slot(self):
+        reader = logbook.LogbookReader()
+        client = StatesClient()
+        async def failing(*args, **kwargs):
+            raise HomeAssistantApiError(details={"status": 500})
+        with patch.object(client, "request", failing), patch.object(logbook, "datetime", Clock), \
+                self.assertRaises(HomeAssistantApiError):
+            await reader.read(client, hours=None, entity_id="", response_limit=60000, name="synthetic")
+        self.assertFalse(reader._active)
+
+    async def test_continuation_recovers_omitted_rows_with_disclosed_overlap(self):
+        start = NOW - timedelta(hours=6)
+        rows = [{"entity_id": "sensor.synthetic", "when": (start + timedelta(seconds=60*i+30)).isoformat(),
+                 "message": f"{i:04}" + "x"*2048} for i in range(300)]
+
+        class Core(StatesClient):
+            async def request(self, method, path, body=None, raw=False, expected_statuses=frozenset(), *, logbook_read=False):
+                self.calls.append((method, path, raw, logbook_read))
+                split = urlsplit(path)
+                low = datetime.fromisoformat(unquote(split.path).removeprefix("/logbook/"))
+                high = datetime.fromisoformat(parse_qs(split.query)["end_time"][0])
+                # Core: exclusive start, chronological order.
+                return json.dumps([r for r in rows if low < datetime.fromisoformat(r["when"]) < high])
+
+        seen, kwargs, reads = [], {"start_time": start.isoformat(), "entity_ids": ["sensor.synthetic"]}, 0
+        while True:
+            client = Core()
+            result = json.loads(await self.read(client, **kwargs))
+            reads += 1
+            seen.extend(entry["message"][:4] for entry in result["entries"])
+            if not result["truncated"]:
+                break
+            continuation = result["continuation"]
+            self.assertTrue(continuation["overlap_possible"])
+            kwargs = {"start_time": continuation["start_time"], "end_time": continuation["end_time"],
+                      "entity_ids": ["sensor.synthetic"]}
+            self.assertLess(reads, 50)
+        self.assertGreater(reads, 1)
+        self.assertEqual(sorted(set(seen)), [f"{i:04}" for i in range(300)])
+
+    async def test_legacy_shape_unchanged_without_new_arguments(self):
+        client = FakeClient(entries())
+        with patch.object(logbook, "datetime", Clock):
+            raw = await logbook.LogbookReader().read(client, hours=12, entity_id="", response_limit=60000)
+        self.assertEqual(raw, json.dumps(entries(), separators=(",", ":")))
+
+
+class WindowProjectionTests(unittest.TestCase):
+    def records(self, count, size, offsets):
+        return [{"entity_id": f"sensor.synthetic_{i}", "when": at(minutes=offsets(i)), "message": "x"*size}
+                for i in range(count)]
+
+    def test_continuation_starts_before_earliest_omitted_unordered(self):
+        records = self.records(300, 2048, lambda i: (i*37) % 600 + 1)
+        result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+        returned = result["returned"]
+        self.assertTrue(result["truncated"])
+        self.assertGreater(returned, 0)
+        self.assertEqual(result["entries"], records[:returned])
+        self.assertEqual(returned + result["omitted"], 300)
+        earliest = min(datetime.fromisoformat(r["when"]) for r in records[returned:])
+        self.assertLess(earliest, min(datetime.fromisoformat(r["when"]) for r in records[:returned]))
+        self.assertEqual(result["continuation"], {
+            "start_time": (earliest - timedelta(microseconds=1)).isoformat(),
+            "end_time": NOW.isoformat(), "overlap_possible": True, "reason": None})
+        self.assertEqual(result["required_action"], logbook.NARROW_WINDOW)
+        self.assertLessEqual(len(json.dumps(result, separators=(",", ":"))), logbook.logbook_data_limit(60000))
+
+    def test_offset_when_values_are_normalized(self):
+        records = self.records(300, 2048, lambda i: i + 1)
+        for record in records:
+            record["when"] = datetime.fromisoformat(record["when"]).astimezone(
+                timezone(timedelta(hours=-5))).isoformat()
+        result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+        earliest = datetime.fromisoformat(records[-1]["when"]).astimezone(timezone.utc)
+        self.assertEqual(result["continuation"]["start_time"],
+                         (earliest - timedelta(microseconds=1)).isoformat())
+
+    def test_unusable_or_outside_when_has_null_continuation_with_reason(self):
+        for mutate, reason in (
+                (lambda r: r.pop("when"), "omitted_when_unavailable"),
+                (lambda r: r.update(when="2026-09-29T10:00:00"), "omitted_when_unavailable"),
+                (lambda r: r.update(when="not-a-time"), "omitted_when_unavailable"),
+                (lambda r: r.update(when=1759140000), "omitted_when_unavailable"),
+                (lambda r: r.update(when="2026-09-29T10:00:00+00:00" + " "*100), "omitted_when_unavailable"),
+                (lambda r: r.update(when="2026-09-20T10:00:00+00:00"), "omitted_when_outside_interval"),
+                (lambda r: r.update(when="2026-09-29T00:00:00+00:00"), "omitted_when_outside_interval")):
+            records = self.records(300, 2048, lambda i: i + 1)
+            mutate(records[-1])
+            with self.subTest(reason=reason, when=records[-1].get("when")):
+                result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+                self.assertTrue(result["truncated"])
+                self.assertEqual(result["continuation"], {"start_time": None, "end_time": None,
+                                                          "overlap_possible": True, "reason": reason})
+
+    def test_datetime_minimum_omitted_when_keeps_useful_partial(self):
+        # Codex L1: subtracting the overlap margin from datetime.min overflowed.
+        records = self.records(300, 2048, lambda i: i + 1)
+        records[-1]["when"] = "0001-01-01T00:00:00+00:00"
+        result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+        returned = result["returned"]
+        self.assertTrue(result["truncated"])
+        self.assertGreater(returned, 0)
+        self.assertEqual(result["entries"], records[:returned])
+        self.assertEqual(returned + result["omitted"], 300)
+        self.assertEqual(result["continuation"], {"start_time": None, "end_time": None,
+                                                  "overlap_possible": True,
+                                                  "reason": "omitted_when_outside_interval"})
+        self.assertEqual(result["required_action"], logbook.NARROW_WINDOW)
+        self.assertLessEqual(len(json.dumps(result, separators=(",", ":"))), logbook.logbook_data_limit(60000))
+
+    def test_continuation_interval_edges_are_unchanged(self):
+        # Control for the L1 guard: the microsecond overlap and both edges keep
+        # their semantics (start - margin must lie in [start, end)).
+        start = datetime(2026, 9, 29, tzinfo=timezone.utc)
+        margin = timedelta(microseconds=1)
+        for when, expected in (
+                (start + margin, start.isoformat()),
+                (NOW, (NOW - margin).isoformat()),
+                (start, None),
+                (NOW + margin, None)):
+            records = self.records(300, 2048, lambda i: i + 1)
+            for record in records:  # Every omitted row has this minimum.
+                record["when"] = when.isoformat()
+            with self.subTest(when=when):
+                result = json.loads(logbook.project_window(json.dumps(records), window_context(), 60000, ()))
+                self.assertTrue(result["truncated"])
+                self.assertEqual(result["continuation"], {
+                    "start_time": expected, "end_time": NOW.isoformat() if expected else None,
+                    "overlap_possible": True,
+                    "reason": None if expected else "omitted_when_outside_interval"})
+
+    def test_complete_empty_limit_and_malformed(self):
+        for records in ([], entries(3)):
+            result = json.loads(logbook.project_window(json.dumps(records), window_context(), 2048, ()))
+            self.assertEqual((result["entries"], result["truncated"], result["continuation"],
+                              result["required_action"]), (records, False, None, None))
+        # At a 1024-byte response limit the window object's metadata leaves
+        # room for an empty result only: a record fails closed, never an
+        # empty success.
+        self.assertEqual(json.loads(logbook.project_window("[]", window_context(), 1024, ()))["entries"], [])
+        for records, limit in ((entries(1, 100000), 60000), (entries(20, 1500), 2048),
+                               (entries(1), 1024)):
+            with self.assertRaises(GovernanceError) as error:
+                logbook.project_window(json.dumps(records), window_context(), limit, ())
+            self.assertEqual(error.exception.details["reason"], "response_bytes")
+        for raw in ('{}', '[0]', '[{"x":NaN}]', '[{"x":1,"x":2}]'):
+            with self.subTest(raw=raw), self.assertRaises(HomeAssistantApiError):
+                logbook.project_window(raw, window_context(), 60000, ())
+
+    def test_sizing_is_exact_at_small_budgets(self):
+        records = entries(40, 20)
+        for limit in (1500, 2048, 4096):
+            raw = logbook.project_window(json.dumps(records), window_context(), limit, ())
+            self.assertLessEqual(len(raw), logbook.logbook_data_limit(limit))
+            result = json.loads(raw)
+            self.assertTrue(result["truncated"])
+            # One more whole record would not have fit.
+            bigger = dict(result, entries=records[:result["returned"]+1])
+            self.assertGreater(len(json.dumps(bigger, separators=(",", ":"))), logbook.logbook_data_limit(limit) - 4)
+
+    def test_secret_suppression_in_window_entries(self):
+        value = [{"message": "token=synthetic-token", "password": "synthetic-password"}]
+        raw = logbook.project_window(json.dumps(value), window_context(), 60000, ("synthetic-password",))
+        for secret in ("synthetic-token", "synthetic-password"):
+            self.assertNotIn(secret, raw)
+
+
+class WindowRegisteredTests(unittest.IsolatedAsyncioTestCase):
+    async def call(self, client, **kwargs):
+        with patch.object(compatibility, "REST_CLIENT", client), \
+                patch.object(compatibility, "LOGBOOK", logbook.LogbookReader()):
+            return json.loads(await compatibility.get_logbook(**kwargs))
+
+    async def test_registered_windowed_completeness_and_object(self):
+        start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        for records, completeness in ((entries(2), "complete"), (entries(300, 2048), "partial")):
+            result = await self.call(StatesClient(value=records), start_time=start,
+                                     entity_ids=["sensor.synthetic_0"])
+            with self.subTest(completeness=completeness):
+                self.assertTrue(result["success"])
+                coverage = result["metadata"]["source_coverage"][0]
+                self.assertEqual(coverage["provider"], "direct_ha_api")
+                self.assertFalse(coverage["fallback_occurred"])
+                self.assertEqual(coverage["completeness"], completeness)
+                self.assertEqual(result["data"]["entries"], records[:result["data"]["returned"]])
+                self.assertEqual(result["data"]["filter"]["kind"], "entity_ids")
+
+    async def test_registered_name_mode_and_refusal_envelopes(self):
+        client = StatesClient([state("light.synthetic", friendly_name="Porch")], entries(1))
+        result = await self.call(client, name="porch")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["filter"]["entity_ids"], ["light.synthetic"])
+        client = StatesClient([state("light.synthetic")])
+        result = await self.call(client, name="porch")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], ErrorCode.INVALID_REQUEST.value)
+        self.assertIn("name_matched_no_entity", json.dumps(result))
+        self.assertEqual(len(client.calls), 1)
+        start = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        for kwargs in ({"hours": 6, "start_time": start}, {"entity_id": "light.a", "name": "porch"},
+                       {"start_time": "2026-09-29T10:00:00"}):
+            client = StatesClient()
+            result = await self.call(client, **kwargs)
+            with self.subTest(kwargs=kwargs):
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], ErrorCode.INVALID_REQUEST.value)
+                self.assertEqual(client.calls, [])
+
+    async def test_registered_default_call_keeps_legacy_list(self):
+        result = await self.call(FakeClient(entries()))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"], entries())
+
+    async def test_registered_start_time_overrides_default_hours(self):
+        start = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+        for kwargs in ({"start_time": start}, {"hours": 12, "start_time": start}):
+            client = StatesClient()
+            result = await self.call(client, **kwargs)
+            with self.subTest(kwargs=kwargs):
+                self.assertTrue(result["success"])
+                self.assertEqual(datetime.fromisoformat(result["data"]["requested_interval"]["start"]),
+                                 datetime.fromisoformat(start))
+                self.assertEqual(len(client.calls), 1)
+
+    def test_public_hours_schema_keeps_v1_default(self):
+        import inspect
+        self.assertEqual(inspect.signature(compatibility.get_logbook).parameters["hours"].default, 12)

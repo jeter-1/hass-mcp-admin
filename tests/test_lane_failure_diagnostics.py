@@ -55,6 +55,61 @@ class FailureReceipts(unittest.TestCase):
                     self.assertNotIn(canary, json.dumps(result))
                     self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
 
+    def test_lane_redirect_refusal_is_shown_only_on_an_exact_match(self):
+        import lane_session
+        code = 'lane_redirect_refused'
+        self.assertEqual(lane_session.REDIRECT_REFUSED, code)
+        self.assertIn(code, diagnostics.SAFE_MESSAGES)
+        with patch.object(diagnostics, '_raw_log', return_value=False):
+            for raised in (lane_session.LaneRedirectRefused(code), RuntimeError(code)):
+                self.assertEqual(diagnostics.failure(raised)['exception_chain'][0]['message'], code)
+            # The type is not exported: only the fixed code is.
+            self.assertEqual(diagnostics.failure(lane_session.LaneRedirectRefused(code))['exception_chain'][0]['type'],
+                             'Exception')
+            # A message that merely contains the code, or the code with anything appended, stays redacted.
+            canary = 'https://user:CANARY_CREDENTIAL@private.invalid/CANARY_PATH'
+            for message in (code + ' ', ' ' + code, code + '\n', code + ':', code + ': ' + canary,
+                            code + ' ' + canary, canary + ' ' + code, 'x' + code, code + 'x', code + code,
+                            code + '_twice', code[:-1], code.upper(), code.title(), repr(code), '', ' '):
+                with self.subTest(message=message):
+                    for raised in (lane_session.LaneRedirectRefused(message), RuntimeError(message),
+                                   lane_session.LaneRedirectRefused(code, canary),
+                                   lane_session.LaneRedirectRefused(message, code)):
+                        result = diagnostics.failure(raised)
+                        self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
+                        self.assertNotIn('CANARY', json.dumps(result))
+                        self.assertNotIn(code, json.dumps(result))
+
+    def test_lane_client_refusal_codes_are_exported_exactly_and_nothing_near_them(self):
+        # The fixed reason codes of the lanes' own clients (HAMCP-290 RawCore,
+        # HAMCP-329/298 LaneRaw): a withheld receipt names its reason.
+        codes = ('raw_core_url_not_pinned', 'raw_core_command_not_listed', 'lane_raw_url_not_loopback',
+                 'lane_raw_request_not_listed', 'lane_fixture_not_owned')
+        canary = 'ws://user:CANARY_CREDENTIAL@private.invalid/api/websocket'
+        with patch.object(diagnostics, '_raw_log', return_value=False):
+            for code in codes:
+                with self.subTest(code=code):
+                    self.assertIn(code, diagnostics.SAFE_MESSAGES)
+                    result = diagnostics.failure(ValueError(code))
+                    self.assertEqual(result['exception_chain'][0],
+                                     {'type': 'ValueError', 'message': code, 'frames': []})
+                # Any other text is still wholly redacted: the allowlist is the exact string.
+                for other in (code + ' ', ' ' + code, code + '\n', code.upper(), code[:-1], code + '_x',
+                              code + ': ' + canary, canary + ' ' + code, code + ' ' + codes[0],
+                              code.replace('_', ' '), code.replace('_', '-')):
+                    with self.subTest(code=code, other=other):
+                        self.assertNotIn(other, diagnostics.SAFE_MESSAGES)
+                        result = diagnostics.failure(ValueError(other))
+                        self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
+                        self.assertNotIn('CANARY', json.dumps(result))
+            # The prose these codes replaced, and a neighbouring lane's prose, stay redacted.
+            for prose in ('Not a created-object lane fixture', 'Not a created-object lane request',
+                          'Created-object lane requests go only to a loopback Core',
+                          'CI-harness routes go only to a loopback Core', 'unknown fixture reason'):
+                with self.subTest(prose=prose):
+                    result = diagnostics.failure(ValueError(prose))
+                    self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
+
     def test_chain_messages_and_frames_are_bounded_and_cycle_safe(self):
         error = None
         for _ in range(12):
@@ -192,7 +247,7 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
             async def __aenter__(self): return self
             async def __aexit__(self, *args): pass
         class Session(Response):
-            def get(self, *_args): return Response()
+            def get(self, *_args, **_kwargs): return Response()
         with patch.object(harness.aiohttp, 'ClientSession', return_value=Session()), \
                 patch.object(harness.asyncio, 'sleep', new=AsyncMock()), diagnostics.lane('helper_value'):
             with self.assertRaises(RuntimeError) as caught:
