@@ -1,13 +1,20 @@
 """HAMCP-319: the exact-image oracle is bound to the Engineering image under test.
 
 The side_by_side rollback stage runs ``scripts/exact_image_read_gateway_acceptance.py``
-against the previous published release 2.4.2-beta.6 (tag v2.4.2-beta.6, source
-af5ec837). That release predates HAMCP-290, HAMCP-229 and HAMCP-231: it registers 81 static
-tools (no ``get_marketplace_inventory``, ``automation_reliability_batch_analysis``
-or ``get_thread_matter_topology``)
+against the previous published release. Until HAMCP-377 that was 2.4.2-beta.6
+(tag v2.4.2-beta.6, source af5ec837). That release predates HAMCP-290, HAMCP-229
+and HAMCP-231: it registers 81 static tools (no ``get_marketplace_inventory``,
+``automation_reliability_batch_analysis`` or ``get_thread_matter_topology``)
 and still delegates ``ha_get_hacs_info`` (nothing
 retired, ``core_withheld_read_count`` 0). Applying the current source's
 expectation to it failed CI run 42547738402 (``sbs_rollback_85_legacy_useful``).
+
+HAMCP-377 (ruling 32): the stage runs 2.4.2-beta.7 (tag v2.4.2-beta.7, source
+b614be43). That release has the HAMCP-290 marketplace tool and retirement (82
+static tools, ``ha_get_hacs_info`` withheld, ``core_withheld_read_count`` 1).
+Its expectation is pinned and recomputed from its source here. The reviewed
+2.4.2-beta.6 expectation is kept and still tested; the workflow no longer
+runs that image.
 
 Offline: the Engineering session is a synthetic in-process fake; no Docker,
 network, live Home Assistant or credentials. The fake stops at the first
@@ -65,7 +72,8 @@ def _load_script(name: str):
 acceptance = _load_script("exact_image_read_gateway_acceptance")
 runners = _load_script("exact_image_admission_91_runners")
 
-ROLLBACK_VERSION = "2.4.2-beta.6"
+# The reviewed beta.6 expectation (kept; the stage ran it before HAMCP-377).
+BETA6_VERSION = "2.4.2-beta.6"
 MARKETPLACE = "get_marketplace_inventory"
 RELIABILITY_BATCH = "automation_reliability_batch_analysis"
 SECURITY_METADATA = "get_security_metadata"  # HAMCP-134, after beta.6
@@ -81,6 +89,11 @@ CURRENT_STATIC = frozenset(
 # thread/matter topology tool.
 BETA6_STATIC = CURRENT_STATIC - {MARKETPLACE, RELIABILITY_BATCH, SECURITY_METADATA,
                                 DEVICE_CONFIGURATION, THREAD_MATTER}
+# HAMCP-377, restated the same way: 2.4.2-beta.7 is the current static set
+# without the four tools added after it. It has the marketplace tool.
+PREVIOUS_RELEASE_VERSION = "2.4.2-beta.7"
+PREVIOUS_RELEASE_STATIC = CURRENT_STATIC - {RELIABILITY_BATCH, SECURITY_METADATA,
+                                            DEVICE_CONFIGURATION, THREAD_MATTER}
 RELEASE_850 = load_reviewed_upstream_release_registry().by_version["8.5.0"]
 POLICY_850 = RELEASE_850.policy
 READS_850 = frozenset(e.exposed_name for e in POLICY_850.tools if e.is_read_route)
@@ -181,11 +194,10 @@ def _inspect(
 
 BETA6_CATALOG = _catalog(BETA6_STATIC, READS_850)
 CURRENT_CATALOG = _catalog(CURRENT_STATIC, READS_850 - RETIRED_850)
+PREVIOUS_RELEASE_CATALOG = _catalog(PREVIOUS_RELEASE_STATIC, READS_850 - RETIRED_850)
 
 
-class RollbackImageCatalogOracleTests(unittest.TestCase):
-    """End-to-end through inspect_engineering with a synthetic session."""
-
+class _OracleAssertions:
     def assert_catalog_accepted(self, *, catalog, version) -> None:
         with self.assertRaises(_ReachedDelegatedCalls):
             _inspect(acceptance, catalog=catalog, health=_health(version))
@@ -197,6 +209,10 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
         self.assertIn(message, str(raised.exception))
         return calls
 
+
+class RollbackImageCatalogOracleTests(_OracleAssertions, unittest.TestCase):
+    """End-to-end through inspect_engineering with a synthetic session."""
+
     def test_fixture_preconditions(self):
         self.assertEqual(RETIRED_850, {"ha_get_hacs_info"})
         self.assertIn(MARKETPLACE, CURRENT_STATIC)
@@ -205,12 +221,12 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
         self.assertIn(DEVICE_CONFIGURATION, CURRENT_STATIC)  # HAMCP-297
         self.assertIn(THREAD_MATTER, CURRENT_STATIC)
         self.assertEqual(len(BETA6_STATIC), len(CURRENT_STATIC) - 5)
-        self.assertNotEqual(SERVER_VERSION, ROLLBACK_VERSION)
+        self.assertNotEqual(SERVER_VERSION, BETA6_VERSION)
 
     def test_beta6_rollback_image_catalog_is_accepted(self):
         # Failed before the correction: "The first accepted Engineering catalog
         # is incomplete" (current 82-tool base applied to beta.6's 81).
-        self.assert_catalog_accepted(catalog=BETA6_CATALOG, version=ROLLBACK_VERSION)
+        self.assert_catalog_accepted(catalog=BETA6_CATALOG, version=BETA6_VERSION)
 
     def test_current_image_keeps_the_full_hamcp290_checks(self):
         self.assert_catalog_accepted(catalog=CURRENT_CATALOG, version=SERVER_VERSION)
@@ -240,12 +256,12 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
     def test_mutant_a_beta6_expectation_on_current_image_fails(self):
         # A current-source catalog cannot pass by self-reporting beta.6.
         self.assert_refused(
-            catalog=CURRENT_CATALOG, health=_health(ROLLBACK_VERSION),
+            catalog=CURRENT_CATALOG, health=_health(BETA6_VERSION),
             message="catalog is incomplete",
         )
         catalog = _catalog(CURRENT_STATIC, READS_850)
         self.assert_refused(
-            catalog=catalog, health=_health(ROLLBACK_VERSION),
+            catalog=catalog, health=_health(BETA6_VERSION),
             message="unexpected tool exposed",
         )
 
@@ -266,9 +282,112 @@ class RollbackImageCatalogOracleTests(unittest.TestCase):
                     self.assertIn("unreviewed Engineering version", str(raised.exception))
 
 
+class PreviousReleaseCatalogOracleTests(_OracleAssertions, unittest.TestCase):
+    """HAMCP-377: the same oracle for 2.4.2-beta.7, the release the stage moves to."""
+
+    def test_fixture_preconditions(self):
+        self.assertEqual(len(PREVIOUS_RELEASE_STATIC), len(CURRENT_STATIC) - 4)
+        self.assertIn(MARKETPLACE, PREVIOUS_RELEASE_STATIC)
+        self.assertNotIn(PREVIOUS_RELEASE_VERSION, (SERVER_VERSION, BETA6_VERSION))
+
+    def test_previous_release_catalog_is_accepted(self):
+        # Before HAMCP-377: "unreviewed Engineering version".
+        self.assert_catalog_accepted(
+            catalog=PREVIOUS_RELEASE_CATALOG, version=PREVIOUS_RELEASE_VERSION
+        )
+
+    def test_previous_release_advertising_the_retired_read_is_refused(self):
+        self.assert_refused(
+            catalog=_catalog(PREVIOUS_RELEASE_STATIC, READS_850),
+            health=_health(PREVIOUS_RELEASE_VERSION),
+            message="a retired delegated read is advertised",
+        )
+
+    def test_previous_release_missing_marketplace_is_refused(self):
+        self.assert_refused(
+            catalog=_catalog(BETA6_STATIC, READS_850 - RETIRED_850),
+            health=_health(PREVIOUS_RELEASE_VERSION),
+            message="catalog is incomplete",
+        )
+
+    def test_other_release_catalogs_cannot_pass_by_reporting_the_previous_release(self):
+        self.assert_refused(
+            catalog=BETA6_CATALOG, health=_health(PREVIOUS_RELEASE_VERSION),
+            message="catalog is incomplete",
+        )
+        self.assert_refused(
+            catalog=CURRENT_CATALOG, health=_health(PREVIOUS_RELEASE_VERSION),
+            message="unexpected tool exposed",
+        )
+
+    def test_previous_release_catalog_cannot_pass_under_another_expectation(self):
+        for version in (SERVER_VERSION, BETA6_VERSION):
+            with self.subTest(version=version):
+                self.assert_refused(
+                    catalog=PREVIOUS_RELEASE_CATALOG, health=_health(version),
+                    message="catalog is incomplete",
+                )
+
+    def test_near_miss_versions_fail_closed(self):
+        for version in ("2.4.2-beta.7 ", "2.4.2-BETA.7", "2.4.2-beta.70", "2.4.2-beta.9"):
+            with self.subTest(version=version):
+                self.assert_refused(
+                    catalog=PREVIOUS_RELEASE_CATALOG, health=_health(version),
+                    message="unreviewed Engineering version",
+                )
+
+    def test_previous_release_outside_its_reviewed_upstream_version_fails_closed(self):
+        with self.assertRaises(acceptance.AcceptanceFailure) as raised:
+            _inspect(
+                acceptance, catalog=PREVIOUS_RELEASE_CATALOG,
+                health=_health(PREVIOUS_RELEASE_VERSION), expected_upstream_version="9.1.0",
+            )
+        self.assertIn("no reviewed expectation", str(raised.exception))
+
+    def test_pinned_expectation_matches_the_restated_values(self):
+        self.assertEqual(acceptance.PREVIOUS_RELEASE_ENGINEERING_VERSION, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(len(acceptance.PREVIOUS_RELEASE_STATIC_TOOL_NAMES), 82)
+        self.assertEqual(acceptance.PREVIOUS_RELEASE_STATIC_TOOL_NAMES, PREVIOUS_RELEASE_STATIC)
+        self.assertEqual(
+            acceptance.PREVIOUS_RELEASE_RETIRED_DELEGATED_READS, frozenset({"ha_get_hacs_info"})
+        )
+        self.assertEqual(
+            dict(acceptance.PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION),
+            {"8.5.0": READS_850 - RETIRED_850},
+        )
+        selected = acceptance.engineering_expectation(
+            PREVIOUS_RELEASE_VERSION, current_static_names=CURRENT_STATIC
+        )
+        self.assertEqual(selected.version, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(selected.static_names, PREVIOUS_RELEASE_STATIC)
+        self.assertEqual(selected.retired_upstream, frozenset({"ha_get_hacs_info"}))
+        source = (ROOT / "scripts" / "exact_image_read_gateway_acceptance.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("b614be43f8c56ae06fdec0ac0bcb479b9da39715", source)
+        self.assertIn("v2.4.2-beta.7", source)
+
+    def test_changed_pins_reject_the_previous_release(self):
+        full_reads = {"8.5.0": READS_850}
+        for name, value, message in (
+            ("PREVIOUS_RELEASE_STATIC_TOOL_NAMES", CURRENT_STATIC, "catalog is incomplete"),
+            ("PREVIOUS_RELEASE_STATIC_TOOL_NAMES", BETA6_STATIC, "unexpected tool exposed"),
+            ("PREVIOUS_RELEASE_RETIRED_DELEGATED_READS", frozenset(),
+             "differs from the Engineering image's own source"),
+            ("PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION", full_reads,
+             "differs from the Engineering image's own source"),
+        ):
+            with self.subTest(pin=name, message=message):
+                with mock.patch.object(acceptance, name, value):
+                    self.assert_refused(
+                        catalog=PREVIOUS_RELEASE_CATALOG,
+                        health=_health(PREVIOUS_RELEASE_VERSION), message=message,
+                    )
+
+
 class VersionBoundExpectationTests(unittest.TestCase):
     def test_pinned_beta6_expectation_matches_published_source(self):
-        self.assertEqual(acceptance.BETA6_ENGINEERING_VERSION, ROLLBACK_VERSION)
+        self.assertEqual(acceptance.BETA6_ENGINEERING_VERSION, BETA6_VERSION)
         self.assertEqual(len(acceptance.BETA6_STATIC_TOOL_NAMES), 81)
         self.assertEqual(acceptance.BETA6_STATIC_TOOL_NAMES, BETA6_STATIC)
         self.assertEqual(acceptance.BETA6_RETIRED_DELEGATED_READS, frozenset())
@@ -277,12 +396,17 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertNotIn(DEVICE_CONFIGURATION, acceptance.BETA6_STATIC_TOOL_NAMES)  # HAMCP-297
 
     def test_pinned_version_is_the_rollback_identity(self):
-        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, ROLLBACK_VERSION)
+        # HAMCP-377 (ruling 32): the stage runs 2.4.2-beta.7, whose expectation
+        # is recomputed from the same commit the rollback identity pins.
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(acceptance.PREVIOUS_RELEASE_ENGINEERING_VERSION, PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_REVISION, PREVIOUS_RELEASE_COMMIT)
         workflow = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         )
         env = workflow["jobs"]["exact-image-admission-lanes"]["env"]
-        self.assertEqual(env["ROLLBACK_ENGINEERING_VERSION"], ROLLBACK_VERSION)
+        self.assertEqual(env["ROLLBACK_ENGINEERING_VERSION"], PREVIOUS_RELEASE_VERSION)
+        self.assertEqual(env["ROLLBACK_ENGINEERING_IMAGE"], runners.ROLLBACK_ENGINEERING_IMAGE)
 
     def test_provenance_is_recorded(self):
         source = (ROOT / "scripts" / "exact_image_read_gateway_acceptance.py").read_text(
@@ -299,7 +423,7 @@ class VersionBoundExpectationTests(unittest.TestCase):
         self.assertEqual(current.static_names, CURRENT_STATIC)
         self.assertEqual(current.retired_upstream, frozenset(RETIRED_DELEGATED_READS))
         beta6 = acceptance.engineering_expectation(
-            ROLLBACK_VERSION, current_static_names=CURRENT_STATIC
+            BETA6_VERSION, current_static_names=CURRENT_STATIC
         )
         self.assertEqual(beta6.static_names, BETA6_STATIC)
         self.assertEqual(beta6.retired_upstream, frozenset())
@@ -327,19 +451,19 @@ class VersionBoundExpectationTests(unittest.TestCase):
     def test_mutant_pinned_set_equal_to_current_rejects_beta6(self):
         with mock.patch.object(acceptance, "BETA6_STATIC_TOOL_NAMES", CURRENT_STATIC):
             with self.assertRaises(acceptance.AcceptanceFailure):
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
 
     def test_mutant_beta6_retiring_hacs_rejects_beta6(self):
         with mock.patch.object(
             acceptance, "BETA6_RETIRED_DELEGATED_READS", frozenset(RETIRED_DELEGATED_READS)
         ):
             with self.assertRaises(acceptance.AcceptanceFailure):
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
 
     def test_beta6_outside_its_reviewed_upstream_version_fails_closed(self):
         with self.assertRaises(acceptance.AcceptanceFailure) as raised:
             _inspect(
-                acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION),
+                acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION),
                 expected_upstream_version="9.1.0",
             )
         self.assertIn("no reviewed expectation", str(raised.exception))
@@ -350,13 +474,15 @@ class VersionBoundExpectationTests(unittest.TestCase):
             acceptance, "BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION", drifted
         ):
             with self.assertRaises(acceptance.AcceptanceFailure) as raised:
-                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(ROLLBACK_VERSION))
+                _inspect(acceptance, catalog=BETA6_CATALOG, health=_health(BETA6_VERSION))
         self.assertIn("differs from the Engineering image's own source", str(raised.exception))
 
 
 BETA6_COMMIT = "af5ec8375401276f910804843c2ddb9180533c77"
 BETA6_TAG = "v2.4.2-beta.6"
-DRIVER = ROOT / "tests" / "support" / "hamcp319_beta6_expectation_driver.py"
+PREVIOUS_RELEASE_COMMIT = "b614be43f8c56ae06fdec0ac0bcb479b9da39715"
+PREVIOUS_RELEASE_TAG = "v2.4.2-beta.7"
+DRIVER = ROOT / "tests" / "support" / "hamcp319_previous_release_expectation_driver.py"
 
 
 def _git(*args: str, binary: bool = False) -> Any:
@@ -366,6 +492,40 @@ def _git(*args: str, binary: bool = False) -> Any:
     if result.returncode != 0:
         return None
     return result.stdout if binary else result.stdout.decode().strip()
+
+
+def _derive_from_published_source(case: type[unittest.TestCase], commit: str, label: str) -> None:
+    """Set ``archive_commit`` and ``derived`` on the class from a git archive of ``commit``."""
+
+    missing = None
+    if shutil.which("git") is None:
+        missing = "git is unavailable"
+    elif _git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}") != commit:
+        missing = f"{label} commit {commit} is not in this clone"
+    if missing is not None:
+        if os.environ.get("CI") == "true":
+            raise AssertionError(missing)
+        raise unittest.SkipTest(missing)
+    archive = _git("archive", "--format=tar", commit, "hass_mcp_engineering_beta", binary=True)
+    if archive is None:
+        raise AssertionError(f"git archive of {label} failed")
+    case.archive_commit = subprocess.run(
+        ["git", "-C", str(ROOT), "get-tar-commit-id"], input=archive,
+        capture_output=True, check=True, timeout=120,
+    ).stdout.decode().strip()
+    temp = Path(tempfile.mkdtemp(prefix="hamcp319-rollback-expectation-"))
+    case.addClassCleanup(shutil.rmtree, temp)
+    source = temp / "release-source"
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(source, filter="data")
+    completed = subprocess.run(
+        [sys.executable, "-I", str(DRIVER), str(source / "hass_mcp_engineering_beta")],
+        cwd=str(temp), capture_output=True, text=True, timeout=600, check=False,
+        env={**os.environ, "TMPDIR": str(temp)},
+    )
+    if completed.returncode != 0:
+        raise AssertionError(f"{label} derivation failed:\n{completed.stderr[-4000:]}")
+    case.derived = json.loads(completed.stdout)
 
 
 class PinnedBeta6ValuesComeFromPublishedSourceTests(unittest.TestCase):
@@ -379,35 +539,7 @@ class PinnedBeta6ValuesComeFromPublishedSourceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        missing = None
-        if shutil.which("git") is None:
-            missing = "git is unavailable"
-        elif _git("rev-parse", "--verify", "--quiet", f"{BETA6_COMMIT}^{{commit}}") != BETA6_COMMIT:
-            missing = f"beta.6 commit {BETA6_COMMIT} is not in this clone"
-        if missing is not None:
-            if os.environ.get("CI") == "true":
-                raise AssertionError(missing)
-            raise unittest.SkipTest(missing)
-        archive = _git("archive", "--format=tar", BETA6_COMMIT, "hass_mcp_engineering_beta", binary=True)
-        if archive is None:
-            raise AssertionError("git archive of beta.6 failed")
-        cls.archive_commit = subprocess.run(
-            ["git", "-C", str(ROOT), "get-tar-commit-id"], input=archive,
-            capture_output=True, check=True, timeout=120,
-        ).stdout.decode().strip()
-        temp = Path(tempfile.mkdtemp(prefix="hamcp319-beta6-expectation-"))
-        cls.addClassCleanup(shutil.rmtree, temp)
-        source = temp / "beta6-source"
-        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-            tar.extractall(source, filter="data")
-        completed = subprocess.run(
-            [sys.executable, "-I", str(DRIVER), str(source / "hass_mcp_engineering_beta")],
-            cwd=str(temp), capture_output=True, text=True, timeout=600, check=False,
-            env={**os.environ, "TMPDIR": str(temp)},
-        )
-        if completed.returncode != 0:
-            raise AssertionError(f"beta.6 derivation failed:\n{completed.stderr[-4000:]}")
-        cls.derived = json.loads(completed.stdout)
+        _derive_from_published_source(cls, BETA6_COMMIT, "beta.6")
 
     def test_archive_is_the_published_commit(self):
         self.assertEqual(self.archive_commit, BETA6_COMMIT)
@@ -455,6 +587,53 @@ class PinnedBeta6ValuesComeFromPublishedSourceTests(unittest.TestCase):
             len(acceptance.retired_exposed_names(POLICY_850, acceptance.BETA6_RETIRED_DELEGATED_READS)),
             0,
         )
+
+
+class PinnedPreviousReleaseValuesComeFromPublishedSourceTests(unittest.TestCase):
+    """HAMCP-377: recompute every pinned 2.4.2-beta.7 value from the b614be43 tree itself.
+
+    Source: tag v2.4.2-beta.7 = commit b614be43, an ancestor of this branch. In
+    CI a missing commit is a failure, not a skip.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _derive_from_published_source(cls, PREVIOUS_RELEASE_COMMIT, "2.4.2-beta.7")
+
+    def test_archive_is_the_published_commit(self):
+        self.assertEqual(self.archive_commit, PREVIOUS_RELEASE_COMMIT)
+        tagged = _git("rev-parse", "--verify", "--quiet", f"{PREVIOUS_RELEASE_TAG}^{{commit}}")
+        if tagged is not None:
+            self.assertEqual(tagged, PREVIOUS_RELEASE_COMMIT)
+
+    def test_version_pin(self):
+        self.assertEqual(self.derived["version"], acceptance.PREVIOUS_RELEASE_ENGINEERING_VERSION)
+
+    def test_static_tool_pin(self):
+        self.assertEqual(self.derived["static_count_constant"], 82)
+        self.assertEqual(len(self.derived["static_names"]), 82)
+        self.assertEqual(
+            frozenset(self.derived["static_names"]),
+            acceptance.PREVIOUS_RELEASE_STATIC_TOOL_NAMES,
+        )
+
+    def test_retired_set_pin(self):
+        self.assertEqual(self.derived["retired_delegated_reads"], ["ha_get_hacs_info"])
+        self.assertEqual(
+            acceptance.PREVIOUS_RELEASE_RETIRED_DELEGATED_READS,
+            frozenset(self.derived["retired_delegated_reads"]),
+        )
+
+    def test_delegated_read_pin_is_the_reviewed_routes_less_the_retired_read(self):
+        derived = self.derived["delegated_reads_by_upstream_version"]
+        retired = frozenset(self.derived["retired_delegated_reads"])
+        pinned = acceptance.PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION
+        self.assertEqual(set(pinned), set(derived))
+        self.assertEqual(len(derived["8.5.0"]), 28)
+        self.assertTrue(retired <= frozenset(derived["8.5.0"]))
+        for version, names in derived.items():
+            self.assertEqual(pinned[version], frozenset(names) - retired)
+        self.assertEqual(len(pinned["8.5.0"]), 27)
 
 
 if __name__ == "__main__":

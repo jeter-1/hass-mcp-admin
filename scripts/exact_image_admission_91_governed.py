@@ -4,7 +4,7 @@ Section 5.1 cases ``91_governed_dashboard_verified_readback`` and
 ``91_typed_public_verified_readback`` (``--configuration 91_only``), and the
 side_by_side rollback stages (``--configuration side_by_side``): stage A
 (current build with the 8.5.0 peer on the legacy endpoint), the digest-pinned
-2.4.2-beta.6 rollback image with the same peer, and stage A again, each with a
+previous-release rollback image with the same peer, and stage A again, each with a
 governed dashboard case and a public typed case. Unlike the in-process typed
 case, every operation here goes through the Engineering image's public MCP
 endpoint, the same one a client uses:
@@ -114,7 +114,8 @@ STAGES: tuple[Stage, ...] = (
     Stage("stage_a", "side_by_side", BASELINE_VERSION, "legacy", False,
           "sbs_governed_dashboard_stage_a_85_legacy", "sbs_typed_public_stage_a_85_legacy"),
     Stage("rollback", "side_by_side", BASELINE_VERSION, "legacy", True,
-          "sbs_governed_dashboard_rollback_beta6_85_legacy", "sbs_typed_public_rollback_beta6_85_legacy"),
+          "sbs_governed_dashboard_rollback_previous_release_85_legacy",
+          "sbs_typed_public_rollback_previous_release_85_legacy"),
     Stage("stage_a_again", "side_by_side", BASELINE_VERSION, "legacy", False,
           "sbs_governed_dashboard_stage_a_again_85_legacy", "sbs_typed_public_stage_a_again_85_legacy"),
 )

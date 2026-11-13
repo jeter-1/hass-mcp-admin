@@ -54,11 +54,13 @@ Fixture provenance (committed evidence only, never hand-edited):
 
 Engineering rollback is NOT accepted here. Its acceptance is the exact-image
 lane (handoff Lane contract section E, Josh ruling 2026-11-07 on #407), which
-runs the previous release, 2.4.2-beta.6, by published digest
-sha256:9284290132d1d4f06195f5ee5bb27797238b86d8a250db13c6c78f2171059f6a in two
-cases: ``sbs_rollback_85_legacy_useful`` (beta.6 on the 8.5 legacy URL against
-8.5.0, must be useful) and ``sbs_engineering_rollback_91_refused`` (beta.6
-strict against 9.1.0, must be refused with unsupported_version_rollback). The
+runs the previous release, 2.4.2-beta.7 (HAMCP-377; it was 2.4.2-beta.6), by
+published digest
+sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47 in two
+cases: ``sbs_rollback_85_legacy_useful`` (beta.7 on the 8.5 legacy URL against
+8.5.0, must be useful) and ``sbs_engineering_rollback_91_refused`` (beta.7
+strict against 9.1.2, which it does not review, must be refused with
+unsupported_version_rollback). The
 runners arrive via #407. No "current build minus the 9.1.0 entry" variant is
 modelled (Josh ruling 2026-11-07: skipped).
 
@@ -541,7 +543,7 @@ class SideBySideTests(_Assertions, unittest.TestCase):
                 stale_tool=b2["tools"][b2["case"].public_tool],
             )
             await stage("rollback_suffix_removed", "8.5.0", "legacy")
-            # Engineering rollback (2.4.2-beta.6 by digest) is a lane stage,
+            # Engineering rollback (2.4.2-beta.7 by digest) is a lane stage,
             # not modelled here; see the module docstring.
 
         with patch.object(socketserver.BaseServer, "handle_error", lambda *_a: None):

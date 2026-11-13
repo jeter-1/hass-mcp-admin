@@ -1,10 +1,10 @@
 """Derive the HAMCP-319 rollback-image expectation from an extracted source tree.
 
 Run with ``python -I <this file> <hass_mcp_engineering_beta directory>`` on a
-``git archive`` of the published 2.4.2-beta.6 source (af5ec837). Prints one JSON
-object computed only from that tree's own code: its self-reported version, its
-static tool registration, its reviewed 8.5.0 delegated read routes, and whether
-it carries any delegated-read retirement.
+``git archive`` of a published release's source (2.4.2-beta.6 at af5ec837,
+2.4.2-beta.7 at b614be43). Prints one JSON object computed only from that
+tree's own code: its self-reported version, its static tool registration, its
+reviewed 8.5.0 read routes, and the delegated reads it retires, if any.
 """
 
 from __future__ import annotations
