@@ -6,6 +6,52 @@ version, or any runtime file. Signing a Core registry sequence is Josh's
 owner action, done through the protected `core-release-registry-signing`
 environment.
 
+## What changed on 2026-11-13 (Josh's rulings R-a to R-g; sheet A refreshed to the release head)
+
+Basis: seven rulings of Josh's, R-a to R-g, relayed verbatim to this
+author by the orchestrating session on 2026-11-13 and quoted in §9D. Every
+other value in this entry was computed or read by this author at this
+branch's head `3bd5fe3f1f1ff6d858e34ecd65a1f80198c46e51` (the #395 fold
+merge) and is labelled [R] or [S]; none of it is Josh's. Nothing was
+signed, prepared, pushed or dispatched, and no lane was run.
+
+- **All six 2.6 profiles are merged** into `release/2.6.0`, each with its
+  lane script, evidence group and a committed PASS receipt (§5A.3, §5A.4,
+  §5A.12). The tuple compiles **38** profiles at `3bd5fe3f` [R]. The
+  table of unmerged profiles in §5A.12 and the provisional table under
+  sheet A are removed, with the merge commits verified by `git log`.
+- **Membership (R-a):** all six, each conditional on its own lane passing
+  on the signing commit. A profile whose lane fails is dropped from
+  sequence 18 and the others proceed (§5A.5, §5A.11 item 3).
+- **Candidate construction (R-b):** `previous_capabilities` are the 32
+  signed sequence 17 references in their signed order, not the first 32
+  compiled profiles; the six added references follow in compiled order.
+  Both rules are recorded in §5A.5 and cross-referenced from sheet B. This
+  answers §5A.13 Q11, which was an [A] proposal.
+- **Device-configuration fingerprint (R-c):** the provisional mark on
+  `74a03a64…` is removed in sheet A's architect table. It is still
+  recomputed on the signing commit, like every row.
+- **Recompute on the signing commit (R-d):** the architect recomputes all
+  38 fingerprints on the `release/2.6.0` to `main` merge commit before
+  signing (sheet A; §5A.8 step 1).
+- **New gate (R-e):** every candidate reference uses exactly the closed
+  field set beta.7 accepts. Added as PC10 (§5A.7) and stop condition 14
+  (§5A.11), citing the model at the tag.
+- **One-way signing (R-f):** stated once in §5A.10.
+- **Entity rename stays out (R-g):** the §5A.5 exclusion and the §5A.12
+  removed-row note stay.
+- **Computed at `3bd5fe3f` [R]:** all 38 fingerprints equal the
+  `4d68e4d8` values row by row; the 32 signed references match their
+  compiled profiles in every signed field; the evidence-group manifest
+  and the contract-read manifest hashes are in sheet A; every committed
+  receipt binds source commit `5fc40f93` and the current contract-read
+  manifest hash. The HAMCP-134 receipt no longer binds `07bc9034…`
+  (§5A.4). R8 still applies: every included lane re-runs once on the
+  signing commit.
+- **One gap found [S]:** `ci/core-contract-read-files.json` has no profile
+  entry for `core.device_configuration_entity_operation`, which G5 as this
+  plan words it asks for (§5A.4). Recorded as open; not resolved here.
+
 ## What changed in the second revision of 2026-11-10 (Josh's rulings)
 
 Basis: seven rulings Josh gave in session on 2026-11-10, in two blocks,
@@ -162,6 +208,23 @@ The #390 row is kept for the record. Its profile left this plan on
   `E/ha_core_readmission/profiles.py` grew: the C9 id rule is now at `:120`
   (`_contract` at `:109-142`), and `CORE_RUNTIME_CAPABILITY_PROFILES` is at
   `:1076-1086`.
+- Refreshed 2026-11-13: this branch's head is
+  `3bd5fe3f1f1ff6d858e34ecd65a1f80198c46e51`, the merge that folds #395
+  into the release head (parents `1d430d6d`, whose first parent is
+  `release/2.6.0` at `7d2989ad` (#437), and `8baf4510`). It carries all six
+  2.6 profiles and their lanes (§5A.3). Over `02627caf..3bd5fe3f` the diff
+  is empty for `scripts/prepare_core_release_registry.py`,
+  `scripts/core_registry_one_tap.py`, `scripts/core_release_evidence.py`,
+  `scripts/core_lane_bindings.py`, `scripts/core_evidence_lanes.py`,
+  `scripts/check_core_registry_branch.sh`,
+  `.github/workflows/core-release-registry-publish.yml` and
+  `E/ha_core_readmission/registry.py` [R], so their line numbers hold.
+  `E/ha_core_readmission/profiles.py` grew again: `_contract` is at
+  `:109-143` (the id rule still at `:120`, `"profile_version": 1` at
+  `:127`), `CORE_CAPABILITY_PROFILES` at `:157`, and
+  `CORE_RUNTIME_CAPABILITY_PROFILES` at `:1349-1361`. In
+  `E/ha_core_readmission/models.py` the fingerprint function is now at
+  `:188-189`.
 - Canonical journal: `origin/registry` at
   `e486028ed0b06b8a5a737824c829705b403b34d8`, sequence 17 (re-read
   2026-11-10; unchanged).
@@ -341,6 +404,11 @@ this plan does not state it.
   (`:900`), `CORE_SECURITY_METADATA_PROFILES` (`:955`) and
   `CORE_DEVICE_CONFIGURATION_PROFILES` (`:1041`). The probe-bound tuple is
   now at `:157` and still has 17. Details in §5A.3.
+- Updated 2026-11-13: at `3bd5fe3f` the tuple has **38** profiles
+  (`profiles.py:1349-1361`): the 35 above plus
+  `CORE_CREATED_OBJECT_PROFILES` (`:1198`, two profiles) and
+  `CORE_THREAD_MATTER_TOPOLOGY_PROFILES` (`:900`). The probe-bound tuple
+  is at `:157` and still has 17 [R]. Details in §5A.3.
 
 ### 2.5 Offline verification result (author, 2026-11-07)
 
@@ -397,6 +465,13 @@ What source now settles, and what it does not:
 | The 2026.11.0 reference list at preparation | Still the 32 of §2.3 today. Unknown at preparation for the same reason | §5A.6 |
 | Final reference count | 33 to 38: the 32 signed today plus one to six added, depending on which of the six profiles are merged and pass on the signing commit in time | §5A.5 |
 | Deployed Core and Engineering versions | Still unknown; not observed | n/a |
+
+**Updated 2026-11-13 [R].** The 2026-11-10 table is kept as written. At
+`3bd5fe3f`, N2, N3 and N6 are merged, so the ids and fingerprints of all
+six 2.6 profiles are known at the release head (§5A.3); each is final for
+signing only when the architect recomputes it on the signing commit (R-d,
+§9D). The final reference count is 38 if every included lane passes on
+the signing commit, and 32 plus the number added otherwise (R-a, §9D).
 
 ## 3. Profiles that must stay byte-identical
 
@@ -666,23 +741,44 @@ other signing is published first (§5A.11).
 
 ### 5A.3 Profiles merged and not signed
 
-`CORE_RUNTIME_CAPABILITY_PROFILES` (`E/ha_core_readmission/profiles.py:1076-1086`)
-compiles 35 profiles at `02627caf` [R]. Three are not in the signed entry.
-All three are `auto_eligible`, version 1, and follow the C9 id rule
-(`profiles.py:120`, `:127`).
+**Refreshed 2026-11-13 to `3bd5fe3f` [R].**
+`CORE_RUNTIME_CAPABILITY_PROFILES` (`E/ha_core_readmission/profiles.py:1349-1361`)
+compiles 38 profiles at `3bd5fe3f`. Six are not in the signed entry. All
+six are `auto_eligible`, version 1, and follow the C9 id rule
+(`profiles.py:120`, `:127`). They are compiled 33rd to 38th, in the order
+of the table below.
 
-| # | Capability id / profile id | Adapter id; class | Fingerprint [R] | Defined at [S] | Merged by [G] | On `main` (`c041f59d`)? |
+The first 32 compiled profiles are the 32 signed references, but not in
+signed order [R]: signed 1-19 are compiled 1-19, signed 20-31 are compiled
+21-32, and `core.typed_helper_value_operation` is compiled 20th and signed
+32nd. So the candidate's carried prefix is the signed list, not the first
+32 compiled profiles (R-b; §5A.5).
+
+| # | Capability id / profile id | Adapter id; class | Fingerprint [R] | Defined at [S] | Merged into `release/2.6.0` by [S] | On `main` (`c041f59d`)? |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | `core.marketplace_read` / `core_marketplace_read_v1` | `compiled-core-marketplace-read-v1`; `marketplace_inventory_read` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` | `profiles.py:900` | #409 (HAMCP-290) into `release/2.5.0`, then #383 into `main` | Yes, with the same fingerprint [R] |
-| M2 | `core.security_metadata_read` / `core_security_metadata_read_v1` | `compiled-core-security-metadata-read-v1`; `security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `profiles.py:955-1035` | #423 (HAMCP-134), merge `6e65ba4d83e9e9f365fc853fa31c56d0be1a35aa` | No |
-| M3 | `core.device_configuration_entity_operation` / `core_device_configuration_entity_operation_v1` | `compiled-core-device-configuration-entity-operation-v1`; `typed_ordinary_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `profiles.py:1041-1075`; ids and allowlist in `E/device_configuration/contracts.py:25-28`, `:48-52`, `:80-85` | #428 (HAMCP-297), merge `fcd6973f14dce01dd3e1fc3d59738a12cd9365c3` | No |
+| M1 | `core.marketplace_read` / `core_marketplace_read_v1` | `compiled-core-marketplace-read-v1`; `marketplace_inventory_read` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` | `profiles.py:998-1046` (id at `:1000`) | Profile: #409 (HAMCP-290), merge `19caf5144fc8e1959b8d83db1fa5b4fe52f9ad9f` into `release/2.5.0`, then #383 (`b614be43f8c56ae06fdec0ac0bcb479b9da39715`) into `main`. Lane: #421 (HAMCP-290), merge `29339009759331118d0402d0be4aaf9e1c13fe26`, 2026-11-11 08:33 CST | Yes, with the same fingerprint [R] |
+| M2 | `core.security_metadata_read` / `core_security_metadata_read_v1` | `compiled-core-security-metadata-read-v1`; `security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `profiles.py:1053-1133` (id at `:1055`) | #423 (HAMCP-134), merge `6e65ba4d83e9e9f365fc853fa31c56d0be1a35aa`, 2026-11-10 08:21 CST | No |
+| M3 | `core.device_configuration_entity_operation` / `core_device_configuration_entity_operation_v1` | `compiled-core-device-configuration-entity-operation-v1`; `typed_ordinary_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `profiles.py:1139-1173`; ids and allowlist in `E/device_configuration/contracts.py:25-28`, `:48-52`, `:80-85` (unchanged since `02627caf`) | Profile: #428 (HAMCP-297), merge `fcd6973f14dce01dd3e1fc3d59738a12cd9365c3`, 2026-11-10 15:30 CST. Lane: #434 (HAMCP-366), merge `1bb864b767531ce311c2cb2c997c48c900273bd8`, 2026-11-11 19:12 CST | No |
+| M4 | `core.scene_create_delete_operation` / `core_scene_create_delete_operation_v1` | `compiled-core-scene-create-delete-operation-v1`; `scene_create_delete_operation` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `profiles.py:1198-1348` (id at `:1200`) | #424 (HAMCP-329 / HAMCP-298), merge `ccaed9ef2183cff2796b835a052de8a88db12229`, 2026-11-11 11:21 CST | No |
+| M5 | `core.created_helper_delete_operation` / `core_created_helper_delete_operation_v1` | `compiled-core-created-helper-delete-operation-v1`; `created_helper_delete_operation` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | `profiles.py:1198-1348` (id at `:1290`) | #424, as M4 | No |
+| M6 | `core.thread_matter_topology_read` / `core_thread_matter_topology_read_v1` | `compiled-core-thread-matter-topology-read-v1`; `thread_matter_topology_read` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | `profiles.py:900-989` (id at `:902`) | #427 (HAMCP-231), merge `a860671f2593ae9a39a97fff8c30effe0c79016b`, 2026-11-11 16:21 CST | No |
 
-M2 is §4 row N5 and M3 is §4 row N4. M1 is HAMCP-290. It has no §4 row; R6
-(§9C) puts it in the combined sequence 18, with a fallback to sequence 19
-(§5A.5).
+Every merge commit above is on the first-parent history of
+`release/2.6.0` at `7d2989ad` and is an ancestor of `3bd5fe3f`, checked
+with `git log --first-parent` and `git merge-base --is-ancestor` [R]. The
+"On `main`" column reads the local `origin/main` ref at `c041f59d`, not
+re-fetched for this refresh. #425 (HAMCP-295, entity rename) is not
+merged and is excluded (R-g; §5A.5 Exclusions).
 
-To reproduce the fingerprints, from a checkout of the commit, with the
-locked requirements installed:
+M2 is §4 row N5, M3 is N4, M4 and M5 are N2 and N3, and M6 is N6. M1 is
+HAMCP-290. It has no §4 row; R6 (§9C) put it in the combined sequence 18,
+and R-a (§9D) now sets the membership of all six (§5A.5).
+
+All 38 fingerprints at `3bd5fe3f` equal, row by row, the 38 values
+computed at `4d68e4d8` for HAMCP-231, and all 32 signed references match
+their compiled profiles in every signed field [R]. To reproduce the six
+rows, from a checkout of the commit, with the locked requirements
+installed:
 
 ```sh
 python -I -B -c "
@@ -695,11 +791,15 @@ print(len(P))
 "
 ```
 
-It prints the three rows above and `35`. The fingerprint is
-`"sha256:" + sha256(canonical_json(material))` (`E/ha_core_readmission/models.py:180-181`).
+It prints the six rows above and `38`. `P[32:]` is the six added profiles
+because they are compiled last; it is not a way to build the carried
+prefix (R-b). The fingerprint is
+`"sha256:" + sha256(canonical_json(material))` (`E/ha_core_readmission/models.py:188-189`).
 
 These values are final for signing only when recomputed on the signing
-commit on `main` (C4, C5, G3). Any change to a contract field before then
+commit on `main` (C4, C5, G3). R-d (§9D): the architect recomputes all 38
+fingerprints on the `release/2.6.0` to `main` merge commit, which is the
+signing commit, before signing. Any change to a contract field before then
 changes the fingerprint and voids its lane receipt.
 
 ### 5A.4 Signing readiness of each merged profile
@@ -713,91 +813,143 @@ once on the signing commit, and the receipts listed in
 binds an older commit. It is review evidence only and is not reused for
 signing.
 
-State at `02627caf`:
+State at `3bd5fe3f` (refreshed 2026-11-13). Every receipt below was
+committed in `a506824170d7eace30fe611f0ada48d44cbecec7` ("HAMCP-364: commit
+the seven lane receipts of 5fc40f93", 2026-11-12 05:48 CST), which #435
+merged into `release/2.6.0` (`a9144591`, 2026-11-12 11:22 CST) [S]. Each
+reads `result` PASS and cleanup `clean` true, and each binds source commit
+`5fc40f939756ee4ed5b004f88e53c00fd7d939c8`, manifest
+`48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed`, journal
+`3f79fce7…` (§5A.2) and the compiled fingerprint of its profile [R].
+`5fc40f93` is an ancestor of `3bd5fe3f`, 54 commits behind it [R].
 
-| Profile | Lane script | Group in `ci/core-evidence-groups.json` | Profile map in `ci/core-contract-read-files.json` | Receipt | Receipt binds | Ready? |
-| --- | --- | --- | --- | --- | --- | --- |
-| M2 `core.security_metadata_read` | `scripts/core_security_metadata_local.py` [S] | `security_metadata` (`:60-61`) [S] | Present [R] | `docs/evidence/hamcp134/lane/security_metadata.json`, sha256 `799799a6844aa6769d2098a1fd09506c95f2d94ccfa5dc0f5f4d39f1c0d509a1`, `result` PASS, cleanup `clean` true [R] | Source commit `bf3c98847f2fd6b72e80c43cafbc2dec2c907b89`; manifest `07bc9034ebb66881bd91fe710174db7dfba67e43c598a53d960f4f81587b1f4d`; journal `3f79fce7…`; fingerprint `9aa788b5…` [R] | No. The existing receipt is review evidence only; the lane re-runs on the signing commit (R8) |
-| M3 `core.device_configuration_entity_operation` | **None** [S] | **None** [S] | **None** [R] | **None** [S] | n/a | No. The lane is being built under HAMCP-366 (R7); nothing is merged |
-| M1 `core.marketplace_read` | **None merged.** In open #421 | **None merged.** In open #421 | **None merged.** In open #421 | **None merged.** In open #421 | See §5A.12 | No, until #421 merges and its lane re-runs on the signing commit (R8) |
+| Profile | Lane script [S] | Group in `ci/core-evidence-groups.json` [S] | Profile map in `ci/core-contract-read-files.json` [S] | Receipt; SHA-256 at `3bd5fe3f` [R] | Ready? |
+| --- | --- | --- | --- | --- | --- |
+| M1 `core.marketplace_read` | `scripts/core_marketplace_read_local.py` | `marketplace_read` (`:60-62`) | Present (`:1397`) | `docs/evidence/hamcp290/lane/marketplace_read.json`; `381358d630ff9fc83ce7d2c87e4d33507aad3f9cdfd9872f8ecc3e2883ca7142` | No. Review evidence only; the lane re-runs on the signing commit (R8) |
+| M2 `core.security_metadata_read` | `scripts/core_security_metadata_local.py` | `security_metadata` (`:75-77`) | Present (`:1514`) | `docs/evidence/hamcp134/lane/security_metadata.json`; `a7f0697af9d350b69a122d540e5b5af29e5090a0779edebb3264c7a66e8d4a47` | No, as M1 |
+| M3 `core.device_configuration_entity_operation` | `scripts/core_device_configuration_local.py` | `device_configuration_entity` (`:72-74`) | **None** (see the M3 gap below) | `docs/evidence/hamcp366/device_configuration_entity.json`; `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0` | No, as M1; and the G5 profile-map question below is open |
+| M4 `core.scene_create_delete_operation` | `scripts/core_created_object_local.py` | `scene_create_delete` (`:66-68`) | Present (`:1549`) | `docs/evidence/hamcp364/lane/scene_create_delete.json`; `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860` | No, as M1 |
+| M5 `core.created_helper_delete_operation` | `scripts/core_created_object_local.py` | `created_helper_delete` (`:69-71`) | Present (`:1570`) | `docs/evidence/hamcp364/lane/created_helper_delete.json`; `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6` | No, as M1 |
+| M6 `core.thread_matter_topology_read` | `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2) | `thread_matter_topology` (`:63-65`) | Present (`:1474`) | A1: `docs/evidence/hamcp231/lane/thread_matter_topology.json`; `6bafb4b6eb49079435e9305f0e7f2a62a324b5579bcad69cc4a974561da2e2c2`. A2: `docs/evidence/hamcp231/lane/thread_matter_topology_a2.json`; `1b4506263090a3f56cba85841ce64cee66e1c323f51729364cadd3868f3826da` | No, as M1; both lanes re-run |
 
-**M2 checks [R].** The receipt's manifest hash equals the sha256 of
-`ci/core-contract-read-files.json` at `02627caf` (`07bc9034…`): **match**.
-Its source-hash record equals the sha256 of
+The A2 receipt also records `stub.source_commit`
+`aa25c56498194c493b468db1faa842018e04acd2`: the provenance of the
+HAMCP-297 Matter Server stub it uses, not the commit the lane ran [R].
+
+**Manifest checks [R].** At `3bd5fe3f` the sha256 of
+`ci/core-contract-read-files.json` is `48b8b875…`, the value every receipt
+binds (`manifest_sha256` is that file's hash, for example
+`scripts/core_device_configuration_local.py:411`). The file has the same
+hash at `5fc40f93`. So no receipt binds a stale manifest hash against
+`3bd5fe3f`. Any later change to that file before the signing commit makes
+every receipt's manifest hash stale; the R8 re-runs bind the signing
+commit's value.
+
+**HAMCP-134 open item, resolved [R].** The HAMCP-134 receipt was recorded
+on 2026-11-10 as sha256 `799799a6844aa6769d2098a1fd09506c95f2d94ccfa5dc0f5f4d39f1c0d509a1`,
+binding `bf3c98847f2fd6b72e80c43cafbc2dec2c907b89` and manifest
+`07bc9034ebb66881bd91fe710174db7dfba67e43c598a53d960f4f81587b1f4d`. At
+`3bd5fe3f` the committed file is the lane's run 3
+(`docs/evidence/hamcp134/lane/README.md:216-230`), committed in `a5068241`;
+run 2 (`5ea622ec`) had replaced run 1 before it. It binds
+`5fc40f93` and the current manifest `48b8b875…`, not `07bc9034…`. Its
+source-hash record equals the sha256 of
 `docs/evidence/hamcp134/lane/core-security-metadata-source-hashes.json`
 (`ca821db6324e70afdc94ea6f15030274deebb989630fed4b3d2824ac9e4219b3`):
-match. Its journal hash equals today's journal: match. Its fingerprint
-equals the compiled fingerprint: match.
+match. It is not stale against `3bd5fe3f`. It is still review evidence
+only (R8).
 
-**M2 gaps.** Gaps 1 and 2 are why the existing receipt is not reused. The
-re-run on the signing commit (R8) replaces it.
+**M2 limit.** The receipt's MFA coverage is `partial` with
+`connection_identity_not_supervisor`
+(`docs/evidence/hamcp134/lane/README.md:180-182`, limitation at
+`:235-240`). That is a disclosed limit of the lane, proven offline in
+tests, not a failure.
 
-1. The receipt binds `bf3c9884`, which is older than the merge (`6e65ba4d`)
-   and the tip. HAMCP-297 changed `profiles.py` afterwards; the M2
-   fingerprint did not move [R].
-2. The manifest hash matches today only. Every open PR in §5A.12 changes
-   `ci/core-contract-read-files.json`, so the receipt's manifest hash stops
-   matching the tip as soon as one of them merges [R]. #421's body records
-   the same for its own merge [H].
-3. The receipt's MFA coverage is `partial`
-   (`docs/evidence/hamcp134/lane/README.md:180-182`, limitation at
-   `:192-197`). That is a disclosed limit of the lane, proven offline in
-   tests, not a failure.
-
-**M3 gap.** The HAMCP-297 design requires a new group
-`device_configuration_entity`, a new `run_disposable` module and a
-lane-owned, test-only Matter Server stub
-(`docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496`). None
-is in source at `02627caf`: no `device_configuration` name appears in
-`ci/core-evidence-groups.json`, `scripts/core_evidence_lanes.py` or
-`scripts/core_lane_bindings.py` [S]. #428's body says "G4 has not been run"
-[H]. R7 (§9C) starts that lane as its own row: register HAMCP-366, started
-2026-11-10, branch `agent/HAMCP-366-device-config-lane` (not on the remote
-at 22:05 CST [G]), no pull request yet [H]. Its script, group, manifest map
-and receipt are pending: HAMCP-366 produces them. M3 joins sequence 18
-only once that lane has merged and passes on the signing commit.
+**M3 gap: no profile map [S].** `ci/core-contract-read-files.json` at
+`3bd5fe3f` has no `profiles` entry for
+`core.device_configuration_entity_operation`. Its lane does not read one:
+it records only the file's SHA-256
+(`scripts/core_device_configuration_local.py:411`), while the other five
+lanes read their own entry (`scripts/core_marketplace_read_local.py:96`,
+`scripts/core_security_metadata_local.py:96`,
+`scripts/core_created_object_local.py:117`,
+`scripts/core_thread_matter_topology_local.py:104`).
+`scripts/core_release_evidence.py` does not read the `profiles` key. But
+G5 (§5.2), as this plan words it, asks for each new capability's "contract
+read paths in `ci/core-contract-read-files.json`, before signing", and the
+HAMCP-297 design asks for "the read-file mapping in
+`ci/core-contract-read-files.json` before signing"
+(`docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1440-1442`).
+Whether M3 meets G5 without an entry is **open**; this refresh does not
+decide it. Closing it needs either a reviewed change that adds the entry
+or a reviewer's finding that G5 does not need one for this profile.
 
 ### 5A.5 Draft candidate
 
 One `extend-capabilities` candidate for Core `2026.11.0`, entry
 `ha-core-2026.11.0-reviewed-v1` (§5.1).
 
-- `previous_capabilities`: the 32 references of §2.3, in order, byte for
-  byte as signed at sequence 17.
-- `added_capabilities`: for the three merged profiles, the references
-  below, appended after that prefix. Each reference has exactly the five
-  fields a signed reference has today [R].
+**Construction rules (R-b, §9D; Josh's ruling, recorded here as R-b
+asks).**
+
+1. `previous_capabilities` are the 32 signed sequence 17 references in
+   their signed order (§2.3), byte for byte as signed. They are **not**
+   the first 32 compiled profiles: `core.typed_helper_value_operation` is
+   compiled 20th and signed 32nd (§5A.3).
+2. The added references follow in compiled order: marketplace,
+   security_metadata, device_configuration_entity, scene_create_delete,
+   created_helper_delete, thread_matter_topology. A profile dropped under
+   R-a is left out and the others keep this relative order.
+
+Sheet B (§5A.15) checks the summary against both rules. The candidate is
+checked against them before Josh signs (R-f; §5A.10).
+
+`added_capabilities` with all six, in R-b's order, as compiled at
+`3bd5fe3f` [R]. Each reference has exactly the five fields a signed
+reference has today, which is the closed field set R-e requires (PC10,
+§5A.7) [R]:
 
 ```json
 [
   {"adapter_id": "compiled-core-marketplace-read-v1", "capability_id": "core.marketplace_read", "contract_fingerprint": "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb", "profile_id": "core_marketplace_read_v1", "profile_version": 1},
   {"adapter_id": "compiled-core-security-metadata-read-v1", "capability_id": "core.security_metadata_read", "contract_fingerprint": "sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55", "profile_id": "core_security_metadata_read_v1", "profile_version": 1},
-  {"adapter_id": "compiled-core-device-configuration-entity-operation-v1", "capability_id": "core.device_configuration_entity_operation", "contract_fingerprint": "sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c", "profile_id": "core_device_configuration_entity_operation_v1", "profile_version": 1}
+  {"adapter_id": "compiled-core-device-configuration-entity-operation-v1", "capability_id": "core.device_configuration_entity_operation", "contract_fingerprint": "sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c", "profile_id": "core_device_configuration_entity_operation_v1", "profile_version": 1},
+  {"adapter_id": "compiled-core-scene-create-delete-operation-v1", "capability_id": "core.scene_create_delete_operation", "contract_fingerprint": "sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d", "profile_id": "core_scene_create_delete_operation_v1", "profile_version": 1},
+  {"adapter_id": "compiled-core-created-helper-delete-operation-v1", "capability_id": "core.created_helper_delete_operation", "contract_fingerprint": "sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4", "profile_id": "core_created_helper_delete_operation_v1", "profile_version": 1},
+  {"adapter_id": "compiled-core-thread-matter-topology-read-v1", "capability_id": "core.thread_matter_topology_read", "contract_fingerprint": "sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c", "profile_id": "core_thread_matter_topology_read_v1", "profile_version": 1}
 ]
 ```
 
-Membership, as decided by R6, R7 and R12 (§9C), with the earlier rulings
-R1 and R4 (§9B) and the late-row rule (§8):
+**Membership (R-a, §9D).** All six, each conditional on its lane passing
+on the signing commit. A profile whose lane fails is dropped from sequence
+18; the others proceed. Earlier rulings that still apply: R1 and R4
+(§9B), R6, R7 and R8 (§9C), and the late-row rule (§8).
 
 | Profile | In sequence 18? | Condition |
 | --- | --- | --- |
-| M1 `core.marketplace_read` | Yes (R6) | #421 is merged and its lane produces a clean PASS receipt on the signing commit. **Fallback (R6):** if the lane cannot, M1 drops to sequence 19 and sequence 18 is not held |
-| M2 `core.security_metadata_read` | Yes (R1, R4; §9B) | Its lane re-runs and passes on the signing commit (R8) |
-| M3 `core.device_configuration_entity_operation` | Yes, once the HAMCP-366 lane has merged and passes on the signing commit (R7) | Until then it is not in the candidate. If the lane cannot pass before 2027-01-22, stop and report (R3, §9B) |
-| `core.scene_create_delete_operation` and `core.created_helper_delete_operation` (#424; N2, N3) | Only if #424 merges and both lanes pass on the signing commit in time | Otherwise they are late rows (§8) |
-| `core.thread_matter_topology_read` (#427; N6) | Only if #427 merges and both of its lanes pass on the signing commit in time | Otherwise it is a late row (§8) |
+| M1 `core.marketplace_read` | Yes (R-a; R6) | Its lane passes on the signing commit (R8). If it fails, M1 is dropped from sequence 18 and the others proceed (R-a); R6 names sequence 19 for it |
+| M2 `core.security_metadata_read` | Yes (R-a; R1, R4) | Its lane re-runs and passes on the signing commit (R8). If it fails, it is dropped (R-a) |
+| M3 `core.device_configuration_entity_operation` | Yes (R-a; R7) | Its HAMCP-366 lane (merged by #434) passes on the signing commit (R8). If it fails, it is dropped (R-a). The recorded stop if that lane cannot pass before 2027-01-22 stays (R3, §9B). The G5 profile-map question of §5A.4 is open |
+| M4 `core.scene_create_delete_operation` | Yes (R-a) | Its lane passes on the signing commit (R8). If it fails, it is dropped (R-a) |
+| M5 `core.created_helper_delete_operation` | Yes (R-a) | As M4 |
+| M6 `core.thread_matter_topology_read` | Yes (R-a) | Both of its lanes, A1 and A2, pass on the signing commit (R8). If either fails, it is dropped (R-a) |
+
+A dropped profile is a later signing: for M1, sequence 19 (R6); for the
+others, the late-row rule (§8). Each lane refuses unless the predecessor
+has exactly 32 references, so a later signing needs that check changed
+first (§5A.13 Q8, Q15).
 
 | Case | Added in sequence 18 | References after sequence 18 |
 | --- | --- | --- |
-| The three merged profiles | M1, M2, M3 | 35 |
-| All six | M1, M2, M3 and the three pending profiles | 38 |
-| M1 falls back to sequence 19 | One fewer | 34 or 37 |
+| Every lane passes on the signing commit | All six, in R-b's order | 38 |
+| Some lanes fail | The six less each dropped profile, still in R-b's order | 32 plus the number added |
 
 **Exclusions.**
 
 - HAMCP-295/109 entity rename (`core.entity_registry_rename_operation`,
   PR #425): moved to 2.7 as its first item by Josh's ruling 2026-11-10; PR
-  #425 does not merge into `release/2.6.0` (R12, §9C). It is in no 2.6
+  #425 does not merge into `release/2.6.0` (R12, §9C), and it stays out of
+  2.6 (R-g, §9D). It is not merged at `3bd5fe3f` [S]. It is in no 2.6
   signing.
 - Core 2026.11.1: outside this plan. Sequence 18 stays a 2026.11.0
   extension, and the 2026.11.1 binding is its own register row, HAMCP-367
@@ -805,14 +957,13 @@ R1 and R4 (§9B) and the late-row rule (§8):
   on 2026-11-09 and is unsigned; scheduled run 42688632541 refused it
   ("binding PR required") [G].
 
-Order of the added references [A]: the order of
-`CORE_RUNTIME_CAPABILITY_PROFILES` on the signing commit. Source requires
-only that the added list is exactly what follows the old prefix
+Order of the added references: decided by R-b (rule 2 above). Source
+requires only that the added list is exactly what follows the old prefix
 (`prepare_core_release_registry.py:108-125`); it sets no order among added
 references. The order is fixed once signed, because a later extension must
 keep it as its prefix (C2).
 
-This is not a signable candidate today. No membership passes §5A.7.
+This is not a signable candidate today. PC2 and PC4 are not met (§5A.7).
 
 ### 5A.6 Inputs
 
@@ -831,21 +982,23 @@ This is not a signable candidate today. No membership passes §5A.7.
 
 ### 5A.7 Preconditions
 
-All must hold before a candidate is prepared. Today PC2, PC3 and PC4 are
-not met, PC1 is settled as a rule only, and the approval PC8 needs does
-not exist yet.
+All must hold before a candidate is prepared. On 2026-11-13, at this
+branch's head `3bd5fe3f`: PC2, PC3 and PC4 are not met; PC1 is settled as
+a rule (R-a) whose outcome depends on the lanes; PC10 is a check on the
+prepared candidate; and the approval PC8 needs does not exist yet.
 
-| # | Precondition | State on 2026-11-10 |
+| # | Precondition | State on 2026-11-13 (at `3bd5fe3f`) |
 | --- | --- | --- |
-| PC1 | Membership is settled: each profile of §5A.5 is either merged and proven, or left for a later signing (§8; for M1, the R6 fallback) | The rule is decided (R6, R7, R12; §9C). Which profiles are ready is known only when the signing commit is fixed |
-| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. M2, M3 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here |
-| PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | Not met; see each PR |
-| PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). R8 (§9C): every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit. Receipts that exist today are review evidence only | Not met for any profile |
-| PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3) | True at `02627caf` [R]; must be repeated on `main` |
-| PC6 | The predecessor is re-fetched, verified against the public key, unexpired, and still the one the lanes ran against: sequence 17 with exactly 32 references on 2026.11.0 (G7; each lane requires it, for example `scripts/core_security_metadata_local.py:143-145`) | True today [R] |
-| PC7 | Preparation is no later than 2027-01-22 (§5.4) | 73 days away |
-| PC8 | Authorization for this exact transition follows R10 (§9C): agents prepare the two files and the expected-values sheet; one agent makes the single candidate push, and only after Josh approves both SHA-256 values; Josh dispatches the dry run and the real run. No agent dispatches a workflow | The route is decided (R10). Josh's approval of both SHA-256 values does not exist yet, because the files are not prepared. Nothing is pushed or dispatched |
+| PC1 | Membership is settled: each profile of §5A.5 is either merged and proven, or left for a later signing (§8). R-a (§9D): all six, each conditional on its lane passing on the signing commit; a profile whose lane fails is dropped from sequence 18 and the others proceed | The rule is decided (R-a; R6, R7, R12 in §9C). All six are merged into `release/2.6.0` (§5A.3). Which profiles pass is known only from the lane runs on the signing commit |
+| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. Of the six, only M1 is on `main` at the local `origin/main` ref `c041f59d` (not re-fetched for this refresh); M2 to M6 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here. M3 has no manifest map entry (§5A.4) |
+| PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | The six profile PRs are merged into `release/2.6.0` (§5A.3). The release PR's review and G6 are not complete |
+| PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). R8 (§9C): every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit. Receipts that exist today are review evidence only | Not met for any profile. The committed receipts bind source commit `5fc40f93`, not the signing commit (§5A.4) |
+| PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3). R-d (§9D): the architect recomputes all 38 on the `release/2.6.0` to `main` merge commit before signing | True at `3bd5fe3f` [R]: 38 compiled, equal to the `4d68e4d8` values, and the 32 signed references match. Must be repeated on the signing commit |
+| PC6 | The predecessor is re-fetched, verified against the public key, unexpired, and still the one the lanes ran against: sequence 17 with exactly 32 references on 2026.11.0 (G7; each lane requires it: `scripts/core_security_metadata_local.py:143-145`, `scripts/core_marketplace_read_local.py:143`, `scripts/core_created_object_local.py:166`, `scripts/core_thread_matter_topology_local.py:151`, `scripts/core_device_configuration_local.py:133-135`) | The local `origin/registry` ref is still `e486028e` (journal SHA-256 `3f79fce7…`, §5A.2), and every committed receipt binds that journal [R]. The re-fetch and signature check repeat at preparation |
+| PC7 | Preparation is no later than 2027-01-22 (§5.4) | 70 days away on 2026-11-13 |
+| PC8 | Authorization for this exact transition follows R10 (§9C): agents prepare the two files and the expected-values sheet; one agent makes the single candidate push, and only after Josh approves both SHA-256 values; Josh dispatches the dry run and the real run. No agent dispatches a workflow. R-f (§9D, §5A.10): Josh signs only after the R-d recomputation, every included lane passing on the signing commit, and the candidate check against R-b | The route is decided (R10). Josh's approval of both SHA-256 values does not exist yet, because the files are not prepared. Nothing is pushed or dispatched |
 | PC9 | Lanes are heavy jobs on the build host and follow its admission limits | Applies when lanes run |
+| PC10 | **Closed reference field set (R-e, §9D).** Every reference in the sequence 18 candidate, carried and added, has exactly the five fields beta.7 accepts and no other: `capability_id`, `profile_id`, `profile_version`, `adapter_id`, `contract_fingerprint`. Source: `git show v2.4.2-beta.7:hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry_models.py`, `class CoreProfileReference` (`:31-56`), whose `from_mapping` requires that exact set at `:41-44` through `_exact_mapping` (set equality, `signed_registry/models.py:149-156` at the same tag), raising `ENTRY_EVIDENCE_INVALID`. `CoreReleaseEntry.from_mapping` parses every reference at `:84`, so one unknown field rejects the whole entry. On a rollback to beta.7 that falls back to the cached sequence 17 or, with an empty cache, loses every Core-native capability [S] | A check on the prepared candidate; there is no candidate yet. Both files are unchanged between the tag and `3bd5fe3f` [R]. The §5A.5 draft uses exactly these five fields |
 
 ### 5A.8 Candidate branch and dispatch steps (decided route; described, not executed)
 
@@ -883,17 +1036,19 @@ What that fixes:
 
 Nothing here was run for this plan.
 
-1. **Fix the signing commit.** Record the `main` commit SHA. Recompute the
-   fingerprints (§5A.3 command). Stop if any differs from the reviewed table.
+1. **Fix the signing commit.** Record the `main` commit SHA: the
+   `release/2.6.0` to `main` merge commit. R-d (§9D): the architect
+   recomputes all 38 fingerprints on that commit before signing (§5A.3
+   command). Stop if any differs from the reviewed table (sheet A).
 2. **Re-run every included lane once on that commit** (R8), HAMCP-134's
    included, under the host's heavy-job limits, following each lane's own
    README (for M2, `docs/evidence/hamcp134/lane/README.md`). Each receipt
    must show PASS, cleanup `clean`, the signing commit, the manifest hash
    of that commit, the current journal hash (§5A.2; re-checked in step 3)
    and the fingerprint from step 1. A receipt that binds an older commit is
-   not used. If M1's lane cannot produce a clean receipt on the signing
-   commit, M1 is left out of this candidate and goes to sequence 19 (R6);
-   sequence 18 is not held for it.
+   not used. R-a (§9D): a profile whose lane fails on the signing commit
+   is dropped from sequence 18 and the others proceed; sequence 18 is not
+   held for it. For M1 that means sequence 19 (R6).
 3. **Fetch and verify the predecessor.** Fetch `origin/registry`, hash the
    journal, verify it with the committed public key. Confirm PC6.
 4. **Prepare the candidate** with the existing utility. It fetches nothing,
@@ -993,7 +1148,7 @@ deployed acceptance stays a separate, separately authorized step.
 | --- | --- | --- |
 | Preparation refuses | Nothing exists outside the working directory | Fix the cause and prepare again |
 | The check, or Josh's review, finds a defect before the push | Nothing is on the remote | Prepare again and give Josh the new SHA-256 values. An approval covers only the bytes it names |
-| M1's lane cannot produce a clean receipt on the signing commit | Nothing is prepared with M1 | R6: prepare sequence 18 without M1; M1 goes to sequence 19. Its lane's predecessor checks must change before that later run (§5A.13 Q15) |
+| An included profile's lane fails on the signing commit | Nothing is prepared with that profile | R-a (§9D): drop that profile from sequence 18; the others proceed. For M1, R6 sends it to sequence 19. A dropped lane's predecessor checks must change before a later run (§5A.13 Q15) |
 | After the push, the remote blobs do not hash to the approved values | The permanent branch holds unapproved bytes; nothing is signed | Stop and report. The workflow refuses a file whose bytes do not hash to its inputs (`core-release-registry-publish.yml:117-120`). Do not force, delete or push again. A second candidate is pending Josh (§5A.13 Q10) |
 | Dry run fails, or differs from the §5A.15 sheet | Nothing signed, nothing published | Find the cause first. The pushed candidate branch is permanent and R10 allows one push, so a corrected candidate needs a new branch name and a new authorization. Source names only `registry-candidates/<version>-seq<sequence>`; the name for a second sequence 18 candidate is not defined. Both are pending Josh (§5A.13 Q10) |
 | Hashes or sequence in the approval summary differ | Nothing signed | Josh rejects the environment approval |
@@ -1001,10 +1156,21 @@ deployed acceptance stays a separate, separately authorized step.
 | `publish` ends UNCHANGED | `registry` not changed | Fix the cause and dispatch again |
 | `publish` ends UNCERTAIN | Unknown | Run the `last-publish` check and compare the tip with the attempted commit. Never dispatch again before knowing which commit `registry` holds (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:203-206`) |
 | A signed profile later proves wrong | The reference stays signed | No operation removes one reference (C2, C3; §7.2). Disable the tool in the runtime and keep the compiled contract on `main`, or C4 refuses every later positive signing. Never restore an old journal or delete a cache (`docs/CORE_RELEASE_REGISTRY.md:287`, `:296-297`) |
-| Whole-release withdrawal | Permanent | `revoke` of 2026.11.0 removes all its capabilities for good (C6; §7.4). Not proposed |
+| Whole-release withdrawal | Permanent | `revoke` of 2026.11.0 removes all its capabilities for good (C6; §7.4). Not proposed. See R-f below |
 | Stop all runs | n/a | Josh can disable the workflow or remove the key (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:176-185`). Neither changes the published journal |
 
-An older Engineering image ignores the new references (C8; §7.1).
+**Signing sequence 18 is one-way (R-f, Josh, §9D).** There is no
+per-capability removal. The only undo is revoking the whole 2026.11.0
+entry, which withdraws all its capabilities, and they cannot be re-added.
+Recovery is then a new Core-version binding (HAMCP-367). Josh signs only
+after: the architect recomputes all 38 fingerprints on the signing commit
+(R-d; §5A.8 step 1); every included lane passes on that commit (R8, R-a;
+§5A.8 step 2); and the candidate is checked against R-b (§5A.5). R-f also
+asks for this statement in the release notes and on #395; this plan is
+#395's document. The release notes are not part of this change.
+
+An older Engineering image ignores the new references (C8; §7.1), provided
+every reference has only the closed field set beta.7 accepts (PC10).
 Persisted-state safety across a downgrade is G6 and is not shown by this
 draft.
 
@@ -1023,9 +1189,11 @@ Stop and report to Josh, without working around it, if any of these occurs:
 3. A lane does not PASS, its cleanup is not `clean`, or its receipt binds a
    different commit, manifest, journal or fingerprint than the candidate
    uses. No substitute lane is allowed
-   (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:272-273`). The one decided
-   exception is R6: if the failing lane is M1's, M1 drops to sequence 19
-   and sequence 18 proceeds without it.
+   (`docs/CORE_REGISTRY_ONE_TAP_RUNBOOK.md:272-273`). The decided
+   exception is R-a (§9D): a profile whose lane fails is dropped from
+   sequence 18 and the others proceed (for M1, to sequence 19 per R6).
+   The stop applies when a dropped profile's reference would still be in
+   the candidate.
 4. An included profile, lane, group or manifest map is not on `main`.
 5. Preparation, the dry run, `verify`, `sign` or `reverify` refuses or
    fails.
@@ -1047,48 +1215,53 @@ Stop and report to Josh, without working around it, if any of these occurs:
     §5A.8 step 6, push that ref a second time, or force or delete it.
 13. The single push is about to happen without Josh's approval of both
     SHA-256 values, or the files no longer hash to the approved values.
+14. Any reference in the candidate, carried or added, has a field outside
+    the closed set beta.7 accepts, or lacks one of its five fields (R-e,
+    §9D; PC10): `CoreProfileReference.from_mapping` at
+    `git show v2.4.2-beta.7:hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry_models.py`
+    `:41-44`. beta.7 rejects the whole entry for one unknown field.
 
-### 5A.12 Pending profiles (not merged; inputs provisional)
+### 5A.12 Merge facts for the six 2.6 profiles (refreshed 2026-11-13)
 
-Nothing in this table is merged into `release/2.6.0`. Every value was read
-or computed at the open head named, on 2026-11-10, and can change with the
-next push.
+**Refreshed 2026-11-13 to `3bd5fe3f` [R].** The table of unmerged
+profiles that stood here on 2026-11-10 is removed: every PR it listed is
+merged into `release/2.6.0`. Each fact below was read with `git log
+--first-parent` on `release/2.6.0` at `7d2989ad` and checked as an ancestor
+of `3bd5fe3f` with `git merge-base --is-ancestor`. Times are CST.
 
-**Rule for every row:** the fingerprint is recomputed from the merge commit
-when the pull request lands, and every included lane re-runs once on the
-signing commit (R8, §9C). The receipts below bind older commits and are
-review evidence only. A row joins §5A.3 only after it merges.
+| PR, register | Merge commit into `release/2.6.0` | Merged | What it brought for sequence 18 |
+| --- | --- | --- | --- |
+| #423, HAMCP-134 | `6e65ba4d83e9e9f365fc853fa31c56d0be1a35aa` | 2026-11-10 08:21 | M2 profile, lane and group |
+| #428, HAMCP-297 | `fcd6973f14dce01dd3e1fc3d59738a12cd9365c3` | 2026-11-10 15:30 | M3 profile |
+| #421, HAMCP-290 | `29339009759331118d0402d0be4aaf9e1c13fe26` | 2026-11-11 08:33 | M1 lane and group (the M1 profile came by #409 and #383; §5A.3) |
+| #424, HAMCP-329 / HAMCP-298 | `ccaed9ef2183cff2796b835a052de8a88db12229` | 2026-11-11 11:21 | M4 and M5 profiles, their lane and groups |
+| #427, HAMCP-231 | `a860671f2593ae9a39a97fff8c30effe0c79016b` | 2026-11-11 16:21 | M6 profile, A1 and A2 lanes and group |
+| #434, HAMCP-366 | `1bb864b767531ce311c2cb2c997c48c900273bd8` | 2026-11-11 19:12 | M3 lane and group |
+| #435, HAMCP-364 | `a9144591` | 2026-11-12 11:22 | The seven committed receipts, all of source commit `5fc40f93` (commit `a5068241`; §5A.4) |
 
-| PR, register, §4 row | Head read [G] | Adds or changes a profile? [R] | Provisional fingerprint at that head [R] | Lane, group and receipt at that head | Receipt binds [R] |
-| --- | --- | --- | --- | --- | --- |
-| #421, HAMCP-290 (no §4 row; in sequence 18 by R6) | `e443b824776901f36507fee5f4e3ac6d3313291e`; open, draft; based on `b810ba77` | **No.** `profiles.py` is unchanged. It adds the signing prerequisites for M1, which is already merged | M1's, unchanged: `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb` | Lane `scripts/core_marketplace_read_local.py`; group `marketplace_read` (`ci/core-evidence-groups.json:60-61`); manifest map present; receipt `docs/evidence/hamcp290/lane/marketplace_read.json`, sha256 `da7a40ac435a5347c73615fea27bfe081bd6b0d26e42a019f60bb0019c302b93`, PASS | `398ca8888b7abe324027b55668a1baa60606ac68`, four first-parent commits behind the head (the receipt commit, two later commits and the merge of `b810ba77`); the lane's acceptance script changed after it. Manifest `b058369d…`, equal to the head's |
-| #424, HAMCP-329 / HAMCP-298, N2 and N3 | `efccdb87079205df9df91eaa0088207d8557487f`; open, draft; based on `fcd6973f` | **Adds two.** `core.scene_create_delete_operation` (`profiles.py:1102`), adapter `compiled-core-scene-create-delete-operation-v1`; `core.created_helper_delete_operation` (`:1192`), adapter `compiled-core-created-helper-delete-operation-v1` | Scene: `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`. Helper: `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | Lane `scripts/core_created_object_local.py`; groups `scene_create_delete` (`:60-61`) and `created_helper_delete` (`:63-64`); manifest maps present. **No receipt is committed.** | Two uncommitted receipts, read in the PR's worktree, both PASS, bind `b89ce817035a646b75c51c12b94a12c99897776a`; the head adds tests only on top of it |
-| #427, HAMCP-231, N6 | `df447a65e43c845a6a1d27e790b07768f957d337`; open, draft; based on `fcd6973f` | **Adds one.** `core.thread_matter_topology_read` (`profiles.py:902`), adapter `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | Lanes `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); group `thread_matter_topology` (`:63-64`); manifest map present; receipts `docs/evidence/hamcp231/lane/thread_matter_topology.json` (sha256 `6c976d24bcd44a111306c5da797d6c0b5606c4e8e426b4f72c0182765aacc15d`) and `thread_matter_topology_a2.json` (sha256 `dd23cca6e9d357e4660846a2910ee35a30fa6909d4d7f7c7d5d0fac59fedd8e0`), both PASS | A1: `d7b7f9366c33bcf1a151fb32c276225468b62640`, manifest `a07ff969…`, **not** the head's `913f8a32…`. A2: `6339dbe7aebe7fcb4f2b11cbdd262ed348abda52`, manifest equal to the head's. Both older than the head |
+**Rule kept for every row:** every included lane re-runs once on the
+signing commit (R8, §9C), and the fingerprint is recomputed there (R-d,
+§9D). The committed receipts bind `5fc40f93` and are review evidence only.
 
 **Row removed (2026-11-10).** The table had a row for #425 (HAMCP-295 /
-HAMCP-109, entity rename). R12 (§9C) moved that work to 2.7; see §5A.5
-Exclusions.
+HAMCP-109, entity rename). R12 (§9C) moved that work to 2.7, and R-g
+(§9D) keeps it out of 2.6; see §5A.5 Exclusions. #425 is not merged.
 
-Checked at every head above [R]: the 32 signed references still match the
-compiled profiles, and the M1, M2 and M3 fingerprints are unchanged where
-the head compiles them.
+Profile ids follow C9 from each capability id
+(`profiles.py:120`). They equal the derived ids in §4.
 
-Profile ids follow C9 from each capability id: `core_scene_create_delete_operation_v1`,
-`core_created_helper_delete_operation_v1` and
-`core_thread_matter_topology_read_v1`. They equal the derived ids in §4.
+Notes that affect signing [R]:
 
-Notes that affect signing:
-
-- #427 also carries its own copy of the HAMCP-290 lane files (group
-  `marketplace_read` at `:60-61`; a `marketplace_read.json` with sha256
-  `2cf03764…` that binds `83a14e00…`). It differs from #421's. Whichever
-  merges second must reconcile it; the receipt that counts is the one from
-  the re-run on the signing commit.
-- Each PR changes `ci/core-contract-read-files.json` differently (hashes at
-  the heads: #421 `b058369d…`, #424 `02a555cb…`, #427 `913f8a32…`; tip
-  `07bc9034…`). After each merge, every earlier receipt's
-  manifest hash is stale against the tip.
-- Every lane here proves a 32-to-33 transition for its own profile only
+- The two copies of the HAMCP-290 lane files that #421 and #427 carried
+  are now one: at `3bd5fe3f` there is a single
+  `docs/evidence/hamcp290/lane/marketplace_read.json`, sha256
+  `381358d6…`, rewritten by `a5068241` and bound to `5fc40f93` (sheet A).
+- The per-PR contract-read manifest hashes recorded on 2026-11-10
+  (`b058369d…`, `02a555cb…`, `913f8a32…`, and the then tip `07bc9034…`)
+  are superseded. At `3bd5fe3f`, `ci/core-contract-read-files.json` hashes
+  to `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed`,
+  and every committed receipt binds that value (§5A.4; sheet A).
+- Every lane proves a 32-to-33 transition for its own profile only
   (§5A.13 Q8).
 
 ### 5A.13 Mismatches and open questions
@@ -1100,16 +1273,16 @@ their status; the finding text is kept as first written.
 | # | Finding | Evidence | Status |
 | --- | --- | --- | --- |
 | Q1 | **Is `core.marketplace_read` in the combined sequence 18 extension?** The recorded decision says no: "the profile is signed separately after 2.5 merges (Josh decision, 2026-11-08)", and this plan's §6 keeps HAMCP-290 out of the 2.6 batch. Later records say yes: #421's lane README calls the profile "proposed for signed Core sequence 18"; #421's body says "in the combined 2.6 signing (seq 18)"; the 2026-11-10 rulings say "seq 18 combined signing covering all new 2.6 profiles" and "add #421 … profiles as each lands". No record seen by this author says the 2026-11-08 decision was withdrawn. The choice sets the count (34 or 35 today) and, if HAMCP-290 is signed separately and first, moves this extension to sequence 19 | `docs/HAMCP_290_MARKETPLACE_READ_DESIGN.md:434-437`, `:454-455` [S]; §6; `docs/evidence/hamcp290/lane/README.md:3-7` at `e443b824` [S]; #421 body [H]; §9B [H] | **Answered 2026-11-10 (R6, §9C):** it is in the combined sequence 18, which replaces the 2026-11-08 separate-signing decision. Fallback: sequence 19 if its lane cannot produce a clean receipt on the signing commit. §6 carries a superseded note. The HAMCP-290 design text is not edited by this plan |
-| Q2 | M1 has no merged signing prerequisite. The lane, group, manifest map and receipt are only in open #421, and the receipt binds a commit older than the head | §5A.4, §5A.12 | Open until #421 merges. The lane then re-runs on the signing commit (R8). If it cannot produce a clean receipt there, the R6 fallback applies |
+| Q2 | M1 has no merged signing prerequisite. The lane, group, manifest map and receipt are only in open #421, and the receipt binds a commit older than the head | §5A.4, §5A.12 | **Closed 2026-11-13 [R]:** #421 merged (`29339009`); the receipt is committed and binds `5fc40f93`. The lane re-runs on the signing commit (R8); if it fails there, R-a and R6 apply |
 | Q3 | Does the "re-run before signing" ruling, recorded for #421, apply to every lane receipt, HAMCP-134's included? The HAMCP-134 receipt binds `bf3c9884`, and its manifest hash matches the tip only until the next §5A.12 merge | §5A.4; the build handoff lists the manifest point as open and not investigated [H] | **Answered 2026-11-10 (R8, §9C):** every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit |
-| Q4 | M3 has no lane, group, manifest map or receipt, and source does not say which pull request builds them. The recorded ruling puts HAMCP-297 in sequence 18 after its G4 lane passes on the reviewed final head | §5A.4; `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496` [S]; #428 body [H] | **Answered 2026-11-10 (R7, §9C):** register row HAMCP-366, started 2026-11-10, builds the lane: script, evidence group, receipt, guards, tests and mutation demonstrations. Its values are pending: HAMCP-366 produces them. If the lane cannot pass before 2027-01-22, the recorded stop applies (R3) |
-| Q5 | M2, M3 and all 2.6 lane plumbing are on `release/2.6.0` only. `main` (`c041f59d`) compiles 33 profiles and maps 32 capabilities in 13 groups; the tip compiles 35 and maps 33 in 14 | [R] | Precondition PC2. Needs the release merge, which is Josh's |
-| Q6 | #424's body recommends holding both of its profiles out of sequence 18. That text names an older head (`6a4f0c1a`) that lacked the lanes; the current head has the lane script and groups. Its receipts are not committed and bind `b89ce817`, not the head | #424 body [H]; §5A.12 [R] | Open at #424's review gate [H]. R8 settles the receipt point: both lanes re-run on the signing commit. Whether the two profiles are in sequence 18 depends on #424 merging in time (§5A.5) |
-| Q7 | #427's A1 receipt binds a manifest that is not its head's, and #427 carries a second copy of the HAMCP-290 lane files. (The #425 part of this row was removed on 2026-11-10: R12 moved that work to 2.7) | §5A.12 [R], [H] | Open; covered by the §5A.12 rule and the R8 re-run |
+| Q4 | M3 has no lane, group, manifest map or receipt, and source does not say which pull request builds them. The recorded ruling puts HAMCP-297 in sequence 18 after its G4 lane passes on the reviewed final head | §5A.4; `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496` [S]; #428 body [H] | **Answered 2026-11-10 (R7, §9C).** 2026-11-13 [R]: #434 (HAMCP-366, `1bb864b7`) merged the lane script, evidence group and receipt (§5A.4). The contract-read manifest has no entry for M3 (§5A.4, open against G5). If the lane cannot pass before 2027-01-22, the recorded stop applies (R3); R-a (§9D) governs a failure on the signing commit |
+| Q5 | M2, M3 and all 2.6 lane plumbing are on `release/2.6.0` only. `main` (`c041f59d`) compiles 33 profiles and maps 32 capabilities in 13 groups; the tip compiles 35 and maps 33 in 14 | [R] | Precondition PC2. Needs the release merge, which is Josh's. 2026-11-13 [R]: `3bd5fe3f` compiles 38, its contract-read manifest maps 37 capabilities (all but M3) plus `binding_judgments`, and its evidence-group manifest has 19 groups (sheet A) |
+| Q6 | #424's body recommends holding both of its profiles out of sequence 18. That text names an older head (`6a4f0c1a`) that lacked the lanes; the current head has the lane script and groups. Its receipts are not committed and bind `b89ce817`, not the head | #424 body [H]; §5A.12 [R] | **Closed 2026-11-13:** #424 merged (`ccaed9ef`), both receipts are committed and bind `5fc40f93` [R], and R-a (§9D) puts both profiles in sequence 18, each conditional on its lane passing on the signing commit. R8 still applies |
+| Q7 | #427's A1 receipt binds a manifest that is not its head's, and #427 carries a second copy of the HAMCP-290 lane files. (The #425 part of this row was removed on 2026-11-10: R12 moved that work to 2.7) | §5A.12 [R], [H] | **Closed 2026-11-13 [R]:** at `3bd5fe3f` there is one HAMCP-290 receipt, and both #427 receipts bind the current contract-read manifest `48b8b875…` (§5A.4). R8 still applies |
 | Q8 | No lane proves the combined transition. Each lane proves 32 to 33 for one profile and refuses unless the predecessor has exactly 32 references. So every lane must run before sequence 18 is published, and a profile signed later (a late row) needs its lane's predecessor check changed first | `scripts/core_security_metadata_local.py:143-145` [S]; `docs/evidence/hamcp134/lane/README.md:22-25` [S] | Open. The combined transition is proven only by preparation and the one-tap dry run (G8). Whether that is enough is for the plan's reviewer |
 | Q9 | G4 (§5.2) still describes the HAMCP-297 lane as using a build-time test seam, "Open for Codex (#389 Q9 seam)". The merged design says the G4 run "contains no test seam" and uses a Matter Server stub instead. G4's text predates that | `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1476-1484` [S] | Flagged. G4 is not edited in this revision, because G1-G8 are under review; the reviewer should confirm the seam question is closed |
 | Q10 | Who prepares the candidate and pushes the candidate branch is not recorded, and no name is defined for a second sequence 18 candidate if the first is pushed and then found wrong | `docs/CORE_RELEASE_REGISTRY.md:377-382`, `:744-752` [S] | **Answered 2026-11-10 (R10, §9C)** for the route: agents prepare, Josh approves both SHA-256 values, one agent makes the single push, Josh dispatches (§5A.8). One contingency stays open: R10 allows one push, so if that candidate proves wrong, a second sequence 18 candidate and its branch name are **pending Josh** |
-| Q11 | The order of added references is not set by source | §5A.5 | Proposal [A]; for the reviewer |
+| Q11 | The order of added references is not set by source | §5A.5 | **Answered 2026-11-13 (R-b, §9D):** the 32 signed references in signed order, then the six added in compiled order (§5A.5) |
 | Q12 | #421's README and #423's README both say "proposed for signed Core sequence 18". Both hold only while nothing else is signed first | §5A.2 | Covered by stop condition 1 |
 | Q13 | The HAMCP-295/109 design still says its cutoff moves the work to 3.0. R12 says 2.7, as Josh's change to the design's cutoff text | `docs/HAMCP_295_109_ENTITY_RENAME_DEPENDENT_EXECUTION_DESIGN.md:1258-1264` [S]; R12 (§9C) | Flagged. This plan does not edit the design. The build handoff lists the amendment as an open follow-up [H] |
 | Q14 | R11 separates the Core 2026.11.1 binding (HAMCP-367) from sequence 18. It does not say which is signed first. If 2026.11.1 is signed first, it takes sequence 18 and this extension becomes 19 against a new predecessor | R11 (§9C); register HAMCP-367 [H]; §5A.11 item 1 | **Pending Josh**, together with HAMCP-367's target and start. Outside this plan; listed because it can move this plan's sequence number |
@@ -1154,16 +1327,41 @@ SHA-256 values. Josh compares it with the dry run's summary and artifact
 reads "pending: X" has no value yet; X is what produces it. Nothing in
 this sheet is estimated.
 
-**A. Profiles added.** One row per profile in the candidate. The
-fingerprint is the compiled value at the commit named. It is final only
-when recomputed on the signing commit (§5A.8 step 1). "Receipt head" is
-the commit the receipt binds.
+**A. Profiles added.** One row per profile in the candidate, in R-b's
+order (§5A.5). Refreshed 2026-11-13 to the release head `3bd5fe3f`
+(R-d, §9D). All six are merged into `release/2.6.0` (§5A.12). R-a: each
+is in sequence 18 only if its lane passes on the signing commit; a row
+whose lane fails is dropped and the others proceed. The fingerprint is
+the compiled value at `3bd5fe3f` [R]. "Review receipt" is the committed
+receipt at `3bd5fe3f`, with the source commit and contract-read manifest
+it binds [R]; its SHA-256 is that file's hash at `3bd5fe3f` [R].
 
-| Profile id; version | Capability id | Adapter id | Compiled fingerprint; commit [R] | Lane; evidence group | Receipt head | Receipt SHA-256 |
+| Profile id; version | Capability id | Adapter id | Compiled fingerprint at `3bd5fe3f` [R] | Lane; evidence group [S] | Review receipt; binds [R] | Receipt SHA-256 [R] |
 | --- | --- | --- | --- | --- | --- | --- |
-| `core_marketplace_read_v1`; 1 | `core.marketplace_read` | `compiled-core-marketplace-read-v1` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`; `02627caf`, and the same on `main` `c041f59d` | `scripts/core_marketplace_read_local.py`; `marketplace_read`. Both are in open #421, not merged | pending: the signing commit (§5A.8 step 1) | pending: the lane re-run on the signing commit |
-| `core_security_metadata_read_v1`; 1 | `core.security_metadata_read` | `compiled-core-security-metadata-read-v1` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55`; `02627caf` | `scripts/core_security_metadata_local.py`; `security_metadata` | pending: the signing commit (§5A.8 step 1) | pending: the lane re-run on the signing commit |
-| `core_device_configuration_entity_operation_v1`; 1 | `core.device_configuration_entity_operation` | `compiled-core-device-configuration-entity-operation-v1` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c`; `02627caf` | pending: HAMCP-366 (the design names the group `device_configuration_entity`) | pending: the signing commit (§5A.8 step 1) | pending: the HAMCP-366 lane, run on the signing commit |
+| `core_marketplace_read_v1`; 1 | `core.marketplace_read` | `compiled-core-marketplace-read-v1` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`; the same on `main` `c041f59d` | `scripts/core_marketplace_read_local.py`; `marketplace_read` (`ci/core-evidence-groups.json:60-62`) | `docs/evidence/hamcp290/lane/marketplace_read.json`; source `5fc40f93`, manifest `48b8b875…` | `381358d630ff9fc83ce7d2c87e4d33507aad3f9cdfd9872f8ecc3e2883ca7142` |
+| `core_security_metadata_read_v1`; 1 | `core.security_metadata_read` | `compiled-core-security-metadata-read-v1` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `scripts/core_security_metadata_local.py`; `security_metadata` (`:75-77`) | `docs/evidence/hamcp134/lane/security_metadata.json`; source `5fc40f93`, manifest `48b8b875…` | `a7f0697af9d350b69a122d540e5b5af29e5090a0779edebb3264c7a66e8d4a47` |
+| `core_device_configuration_entity_operation_v1`; 1 | `core.device_configuration_entity_operation` | `compiled-core-device-configuration-entity-operation-v1` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `scripts/core_device_configuration_local.py`; `device_configuration_entity` (`:72-74`). No entry in `ci/core-contract-read-files.json` (§5A.4, open against G5) | `docs/evidence/hamcp366/device_configuration_entity.json`; source `5fc40f93`, manifest `48b8b875…` | `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0` |
+| `core_scene_create_delete_operation_v1`; 1 | `core.scene_create_delete_operation` | `compiled-core-scene-create-delete-operation-v1` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `scripts/core_created_object_local.py`; `scene_create_delete` (`:66-68`) | `docs/evidence/hamcp364/lane/scene_create_delete.json`; source `5fc40f93`, manifest `48b8b875…` | `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860` |
+| `core_created_helper_delete_operation_v1`; 1 | `core.created_helper_delete_operation` | `compiled-core-created-helper-delete-operation-v1` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | `scripts/core_created_object_local.py`; `created_helper_delete` (`:69-71`) | `docs/evidence/hamcp364/lane/created_helper_delete.json`; source `5fc40f93`, manifest `48b8b875…` | `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6` |
+| `core_thread_matter_topology_read_v1`; 1 | `core.thread_matter_topology_read` | `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); `thread_matter_topology` (`:63-65`) | A1: `docs/evidence/hamcp231/lane/thread_matter_topology.json`; A2: `docs/evidence/hamcp231/lane/thread_matter_topology_a2.json`. Both: source `5fc40f93`, manifest `48b8b875…` | A1: `6bafb4b6eb49079435e9305f0e7f2a62a324b5579bcad69cc4a974561da2e2c2`. A2: `1b4506263090a3f56cba85841ce64cee66e1c323f51729364cadd3868f3826da` |
+
+Every review receipt reads PASS with cleanup `clean` true, binds journal
+`3f79fce7…` and the fingerprint in its row [R]. They are review evidence
+only. R8 (§9C) is unchanged: every included lane, HAMCP-134's included,
+re-runs once on the signing commit, and the receipts that count for
+signing are the ones from those re-runs, which bind that commit (§5A.4,
+§5A.8 step 2). The signing commit, its receipts and their SHA-256 values
+do not exist yet and are not in this sheet.
+
+**Manifests at `3bd5fe3f` [R].**
+
+| File | SHA-256 | Contents |
+| --- | --- | --- |
+| `ci/core-evidence-groups.json` | `5474f77b2cc91d52875a5920d37ce495907e5b81cfe7a052da269f71c7985e87` | 19 groups, in this order: `general` (`:2-22`), `integration_inspection` (`:23-25`), `automation_baseline` (`:26-28`), `entity_metadata` (`:29-31`), `availability_exposure` (`:32-35`), `label_registry` (`:36-38`), `configuration_delete` (`:39-41`), `helper_options` (`:42-44`), `input_select_option` (`:45-47`), `script_traces` (`:48-50`), `dashboard_metadata` (`:51-53`), `scene_configuration` (`:54-56`), `helper_value` (`:57-59`), `marketplace_read` (`:60-62`), `thread_matter_topology` (`:63-65`), `scene_create_delete` (`:66-68`), `created_helper_delete` (`:69-71`), `device_configuration_entity` (`:72-74`), `security_metadata` (`:75-77`) |
+| `ci/core-contract-read-files.json` | `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` | The manifest every receipt binds (`manifest_sha256`). Its `profiles` map has 38 keys: 37 capabilities, every compiled one except `core.device_configuration_entity_operation`, plus `binding_judgments` |
+
+Any change to either file before the signing commit changes its hash;
+the R8 re-runs bind the signing commit's values.
 
 **Architect-computed fingerprints (recorded 2026-11-11 at Josh's
 direction).** These are the architect's values, reported by Josh. The
@@ -1171,30 +1369,16 @@ agents did not recompute them at the commits named here.
 
 | Capability id | Architect-computed fingerprint | Commit | Status |
 | --- | --- | --- | --- |
-| `core.security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `6e65ba4d` (the HAMCP-134 merge) and `b810ba77` (the release/2.6.0 tip) | Same value at both commits |
-| `core.device_configuration_entity_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `b810ba77` | Provisional pending Josh's ruling 4 of 2026-11-11 (HAMCP-366: coverage of the three Eve entities by operation shape) |
+| `core.security_metadata_read` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `6e65ba4d` (the HAMCP-134 merge) and `b810ba77` (the release/2.6.0 tip) | Same value at both commits. Still recomputed on the signing commit (R-d) |
+| `core.device_configuration_entity_operation` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `b810ba77` | Provisional mark removed (R-c, Josh, 2026-11-13): ruling 4 closed with no ALLOWLIST change, and the value held through #434's merge. Still recomputed on the signing commit (R-d), like every row |
 
 Both equal the compiled values in the M2 and M3 rows above, which the
-agents computed at `02627caf` [R]. Neither is final until it is recomputed
-on the signing commit (§5A.8 step 1).
+agents computed at `3bd5fe3f` [R]. **R-d (Josh, §9D):** the architect
+recomputes all 38 fingerprints on the `release/2.6.0` to `main` merge
+commit, which is the signing commit, before signing (§5A.8 step 1).
 
-These rows join the sheet only if their pull request merges and their
-lanes pass on the signing commit in time (§5A.5). Their fingerprints are
-provisional, computed at the open head named.
-
-| Profile id; version | Capability id | Adapter id | Provisional fingerprint; open head [R] | Lane; evidence group | Receipt head | Receipt SHA-256 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `core_scene_create_delete_operation_v1`; 1 | `core.scene_create_delete_operation` | `compiled-core-scene-create-delete-operation-v1` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`; #424 at `efccdb87` | `scripts/core_created_object_local.py`; `scene_create_delete` | pending: the signing commit | pending: the lane re-run on the signing commit |
-| `core_created_helper_delete_operation_v1`; 1 | `core.created_helper_delete_operation` | `compiled-core-created-helper-delete-operation-v1` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4`; #424 at `efccdb87` | `scripts/core_created_object_local.py`; `created_helper_delete` | pending: the signing commit | pending: the lane re-run on the signing commit |
-| `core_thread_matter_topology_read_v1`; 1 | `core.thread_matter_topology_read` | `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c`; #427 at `df447a65` | `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); `thread_matter_topology` | pending: the signing commit | pending: two receipts, one per lane, from the re-runs on the signing commit |
-
-There is no row for the entity-rename profile (R12; §5A.5 Exclusions).
-
-#424's head moved to `c47ce2f08394dda3fb2351c51de2eac5a3cbf423` during this
-revision (read at 22:20 CST [G]). The only file that differs from
-`efccdb87` is `tests/test_core_created_object_local.py`, so the profile
-source, and with it the two fingerprints above and the #424 row of
-§5A.12, are unchanged [R].
+There is no row for the entity-rename profile (R12, R-g; §5A.5
+Exclusions).
 
 **B. Envelope and summary values.** The left column uses the labels of
 the summary that the `verify` job writes
@@ -1210,10 +1394,10 @@ the summary that the `verify` job writes
 | Evidence file `previous_entry_sha256` | `2307c0e07e026afc157fb40af7a633242fbc664e70cb6252b953bc56abf26405` | Computed from the signed 2026.11.0 entry at sequence 17 [R] |
 | New sequence | `18` | `scripts/prepare_core_release_registry.py:245` [S] |
 | Compared with entry | `2026.11.0` | `core_registry_one_tap.py:114-122` [S] |
-| Profiles carried (count) | 32 plus the number added: `35` with M1, M2 and M3. pending: the final membership at the signing commit | The summary lists every capability of the new entry (`core_registry_one_tap.py:178`) |
-| Carried references | The first 32 are the sequence 17 references, in order, unchanged (§2.3) | C2 |
+| Profiles carried (count) | `38`: the 32 signed plus the 6 added, if every included lane passes on the signing commit. R-a: a profile whose lane fails is dropped, and the count is 32 plus the number added | The summary lists every capability of the new entry (`core_registry_one_tap.py:178`); R-a (§9D) |
+| Carried references | R-b rule 1: the first 32 are the 32 signed sequence 17 references in their signed order (§2.3), unchanged; not the first 32 compiled profiles (`core.typed_helper_value_operation` is compiled 20th and signed 32nd). Each has exactly the five beta.7 fields (PC10) | C2; R-b (§9D), recorded in §5A.5 |
 | Withheld profiles | "Withheld profiles: none." A WITHHELD block is a stop | `core_registry_one_tap.py:219-226` |
-| Profiles added (count and ids) | The capability ids of the sheet A rows that are in the candidate. `3` with M1, M2 and M3. pending: the final membership at the signing commit | §5A.5 |
+| Profiles added (count and ids) | `6`, in R-b rule 2's order (compiled order): `core.marketplace_read`, `core.security_metadata_read`, `core.device_configuration_entity_operation`, `core.scene_create_delete_operation`, `core.created_helper_delete_operation`, `core.thread_matter_topology_read`. R-a: a profile whose lane fails on the signing commit is dropped and the others keep this order | §5A.5; R-a, R-b (§9D) |
 | Other entries | 2026.10.0: 22 references; 2026.10.1: 26; 2026.10.3: 31; three revocation records. All unchanged | §5A.2 [R]; C1 |
 | Generated | pending: the preparation time | Written by the utility |
 | Expires | pending: Generated plus 90 days | `prepare_core_release_registry.py:247-248` |
@@ -1586,6 +1770,24 @@ Reading notes, this plan's and not Josh's:
 - The handoff's second block has a fourth item, about #424's tests. It is
   not about this plan and is not quoted.
 
+## 9D. Josh's rulings of 2026-11-13 (R-a to R-g)
+
+Josh's rulings, relayed verbatim to this author by the orchestrating
+session's brief of 2026-11-13 and quoted below as relayed. Each is
+attributed as "Josh, 2026-11-13". Nothing else in the 2026-11-13 refresh
+is attributed to Josh; the computed values are this author's, at
+`3bd5fe3f`.
+
+| # | Text (verbatim) | Status | Used in |
+| --- | --- | --- | --- |
+| R-a | "Membership: all six (core.marketplace_read, core.security_metadata_read, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.created_helper_delete_operation, core.thread_matter_topology_read), each conditional on its lane passing on the signing commit. A profile whose lane fails is dropped from seq 18; the others proceed." | In force | §5A.5; §5A.7 PC1; §5A.8 step 2; §5A.10; §5A.11 item 3; §5A.15 A and B |
+| R-b | "previous_capabilities are the 32 signed sequence-17 references in their signed order, not the first 32 compiled profiles (core.typed_helper_value_operation is compiled 20th and signed 32nd). The six added references follow in compiled order: marketplace, security_metadata, device_configuration_entity, scene_create_delete, created_helper_delete, thread_matter_topology. Record both rules on #395." | In force. Both rules are recorded in §5A.5 | §5A.3; §5A.5; §5A.10; §5A.13 Q11; §5A.15 B |
+| R-c | "The provisional mark on core.device_configuration_entity_operation (74a03a64…) is removed: ruling 4 closed with no ALLOWLIST change, and the value held through #434's merge." | Applied | §5A.15 A (architect table) |
+| R-d | "refresh #395's sheet A to the final release tip: 38 compiled profiles, line numbers, manifest hash, lane and group cells, and receipt hashes. The architect recomputes all 38 fingerprints on the release/2.6.0 to main merge commit (the signing commit) before signing." | Refresh applied at `3bd5fe3f`; the recomputation is in force for the signing commit | §5A.3; §5A.7 PC5; §5A.8 step 1; §5A.15 A |
+| R-e | "every reference in the seq 18 candidate uses exactly the closed field set that beta.7 accepts (registry_models.py at tag v2.4.2-beta.7). beta.7 rejects a whole entry for a single unknown field, which on rollback would fall back to the cached sequence 17 or, with an empty cache, lose every Core-native capability." | In force | §5A.7 PC10; §5A.10; §5A.11 item 14; §5A.15 B |
+| R-f | "Signing seq 18 is one-way. There is no per-capability removal; the only undo is revoking the whole 2026.11.0 entry, which withdraws all its capabilities and cannot be re-added; recovery is then a new Core-version binding (HAMCP-367). State this plainly in the release notes and on #395. Josh signs only after: the architect recomputes all 38 fingerprints on the signing commit; every included lane passes on that commit; and the candidate is checked against item 3." Item 3 is R-b, as relayed | In force. Stated in §5A.10. The release notes are outside this change | §5A.7 PC8; §5A.10 |
+| R-g | #425 (HAMCP-295, entity rename) stays out of 2.6. Its exclusion row stays. (Relayed as a ruling, not as a quotation.) | In force | §5A.5 Exclusions; §5A.12; §5A.15 A |
+
 ## 10. Superseded (historical)
 
 The revision at `2248224f` was written before the Josh direction in §1 was
@@ -1725,3 +1927,18 @@ For the second revision of 2026-11-10:
 - The decisions attributed to Josh in this revision are exactly R6-R12,
   quoted in §9C. Every reading note, every item marked [A] and every
   section reference beside a ruling is this plan's.
+
+For the 2026-11-13 refresh:
+
+- Only this file was edited, in one local commit on
+  `agent/HAMCP-332-release-2.6.0`. Nothing was pushed, no pull request was
+  opened or edited, no GitHub write was made and no workflow was
+  dispatched. Nothing was fetched; `origin/main` and `origin/registry` are
+  the local refs.
+- No lane was run and no container was started. Receipts were read from
+  the files committed at `3bd5fe3f`; none was edited.
+- The fingerprints were computed offline by importing the profile module
+  from a `git archive` of `3bd5fe3f` in an ignored scratch directory. No
+  candidate or evidence file was prepared and nothing was signed.
+- No live Home Assistant, deployed endpoint, secret, signing seed or
+  production credential was used.
