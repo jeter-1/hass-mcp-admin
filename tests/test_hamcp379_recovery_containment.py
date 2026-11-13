@@ -1819,6 +1819,269 @@ class ContainmentContract:
                                  [(hold.key, True)])
         self.assertTrue(store.hold_settled(record, owned))
 
+    # HAMCP-379 adversarial pass 2 (2026-11-12): each test below pins a fence
+    # whose removal survived the first closing set. The fences bind the hold
+    # to the record's exact owner, generation, single entity row, own task
+    # and an inactive task; every case here is lock-store corruption or a
+    # live task, so each must stay refused, counted and unreleased.
+
+    def rewrite_row(self, process, task_id, row_key, *, fresh_generation=False, **fields):
+        """Rewrite one stored row of the task, as lock-store corruption would.
+
+        ``fresh_generation`` moves the row to the store's next unused
+        generation. Returns the row's previous fields, for a restore.
+        """
+        previous = {}
+
+        def mutate(state):
+            rows = [item for item in state["records"]
+                    if item.task_id == task_id and item.key == row_key]
+            self.assertEqual(len(rows), 1)
+            previous.update(rows[0].to_dict())
+            changed = {**previous, **fields}
+            if fresh_generation:
+                changed["generation"] = state["next_generation"]
+                state["next_generation"] += 1
+            state["records"] = [LockRecord.from_dict(changed) if item is rows[0] else item
+                                for item in state["records"]]
+            return None, True
+        process.service.locks._transact(mutate)
+        return previous
+
+    def restore_row(self, process, previous):
+        """Put back a row ``rewrite_row`` changed, exactly as it was."""
+        def mutate(state):
+            state["records"] = [
+                LockRecord.from_dict(previous)
+                if item.task_id == previous["task_id"] and item.key == previous["key"] else item
+                for item in state["records"]]
+            return None, True
+        process.service.locks._transact(mutate)
+
+    def add_task_row(self, process, task_id, key, mode):
+        """One more row for the task, under its rows' owner, at a fresh generation."""
+        def mutate(state):
+            first = next(item for item in state["records"] if item.task_id == task_id)
+            row = {**first.to_dict(), "key": key, "mode": mode, "conflict_hold": False,
+                   "generation": state["next_generation"]}
+            state["next_generation"] += 1
+            state["records"].append(LockRecord.from_dict(row))
+            return None, True
+        process.service.locks._transact(mutate)
+
+    async def assert_hold_not_settled(self, process, task_id, refusal):
+        """Not settled, not offered, reconcile refuses and the sweep counts it."""
+        store = process.service.locks
+        record = process.record(task_id)
+        owned = [row for row in store.records() if row.task_id == task_id]
+        self.assertFalse(store.hold_settled(record, owned))
+        self.assertIsNone(process.service.hold_release_item(task_id))
+        rows = process.lock_rows(task_id)
+        with self.assertRaisesRegex(LockOwnershipError, refusal):
+            store.reconcile_terminal_hold(record)
+        self.assertEqual(process.lock_rows(task_id), rows)
+        before = (process.service.recovery_failures, record.events, rows, tree_digest(self.root))
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assertEqual((process.service.recovery_failures, process.record(task_id).events,
+                          process.lock_rows(task_id), tree_digest(self.root)),
+                         (before[0] + 1,) + before[1:])
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_a_hold_row_whose_attempt_operation_or_plan_changed_is_not_settled(self):
+        # The lock_tokens dict names key, generation, mode and owner only;
+        # the attempt, operation and plan are bound by the owner comparison.
+        process, task_id = await self.normal_hold()
+        hold = "entity:" + process.entity
+        for field in ("attempt_id", "operation_id", "plan_id"):
+            with self.subTest(field=field):
+                previous = self.rewrite_row(process, task_id, hold,
+                                            **{field: "synthetic" + uuid.uuid4().hex})
+                await self.assert_hold_not_settled(process, task_id, "fan hold owner changed")
+                self.restore_row(process, previous)
+        record = process.record(task_id)
+        self.assertTrue(process.service.locks.hold_settled(
+            record, [row for row in process.service.locks.records() if row.task_id == task_id]))
+        self.assertIsNotNone(process.service.hold_release_item(task_id))
+
+    @virtual
+    async def test_a_hold_row_the_record_does_not_name_is_not_settled(self):
+        # A hold at a generation or mode the record's lock_tokens do not name.
+        process, task_id = await self.normal_hold()
+        hold = "entity:" + process.entity
+        for name, change in (("generation", {"fresh_generation": True}),
+                             ("mode", {"mode": "shared"})):
+            with self.subTest(changed=name):
+                previous = self.rewrite_row(process, task_id, hold, **change)
+                await self.assert_hold_not_settled(process, task_id,
+                                                   "fan hold settlement was fenced")
+                self.restore_row(process, previous)
+        record = process.record(task_id)
+        self.assertTrue(process.service.locks.hold_settled(
+            record, [row for row in process.service.locks.records() if row.task_id == task_id]))
+
+    @virtual
+    async def test_an_entity_hold_with_another_row_of_the_task_is_not_settled(self):
+        process, task_id = await self.normal_hold()
+        self.add_task_row(process, task_id, "home_assistant:core", "shared")
+        self.assertEqual([(key, held) for key, _, _, _, held in process.lock_rows(task_id)],
+                         [("entity:" + process.entity, True), ("home_assistant:core", False)])
+        await self.assert_hold_not_settled(process, task_id, "fan hold settlement was fenced")
+
+    @virtual
+    async def test_a_single_conflict_hold_on_a_dependency_key_is_not_settled(self):
+        # The one hold row is named by lock_tokens, under the right owner, but
+        # on home_assistant:core rather than the request's entity.
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id)
+        process.service.locks.promote_selective_conflict_hold(
+            lock_handle(process, task_id), retained_keys=("home_assistant:core",),
+            reason_code="manual_review_unresolved_dispatch")
+        self.assertEqual([(key, held) for key, _, _, _, held in process.lock_rows(task_id)],
+                         [("home_assistant:core", True)])
+        await self.assert_hold_not_settled(process, task_id, "fan hold settlement was fenced")
+
+    @virtual
+    async def test_reconcile_refuses_an_unpromoted_row_set_the_record_does_not_name(self):
+        # The full unpromoted row set with one row at a generation the record
+        # does not name: reconcile_terminal_hold promotes only the exact set.
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id)
+        store, core = process.service.locks, "home_assistant:core"
+        previous = self.rewrite_row(process, task_id, core, fresh_generation=True)
+        rows = process.lock_rows(task_id)
+        self.assertEqual((len(rows), any(row[4] for row in rows)),
+                         (len(process.record(task_id).lock_tokens), False))
+        with self.assertRaisesRegex(LockOwnershipError, "fan hold settlement was fenced"):
+            store.reconcile_terminal_hold(process.record(task_id))
+        self.assertEqual(process.lock_rows(task_id), rows)
+        self.assertIn(core, [row[0] for row in rows])
+        # The exact set is promoted: the entity hold stays, the rest is released.
+        self.restore_row(process, previous)
+        store.reconcile_terminal_hold(process.record(task_id))
+        self.assert_entity_hold_only(process, task_id)
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    async def assert_a_change_after_the_release_decision_is_fenced(self, process, task_id,
+                                                                   change, refusal):
+        """``change`` runs once the release decision is durable; nothing is released."""
+        service, write = process.service, process.service._write_release
+        changed = []
+
+        def write_then_change(release):
+            write(release)
+            if release["released_at"] is None:
+                change()
+                changed.append(process.lock_rows(task_id))
+        review = await service.hold_release_review(task_id)
+        self.assertIsNotNone(review, "the hold is not offered for release")
+        with patch.object(service, "_write_release", write_then_change), \
+                self.assertRaisesRegex(LockOwnershipError, refusal):
+            await service.release_hold(
+                task_id, record_generation=review["record_generation"],
+                prepared_hash=review["prepared_hash"], hold_binding=review["hold_binding"],
+                reviewed_readback_hash=review["readback_hash"],
+                authorized_principal="home_assistant_admin_ingress:admin-fixture")
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(process.lock_rows(task_id), changed[0])
+        self.assertIn(("entity:" + process.entity, True),
+                      [(row[0], row[4]) for row in changed[0]])
+        self.assertIsNone(service._load_release(task_id)["released_at"])
+        # The sweep's finisher meets the same fence and counts it.
+        before = service.recovery_failures
+        await asyncio.sleep(SWEEP_SECONDS)
+        await service.recover_once()
+        self.assertEqual(service.recovery_failures, before + 1)
+        self.assertEqual(process.lock_rows(task_id), changed[0])
+        self.assertIsNone(service._load_release(task_id)["released_at"])
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
+    @virtual
+    async def test_a_hold_regenerated_after_the_release_decision_is_not_released(self):
+        process, task_id = await self.normal_hold()
+        await self.assert_a_change_after_the_release_decision_is_fenced(
+            process, task_id,
+            lambda: self.rewrite_row(process, task_id, "entity:" + process.entity,
+                                     fresh_generation=True),
+            "fan hold release was fenced")
+
+    @virtual
+    async def test_a_second_row_added_after_the_release_decision_is_not_released(self):
+        process, task_id = await self.normal_hold()
+        await self.assert_a_change_after_the_release_decision_is_fenced(
+            process, task_id,
+            lambda: self.add_task_row(process, task_id, "home_assistant:core", "shared"),
+            "fan hold release was fenced")
+
+    @virtual
+    async def test_a_hold_reowned_to_the_claim_owner_after_the_release_decision_is_not_released(self):
+        # The claim names the recovering pass; only the lock_tokens owner may
+        # release, even when the hold row is rewritten to the claim's owner.
+        process, task_id = await self.promoted_unpromoted_settlement()
+        claim_owner = process.record(task_id).execution_identity().owner_id
+        await self.assert_a_change_after_the_release_decision_is_fenced(
+            process, task_id,
+            lambda: self.reown_row(process, task_id, "entity:" + process.entity, claim_owner),
+            "conflict-hold release was fenced")
+
+    @virtual
+    async def test_the_ruling_a_sweep_leaves_another_tasks_rows_alone(self):
+        # Another family's task, still awaiting recovery, shares the shared
+        # keys. The ruling A sweep promotes only its own task's rows.
+        family = next(family for family in FAMILIES if family != self.family)
+        mine = await self.crash_after_dispatch_intent()
+        theirs = await self.crash_after_dispatch_intent(self.process(family))
+        await asyncio.sleep(205)
+        process, other = self.process(), self.process(family)
+        await self.settle_without_a_handle(process, mine.task_id)
+
+        def their_rows():
+            return [row.to_dict() for row in process.service.locks.records()
+                    if row.task_id == theirs.task_id]
+        rows, store = their_rows(), tree_digest(other.service.root)
+        self.assertTrue(rows)
+        self.assertFalse(any(row["conflict_hold"] for row in rows))
+        self.assertIn("home_assistant:core", [row["key"] for row in rows])
+        before = (process.service.recovery_failures, other.service.recovery_failures)
+        await asyncio.sleep(SWEEP_SECONDS)
+        await process.service.recover_once()
+        self.assert_entity_hold_only(process, mine.task_id)
+        self.assertEqual(their_rows(), rows)
+        self.assertEqual(tree_digest(other.service.root), store)
+        self.assertEqual((process.service.recovery_failures, other.service.recovery_failures),
+                         before)
+        # The other task still settles through its own family's recovery.
+        with patch(BOUND_REACHED, lambda record: True):
+            await other.service.recover_once()
+        self.assert_bound_settlement(other, theirs.task_id)
+        self.assert_entity_hold_only(process, mine.task_id)
+        self.assertEqual((process.writes(), process.dispatches, other.writes(), other.dispatches),
+                         (0, 0, 0, 0))
+
+    @virtual
+    async def test_the_ruling_a_sweep_skips_a_task_active_in_this_process(self):
+        process, task_id = await self.awaiting_recovery()
+        await self.settle_without_a_handle(process, task_id)
+        service = process.service
+        rows, events = process.lock_rows(task_id), process.record(task_id).events
+        before, store = service.recovery_failures, tree_digest(self.root)
+        self.assertFalse(any(row[4] for row in rows))
+        with patch.dict(service.active, {task_id: None}):
+            for _ in range(2):
+                await asyncio.sleep(SWEEP_SECONDS)
+                await service.recover_once()
+            self.assertEqual((service.recovery_failures, process.record(task_id).events,
+                              process.lock_rows(task_id), tree_digest(self.root)),
+                             (before, events, rows, store))
+        # No longer active here: the next sweep promotes it.
+        await asyncio.sleep(SWEEP_SECONDS)
+        await service.recover_once()
+        self.assert_entity_hold_only(process, task_id)
+        self.assertEqual((service.recovery_failures, process.record(task_id).events),
+                         (before, events))
+        self.assertEqual((process.writes(), process.dispatches), (0, 0))
+
     # Architect ruling on Stop A (2026-11-12), the beta.8 known limit: a real
     # contradictory owner set at the bound (a row the record's lock_tokens do
     # not name) arises only from lock-store corruption, and recovery is a
