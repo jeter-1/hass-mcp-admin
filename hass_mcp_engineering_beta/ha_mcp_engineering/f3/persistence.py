@@ -17,6 +17,7 @@ from typing import Any, Callable, TypeVar
 from .models import (
     EXECUTION_RECORD_SCHEMA_VERSION,
     F3_ADAPTER_CONTRACT_MODEL,
+    MAX_EXECUTION_EVENTS,
     NORMALIZED_OUTCOME_TO_TASK_STATE,
     ExecutionIdentity,
     ExecutionRecord,
@@ -37,6 +38,139 @@ EXECUTION_NAMESPACE = "f3-operation-executions-v1"
 EXECUTION_TRANSACTION_FILE = ".transaction.lock"
 EXECUTION_TEMP_PREFIX = ".execution.tmp-"
 EXECUTION_RETENTION_DAYS = 90
+
+
+# HAMCP-379 recovery containment (opt-in; see SharedOperationExecutor).
+#
+# Completed observation: an ``observation_recorded`` event without the
+# ``observation_failed`` code. It is written only after the adapter's read
+# returned. A read that raised, a pass cancelled during its read and a pass
+# that yielded without reading complete no observation.
+#
+# Counted recovery claims: walking the ``recovery_claimed`` events after the
+# most recent completed observation (or the whole record when there is none),
+# a claim counts when it is the first of them, or when its ``occurred_at`` is
+# at least _RECOVERY_CLAIM_WINDOW_SECONDS from the previous counted claim's, by
+# absolute distance so a clock step back cannot make every claim count. A
+# claim that does not count does not move that start point.
+#
+# Under containment a claim that would not count appends no bookkeeping event,
+# and ``recovery_locks_transferred`` and ``execution_claim_yielded`` are each
+# appended at most once after the latest counted ``recovery_claimed``. The
+# claim counters, claim expiry and lock tokens still update every time.
+#
+# The recovery pass whose claim brings the count to RECOVERY_CLAIM_BOUND
+# settles the task to manual review without another read.
+RECOVERY_CLAIM_BOUND = 8
+# Equal to fan.service.RECOVERY_SWEEP_SECONDS (a test keeps them equal); f3
+# does not import the typed write families.
+_RECOVERY_CLAIM_WINDOW_SECONDS = 30
+# Backstop: a recovery claim that finds this many events settles the task too.
+RECOVERY_SETTLE_BOUND = MAX_EXECUTION_EVENTS - 8
+# Recovery bookkeeping: these events carry no readback or dispatch evidence.
+RECOVERY_BOOKKEEPING_EVENT_TYPES = frozenset(
+    {"recovery_claimed", "recovery_locks_transferred", "execution_claim_yielded"}
+)
+# Room a record already at the event bound needs before it can settle: one
+# claim event that names the number of dropped events, and the settlement.
+_SETTLEMENT_EVENTS = 2
+# Diagnostic code prefix; the suffix is the number of dropped events.
+RECOVERY_DROPPED_CODE_PREFIX = "recovery_bookkeeping_dropped_"
+
+
+def _completed_observation(event: dict[str, Any]) -> bool:
+    return (
+        event["event_type"] == "observation_recorded"
+        and "observation_failed" not in event["diagnostic_codes"]
+    )
+
+
+def _claim_counts(anchor: datetime | None, occurred_at: datetime) -> bool:
+    return anchor is None or (
+        abs((occurred_at - anchor).total_seconds())
+        >= _RECOVERY_CLAIM_WINDOW_SECONDS
+    )
+
+
+def _counted_recovery_claims(
+    events: list[dict[str, Any]],
+) -> tuple[int, datetime | None, int | None]:
+    """Walk the record once (see above).
+
+    Returns the counted claims since the last completed observation, the
+    ``occurred_at`` of the latest of them (None when there is none), and the
+    index of the latest counted claim in the whole record.
+    """
+    count = 0
+    anchor: datetime | None = None
+    latest: int | None = None
+    for index, event in enumerate(events):
+        if _completed_observation(event):
+            count, anchor = 0, None
+            continue
+        if event["event_type"] != "recovery_claimed":
+            continue
+        occurred_at = parse_timestamp(
+            event["occurred_at"], field_name="occurred_at"
+        )
+        if _claim_counts(anchor, occurred_at):
+            count, anchor, latest = count + 1, occurred_at, index
+    return count, anchor, latest
+
+
+def consecutive_recovery_claims(events: list[dict[str, Any]]) -> int:
+    """Counted recovery claims since the last completed observation."""
+    return _counted_recovery_claims(events)[0]
+
+
+def recovery_bound_reached(record: ExecutionRecord) -> bool:
+    return (
+        consecutive_recovery_claims(record.events) >= RECOVERY_CLAIM_BOUND
+        or len(record.events) >= RECOVERY_SETTLE_BOUND
+    )
+
+
+def _bookkeeping_suppressed(
+    record: ExecutionRecord, event_type: str, occurred_at: str
+) -> bool:
+    """Under containment: is this bookkeeping event left out (see above)?"""
+    _, anchor, latest = _counted_recovery_claims(record.events)
+    if event_type == "recovery_claimed":
+        return not _claim_counts(
+            anchor, parse_timestamp(occurred_at, field_name="occurred_at")
+        )
+    return latest is not None and any(
+        event["event_type"] == event_type
+        for event in record.events[latest + 1 :]
+    )
+
+
+def _append_recovery_bookkeeping(
+    record: ExecutionRecord,
+    *,
+    containment: bool,
+    event_type: str,
+    occurred_at: str,
+    diagnostic_codes: tuple[str, ...],
+) -> None:
+    """Append one bookkeeping event; under containment, only when it counts.
+
+    A task at the recovery bound only waits to settle. Its waiting passes
+    append nothing, so the settlement event always fits. Below the bound, a
+    claim that does not count, and a repeated lock transfer or yield after the
+    latest counted claim, append nothing either (see above).
+    """
+    if containment and (
+        recovery_bound_reached(record)
+        or _bookkeeping_suppressed(record, event_type, occurred_at)
+    ):
+        return
+    append_execution_event(
+        record,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        diagnostic_codes=diagnostic_codes,
+    )
 
 
 class ExecutionStorageError(RuntimeError):
@@ -236,6 +370,7 @@ class DurableExecutionRepository:
         prepared: object,
         timing: ExecutorTiming,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionClaim:
         identity.validate()
         timing.validate()
@@ -297,12 +432,30 @@ class DurableExecutionRepository:
                 record.identity["request_id"] = identity.request_id
                 record.claim_generation += 1
                 record.claim_expires_at = claim_expiry
-                append_execution_event(
-                    record,
-                    event_type="recovery_claimed",
-                    occurred_at=now_text,
-                    diagnostic_codes=("redispatch_prohibited",),
+                dropped = (
+                    self._reserve_settlement_events(record)
+                    if recovery_containment
+                    else 0
                 )
+                if dropped:
+                    # The one event a trimmed record gains before it settles.
+                    append_execution_event(
+                        record,
+                        event_type="recovery_claimed",
+                        occurred_at=now_text,
+                        diagnostic_codes=(
+                            "redispatch_prohibited",
+                            f"{RECOVERY_DROPPED_CODE_PREFIX}{dropped}",
+                        ),
+                    )
+                else:
+                    _append_recovery_bookkeeping(
+                        record,
+                        containment=recovery_containment,
+                        event_type="recovery_claimed",
+                        occurred_at=now_text,
+                        diagnostic_codes=("redispatch_prohibited",),
+                    )
                 self._write_unlocked(record)
                 return ExecutionClaim(record, record.claim_generation, False)
             record.identity["owner_id"] = identity.owner_id
@@ -317,6 +470,36 @@ class DurableExecutionRepository:
             )
             self._write_unlocked(record)
             return ExecutionClaim(record, record.claim_generation, False)
+
+    @staticmethod
+    def _reserve_settlement_events(record: ExecutionRecord) -> int:
+        """Make room to settle a record written at the event bound.
+
+        HAMCP-379: releases before containment could fill a record with
+        recovery bookkeeping, after which no terminal event fits. Only then,
+        drop the newest bookkeeping events (never another event type, never an
+        attempt counter) and return how many were dropped. A record that grew
+        under containment settles before it can get here.
+        """
+        if len(record.events) < MAX_EXECUTION_EVENTS:
+            return 0
+        kept: list[dict[str, Any]] = []
+        dropped = 0
+        for event in reversed(record.events):
+            if (
+                dropped < _SETTLEMENT_EVENTS
+                and event["event_type"] in RECOVERY_BOOKKEEPING_EVENT_TYPES
+            ):
+                dropped += 1
+                continue
+            kept.append(event)
+        if dropped < _SETTLEMENT_EVENTS:
+            return 0
+        record.events = [
+            {**event, "sequence": sequence}
+            for sequence, event in enumerate(reversed(kept), start=1)
+        ]
+        return dropped
 
     @staticmethod
     def _require_claim(
@@ -468,6 +651,7 @@ class DurableExecutionRepository:
         claim_generation: int,
         handle: LockHandle,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionRecord:
         now_text = timestamp(now or utc_now())
         handle.validate()
@@ -489,8 +673,9 @@ class DurableExecutionRepository:
             record.dispatch_intent["lock_tokens"] = [
                 dict(item) for item in record.lock_tokens
             ]
-            append_execution_event(
+            _append_recovery_bookkeeping(
                 record,
+                containment=recovery_containment,
                 event_type="recovery_locks_transferred",
                 occurred_at=now_text,
                 diagnostic_codes=("observation_only",),
@@ -732,6 +917,7 @@ class DurableExecutionRepository:
         owner_id: str,
         claim_generation: int,
         now: datetime | None = None,
+        recovery_containment: bool = False,
     ) -> ExecutionRecord:
         """End an in-process single-flight claim while work remains observable."""
         now_text = timestamp(now or utc_now())
@@ -740,8 +926,9 @@ class DurableExecutionRepository:
             if record.terminal:
                 raise ExecutionStorageError("terminal execution cannot yield a claim")
             record.claim_expires_at = now_text
-            append_execution_event(
+            _append_recovery_bookkeeping(
                 record,
+                containment=recovery_containment,
                 event_type="execution_claim_yielded",
                 occurred_at=now_text,
                 diagnostic_codes=("observation_resume_allowed",),
