@@ -23,7 +23,10 @@ approval.
   were relayed by Josh on 2026-11-12; they are architect rulings, not
   Josh's own. Josh's decisions 3 (restore-first recovery) and 4 (the A2
   restore rehearsal) date from 2026-11-12. Rulings R-a to R-g are Josh's,
-  of 2026-11-13 (signing plan §9D).
+  of 2026-11-13 (signing plan §9D). The 17:05 ruling 2 (architect,
+  relayed by Josh 2026-11-13, finding HAMCP332-RUNBOOK-SIGNING-COMMIT) sets
+  the two commits used in 1.2-1.4, 7.1, 7.2 and 7.5-7.6; it is not Josh's
+  own.
 - "Check A1" and "check A2" are the two checks inside architect ruling A.
   They are not the earlier rulings cited below as A2, A3 or A8, nor the
   23:11 rulings A1 and A2.
@@ -331,15 +334,22 @@ If a family count is not 0:
 
 **1.2 Record the merge**
 - Who: orchestrator.
-- Action: record the merge SHA (the signing commit, ruling B9), the image
-  digest and the tag target.
+- Action: record the merge SHA, the image digest and the tag target.
+- Two commits (17:05 ruling 2a; Josh's decision 1d, 2026-11-13: fix G5 in
+  2.6 before signing):
+  - the release merge SHA is the **publish and deploy commit**;
+  - the **signing commit** is the merge commit of the HAMCP-297 G5 pull
+    request (pending: it exists only after that pull request merges).
+    Every included lane re-runs there under R8 (signing plan §5A.4).
 - Check: tag = merge SHA; publication run green; Release present.
 - Stop: publication red → no deploy.
 
-**1.3 Recompute on the signing commit**
+**1.3 Recompute on the release merge, then on the signing commit**
 - Who: architect.
-- Action: recompute all 38 profile fingerprints on the merge SHA (ruling
-  R-d, 2026-11-13, signing plan §9D; rulings B11 and A8).
+- Action: recompute all 38 profile fingerprints twice (ruling R-d,
+  2026-11-13, signing plan §9D; rulings B11 and A8; 17:05 ruling 2b):
+  - on the release merge SHA, for deploy;
+  - again on the signing commit (1.2), before signing.
 - Check: they match sheet A of the signing plan
   ([`HAMCP_332_2_6_0_SIGNING_PLAN.md`](../HAMCP_332_2_6_0_SIGNING_PLAN.md),
   "5A.15 Expected-values sheet (for the dry-run comparison)", part
@@ -351,16 +361,22 @@ If a family count is not 0:
   - `core.scene_create_delete_operation` `93378ae0…400d`;
   - `core.created_helper_delete_operation` `3f2e6813…cdbf4`;
   - `core.thread_matter_topology_read` `d03f005c…bb6c`.
+  The 38 fingerprints must be unchanged between the release merge and the
+  signing commit (17:05 ruling 2b).
 - Stop: any mismatch → no signing. Deploy may still proceed (INFERENCE:
   the profiles are dormant until seq 18 is signed).
 
-**1.4 Catalog hashes on the signing commit**
+**1.4 Catalog hashes on the release merge, then on the signing commit**
 - Who: orchestrator arranges a read-only side session.
-- Action: re-run the catalog hashes on the merge SHA (ruling B11).
+- Action: re-run the catalog hashes on the release merge SHA, for deploy
+  (ruling B11), and again on the signing commit (1.2), before signing
+  (17:05 ruling 2b).
 - Check: 86 Engineering tools, with the 4 added and 6 changed tools
   declared in the release notes' Tool catalog section; the catalog hash
-  equals the release pull request head's.
-- Stop: mismatch → stop and report.
+  equals the release pull request head's. The catalog must be unchanged
+  between the release merge and the signing commit.
+- Stop: mismatch → stop and report. A change between the two commits → no
+  signing.
 
 **1.5 Regenerate the changing facts on the merge commit**
 - Who: orchestrator arranges a read-only side session. It runs alongside
@@ -572,6 +588,10 @@ is the signing plan's (§5A.8).
   (writer 2.4.2-beta.8 at `aeb3b314`, reader 2.4.2-beta.7 at `b614be43`;
   see the [lane README](../evidence/hamcp377/lane/README.md)). Confirm its
   sha256 is unchanged on the merge commit (1.5).
+- That sha256 holds only until `compare-candidate --record` is used (7.2).
+  After recording, cite the new sha256 of `12a-source.json` from the
+  receipt pull request instead (17:05 ruling 2c). Until then the new value
+  is pending.
 - Check: PASS. 2.4.2-beta.7 admits 33 of 38 references, including
   `core.marketplace_read`, with 5 not admitted and 0 quarantined (ruling
   29).
@@ -585,8 +605,13 @@ is the signing plan's (§5A.8).
   `python scripts/rollback_proof_lane.py compare-candidate docs/evidence/hamcp377/lane <core-candidate.json>`
 
   It compares the canonical bytes of each reference object, in order. With
-  `--record` it also writes the result into the committed 12a receipt; use
-  that only on a branch meant for review.
+  `--record` it also writes the result into the committed 12a receipt
+  (17:05 ruling 2d):
+  - run `--record` only after the real seq 18 candidate exists;
+  - run it on a dedicated evidence branch with its own pull request,
+    under register id HAMCP-377. Proposed branch pattern (a proposal, not
+    yet ruled): `agent/HAMCP-377-seq18-record-<short-sha>`;
+  - then cite the new 12a sha256 from that pull request (7.1).
 - Check: identical. The 12a entry was built by
   `scripts/prepare_core_release_registry.py extend-capabilities`, the route
   the real candidate takes (lane README).
@@ -614,15 +639,17 @@ is the signing plan's (§5A.8).
 
 **7.5 Lanes on the signing commit**
 - Who: orchestrator.
-- Action: confirm every included profile's lane passed on the merge SHA
-  (ruling A8; R-a; signing plan §5A.8 step 2).
+- Action: confirm every included profile's lane passed on the signing
+  commit (1.2), not the release merge SHA (ruling A8; R-a; R8; 17:05
+  ruling 2a; signing plan §5A.8 step 2).
 - Check: one green receipt per profile.
 - Stop: a failed lane drops that profile (R-a). Rebuild the candidate and
   redo 7.2-7.4.
 
 **7.6 Recompute matches**
 - Who: architect.
-- Action: confirm step 1.3 matched for every included profile.
+- Action: confirm step 1.3 matched on the signing commit for every
+  included profile.
 - Check: the candidate's fingerprints equal the 1.3 values.
 - Stop: mismatch → no signing.
 
