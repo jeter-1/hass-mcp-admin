@@ -197,7 +197,8 @@ supported.
 on restore: plans, receipts, audit and trace watches. See
 [`runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md`](runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md).
 After a restore, refresh every client; the connector catalog returns to 110
-tools.
+tools. The deploy-day steps, including both restore paths, are in
+[`runbooks/DEPLOY-2.4.2-BETA.7-TO-BETA.8.md`](runbooks/DEPLOY-2.4.2-BETA.7-TO-BETA.8.md).
 
 **Why in-place downgrade is not supported.** Two findings on
 2.4.2-beta.7, both shown by the rollback proof receipts below:
