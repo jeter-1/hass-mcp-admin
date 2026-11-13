@@ -715,7 +715,9 @@ or deployment.
 ## Independent review and Ready automation
 
 Review begins only after implementation reaches a stable candidate and
-Full/Evidence validation has completed. Use this bounded default sequence:
+Full/Evidence validation has completed, or the Fast checks and CI when the
+"Scope pre-review validation by change type" bullet in the root `AGENTS.md`
+allows them instead. Use this bounded default sequence:
 
 1. A separately tasked reviewer/session that did not implement the change reviews
    the exact base/head without editing. A separate worktree is optional file
@@ -1205,9 +1207,10 @@ These are distinct profiles; “Codex access” is not one universal permission.
 
 > From current `origin/main`, create one clean worktree and branch for `<scope>`.
 > Report base/HEAD/version context, inspect before editing, make the smallest
-> coherent change, run Fast during development and Full/Evidence before pushing,
-> open a draft PR, and stop before merge/release/deployment. Do not cross `<named
-> trust boundaries>`.
+> coherent change, run Fast during development and Full/Evidence before pushing
+> (Fast checks and CI instead when the "Scope pre-review validation by change
+> type" bullet in the root `AGENTS.md` allows it), open a draft PR, and stop
+> before merge/release/deployment. Do not cross `<named trust boundaries>`.
 
 ### Independent Review
 
@@ -1222,9 +1225,11 @@ These are distinct profiles; “Codex access” is not one universal permission.
 
 > On `<existing draft branch>`, verify each accepted review finding against
 > source, implement only attributable corrections, add regression coverage, rerun
-> the affected Fast area and Full/Evidence, update the draft PR, then request one
-> focused delta rereview of the accepted findings and reviewed-head-to-final-head
-> delta. Request a full rereview only if architecture or scope materially changed.
+> the affected Fast area and Full/Evidence (Fast checks and CI instead when the
+> "Scope pre-review validation by change type" bullet in the root `AGENTS.md`
+> allows it), update the draft PR, then request one focused delta rereview of
+> the accepted findings and reviewed-head-to-final-head delta. Request a full
+> rereview only if architecture or scope materially changed.
 
 ### Remote Implementation
 
