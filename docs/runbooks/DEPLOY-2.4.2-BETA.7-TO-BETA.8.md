@@ -541,11 +541,17 @@ automation was watched.
   `get_security_metadata`, `get_thread_matter_topology` and
   `automation_reliability_batch_analysis`.
 - Stop: still missing after reconnect → stop and report.
-- Known blocker C1 (19:05 record item 1): on the 2.6 deploy day, a
-  brand-new Claude chat could not load the connector. An existing chat saw
-  the four new tools after an app restart. Record Phase 5 as blocked by
-  C1, not failed, when only a brand-new Claude chat fails to load the
-  connector. C1 (legacy-only MCP protocol) is 2.7 intake.
+- Known blocker (corrected by the architect, 2026-11-14 about 06:00 CST):
+  blocked by a Claude client-side connector-loading issue (fresh chats
+  never contact Engineering); C1 is a separate spec gap. On the 2.6 deploy
+  day, a brand-new Claude chat could not load the connector, and the
+  Engineering gateway log shows that chat sent no request at all. An
+  existing chat saw the four new tools after an app restart. Record Phase 5
+  as blocked by this client-side issue, not failed, when only a brand-new
+  Claude chat fails to load the connector. C1 (the `server/discover` 400
+  spec gap; the legacy fallback works) is HAMCP-384, 2.7 intake. The
+  earlier attribution of this blocker to C1 (19:05 record item 1) is
+  withdrawn.
 
 ---
 
@@ -716,7 +722,7 @@ is the signing plan's (§5A.8).
 - Action: `get_thread_matter_topology()`, then again with
   `sections=["datasets"]`.
 - Check: both sections are returned. No credentials, MAC, SSID or TLV
-  appear. References change between calls.
+  appear. No raw identifiers; references are per-response labels (`g<k>`).
 - Stop: a secret appears → stop, do not share the output.
 
 **9.2 Marketplace** (acceptance §7.2)
@@ -769,18 +775,25 @@ acceptance §7.6)
 - Who: architect, Josh.
 - Action: create a throwaway automation with no trigger that can fire. Then
   `rollback_change`.
+- Criterion: "enabled but inert". The automation is created enabled, and
+  it is inert because no trigger can fire. Schema limit: the governed
+  create rejects `initial_state`, so the automation cannot be created
+  disabled.
 - Check: `succeeded_verified` both ways; the count returns to the
   pre-state.
 - Stop: anything unexpected → stop.
 
 **9.7 Target-kind refusals** [JOSH APPROVAL: each] (acceptance §5 step 3)
 - Who: architect.
-- Action: call `control_device_configuration` on a non-config switch, a
-  diagnostic entity and a Tapo select.
-- Check: each is refused for target kind (for example,
-  `device_configuration_target_kind_not_admitted`), with no dispatch and
-  states unchanged. `list_change_plans` shows no pending or approved plan
-  (architect ruling E; see Phase 6).
+- Action: call `control_device_configuration` on (a) a non-config switch,
+  (b) a diagnostic entity and (c) a Tapo select.
+- Check: each is refused, with no dispatch and states unchanged: (a) with
+  `device_configuration_not_config_category`, (c) with
+  `device_configuration_target_kind_not_admitted`. (b) is covered by the
+  config-category check: a diagnostic entity is not in the `config`
+  category, so (a)'s refusal covers it, and it need not be run separately.
+  `list_change_plans` shows no pending or approved plan (architect ruling
+  E; see Phase 6).
 - Stop: any dispatch, or a pending or approved plan left → stop. Do not run
   9.8.
 
@@ -851,7 +864,17 @@ acceptance §7.6)
 Every rollback is **[JOSH APPROVAL]**. Recovery from a bad 2.4.2-beta.8 is
 a restore from the full Home Assistant backup taken immediately before
 deploy (2.6). In-place rollback to 2.4.2-beta.7 is no longer a supported
-path (Josh's decision 3a). There are two restore paths:
+path (Josh's decision 3a).
+
+**G6 not proven by tests; safe only under restore-first; never downgrade in
+place.** Josh's decision of 2026-11-14 (about 06:15 CST) accepts the
+persisted-state gate G6 for 2.6 on the basis of restore-first, as a scoped
+waiver of the signing plan's §7.3 proving tests 1 and 2 and of the N4 items
+the 12b receipt does not show. It is not a pass of them. In-place downgrade
+of Engineering (installing 2.4.2-beta.7 over 2.4.2-beta.8's data) is
+prohibited from 2.6 on; recovery is restore only.
+
+There are two restore paths:
 - RB4, tier 4, primary: restore the full backup. It also reverts the Home
   Assistant objects created during acceptance. The full restore is
   untested.
@@ -890,7 +913,9 @@ place".
 **RB-pre: before either restore**
 1. Export the 2.4.2-beta.8 audit (`get_audit_log`) if 2.4.2-beta.8 answers
    reads. It is lost on restore (Josh's decision 3a). If it cannot answer,
-   record that.
+   record that. Undo any open device-configuration change first: a restore
+   discards every Engineering record written by 2.4.2-beta.8, including
+   plans, tasks and undo claims (G6 condition 2b, 2026-11-14).
 2. Repeat check A1 (0.5) immediately before the restore.
 3. The loss of every Engineering record written since deploy is accepted:
    plans, receipts, audit and the trace-watch sidecar state.
