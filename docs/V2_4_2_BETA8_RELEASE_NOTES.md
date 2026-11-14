@@ -343,6 +343,14 @@ Limits that remain:
 
 ### Other limitations
 
+- **Rollback persisted-state gate (G6).** G6 not proven by tests; safe
+  only under restore-first; never downgrade in place. G6 is accepted for
+  2.6 as a scoped waiver of its proving tests, not as a pass (Josh,
+  2026-11-14). The only supported route back to 2.4.2-beta.7 is restoring
+  a backup taken under 2.4.2-beta.7, which brings back that version
+  together with its own data (see [Rollback](#rollback)). Before any
+  restore, export `get_audit_log` and undo any open device-configuration
+  change; the restore discards every record 2.4.2-beta.8 wrote.
 - **Plan-governed tasks after an Engineering crash (HAMCP-381).** If the
   Engineering add-on stops at one specific point while it is recovering a
   plan-governed task (after it takes over the task's expired claim and
