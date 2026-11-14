@@ -23,7 +23,16 @@ approval.
   were relayed by Josh on 2026-11-12; they are architect rulings, not
   Josh's own. Josh's decisions 3 (restore-first recovery) and 4 (the A2
   restore rehearsal) date from 2026-11-12. Rulings R-a to R-g are Josh's,
-  of 2026-11-13 (signing plan §9D).
+  of 2026-11-13 (signing plan §9D). The 17:05 ruling 2 (architect,
+  relayed by Josh 2026-11-13, finding HAMCP332-RUNBOOK-SIGNING-COMMIT) sets
+  the two commits used in 1.2-1.4, 7.1, 7.2 and 7.5-7.6; it is not Josh's
+  own. The 19:05 record item 1 (architect, relayed by Josh 2026-11-13,
+  after the beta.8 deploy) sets the S7 row, the Phase 5 known blocker and
+  the 6.2 deviation note; it is not Josh's own either. Josh's own
+  decision of 2026-11-13 (about 19:10 CST) sets the 9.8 target and
+  steps. The architect's 19:20 ruling (relayed by Josh 2026-11-13) sets
+  the 7.2 branch pattern and the 9.8 restore by `undo`; it is not Josh's
+  own.
 - "Check A1" and "check A2" are the two checks inside architect ruling A.
   They are not the earlier rulings cited below as A2, A3 or A8, nor the
   23:11 rulings A1 and A2.
@@ -331,15 +340,22 @@ If a family count is not 0:
 
 **1.2 Record the merge**
 - Who: orchestrator.
-- Action: record the merge SHA (the signing commit, ruling B9), the image
-  digest and the tag target.
+- Action: record the merge SHA, the image digest and the tag target.
+- Two commits (17:05 ruling 2a; Josh's decision 1d, 2026-11-13: fix G5 in
+  2.6 before signing):
+  - the release merge SHA is the **publish and deploy commit**;
+  - the **signing commit** is the merge commit of the HAMCP-297 G5 pull
+    request (pending: it exists only after that pull request merges).
+    Every included lane re-runs there under R8 (signing plan §5A.4).
 - Check: tag = merge SHA; publication run green; Release present.
 - Stop: publication red → no deploy.
 
-**1.3 Recompute on the signing commit**
+**1.3 Recompute on the release merge, then on the signing commit**
 - Who: architect.
-- Action: recompute all 38 profile fingerprints on the merge SHA (ruling
-  R-d, 2026-11-13, signing plan §9D; rulings B11 and A8).
+- Action: recompute all 38 profile fingerprints twice (ruling R-d,
+  2026-11-13, signing plan §9D; rulings B11 and A8; 17:05 ruling 2b):
+  - on the release merge SHA, for deploy;
+  - again on the signing commit (1.2), before signing.
 - Check: they match sheet A of the signing plan
   ([`HAMCP_332_2_6_0_SIGNING_PLAN.md`](../HAMCP_332_2_6_0_SIGNING_PLAN.md),
   "5A.15 Expected-values sheet (for the dry-run comparison)", part
@@ -351,16 +367,22 @@ If a family count is not 0:
   - `core.scene_create_delete_operation` `93378ae0…400d`;
   - `core.created_helper_delete_operation` `3f2e6813…cdbf4`;
   - `core.thread_matter_topology_read` `d03f005c…bb6c`.
+  The 38 fingerprints must be unchanged between the release merge and the
+  signing commit (17:05 ruling 2b).
 - Stop: any mismatch → no signing. Deploy may still proceed (INFERENCE:
   the profiles are dormant until seq 18 is signed).
 
-**1.4 Catalog hashes on the signing commit**
+**1.4 Catalog hashes on the release merge, then on the signing commit**
 - Who: orchestrator arranges a read-only side session.
-- Action: re-run the catalog hashes on the merge SHA (ruling B11).
+- Action: re-run the catalog hashes on the release merge SHA, for deploy
+  (ruling B11), and again on the signing commit (1.2), before signing
+  (17:05 ruling 2b).
 - Check: 86 Engineering tools, with the 4 added and 6 changed tools
   declared in the release notes' Tool catalog section; the catalog hash
-  equals the release pull request head's.
-- Stop: mismatch → stop and report.
+  equals the release pull request head's. The catalog must be unchanged
+  between the release merge and the signing commit.
+- Stop: mismatch → stop and report. A change between the two commits → no
+  signing.
 
 **1.5 Regenerate the changing facts on the merge commit**
 - Who: orchestrator arranges a read-only side session. It runs alongside
@@ -487,7 +509,7 @@ planned partial add-on backup that was step 2.1; 2.1 is no longer used.
 | S4 | registry | seq 17, 32 references, 0 mismatches |
 | S5 | `tools/list` | 114 tools; `ha_get_hacs_info` absent; four new tools present |
 | S6 | `list_capabilities` | answers; record it beside the baseline |
-| S7 | `get_server_health` startup readiness | the startup-readiness phase timing is present (HAMCP-350) |
+| S7 | add-on log: `startup_phase_timing` events, not `get_server_health` (19:05 record item 1) | the HAMCP-350 startup phase timings are present, with `readiness_deadline_elapsed` false |
 | S8 | upstream fingerprint | `upstream_catalog_fingerprint` equals baseline |
 | S9 | one delegated read | `ha_get_state` on a harmless sensor attributed to ha-mcp, no fallback |
 | S10 | one native read | `provider: engineering`, `fallback_occurred: false` |
@@ -519,6 +541,11 @@ automation was watched.
   `get_security_metadata`, `get_thread_matter_topology` and
   `automation_reliability_batch_analysis`.
 - Stop: still missing after reconnect → stop and report.
+- Known blocker C1 (19:05 record item 1): on the 2.6 deploy day, a
+  brand-new Claude chat could not load the connector. An existing chat saw
+  the four new tools after an app restart. Record Phase 5 as blocked by
+  C1, not failed, when only a brand-new Claude chat fails to load the
+  connector. C1 (legacy-only MCP protocol) is 2.7 intake.
 
 ---
 
@@ -552,6 +579,12 @@ Poll `get_execution_task` no more often than every 10 s.
     E).
 - Stop: anything was dispatched, or a pending or approved plan is left →
   stop and tell Josh.
+- Deviation on the 2.6 deploy day (19:05 record item 1): both named Eve
+  plugs were offline (F063). The probe used the offline master bedroom TV
+  select with `"previous"` instead, on the architect's ruling with Josh's
+  approval. It refused with `device_configuration_core_authority_unavailable`,
+  with no dispatch and no plan. A different target needs the same ruling
+  and approval.
 
 ---
 
@@ -572,6 +605,10 @@ is the signing plan's (§5A.8).
   (writer 2.4.2-beta.8 at `aeb3b314`, reader 2.4.2-beta.7 at `b614be43`;
   see the [lane README](../evidence/hamcp377/lane/README.md)). Confirm its
   sha256 is unchanged on the merge commit (1.5).
+- That sha256 holds only until `compare-candidate --record` is used (7.2).
+  After recording, cite the new sha256 of `12a-source.json` from the
+  receipt pull request instead (17:05 ruling 2c). Until then the new value
+  is pending.
 - Check: PASS. 2.4.2-beta.7 admits 33 of 38 references, including
   `core.marketplace_read`, with 5 not admitted and 0 quarantined (ruling
   29).
@@ -585,8 +622,14 @@ is the signing plan's (§5A.8).
   `python scripts/rollback_proof_lane.py compare-candidate docs/evidence/hamcp377/lane <core-candidate.json>`
 
   It compares the canonical bytes of each reference object, in order. With
-  `--record` it also writes the result into the committed 12a receipt; use
-  that only on a branch meant for review.
+  `--record` it also writes the result into the committed 12a receipt
+  (17:05 ruling 2d):
+  - run `--record` only after the real seq 18 candidate exists;
+  - run it on a dedicated evidence branch with its own pull request,
+    under register id HAMCP-377. Branch pattern (19:20 ruling 1):
+    `agent/HAMCP-377-seq18-record-<short-sha>`, where `<short-sha>` is
+    the signing commit's short SHA;
+  - then cite the new 12a sha256 from that pull request (7.1).
 - Check: identical. The 12a entry was built by
   `scripts/prepare_core_release_registry.py extend-capabilities`, the route
   the real candidate takes (lane README).
@@ -614,15 +657,17 @@ is the signing plan's (§5A.8).
 
 **7.5 Lanes on the signing commit**
 - Who: orchestrator.
-- Action: confirm every included profile's lane passed on the merge SHA
-  (ruling A8; R-a; signing plan §5A.8 step 2).
+- Action: confirm every included profile's lane passed on the signing
+  commit (1.2), not the release merge SHA (ruling A8; R-a; R8; 17:05
+  ruling 2a; signing plan §5A.8 step 2).
 - Check: one green receipt per profile.
 - Stop: a failed lane drops that profile (R-a). Rebuild the candidate and
   redo 7.2-7.4.
 
 **7.6 Recompute matches**
 - Who: architect.
-- Action: confirm step 1.3 matched for every included profile.
+- Action: confirm step 1.3 matched on the signing commit for every
+  included profile.
 - Check: the candidate's fingerprints equal the 1.3 values.
 - Stop: mismatch → no signing.
 
@@ -739,31 +784,56 @@ acceptance §7.6)
 - Stop: any dispatch, or a pending or approved plan left → stop. Do not run
   9.8.
 
-**9.8 Eve plug device configuration** [JOSH APPROVAL: each step, in chat]
-(acceptance §7.7)
+**9.8 Device configuration: Garage Camera Smart Plug power-on behavior**
+[JOSH APPROVAL: each step, in chat]
+(acceptance §7.7; target and steps: Josh's decision of 2026-11-13, about
+19:10 CST; restore: 19:20 ruling 3)
 - Who: Josh, architect.
 - Gates:
   - the committed HAMCP-377 12b receipt (`12b-source.json`, sha256
     `fee3d5250fee91f0210d2ed2e778d132e83d2a468392d2768010ff9a0136fb46`),
     PASS;
   - the HAMCP-379 recovery containment, which ships in this release (#436;
-    23:01 ruling 3).
-- Action, on the master bedroom TV or kitchen Eve plug only:
-  1. power-on behavior: `select_option`, then `undo`;
-  2. child lock: on/off, then `undo`.
-
-  Never use the beer fridge plug or the network cabinet plug. A blanket
-  approval does not count (D21).
+    23:01 ruling 3);
+  - [READ] the registry shows the target as `config` / `select` /
+    `matter` / `startup_on_off`, and its current option is
+    `"previous"`. Record the option list and the plug's main switch
+    state. Anything else → stop and tell Josh; do not pick another
+    target (19:25 ruling 1).
+- Target: `select.garage_garage_camera_smart_plug_power_on_behavior`
+  (Garage Camera Smart Plug) only. Both Eve plugs named earlier (master
+  bedroom TV and kitchen) were offline on the deploy day (F063), so Josh
+  chose this target. Acceptance §7.7 says the same (19:25 ruling 2).
+  Power-on behavior applies only after a mains power loss, and the test
+  never switches the plug; `"on"` is a safe fallback for a camera if the
+  restore fails.
+- Never use: the network cabinet plug; the back-porch Aqara sensitivity
+  (that step was dropped and stays dropped); the offline Eve plugs; the
+  beer fridge plug.
+- Action, one step at a time, each with its own approval from Josh at
+  Phase 9 time. A blanket approval does not count (D21).
+  1. `select_option` from `"previous"` to `"on"`; exact readback
+     `"on"`.
+  2. Restore with `undo`; exact readback `"previous"`.
 - Check:
-  - each step is `succeeded_verified`, and each undo is
-    `succeeded_verified` with `undone` true;
-  - the main switch is unchanged;
-  - at the end there is no hold and no non-terminal task.
+  - step 1 is `succeeded_verified` and reads back exactly `"on"`;
+  - the undo is `succeeded_verified` with `undone` true and reads back
+    exactly `"previous"`;
+  - the plug's main switch equals its recorded state;
+  - at the end `ordinary_device_configuration` shows no hold and no
+    task, and `list_execution_tasks` shows no non-terminal task.
 - Stop:
   - `confirmation_required` → nothing was sent; tell Josh.
   - An uncertain result → poll `get_execution_task` at most every 10 s.
     Never resend.
-- Not tested live: the number path (D20; see the release notes' Known
+  - `undo` refuses, or ends other than `succeeded_verified` with `undone`
+    true → stop and tell Josh. No automatic second `select_option` to
+    `"previous"`; that needs its own approval (19:20 ruling 3).
+- Verification is the device's reported value read back through Home
+  Assistant; actual power-on behavior after a mains power loss is not
+  tested (architect 19:30 note).
+- Not tested live: the child-lock switch (step removed by Josh's 19:10
+  decision) and the number path (D20; see the release notes' Known
   limitations).
 
 **9.9 Final readback**
