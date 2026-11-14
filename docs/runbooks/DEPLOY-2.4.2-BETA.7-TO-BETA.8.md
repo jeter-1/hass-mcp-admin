@@ -607,14 +607,14 @@ is the signing plan's (§5A.8).
 - Who: orchestrator.
 - Action: cite the committed HAMCP-377 12a receipt:
   `docs/evidence/hamcp377/lane/12a-source.json`, sha256
-  `b7b66591d2620e09063627c4dec6d2aa42ef94846b9f2f1526ce354d78646437`
+  `d0fbbb0b7ed2a57530cc387889a8d0f83da5c8359c8a541ddccd3b2faff5f67e`
   (writer 2.4.2-beta.8 at `aeb3b314`, reader 2.4.2-beta.7 at `b614be43`;
   see the [lane README](../evidence/hamcp377/lane/README.md)). Confirm its
   sha256 is unchanged on the merge commit (1.5).
-- That sha256 holds only until `compare-candidate --record` is used (7.2).
-  After recording, cite the new sha256 of `12a-source.json` from the
-  receipt pull request instead (17:05 ruling 2c). Until then the new value
-  is pending.
+- This is the sha256 after `compare-candidate --record` (7.2), recorded on
+  2026-11-14 by the HAMCP-377 receipt pull request (17:05 ruling 2c). The
+  value before recording, `b7b66591`, was true until then; the beta.8
+  release notes keep it as the value at release.
 - Check: PASS. 2.4.2-beta.7 admits 33 of 38 references, including
   `core.marketplace_read`, with 5 not admitted and 0 quarantined (ruling
   29).
