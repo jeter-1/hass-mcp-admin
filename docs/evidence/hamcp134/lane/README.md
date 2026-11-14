@@ -221,7 +221,7 @@ as unit `hamcp364-security-lane-5fc40f93`. After run 2 the branch changed
 `scripts/core_security_metadata_local.py` imports: the config flow id that
 harness accepts is now the 26-character ULID Core issues (commit `4a72ee8a`).
 `scripts/security_metadata_contract_acceptance.py` did not change.
-`security_metadata.json` now records this run:
+`security_metadata.json` recorded this run until the R8 re-run below replaced it:
 
 - source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
 - the same manifest SHA-256, image, memory limits and `contract_fingerprint`
@@ -231,6 +231,28 @@ harness accepts is now the 26-character ULID Core issues (commit `4a72ee8a`).
 
 Apart from the source commit, the times and the host admission snapshot, every
 receipt field equals run 2. The limitation below applies to all three runs.
+
+### R8 run on the signing commit: PASS (2026-11-13 21:55 CST)
+
+The committed `security_metadata.json` is the R8 re-run on the signing commit
+(signing plan §5A.8 step 2; architect ruling 2026-11-13, about 22:15 CST). It supersedes
+run 3's receipt. Preparation lists its SHA-256 in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing has been
+signed.
+
+- user unit `hamcp332-security-lane-d84d8d9e` (heavy-job gate, kind
+  `lane`), 2026-11-13 21:55:16 to 21:55:27 Central (the receipt's
+  `started_utc` and `ended_utc`);
+- source commit `d84d8d9e69c4fff8481b018182a6b43f088aac7d`;
+- result `PASS`, `cleanup.clean: true`;
+- manifest SHA-256
+  `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`
+  (`ci/core-contract-read-files.json`, 535 paths);
+- the sequence 17 predecessor journal, SHA-256
+  `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`;
+- receipt SHA-256
+  `5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a`
+  (3,707 bytes).
 
 Limitation: the disposable Core has one owner (the onboarding user) and no
 non-admin user, no pending or trial HTTP configuration and no Supervisor

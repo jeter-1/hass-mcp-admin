@@ -6,18 +6,19 @@
 [`HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md`](../../HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md)
 section 9.2).
 
-**This receipt is review evidence, not the signing receipt.** Every included
-lane re-runs once on the signing commit, and the signing receipt will bind that
-commit. Nothing here signs a registry entry, builds a candidate, or admits the
-capability in production. The receipt is the lane's canonical output, copied
+**This receipt is the R8 re-run on the signing commit**
+`d84d8d9e69c4fff8481b018182a6b43f088aac7d` (signing plan §5A.8 step 2;
+architect ruling 2026-11-13, about 22:15 CST). Preparation lists its SHA-256 in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing here signs a
+registry entry, builds a candidate, or admits the capability in production. The receipt is the lane's canonical output, copied
 byte for byte; it is never edited by hand.
 
 | Field | Value |
 |---|---|
-| Receipt source commit | `5fc40f939756ee4ed5b004f88e53c00fd7d939c8` (clean committed checkout of the HAMCP-364 branch, which contains `release/2.6.0` at `aeb3b314dd180592874243c9ae370a63f0622c2b`) |
-| Receipt SHA-256 | `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0` (35,796 bytes) |
+| Receipt source commit | `d84d8d9e69c4fff8481b018182a6b43f088aac7d` (the signing commit, `main` after #439; manifest `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`) |
+| Receipt SHA-256 (R8 on signing commit d84d8d9e) | `710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc` (35,906 bytes) |
 | Result | `PASS`, `cleanup.clean: true` |
-| Run | user unit `hamcp364-devcfg-lane-5fc40f93`, scriptbox (amd64), 2026-11-12 03:32:52 to 03:37:26 Central (4 min 34 s; the receipt's `started_utc` and `ended_utc`) |
+| Run | user unit `hamcp332-devcfg-lane-d84d8d9e`, scriptbox (amd64), 2026-11-13 21:57:54 to 22:02:18 Central (the receipt's `started_utc` and `ended_utc`) |
 | Core | 2026.11.0, `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e` |
 | ha-mcp child | 8.5.0, `ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c` |
 | Predecessor journal | sequence 17, SHA-256 `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`, 32 Core references |
@@ -418,7 +419,10 @@ per kind.
 ## Earlier runs on the HAMCP-366 and HAMCP-364 branches (not evidence)
 
 In each entry "this receipt" is the receipt of the next run in the list; in the
-last entry it is the committed receipt.
+last entry it is the receipt of the run on `5fc40f93`
+(`hamcp364-devcfg-lane-5fc40f93`, 2026-11-12 03:32:52 to 03:37:26 Central;
+SHA-256 `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0`),
+which the R8 re-run on the signing commit replaced (history).
 
 - `hamcp366-lane-run1` at `fd5b72ac`: WITHHELD after 19 s (Matter config flow
   `cannot_connect`, the name-resolution observation above); cleanup clean.

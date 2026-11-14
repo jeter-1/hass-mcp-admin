@@ -10,13 +10,14 @@ separate owner action.
 against exact Core. A2 (`matter/network_topology` with `refresh: false`) is
 proven for its fail-closed case (Matter not set up gives `matter_not_loaded`)
 and, against the HAMCP-297 Matter Server stub, for success and two upstream
-faults. **The A2 success lane has a passing receipt on source commit
-`5fc40f93`; nothing has been signed**: A2 success lane run 7 below (PASS, on
-the HAMCP-364 branch after its merge with `release/2.6.0` at `aeb3b314`)
-produced the `thread_matter_topology_a2.json` in this directory. That receipt
-is review evidence for that commit, not a signing receipt: every lane proposed
-for sequence 18, this one included, re-runs on the signing commit, and the
-signing receipt will bind that commit. The run 7 receipt records, as
+faults. **The A1 and A2 receipts in this directory are the R8 re-runs on
+the signing commit `d84d8d9e`; nothing has been signed** (sections "R8 run
+on the signing commit" below; signing plan §5A.8 step 2). Preparation lists
+their SHA-256 values in `review_artifacts_sha256` (signing plan §5A.8 step
+4). Before R8, A2 success lane run 7 below (PASS, on source commit
+`5fc40f93`, the HAMCP-364 branch after its merge with `release/2.6.0` at
+`aeb3b314`) produced the committed `thread_matter_topology_a2.json`
+(history). The run 7 receipt records, as
 `lane_network`, the internal network the run created and inspected again
 before it handed Core to the harness. Runs 2, 3, 4, 5 and 6 were earlier PASS
 runs whose receipts it replaced.
@@ -287,7 +288,8 @@ as unit `hamcp364-a1-lane-5fc40f93`. After run 4 the branch changed
 `scripts/core_thread_matter_topology_local.py` imports: the config flow id
 that harness accepts is now the 26-character ULID Core issues (commit
 `4a72ee8a`). `scripts/thread_matter_topology_contract_acceptance.py` did not
-change. `thread_matter_topology.json` now records this run:
+change. `thread_matter_topology.json` recorded this run until the R8 re-run
+below replaced it:
 
 - source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
 - the same manifest SHA-256, image, memory limits and profile fingerprint as
@@ -297,6 +299,28 @@ change. `thread_matter_topology.json` now records this run:
 
 Apart from the source commit, the times and the host admission snapshot, every
 receipt field equals run 4.
+
+### R8 run on the signing commit: PASS (2026-11-13 21:57 CST)
+
+The committed `thread_matter_topology.json` is the R8 re-run on the signing commit
+(signing plan §5A.8 step 2; architect ruling 2026-11-13, about 22:15 CST). It supersedes
+run 5's receipt. Preparation lists its SHA-256 in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing has been
+signed.
+
+- user unit `hamcp332-a1-lane-d84d8d9e` (heavy-job gate, kind
+  `lane`), 2026-11-13 21:57:02 to 21:57:13 Central (the receipt's
+  `started_utc` and `ended_utc`);
+- source commit `d84d8d9e69c4fff8481b018182a6b43f088aac7d`;
+- result `PASS`, `cleanup.clean: true`;
+- manifest SHA-256
+  `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`
+  (`ci/core-contract-read-files.json`, 535 paths);
+- the sequence 17 predecessor journal, SHA-256
+  `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`;
+- receipt SHA-256
+  `6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393`
+  (3,019 bytes).
 
 These runs cover A2 only for its fail-closed case. The A2 success lane below
 covers success.
@@ -507,7 +531,8 @@ as unit `hamcp364-a2-lane-5fc40f93`. After run 6 the branch changed
 that harness accepts is now the 26-character ULID Core issues (commit
 `4a72ee8a`). Neither the lane script nor
 `scripts/thread_matter_topology_a2_acceptance.py` changed.
-`thread_matter_topology_a2.json` now records this run:
+`thread_matter_topology_a2.json` recorded this run until the R8 re-run below
+replaced it:
 
 - source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8`;
 - the same profile, fingerprint and manifest SHA-256 as run 6;
@@ -519,6 +544,28 @@ that harness accepts is now the 26-character ULID Core issues (commit
 
 Apart from the source commit, the times and the host admission snapshot, every
 receipt field equals run 6.
+
+### R8 run on the signing commit: PASS (2026-11-13 21:57 CST)
+
+The committed `thread_matter_topology_a2.json` is the R8 re-run on the signing commit
+(signing plan §5A.8 step 2; architect ruling 2026-11-13, about 22:15 CST). It supersedes
+run 7's receipt. Preparation lists its SHA-256 in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing has been
+signed.
+
+- user unit `hamcp332-a2-lane-d84d8d9e` (heavy-job gate, kind
+  `lane`), 2026-11-13 21:57:25 to 21:57:45 Central (the receipt's
+  `started_utc` and `ended_utc`);
+- source commit `d84d8d9e69c4fff8481b018182a6b43f088aac7d`;
+- result `PASS`, `cleanup.clean: true`;
+- manifest SHA-256
+  `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`
+  (`ci/core-contract-read-files.json`, 535 paths);
+- the sequence 17 predecessor journal, SHA-256
+  `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`;
+- receipt SHA-256
+  `f36d8c1a82e657de1dd82373eace0372f3ae31c2a1ee7e6fc50330f92913f798`
+  (4,772 bytes).
 
 The lane was launched once. Before the first lane of this batch was launched,
 the ignored `__pycache__` directory that a local test run had again left in

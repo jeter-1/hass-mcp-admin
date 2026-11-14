@@ -303,8 +303,8 @@ receipt is in commit `5ea622ec`).
 
 ### Run 5: PASS (2026-11-12 03:31 CST)
 
-The committed `marketplace_read.json` is now this run's receipt. It supersedes
-run 4's receipt.
+This run's receipt superseded run 4's. The R8 re-run's receipt supersedes it
+(below).
 
 - The lane ran under the host heavy-job gate as unit
   `hamcp364-marketplace-lane-5fc40f93` (kind `lane`) at source commit
@@ -323,3 +323,25 @@ run 4's receipt.
   `572162f00cb001faa4bcb188f1492fd00dd865f19e3db5ef67150392d7b874b0`.
 - Apart from that field, the source commit, the times and the host admission
   snapshot, every receipt field equals run 4.
+
+### R8 run on the signing commit: PASS (2026-11-13 21:56 CST)
+
+The committed `marketplace_read.json` is the R8 re-run on the signing commit
+(signing plan §5A.8 step 2; architect ruling 2026-11-13, about 22:15 CST). It supersedes
+run 5's receipt. Preparation lists its SHA-256 in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing has been
+signed.
+
+- user unit `hamcp332-marketplace-lane-d84d8d9e` (heavy-job gate, kind
+  `lane`), 2026-11-13 21:56:29 to 21:56:52 Central (the receipt's
+  `started_utc` and `ended_utc`);
+- source commit `d84d8d9e69c4fff8481b018182a6b43f088aac7d`;
+- result `PASS`, `cleanup.clean: true`;
+- manifest SHA-256
+  `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`
+  (`ci/core-contract-read-files.json`, 535 paths);
+- the sequence 17 predecessor journal, SHA-256
+  `3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d`;
+- receipt SHA-256
+  `a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037`
+  (3,649 bytes).

@@ -4,10 +4,13 @@ Two receipts of `scripts/core_created_object_local.py`, one passing local run
 per lane. Each is the lane's canonical output, copied byte for byte from the
 run directory; neither is edited by hand.
 
-**These receipts are review evidence, not signing receipts.** Every included
-lane re-runs once on the signing commit, and the signing receipt will bind that
-commit. Nothing here signs a registry entry, builds a candidate, or admits a
-capability in production.
+**These receipts are the R8 re-runs on the signing commit**
+`d84d8d9e69c4fff8481b018182a6b43f088aac7d` (signing plan §5A.8 step 2;
+architect ruling 2026-11-13, about 22:15 CST). Preparation lists their SHA-256 values in
+`review_artifacts_sha256` (signing plan §5A.8 step 4). Nothing here signs a
+registry entry, builds a candidate, or admits a capability in production.
+The sections after the table and list describe the earlier run on
+`5fc40f93`, whose receipts these replace (history).
 
 The two lanes had no committed receipt before these. Neither
 `ci/core-evidence-groups.json` nor the lanes' design document
@@ -22,20 +25,19 @@ on whose head they ran.
 | Capability | `core.scene_create_delete_operation` | `core.created_helper_delete_operation` |
 | `contract_fingerprint` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` |
 | Result | `PASS`, `cleanup.clean: true` | `PASS`, `cleanup.clean: true` |
-| Receipt SHA-256 | `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860` (5,402 bytes) | `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6` (6,906 bytes) |
-| User unit (heavy-job gate, kind `lane`) | `hamcp364-scene-lane-5fc40f93` | `hamcp364-helper-lane-5fc40f93` |
-| Run, 2026-11-12 Central (the receipt's `started_utc` and `ended_utc`) | 03:26:38 to 03:27:03 | 03:28:06 to 03:29:07 |
+| Receipt SHA-256 (R8 on signing commit d84d8d9e) | `03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e` (5,403 bytes) | `c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd` (6,907 bytes) |
+| User unit (heavy-job gate, kind `lane`) | `hamcp332-scene-lane-d84d8d9e` | `hamcp332-helper-lane-d84d8d9e` |
+| Run, 2026-11-13 Central (the receipt's `started_utc` and `ended_utc`) | 21:52:10 to 21:52:31 | 21:53:43 to 21:54:08 |
 | Profile paths | 19 | 10 |
 | Scenarios | `scene_create`, `scene_existing_id_refused`, `scene_recreate`, `scene_recreate_undo`, `scene_undo` | `helper_create_input_boolean`, `helper_create_input_number`, `helper_undo_input_boolean`, `helper_undo_input_number`, `mixed_plan_create`, `mixed_plan_undo` |
 
 Both receipts record:
 
-- source commit `5fc40f939756ee4ed5b004f88e53c00fd7d939c8` (clean committed
-  checkout of the HAMCP-364 branch, which contains `release/2.6.0` at
-  `aeb3b314dd180592874243c9ae370a63f0622c2b`);
+- source commit `d84d8d9e69c4fff8481b018182a6b43f088aac7d` (the signing
+  commit, `main` after #439);
 - manifest SHA-256
-  `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed`
-  (`ci/core-contract-read-files.json`, 527 paths);
+  `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`
+  (`ci/core-contract-read-files.json`, 535 paths);
 - Core 2026.11.0,
   `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e`,
   with `--pull never`, Core at `2g` and the fixture container at `128m`;
@@ -45,7 +47,11 @@ Both receipts record:
 - the lane's own Docker bridge with host port 18123 bound to `127.0.0.1`, and
   `production_authority: false`.
 
-All seven lanes ran on this source commit, one at a time and once each: no
+History: on `5fc40f939756ee4ed5b004f88e53c00fd7d939c8` (manifest
+`48b8b875…`, 527 paths; receipt SHA-256 scene
+`7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860`, created helper
+`5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6`), all seven
+lanes ran one at a time and once each: no
 launch was refused and none was repeated. Between lanes the launcher waited
 until the previous lane's host port could be bound again. Before the first
 launch, three ignored `__pycache__` directories that local test runs had left
@@ -58,7 +64,7 @@ that already held them:
 [`../../hamcp231/lane/`](../../hamcp231/lane/README.md) (Thread/Matter A1 and
 A2) and [`../../hamcp366/`](../../hamcp366/README.md) (device configuration).
 
-These two receipts replace the ones recorded on source commit `b6f81dcf`
+The `5fc40f93` receipts replaced the ones recorded on source commit `b6f81dcf`
 (scene `ed8659bd548c4f29865b16d10e5ecbb399a292fee3623b95a4ffbd7cef208b30`,
 created helper
 `fdd6991386289849a66b89b085750712d532061b70c20a596a577bbee262fca7`; both are in
