@@ -6,6 +6,30 @@ version, or any runtime file. Signing a Core registry sequence is Josh's
 owner action, done through the protected `core-release-registry-signing`
 environment.
 
+## What changed on 2026-11-14 (R8 receipts; G5 closed)
+
+Basis: the architect's rulings of 2026-11-13 (about 22:15 CST) and
+2026-11-14 (about 00:30 CST), relayed by Josh. They are the architect's,
+not Josh's. Values marked [R] were computed by this author. Nothing was
+signed, prepared, pushed to `registry-candidates/` or dispatched.
+
+- **G5 CLOSED** for `core.device_configuration_entity_operation`: the
+  HAMCP-297 G5 pull request, #439, merged as `d84d8d9e69c4fff8481b018182a6b43f088aac7d`
+  on 2026-11-13. That merge is the signing commit (17:05 ruling 2a). §5A.4,
+  §5A.5, §5A.7 PC2, §5A.13 Q4 and sheet A record it.
+- **R8 receipts:** every included lane ran once on `d84d8d9e`
+  (2026-11-13, 21:52 to 22:02 CST), and all seven passed with cleanup clean,
+  manifest `073fa5ad…` and the fingerprints in sheet A [R]. The receipt
+  SHA-256 values in sheet A, §5A.4 and §5A.6 are now the R8 values, each
+  marked "R8 on signing commit d84d8d9e". The receipts at `3bd5fe3f` are kept only as history.
+- **Receipt route:** the seven R8 receipts are committed in `2bea0ed6` on
+  branch `agent/HAMCP-332-r8-receipts-d84d8d9e` (draft PR #440), at the same paths under `docs/evidence/`.
+  That pull request stays a draft and merges into `main` only after
+  signing, as post-signing evidence; `main` stays `d84d8d9e` through
+  Phase 7. Preparation cites the seven SHA-256 values in
+  `review_artifacts_sha256` with those paths (§5A.8 step 4). Phase 7's
+  dry-run comparison uses this plan as it stands at that branch's head.
+
 ## What changed on 2026-11-13 (Josh's rulings R-a to R-g; sheet A refreshed to the release head)
 
 Basis: seven rulings of Josh's, R-a to R-g, relayed verbatim to this
@@ -873,7 +897,8 @@ once on the signing commit, and the receipts listed in
 binds an older commit. It is review evidence only and is not reused for
 signing.
 
-State at `3bd5fe3f` (refreshed 2026-11-13). Every receipt below was
+History: state at `3bd5fe3f` (refreshed 2026-11-13; superseded by the R8
+receipts after this table). Every receipt below was
 committed in `a506824170d7eace30fe611f0ada48d44cbecec7` ("HAMCP-364: commit
 the seven lane receipts of 5fc40f93", 2026-11-12 05:48 CST), which #435
 merged into `release/2.6.0` (`a9144591`, 2026-11-12 11:22 CST) [S]. Each
@@ -895,6 +920,23 @@ reads `result` PASS and cleanup `clean` true, and each binds source commit
 The A2 receipt also records `stub.source_commit`
 `aa25c56498194c493b468db1faa842018e04acd2`: the provenance of the
 HAMCP-297 Matter Server stub it uses, not the commit the lane ran [R].
+
+**R8 receipts on the signing commit `d84d8d9e` [R].** Each lane ran once on
+`d84d8d9e69c4fff8481b018182a6b43f088aac7d` (§5A.8 step 2; architect ruling 2026-11-13, about 22:15 CST). Each receipt reads `result` PASS and cleanup
+`clean` true, and binds source commit `d84d8d9e`, manifest
+`073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`, journal `3f79fce7…` (§5A.2) and the compiled fingerprint in sheet
+A. They are committed in `2bea0ed6` on branch `agent/HAMCP-332-r8-receipts-d84d8d9e` (draft PR #440, merged
+after signing), at the paths below.
+
+| Profile | Receipt | SHA-256 (R8 on signing commit d84d8d9e) |
+| --- | --- | --- |
+| M1 `core.marketplace_read` | `docs/evidence/hamcp290/lane/marketplace_read.json` | `a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037` |
+| M2 `core.security_metadata_read` | `docs/evidence/hamcp134/lane/security_metadata.json` | `5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a` |
+| M3 `core.device_configuration_entity_operation` | `docs/evidence/hamcp366/device_configuration_entity.json` | `710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc` |
+| M4 `core.scene_create_delete_operation` | `docs/evidence/hamcp364/lane/scene_create_delete.json` | `03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e` |
+| M5 `core.created_helper_delete_operation` | `docs/evidence/hamcp364/lane/created_helper_delete.json` | `c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd` |
+| M6 `core.thread_matter_topology_read` (A1) | `docs/evidence/hamcp231/lane/thread_matter_topology.json` | `6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393` |
+| M6 `core.thread_matter_topology_read` (A2) | `docs/evidence/hamcp231/lane/thread_matter_topology_a2.json` | `f36d8c1a82e657de1dd82373eace0372f3ae31c2a1ee7e6fc50330f92913f798` |
 
 **Manifest checks [R].** At `3bd5fe3f` the sha256 of
 `ci/core-contract-read-files.json` is `48b8b875…`, the value every receipt
@@ -957,6 +999,12 @@ ruling 2a). G5 is recorded as closed only when that pull request merges,
 citing it. Until then G5 stays open, and stop condition 10 (§5A.11)
 applies.
 
+**G5 CLOSED (2026-11-13).** The HAMCP-297 G5 pull request, #439, merged
+as `d84d8d9e69c4fff8481b018182a6b43f088aac7d`, which is the signing commit.
+At that commit `ci/core-contract-read-files.json` has the
+`core.device_configuration_entity_operation` entry (42 files) and hashes
+to `073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1` [R]; the M3 R8 receipt binds that value.
+
 ### 5A.5 Draft candidate
 
 One `extend-capabilities` candidate for Core `2026.11.0`, entry
@@ -1002,7 +1050,7 @@ on the signing commit. A profile whose lane fails is dropped from sequence
 | --- | --- | --- |
 | M1 `core.marketplace_read` | Yes (R-a; R6) | Its lane passes on the signing commit (R8). If it fails, M1 is dropped from sequence 18 and the others proceed (R-a); R6 names sequence 19 for it |
 | M2 `core.security_metadata_read` | Yes (R-a; R1, R4) | Its lane re-runs and passes on the signing commit (R8). If it fails, it is dropped (R-a) |
-| M3 `core.device_configuration_entity_operation` | Yes (R-a; R7) | Its HAMCP-366 lane (merged by #434) passes on the signing commit (R8). If it fails, it is dropped (R-a). G5 is open for this profile only, and it is not signable until G5 is closed (SA-1, §9D; §5A.4). If its G4 lane or its G5 gate cannot pass before 2027-01-22, it is dropped from sequence 18 and the others proceed; Josh is told before signing (§5A.11 item 10, SA-2) |
+| M3 `core.device_configuration_entity_operation` | Yes (R-a; R7) | Its HAMCP-366 lane (merged by #434) passes on the signing commit (R8). If it fails, it is dropped (R-a). G5 was open for this profile only, and it was not signable until G5 closed (SA-1, §9D); G5 is CLOSED by #439 (merge `d84d8d9e`; §5A.4). If its G4 lane or its G5 gate cannot pass before 2027-01-22, it is dropped from sequence 18 and the others proceed; Josh is told before signing (§5A.11 item 10, SA-2) |
 | M4 `core.scene_create_delete_operation` | Yes (R-a) | Its lane passes on the signing commit (R8). If it fails, it is dropped (R-a) |
 | M5 `core.created_helper_delete_operation` | Yes (R-a) | As M4 |
 | M6 `core.thread_matter_topology_read` | Yes (R-a) | Both of its lanes, A1 and A2, pass on the signing commit (R8). If either fails, it is dropped (R-a) |
@@ -1047,7 +1095,7 @@ This is not a signable candidate today. PC2 and PC4 are not met (§5A.7).
 | Public key | `docs/evidence/hamcp222/core-public-key.txt` | Yes [S] |
 | Entry JSON | The signed 2026.11.0 entry with only `capabilities` extended and `evidence_sha256` replaced; source, image, architecture and probe identity unchanged (C2) | Derived at preparation |
 | Evidence JSON | Canonical JSON with exactly `model` (`core-capability-extension-evidence-v1`), `version`, `previous_entry_sha256`, `previous_capabilities`, `added_capabilities`, `review_artifacts_sha256` (`docs/CORE_RELEASE_REGISTRY.md:269-277`; C10) | Derived at preparation |
-| `review_artifacts_sha256` | 1-32 distinct sha256 values: the PASS receipt of each included lane, from its one re-run on the signing commit (R8), plus the reviewed candidate artifacts (§5.1). No receipt that binds an older commit is listed | No |
+| `review_artifacts_sha256` | 1-32 distinct sha256 values: the PASS receipt of each included lane, from its one re-run on the signing commit (R8), plus the reviewed candidate artifacts (§5.1). No receipt that binds an older commit is listed | The seven receipts: yes, the R8 values on signing commit `d84d8d9e` (§5A.4, sheet A), committed on branch `agent/HAMCP-332-r8-receipts-d84d8d9e` (draft PR #440; merged after signing). The candidate artifacts: no |
 | Core lane image | `ghcr.io/home-assistant/home-assistant:2026.11.0@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e` (C12; the same index as the signed entry) | Yes |
 | Candidate branch | A new permanent branch `registry-candidates/2026.11.0-seq18`, holding `core-candidate.json` and `core-review-evidence.json` at its root and nothing else (`docs/CORE_RELEASE_REGISTRY.md:376-382`). It is created by the single push of §5A.8 step 6, only after Josh approves both SHA-256 values (R10) | Does not exist [G] |
 | Workflow inputs | `core_version` `2026.11.0`, `candidate_ref`, `candidate_sha256`, `evidence_sha256`, `dry_run` (`.github/workflows/core-release-registry-publish.yml:9-31`) | The two hashes exist only after preparation |
@@ -1063,7 +1111,7 @@ prepared candidate; and the approval PC8 needs does not exist yet.
 | # | Precondition | State on 2026-11-13 (at `3bd5fe3f`) |
 | --- | --- | --- |
 | PC1 | Membership is settled: each profile of §5A.5 is either merged and proven, or left for a later signing (§8). R-a (§9D): all six, each conditional on its lane passing on the signing commit; a profile whose lane fails is dropped from sequence 18 and the others proceed | The rule is decided (R-a; R6, R7, R12 in §9C). All six are merged into `release/2.6.0` (§5A.3). Which profiles pass is known only from the lane runs on the signing commit |
-| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. Of the six, only M1 is on `main` at the local `origin/main` ref `c041f59d` (not re-fetched for this refresh); M2 to M6 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here. M3's manifest map entry is added by the HAMCP-297 G5 change (§5A.4); PC2 counts as met when that pull request merges (architect 19:20 ruling 2) |
+| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. Of the six, only M1 is on `main` at the local `origin/main` ref `c041f59d` (not re-fetched for this refresh); M2 to M6 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here. M3's manifest map entry is added by the HAMCP-297 G5 change (§5A.4); PC2 counts as met when that pull request merges (architect 19:20 ruling 2). 2026-11-14: #439 merged as `d84d8d9e`, closing G5 (§5A.4) |
 | PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | The six profile PRs are merged into `release/2.6.0` (§5A.3). The release PR's review and G6 are not complete |
 | PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). R8 (§9C): every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit. Receipts that exist today are review evidence only | Not met for any profile. The committed receipts bind source commit `5fc40f93`, not the signing commit (§5A.4) |
 | PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3). R-d (§9D): the architect recomputes all 38 on the signing commit before signing; the signing commit is the HAMCP-297 G5 pull request's merge commit (17:05 ruling 2a, §9D), and the 38 must equal the values recomputed on the `release/2.6.0` to `main` merge commit for deploy (17:05 ruling 2b) | True at `3bd5fe3f` [R]: 38 compiled, equal to the `4d68e4d8` values, and the 32 signed references match. Must be repeated on the signing commit |
@@ -1138,6 +1186,14 @@ Nothing here was run for this plan.
    ```
 
    Preparation runs C1, C2, C4 and C10 and refuses on any violation.
+
+   `review_artifacts_sha256` lists the seven R8 receipt SHA-256 values of
+   sheet A (R8 on signing commit d84d8d9e), each at its path under
+   `docs/evidence/` on branch `agent/HAMCP-332-r8-receipts-d84d8d9e`
+   (commit `2bea0ed6`, draft PR #440), plus the reviewed candidate
+   artifacts (§5.1). That pull request merges into `main` only after
+   signing; `main` stays `d84d8d9e` through Phase 7 (architect rulings
+   2026-11-13 about 22:15 CST and 2026-11-14 about 00:30 CST).
 5. **Check, hash, fill in the sheet, and stop.** Agents check
    `core-candidate.json` and `core-review-evidence.json` against §5.3 tests
    1, 4 and 5: one changed entry, the 32-reference prefix intact, only the
@@ -1332,12 +1388,14 @@ Notes that affect signing [R]:
 - The two copies of the HAMCP-290 lane files that #421 and #427 carried
   are now one: at `3bd5fe3f` there is a single
   `docs/evidence/hamcp290/lane/marketplace_read.json`, sha256
-  `381358d6…`, rewritten by `a5068241` and bound to `5fc40f93` (sheet A).
+  `381358d6…`, rewritten by `a5068241` and bound to `5fc40f93` (history;
+  R8 on signing commit d84d8d9e: `a61da63c…`, sheet A).
 - The per-PR contract-read manifest hashes recorded on 2026-11-10
   (`b058369d…`, `02a555cb…`, `913f8a32…`, and the then tip `07bc9034…`)
   are superseded. At `3bd5fe3f`, `ci/core-contract-read-files.json` hashes
   to `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed`,
-  and every committed receipt binds that value (§5A.4; sheet A).
+  and every receipt committed then binds that value (history; the R8
+  receipts bind `073fa5ad…`; §5A.4, sheet A).
 - Every lane proves a 32-to-33 transition for its own profile only
   (§5A.13 Q8).
 
@@ -1352,7 +1410,7 @@ their status; the finding text is kept as first written.
 | Q1 | **Is `core.marketplace_read` in the combined sequence 18 extension?** The recorded decision says no: "the profile is signed separately after 2.5 merges (Josh decision, 2026-11-08)", and this plan's §6 keeps HAMCP-290 out of the 2.6 batch. Later records say yes: #421's lane README calls the profile "proposed for signed Core sequence 18"; #421's body says "in the combined 2.6 signing (seq 18)"; the 2026-11-10 rulings say "seq 18 combined signing covering all new 2.6 profiles" and "add #421 … profiles as each lands". No record seen by this author says the 2026-11-08 decision was withdrawn. The choice sets the count (34 or 35 today) and, if HAMCP-290 is signed separately and first, moves this extension to sequence 19 | `docs/HAMCP_290_MARKETPLACE_READ_DESIGN.md:434-437`, `:454-455` [S]; §6; `docs/evidence/hamcp290/lane/README.md:3-7` at `e443b824` [S]; #421 body [H]; §9B [H] | **Answered 2026-11-10 (R6, §9C):** it is in the combined sequence 18, which replaces the 2026-11-08 separate-signing decision. Fallback: sequence 19 if its lane cannot produce a clean receipt on the signing commit. §6 carries a superseded note. The HAMCP-290 design text is not edited by this plan |
 | Q2 | M1 has no merged signing prerequisite. The lane, group, manifest map and receipt are only in open #421, and the receipt binds a commit older than the head | §5A.4, §5A.12 | **Closed 2026-11-13 [R]:** #421 merged (`29339009`); the receipt is committed and binds `5fc40f93`. The lane re-runs on the signing commit (R8); if it fails there, R-a and R6 apply |
 | Q3 | Does the "re-run before signing" ruling, recorded for #421, apply to every lane receipt, HAMCP-134's included? The HAMCP-134 receipt binds `bf3c9884`, and its manifest hash matches the tip only until the next §5A.12 merge | §5A.4; the build handoff lists the manifest point as open and not investigated [H] | **Answered 2026-11-10 (R8, §9C):** every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit |
-| Q4 | M3 has no lane, group, manifest map or receipt, and source does not say which pull request builds them. The recorded ruling puts HAMCP-297 in sequence 18 after its G4 lane passes on the reviewed final head | §5A.4; `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496` [S]; #428 body [H] | **Answered 2026-11-10 (R7, §9C).** 2026-11-13 [R]: #434 (HAMCP-366, `1bb864b7`) merged the lane script, evidence group and receipt (§5A.4). The contract-read manifest has no entry for M3 (§5A.4, open against G5). If the lane cannot pass before 2027-01-22, the recorded stop applies (R3); R-a (§9D) governs a failure on the signing commit |
+| Q4 | M3 has no lane, group, manifest map or receipt, and source does not say which pull request builds them. The recorded ruling puts HAMCP-297 in sequence 18 after its G4 lane passes on the reviewed final head | §5A.4; `docs/HAMCP_297_DEVICE_CONFIGURATION_ENTITIES_DESIGN.md:1462-1496` [S]; #428 body [H] | **Answered 2026-11-10 (R7, §9C).** 2026-11-13 [R]: #434 (HAMCP-366, `1bb864b7`) merged the lane script, evidence group and receipt (§5A.4). The contract-read manifest has no entry for M3 (§5A.4, open against G5). 2026-11-14: G5 CLOSED by #439 (merge `d84d8d9e`; §5A.4). If the lane cannot pass before 2027-01-22, the recorded stop applies (R3); R-a (§9D) governs a failure on the signing commit |
 | Q5 | M2, M3 and all 2.6 lane plumbing are on `release/2.6.0` only. `main` (`c041f59d`) compiles 33 profiles and maps 32 capabilities in 13 groups; the tip compiles 35 and maps 33 in 14 | [R] | Precondition PC2. Needs the release merge, which is Josh's. 2026-11-13 [R]: `3bd5fe3f` compiles 38, its contract-read manifest maps 37 capabilities (all but M3) plus `binding_judgments`, and its evidence-group manifest has 19 groups (sheet A) |
 | Q6 | #424's body recommends holding both of its profiles out of sequence 18. That text names an older head (`6a4f0c1a`) that lacked the lanes; the current head has the lane script and groups. Its receipts are not committed and bind `b89ce817`, not the head | #424 body [H]; §5A.12 [R] | **Closed 2026-11-13:** #424 merged (`ccaed9ef`), both receipts are committed and bind `5fc40f93` [R], and R-a (§9D) puts both profiles in sequence 18, each conditional on its lane passing on the signing commit. R8 still applies |
 | Q7 | #427's A1 receipt binds a manifest that is not its head's, and #427 carries a second copy of the HAMCP-290 lane files. (The #425 part of this row was removed on 2026-11-10: R12 moved that work to 2.7) | §5A.12 [R], [H] | **Closed 2026-11-13 [R]:** at `3bd5fe3f` there is one HAMCP-290 receipt, and both #427 receipts bind the current contract-read manifest `48b8b875…` (§5A.4). R8 still applies |
@@ -1409,33 +1467,43 @@ order (§5A.5). Refreshed 2026-11-13 to the release head `3bd5fe3f`
 (R-d, §9D). All six are merged into `release/2.6.0` (§5A.12). R-a: each
 is in sequence 18 only if its lane passes on the signing commit; a row
 whose lane fails is dropped and the others proceed. The fingerprint is
-the compiled value at `3bd5fe3f` [R]. "Review receipt" is the committed
-receipt at `3bd5fe3f`, with the source commit and contract-read manifest
-it binds [R]; its SHA-256 is that file's hash at `3bd5fe3f` [R].
+the compiled value at `3bd5fe3f` [R]. "R8 receipt" is the receipt of
+the lane's one re-run on the signing commit `d84d8d9e` (§5A.8 step 2;
+2026-11-13, 21:52 to 22:02 CST), with the source commit and
+contract-read manifest it binds [R]; its SHA-256 is that file's hash at
+`2bea0ed6` on branch `agent/HAMCP-332-r8-receipts-d84d8d9e` [R].
+The receipts at `3bd5fe3f` are listed after the table as history.
 
-| Profile id; version | Capability id | Adapter id | Compiled fingerprint at `3bd5fe3f` [R] | Lane; evidence group [S] | Review receipt; binds [R] | Receipt SHA-256 [R] |
+| Profile id; version | Capability id | Adapter id | Compiled fingerprint at `3bd5fe3f` [R] | Lane; evidence group [S] | R8 receipt; binds [R] | Receipt SHA-256 (R8 on signing commit d84d8d9e) [R] |
 | --- | --- | --- | --- | --- | --- | --- |
-| `core_marketplace_read_v1`; 1 | `core.marketplace_read` | `compiled-core-marketplace-read-v1` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`; the same on `main` `c041f59d` | `scripts/core_marketplace_read_local.py`; `marketplace_read` (`ci/core-evidence-groups.json:60-62`) | `docs/evidence/hamcp290/lane/marketplace_read.json`; source `5fc40f93`, manifest `48b8b875…` | `381358d630ff9fc83ce7d2c87e4d33507aad3f9cdfd9872f8ecc3e2883ca7142` |
-| `core_security_metadata_read_v1`; 1 | `core.security_metadata_read` | `compiled-core-security-metadata-read-v1` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `scripts/core_security_metadata_local.py`; `security_metadata` (`:75-77`) | `docs/evidence/hamcp134/lane/security_metadata.json`; source `5fc40f93`, manifest `48b8b875…` | `a7f0697af9d350b69a122d540e5b5af29e5090a0779edebb3264c7a66e8d4a47` |
-| `core_device_configuration_entity_operation_v1`; 1 | `core.device_configuration_entity_operation` | `compiled-core-device-configuration-entity-operation-v1` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `scripts/core_device_configuration_local.py`; `device_configuration_entity` (`:72-74`). No entry in `ci/core-contract-read-files.json` (§5A.4, open against G5) | `docs/evidence/hamcp366/device_configuration_entity.json`; source `5fc40f93`, manifest `48b8b875…` | `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0` |
-| `core_scene_create_delete_operation_v1`; 1 | `core.scene_create_delete_operation` | `compiled-core-scene-create-delete-operation-v1` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `scripts/core_created_object_local.py`; `scene_create_delete` (`:66-68`) | `docs/evidence/hamcp364/lane/scene_create_delete.json`; source `5fc40f93`, manifest `48b8b875…` | `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860` |
-| `core_created_helper_delete_operation_v1`; 1 | `core.created_helper_delete_operation` | `compiled-core-created-helper-delete-operation-v1` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | `scripts/core_created_object_local.py`; `created_helper_delete` (`:69-71`) | `docs/evidence/hamcp364/lane/created_helper_delete.json`; source `5fc40f93`, manifest `48b8b875…` | `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6` |
-| `core_thread_matter_topology_read_v1`; 1 | `core.thread_matter_topology_read` | `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); `thread_matter_topology` (`:63-65`) | A1: `docs/evidence/hamcp231/lane/thread_matter_topology.json`; A2: `docs/evidence/hamcp231/lane/thread_matter_topology_a2.json`. Both: source `5fc40f93`, manifest `48b8b875…` | A1: `6bafb4b6eb49079435e9305f0e7f2a62a324b5579bcad69cc4a974561da2e2c2`. A2: `1b4506263090a3f56cba85841ce64cee66e1c323f51729364cadd3868f3826da` |
+| `core_marketplace_read_v1`; 1 | `core.marketplace_read` | `compiled-core-marketplace-read-v1` | `sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb`; the same on `main` `c041f59d` | `scripts/core_marketplace_read_local.py`; `marketplace_read` (`ci/core-evidence-groups.json:60-62`) | `docs/evidence/hamcp290/lane/marketplace_read.json`; source `d84d8d9e`, manifest `073fa5ad…` | `a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037` (R8 on signing commit d84d8d9e) |
+| `core_security_metadata_read_v1`; 1 | `core.security_metadata_read` | `compiled-core-security-metadata-read-v1` | `sha256:9aa788b50f6d9544808bd8b89fd50c00ffd32e7ebcdd940b9dddace18b2e9c55` | `scripts/core_security_metadata_local.py`; `security_metadata` (`:75-77`) | `docs/evidence/hamcp134/lane/security_metadata.json`; source `d84d8d9e`, manifest `073fa5ad…` | `5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a` (R8 on signing commit d84d8d9e) |
+| `core_device_configuration_entity_operation_v1`; 1 | `core.device_configuration_entity_operation` | `compiled-core-device-configuration-entity-operation-v1` | `sha256:74a03a640f60c9adaf8508a0a7fcbca7745f29b3d09e1dc9a611ac361475293c` | `scripts/core_device_configuration_local.py`; `device_configuration_entity` (`:72-74`). Entry in `ci/core-contract-read-files.json` added by #439; G5 CLOSED (§5A.4) | `docs/evidence/hamcp366/device_configuration_entity.json`; source `d84d8d9e`, manifest `073fa5ad…` | `710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc` (R8 on signing commit d84d8d9e) |
+| `core_scene_create_delete_operation_v1`; 1 | `core.scene_create_delete_operation` | `compiled-core-scene-create-delete-operation-v1` | `sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d` | `scripts/core_created_object_local.py`; `scene_create_delete` (`:66-68`) | `docs/evidence/hamcp364/lane/scene_create_delete.json`; source `d84d8d9e`, manifest `073fa5ad…` | `03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e` (R8 on signing commit d84d8d9e) |
+| `core_created_helper_delete_operation_v1`; 1 | `core.created_helper_delete_operation` | `compiled-core-created-helper-delete-operation-v1` | `sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4` | `scripts/core_created_object_local.py`; `created_helper_delete` (`:69-71`) | `docs/evidence/hamcp364/lane/created_helper_delete.json`; source `d84d8d9e`, manifest `073fa5ad…` | `c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd` (R8 on signing commit d84d8d9e) |
+| `core_thread_matter_topology_read_v1`; 1 | `core.thread_matter_topology_read` | `compiled-core-thread-matter-topology-read-v1` | `sha256:d03f005cfc0dbaaa03aad3e78d9147f83321bb3dec8015aa69edb93e358ebb6c` | `scripts/core_thread_matter_topology_local.py` (A1) and `scripts/core_thread_matter_topology_a2_local.py` (A2); `thread_matter_topology` (`:63-65`) | A1: `docs/evidence/hamcp231/lane/thread_matter_topology.json`; A2: `docs/evidence/hamcp231/lane/thread_matter_topology_a2.json`. Both: source `d84d8d9e`, manifest `073fa5ad…` | A1: `6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393`. A2: `f36d8c1a82e657de1dd82373eace0372f3ae31c2a1ee7e6fc50330f92913f798` (both R8 on signing commit d84d8d9e) |
 
-Every review receipt reads PASS with cleanup `clean` true, binds journal
-`3f79fce7…` and the fingerprint in its row [R]. They are review evidence
-only. R8 (§9C) is unchanged: every included lane, HAMCP-134's included,
-re-runs once on the signing commit, and the receipts that count for
-signing are the ones from those re-runs, which bind that commit (§5A.4,
-§5A.8 step 2). The signing commit, its receipts and their SHA-256 values
-do not exist yet and are not in this sheet.
+Every R8 receipt reads PASS with cleanup `clean` true, binds journal
+`3f79fce7…` and the fingerprint in its row [R]. These are the receipts that
+count for signing (R8, §9C; §5A.4, §5A.8 step 2), and preparation lists
+their SHA-256 values in `review_artifacts_sha256` (§5A.8 step 4).
+
+History (state at `3bd5fe3f`; not used for signing): the review receipts
+committed then bound source `5fc40f93` and manifest `48b8b875…`. Their
+SHA-256 values were: M1 `381358d630ff9fc83ce7d2c87e4d33507aad3f9cdfd9872f8ecc3e2883ca7142`;
+M2 `a7f0697af9d350b69a122d540e5b5af29e5090a0779edebb3264c7a66e8d4a47`;
+M3 `6345ff58a9fc798d3ece65b7436c7c64564a79bf5866de5502e9e873c38739d0`;
+M4 `7320406f98b60c34499c2d10e71675981ffc3d8b0f080cdba53de131c7e57860`;
+M5 `5e4d641def9c6e248ca88a22fbf3836c5c836f9b429270116dffd1b547897df6`;
+M6 A1 `6bafb4b6eb49079435e9305f0e7f2a62a324b5579bcad69cc4a974561da2e2c2`;
+M6 A2 `1b4506263090a3f56cba85841ce64cee66e1c323f51729364cadd3868f3826da`.
 
 **Manifests at `3bd5fe3f` [R].**
 
 | File | SHA-256 | Contents |
 | --- | --- | --- |
 | `ci/core-evidence-groups.json` | `5474f77b2cc91d52875a5920d37ce495907e5b81cfe7a052da269f71c7985e87` | 19 groups, in this order: `general` (`:2-22`), `integration_inspection` (`:23-25`), `automation_baseline` (`:26-28`), `entity_metadata` (`:29-31`), `availability_exposure` (`:32-35`), `label_registry` (`:36-38`), `configuration_delete` (`:39-41`), `helper_options` (`:42-44`), `input_select_option` (`:45-47`), `script_traces` (`:48-50`), `dashboard_metadata` (`:51-53`), `scene_configuration` (`:54-56`), `helper_value` (`:57-59`), `marketplace_read` (`:60-62`), `thread_matter_topology` (`:63-65`), `scene_create_delete` (`:66-68`), `created_helper_delete` (`:69-71`), `device_configuration_entity` (`:72-74`), `security_metadata` (`:75-77`) |
-| `ci/core-contract-read-files.json` | `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` | The manifest every receipt binds (`manifest_sha256`). Its `profiles` map has 38 keys: 37 capabilities, every compiled one except `core.device_configuration_entity_operation`, plus `binding_judgments` |
+| `ci/core-contract-read-files.json` | `48b8b87590a7c023f6ff9f44ff05abcab4fbb9aa3f597d57c2a131a149cfbbed` | History: the manifest every receipt at `3bd5fe3f` binds (`manifest_sha256`); the R8 receipts bind `073fa5ad…`, the file's hash at `d84d8d9e`. Its `profiles` map has 38 keys: 37 capabilities, every compiled one except `core.device_configuration_entity_operation`, plus `binding_judgments` |
 
 Any change to either file before the signing commit changes its hash;
 the R8 re-runs bind the signing commit's values.
