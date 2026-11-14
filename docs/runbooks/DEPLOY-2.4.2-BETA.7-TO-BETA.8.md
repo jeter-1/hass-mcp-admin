@@ -26,7 +26,9 @@ approval.
   of 2026-11-13 (signing plan §9D). The 17:05 ruling 2 (architect,
   relayed by Josh 2026-11-13, finding HAMCP332-RUNBOOK-SIGNING-COMMIT) sets
   the two commits used in 1.2-1.4, 7.1, 7.2 and 7.5-7.6; it is not Josh's
-  own.
+  own. The 19:05 record item 1 (architect, relayed by Josh 2026-11-13,
+  after the beta.8 deploy) sets the S7 row, the Phase 5 known blocker and
+  the 6.2 deviation note; it is not Josh's own either.
 - "Check A1" and "check A2" are the two checks inside architect ruling A.
   They are not the earlier rulings cited below as A2, A3 or A8, nor the
   23:11 rulings A1 and A2.
@@ -503,7 +505,7 @@ planned partial add-on backup that was step 2.1; 2.1 is no longer used.
 | S4 | registry | seq 17, 32 references, 0 mismatches |
 | S5 | `tools/list` | 114 tools; `ha_get_hacs_info` absent; four new tools present |
 | S6 | `list_capabilities` | answers; record it beside the baseline |
-| S7 | `get_server_health` startup readiness | the startup-readiness phase timing is present (HAMCP-350) |
+| S7 | add-on log: `startup_phase_timing` events, not `get_server_health` (19:05 record item 1) | the HAMCP-350 startup phase timings are present, with `readiness_deadline_elapsed` false |
 | S8 | upstream fingerprint | `upstream_catalog_fingerprint` equals baseline |
 | S9 | one delegated read | `ha_get_state` on a harmless sensor attributed to ha-mcp, no fallback |
 | S10 | one native read | `provider: engineering`, `fallback_occurred: false` |
@@ -535,6 +537,11 @@ automation was watched.
   `get_security_metadata`, `get_thread_matter_topology` and
   `automation_reliability_batch_analysis`.
 - Stop: still missing after reconnect → stop and report.
+- Known blocker C1 (19:05 record item 1): on the 2.6 deploy day, a
+  brand-new Claude chat could not load the connector. An existing chat saw
+  the four new tools after an app restart. Record Phase 5 as blocked by
+  C1, not failed, when only a brand-new Claude chat fails to load the
+  connector. C1 (legacy-only MCP protocol) is 2.7 intake.
 
 ---
 
@@ -568,6 +575,12 @@ Poll `get_execution_task` no more often than every 10 s.
     E).
 - Stop: anything was dispatched, or a pending or approved plan is left →
   stop and tell Josh.
+- Deviation on the 2.6 deploy day (19:05 record item 1): both named Eve
+  plugs were offline (F063). The probe used the offline master bedroom TV
+  select with `"previous"` instead, on the architect's ruling with Josh's
+  approval. It refused with `device_configuration_core_authority_unavailable`,
+  with no dispatch and no plan. A different target needs the same ruling
+  and approval.
 
 ---
 
