@@ -323,42 +323,59 @@ This step runs on the already-signed delete profile.
 5. [READ] The automation is absent, the count is back to the pre-state, and
    the audit shows one create and one delete.
 
-### 7.7 Device configuration on an Eve plug (HAMCP-297)
+### 7.7 Device configuration on the Garage Camera Smart Plug (HAMCP-297)
 
 Gates: the HAMCP-377 12b receipt, committed and passing, and the HAMCP-379
 recovery containment, which ships in this release.
 
-Targets: only the master bedroom TV Eve plug or the kitchen Eve plug.
-Never the garage beer fridge plug or the network cabinet plug.
+Target: only `select.garage_garage_camera_smart_plug_power_on_behavior`
+(Garage Camera Smart Plug), its power-on behavior. Josh chose it on
+2026-11-13 (about 19:10 CST) because both Eve plugs named earlier (master
+bedroom TV and kitchen) were offline on the deploy day (F063). Power-on
+behavior applies only after a mains power loss, and the test never switches
+the plug; `"on"` is a safe fallback for a camera if the restore fails. This
+section and runbook step 9.8 must not disagree (architect 19:25 ruling 2;
+the config-category check and the removal of the old physical-confirmation
+step were accepted in the architect's 19:30 note).
+
+Never: the network cabinet plug; the back-porch Aqara sensitivity (that
+step was dropped and stays dropped); the offline Eve plugs; the beer fridge
+plug.
 
 No plan or panel exists for this tool. Each mutating step needs its own
-approval from Josh in chat; a blanket approval does not count.
+approval from Josh in chat at Phase 9 time; a blanket approval does not
+count (D21).
 
-1. [READ] From the registry, confirm:
-   - the power-on-behavior `select` is `config` / `matter` /
-     `startup_on_off`;
-   - the child-lock `switch` is `child_lock`.
-
-   Record the current option, the option list, the child-lock state and the
-   main switch state.
+1. [READ] From the registry, confirm the target is `config` / `select` /
+   `matter` / `startup_on_off` and its current option is `"previous"`.
+   Record the option list and the plug's main switch state. Anything else:
+   stop and tell Josh; do not pick another target.
 2. [MUTATES; Josh's explicit approval required, this step only]
-   `select_option` to a different live option. Result: `succeeded_verified`
-   with an `undo` field. If the result is `confirmation_required`, nothing
-   was sent; relay the reason to Josh.
-3. [READ] The new option shows, the main switch is unchanged, and the task
-   is terminal and verified.
-4. [MUTATES; Josh's explicit approval required, this step only] `undo`.
-   Result: `succeeded_verified`, with `undone` true.
-5. [READ] The option equals step 1.
-6. [MUTATES; Josh's explicit approval required, each step] Repeat steps
-   2-5 for the child-lock switch.
-7. Josh confirms the physical device behaves as reported.
-8. [READ] Final check:
-   - every touched entity equals its step 1 value;
+   `select_option` from `"previous"` to `"on"`. Result: `succeeded_verified`,
+   reading back exactly `"on"`, with an `undo` field. If the result is
+   `confirmation_required`, nothing was sent; relay the reason to Josh.
+3. [READ] The option reads exactly `"on"`, the main switch equals its
+   recorded state, and the task is terminal and verified.
+4. [MUTATES; Josh's explicit approval required, this step only] Restore
+   with `undo`. Result: `succeeded_verified`, with `undone` true, reading
+   back exactly `"previous"`. If `undo` refuses, or ends other than
+   `succeeded_verified` with `undone` true: stop and tell Josh. No automatic
+   second `select_option` to `"previous"`; that needs its own approval.
+5. [READ] Final check:
+   - the option reads exactly `"previous"` and the main switch equals its
+     recorded state;
    - `ordinary_device_configuration` shows no hold and no task;
    - `list_execution_tasks` shows no non-terminal task.
 
-The number path (`set_value`) is not live-tested in 2.6.
+An uncertain result at any step: poll `get_execution_task` at most every
+10 s. Never resend.
+
+Verification is the device's reported value read back through Home
+Assistant; actual power-on behavior after a mains power loss is not tested
+(architect 19:30 note).
+
+Not live-tested in 2.6: the child-lock switch (step removed by Josh's 19:10
+decision) and the number path (`set_value`).
 
 ## Rollback
 

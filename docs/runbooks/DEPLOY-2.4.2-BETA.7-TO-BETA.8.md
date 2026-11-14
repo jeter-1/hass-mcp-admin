@@ -28,7 +28,11 @@ approval.
   the two commits used in 1.2-1.4, 7.1, 7.2 and 7.5-7.6; it is not Josh's
   own. The 19:05 record item 1 (architect, relayed by Josh 2026-11-13,
   after the beta.8 deploy) sets the S7 row, the Phase 5 known blocker and
-  the 6.2 deviation note; it is not Josh's own either.
+  the 6.2 deviation note; it is not Josh's own either. Josh's own
+  decision of 2026-11-13 (about 19:10 CST) sets the 9.8 target and
+  steps. The architect's 19:20 ruling (relayed by Josh 2026-11-13) sets
+  the 7.2 branch pattern and the 9.8 restore by `undo`; it is not Josh's
+  own.
 - "Check A1" and "check A2" are the two checks inside architect ruling A.
   They are not the earlier rulings cited below as A2, A3 or A8, nor the
   23:11 rulings A1 and A2.
@@ -622,8 +626,9 @@ is the signing plan's (§5A.8).
   (17:05 ruling 2d):
   - run `--record` only after the real seq 18 candidate exists;
   - run it on a dedicated evidence branch with its own pull request,
-    under register id HAMCP-377. Proposed branch pattern (a proposal, not
-    yet ruled): `agent/HAMCP-377-seq18-record-<short-sha>`;
+    under register id HAMCP-377. Branch pattern (19:20 ruling 1):
+    `agent/HAMCP-377-seq18-record-<short-sha>`, where `<short-sha>` is
+    the signing commit's short SHA;
   - then cite the new 12a sha256 from that pull request (7.1).
 - Check: identical. The 12a entry was built by
   `scripts/prepare_core_release_registry.py extend-capabilities`, the route
@@ -779,31 +784,56 @@ acceptance §7.6)
 - Stop: any dispatch, or a pending or approved plan left → stop. Do not run
   9.8.
 
-**9.8 Eve plug device configuration** [JOSH APPROVAL: each step, in chat]
-(acceptance §7.7)
+**9.8 Device configuration: Garage Camera Smart Plug power-on behavior**
+[JOSH APPROVAL: each step, in chat]
+(acceptance §7.7; target and steps: Josh's decision of 2026-11-13, about
+19:10 CST; restore: 19:20 ruling 3)
 - Who: Josh, architect.
 - Gates:
   - the committed HAMCP-377 12b receipt (`12b-source.json`, sha256
     `fee3d5250fee91f0210d2ed2e778d132e83d2a468392d2768010ff9a0136fb46`),
     PASS;
   - the HAMCP-379 recovery containment, which ships in this release (#436;
-    23:01 ruling 3).
-- Action, on the master bedroom TV or kitchen Eve plug only:
-  1. power-on behavior: `select_option`, then `undo`;
-  2. child lock: on/off, then `undo`.
-
-  Never use the beer fridge plug or the network cabinet plug. A blanket
-  approval does not count (D21).
+    23:01 ruling 3);
+  - [READ] the registry shows the target as `config` / `select` /
+    `matter` / `startup_on_off`, and its current option is
+    `"previous"`. Record the option list and the plug's main switch
+    state. Anything else → stop and tell Josh; do not pick another
+    target (19:25 ruling 1).
+- Target: `select.garage_garage_camera_smart_plug_power_on_behavior`
+  (Garage Camera Smart Plug) only. Both Eve plugs named earlier (master
+  bedroom TV and kitchen) were offline on the deploy day (F063), so Josh
+  chose this target. Acceptance §7.7 says the same (19:25 ruling 2).
+  Power-on behavior applies only after a mains power loss, and the test
+  never switches the plug; `"on"` is a safe fallback for a camera if the
+  restore fails.
+- Never use: the network cabinet plug; the back-porch Aqara sensitivity
+  (that step was dropped and stays dropped); the offline Eve plugs; the
+  beer fridge plug.
+- Action, one step at a time, each with its own approval from Josh at
+  Phase 9 time. A blanket approval does not count (D21).
+  1. `select_option` from `"previous"` to `"on"`; exact readback
+     `"on"`.
+  2. Restore with `undo`; exact readback `"previous"`.
 - Check:
-  - each step is `succeeded_verified`, and each undo is
-    `succeeded_verified` with `undone` true;
-  - the main switch is unchanged;
-  - at the end there is no hold and no non-terminal task.
+  - step 1 is `succeeded_verified` and reads back exactly `"on"`;
+  - the undo is `succeeded_verified` with `undone` true and reads back
+    exactly `"previous"`;
+  - the plug's main switch equals its recorded state;
+  - at the end `ordinary_device_configuration` shows no hold and no
+    task, and `list_execution_tasks` shows no non-terminal task.
 - Stop:
   - `confirmation_required` → nothing was sent; tell Josh.
   - An uncertain result → poll `get_execution_task` at most every 10 s.
     Never resend.
-- Not tested live: the number path (D20; see the release notes' Known
+  - `undo` refuses, or ends other than `succeeded_verified` with `undone`
+    true → stop and tell Josh. No automatic second `select_option` to
+    `"previous"`; that needs its own approval (19:20 ruling 3).
+- Verification is the device's reported value read back through Home
+  Assistant; actual power-on behavior after a mains power loss is not
+  tested (architect 19:30 note).
+- Not tested live: the child-lock switch (step removed by Josh's 19:10
+  decision) and the number path (D20; see the release notes' Known
   limitations).
 
 **9.9 Final readback**

@@ -104,6 +104,11 @@ and no lane was run.
   manifest hash, which R8 already handles: the signing commit's value is
   bound by the re-runs. No runtime file and no compiled fingerprint
   changes.
+- **PC2 (architect 19:20 ruling 2, relayed by Josh 2026-11-13):** §5A.7
+  PC2 now says M3's manifest map entry is added by the HAMCP-297 G5
+  change and that PC2 counts as met when that pull request merges. The
+  earlier 2026-11-13 revision note that names the release merge is kept
+  as history.
 
 ## What changed in the second revision of 2026-11-10 (Josh's rulings)
 
@@ -1055,7 +1060,7 @@ prepared candidate; and the approval PC8 needs does not exist yet.
 | # | Precondition | State on 2026-11-13 (at `3bd5fe3f`) |
 | --- | --- | --- |
 | PC1 | Membership is settled: each profile of §5A.5 is either merged and proven, or left for a later signing (§8). R-a (§9D): all six, each conditional on its lane passing on the signing commit; a profile whose lane fails is dropped from sequence 18 and the others proceed | The rule is decided (R-a; R6, R7, R12 in §9C). All six are merged into `release/2.6.0` (§5A.3). Which profiles pass is known only from the lane runs on the signing commit |
-| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. Of the six, only M1 is on `main` at the local `origin/main` ref `c041f59d` (not re-fetched for this refresh); M2 to M6 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here. M3 has no manifest map entry (§5A.4) |
+| PC2 | **Protected `main` carries the code.** Every included profile is compiled and `auto_eligible` on `main`, with its lane script, evidence group and manifest map (C4, C5, G2, G5). The workflow refuses any ref other than `refs/heads/main` (`core-release-registry-publish.yml:62`, `:95`) | Not met. Of the six, only M1 is on `main` at the local `origin/main` ref `c041f59d` (not re-fetched for this refresh); M2 to M6 and every lane and group added for 2.6 are only on `release/2.6.0`. Merging the release branch into `main` is Josh's Ready action; it is not requested here. M3's manifest map entry is added by the HAMCP-297 G5 change (§5A.4); PC2 counts as met when that pull request merges (architect 19:20 ruling 2) |
 | PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | The six profile PRs are merged into `release/2.6.0` (§5A.3). The release PR's review and G6 are not complete |
 | PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). R8 (§9C): every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit. Receipts that exist today are review evidence only | Not met for any profile. The committed receipts bind source commit `5fc40f93`, not the signing commit (§5A.4) |
 | PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3). R-d (§9D): the architect recomputes all 38 on the signing commit before signing; the signing commit is the HAMCP-297 G5 pull request's merge commit (17:05 ruling 2a, §9D), and the 38 must equal the values recomputed on the `release/2.6.0` to `main` merge commit for deploy (17:05 ruling 2b) | True at `3bd5fe3f` [R]: 38 compiled, equal to the `4d68e4d8` values, and the 32 signed references match. Must be repeated on the signing commit |
