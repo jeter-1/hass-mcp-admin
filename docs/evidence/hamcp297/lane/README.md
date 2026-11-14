@@ -42,5 +42,11 @@ unchanged and adds only this directory's record. `--check` reproduces every
 committed record byte for byte.
 
 The committed lane receipt `docs/evidence/hamcp366/device_configuration_entity.json`
-predates this lane change, has no `source_hashes_sha256` or `profile_paths`, and
-is stale until the lane is re-run on the signing commit (pending).
+is the R8 re-run on the signing commit
+`d84d8d9e69c4fff8481b018182a6b43f088aac7d` (architect ruling 2026-11-13, about
+22:15 CST): PASS, cleanup clean, manifest
+`073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1`,
+`source_hashes_sha256`
+`0cb62ae83f6ab5c9913e908ebfcd1e022973f0186f8a943793a07eab1278d4f7`, 42
+`profile_paths`. Receipt SHA-256
+`710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc`.
